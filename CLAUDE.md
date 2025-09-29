@@ -120,6 +120,28 @@ Before modifying:
 
 ## Environment Setup
 
+### Python Virtual Environment
+
+This project uses `uv` for Python package management:
+
+```bash
+# First-time setup
+uv venv                               # Create virtual environment
+source .venv/bin/activate             # Activate it
+uv pip install -r pyproject.toml      # Install dependencies
+
+# Running scripts
+python scan_intake.py                 # Always use python, not python3
+```
+
+The `pyproject.toml` file tracks all dependencies. When adding new packages:
+```bash
+# Add to pyproject.toml dependencies array, then:
+uv pip install -r pyproject.toml
+```
+
+### Secrets Management
+
 Never commit secrets:
 ```bash
 # Check .env.example for required variables

@@ -3,26 +3,47 @@
 ## Overview
 Automated research infrastructure for analyzing how US decisions during 1935-1955 created the "Aerospace Republic" - a system that prioritized aerospace dominance and financial hegemony over industrial strength, creating the contradictions that define our current crisis.
 
-## Core Documents
+## Current Status
 
-1. **[keyplayers.md](keyplayers.md)** - The 15-20 key figures whose decisions shaped this period
-2. **[sources-access.md](sources-access.md)** - Strategy for accessing full-text biographies and primary sources  
-3. **[agent-architecture.md](agent-architecture.md)** - Intelligent agents for filtering and extracting relevant content
-4. **[project-structure.md](project-structure.md)** - Biographical organization system
-5. **[implementation-roadmap.md](implementation-roadmap.md)** - Week-by-week implementation plan
+**Working Systems:**
+- ✅ Book scanning intake system (`scan_intake.py`)
+- ✅ Python environment with `uv` package management
+- ✅ Organized batch structure for scanned books
+
+**In Progress:**
+- 🔄 OCR pipeline for extracting text from scanned PDFs
+- 🔄 Quote extraction and analysis tools
+
+See [GitHub Issues](../../issues) for detailed planning and roadmap.
 
 ## Quick Start
 
-### This Week
-1. Create Internet Archive account with borrowing enabled
-2. Start Scribd free trial
-3. Download Manchester's "American Caesar" (MacArthur biography)
-4. Build and test QuoteExtractor agent on 3 chapters
+### Setup Environment
+```bash
+# Clone and setup
+git clone <repo-url>
+cd ar-research
 
-### This Month
-1. Complete pipeline for MacArthur, Marshall, and Acheson
-2. Extract 2000+ relevant quotes
-3. Identify 5+ "crossroads moments" where history pivoted
+# Setup Python environment
+uv venv
+source .venv/bin/activate
+uv pip install -r pyproject.toml
+```
+
+### Scanning Books
+```bash
+# Interactive mode
+python scan_intake.py
+
+# See workflow guide
+cat SCAN_WORKFLOW.md
+```
+
+## Core Documentation
+
+- **[SCAN_WORKFLOW.md](SCAN_WORKFLOW.md)** - Complete guide to scanning and organizing books
+- **[BOOK_OCR.md](BOOK_OCR.md)** - OCR processing pipeline (in development)
+- **[CLAUDE.md](CLAUDE.md)** - AI assistant workflow and guidelines
 
 ## Key Thesis
 Between 1935-1955, American leaders made four fateful decisions:
