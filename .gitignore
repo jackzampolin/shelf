@@ -33,3 +33,6 @@ dist/
 
 # Project-specific
 .claude/.env
+
+# Log files
+*.log

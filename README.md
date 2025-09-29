@@ -5,13 +5,22 @@ Automated research infrastructure for analyzing how US decisions during 1935-195
 
 ## Current Status
 
-**Working Systems:**
+**Completed Systems:**
 - ✅ Book scanning intake system (`scan_intake.py`)
 - ✅ Python environment with `uv` package management
 - ✅ Organized batch structure for scanned books
+- ✅ OCR pipeline for extracting text from scanned PDFs (`book_ocr.py`)
+- ✅ 4-agent LLM correction pipeline (`book_llm_process.py`)
+- ✅ Agent 4 targeted fix system (`book_agent4_fix.py`)
+- ✅ Review handler for flagged pages (`book_review_handler.py`)
+- ✅ Dual-structure merge system (`book_llm_merge.py`)
+
+**Current Books:**
+- 📖 *The Accidental President* by A.J. Baime - 447 pages OCR'd, ~60% LLM corrected
+- 📖 *Hap Arnold* - Scanned, ready for processing
 
 **In Progress:**
-- 🔄 OCR pipeline for extracting text from scanned PDFs
+- 🔄 First book LLM correction pipeline (running)
 - 🔄 Quote extraction and analysis tools
 
 See [GitHub Issues](../../issues) for detailed planning and roadmap.
@@ -37,6 +46,24 @@ python scan_intake.py
 
 # See workflow guide
 cat SCAN_WORKFLOW.md
+```
+
+### Processing Books
+```bash
+# 1. OCR extraction from PDFs
+python book_ocr.py <book-slug>
+
+# 2. LLM correction pipeline (4 agents)
+python book_llm_process.py <book-slug>
+
+# 3. Fix flagged pages with Agent 4
+python book_agent4_fix.py <book-slug>
+
+# 4. Merge into final text
+python book_llm_merge.py <book-slug>
+
+# 5. Generate review report
+python book_review_handler.py <book-slug> report
 ```
 
 ## Core Documentation
