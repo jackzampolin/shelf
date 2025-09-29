@@ -54,10 +54,11 @@ class LLMBookProcessor:
             "total_cost_usd": 0.0
         }
 
-    def extract_json(self, text):
+    def extract_json(self, text, debug_label=""):
         """
         Extract JSON from LLM response, handling markdown code blocks and extra text
         """
+        original_text = text
         text = text.strip()
 
         # Remove markdown code blocks
@@ -77,6 +78,29 @@ class LLMBookProcessor:
 
         if first_brace != -1 and last_brace != -1:
             text = text[first_brace:last_brace + 1]
+
+        # Try to parse and validate
+        try:
+            json.loads(text)  # Validate JSON
+        except json.JSONDecodeError as e:
+            # Save problematic response for debugging
+            if debug_label:
+                debug_file = self.book_dir / f"debug_{debug_label}_json_error.txt"
+                with open(debug_file, 'w', encoding='utf-8') as f:
+                    f.write(f"JSON Parse Error: {e}\n")
+                    f.write(f"Error at line {e.lineno}, column {e.colno}\n\n")
+                    f.write("=== ORIGINAL RESPONSE ===\n")
+                    f.write(original_text)
+                    f.write("\n\n=== EXTRACTED JSON ===\n")
+                    f.write(text)
+                    f.write("\n\n=== PROBLEMATIC SECTION ===\n")
+                    lines = text.split('\n')
+                    if e.lineno > 0 and e.lineno <= len(lines):
+                        problem_line = lines[e.lineno - 1]
+                        f.write(f"Line {e.lineno}: {problem_line}\n")
+                        f.write(" " * (e.colno + 8) + "^\n")
+            # Re-raise to let caller handle
+            raise
 
         return text
 
@@ -208,7 +232,7 @@ Return JSON error catalog for page {page_num} only."""
             response, usage = self.call_llm(system_prompt, user_prompt, temperature=0.1)
 
             # Extract JSON robustly
-            json_text = self.extract_json(response)
+            json_text = self.extract_json(response, debug_label=f"page_{page_num:04d}_agent1")
             error_catalog = json.loads(json_text)
 
             # Save error catalog
@@ -355,7 +379,7 @@ Verify each correction and check for unauthorized changes."""
             response, usage = self.call_llm(system_prompt, user_prompt, temperature=0)
 
             # Extract JSON robustly
-            json_text = self.extract_json(response)
+            json_text = self.extract_json(response, debug_label=f"page_{page_num:04d}_agent3")
             verification = json.loads(json_text)
 
             # Add metadata
@@ -393,12 +417,39 @@ Verify each correction and check for unauthorized changes."""
 
         except Exception as e:
             print(f"    ✗ Error in Agent 3: {e}")
-            return {
+
+            # Create error verification result
+            error_result = {
                 "page_number": page_num,
                 "confidence_score": 0.0,
                 "needs_human_review": True,
-                "review_reason": f"Verification failed: {str(e)}"
+                "review_reason": f"Verification failed: {str(e)}",
+                "verification_timestamp": datetime.now().isoformat(),
+                "agent_metadata": {
+                    "model": self.model,
+                    "error": str(e)
+                }
             }
+
+            # Save error verification file
+            output_file = self.verification_dir / f"page_{page_num:04d}.json"
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(error_result, f, indent=2)
+
+            # Also save to needs_review
+            review_file = self.needs_review_dir / f"page_{page_num:04d}.json"
+            with open(review_file, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'page_number': page_num,
+                    'confidence_score': 0.0,
+                    'verification': error_result,
+                    'error_type': 'json_parse_error',
+                    'error_message': str(e)
+                }, f, indent=2)
+
+            self.stats['pages_needing_review'] += 1
+
+            return error_result
 
     def process_page(self, page_num, total_pages):
         """
