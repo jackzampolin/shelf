@@ -32,4 +32,4 @@ dist/
 *.egg-info/
 
 # Project-specific
-.claude/
+.claude/.env
