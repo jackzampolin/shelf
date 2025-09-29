@@ -6,14 +6,14 @@ Automated research infrastructure for analyzing how US decisions during 1935-195
 ## Current Status
 
 **Completed Systems:**
-- ✅ Book scanning intake system (`scan_intake.py`)
+- ✅ Book scanning intake system (`tools/scan.py`)
 - ✅ Python environment with `uv` package management
 - ✅ Organized batch structure for scanned books
-- ✅ OCR pipeline for extracting text from scanned PDFs (`book_ocr.py`)
-- ✅ 4-agent LLM correction pipeline (`book_llm_process.py`)
-- ✅ Agent 4 targeted fix system (`book_agent4_fix.py`)
-- ✅ Review handler for flagged pages (`book_review_handler.py`)
-- ✅ Dual-structure merge system (`book_llm_merge.py`)
+- ✅ OCR pipeline for extracting text from scanned PDFs (`pipeline/ocr.py`)
+- ✅ 4-agent LLM correction pipeline (`pipeline/correct.py`)
+- ✅ Agent 4 targeted fix system (`pipeline/fix.py`)
+- ✅ Review handler for flagged pages (`tools/review.py`)
+- ✅ Dual-structure merge system (`pipeline/merge.py`)
 
 **Current Books:**
 - 📖 *The Accidental President* by A.J. Baime - 447 pages OCR'd, ~60% LLM corrected
@@ -39,38 +39,42 @@ source .venv/bin/activate
 uv pip install -r pyproject.toml
 ```
 
-### Scanning Books
-```bash
-# Interactive mode
-python scan_intake.py
+### Book Digitization Pipeline
 
-# See workflow guide
-cat SCAN_WORKFLOW.md
+```bash
+# Step 0: Scan intake (as-needed, interactive)
+uv run python tools/scan.py
+
+# Step 1: OCR extraction from PDFs
+uv run python pipeline/ocr.py <book-slug>
+
+# Step 2: LLM correction pipeline (3-agent system)
+uv run python pipeline/correct.py <book-slug>
+
+# Step 3: Fix flagged pages with Agent 4
+uv run python pipeline/fix.py <book-slug>
+
+# Step 4: Merge into final dual-structure text
+uv run python pipeline/merge.py <book-slug>
+
+# Review tools
+uv run python tools/review.py <book-slug> report
 ```
 
-### Processing Books
-```bash
-# 1. OCR extraction from PDFs
-python book_ocr.py <book-slug>
+## Project Structure
 
-# 2. LLM correction pipeline (4 agents)
-python book_llm_process.py <book-slug>
-
-# 3. Fix flagged pages with Agent 4
-python book_agent4_fix.py <book-slug>
-
-# 4. Merge into final text
-python book_llm_merge.py <book-slug>
-
-# 5. Generate review report
-python book_review_handler.py <book-slug> report
 ```
-
-## Core Documentation
-
-- **[SCAN_WORKFLOW.md](SCAN_WORKFLOW.md)** - Complete guide to scanning and organizing books
-- **[BOOK_OCR.md](BOOK_OCR.md)** - OCR processing pipeline (in development)
-- **[CLAUDE.md](CLAUDE.md)** - AI assistant workflow and guidelines
+ar-research/
+├── pipeline/          # Sequential processing stages
+│   ├── ocr.py        # Stage 1: Tesseract OCR extraction
+│   ├── correct.py    # Stage 2: 3-agent LLM correction
+│   ├── fix.py        # Stage 3: Agent 4 targeted fixes
+│   └── merge.py      # Stage 4: Final text merge
+├── tools/            # Supporting utilities
+│   ├── scan.py       # Scanner intake workflow
+│   └── review.py     # Review flagged pages
+└── CLAUDE.md         # AI assistant workflow guidelines
+```
 
 ## Key Thesis
 Between 1935-1955, American leaders made four fateful decisions:
