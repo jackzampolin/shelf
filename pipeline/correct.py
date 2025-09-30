@@ -65,8 +65,10 @@ class StructuredPageCorrector:
         self.ocr_dir = self.book_dir / "ocr"
         self.corrected_dir = self.book_dir / "corrected"
         self.needs_review_dir = self.book_dir / "needs_review"
+        self.logs_dir = self.book_dir / "logs"
+        self.debug_dir = self.logs_dir / "debug"
 
-        for dir_path in [self.corrected_dir, self.needs_review_dir]:
+        for dir_path in [self.corrected_dir, self.needs_review_dir, self.logs_dir, self.debug_dir]:
             dir_path.mkdir(exist_ok=True)
 
         # Thread-safe stats tracking
@@ -136,7 +138,7 @@ class StructuredPageCorrector:
 
         # Save debug info before raising
         if debug_label and last_error:
-            debug_file = self.book_dir / f"debug_{debug_label}_json_error.txt"
+            debug_file = self.debug_dir / f"{debug_label}_json_error.txt"
             with open(debug_file, 'w', encoding='utf-8') as f:
                 f.write(f"JSON Parse Error: {last_error['msg']}\n")
                 f.write(f"Error at line {last_error['lineno']}, column {last_error['colno']}\n\n")
