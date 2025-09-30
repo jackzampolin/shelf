@@ -6,22 +6,20 @@ Automated research infrastructure for analyzing how US decisions during 1935-195
 ## Current Status
 
 **Completed Systems:**
-- ✅ Book scanning intake system (`tools/scan.py`)
-- ✅ Python environment with `uv` package management
-- ✅ Organized batch structure for scanned books
-- ✅ OCR pipeline for extracting text from scanned PDFs (`pipeline/ocr.py`)
-- ✅ 4-agent LLM correction pipeline (`pipeline/correct.py`)
-- ✅ Agent 4 targeted fix system (`pipeline/fix.py`)
-- ✅ Review handler for flagged pages (`tools/review.py`)
-- ✅ Dual-structure merge system (`pipeline/merge.py`)
+- ✅ Unified CLI (`ar.py`) - Single entry point for all operations
+- ✅ Library tracking system with LLM-powered book discovery
+- ✅ Random identifier system for scan folders (Docker-style naming)
+- ✅ 4-stage pipeline: OCR → Correct → Fix → Structure
+- ✅ 3-agent LLM correction pipeline with parallel processing
+- ✅ Agent 4 targeted fix system for low-confidence pages
+- ✅ Real-time progress monitoring with ETA
+- ✅ Centralized configuration via `.env` file
 
 **Current Books:**
-- 📖 *The Accidental President* by A.J. Baime - 447 pages OCR'd, ~60% LLM corrected
-- 📖 *Hap Arnold* - Scanned, ready for processing
-
-**In Progress:**
-- 🔄 First book LLM correction pipeline (running)
-- 🔄 Quote extraction and analysis tools
+- 📖 *The Accidental President* by A.J. Baime (scan: `modest-lovelace`)
+  - 447 pages fully processed through all 4 stages
+  - 5 chapters, 36 semantic chunks
+  - Total cost: ~$12
 
 See [GitHub Issues](../../issues) for detailed planning and roadmap.
 
@@ -36,45 +34,143 @@ cd ar-research
 # Setup Python environment
 uv venv
 source .venv/bin/activate
-uv pip install -r pyproject.toml
+uv pip install -e .
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your OpenRouter API key
 ```
 
-### Book Digitization Pipeline
+### Library Management
 
 ```bash
-# Step 0: Scan intake (as-needed, interactive)
-uv run python tools/scan.py
+# View your collection
+ar library list                    # List all books
+ar library stats                   # Collection statistics
+ar library show <scan-id>          # Show scan details
 
-# Step 1: OCR extraction from PDFs
-uv run python pipeline/ocr.py <book-slug>
+# Add new books
+ar library discover ~/Downloads    # Find PDFs, extract metadata with LLM
+ar library migrate <folder-name>   # Migrate existing folders to new naming
+```
 
-# Step 2: LLM correction pipeline (3-agent system)
-uv run python pipeline/correct.py <book-slug>
+### Book Processing Pipeline
 
-# Step 3: Fix flagged pages with Agent 4
-uv run python pipeline/fix.py <book-slug>
+```bash
+# Run complete pipeline (all 4 stages)
+ar pipeline <scan-id>
 
-# Step 4: Merge into final dual-structure text
-uv run python pipeline/merge.py <book-slug>
+# Or run stages individually
+ar ocr <scan-id>                   # Step 1: OCR extraction
+ar correct <scan-id>               # Step 2: 3-agent LLM correction
+ar fix <scan-id>                   # Step 3: Agent 4 targeted fixes
+ar structure <scan-id>             # Step 4: Chapter/chunk structuring
 
-# Review tools
-uv run python tools/review.py <book-slug> report
+# Monitor progress
+ar monitor <scan-id>               # Real-time progress with ETA
+ar status <scan-id>                # Quick status check
+
+# Review flagged pages
+ar review <scan-id> report         # Generate review report
+ar review <scan-id> checklist      # Create markdown checklist
+```
+
+### Interactive Scan Intake
+
+```bash
+ar scan                            # Interactive workflow for new scans
 ```
 
 ## Project Structure
 
 ```
 ar-research/
+├── ar.py              # Unified CLI entry point
+├── config.py          # Centralized configuration from .env
+├── utils.py           # Shared utilities (metadata tracking)
 ├── pipeline/          # Sequential processing stages
+│   ├── run.py        # Pipeline orchestrator
 │   ├── ocr.py        # Stage 1: Tesseract OCR extraction
 │   ├── correct.py    # Stage 2: 3-agent LLM correction
 │   ├── fix.py        # Stage 3: Agent 4 targeted fixes
-│   └── merge.py      # Stage 4: Final text merge
-├── tools/            # Supporting utilities
+│   └── structure.py  # Stage 4: Chapter/chunk structuring
+├── tools/             # Supporting utilities
 │   ├── scan.py       # Scanner intake workflow
-│   └── review.py     # Review flagged pages
-└── CLAUDE.md         # AI assistant workflow guidelines
+│   ├── monitor.py    # Real-time progress monitoring
+│   ├── review.py     # Review flagged pages
+│   ├── library.py    # Library catalog management
+│   ├── discover.py   # LLM-powered book metadata extraction
+│   └── names.py      # Random identifier generation
+└── CLAUDE.md          # AI assistant workflow guidelines
 ```
+
+### Book Database Structure
+
+**Collection Level:**
+```
+~/Documents/book_scans/
+├── library.json              # Collection catalog (single source of truth)
+└── <scan-id>/                # Random identifier (e.g., "modest-lovelace")
+    ├── metadata.json         # Scan-specific processing history
+    ├── source/               # Original scanned materials
+    ├── ocr/                  # OCR output (page_*.json files, flat)
+    ├── corrected/            # LLM-corrected pages (page_*.json files, flat)
+    ├── structured/           # Semantic structure for database ingestion
+    │   ├── chapters/         # Chapter JSON and markdown files
+    │   ├── chunks/           # ~5-page semantic chunks for RAG
+    │   ├── full_book.md      # Complete book in markdown
+    │   └── metadata.json
+    ├── images/               # Extracted images from pages
+    ├── needs_review/         # Pages flagged by Agent 3
+    └── logs/                 # Pipeline logs and debug files
+        ├── debug/            # JSON parsing error logs
+        └── reports/          # Processing reports
+```
+
+**library.json Structure:**
+```json
+{
+  "version": "1.0",
+  "books": {
+    "the-accidental-president": {
+      "title": "The Accidental President",
+      "author": "A.J. Baime",
+      "isbn": "978-0544617247",
+      "scans": [
+        {
+          "scan_id": "modest-lovelace",
+          "date_added": "2025-09-30",
+          "status": "complete",
+          "pages": 447,
+          "cost_usd": 12.45,
+          "models": {
+            "ocr": "tesseract",
+            "correct": "openai/gpt-4o-mini",
+            "fix": "anthropic/claude-3.5-sonnet",
+            "structure": "anthropic/claude-sonnet-4.5"
+          }
+        }
+      ]
+    }
+  },
+  "stats": {
+    "total_books": 1,
+    "total_scans": 1,
+    "total_pages": 447,
+    "total_cost_usd": 12.45
+  }
+}
+```
+
+**Key Design Principles:**
+- **Random identifiers**: Scan folders use Docker-style names (e.g., `modest-lovelace`)
+- **Catalog-based**: `library.json` maps identifiers to books and tracks all metadata
+- **Multiple scans**: Same book can have multiple scans for LLM comparison
+- **Flat page structure**: No batch subdirectories - all pages at root level
+- **Single source of truth**: `corrected/` contains best version (Agent 4 overwrites in place)
+- **Agent visibility**: All agent outputs (1-4) stored in each page JSON's `llm_processing` section
+- **Layered semantics**: Pages (provenance) → Chapters (human reading) → Chunks (LLM queries)
+- **Pipeline stages**: source → ocr → corrected → structured → database
 
 ## Key Thesis
 Between 1935-1955, American leaders made four fateful decisions:

@@ -190,17 +190,17 @@ class BookOCRProcessor:
         print()
 
         # Create output directories
-        ocr_dir = book_dir / "ocr_structured"
+        ocr_dir = book_dir / "ocr"
         ocr_dir.mkdir(exist_ok=True)
 
-        images_dir = book_dir / "extracted_images"
+        images_dir = book_dir / "images"
         images_dir.mkdir(exist_ok=True)
 
         # Process each batch
         total_pages = 0
         for batch_info in metadata['batches']:
             batch_num = batch_info['batch_number']
-            pdf_path = book_dir / "batches" / f"batch_{batch_num:03d}" / batch_info['filename']
+            pdf_path = book_dir / "source" / "batches" / f"batch_{batch_num:03d}" / batch_info['filename']
 
             if not pdf_path.exists():
                 print(f"⚠️  Batch {batch_num} PDF not found: {pdf_path}")
@@ -238,9 +238,8 @@ class BookOCRProcessor:
         print(f"📄 Batch {batch_num}: {pdf_path.name}")
         print(f"   Converting PDF to images...")
 
-        # Create batch subdirectory
-        batch_ocr_dir = ocr_dir / f"batch_{batch_num:03d}"
-        batch_ocr_dir.mkdir(exist_ok=True)
+        # Write directly to ocr/ directory (flat structure)
+        batch_ocr_dir = ocr_dir
 
         # Convert PDF to images
         try:

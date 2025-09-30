@@ -13,10 +13,17 @@ Usage:
     ar review <book-slug> <action>    # Review flagged pages
     ar status <book-slug>             # Quick status check
 
+    ar library list                   # List all books in collection
+    ar library show <id>              # Show book or scan details
+    ar library stats                  # Collection statistics
+    ar library discover <dir>         # Find new PDFs to add
+    ar library migrate <folder>       # Migrate existing folder to new naming
+
 Examples:
     ar pipeline The-Accidental-President
     ar monitor The-Accidental-President
-    ar status The-Accidental-President
+    ar library list
+    ar library discover ~/Downloads
 """
 
 import sys
@@ -123,6 +130,232 @@ def cmd_status(args):
     return 0
 
 
+def cmd_library_list(args):
+    """List all books in the collection."""
+    from tools.library import LibraryIndex
+
+    library = LibraryIndex()
+    books = library.list_all_books()
+
+    if not books:
+        print("No books in library yet.")
+        print("\nAdd books with: ar library discover <directory>")
+        return 0
+
+    print(f"\n📚 Library ({len(books)} book(s))\n")
+    print(f"{'Title':<50} {'Author':<30} {'Scans':>6}")
+    print("=" * 88)
+
+    for book in books:
+        title = book['title'][:48] if len(book['title']) > 48 else book['title']
+        author = book['author'][:28] if len(book['author']) > 28 else book['author']
+        print(f"{title:<50} {author:<30} {book['scan_count']:>6}")
+
+    return 0
+
+
+def cmd_library_show(args):
+    """Show details for a book or scan."""
+    from tools.library import LibraryIndex
+
+    library = LibraryIndex()
+
+    # Try as scan_id first
+    scan_info = library.get_scan_info(args.identifier)
+    if scan_info:
+        print(f"\n📖 {scan_info['title']}")
+        print(f"   By {scan_info['author']}")
+        if scan_info.get('isbn'):
+            print(f"   ISBN: {scan_info['isbn']}")
+        print()
+
+        scan = scan_info['scan']
+        print(f"Scan: {scan['scan_id']}")
+        print(f"  Status: {scan['status']}")
+        print(f"  Added: {scan['date_added'][:10]}")
+        print(f"  Pages: {scan.get('pages', 0)}")
+        print(f"  Cost: ${scan.get('cost_usd', 0):.2f}")
+
+        if scan.get('models'):
+            print(f"  Models:")
+            for stage, model in scan['models'].items():
+                print(f"    {stage}: {model}")
+
+        if scan.get('notes'):
+            print(f"  Notes: {scan['notes']}")
+
+        return 0
+
+    # Try as book slug
+    scans = library.get_book_scans(args.identifier)
+    if scans:
+        book = library.data['books'][args.identifier]
+        print(f"\n📖 {book['title']}")
+        print(f"   By {book['author']}")
+        if book.get('isbn'):
+            print(f"   ISBN: {book['isbn']}")
+        print()
+
+        print(f"Scans ({len(scans)}):")
+        for scan in scans:
+            print(f"  • {scan['scan_id']}")
+            print(f"    Status: {scan['status']} | Pages: {scan.get('pages', 0)} | Cost: ${scan.get('cost_usd', 0):.2f}")
+
+        return 0
+
+    print(f"Not found: {args.identifier}")
+    return 1
+
+
+def cmd_library_scans(args):
+    """List all scans for a book."""
+    from tools.library import LibraryIndex
+
+    library = LibraryIndex()
+    scans = library.get_book_scans(args.book_slug)
+
+    if not scans:
+        print(f"No scans found for: {args.book_slug}")
+        return 1
+
+    book = library.data['books'][args.book_slug]
+    print(f"\n📖 {book['title']}")
+    print(f"   By {book['author']}\n")
+
+    for scan in scans:
+        print(f"  {scan['scan_id']}")
+        print(f"    Status: {scan['status']}")
+        print(f"    Added: {scan['date_added'][:10]}")
+        print(f"    Pages: {scan.get('pages', 0)}")
+        print(f"    Cost: ${scan.get('cost_usd', 0):.2f}")
+        if scan.get('notes'):
+            print(f"    Notes: {scan['notes']}")
+        print()
+
+    return 0
+
+
+def cmd_library_stats(args):
+    """Show library-wide statistics."""
+    from tools.library import LibraryIndex
+
+    library = LibraryIndex()
+    stats = library.get_stats()
+
+    print("\n📊 Library Statistics\n")
+    print(f"Books:       {stats['total_books']}")
+    print(f"Scans:       {stats['total_scans']}")
+    print(f"Pages:       {stats['total_pages']:,}")
+    print(f"Total Cost:  ${stats['total_cost_usd']:.2f}")
+
+    if stats['total_pages'] > 0:
+        avg_cost_per_page = stats['total_cost_usd'] / stats['total_pages']
+        print(f"Cost/Page:   ${avg_cost_per_page:.4f}")
+
+    return 0
+
+
+def cmd_library_discover(args):
+    """Discover new PDFs and add to library."""
+    from tools.library import LibraryIndex
+    from tools.discover import discover_books_in_directory
+    from tools.names import ensure_unique_scan_id
+    import shutil
+
+    library = LibraryIndex()
+    directory = Path(args.directory).expanduser()
+
+    print(f"\n🔍 Scanning: {directory}\n")
+
+    # Discover PDFs
+    discovered = discover_books_in_directory(directory)
+
+    if not discovered:
+        print("No PDFs found.")
+        return 0
+
+    print(f"\nFound {len(discovered)} book(s)\n")
+
+    # Process each discovered book
+    for item in discovered:
+        pdf_path = item['pdf_path']
+        metadata = item['metadata']
+
+        title = metadata.get('title', pdf_path.stem)
+        author = metadata.get('author', 'Unknown')
+
+        print(f"\n📖 {title}")
+        print(f"   By {author}")
+
+        # Ask user to confirm
+        response = input("   Add to library? (y/n): ").strip().lower()
+
+        if response != 'y':
+            print("   Skipped.")
+            continue
+
+        # Generate unique scan ID
+        existing_ids = [
+            scan['scan_id']
+            for book in library.data['books'].values()
+            for scan in book['scans']
+        ]
+        scan_id = ensure_unique_scan_id(existing_ids)
+
+        # Create scan directory
+        scan_dir = library.storage_root / scan_id
+        scan_dir.mkdir(exist_ok=True)
+
+        # Copy PDF to source/
+        source_dir = scan_dir / "source"
+        source_dir.mkdir(exist_ok=True)
+        dest_pdf = source_dir / pdf_path.name
+        shutil.copy2(pdf_path, dest_pdf)
+
+        # Add to library
+        library.add_book(
+            title=title,
+            author=author,
+            scan_id=scan_id,
+            isbn=metadata.get('isbn'),
+            year=metadata.get('year'),
+            publisher=metadata.get('publisher'),
+            source_file=pdf_path.name
+        )
+
+        print(f"   ✓ Added as: {scan_id}")
+
+    return 0
+
+
+def cmd_library_migrate(args):
+    """Migrate existing folder to new naming system."""
+    from tools.library import LibraryIndex
+
+    library = LibraryIndex()
+
+    print(f"\n🔄 Migrating: {args.folder_name}\n")
+
+    try:
+        scan_id = library.migrate_existing_folder(
+            args.folder_name,
+            title=args.title,
+            author=args.author
+        )
+
+        print(f"✓ Migrated to: {scan_id}")
+
+        # Show new path
+        new_path = library.storage_root / scan_id
+        print(f"  New path: {new_path}")
+
+        return 0
+
+    except Exception as e:
+        print(f"✗ Migration failed: {e}")
+        return 1
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -227,6 +460,42 @@ def main():
     status_parser = subparsers.add_parser('status', help='Quick status check')
     status_parser.add_argument('book_slug', help='Book slug')
     status_parser.set_defaults(func=cmd_status)
+
+    # =========================================================================
+    # LIBRARY command group
+    # =========================================================================
+    library_parser = subparsers.add_parser('library', help='Library management commands')
+    library_subparsers = library_parser.add_subparsers(dest='library_command', help='Library commands')
+
+    # library list
+    list_parser = library_subparsers.add_parser('list', help='List all books in collection')
+    list_parser.set_defaults(func=cmd_library_list)
+
+    # library show
+    show_parser = library_subparsers.add_parser('show', help='Show book or scan details')
+    show_parser.add_argument('identifier', help='Book slug or scan ID')
+    show_parser.set_defaults(func=cmd_library_show)
+
+    # library scans
+    scans_parser = library_subparsers.add_parser('scans', help='List all scans for a book')
+    scans_parser.add_argument('book_slug', help='Book slug')
+    scans_parser.set_defaults(func=cmd_library_scans)
+
+    # library stats
+    stats_parser = library_subparsers.add_parser('stats', help='Show library statistics')
+    stats_parser.set_defaults(func=cmd_library_stats)
+
+    # library discover
+    discover_parser = library_subparsers.add_parser('discover', help='Discover new PDFs in directory')
+    discover_parser.add_argument('directory', help='Directory to scan for PDFs')
+    discover_parser.set_defaults(func=cmd_library_discover)
+
+    # library migrate
+    migrate_parser = library_subparsers.add_parser('migrate', help='Migrate existing folder to new naming')
+    migrate_parser.add_argument('folder_name', help='Current folder name')
+    migrate_parser.add_argument('--title', help='Book title (optional, will read from metadata)')
+    migrate_parser.add_argument('--author', help='Book author (optional, will read from metadata)')
+    migrate_parser.set_defaults(func=cmd_library_migrate)
 
     # Parse and execute
     args = parser.parse_args()
