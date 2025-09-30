@@ -48,7 +48,7 @@ class StructuredPageCorrector:
     """
 
     def __init__(self, book_title, storage_root=None, model="openai/gpt-4o-mini",
-                 max_workers=20, calls_per_minute=50):
+                 max_workers=30, calls_per_minute=150):
         self.book_title = book_title
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
         self.book_dir = self.storage_root / book_title
@@ -111,7 +111,7 @@ class StructuredPageCorrector:
         try:
             json.loads(text)
             return text
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
             pass  # Try fallback strategies
 
         # Strategy 2: Fix common JSON syntax errors
@@ -126,18 +126,20 @@ class StructuredPageCorrector:
         # Fix missing commas between array elements
         fixed_text = re.sub(r'"\s*\n\s*"', '",\n"', fixed_text)
 
+        last_error = None
         try:
             json.loads(fixed_text)
             return fixed_text
         except json.JSONDecodeError as e:
-            pass  # Still broken, save debug and raise
+            # Capture error details before leaving except block
+            last_error = {"msg": str(e), "lineno": e.lineno, "colno": e.colno}
 
         # Save debug info before raising
-        if debug_label:
+        if debug_label and last_error:
             debug_file = self.book_dir / f"debug_{debug_label}_json_error.txt"
             with open(debug_file, 'w', encoding='utf-8') as f:
-                f.write(f"JSON Parse Error: {e}\n")
-                f.write(f"Error at line {e.lineno}, column {e.colno}\n\n")
+                f.write(f"JSON Parse Error: {last_error['msg']}\n")
+                f.write(f"Error at line {last_error['lineno']}, column {last_error['colno']}\n\n")
                 f.write("=== ORIGINAL RESPONSE ===\n")
                 f.write(original_text)
                 f.write("\n\n=== EXTRACTED JSON ===\n")
@@ -698,10 +700,10 @@ Default models and pricing (per 447-page book):
     parser.add_argument('--end', type=int, default=None, help='End page (default: all pages)')
     parser.add_argument('--model', default='openai/gpt-4o-mini',
                         help='OpenRouter model ID (default: openai/gpt-4o-mini)')
-    parser.add_argument('--workers', type=int, default=20,
-                        help='Max concurrent workers (default: 20)')
-    parser.add_argument('--rate-limit', type=int, default=50,
-                        help='API calls per minute (default: 50 for paid models)')
+    parser.add_argument('--workers', type=int, default=30,
+                        help='Max concurrent workers (default: 30)')
+    parser.add_argument('--rate-limit', type=int, default=150,
+                        help='API calls per minute (default: 150 for paid models)')
 
     args = parser.parse_args()
 
