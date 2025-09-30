@@ -184,10 +184,6 @@ class BookOCRProcessor:
             metadata = json.load(f)
 
         print(f"📖 Processing: {metadata['title']}")
-        print(f"   Total batches: {len(metadata['batches'])}")
-        print(f"   Estimated pages: {metadata['total_pages']}")
-        print(f"   Mode: Enhanced (structured output + images)")
-        print()
 
         # Create output directories
         ocr_dir = book_dir / "ocr"
@@ -196,29 +192,68 @@ class BookOCRProcessor:
         images_dir = book_dir / "images"
         images_dir.mkdir(exist_ok=True)
 
-        # Process each batch
-        total_pages = 0
-        for batch_info in metadata['batches']:
-            batch_num = batch_info['batch_number']
-            pdf_path = book_dir / "source" / "batches" / f"batch_{batch_num:03d}" / batch_info['filename']
+        # Check if using old batch structure or new simple structure
+        if 'batches' in metadata and metadata['batches']:
+            # Old batch-based structure
+            print(f"   Total batches: {len(metadata['batches'])}")
+            print(f"   Estimated pages: {metadata.get('total_pages', 'unknown')}")
+            print(f"   Mode: Batch-based (old system)")
+            print()
 
-            if not pdf_path.exists():
-                print(f"⚠️  Batch {batch_num} PDF not found: {pdf_path}")
-                continue
+            total_pages = 0
+            for batch_info in metadata['batches']:
+                batch_num = batch_info['batch_number']
+                pdf_path = book_dir / "source" / "batches" / f"batch_{batch_num:03d}" / batch_info['filename']
 
-            pages_processed = self.process_batch(
-                pdf_path,
-                batch_num,
-                ocr_dir,
-                images_dir,
-                batch_info['page_start'],
-                batch_info['page_end']
-            )
-            total_pages += pages_processed
+                if not pdf_path.exists():
+                    print(f"⚠️  Batch {batch_num} PDF not found: {pdf_path}")
+                    continue
 
-            # Update batch status
-            batch_info['ocr_status'] = 'complete'
-            batch_info['ocr_timestamp'] = datetime.now().isoformat()
+                pages_processed = self.process_batch(
+                    pdf_path,
+                    batch_num,
+                    ocr_dir,
+                    images_dir,
+                    batch_info['page_start'],
+                    batch_info['page_end']
+                )
+                total_pages += pages_processed
+
+                # Update batch status
+                batch_info['ocr_status'] = 'complete'
+                batch_info['ocr_timestamp'] = datetime.now().isoformat()
+
+        else:
+            # New simple structure - PDFs directly in source/
+            source_dir = book_dir / "source"
+            pdf_files = sorted(source_dir.glob("*.pdf"))
+
+            if not pdf_files:
+                print(f"⚠️  No PDFs found in {source_dir}")
+                return
+
+            print(f"   PDFs: {len(pdf_files)}")
+            print(f"   Mode: Simple (new ingest system)")
+            print()
+
+            total_pages = 0
+            page_offset = 0  # Track page numbering across PDFs
+
+            for batch_num, pdf_path in enumerate(pdf_files, 1):
+                print(f"\n📄 Processing: {pdf_path.name}")
+
+                # Process PDF
+                pages_processed = self.process_batch(
+                    pdf_path,
+                    batch_num,
+                    ocr_dir,
+                    images_dir,
+                    page_start=page_offset + 1,
+                    page_end=None  # Will be determined during processing
+                )
+
+                total_pages += pages_processed
+                page_offset += pages_processed
 
         # Update metadata
         metadata['ocr_complete'] = True
