@@ -259,8 +259,8 @@ class StructuredPageCorrector:
 
         return prev_text, current_data, next_text
 
-    def agent1_detect_errors(self, page_num, prev_text, page_data, next_text):
-        """Agent 1: Detect OCR errors in body/caption regions"""
+    def agent1_detect_errors(self, page_num, prev_text, page_data, next_text, max_retries=2):
+        """Agent 1: Detect OCR errors in body/caption regions with retry logic"""
 
         correctable_regions = self.filter_correctable_regions(page_data)
         if not correctable_regions:
@@ -340,26 +340,43 @@ Use adjacent pages for sentence context, but ONLY report errors from page {page_
 
 Return JSON error catalog for page {page_num} only."""
 
-        try:
-            response, usage = self.call_llm(system_prompt, user_prompt, temperature=0.1)
-            json_text = self.extract_json(response, debug_label=f"page_{page_num:04d}_agent1")
-            error_catalog = json.loads(json_text)
-            error_catalog['processing_timestamp'] = datetime.now().isoformat()
+        # Retry logic for Agent 1
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                response, usage = self.call_llm(system_prompt, user_prompt, temperature=0.1)
+                json_text = self.extract_json(response, debug_label=f"page_{page_num:04d}_agent1")
+                error_catalog = json.loads(json_text)
+                error_catalog['processing_timestamp'] = datetime.now().isoformat()
 
-            errors_found = error_catalog.get('total_errors_found', 0)
-            with self.stats_lock:
-                self.stats['total_errors_found'] += errors_found
+                errors_found = error_catalog.get('total_errors_found', 0)
+                with self.stats_lock:
+                    self.stats['total_errors_found'] += errors_found
 
-            return error_catalog
+                # Success - log retry if it wasn't first attempt
+                if attempt > 0:
+                    timestamp = datetime.now().strftime("%H:%M:%S")
+                    print(f"    [{timestamp}] ✓ Agent 1 succeeded on retry {attempt} for page {page_num}")
 
-        except Exception as e:
-            print(f"    ✗ Agent 1 error: {e}")
-            return {
-                "page_number": page_num,
-                "total_errors_found": 0,
-                "errors": [],
-                "error_message": str(e)
-            }
+                return error_catalog
+
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries:
+                    timestamp = datetime.now().strftime("%H:%M:%S")
+                    print(f"    [{timestamp}] ↻ Agent 1 retry {attempt + 1}/{max_retries} for page {page_num}: {e}")
+                    time.sleep(0.5 * (attempt + 1))  # Brief exponential backoff
+                else:
+                    timestamp = datetime.now().strftime("%H:%M:%S")
+                    print(f"    [{timestamp}] ✗ Agent 1 failed after {max_retries} retries for page {page_num}: {e}")
+
+        # All retries exhausted
+        return {
+            "page_number": page_num,
+            "total_errors_found": 0,
+            "errors": [],
+            "error_message": str(last_error)
+        }
 
     def agent2_correct(self, page_num, page_data, error_catalog):
         """Agent 2: Apply corrections to regions"""
@@ -642,12 +659,13 @@ Verify each correction and check for unauthorized changes."""
                         'not_found': '?'
                     }.get(result['status'], '?')
 
+                    timestamp = datetime.now().strftime("%H:%M:%S")
                     if result['status'] == 'success':
                         conf = result.get('confidence', 0)
                         errors = result.get('errors_found', 0)
-                        print(f"   [{status_icon}] Page {page_num}: {errors} errors, confidence {conf:.2f} ({completed}/{len(page_numbers)})")
+                        print(f"   [{timestamp}] [{status_icon}] Page {page_num}: {errors} errors, confidence {conf:.2f} ({completed}/{len(page_numbers)})")
                     else:
-                        print(f"   [{status_icon}] Page {page_num}: {result['status']} ({completed}/{len(page_numbers)})")
+                        print(f"   [{timestamp}] [{status_icon}] Page {page_num}: {result['status']} ({completed}/{len(page_numbers)})")
 
         self.print_summary()
 
