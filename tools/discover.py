@@ -64,15 +64,13 @@ Return your response as a JSON object with these exact keys:
 
 If any field is not found, use null. Be precise and extract exactly what you see."""
 
-        # Build message with images
+        # Build message with images (OpenAI format for OpenRouter compatibility)
         content = [{"type": "text", "text": prompt}]
         for img_b64 in image_data:
             content.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": img_b64
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{img_b64}"
                 }
             })
 
