@@ -47,8 +47,8 @@ class StructuredPageCorrector:
     - Agent 3: Verify corrections
     """
 
-    def __init__(self, book_title, storage_root=None, model="anthropic/claude-3.5-sonnet",
-                 max_workers=5, calls_per_minute=15):
+    def __init__(self, book_title, storage_root=None, model="openai/gpt-4o-mini",
+                 max_workers=20, calls_per_minute=50):
         self.book_title = book_title
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
         self.book_dir = self.storage_root / book_title
@@ -392,7 +392,7 @@ WRONG - Do NOT include explanations:
 CORRECT - Start immediately with content:
 "The president walked into the[CORRECTED:1] room."
 
-Your response must begin with the first word of the text, not with any explanation or introduction.
+Your response must begin with the first word of the text, not with any explanation or introduction."""
 
         user_prompt = f"""Apply these specific corrections to page {page_num}.
 
@@ -452,7 +452,7 @@ CORRECT OUTPUT:
 {"page_number": 5, "all_corrections_applied": true, "confidence_score": 1.0, ...}
 
 WRONG OUTPUT:
-I've verified the corrections. Here are my findings:
+I have verified the corrections. Here are my findings:
 {"page_number": 5, ...}
 
 WRONG OUTPUT:
@@ -666,23 +666,59 @@ Verify each correction and check for unauthorized changes."""
 
 def main():
     """Main entry point"""
-    import sys
+    import argparse
 
-    if len(sys.argv) < 2:
-        print("Usage: python pipeline/correct.py <book-slug> [start_page] [end_page]")
-        print("Example: python pipeline/correct.py The-Accidental-President 1 10")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description='Process book OCR through 3-agent LLM correction pipeline',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Process full book with default model (GPT-4o-mini)
+  python pipeline/correct.py The-Accidental-President
 
-    book_title = sys.argv[1]
-    start_page = int(sys.argv[2]) if len(sys.argv) > 2 else 1
-    end_page = int(sys.argv[3]) if len(sys.argv) > 3 else None
+  # Process pages 1-50
+  python pipeline/correct.py The-Accidental-President --start 1 --end 50
+
+  # Use different model
+  python pipeline/correct.py The-Accidental-President --model anthropic/claude-3.5-haiku
+
+  # Adjust concurrency
+  python pipeline/correct.py The-Accidental-President --workers 30 --rate-limit 60
+
+Default models and pricing (per 447-page book):
+  - openai/gpt-4o-mini: ~$0.32 (default, excellent quality)
+  - anthropic/claude-3-haiku: ~$0.61 (Claude family)
+  - google/gemini-2.5-flash: ~$1.02 (fast, 1M context)
+  - deepseek/deepseek-chat-v3.1: ~$0.43 (structured output)
+        """
+    )
+
+    parser.add_argument('book_slug', help='Book slug (e.g., The-Accidental-President)')
+    parser.add_argument('--start', type=int, default=1, help='Start page (default: 1)')
+    parser.add_argument('--end', type=int, default=None, help='End page (default: all pages)')
+    parser.add_argument('--model', default='openai/gpt-4o-mini',
+                        help='OpenRouter model ID (default: openai/gpt-4o-mini)')
+    parser.add_argument('--workers', type=int, default=20,
+                        help='Max concurrent workers (default: 20)')
+    parser.add_argument('--rate-limit', type=int, default=50,
+                        help='API calls per minute (default: 50 for paid models)')
+
+    args = parser.parse_args()
+
+    print(f"📊 Configuration:")
+    print(f"   Model: {args.model}")
+    print(f"   Workers: {args.workers}")
+    print(f"   Rate limit: {args.rate_limit}/min")
+    print(f"   Page range: {args.start}-{args.end or 'end'}")
+    print()
 
     processor = StructuredPageCorrector(
-        book_title,
-        max_workers=5,
-        calls_per_minute=15
+        args.book_slug,
+        model=args.model,
+        max_workers=args.workers,
+        calls_per_minute=args.rate_limit
     )
-    processor.process_pages(start_page, end_page)
+    processor.process_pages(args.start, args.end)
 
 
 if __name__ == "__main__":
