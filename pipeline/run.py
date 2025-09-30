@@ -216,7 +216,7 @@ class BookPipeline:
                 # Persist to metadata
                 from utils import update_book_metadata
                 update_book_metadata(self.book_dir, 'correct', {
-                    'model': correct_model,
+                    'model': model,
                     'pages_processed': processor.stats.get('pages_processed', 0),
                     'total_errors_found': processor.stats.get('total_errors', 0),
                     'cost_usd': cost
@@ -277,7 +277,7 @@ class BookPipeline:
             # Import and run structure
             from pipeline.structure import DeepBookStructurer
 
-            structurer = DeepBookStructurer(self.book_slug, model=model)
+            structurer = DeepBookStructurer(self.book_slug, model=model, storage_root=self.storage_root)
             structurer.process_book()
 
             # Log cost from structurer stats
@@ -355,7 +355,7 @@ class BookPipeline:
         if success:
             try:
                 from tools.library import LibraryIndex
-                library = LibraryIndex()
+                library = LibraryIndex(storage_root=self.storage_root)
                 library.sync_scan_from_metadata(self.book_slug)
                 self.logger.log("✅ Synced costs and metadata to library.json")
             except Exception as e:

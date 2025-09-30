@@ -440,7 +440,9 @@ class BookOCRProcessor:
         Returns:
             List of dicts with 'bbox', 'text', 'confidence', 'type'
         """
-        reader = csv.DictReader(io.StringIO(tsv_string), delimiter='\t')
+        # IMPORTANT: Use QUOTE_NONE because Tesseract TSV contains unescaped quotes
+        # which cause csv.DictReader to incorrectly parse multi-line quoted fields
+        reader = csv.DictReader(io.StringIO(tsv_string), delimiter='\t', quoting=csv.QUOTE_NONE)
 
         # Group by paragraph
         paragraphs = {}

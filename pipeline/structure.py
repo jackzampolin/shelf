@@ -28,9 +28,10 @@ from dotenv import load_dotenv
 class DeepBookStructurer:
     """Use LLM to deeply understand and structure entire book in one pass."""
 
-    def __init__(self, book_slug: str, model: str = None):
+    def __init__(self, book_slug: str, model: str = None, storage_root: Path = None):
         self.book_slug = book_slug
-        self.book_dir = Path.home() / "Documents" / "book_scans" / book_slug
+        self.storage_root = storage_root or (Path.home() / "Documents" / "book_scans")
+        self.book_dir = self.storage_root / book_slug
 
         # Directories
         self.corrected_dir = self.book_dir / "corrected"

@@ -31,7 +31,7 @@ BATCH_MAPPING = [
 def extract_pages():
     """Extract test pages from source PDFs."""
     source_dir = Path.home() / "Documents" / "book_scans" / "modest-lovelace" / "source" / "pdfs"
-    output_dir = Path(__file__).parent / "test_book" / "source" / "pdfs"
+    output_dir = Path(__file__).parent / "test_book" / "source"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Group pages by source PDF

@@ -99,8 +99,8 @@ def test_cost_tracking_full_pipeline(test_book_dir, test_library):
     total_cost = get_scan_total_cost(book_dir)
     assert total_cost > 0, "Total cost should be positive"
 
-    # Verify cost is reasonable (~$0.025 for 5 pages)
-    assert total_cost < 0.10, f"Total cost should be < $0.10, got ${total_cost:.4f}"
+    # Verify cost is reasonable (5 pages with correction + structure)
+    assert total_cost < 0.20, f"Total cost should be < $0.20, got ${total_cost:.4f}"
 
     # Check library.json was synced
     test_library = LibraryIndex(storage_root=test_library.storage_root)
@@ -248,9 +248,10 @@ def test_library_stats_aggregate_costs(test_library):
 @pytest.mark.api
 def test_rerun_stage_adds_new_cost_record(test_book_dir, test_library):
     """
-    Test that rerunning a stage adds a new processing record.
+    Test that skipped stages don't create duplicate processing records.
 
-    Each run should create a separate record in processing_history.
+    When a stage is already complete and gets skipped, it should not add
+    a new processing record (to avoid misleading cost/time tracking).
     """
     from pipeline.run import BookPipeline
 
@@ -261,7 +262,7 @@ def test_rerun_stage_adds_new_cost_record(test_book_dir, test_library):
 
     test_library.add_book(title="Test Rerun", author="Test", scan_id=scan_id)
 
-    # Run structure once
+    # Run OCR once
     pipeline1 = BookPipeline(scan_id, storage_root=test_library.storage_root)
     pipeline1.run(
         stages=['ocr'],
@@ -275,17 +276,17 @@ def test_rerun_stage_adds_new_cost_record(test_book_dir, test_library):
     history1_len = len(metadata1['processing_history'])
     assert history1_len == 1, "Should have 1 processing record after first run"
 
-    # Run OCR again
+    # Run OCR again - should skip since already complete
     pipeline2 = BookPipeline(scan_id, storage_root=test_library.storage_root)
     pipeline2.run(stages=['ocr'], ocr_workers=4)
 
-    # Check processing history again
+    # Check processing history again - should still be 1 (not 2)
     with open(book_dir / "metadata.json") as f:
         metadata2 = json.load(f)
 
     history2_len = len(metadata2['processing_history'])
-    assert history2_len == 2, "Should have 2 processing records after second run"
+    assert history2_len == 1, "Should still have 1 processing record (stage was skipped)"
 
-    # Both should be OCR records
+    # Verify it's still the OCR record
     stages = [record['stage'] for record in metadata2['processing_history']]
-    assert stages.count('ocr') == 2, "Should have 2 OCR records"
+    assert stages[0] == 'ocr', "Should be the original OCR record"

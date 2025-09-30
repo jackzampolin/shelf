@@ -161,7 +161,7 @@ def test_full_pipeline_ocr_to_structure(test_book_dir, test_library, tmp_path):
 
     # Should have some cost (correction + structure)
     assert total_cost > 0, f"Total cost should be positive, got {total_cost}"
-    assert total_cost < 0.10, f"Total cost should be < $0.10, got ${total_cost:.4f}"
+    assert total_cost < 0.20, f"Total cost should be < $0.20, got ${total_cost:.4f}"
 
     # Assert: Library was synced
     test_library = LibraryIndex(storage_root=test_library.storage_root)

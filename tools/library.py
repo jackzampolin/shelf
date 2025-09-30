@@ -25,7 +25,17 @@ class LibraryIndex:
         """
         self.storage_root = storage_root or Config.BOOK_STORAGE_ROOT
         self.library_file = self.storage_root / "library.json"
+
+        # Ensure storage root exists
+        self.storage_root.mkdir(parents=True, exist_ok=True)
+
+        # Load or create library
+        file_existed = self.library_file.exists()
         self.data = self._load()
+
+        # Save if newly created
+        if not file_existed:
+            self.save()
 
     def _load(self) -> Dict[str, Any]:
         """Load library.json or create default structure."""
