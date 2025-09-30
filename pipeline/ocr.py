@@ -1,31 +1,177 @@
 #!/usr/bin/env python3
 """
-Book OCR Processor - Step 2: Extract text from scanned PDFs
-Converts PDFs to images and extracts text per page using Tesseract
+Book OCR Processor - Enhanced with Layout Analysis
+Extracts structured text with images, captions, headers, and footers
 """
 
 import json
+import csv
+import io
 from pathlib import Path
 from pdf2image import convert_from_path
 import pytesseract
 from datetime import datetime
+from PIL import Image
+import cv2
+import numpy as np
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+
+
+class BlockClassifier:
+    """Classifies text blocks by type based on position and content."""
+
+    @staticmethod
+    def classify(bbox, text, page_width, page_height):
+        """
+        Classify a text block as header, footer, caption, or body.
+
+        Args:
+            bbox: (x, y, width, height) bounding box
+            text: The text content
+            page_width, page_height: Page dimensions
+
+        Returns:
+            str: Block type ('header', 'footer', 'caption', 'body')
+        """
+        x, y, w, h = bbox
+
+        # Header: top 8% of page
+        if y < page_height * 0.08:
+            return "header"
+
+        # Footer: bottom 5% of page
+        if y + h > page_height * 0.95:
+            return "footer"
+
+        # Caption heuristics:
+        # - ALL CAPS (common for photo credits)
+        # - Contains certain keywords
+        # - Very short text
+        text_upper = text.strip()
+        if text_upper.isupper() and len(text_upper) > 5:
+            caption_keywords = ['LIBRARY', 'MUSEUM', 'ARCHIVES', 'COLLECTION', 'GETTY', 'PHOTO']
+            if any(kw in text_upper for kw in caption_keywords):
+                return "caption"
+
+        # Default: body text
+        return "body"
+
+
+class ImageDetector:
+    """Detects image regions on a page using OpenCV."""
+
+    @staticmethod
+    def detect_images(pil_image, text_boxes, min_area=10000):
+        """
+        Detect image regions by finding large areas without text.
+
+        Args:
+            pil_image: PIL Image object
+            text_boxes: List of (x, y, w, h) text bounding boxes
+            min_area: Minimum area in pixels for an image region
+
+        Returns:
+            List of (x, y, w, h) image bounding boxes
+        """
+        # Convert PIL to OpenCV format
+        img_array = np.array(pil_image)
+        if len(img_array.shape) == 3:
+            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = img_array
+
+        # Create mask of text regions
+        height, width = gray.shape
+        text_mask = np.zeros((height, width), dtype=np.uint8)
+
+        for x, y, w, h in text_boxes:
+            # Expand text boxes slightly to avoid detecting gaps between lines
+            padding = 10
+            x1 = max(0, x - padding)
+            y1 = max(0, y - padding)
+            x2 = min(width, x + w + padding)
+            y2 = min(height, y + h + padding)
+            cv2.rectangle(text_mask, (x1, y1), (x2, y2), 255, -1)
+
+        # Find contours in non-text regions
+        # Look for darker regions (likely images) in areas without text
+        _, binary = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+        non_text = cv2.bitwise_and(cv2.bitwise_not(binary), cv2.bitwise_not(text_mask))
+
+        contours, _ = cv2.findContours(non_text, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        image_boxes = []
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            area = w * h
+
+            # Filter by size and aspect ratio
+            if area > min_area:
+                aspect_ratio = w / h if h > 0 else 0
+                # Most images are roughly rectangular, not extremely narrow
+                if 0.2 < aspect_ratio < 5.0:
+                    image_boxes.append((x, y, w, h))
+
+        return image_boxes
+
+
+class LayoutAnalyzer:
+    """Analyzes page layout and associates captions with images."""
+
+    @staticmethod
+    def associate_captions(caption_blocks, image_blocks, proximity=100):
+        """
+        Associate caption blocks with nearby image blocks.
+
+        Args:
+            caption_blocks: List of caption block dicts with 'bbox'
+            image_blocks: List of image block dicts with 'bbox'
+            proximity: Maximum distance in pixels to associate
+
+        Returns:
+            Dict mapping caption IDs to image IDs
+        """
+        associations = {}
+
+        for caption in caption_blocks:
+            cx, cy, cw, ch = caption['bbox']
+            caption_center_y = cy + ch / 2
+
+            closest_image = None
+            closest_dist = float('inf')
+
+            for image in image_blocks:
+                ix, iy, iw, ih = image['bbox']
+
+                # Check if caption is above or below image
+                if cy + ch < iy:  # Caption above image
+                    dist = iy - (cy + ch)
+                elif cy > iy + ih:  # Caption below image
+                    dist = cy - (iy + ih)
+                else:  # Overlapping vertically (side by side - unlikely for captions)
+                    continue
+
+                if dist < proximity and dist < closest_dist:
+                    closest_dist = dist
+                    closest_image = image
+
+            if closest_image:
+                associations[caption['id']] = closest_image['id']
+
+        return associations
 
 
 class BookOCRProcessor:
-    """
-    Processes scanned book PDFs to extract text on a per-page basis.
-    """
+    """Enhanced OCR processor with layout analysis."""
 
-    def __init__(self, storage_root=None):
+    def __init__(self, storage_root=None, max_workers=8):
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
+        self.max_workers = max_workers
+        self.progress_lock = threading.Lock()
 
     def process_book(self, book_title):
-        """
-        Process all batches for a given book.
-
-        Args:
-            book_title: Safe title of the book (e.g., "The-Accidental-President")
-        """
+        """Process all batches for a given book."""
         book_dir = self.storage_root / book_title
 
         if not book_dir.exists():
@@ -40,11 +186,15 @@ class BookOCRProcessor:
         print(f"📖 Processing: {metadata['title']}")
         print(f"   Total batches: {len(metadata['batches'])}")
         print(f"   Estimated pages: {metadata['total_pages']}")
+        print(f"   Mode: Enhanced (structured output + images)")
         print()
 
-        # Create OCR output directory
-        ocr_dir = book_dir / "ocr_text"
+        # Create output directories
+        ocr_dir = book_dir / "ocr_structured"
         ocr_dir.mkdir(exist_ok=True)
+
+        images_dir = book_dir / "extracted_images"
+        images_dir.mkdir(exist_ok=True)
 
         # Process each batch
         total_pages = 0
@@ -60,12 +210,13 @@ class BookOCRProcessor:
                 pdf_path,
                 batch_num,
                 ocr_dir,
+                images_dir,
                 batch_info['page_start'],
                 batch_info['page_end']
             )
             total_pages += pages_processed
 
-            # Update batch status in metadata
+            # Update batch status
             batch_info['ocr_status'] = 'complete'
             batch_info['ocr_timestamp'] = datetime.now().isoformat()
 
@@ -73,26 +224,17 @@ class BookOCRProcessor:
         metadata['ocr_complete'] = True
         metadata['ocr_completion_date'] = datetime.now().isoformat()
         metadata['total_pages_processed'] = total_pages
+        metadata['ocr_mode'] = 'structured'
 
         with open(metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
 
         print(f"\n✅ OCR complete: {total_pages} pages processed")
+        print(f"   Output: {ocr_dir}")
+        print(f"   Images: {images_dir}")
 
-    def process_batch(self, pdf_path, batch_num, ocr_dir, page_start, page_end):
-        """
-        Process a single PDF batch, extracting text for each page.
-
-        Args:
-            pdf_path: Path to the PDF file
-            batch_num: Batch number (for organization)
-            ocr_dir: Root directory for OCR output
-            page_start: Starting page number in book
-            page_end: Ending page number in book
-
-        Returns:
-            Number of pages processed
-        """
+    def process_batch(self, pdf_path, batch_num, ocr_dir, images_dir, page_start, page_end):
+        """Process a single PDF batch with layout analysis."""
         print(f"📄 Batch {batch_num}: {pdf_path.name}")
         print(f"   Converting PDF to images...")
 
@@ -108,36 +250,227 @@ class BookOCRProcessor:
             return 0
 
         num_pages = len(images)
-        print(f"   Processing {num_pages} pages...")
+        print(f"   Processing {num_pages} pages with layout analysis (parallel, {self.max_workers} workers)...")
 
-        # Process each page
+        # Prepare page tasks
+        tasks = []
         for i, image in enumerate(images, start=1):
-            # Calculate actual book page number
             book_page = page_start + i - 1
+            tasks.append({
+                'image': image,
+                'page_number': book_page,
+                'index': i,
+                'total': num_pages,
+                'batch_ocr_dir': batch_ocr_dir,
+                'images_dir': images_dir
+            })
 
-            # Progress indicator
-            print(f"   Page {book_page:4d} ({i:2d}/{num_pages})...", end='', flush=True)
+        # Process pages in parallel
+        completed = 0
+        errors = 0
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all tasks
+            future_to_task = {
+                executor.submit(self._process_single_page, task): task
+                for task in tasks
+            }
 
+            # Process completions as they finish
+            for future in as_completed(future_to_task):
+                task = future_to_task[future]
+                try:
+                    success = future.result()
+                    if success:
+                        completed += 1
+                    else:
+                        errors += 1
+                except Exception as e:
+                    errors += 1
+                    with self.progress_lock:
+                        print(f"   ❌ Page {task['page_number']}: {e}")
+
+                # Progress update
+                with self.progress_lock:
+                    progress = completed + errors
+                    print(f"   Progress: {progress}/{num_pages} ({completed} ✓, {errors} ✗)", flush=True)
+
+        print(f"   ✅ Batch {batch_num} complete: {completed}/{num_pages} pages\n")
+        return completed
+
+    def _process_single_page(self, task):
+        """
+        Process a single page (called by ThreadPoolExecutor).
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            page_data = self.process_page(
+                task['image'],
+                task['page_number'],
+                task['images_dir']
+            )
+
+            # Save structured JSON
+            json_file = task['batch_ocr_dir'] / f"page_{task['page_number']:04d}.json"
+            with open(json_file, 'w', encoding='utf-8') as f:
+                json.dump(page_data, f, indent=2)
+
+            return True
+
+        except Exception as e:
+            with self.progress_lock:
+                print(f"   ❌ Page {task['page_number']}: {e}")
+            return False
+
+    def process_page(self, pil_image, page_number, images_dir):
+        """
+        Process a single page with full layout analysis.
+
+        Returns:
+            dict: Structured page data with regions
+        """
+        width, height = pil_image.size
+
+        # Step 1: Get TSV output from Tesseract
+        tsv_output = pytesseract.image_to_data(pil_image, lang='eng', output_type=pytesseract.Output.STRING)
+
+        # Step 2: Parse TSV into text blocks
+        text_blocks = self._parse_tsv(tsv_output, width, height)
+
+        # Step 3: Detect image regions
+        text_boxes = [b['bbox'] for b in text_blocks]
+        image_boxes = ImageDetector.detect_images(pil_image, text_boxes)
+
+        # Step 4: Create region list
+        regions = []
+        next_id = 1
+
+        # Add text blocks
+        for block in text_blocks:
+            regions.append({
+                'id': next_id,
+                'type': block['type'],
+                'bbox': block['bbox'],
+                'text': block['text'],
+                'confidence': block['confidence'],
+                'reading_order': next_id
+            })
+            next_id += 1
+
+        # Add image blocks
+        for img_box in image_boxes:
+            # Crop and save image
+            x, y, w, h = img_box
+            cropped = pil_image.crop((x, y, x + w, y + h))
+            img_filename = f"page_{page_number:04d}_img_{next_id:03d}.png"
+            img_path = images_dir / img_filename
+            cropped.save(img_path)
+
+            regions.append({
+                'id': next_id,
+                'type': 'image',
+                'bbox': list(img_box),
+                'image_file': img_filename,
+                'reading_order': next_id
+            })
+            next_id += 1
+
+        # Step 5: Associate captions with images
+        caption_blocks = [r for r in regions if r['type'] == 'caption']
+        image_blocks = [r for r in regions if r['type'] == 'image']
+        associations = LayoutAnalyzer.associate_captions(caption_blocks, image_blocks)
+
+        # Add associations to caption blocks
+        for region in regions:
+            if region['type'] == 'caption' and region['id'] in associations:
+                region['associated_image'] = associations[region['id']]
+
+        # Step 6: Sort by reading order (top to bottom, left to right)
+        regions.sort(key=lambda r: (r['bbox'][1], r['bbox'][0]))
+        for i, region in enumerate(regions, 1):
+            region['reading_order'] = i
+
+        return {
+            'page_number': page_number,
+            'page_dimensions': {'width': width, 'height': height},
+            'ocr_timestamp': datetime.now().isoformat(),
+            'ocr_mode': 'structured',
+            'regions': regions
+        }
+
+    def _parse_tsv(self, tsv_string, page_width, page_height):
+        """
+        Parse Tesseract TSV output into text blocks.
+
+        Returns:
+            List of dicts with 'bbox', 'text', 'confidence', 'type'
+        """
+        reader = csv.DictReader(io.StringIO(tsv_string), delimiter='\t')
+
+        # Group by paragraph
+        paragraphs = {}
+        for row in reader:
             try:
-                # Extract text using Tesseract
-                text = pytesseract.image_to_string(image, lang='eng')
+                level = int(row['level'])
+                if level != 5:  # We want word level (5)
+                    continue
 
-                # Save text file
-                text_file = batch_ocr_dir / f"page_{book_page:04d}.txt"
-                with open(text_file, 'w', encoding='utf-8') as f:
-                    f.write(f"# Page {book_page}\n")
-                    f.write(f"# Batch {batch_num}\n")
-                    f.write(f"# OCR Date: {datetime.now().isoformat()}\n\n")
-                    f.write(text)
+                par_num = int(row['par_num'])
+                conf = float(row['conf'])  # Fixed: conf is a float, not int
+                text = row['text'].strip()
 
-                print(f" ✓ ({len(text)} chars)")
+                if conf < 0 or not text:
+                    continue
 
-            except Exception as e:
-                print(f" ❌ Error: {e}")
+                left = int(row['left'])
+                top = int(row['top'])
+                width = int(row['width'])
+                height = int(row['height'])
+
+                if par_num not in paragraphs:
+                    paragraphs[par_num] = {
+                        'words': [],
+                        'min_x': left,
+                        'min_y': top,
+                        'max_x': left + width,
+                        'max_y': top + height,
+                        'confidences': []
+                    }
+
+                para = paragraphs[par_num]
+                para['words'].append(text)
+                para['confidences'].append(conf)
+                para['min_x'] = min(para['min_x'], left)
+                para['min_y'] = min(para['min_y'], top)
+                para['max_x'] = max(para['max_x'], left + width)
+                para['max_y'] = max(para['max_y'], top + height)
+
+            except (ValueError, KeyError):
                 continue
 
-        print(f"   ✅ Batch {batch_num} complete: {num_pages} pages\n")
-        return num_pages
+        # Convert paragraphs to blocks
+        blocks = []
+        for par_num, para in paragraphs.items():
+            text = ' '.join(para['words'])
+            bbox = [
+                para['min_x'],
+                para['min_y'],
+                para['max_x'] - para['min_x'],
+                para['max_y'] - para['min_y']
+            ]
+            confidence = sum(para['confidences']) / len(para['confidences']) / 100.0
+
+            block_type = BlockClassifier.classify(bbox, text, page_width, page_height)
+
+            blocks.append({
+                'bbox': bbox,
+                'text': text,
+                'confidence': round(confidence, 3),
+                'type': block_type
+            })
+
+        return blocks
 
     def list_books(self):
         """List all books available for OCR processing."""
@@ -153,7 +486,8 @@ class BookOCRProcessor:
         print("\n📚 Books available for OCR:")
         for book in books:
             ocr_status = "✅ Complete" if book.get('ocr_complete') else "⏳ Pending"
-            print(f"{ocr_status} {book['title']}")
+            ocr_mode = book.get('ocr_mode', 'plain')
+            print(f"{ocr_status} {book['title']} (mode: {ocr_mode})")
             print(f"         {len(book['batches'])} batches, ~{book['total_pages']} pages")
             if book.get('ocr_complete'):
                 print(f"         Processed: {book.get('total_pages_processed', 0)} pages")
@@ -163,12 +497,10 @@ class BookOCRProcessor:
 
 
 def interactive_mode():
-    """
-    Simple CLI for OCR processing.
-    """
+    """Simple CLI for OCR processing."""
     processor = BookOCRProcessor()
 
-    print("🔍 Book OCR Processor")
+    print("🔍 Book OCR Processor (Enhanced)")
     print("-" * 40)
 
     while True:
