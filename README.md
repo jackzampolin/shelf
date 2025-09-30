@@ -14,6 +14,8 @@ Automated research infrastructure for analyzing how US decisions during 1935-195
 - ✅ Agent 4 targeted fix system for low-confidence pages
 - ✅ Real-time progress monitoring with ETA
 - ✅ Centralized configuration via `.env` file
+- ✅ **MCP Server for Claude Desktop** - Query books directly from Claude chat
+- ✅ **Semantic chunking** - RAG-ready ~5-page segments with provenance
 
 **Current Books:**
 - 📖 *The Accidental President* by A.J. Baime (scan: `modest-lovelace`)
@@ -81,11 +83,89 @@ ar review <scan-id> checklist      # Create markdown checklist
 ar scan                            # Interactive workflow for new scans
 ```
 
+### Querying Books
+
+Once books are processed through the full pipeline, you can query them in multiple ways:
+
+#### Option 1: MCP Server (Claude Desktop Integration)
+
+The MCP server provides direct access to your book library from Claude Desktop:
+
+```bash
+# Install MCP support
+uv pip install -e .
+
+# Configure Claude Desktop (see docs/MCP_SETUP.md)
+# Then query naturally in Claude chat:
+# "What books do you have in the AR research library?"
+# "Search for mentions of Truman in modest-lovelace"
+# "Show me chapter 3 from The Accidental President"
+```
+
+**MCP Tools Available:**
+- `list_books` - List all books with metadata
+- `search_book` - Full-text search with context
+- `get_chapter` - Retrieve complete chapters
+- `get_chunk` - Get semantic chunks for RAG
+- `get_chunk_context` - Chunks with surrounding context
+- `list_chapters` - Chapter metadata
+- `list_chunks` - Chunk summaries
+
+See **[docs/MCP_SETUP.md](docs/MCP_SETUP.md)** for detailed setup instructions.
+
+#### Option 2: Direct File Access
+
+Books are stored as structured JSON files:
+
+```bash
+# View book structure
+cat ~/Documents/book_scans/<scan-id>/structured/metadata.json
+
+# Read a specific chapter
+cat ~/Documents/book_scans/<scan-id>/structured/chapters/chapter_01.md
+
+# Search across chunks
+grep -r "keyword" ~/Documents/book_scans/<scan-id>/structured/chunks/
+
+# Get full book as markdown
+cat ~/Documents/book_scans/<scan-id>/structured/full_book.md
+```
+
+#### Option 3: Python API
+
+Import the library module directly:
+
+```python
+from tools.library import LibraryIndex
+
+library = LibraryIndex()
+
+# List all books
+books = library.list_all_books()
+
+# Get book info
+scan_info = library.get_scan_info('modest-lovelace')
+
+# Read structured data
+import json
+from pathlib import Path
+
+scan_id = 'modest-lovelace'
+chunks_dir = Path.home() / 'Documents' / 'book_scans' / scan_id / 'structured' / 'chunks'
+
+# Load all chunks
+for chunk_file in sorted(chunks_dir.glob('chunk_*.json')):
+    with open(chunk_file) as f:
+        chunk = json.load(f)
+        print(f"Chunk {chunk['chunk_id']}: {chunk['text'][:100]}...")
+```
+
 ## Project Structure
 
 ```
 ar-research/
 ├── ar.py              # Unified CLI entry point
+├── mcp_server.py      # MCP server for Claude Desktop integration
 ├── config.py          # Centralized configuration from .env
 ├── utils.py           # Shared utilities (metadata tracking)
 ├── pipeline/          # Sequential processing stages
@@ -93,15 +173,20 @@ ar-research/
 │   ├── ocr.py        # Stage 1: Tesseract OCR extraction
 │   ├── correct.py    # Stage 2: 3-agent LLM correction
 │   ├── fix.py        # Stage 3: Agent 4 targeted fixes
+│   ├── merge.py      # Merge corrected pages for structuring
 │   └── structure.py  # Stage 4: Chapter/chunk structuring
 ├── tools/             # Supporting utilities
 │   ├── scan.py       # Scanner intake workflow
 │   ├── monitor.py    # Real-time progress monitoring
 │   ├── review.py     # Review flagged pages
 │   ├── library.py    # Library catalog management
+│   ├── ingest.py     # Smart book ingestion with LLM
 │   ├── discover.py   # LLM-powered book metadata extraction
 │   └── names.py      # Random identifier generation
-└── CLAUDE.md          # AI assistant workflow guidelines
+├── docs/              # Documentation
+│   └── MCP_SETUP.md  # MCP server setup guide
+├── CLAUDE.md          # AI assistant workflow guidelines
+└── README.md          # This file
 ```
 
 ### Book Database Structure

@@ -192,6 +192,42 @@ class LibraryIndex:
 
         self.save()
 
+    def sync_scan_from_metadata(self, scan_id: str):
+        """
+        Sync scan data from its metadata.json to library.json.
+
+        Reads cost and model information from the scan's metadata.json
+        processing_history and updates library.json accordingly.
+
+        Args:
+            scan_id: Scan identifier
+        """
+        from utils import get_scan_total_cost, get_scan_models
+
+        scan_dir = self.storage_root / scan_id
+        if not scan_dir.exists():
+            raise ValueError(f"Scan directory not found: {scan_dir}")
+
+        # Get cost and models from scan metadata
+        total_cost = get_scan_total_cost(scan_dir)
+        models = get_scan_models(scan_dir)
+
+        # Get page count from structured metadata if available
+        structured_meta_file = scan_dir / "structured" / "metadata.json"
+        pages = 0
+        if structured_meta_file.exists():
+            with open(structured_meta_file, 'r') as f:
+                structured_meta = json.load(f)
+                pages = structured_meta.get('book_info', {}).get('total_pages', 0)
+
+        # Update library
+        self.update_scan_metadata(scan_id, {
+            'cost_usd': total_cost,
+            'models': models,
+            'pages': pages,
+            'status': 'complete' if models else 'registered'
+        })
+
     def get_scan_info(self, scan_id: str) -> Optional[Dict[str, Any]]:
         """
         Get full information for a scan.

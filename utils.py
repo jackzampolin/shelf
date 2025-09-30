@@ -78,6 +78,63 @@ def get_latest_processing_record(book_dir: Path, stage: str) -> Dict[str, Any]:
     return stage_records[-1] if stage_records else None
 
 
+def get_scan_total_cost(book_dir: Path) -> float:
+    """
+    Calculate total cost for a scan from processing history.
+
+    Args:
+        book_dir: Path to book directory
+
+    Returns:
+        Total cost in USD
+    """
+    metadata_file = book_dir / "metadata.json"
+
+    if not metadata_file.exists():
+        return 0.0
+
+    with open(metadata_file, 'r') as f:
+        book_metadata = json.load(f)
+
+    processing_history = book_metadata.get('processing_history', [])
+
+    return sum(
+        record.get('cost_usd', 0)
+        for record in processing_history
+    )
+
+
+def get_scan_models(book_dir: Path) -> Dict[str, str]:
+    """
+    Get models used for each stage from processing history.
+
+    Args:
+        book_dir: Path to book directory
+
+    Returns:
+        Dictionary mapping stage names to model names
+    """
+    metadata_file = book_dir / "metadata.json"
+
+    if not metadata_file.exists():
+        return {}
+
+    with open(metadata_file, 'r') as f:
+        book_metadata = json.load(f)
+
+    processing_history = book_metadata.get('processing_history', [])
+
+    # Get most recent model for each stage
+    models = {}
+    for record in processing_history:
+        stage = record.get('stage')
+        model = record.get('model')
+        if stage and model:
+            models[stage] = model
+
+    return models
+
+
 def format_processing_summary(book_dir: Path) -> str:
     """
     Generate a human-readable processing summary from metadata.
@@ -132,7 +189,11 @@ def format_processing_summary(book_dir: Path) -> str:
         lines.append(f"   Date: {latest.get('timestamp', 'N/A')[:10]}")
 
         # Stage-specific details
-        if stage == 'correct':
+        if stage == 'ocr':
+            lines.append(f"   Pages: {latest.get('pages_processed', 0)}")
+            lines.append(f"   Cost: $0.00 (free)")
+
+        elif stage == 'correct':
             lines.append(f"   Pages: {latest.get('pages_processed', 0)}")
             lines.append(f"   Errors: {latest.get('total_errors_found', 0)}")
             lines.append(f"   Cost: ${latest.get('cost_usd', 0):.2f}")
@@ -149,10 +210,7 @@ def format_processing_summary(book_dir: Path) -> str:
         lines.append("")
 
     # Total cost
-    total_cost = sum(
-        record.get('cost_usd', 0)
-        for record in processing_history
-    )
+    total_cost = get_scan_total_cost(book_dir)
     lines.append(f"💰 Total Cost: ${total_cost:.2f}")
 
     return "\n".join(lines)

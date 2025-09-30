@@ -174,6 +174,14 @@ class BookPipeline:
             processor = BookOCRProcessor(storage_root=str(self.storage_root), max_workers=max_workers)
             processor.process_book(self.book_slug)
 
+            # Track OCR completion (free, no cost)
+            from utils import update_book_metadata
+            update_book_metadata(self.book_dir, 'ocr', {
+                'model': 'tesseract',
+                'pages_processed': processor.total_pages if hasattr(processor, 'total_pages') else 0,
+                'cost_usd': 0.0  # OCR is free
+            })
+
             self.logger.stage_end("ocr", success=True)
             return True
 
@@ -204,6 +212,15 @@ class BookPipeline:
             if hasattr(processor, 'stats'):
                 cost = processor.stats.get('total_cost_usd', 0)
                 self.logger.log(f"Correction cost: ${cost:.4f}")
+
+                # Persist to metadata
+                from utils import update_book_metadata
+                update_book_metadata(self.book_dir, 'correct', {
+                    'model': correct_model,
+                    'pages_processed': processor.stats.get('pages_processed', 0),
+                    'total_errors_found': processor.stats.get('total_errors', 0),
+                    'cost_usd': cost
+                })
 
             self.logger.stage_end("correct", success=True)
             return True
@@ -236,6 +253,14 @@ class BookPipeline:
                 cost = agent4.stats.get('total_cost_usd', 0)
                 self.logger.log(f"Fix cost: ${cost:.4f}")
 
+                # Persist to metadata
+                from utils import update_book_metadata
+                update_book_metadata(self.book_dir, 'fix', {
+                    'model': agent4.model,
+                    'pages_fixed': agent4.stats.get('pages_fixed', 0),
+                    'cost_usd': cost
+                })
+
             self.logger.stage_end("fix", success=True)
             return True
 
@@ -259,6 +284,16 @@ class BookPipeline:
             if hasattr(structurer, 'stats'):
                 cost = structurer.stats.get('total_cost_usd', 0)
                 self.logger.log(f"Structure cost: ${cost:.4f}")
+
+                # Persist to metadata
+                from utils import update_book_metadata
+                update_book_metadata(self.book_dir, 'structure', {
+                    'model': model,
+                    'chapters_detected': structurer.stats.get('chapters_detected', 0),
+                    'chunks_created': structurer.stats.get('chunks_created', 0),
+                    'paragraphs_created': structurer.stats.get('paragraphs_created', 0),
+                    'cost_usd': cost
+                })
 
             self.logger.stage_end("structure", success=True)
             return True
@@ -315,6 +350,16 @@ class BookPipeline:
             if not success:
                 self.logger.log(f"Pipeline stopped due to {stage} failure", level="ERROR")
                 break
+
+        # Sync costs to library.json if successful
+        if success:
+            try:
+                from tools.library import LibraryIndex
+                library = LibraryIndex()
+                library.sync_scan_from_metadata(self.book_slug)
+                self.logger.log("✅ Synced costs and metadata to library.json")
+            except Exception as e:
+                self.logger.log(f"Warning: Could not sync to library: {e}", level="WARNING")
 
         # Finalize
         self.logger.pipeline_end()

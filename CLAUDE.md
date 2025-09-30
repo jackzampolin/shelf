@@ -180,6 +180,191 @@ GitHub Actions will run on:
 - PR approved
 - Linked issue closed
 
+## AR Research Specific Patterns
+
+### Project Architecture
+
+This is a **book processing pipeline** for historical research:
+
+```
+Scan (PDF) → OCR → LLM Correction → Structure → Query API
+```
+
+**Key Concepts:**
+- **Library**: `~/Documents/book_scans/library.json` - catalog of all books
+- **Scan ID**: Random Docker-style name (e.g., "modest-lovelace")
+- **Pipeline Stages**: OCR → Correct → Fix → Structure
+- **Data Products**: Pages (provenance) → Chapters (reading) → Chunks (RAG)
+
+### Using the CLI (`ar.py`)
+
+The unified CLI is the main interface. Always use `ar <command>` syntax:
+
+**Library Management:**
+```bash
+ar library list                    # See what books exist
+ar library show <scan-id>          # Get book details
+ar library stats                   # Collection statistics
+ar library ingest <directory>      # Smart add with LLM metadata
+```
+
+**Processing Pipeline:**
+```bash
+ar pipeline <scan-id>              # Run full pipeline (all stages)
+ar ocr <scan-id>                   # Stage 1: OCR only
+ar correct <scan-id>               # Stage 2: LLM corrections only
+ar fix <scan-id>                   # Stage 3: Agent 4 targeted fixes
+ar structure <scan-id>             # Stage 4: Chapter/chunk structure
+```
+
+**Monitoring:**
+```bash
+ar status <scan-id>                # Quick status check
+ar monitor <scan-id>               # Real-time progress with ETA
+```
+
+**Common Patterns:**
+```bash
+# Add a new book
+ar library discover ~/Downloads
+
+# Process it completely
+ar pipeline modest-lovelace
+
+# Check progress
+ar monitor modest-lovelace
+
+# View results
+ar library show modest-lovelace
+```
+
+### Data Structure Understanding
+
+**Storage Layout:**
+```
+~/Documents/book_scans/
+├── library.json              # Catalog (single source of truth)
+└── <scan-id>/                # One per scan
+    ├── source/               # Original PDF
+    ├── ocr/                  # Raw OCR (page_*.json)
+    ├── corrected/            # LLM corrected (page_*.json)
+    ├── structured/           # Semantic structure
+    │   ├── chapters/         # Chapter JSON + markdown
+    │   ├── chunks/           # ~5-page RAG chunks
+    │   ├── full_book.md      # Complete markdown
+    │   └── metadata.json     # Structure metadata
+    └── logs/                 # Processing logs
+```
+
+**Important Files:**
+- `library.json`: Maps scan IDs to books, tracks metadata
+- `structured/metadata.json`: Chapter breakdown, chunk count, costs
+- `structured/chunks/chunk_*.json`: Semantic chunks with provenance
+- `metadata.json` (in scan root): Per-scan processing history
+
+**Data Flow:**
+1. PDF → OCR → `ocr/page_*.json` (raw text)
+2. OCR → Correction → `corrected/page_*.json` (cleaned text)
+3. Corrected → Agent 4 → `corrected/page_*.json` (overwrites in place)
+4. Corrected → Structure → `structured/` (chapters + chunks)
+
+### Working with Books
+
+**When asked to query books:**
+1. First run: `ar library list` to see available books
+2. Get scan_id for the book you want
+3. Check if structured: `ar library show <scan-id>`
+4. If using MCP: Use MCP tools (list_books, search_book, etc.)
+5. If direct access: Read from `~/Documents/book_scans/<scan-id>/structured/`
+
+**Example:**
+```bash
+# User asks: "Find mentions of Truman in The Accidental President"
+
+# Step 1: Find the scan ID
+ar library list
+# Output shows: modest-lovelace is The Accidental President
+
+# Step 2: Search (if using structured data directly)
+grep -i "truman" ~/Documents/book_scans/modest-lovelace/structured/chunks/*.json
+
+# Or use MCP if configured:
+# MCP tool: search_book(scan_id="modest-lovelace", query="truman")
+```
+
+### MCP Server Integration
+
+The MCP server (`mcp_server.py`) provides Claude Desktop direct access to books.
+
+**Available Tools:**
+- `list_books`: See all books in library
+- `get_book_info(scan_id)`: Book details + chapters
+- `search_book(scan_id, query)`: Full-text search
+- `get_chapter(scan_id, chapter_number)`: Full chapter text
+- `get_chunk(scan_id, chunk_id)`: Specific chunk
+- `get_chunk_context(scan_id, chunk_id, before, after)`: Chunk with context
+- `list_chapters(scan_id)`: Chapter metadata
+- `list_chunks(scan_id, chapter)`: Chunk summaries
+
+**Setup:** See `docs/MCP_SETUP.md`
+
+### Cost Awareness
+
+This pipeline costs money (OpenRouter API). Be mindful:
+
+**Per-Book Costs (447-page example):**
+- OCR: Free (Tesseract)
+- Correct: ~$10 (gpt-4o-mini, 30 workers)
+- Fix: ~$1 (Claude, targeted fixes only)
+- Structure: ~$0.50 (Claude Sonnet 4.5, one pass)
+- **Total: ~$12/book**
+
+**When suggesting changes:**
+- Don't re-run stages unnecessarily
+- Use `--start` and `--end` flags to limit page ranges for testing
+- Test prompts on small samples first
+- Consider model choice (gpt-4o-mini vs Claude)
+
+### Adding New Features
+
+**Before adding code:**
+1. Check if it belongs in: `pipeline/`, `tools/`, or root
+2. `pipeline/`: Sequential processing stages (OCR → Correct → Fix → Structure)
+3. `tools/`: Supporting utilities (library, monitor, review, scan)
+4. Root: Infrastructure (CLI, config, MCP server)
+
+**Common Changes:**
+- New pipeline stage → Add to `pipeline/`, update `pipeline/run.py`
+- New CLI command → Add to `ar.py` subcommands
+- New query capability → Add to `mcp_server.py` tools
+- New library feature → Update `tools/library.py`
+
+### File Naming Conventions
+
+- Pages: `page_001.json`, `page_002.json` (zero-padded, 3 digits)
+- Chunks: `chunk_001.json`, `chunk_002.json` (zero-padded, 3 digits)
+- Chapters: `chapter_01.json`, `chapter_01.md` (zero-padded, 2 digits)
+- Scan IDs: `<adjective>-<scientist>` (e.g., "modest-lovelace", "wonderful-dirac")
+
+### Dependencies Management
+
+When adding dependencies:
+```bash
+# 1. Add to pyproject.toml
+# 2. Install
+uv pip install -e .
+# 3. Test import
+python -c "import <package>"
+```
+
+**Current key dependencies:**
+- `pytesseract`: OCR
+- `requests`: API calls (OpenRouter)
+- `python-dotenv`: Config management
+- `mcp`: MCP server protocol
+- `pdf2image`: PDF processing
+- `pillow`, `opencv-python`: Image handling
+
 ## Remember
 
 1. **One source of truth** - Main branch is reality
@@ -187,6 +372,9 @@ GitHub Actions will run on:
 3. **Test everything** - No untested code
 4. **Commit often** - Logical, atomic chunks
 5. **Docs stay current** - Update or delete
+6. **Use `ar` CLI** - Don't run scripts directly
+7. **Check costs** - LLM calls add up
+8. **Scan IDs not slugs** - Use random IDs for scans
 
 ---
 
