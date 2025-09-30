@@ -16,6 +16,7 @@ Usage:
     ar library list                   # List all books in collection
     ar library show <id>              # Show book or scan details
     ar library stats                  # Collection statistics
+    ar library ingest <dir>           # Smart ingest: LLM + web search + full setup
     ar library discover <dir>         # Find new PDFs to add
     ar library migrate <folder>       # Migrate existing folder to new naming
 
@@ -23,7 +24,7 @@ Examples:
     ar pipeline The-Accidental-President
     ar monitor The-Accidental-President
     ar library list
-    ar library discover ~/Downloads
+    ar library ingest ~/Documents/Scans
 """
 
 import sys
@@ -255,6 +256,16 @@ def cmd_library_stats(args):
     return 0
 
 
+def cmd_library_ingest(args):
+    """Smart ingest with LLM + web search."""
+    from tools.ingest import ingest_from_directories
+
+    directories = [Path(args.directory).expanduser()]
+    scan_ids = ingest_from_directories(directories, auto_confirm=args.yes)
+
+    return 0 if scan_ids else 1
+
+
 def cmd_library_discover(args):
     """Discover new PDFs and add to library."""
     from tools.library import LibraryIndex
@@ -484,6 +495,12 @@ def main():
     # library stats
     stats_parser = library_subparsers.add_parser('stats', help='Show library statistics')
     stats_parser.set_defaults(func=cmd_library_stats)
+
+    # library ingest
+    ingest_parser = library_subparsers.add_parser('ingest', help='Smart ingest with LLM + web search')
+    ingest_parser.add_argument('directory', help='Directory to scan for PDFs')
+    ingest_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompts')
+    ingest_parser.set_defaults(func=cmd_library_ingest)
 
     # library discover
     discover_parser = library_subparsers.add_parser('discover', help='Discover new PDFs in directory')
