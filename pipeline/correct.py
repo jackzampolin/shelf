@@ -681,12 +681,12 @@ Verify each correction and check for unauthorized changes."""
 
                 completed += 1
 
-                # Update checkpoint with completed page
-                if self.checkpoint and result['status'] in ['success', 'skipped']:
-                    page_cost = result.get('cost_usd', 0.022)  # Estimate if not provided
-                    self.checkpoint.mark_completed(page_num, cost_usd=page_cost)
-
                 with self.progress_lock:
+                    # Update checkpoint inside lock for consistency
+                    if self.checkpoint and result['status'] in ['success', 'skipped']:
+                        page_cost = result.get('cost_usd', 0.022)  # Estimate if not provided
+                        self.checkpoint.mark_completed(page_num, cost_usd=page_cost)
+
                     # Log progress with detailed information
                     if result['status'] == 'success':
                         conf = result.get('confidence', 0)

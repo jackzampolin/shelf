@@ -485,6 +485,8 @@ def main():
     structure_parser.add_argument('book_slug', help='Book slug')
     structure_parser.add_argument('--model', default='anthropic/claude-sonnet-4.5',
                                  help='Model (default: anthropic/claude-sonnet-4.5)')
+    structure_parser.add_argument('--resume', action='store_true',
+                                 help='Skip if structure already complete')
     structure_parser.set_defaults(func=cmd_structure)
 
     # =========================================================================
