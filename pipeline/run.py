@@ -152,7 +152,7 @@ class BookPipeline:
         with open(metadata_file) as f:
             self.metadata = json.load(f)
 
-    def run_stage_ocr(self, max_workers: int = 8):
+    def run_stage_ocr(self, max_workers: int = 8, resume: bool = False):
         """Stage 1: OCR extraction."""
         self.logger.stage_start("ocr")
 
@@ -172,7 +172,7 @@ class BookPipeline:
             from pipeline.ocr import BookOCRProcessor
 
             processor = BookOCRProcessor(storage_root=str(self.storage_root), max_workers=max_workers)
-            processor.process_book(self.book_slug)
+            processor.process_book(self.book_slug, resume=resume)
 
             # Track OCR completion (free, no cost)
             from utils import update_book_metadata
@@ -191,7 +191,7 @@ class BookPipeline:
             return False
 
     def run_stage_correct(self, model: str = "openai/gpt-4o-mini",
-                          max_workers: int = 30, rate_limit: int = 150):
+                          max_workers: int = 30, rate_limit: int = 150, resume: bool = False):
         """Stage 2: LLM correction."""
         self.logger.stage_start("correct")
 
@@ -206,7 +206,7 @@ class BookPipeline:
                 max_workers=max_workers,
                 calls_per_minute=rate_limit
             )
-            processor.process_pages()
+            processor.process_pages(resume=resume)
 
             # Log cost from correction stats
             if hasattr(processor, 'stats'):
@@ -230,7 +230,7 @@ class BookPipeline:
             self.logger.stage_end("correct", success=False, error=str(e))
             return False
 
-    def run_stage_fix(self):
+    def run_stage_fix(self, resume: bool = False):
         """Stage 3: Agent 4 targeted fixes."""
         self.logger.stage_start("fix")
 
@@ -246,7 +246,7 @@ class BookPipeline:
             from pipeline.fix import Agent4TargetedFix
 
             agent4 = Agent4TargetedFix(self.book_slug)
-            agent4.process_all_flagged()
+            agent4.process_all_flagged(resume=resume)
 
             # Log cost from agent4 stats
             if hasattr(agent4, 'stats'):
@@ -269,15 +269,24 @@ class BookPipeline:
             self.logger.stage_end("fix", success=False, error=str(e))
             return False
 
-    def run_stage_structure(self, model: str = "anthropic/claude-sonnet-4.5"):
+    def run_stage_structure(self, model: str = "anthropic/claude-sonnet-4.5", resume: bool = False):
         """Stage 4: Semantic structuring."""
         self.logger.stage_start("structure")
 
+        # Check if already complete (simple resume: check if output exists)
+        if resume:
+            structured_dir = self.book_dir / "structured"
+            metadata_file = structured_dir / "metadata.json"
+            if metadata_file.exists():
+                self.logger.log("Structure already complete, skipping...")
+                self.logger.stage_end("structure", success=True)
+                return True
+
         try:
             # Import and run structure
-            from pipeline.structure import DeepBookStructurer
+            from pipeline.structure import BookStructurer
 
-            structurer = DeepBookStructurer(self.book_slug, model=model, storage_root=self.storage_root)
+            structurer = BookStructurer(self.book_slug, model=model, storage_root=self.storage_root)
             structurer.process_book()
 
             # Log cost from structurer stats
@@ -338,6 +347,7 @@ class BookPipeline:
             return False
 
     def run(self, stages: list = None, start_from: str = None,
+            resume: bool = False,
             ocr_workers: int = 8,
             correct_model: str = "openai/gpt-4o-mini",
             correct_workers: int = 30,
@@ -362,6 +372,7 @@ class BookPipeline:
         self.logger.log("="*70)
         self.logger.log(f"Book: {self.book_slug}")
         self.logger.log(f"Stages: {', '.join(run_stages)}")
+        self.logger.log(f"Resume Mode: {'Enabled' if resume else 'Disabled'}")
         self.logger.log(f"Correction Model: {correct_model}")
         self.logger.log(f"Structure Model: {structure_model}")
         self.logger.log(f"Quality Model: {quality_model}")
@@ -371,17 +382,18 @@ class BookPipeline:
         success = True
         for stage in run_stages:
             if stage == 'ocr':
-                success = self.run_stage_ocr(max_workers=ocr_workers)
+                success = self.run_stage_ocr(max_workers=ocr_workers, resume=resume)
             elif stage == 'correct':
                 success = self.run_stage_correct(
                     model=correct_model,
                     max_workers=correct_workers,
-                    rate_limit=correct_rate_limit
+                    rate_limit=correct_rate_limit,
+                    resume=resume
                 )
             elif stage == 'fix':
-                success = self.run_stage_fix()
+                success = self.run_stage_fix(resume=resume)
             elif stage == 'structure':
-                success = self.run_stage_structure(model=structure_model)
+                success = self.run_stage_structure(model=structure_model, resume=resume)
             elif stage == 'quality':
                 success = self.run_stage_quality(model=quality_model)
 
@@ -443,6 +455,8 @@ Stage descriptions:
                         help='Run only specific stages')
     parser.add_argument('--start-from', choices=['ocr', 'correct', 'fix', 'structure', 'quality'],
                         help='Start from this stage (run all subsequent stages)')
+    parser.add_argument('--resume', action='store_true',
+                        help='Resume from checkpoints (skip completed pages/stages)')
 
     # OCR settings
     parser.add_argument('--ocr-workers', type=int, default=8,
@@ -472,6 +486,7 @@ Stage descriptions:
         success = pipeline.run(
             stages=args.stages,
             start_from=args.start_from,
+            resume=args.resume,
             ocr_workers=args.ocr_workers,
             correct_model=args.correct_model,
             correct_workers=args.correct_workers,

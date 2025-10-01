@@ -47,6 +47,7 @@ def cmd_pipeline(args):
     success = pipeline.run(
         stages=args.stages,
         start_from=args.start_from,
+        resume=args.resume,
         ocr_workers=args.ocr_workers,
         correct_model=args.correct_model,
         correct_workers=args.correct_workers,
@@ -70,7 +71,7 @@ def cmd_ocr(args):
     from pipeline.ocr import BookOCRProcessor
 
     processor = BookOCRProcessor(max_workers=args.workers)
-    processor.process_book(args.book_slug)
+    processor.process_book(args.book_slug, resume=args.resume)
     return 0
 
 
@@ -84,7 +85,7 @@ def cmd_correct(args):
         max_workers=args.workers,
         calls_per_minute=args.rate_limit
     )
-    processor.process_pages(start_page=args.start, end_page=args.end)
+    processor.process_pages(start_page=args.start, end_page=args.end, resume=args.resume)
     return 0
 
 
@@ -93,15 +94,25 @@ def cmd_fix(args):
     from pipeline.fix import Agent4TargetedFix
 
     agent4 = Agent4TargetedFix(args.book_slug)
-    agent4.process_all_flagged()
+    agent4.process_all_flagged(resume=args.resume)
     return 0
 
 
 def cmd_structure(args):
     """Run structure stage only."""
-    from pipeline.structure import DeepBookStructurer
+    from pipeline.structure import BookStructurer
+    from pathlib import Path
 
-    structurer = DeepBookStructurer(args.book_slug, model=args.model)
+    # Simple checkpoint: check if output already exists
+    book_dir = Path.home() / "Documents" / "book_scans" / args.book_slug
+    metadata_file = book_dir / "structured" / "metadata.json"
+
+    if args.resume and metadata_file.exists():
+        print("✅ Structure already complete")
+        print(f"   Output: {book_dir / 'structured'}")
+        return 0
+
+    structurer = BookStructurer(args.book_slug, model=args.model)
     structurer.process_book()
     return 0
 
@@ -409,6 +420,8 @@ def main():
                                 help='Run only specific stages')
     pipeline_parser.add_argument('--start-from', choices=['ocr', 'correct', 'fix', 'structure', 'quality'],
                                 help='Start from this stage')
+    pipeline_parser.add_argument('--resume', action='store_true',
+                                help='Resume from checkpoints (skip completed pages in all stages)')
     pipeline_parser.add_argument('--ocr-workers', type=int, default=8,
                                 help='OCR parallel workers (default: 8)')
     pipeline_parser.add_argument('--correct-model', default='openai/gpt-4o-mini',
@@ -436,6 +449,8 @@ def main():
     ocr_parser.add_argument('book_slug', help='Book slug')
     ocr_parser.add_argument('--workers', type=int, default=8,
                            help='Parallel workers (default: 8)')
+    ocr_parser.add_argument('--resume', action='store_true',
+                           help='Resume from checkpoint (skip completed pages)')
     ocr_parser.set_defaults(func=cmd_ocr)
 
     # =========================================================================
@@ -453,6 +468,8 @@ def main():
                                help='Start page (default: 1)')
     correct_parser.add_argument('--end', type=int, default=None,
                                help='End page (default: all)')
+    correct_parser.add_argument('--resume', action='store_true',
+                               help='Resume from checkpoint (skip completed pages)')
     correct_parser.set_defaults(func=cmd_correct)
 
     # =========================================================================
@@ -460,6 +477,8 @@ def main():
     # =========================================================================
     fix_parser = subparsers.add_parser('fix', help='Run Agent 4 fixes only')
     fix_parser.add_argument('book_slug', help='Book slug')
+    fix_parser.add_argument('--resume', action='store_true',
+                           help='Resume from checkpoint (skip completed pages)')
     fix_parser.set_defaults(func=cmd_fix)
 
     # =========================================================================
@@ -469,6 +488,8 @@ def main():
     structure_parser.add_argument('book_slug', help='Book slug')
     structure_parser.add_argument('--model', default='anthropic/claude-sonnet-4.5',
                                  help='Model (default: anthropic/claude-sonnet-4.5)')
+    structure_parser.add_argument('--resume', action='store_true',
+                                 help='Skip if structure already complete')
     structure_parser.set_defaults(func=cmd_structure)
 
     # =========================================================================

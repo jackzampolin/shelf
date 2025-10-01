@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from llm_client import LLMClient
 from logger import create_logger
+from checkpoint import CheckpointManager
 
 # Load environment variables
 load_dotenv()
@@ -53,13 +54,14 @@ class StructuredPageCorrector:
     """
 
     def __init__(self, book_title, storage_root=None, model="openai/gpt-4o-mini",
-                 max_workers=30, calls_per_minute=150):
+                 max_workers=30, calls_per_minute=150, enable_checkpoints=True):
         self.book_title = book_title
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
         self.book_dir = self.storage_root / book_title
         self.model = model
         self.max_workers = max_workers
         self.rate_limiter = RateLimiter(calls_per_minute)
+        self.enable_checkpoints = enable_checkpoints
 
         # Initialize LLM client
         self.llm_client = LLMClient()
@@ -75,7 +77,18 @@ class StructuredPageCorrector:
             dir_path.mkdir(exist_ok=True)
 
         # Initialize unified logger
-        self.logger = create_logger(book_title, "correct", log_dir=self.logs_dir)
+        self.logger = create_logger(book_title, "correction", log_dir=self.logs_dir)
+
+        # Initialize checkpoint manager
+        if self.enable_checkpoints:
+            self.checkpoint = CheckpointManager(
+                scan_id=book_title,
+                stage="correction",
+                storage_root=self.storage_root,
+                output_dir="corrected"
+            )
+        else:
+            self.checkpoint = None
 
         # Thread-safe stats tracking
         self.stats = {
@@ -592,7 +605,7 @@ Verify each correction and check for unauthorized changes."""
             traceback.print_exc()
             return {'page': page_num, 'status': 'error', 'error': str(e)}
 
-    def process_pages(self, start_page=1, end_page=None, total_pages=None):
+    def process_pages(self, start_page=1, end_page=None, total_pages=None, resume=False):
         """Process range of pages with parallel execution"""
 
         if total_pages is None:
@@ -607,7 +620,41 @@ Verify each correction and check for unauthorized changes."""
         if end_page is None:
             end_page = total_pages
 
-        self.stats['total_pages'] = end_page - start_page + 1
+        # Use checkpoint system to determine which pages to process
+        if self.checkpoint and resume:
+            page_numbers = self.checkpoint.get_remaining_pages(
+                total_pages=total_pages,
+                resume=True,
+                start_page=start_page,
+                end_page=end_page
+            )
+
+            # Log resume information
+            skipped = (end_page - start_page + 1) - len(page_numbers)
+            if skipped > 0:
+                cost_saved = self.checkpoint.estimate_cost_saved(avg_cost_per_page=0.022)
+                self.logger.info(
+                    f"Resuming from checkpoint: {skipped} pages already completed",
+                    skipped_pages=skipped,
+                    remaining_pages=len(page_numbers),
+                    estimated_cost_saved=cost_saved
+                )
+                print(f"✅ Resuming: {skipped} pages already completed (saved ~${cost_saved:.2f})")
+                print(f"⏳ Processing {len(page_numbers)} remaining pages...")
+        elif self.checkpoint:
+            # Start fresh - reset checkpoint
+            self.checkpoint.reset()
+            page_numbers = list(range(start_page, end_page + 1))
+        else:
+            # No checkpoint system
+            page_numbers = list(range(start_page, end_page + 1))
+
+        self.stats['total_pages'] = len(page_numbers)
+
+        if len(page_numbers) == 0:
+            self.logger.info("All pages already completed - nothing to process")
+            print("✅ All pages already completed!")
+            return
 
         # Log stage start with metadata
         self.logger.start_stage(
@@ -616,11 +663,9 @@ Verify each correction and check for unauthorized changes."""
             total_pages=self.stats['total_pages'],
             model=self.model,
             max_workers=self.max_workers,
-            rate_limit=self.rate_limiter.calls_per_minute
+            rate_limit=self.rate_limiter.calls_per_minute,
+            resume=resume
         )
-
-        # Prepare page numbers
-        page_numbers = list(range(start_page, end_page + 1))
 
         # Process in parallel
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -635,6 +680,12 @@ Verify each correction and check for unauthorized changes."""
                 result = future.result()
 
                 completed += 1
+
+                # Update checkpoint OUTSIDE progress_lock to avoid lock ordering issues
+                # CheckpointManager has its own thread-safe lock
+                if self.checkpoint and result['status'] in ['success', 'skipped']:
+                    page_cost = result.get('cost_usd', 0.022)  # Estimate if not provided
+                    self.checkpoint.mark_completed(page_num, cost_usd=page_cost)
 
                 with self.progress_lock:
                     # Log progress with detailed information
@@ -669,6 +720,14 @@ Verify each correction and check for unauthorized changes."""
                         )
 
         self.print_summary()
+
+        # Mark stage complete in checkpoint
+        if self.checkpoint:
+            self.checkpoint.mark_stage_complete(metadata={
+                "model": self.model,
+                "workers": self.max_workers,
+                "total_cost_usd": self.stats['total_cost_usd']
+            })
 
     def print_summary(self):
         """Print processing summary and log completion"""
@@ -736,6 +795,8 @@ Default models and pricing (per 447-page book):
                         help='Max concurrent workers (default: 30)')
     parser.add_argument('--rate-limit', type=int, default=150,
                         help='API calls per minute (default: 150 for paid models)')
+    parser.add_argument('--resume', action='store_true',
+                        help='Resume from checkpoint (skip already-completed pages)')
 
     args = parser.parse_args()
 
@@ -744,6 +805,7 @@ Default models and pricing (per 447-page book):
     print(f"   Workers: {args.workers}")
     print(f"   Rate limit: {args.rate_limit}/min")
     print(f"   Page range: {args.start}-{args.end or 'end'}")
+    print(f"   Resume: {args.resume}")
     print()
 
     processor = StructuredPageCorrector(
@@ -752,7 +814,7 @@ Default models and pricing (per 447-page book):
         max_workers=args.workers,
         calls_per_minute=args.rate_limit
     )
-    processor.process_pages(args.start, args.end)
+    processor.process_pages(args.start, args.end, resume=args.resume)
 
 
 if __name__ == "__main__":

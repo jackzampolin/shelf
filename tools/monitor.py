@@ -2,7 +2,7 @@
 """
 Real-time pipeline monitoring tool
 
-Shows:
+Parses structured JSON logs to show:
 - Progress percentage and ETA
 - Processing rate (pages/min)
 - Cost tracking
@@ -15,22 +15,172 @@ import json
 import time
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+
+
+@dataclass
+class StageStatus:
+    """Status for a single pipeline stage."""
+    stage: str
+    status: str  # 'not_started', 'in_progress', 'completed', 'failed'
+    progress_current: int = 0
+    progress_total: int = 0
+    progress_percent: float = 0.0
+    cost_usd: float = 0.0
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    errors: List[Dict[str, Any]] = None
+    warnings: List[Dict[str, Any]] = None
+
+    def __post_init__(self):
+        if self.errors is None:
+            self.errors = []
+        if self.warnings is None:
+            self.warnings = []
+
+
+class LogParser:
+    """Parse JSON log files (.jsonl) for pipeline monitoring."""
+
+    @staticmethod
+    def parse_log_file(log_path: Path) -> List[Dict[str, Any]]:
+        """Parse a single .jsonl file into list of log entries."""
+        entries = []
+
+        if not log_path.exists():
+            return entries
+
+        try:
+            with open(log_path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        # Parse timestamp if present
+                        if 'timestamp' in entry:
+                            try:
+                                entry['timestamp_dt'] = datetime.fromisoformat(entry['timestamp'])
+                            except:
+                                pass
+                        entries.append(entry)
+                    except json.JSONDecodeError:
+                        continue
+        except Exception:
+            pass
+
+        return entries
+
+    @staticmethod
+    def get_stage_logs(logs_dir: Path, stage: str) -> List[Dict[str, Any]]:
+        """Get all log entries for a specific stage, sorted by timestamp."""
+        all_entries = []
+
+        if not logs_dir.exists():
+            return all_entries
+
+        # Find all log files for this stage
+        log_files = sorted(logs_dir.glob(f"{stage}_*.jsonl"))
+
+        for log_file in log_files:
+            entries = LogParser.parse_log_file(log_file)
+            all_entries.extend(entries)
+
+        # Sort by timestamp
+        all_entries.sort(key=lambda e: e.get('timestamp', ''))
+
+        return all_entries
+
+    @staticmethod
+    def get_latest_progress(logs: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Get the most recent progress event from logs."""
+        for entry in reversed(logs):
+            if 'progress' in entry:
+                return entry
+        return None
+
+    @staticmethod
+    def get_accumulated_cost(logs: List[Dict[str, Any]]) -> float:
+        """Sum all cost_usd fields from logs."""
+        total = 0.0
+        for entry in logs:
+            if 'cost_usd' in entry:
+                total += entry['cost_usd']
+        return total
+
+    @staticmethod
+    def get_stage_duration(logs: List[Dict[str, Any]]) -> Optional[float]:
+        """Get duration from completion event, or calculate from timestamps."""
+        # Check for explicit duration in completion event
+        for entry in reversed(logs):
+            if 'duration_seconds' in entry:
+                return entry['duration_seconds']
+
+        # Calculate from first/last timestamp
+        if logs and 'timestamp_dt' in logs[0] and 'timestamp_dt' in logs[-1]:
+            duration = (logs[-1]['timestamp_dt'] - logs[0]['timestamp_dt']).total_seconds()
+            return duration if duration > 0 else None
+
+        return None
+
+    @staticmethod
+    def get_errors_warnings(logs: List[Dict[str, Any]], limit: int = 5) -> tuple[List[Dict], List[Dict]]:
+        """Get recent ERROR and WARNING entries."""
+        errors = []
+        warnings = []
+
+        for entry in reversed(logs):
+            if entry.get('level') == 'ERROR' and len(errors) < limit:
+                errors.append(entry)
+            elif entry.get('level') == 'WARNING' and len(warnings) < limit:
+                warnings.append(entry)
+
+            if len(errors) >= limit and len(warnings) >= limit:
+                break
+
+        return errors, warnings
+
+    @staticmethod
+    def is_stage_complete(logs: List[Dict[str, Any]]) -> bool:
+        """Check if stage has completion event."""
+        for entry in reversed(logs):
+            if 'Completed' in entry.get('message', '') or 'Complete' in entry.get('message', ''):
+                return True
+        return False
+
+    @staticmethod
+    def get_start_time(logs: List[Dict[str, Any]]) -> Optional[datetime]:
+        """Get stage start time."""
+        if logs and 'timestamp_dt' in logs[0]:
+            return logs[0]['timestamp_dt']
+        return None
+
+    @staticmethod
+    def get_end_time(logs: List[Dict[str, Any]]) -> Optional[datetime]:
+        """Get stage end time if completed."""
+        if LogParser.is_stage_complete(logs) and logs and 'timestamp_dt' in logs[-1]:
+            return logs[-1]['timestamp_dt']
+        return None
 
 
 class PipelineMonitor:
-    """Monitor pipeline progress in real-time."""
+    """Monitor pipeline progress in real-time using JSON logs."""
 
-    def __init__(self, book_slug: str, storage_root: Path = None):
-        self.book_slug = book_slug
+    def __init__(self, scan_id: str, storage_root: Path = None):
+        self.scan_id = scan_id
         self.storage_root = storage_root or Path.home() / "Documents" / "book_scans"
-        self.book_dir = self.storage_root / book_slug
+        self.book_dir = self.storage_root / scan_id
 
         # Verify book exists
         if not self.book_dir.exists():
             raise ValueError(f"Book directory not found: {self.book_dir}")
 
-        # Load metadata
+        self.logs_dir = self.book_dir / "logs"
+
+        # Load metadata for total pages
         metadata_file = self.book_dir / "metadata.json"
         if metadata_file.exists():
             with open(metadata_file) as f:
@@ -41,280 +191,215 @@ class PipelineMonitor:
         # Get total pages from metadata, or infer from OCR directory
         self.total_pages = self.metadata.get('total_pages', 0)
         if self.total_pages == 0:
-            # Try to infer from OCR output
             ocr_dir = self.book_dir / "ocr"
             if ocr_dir.exists():
                 self.total_pages = len(list(ocr_dir.glob("page_*.json")))
 
-    def get_stage_progress(self) -> Dict:
-        """Get progress for each stage."""
-        ocr_dir = self.book_dir / "ocr"
-        corrected_dir = self.book_dir / "corrected"
-        structured_dir = self.book_dir / "structured"
-        needs_review_dir = self.book_dir / "needs_review"
+    def get_stage_status(self, stage: str) -> StageStatus:
+        """Get status for a specific stage from JSON logs."""
+        logs = LogParser.get_stage_logs(self.logs_dir, stage)
 
-        # Count pages in each stage
-        ocr_pages = len(list(ocr_dir.glob("page_*.json"))) if ocr_dir.exists() else 0
-        corrected_pages = len(list(corrected_dir.glob("page_*.json"))) if corrected_dir.exists() else 0
-        flagged_pages = len(list(needs_review_dir.glob("page_*.json"))) if needs_review_dir.exists() else 0
+        if not logs:
+            return StageStatus(stage=stage, status='not_started')
 
-        # Check structure completion
-        structure_complete = (structured_dir / "metadata.json").exists() if structured_dir.exists() else False
+        # Check if completed
+        is_complete = LogParser.is_stage_complete(logs)
+        status = 'completed' if is_complete else 'in_progress'
 
-        return {
-            "ocr": {
-                "completed": ocr_pages,
-                "total": self.total_pages,
-                "percentage": (ocr_pages / self.total_pages * 100) if self.total_pages > 0 else 0
-            },
-            "correct": {
-                "completed": corrected_pages,
-                "total": self.total_pages,
-                "percentage": (corrected_pages / self.total_pages * 100) if self.total_pages > 0 else 0
-            },
-            "fix": {
-                "flagged": flagged_pages,
-                "status": "pending" if flagged_pages > 0 else "none_needed"
-            },
-            "structure": {
-                "status": "complete" if structure_complete else "pending"
-            }
-        }
+        # Get latest progress
+        progress_entry = LogParser.get_latest_progress(logs)
+        progress_current = 0
+        progress_total = 0
+        progress_percent = 0.0
 
-    def get_latest_log(self) -> Optional[Path]:
-        """Get the most recent pipeline log."""
-        logs_dir = self.book_dir / "logs"
-        if not logs_dir.exists():
+        if progress_entry and 'progress' in progress_entry:
+            prog = progress_entry['progress']
+            progress_current = prog.get('current', 0)
+            progress_total = prog.get('total', 0)
+            progress_percent = prog.get('percent', 0.0)
+
+        # Get cost
+        cost_usd = LogParser.get_accumulated_cost(logs)
+
+        # Get timing
+        start_time = LogParser.get_start_time(logs)
+        end_time = LogParser.get_end_time(logs)
+        duration = LogParser.get_stage_duration(logs)
+
+        # Get errors and warnings
+        errors, warnings = LogParser.get_errors_warnings(logs, limit=5)
+
+        return StageStatus(
+            stage=stage,
+            status=status,
+            progress_current=progress_current,
+            progress_total=progress_total,
+            progress_percent=progress_percent,
+            cost_usd=cost_usd,
+            start_time=start_time,
+            end_time=end_time,
+            duration_seconds=duration,
+            errors=errors,
+            warnings=warnings
+        )
+
+    def get_all_stages_status(self) -> Dict[str, StageStatus]:
+        """Get status for all pipeline stages."""
+        stages = ['ocr', 'correction', 'fix', 'structure']
+        return {stage: self.get_stage_status(stage) for stage in stages}
+
+    def calculate_eta(self, stage_status: StageStatus) -> Optional[str]:
+        """Calculate ETA for in-progress stage."""
+        if stage_status.status != 'in_progress':
             return None
 
-        log_files = sorted(logs_dir.glob("pipeline_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-        return log_files[0] if log_files else None
-
-    def get_latest_report(self) -> Optional[Dict]:
-        """Get the most recent pipeline report."""
-        logs_dir = self.book_dir / "logs"
-        reports_dir = logs_dir / "reports"
-
-        # Check both locations for compatibility
-        for dir_path in [reports_dir, logs_dir]:
-            if not dir_path.exists():
-                continue
-
-            report_files = sorted(dir_path.glob("pipeline_report_*.json"),
-                                 key=lambda p: p.stat().st_mtime, reverse=True)
-            if report_files:
-                with open(report_files[0]) as f:
-                    return json.load(f)
-
-        return None
-
-    def get_debug_errors(self, limit: int = 5) -> List[Dict]:
-        """Get recent debug error files."""
-        debug_dir = self.book_dir / "logs" / "debug"
-        errors = []
-
-        # Check new location
-        if debug_dir.exists():
-            error_files = sorted(debug_dir.glob("page_*_error.txt"),
-                                key=lambda p: p.stat().st_mtime, reverse=True)
-            for error_file in error_files[:limit]:
-                errors.append({
-                    "file": error_file.name,
-                    "time": datetime.fromtimestamp(error_file.stat().st_mtime),
-                    "size": error_file.stat().st_size
-                })
-
-        # Also check old location (root) for backwards compatibility
-        old_errors = list(self.book_dir.glob("debug_page_*.txt"))
-        if old_errors:
-            for error_file in sorted(old_errors, key=lambda p: p.stat().st_mtime, reverse=True)[:limit]:
-                if len(errors) < limit:
-                    errors.append({
-                        "file": error_file.name,
-                        "time": datetime.fromtimestamp(error_file.stat().st_mtime),
-                        "size": error_file.stat().st_size,
-                        "old_location": True
-                    })
-
-        return errors
-
-    def calculate_processing_rate(self, corrected_dir: Path) -> Optional[float]:
-        """Calculate pages/minute processing rate."""
-        if not corrected_dir.exists():
+        if not stage_status.start_time or stage_status.progress_current == 0:
             return None
 
-        corrected_files = list(corrected_dir.glob("page_*.json"))
-        if len(corrected_files) < 2:
+        # Calculate rate from elapsed time
+        elapsed = (datetime.now() - stage_status.start_time).total_seconds()
+        if elapsed < 1:
             return None
 
-        # Sort by modification time
-        sorted_files = sorted(corrected_files, key=lambda p: p.stat().st_mtime)
+        pages_per_second = stage_status.progress_current / elapsed
+        remaining = stage_status.progress_total - stage_status.progress_current
 
-        # Get time span
-        first_time = datetime.fromtimestamp(sorted_files[0].stat().st_mtime)
-        last_time = datetime.fromtimestamp(sorted_files[-1].stat().st_mtime)
-
-        duration_minutes = (last_time - first_time).total_seconds() / 60.0
-
-        if duration_minutes < 0.1:  # Less than 6 seconds
+        if pages_per_second <= 0 or remaining <= 0:
             return None
 
-        return len(sorted_files) / duration_minutes
+        remaining_seconds = remaining / pages_per_second
 
-    def estimate_eta(self, completed: int, total: int, rate: Optional[float]) -> Optional[str]:
-        """Estimate time to completion."""
-        if not rate or rate <= 0 or completed >= total:
-            return None
-
-        remaining_pages = total - completed
-        remaining_minutes = remaining_pages / rate
-
-        # Format as duration (e.g., "2m 30s" or "1h 15m")
-        if remaining_minutes < 1:
-            return f"{int(remaining_minutes * 60)}s"
-        elif remaining_minutes < 60:
-            mins = int(remaining_minutes)
-            secs = int((remaining_minutes - mins) * 60)
+        # Format as duration
+        if remaining_seconds < 60:
+            return f"{int(remaining_seconds)}s"
+        elif remaining_seconds < 3600:
+            mins = int(remaining_seconds / 60)
+            secs = int(remaining_seconds % 60)
             return f"{mins}m {secs}s"
         else:
-            hours = int(remaining_minutes / 60)
-            mins = int(remaining_minutes % 60)
+            hours = int(remaining_seconds / 3600)
+            mins = int((remaining_seconds % 3600) / 60)
+            return f"{hours}h {mins}m"
+
+    def format_duration(self, seconds: Optional[float]) -> str:
+        """Format duration in seconds to human-readable format."""
+        if seconds is None or seconds < 0:
+            return "N/A"
+
+        if seconds < 60:
+            return f"{int(seconds)}s"
+        elif seconds < 3600:
+            mins = int(seconds / 60)
+            secs = int(seconds % 60)
+            return f"{mins}m {secs}s"
+        else:
+            hours = int(seconds / 3600)
+            mins = int((seconds % 3600) / 60)
             return f"{hours}h {mins}m"
 
     def print_status(self, clear_screen: bool = False):
-        """Print current status."""
+        """Print current status from JSON logs."""
         if clear_screen:
             print("\033[2J\033[H", end="")  # Clear screen and move cursor to top
 
         print("=" * 70)
-        print(f"📊 Pipeline Monitor: {self.book_slug}")
+        print(f"📊 Pipeline Monitor: {self.scan_id}")
         print(f"   Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 70)
         print()
 
-        # Get progress
-        progress = self.get_stage_progress()
+        # Get all stages status
+        stages_status = self.get_all_stages_status()
 
-        # OCR Stage
-        ocr = progress['ocr']
-        ocr_icon = "✅" if ocr['completed'] >= self.total_pages * 0.95 else "⏳"
-        print(f"{ocr_icon} OCR:       {ocr['completed']:3d} / {ocr['total']:3d} pages ({ocr['percentage']:5.1f}%)")
+        # Display each stage
+        total_cost = 0.0
 
-        # Correction Stage
-        correct = progress['correct']
-        corrected_dir = self.book_dir / "corrected"
-        rate = self.calculate_processing_rate(corrected_dir)
-        eta = self.estimate_eta(correct['completed'], correct['total'], rate) if rate else None
+        for stage_name, stage_status in stages_status.items():
+            total_cost += stage_status.cost_usd
 
-        correct_icon = "✅" if correct['completed'] >= correct['total'] else "⏳"
-        status_line = f"{correct_icon} Correct:   {correct['completed']:3d} / {correct['total']:3d} pages ({correct['percentage']:5.1f}%)"
+            # Choose icon
+            if stage_status.status == 'completed':
+                icon = "✅"
+            elif stage_status.status == 'in_progress':
+                icon = "⏳"
+            else:
+                icon = "○"
 
-        if rate:
-            status_line += f" - {rate:.1f} pages/min"
-        if eta:
-            status_line += f" - ETA: {eta}"
+            # Format stage name
+            display_name = stage_name.capitalize()[:10].ljust(10)
 
-        print(status_line)
+            # Build status line
+            if stage_status.status == 'not_started':
+                status_line = f"{icon} {display_name} Not started"
+            elif stage_status.status == 'completed':
+                duration_str = self.format_duration(stage_status.duration_seconds)
+                cost_str = f"${stage_status.cost_usd:.2f}" if stage_status.cost_usd > 0 else ""
+                status_line = f"{icon} {display_name} Complete ({duration_str})"
+                if cost_str:
+                    status_line += f" - {cost_str}"
+            else:  # in_progress
+                if stage_status.progress_total > 0:
+                    status_line = f"{icon} {display_name} {stage_status.progress_current}/{stage_status.progress_total} ({stage_status.progress_percent:.1f}%)"
 
-        # Fix Stage - check if completed from latest report
-        fix = progress['fix']
-        report = self.get_latest_report()
-        fix_completed = False
-        fix_cost = None
-        if report and 'fix' in report.get('stages', {}):
-            fix_stage = report['stages']['fix']
-            if fix_stage.get('status') == 'success':
-                fix_completed = True
-                fix_cost = fix_stage.get('cost_usd', 0)
+                    # Add ETA
+                    eta = self.calculate_eta(stage_status)
+                    if eta:
+                        status_line += f" - ETA: {eta}"
 
-        if fix_completed:
-            fix_icon = "✅"
-            fix_status = f"{fix['flagged']} pages fixed"
-            if fix_cost:
-                fix_status += f" (${fix_cost:.2f})"
-        elif fix['status'] == 'none_needed':
-            fix_icon = "○"
-            fix_status = "None needed"
-        else:
-            fix_icon = "⏳"
-            fix_status = f"{fix['flagged']} pages flagged"
+                    # Add cost if present
+                    if stage_status.cost_usd > 0:
+                        status_line += f" - ${stage_status.cost_usd:.2f}"
+                else:
+                    status_line = f"{icon} {display_name} In progress..."
 
-        print(f"{fix_icon} Fix:       {fix_status}")
-
-        # Structure Stage - check for streaming progress in log
-        structure = progress['structure']
-        structure_tokens = None
-        structure_total = 158687  # Approximate from log
-
-        # Try to get latest token count from log
-        latest_log = self.get_latest_log()
-        if latest_log and latest_log.exists():
-            try:
-                with open(latest_log) as f:
-                    log_content = f.read()
-                    # Find last "Tokens: X..." line
-                    import re
-                    matches = re.findall(r'Tokens: ([\d,]+)', log_content)
-                    if matches:
-                        structure_tokens = int(matches[-1].replace(',', ''))
-            except:
-                pass
-
-        if structure['status'] == 'complete':
-            structure_icon = "✅"
-            structure_status = "Complete"
-        elif structure_tokens:
-            structure_icon = "⏳"
-            pct = (structure_tokens / structure_total * 100)
-            structure_status = f"Generating... {structure_tokens:,} / ~{structure_total:,} tokens ({pct:.0f}%)"
-        else:
-            structure_icon = "⏳"
-            structure_status = "Pending"
-
-        print(f"{structure_icon} Structure: {structure_status}")
+            print(status_line)
 
         print()
 
-        # Latest report
-        report = self.get_latest_report()
-        if report:
-            print("📋 Latest Report:")
-            stages = report.get('stages', {})
-            for stage_name, stage_data in stages.items():
-                status_icon = "✅" if stage_data.get('status') == 'success' else "❌"
-                duration = stage_data.get('duration_seconds', 0)
-                print(f"   {status_icon} {stage_name}: {duration:.1f}s")
-
-            total_cost = 0
-            for stage_name, stage_data in stages.items():
-                # Cost tracking would need to be extracted from individual stage stats
-                pass
-
+        # Total cost
+        if total_cost > 0:
+            print(f"💰 Total Cost: ${total_cost:.2f}")
             print()
 
-        # Recent errors
-        errors = self.get_debug_errors(limit=3)
-        if errors:
-            print("⚠️  Recent Debug Files:")
-            for error in errors:
-                location = " (old location)" if error.get('old_location') else ""
-                print(f"   • {error['file']}{location}")
+        # Show recent errors/warnings
+        all_errors = []
+        all_warnings = []
+
+        for stage_status in stages_status.values():
+            all_errors.extend(stage_status.errors)
+            all_warnings.extend(stage_status.warnings)
+
+        if all_errors:
+            print("❌ Recent Errors:")
+            for error in all_errors[:3]:
+                stage = error.get('stage', 'unknown')
+                msg = error.get('message', '')
+                page = error.get('page', '')
+                page_str = f" [page {page}]" if page else ""
+                error_detail = error.get('error', '')
+                print(f"   [{stage}]{page_str} {msg}")
+                if error_detail:
+                    print(f"      → {error_detail}")
             print()
 
-        # Latest log file
-        latest_log = self.get_latest_log()
-        if latest_log:
-            print(f"📄 Latest Log: {latest_log.name}")
+        if all_warnings:
+            print("⚠️  Recent Warnings:")
+            for warning in all_warnings[:3]:
+                stage = warning.get('stage', 'unknown')
+                msg = warning.get('message', '')
+                page = warning.get('page', '')
+                page_str = f" [page {page}]" if page else ""
+                print(f"   [{stage}]{page_str} {msg}")
             print()
 
         print("=" * 70)
 
 
-def monitor_pipeline(book_slug: str, refresh_interval: int = 5):
+def monitor_pipeline(scan_id: str, refresh_interval: int = 5):
     """Monitor pipeline with automatic refresh."""
-    monitor = PipelineMonitor(book_slug)
+    monitor = PipelineMonitor(scan_id)
 
-    print(f"Monitoring {book_slug}...")
+    print(f"Monitoring {scan_id}...")
     print(f"Press Ctrl+C to exit")
     print()
 
@@ -326,23 +411,23 @@ def monitor_pipeline(book_slug: str, refresh_interval: int = 5):
         print("\n\nMonitoring stopped.")
 
 
-def print_status(book_slug: str):
+def print_status(scan_id: str):
     """Print status once (no refresh)."""
-    monitor = PipelineMonitor(book_slug)
+    monitor = PipelineMonitor(scan_id)
     monitor.print_status(clear_screen=False)
 
 
 def main():
     """Main entry point for standalone usage."""
     if len(sys.argv) < 2:
-        print("Usage: python tools/monitor.py <book-slug> [refresh-interval]")
-        print("Example: python tools/monitor.py The-Accidental-President 5")
+        print("Usage: python tools/monitor.py <scan-id> [refresh-interval]")
+        print("Example: python tools/monitor.py modest-lovelace 5")
         sys.exit(1)
 
-    book_slug = sys.argv[1]
+    scan_id = sys.argv[1]
     refresh_interval = int(sys.argv[2]) if len(sys.argv) > 2 else 5
 
-    monitor_pipeline(book_slug, refresh_interval)
+    monitor_pipeline(scan_id, refresh_interval)
 
 
 if __name__ == "__main__":

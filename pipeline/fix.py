@@ -25,15 +25,17 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from llm_client import LLMClient
 from logger import create_logger
+from checkpoint import CheckpointManager
 
 
 class Agent4TargetedFix:
     """Agent 4: Make targeted fixes based on Agent 3 feedback."""
 
-    def __init__(self, book_slug: str, max_workers: int = 15):
+    def __init__(self, book_slug: str, max_workers: int = 15, enable_checkpoints: bool = True):
         self.book_slug = book_slug
         self.base_dir = Path.home() / "Documents" / "book_scans" / book_slug
         self.max_workers = max_workers
+        self.enable_checkpoints = enable_checkpoints
 
         # Directories
         self.needs_review_dir = self.base_dir / "needs_review"
@@ -43,6 +45,17 @@ class Agent4TargetedFix:
         logs_dir = self.base_dir / "logs"
         logs_dir.mkdir(exist_ok=True)
         self.logger = create_logger(book_slug, "fix", log_dir=logs_dir)
+
+        # Initialize checkpoint manager
+        if self.enable_checkpoints:
+            self.checkpoint = CheckpointManager(
+                scan_id=book_slug,
+                stage="fix",
+                storage_root=self.base_dir.parent,
+                output_dir="corrected"
+            )
+        else:
+            self.checkpoint = None
 
         # Load API key
         load_dotenv()
@@ -306,15 +319,42 @@ Return the complete corrected text."""
             self.stats['pages_processed'] += 1
             self.stats['pages_fixed'] += 1
 
-    def process_all_flagged(self):
+    def process_all_flagged(self, resume: bool = False):
         """Process all flagged pages."""
         # Get all flagged pages
         flagged_files = sorted(self.needs_review_dir.glob("page_*.json"))
 
+        # Extract page numbers and filter with checkpoint if resuming
+        flagged_pages = []
+        for f in flagged_files:
+            # Extract page number from filename
+            import re
+            match = re.search(r'page_(\d+)\.json', f.name)
+            if match:
+                page_num = int(match.group(1))
+                # Skip if checkpoint says already fixed
+                if resume and self.checkpoint and self.checkpoint.validate_page_output(page_num):
+                    continue
+                flagged_pages.append((page_num, f))
+
+        if not resume and self.checkpoint:
+            self.checkpoint.reset()
+
+        if len(flagged_pages) == 0:
+            self.logger.info("All flagged pages already fixed")
+            print("✅ All flagged pages already fixed!")
+            return
+
+        skipped = len(flagged_files) - len(flagged_pages)
+        if skipped > 0:
+            self.logger.info(f"Resuming: {skipped} pages already fixed", skipped=skipped, remaining=len(flagged_pages))
+            print(f"✅ Resuming: {skipped} pages already fixed")
+
         self.logger.start_stage(
-            flagged_pages=len(flagged_files),
+            flagged_pages=len(flagged_pages),
             max_workers=self.max_workers,
-            model=self.model
+            model=self.model,
+            resume=resume
         )
 
         # Also print for compatibility
@@ -328,27 +368,41 @@ Return the complete corrected text."""
         # Process pages in parallel
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Submit all tasks
-            future_to_file = {
-                executor.submit(self.process_flagged_page, review_file): review_file
-                for review_file in flagged_files
+            future_to_page = {
+                executor.submit(self.process_flagged_page, review_file): (page_num, review_file)
+                for page_num, review_file in flagged_pages
             }
 
             # Process completions as they finish
             completed = 0
-            for future in as_completed(future_to_file):
-                review_file = future_to_file[future]
+            for future in as_completed(future_to_page):
+                page_num, review_file = future_to_page[future]
                 try:
                     future.result()
                     completed += 1
+
+                    # Mark page as completed in checkpoint
+                    if self.checkpoint:
+                        self.checkpoint.mark_completed(page_num, cost_usd=0.0)  # TODO: track actual cost
+
                     self.logger.progress(
                         "Processing flagged pages",
                         current=completed,
-                        total=len(flagged_files)
+                        total=len(flagged_pages),
+                        page=page_num
                     )
                 except Exception as e:
                     self.logger.error(f"Failed to process page", file=review_file.name, error=str(e))
                     with self.stats_lock:
                         self.stats['pages_failed'] += 1
+
+        # Mark stage complete in checkpoint
+        if self.checkpoint:
+            self.checkpoint.mark_stage_complete(metadata={
+                "pages_processed": self.stats['pages_processed'],
+                "pages_fixed": self.stats['pages_fixed'],
+                "total_cost_usd": self.stats['total_cost_usd']
+            })
 
         # Log summary
         self.logger.info(
