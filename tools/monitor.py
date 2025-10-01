@@ -216,16 +216,61 @@ class PipelineMonitor:
 
         print(status_line)
 
-        # Fix Stage
+        # Fix Stage - check if completed from latest report
         fix = progress['fix']
-        fix_icon = "○" if fix['status'] == 'none_needed' else "⏳"
-        fix_status = "None needed" if fix['status'] == 'none_needed' else f"{fix['flagged']} pages flagged"
+        report = self.get_latest_report()
+        fix_completed = False
+        fix_cost = None
+        if report and 'fix' in report.get('stages', {}):
+            fix_stage = report['stages']['fix']
+            if fix_stage.get('status') == 'success':
+                fix_completed = True
+                fix_cost = fix_stage.get('cost_usd', 0)
+
+        if fix_completed:
+            fix_icon = "✅"
+            fix_status = f"{fix['flagged']} pages fixed"
+            if fix_cost:
+                fix_status += f" (${fix_cost:.2f})"
+        elif fix['status'] == 'none_needed':
+            fix_icon = "○"
+            fix_status = "None needed"
+        else:
+            fix_icon = "⏳"
+            fix_status = f"{fix['flagged']} pages flagged"
+
         print(f"{fix_icon} Fix:       {fix_status}")
 
-        # Structure Stage
+        # Structure Stage - check for streaming progress in log
         structure = progress['structure']
-        structure_icon = "✅" if structure['status'] == 'complete' else "⏳"
-        structure_status = "Complete" if structure['status'] == 'complete' else "Pending"
+        structure_tokens = None
+        structure_total = 158687  # Approximate from log
+
+        # Try to get latest token count from log
+        latest_log = self.get_latest_log()
+        if latest_log and latest_log.exists():
+            try:
+                with open(latest_log) as f:
+                    log_content = f.read()
+                    # Find last "Tokens: X..." line
+                    import re
+                    matches = re.findall(r'Tokens: ([\d,]+)', log_content)
+                    if matches:
+                        structure_tokens = int(matches[-1].replace(',', ''))
+            except:
+                pass
+
+        if structure['status'] == 'complete':
+            structure_icon = "✅"
+            structure_status = "Complete"
+        elif structure_tokens:
+            structure_icon = "⏳"
+            pct = (structure_tokens / structure_total * 100)
+            structure_status = f"Generating... {structure_tokens:,} / ~{structure_total:,} tokens ({pct:.0f}%)"
+        else:
+            structure_icon = "⏳"
+            structure_status = "Pending"
+
         print(f"{structure_icon} Structure: {structure_status}")
 
         print()
