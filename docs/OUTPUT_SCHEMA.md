@@ -742,7 +742,7 @@ High-level processing summary:
 
 ```json
 {
-  "book_slug": "modest-lovelace",
+  "book_slug": "accidental-president",
   "book_info": {
     "title": "The Accidental President",
     "author": "A.J. Baime",
