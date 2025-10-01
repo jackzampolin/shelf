@@ -9,6 +9,7 @@ Usage:
     ar correct <book-slug>            # Correction stage only
     ar fix <book-slug>                # Agent 4 fixes only
     ar structure <book-slug>          # Structure stage only
+    ar quality <book-slug>            # Quality review stage only
     ar monitor <book-slug>            # Real-time progress monitoring
     ar review <book-slug> <action>    # Review flagged pages
     ar status <book-slug>             # Quick status check
@@ -19,9 +20,11 @@ Usage:
     ar library ingest <dir>           # Smart ingest: LLM + web search + full setup
     ar library discover <dir>         # Find new PDFs to add
     ar library migrate <folder>       # Migrate existing folder to new naming
+    ar library quality <scan-id>      # Run quality assessment
 
 Examples:
     ar pipeline The-Accidental-President
+    ar quality amazing-pasteur
     ar monitor The-Accidental-President
     ar library list
     ar library ingest ~/Documents/Scans
@@ -48,7 +51,8 @@ def cmd_pipeline(args):
         correct_model=args.correct_model,
         correct_workers=args.correct_workers,
         correct_rate_limit=args.correct_rate_limit,
-        structure_model=args.structure_model
+        structure_model=args.structure_model,
+        quality_model=args.quality_model
     )
 
     return 0 if success else 1
@@ -99,6 +103,15 @@ def cmd_structure(args):
 
     structurer = DeepBookStructurer(args.book_slug, model=args.model)
     structurer.process_book()
+    return 0
+
+
+def cmd_quality(args):
+    """Run quality review stage only."""
+    from pipeline.quality_review import QualityReview
+
+    reviewer = QualityReview(args.book_slug)
+    reviewer.run()
     return 0
 
 
@@ -367,6 +380,16 @@ def cmd_library_migrate(args):
         return 1
 
 
+def cmd_library_quality(args):
+    """Run quality assessment on a scan."""
+    from tools.quality_check import QualityAssessment
+
+    qa = QualityAssessment(args.scan_id)
+    qa.run_full_assessment()
+    qa.print_report()
+    return 0
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -382,9 +405,9 @@ def main():
     pipeline_parser = subparsers.add_parser('pipeline', help='Run full processing pipeline')
     pipeline_parser.add_argument('book_slug', help='Book slug (e.g., The-Accidental-President)')
     pipeline_parser.add_argument('--stages', nargs='+',
-                                choices=['ocr', 'correct', 'fix', 'structure'],
+                                choices=['ocr', 'correct', 'fix', 'structure', 'quality'],
                                 help='Run only specific stages')
-    pipeline_parser.add_argument('--start-from', choices=['ocr', 'correct', 'fix', 'structure'],
+    pipeline_parser.add_argument('--start-from', choices=['ocr', 'correct', 'fix', 'structure', 'quality'],
                                 help='Start from this stage')
     pipeline_parser.add_argument('--ocr-workers', type=int, default=8,
                                 help='OCR parallel workers (default: 8)')
@@ -396,6 +419,8 @@ def main():
                                 help='Correction API calls/min (default: 150)')
     pipeline_parser.add_argument('--structure-model', default='anthropic/claude-sonnet-4.5',
                                 help='Structure model (default: anthropic/claude-sonnet-4.5)')
+    pipeline_parser.add_argument('--quality-model', default='anthropic/claude-sonnet-4.5',
+                                help='Quality review model (default: anthropic/claude-sonnet-4.5)')
     pipeline_parser.set_defaults(func=cmd_pipeline)
 
     # =========================================================================
@@ -445,6 +470,15 @@ def main():
     structure_parser.add_argument('--model', default='anthropic/claude-sonnet-4.5',
                                  help='Model (default: anthropic/claude-sonnet-4.5)')
     structure_parser.set_defaults(func=cmd_structure)
+
+    # =========================================================================
+    # QUALITY command
+    # =========================================================================
+    quality_parser = subparsers.add_parser('quality', help='Run quality review stage only')
+    quality_parser.add_argument('book_slug', help='Book slug')
+    quality_parser.add_argument('--model', default='anthropic/claude-sonnet-4.5',
+                                help='Model (default: anthropic/claude-sonnet-4.5)')
+    quality_parser.set_defaults(func=cmd_quality)
 
     # =========================================================================
     # MONITOR command
@@ -513,6 +547,11 @@ def main():
     migrate_parser.add_argument('--title', help='Book title (optional, will read from metadata)')
     migrate_parser.add_argument('--author', help='Book author (optional, will read from metadata)')
     migrate_parser.set_defaults(func=cmd_library_migrate)
+
+    # library quality
+    quality_parser = library_subparsers.add_parser('quality', help='Run quality assessment on a scan')
+    quality_parser.add_argument('scan_id', help='Scan ID to assess')
+    quality_parser.set_defaults(func=cmd_library_quality)
 
     # Parse and execute
     args = parser.parse_args()

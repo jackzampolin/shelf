@@ -16,17 +16,20 @@ import os
 import sys
 import json
 import requests
+import time
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class Agent4TargetedFix:
     """Agent 4: Make targeted fixes based on Agent 3 feedback."""
 
-    def __init__(self, book_slug: str):
+    def __init__(self, book_slug: str, max_workers: int = 15):
         self.book_slug = book_slug
         self.base_dir = Path.home() / "Documents" / "book_scans" / book_slug
+        self.max_workers = max_workers
 
         # Directories
         self.needs_review_dir = self.base_dir / "needs_review"
@@ -40,7 +43,9 @@ class Agent4TargetedFix:
 
         self.model = "anthropic/claude-3.5-sonnet"
 
-        # Stats
+        # Stats (thread-safe)
+        import threading
+        self.stats_lock = threading.Lock()
         self.stats = {
             "pages_processed": 0,
             "pages_fixed": 0,
@@ -68,21 +73,54 @@ class Agent4TargetedFix:
             "temperature": temperature
         }
 
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
+        # Retry logic for transient errors
+        max_retries = 3
+        retry_delay = 2  # seconds
 
-        result = response.json()
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(url, headers=headers, json=payload, timeout=120)
+                response.raise_for_status()
 
-        # Extract usage for cost tracking
-        usage = result.get('usage', {})
-        prompt_tokens = usage.get('prompt_tokens', 0)
-        completion_tokens = usage.get('completion_tokens', 0)
+                result = response.json()
 
-        # Cost: $3/M input, $15/M output
-        cost = (prompt_tokens / 1_000_000 * 3.0) + (completion_tokens / 1_000_000 * 15.0)
-        self.stats['total_cost_usd'] += cost
+                # Extract usage for cost tracking
+                usage = result.get('usage', {})
+                prompt_tokens = usage.get('prompt_tokens', 0)
+                completion_tokens = usage.get('completion_tokens', 0)
 
-        return result['choices'][0]['message']['content'], usage
+                # Cost: $3/M input, $15/M output
+                cost = (prompt_tokens / 1_000_000 * 3.0) + (completion_tokens / 1_000_000 * 15.0)
+                with self.stats_lock:
+                    self.stats['total_cost_usd'] += cost
+
+                return result['choices'][0]['message']['content'], usage
+
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code >= 500:
+                    # Server error - retry with exponential backoff
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)
+                        print(f"  ⚠️  Server error {e.response.status_code}, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"  ❌ Server error after {max_retries} attempts, skipping this page")
+                        raise
+                else:
+                    # Client error (4xx) - don't retry
+                    raise
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                # Handle both Timeout and ConnectionError (which wraps ReadTimeoutError)
+                if attempt < max_retries - 1:
+                    wait_time = retry_delay * (2 ** attempt)
+                    error_type = "timeout" if isinstance(e, requests.exceptions.Timeout) else "connection error"
+                    print(f"  ⚠️  Request {error_type}, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"  ❌ Request failed after {max_retries} attempts, skipping this page")
+                    raise
 
     def agent4_targeted_fix(self, page_num: int, page_data: dict, corrected_text: str,
                             agent3_feedback: str, missed_corrections: list):
@@ -263,16 +301,26 @@ Return the complete corrected text."""
 
         if not corrected_data:
             print(f"  ✗ Corrected JSON file not found")
-            self.stats['pages_failed'] += 1
+            with self.stats_lock:
+                self.stats['pages_failed'] += 1
+            return
+
+        # Checkpoint: Check if this page was already processed by Agent 4
+        llm_processing = corrected_data.get('llm_processing', {})
+        if 'agent4_fixes' in llm_processing:
+            print(f"  ✓ Already processed (checkpoint found), skipping")
+            with self.stats_lock:
+                self.stats['pages_processed'] += 1
+                self.stats['pages_fixed'] += 1
             return
 
         # Extract corrected text from llm_processing section
-        llm_processing = corrected_data.get('llm_processing', {})
         corrected_text = llm_processing.get('corrected_text', '')
 
         if not corrected_text:
             print(f"  ✗ No corrected_text in JSON")
-            self.stats['pages_failed'] += 1
+            with self.stats_lock:
+                self.stats['pages_failed'] += 1
             return
 
         # Get Agent 3's feedback from the structured JSON
@@ -298,8 +346,9 @@ Return the complete corrected text."""
             missed_corrections
         )
 
-        self.stats['pages_processed'] += 1
-        self.stats['pages_fixed'] += 1
+        with self.stats_lock:
+            self.stats['pages_processed'] += 1
+            self.stats['pages_fixed'] += 1
 
     def process_all_flagged(self):
         """Process all flagged pages."""
@@ -311,13 +360,25 @@ Return the complete corrected text."""
         # Get all flagged pages
         flagged_files = sorted(self.needs_review_dir.glob("page_*.json"))
         print(f"\n📋 Found {len(flagged_files)} pages flagged for review")
+        print(f"⚙️  Processing with {self.max_workers} parallel workers\n")
 
-        for review_file in flagged_files:
-            try:
-                self.process_flagged_page(review_file)
-            except Exception as e:
-                print(f"\n❌ Failed to process {review_file.name}: {e}")
-                self.stats['pages_failed'] += 1
+        # Process pages in parallel
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all tasks
+            future_to_file = {
+                executor.submit(self.process_flagged_page, review_file): review_file
+                for review_file in flagged_files
+            }
+
+            # Process completions as they finish
+            for future in as_completed(future_to_file):
+                review_file = future_to_file[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"\n❌ Failed to process {review_file.name}: {e}")
+                    with self.stats_lock:
+                        self.stats['pages_failed'] += 1
 
         # Print summary
         print("\n" + "=" * 70)

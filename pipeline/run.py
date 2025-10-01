@@ -303,15 +303,50 @@ class BookPipeline:
             self.logger.stage_end("structure", success=False, error=str(e))
             return False
 
+    def run_stage_quality(self, model: str = "anthropic/claude-sonnet-4.5"):
+        """Stage 5: LLM-based quality review."""
+        self.logger.stage_start("quality")
+
+        try:
+            # Import and run quality review
+            from pipeline.quality_review import QualityReview
+
+            reviewer = QualityReview(self.book_slug)
+            report = reviewer.run()
+
+            # Log cost and results
+            cost = report['cost_tracking']['total_cost_usd']
+            self.logger.log(f"Quality review cost: ${cost:.2f}")
+            self.logger.log(f"Overall grade: {report['overall_grade']} ({report['overall_score']}/100)")
+
+            # Persist to metadata
+            from utils import update_book_metadata
+            update_book_metadata(self.book_dir, 'quality', {
+                'model': model,
+                'overall_score': report['overall_score'],
+                'overall_grade': report['overall_grade'],
+                'flagged_issues': len(report['flagged_issues']),
+                'cost_usd': cost
+            })
+
+            self.logger.stage_end("quality", success=True)
+            return True
+
+        except Exception as e:
+            self.logger.log(f"Quality review stage failed: {e}", level="ERROR")
+            self.logger.stage_end("quality", success=False, error=str(e))
+            return False
+
     def run(self, stages: list = None, start_from: str = None,
             ocr_workers: int = 8,
             correct_model: str = "openai/gpt-4o-mini",
             correct_workers: int = 30,
             correct_rate_limit: int = 150,
-            structure_model: str = "anthropic/claude-sonnet-4.5"):
+            structure_model: str = "anthropic/claude-sonnet-4.5",
+            quality_model: str = "anthropic/claude-sonnet-4.5"):
         """Run the complete pipeline or selected stages."""
 
-        available_stages = ['ocr', 'correct', 'fix', 'structure']
+        available_stages = ['ocr', 'correct', 'fix', 'structure', 'quality']
 
         # Determine which stages to run
         if stages:
@@ -329,6 +364,7 @@ class BookPipeline:
         self.logger.log(f"Stages: {', '.join(run_stages)}")
         self.logger.log(f"Correction Model: {correct_model}")
         self.logger.log(f"Structure Model: {structure_model}")
+        self.logger.log(f"Quality Model: {quality_model}")
         self.logger.log("")
 
         # Run each stage
@@ -346,6 +382,8 @@ class BookPipeline:
                 success = self.run_stage_fix()
             elif stage == 'structure':
                 success = self.run_stage_structure(model=structure_model)
+            elif stage == 'quality':
+                success = self.run_stage_quality(model=quality_model)
 
             if not success:
                 self.logger.log(f"Pipeline stopped due to {stage} failure", level="ERROR")
@@ -393,16 +431,17 @@ Stage descriptions:
   ocr      - Extract text from PDFs (Tesseract, ~10 min for 447 pages)
   correct  - 3-agent LLM correction (GPT-4o-mini, ~$0.32, 2-3 hours)
   fix      - Agent 4 targeted fixes (Claude Sonnet, ~$0.01/page flagged)
-  structure- Deep semantic structuring (Claude Sonnet 4, ~$6, 10-20 min)
+  structure- Deep semantic structuring (Claude Sonnet 4.5, ~$0.50, 5-10 min)
+  quality  - LLM quality review (Claude Sonnet 4.5, ~$0.50-1.00, 2-5 min)
         """
     )
 
     parser.add_argument('book_slug', help='Book slug (e.g., The-Accidental-President)')
 
     # Stage control
-    parser.add_argument('--stages', nargs='+', choices=['ocr', 'correct', 'fix', 'structure'],
+    parser.add_argument('--stages', nargs='+', choices=['ocr', 'correct', 'fix', 'structure', 'quality'],
                         help='Run only specific stages')
-    parser.add_argument('--start-from', choices=['ocr', 'correct', 'fix', 'structure'],
+    parser.add_argument('--start-from', choices=['ocr', 'correct', 'fix', 'structure', 'quality'],
                         help='Start from this stage (run all subsequent stages)')
 
     # OCR settings
@@ -421,6 +460,10 @@ Stage descriptions:
     parser.add_argument('--structure-model', default='anthropic/claude-sonnet-4.5',
                         help='Structure model (default: anthropic/claude-sonnet-4.5)')
 
+    # Quality review settings
+    parser.add_argument('--quality-model', default='anthropic/claude-sonnet-4.5',
+                        help='Quality review model (default: anthropic/claude-sonnet-4.5)')
+
     args = parser.parse_args()
 
     # Create and run pipeline
@@ -433,7 +476,8 @@ Stage descriptions:
             correct_model=args.correct_model,
             correct_workers=args.correct_workers,
             correct_rate_limit=args.correct_rate_limit,
-            structure_model=args.structure_model
+            structure_model=args.structure_model,
+            quality_model=args.quality_model
         )
 
         sys.exit(0 if success else 1)
