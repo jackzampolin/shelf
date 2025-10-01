@@ -19,7 +19,7 @@ import sys
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from logger import Logger
+from logger import PipelineLogger
 from checkpoint import CheckpointManager
 
 
@@ -81,7 +81,7 @@ class ParallelProcessor:
         self,
         max_workers: int = 30,
         rate_limit: Optional[int] = None,
-        logger: Optional[Logger] = None,
+        logger: Optional[PipelineLogger] = None,
         checkpoint: Optional[CheckpointManager] = None,
         description: str = "Processing"
     ):
