@@ -26,6 +26,7 @@ class ContentExtractor:
     def __init__(self):
         self.client = LLMClient()
         self.model = "openai/gpt-4o-mini"
+        self.logger = None  # Will be set by parent BookStructurer
 
     # =========================================================================
     # Phase 3: Page Number Extraction (parallel)

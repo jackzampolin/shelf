@@ -20,6 +20,7 @@ class OutputGenerator:
     def __init__(self, book_dir: Path):
         self.book_dir = book_dir
         self.structured_dir = book_dir / "structured"
+        self.logger = None  # Will be set by parent BookStructurer
 
         # Output directories
         self.reading_dir = self.structured_dir / "reading"

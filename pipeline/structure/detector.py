@@ -25,6 +25,7 @@ class StructureDetector:
     def __init__(self):
         self.client = LLMClient()
         self.model = "anthropic/claude-sonnet-4.5"
+        self.logger = None  # Will be set by parent BookStructurer
 
     def detect_structure(self, pages: List[Dict]) -> Dict:
         """
