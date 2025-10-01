@@ -100,6 +100,16 @@ def cmd_fix(args):
 def cmd_structure(args):
     """Run structure stage only."""
     from pipeline.structure import DeepBookStructurer
+    from pathlib import Path
+
+    # Simple checkpoint: check if output already exists
+    book_dir = Path.home() / "Documents" / "book_scans" / args.book_slug
+    metadata_file = book_dir / "structured" / "metadata.json"
+
+    if args.resume and metadata_file.exists():
+        print("✅ Structure already complete")
+        print(f"   Output: {book_dir / 'structured'}")
+        return 0
 
     structurer = DeepBookStructurer(args.book_slug, model=args.model)
     structurer.process_book()
