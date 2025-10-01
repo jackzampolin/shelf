@@ -47,6 +47,7 @@ def cmd_pipeline(args):
     success = pipeline.run(
         stages=args.stages,
         start_from=args.start_from,
+        resume=args.resume,
         ocr_workers=args.ocr_workers,
         correct_model=args.correct_model,
         correct_workers=args.correct_workers,
@@ -99,7 +100,7 @@ def cmd_fix(args):
 
 def cmd_structure(args):
     """Run structure stage only."""
-    from pipeline.structure import DeepBookStructurer
+    from pipeline.structure import BookStructurer
     from pathlib import Path
 
     # Simple checkpoint: check if output already exists
@@ -111,7 +112,7 @@ def cmd_structure(args):
         print(f"   Output: {book_dir / 'structured'}")
         return 0
 
-    structurer = DeepBookStructurer(args.book_slug, model=args.model)
+    structurer = BookStructurer(args.book_slug, model=args.model)
     structurer.process_book()
     return 0
 
@@ -419,6 +420,8 @@ def main():
                                 help='Run only specific stages')
     pipeline_parser.add_argument('--start-from', choices=['ocr', 'correct', 'fix', 'structure', 'quality'],
                                 help='Start from this stage')
+    pipeline_parser.add_argument('--resume', action='store_true',
+                                help='Resume from checkpoints (skip completed pages in all stages)')
     pipeline_parser.add_argument('--ocr-workers', type=int, default=8,
                                 help='OCR parallel workers (default: 8)')
     pipeline_parser.add_argument('--correct-model', default='openai/gpt-4o-mini',
