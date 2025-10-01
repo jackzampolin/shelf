@@ -236,8 +236,16 @@ ar monitor <scan-id>               # Real-time progress with ETA
 
 **Common Patterns:**
 ```bash
-# Add a new book
-ar library discover ~/Downloads
+# Discover available books to ingest
+ar library discover ~/Documents/Scans
+
+# Compare available vs. ingested books
+ar library list                    # See what's already in library
+ar library discover ~/Documents/Scans  # See what PDFs are available
+# Compare the two lists to find books not yet ingested
+
+# Add a new book (run ingest on specific directory)
+ar library ingest ~/Documents/Scans/fiery-peace-1.pdf ~/Documents/Scans/fiery-peace-2.pdf ...
 
 # Process it completely
 ar pipeline modest-lovelace

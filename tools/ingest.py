@@ -51,13 +51,16 @@ def group_batch_pdfs(pdf_paths: List[Path]) -> Dict[str, List[Path]]:
     return dict(groups)
 
 
-def sample_pdf_pages(pdf_path: Path, num_samples: int = 5) -> List[str]:
+def sample_pdf_pages(pdf_path: Path, num_samples: int = 10) -> List[str]:
     """
-    Extract images from strategically sampled pages throughout the PDF.
+    Extract images from the first N pages of a PDF.
+
+    Title pages and copyright pages are almost always in the first few pages,
+    so we sample from the start rather than randomly throughout the document.
 
     Args:
         pdf_path: Path to PDF
-        num_samples: Number of pages to sample (default 5)
+        num_samples: Number of pages to sample from start (default 10)
 
     Returns:
         List of base64-encoded PNG images
@@ -68,17 +71,10 @@ def sample_pdf_pages(pdf_path: Path, num_samples: int = 5) -> List[str]:
     info = pdfinfo_from_path(pdf_path)
     total_pages = info['Pages']
 
-    # Sample pages: first, last, and evenly spaced through middle
-    if total_pages <= num_samples:
-        page_numbers = list(range(1, total_pages + 1))
-    else:
-        page_numbers = [1]  # First page
-        step = (total_pages - 2) // (num_samples - 2)
-        for i in range(1, num_samples - 1):
-            page_numbers.append(1 + i * step)
-        page_numbers.append(total_pages)  # Last page
+    # Sample first N pages (where title/copyright/TOC usually are)
+    page_numbers = list(range(1, min(num_samples + 1, total_pages + 1)))
 
-    print(f"  Sampling pages: {page_numbers}")
+    print(f"  Sampling first {len(page_numbers)} pages: {page_numbers}")
 
     images = []
     for page_num in page_numbers:
@@ -114,37 +110,47 @@ def identify_book_with_llm(pdf_paths: List[Path]) -> Optional[Dict]:
     """
     print(f"  Analyzing {len(pdf_paths)} PDF(s) with LLM...")
 
-    # Sample pages from first PDF
-    images = sample_pdf_pages(pdf_paths[0], num_samples=5)
+    # Sample first 10 pages from first PDF (where title/copyright pages are)
+    images = sample_pdf_pages(pdf_paths[0], num_samples=10)
 
     if not images:
         print("    ✗ No pages extracted")
         return None
 
     # Build prompt
-    prompt = """Analyze these pages from a scanned book and identify:
+    prompt = """Analyze the FIRST PAGES from this scanned book and identify:
 
-1. **Title**: The book's title
+1. **Title**: The complete book title
 2. **Author**: Author name(s)
-3. **Type**: Type of book (biography, history, memoir, etc.)
+3. **Type**: Type of book (biography, history, memoir, political analysis, etc.)
 
-These may be batch scans without title pages. Look for:
-- Running headers/footers with book title or author
-- Chapter titles that hint at subject matter
-- Copyright pages
-- Any visible publication information
+You are looking at the FIRST 10 pages of the book, which typically contain:
+- Title page (usually page 1-3)
+- Copyright page with publisher info
+- Table of contents
+- Dedication or introduction
+
+Look carefully for:
+- Large title text on title page
+- Author name on title page or copyright page
+- Publisher and publication year on copyright page
+- Subtitle or series information
+
+Return ONLY the information you can clearly see. Do not guess based on content.
 
 Return as JSON:
 ```json
 {
-  "title": "Book Title",
-  "author": "Author Name",
+  "title": "Complete Book Title: With Subtitle if Present",
+  "author": "Author Full Name",
   "type": "biography",
-  "confidence": 0.8
+  "confidence": 0.9,
+  "year": 2010,
+  "publisher": "Publisher Name"
 }
 ```
 
-If you can't identify the book, return confidence < 0.5 and your best guess.
+If you cannot find a clear title page, return confidence < 0.5 with null values.
 """
 
     # Build message with images
@@ -189,6 +195,7 @@ If you can't identify the book, return confidence < 0.5 and your best guess.
             return metadata
         else:
             print("    ✗ Failed to parse LLM response")
+            print(f"    Response was: {assistant_message[:200]}...")
             return None
 
     except Exception as e:
@@ -255,24 +262,34 @@ def ingest_book_group(
             if response != 'y':
                 return None
 
-    # Step 2: Get title and author
-    if llm_metadata:
+    # Step 2: Get title and author from LLM, with filename fallback
+    if llm_metadata and llm_metadata.get('confidence', 0) >= 0.5:
+        # Trust LLM if confidence is decent
         title = llm_metadata.get('title', base_name)
         author = llm_metadata.get('author', 'Unknown')
+        year = llm_metadata.get('year', None)
+        publisher = llm_metadata.get('publisher', None)
     else:
-        title = base_name.replace('-', ' ').title()
+        # Fallback to cleaned-up filename
+        title = base_name.replace('-', ' ').replace('_', ' ').title()
         author = 'Unknown'
+        year = None
+        publisher = None
+        print(f"   Using filename as title: {title}")
 
-    # Step 3: Search for additional metadata
+    # Step 3: Search for additional metadata (currently disabled)
     web_metadata = search_book_metadata(title, author)
 
     # Step 4: Present findings and get confirmation
     print(f"\n   📖 Identified:")
-    print(f"      Title:  {title}")
-    print(f"      Author: {author}")
+    print(f"      Title:     {title}")
+    print(f"      Author:    {author}")
+    if year:
+        print(f"      Year:      {year}")
+    if publisher:
+        print(f"      Publisher: {publisher}")
     if web_metadata:
-        print(f"      ISBN:   {web_metadata.get('isbn')}")
-        print(f"      Year:   {web_metadata.get('year')}")
+        print(f"      ISBN:      {web_metadata.get('isbn')}")
 
     if not auto_confirm:
         print("\n   Options:")
@@ -299,11 +316,15 @@ def ingest_book_group(
         elif choice == '3':
             return None
         else:
+            # Prefer LLM-extracted year over web metadata
             isbn = web_metadata.get('isbn') if web_metadata else None
-            year = web_metadata.get('year') if web_metadata else None
+            if not year:
+                year = web_metadata.get('year') if web_metadata else None
     else:
+        # Prefer LLM-extracted year over web metadata
         isbn = web_metadata.get('isbn') if web_metadata else None
-        year = web_metadata.get('year') if web_metadata else None
+        if not year:
+            year = web_metadata.get('year') if web_metadata else None
 
     # Step 5: Generate scan ID
     existing_ids = [
