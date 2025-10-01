@@ -198,11 +198,22 @@ Scan (PDF) → OCR → LLM Correction → Structure → Query API
 
 ### Using the CLI (`ar.py`)
 
-The unified CLI is the main interface. Always use `ar <command>` syntax:
+The unified CLI is the main interface. **CRITICAL: `ar` is shorthand - you MUST actually run `uv run python ar.py <command>`**
+
+Example:
+```bash
+# WRONG (will fail with "ar: illegal option"):
+ar library list
+
+# CORRECT:
+uv run python ar.py library list
+```
+
+For brevity in these docs, we show `ar <command>`, but **always expand it to `uv run python ar.py <command>` in actual commands**.
 
 **Library Management:**
 ```bash
-ar library list                    # See what books exist
+ar library list                    # See what books exist (run as: uv run python ar.py library list)
 ar library show <scan-id>          # Get book details
 ar library stats                   # Collection statistics
 ar library ingest <directory>      # Smart add with LLM metadata
