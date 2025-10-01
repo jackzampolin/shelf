@@ -24,6 +24,10 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from pricing import CostCalculator
+
 
 class DeepBookStructurer:
     """Use LLM to deeply understand and structure entire book in one pass."""
@@ -51,6 +55,9 @@ class DeepBookStructurer:
 
         # Model selection (allow override for cost optimization)
         self.model = model or "anthropic/claude-sonnet-4.5"  # Can use cheaper models
+
+        # Initialize cost calculator with dynamic pricing
+        self.cost_calculator = CostCalculator()
 
         # Stats
         self.stats = {
@@ -99,8 +106,12 @@ class DeepBookStructurer:
             self.stats['input_tokens'] += prompt_tokens
             self.stats['output_tokens'] += completion_tokens
 
-            # Cost: $3/M input, $15/M output (Sonnet 4)
-            cost = (prompt_tokens / 1_000_000 * 3.0) + (completion_tokens / 1_000_000 * 15.0)
+            # Calculate cost using dynamic pricing from OpenRouter API
+            cost = self.cost_calculator.calculate_cost(
+                self.model,
+                prompt_tokens,
+                completion_tokens
+            )
             self.stats['total_cost_usd'] += cost
 
             return result['choices'][0]['message']['content'], usage
@@ -157,8 +168,12 @@ class DeepBookStructurer:
             self.stats['input_tokens'] += usage['prompt_tokens']
             self.stats['output_tokens'] += usage['completion_tokens']
 
-            # Cost estimation
-            cost = (usage['prompt_tokens'] / 1_000_000 * 3.0) + (usage['completion_tokens'] / 1_000_000 * 15.0)
+            # Calculate cost using dynamic pricing from OpenRouter API
+            cost = self.cost_calculator.calculate_cost(
+                self.model,
+                usage['prompt_tokens'],
+                usage['completion_tokens']
+            )
             self.stats['total_cost_usd'] += cost
 
             return complete_response, usage

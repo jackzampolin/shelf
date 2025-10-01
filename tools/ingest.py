@@ -9,6 +9,7 @@ import re
 import json
 import shutil
 import base64
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -17,6 +18,10 @@ from io import BytesIO
 
 import requests
 from pdf2image import convert_from_path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from pricing import CostCalculator
 
 from config import Config
 from tools.library import LibraryIndex
@@ -182,6 +187,18 @@ If you cannot find a clear title page, return confidence < 0.5 with null values.
 
         response.raise_for_status()
         result = response.json()
+
+        # Track cost using dynamic pricing
+        usage = result.get('usage', {})
+        if usage:
+            calc = CostCalculator()
+            cost = calc.calculate_cost(
+                Config.STRUCTURE_MODEL,
+                usage.get('prompt_tokens', 0),
+                usage.get('completion_tokens', 0),
+                num_images=len(images)
+            )
+            print(f"    💰 LLM cost: ${cost:.4f}")
 
         # Extract JSON from response
         assistant_message = result["choices"][0]["message"]["content"]

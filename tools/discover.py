@@ -4,6 +4,7 @@ LLM-powered book discovery from PDF files.
 Scans directories for PDFs and extracts metadata using vision models.
 """
 
+import sys
 import json
 import base64
 from pathlib import Path
@@ -11,6 +12,10 @@ from typing import Dict, Any, List, Optional
 import requests
 from pdf2image import convert_from_path
 from io import BytesIO
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from pricing import CostCalculator
 
 from config import Config
 
@@ -97,6 +102,18 @@ If any field is not found, use null. Be precise and extract exactly what you see
 
         response.raise_for_status()
         result = response.json()
+
+        # Track cost using dynamic pricing
+        usage = result.get('usage', {})
+        if usage:
+            calc = CostCalculator()
+            cost = calc.calculate_cost(
+                Config.STRUCTURE_MODEL,
+                usage.get('prompt_tokens', 0),
+                usage.get('completion_tokens', 0),
+                num_images=len(image_data)
+            )
+            print(f"  💰 LLM cost: ${cost:.4f}")
 
         # Extract and parse response
         assistant_message = result["choices"][0]["message"]["content"]

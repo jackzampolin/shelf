@@ -6,12 +6,18 @@ LLM-based quality assessment of structured books.
 Focuses on artifact detection and research-readiness of final output.
 """
 
+import sys
 import json
 import re
 import requests
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 from datetime import datetime
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from pricing import CostCalculator
+
 from config import Config
 
 
@@ -24,14 +30,13 @@ class QualityReview:
         self.structured_dir = self.book_dir / "structured"
         self.model = "anthropic/claude-sonnet-4.5"
 
+        # Initialize cost calculator with dynamic pricing
+        self.cost_calculator = CostCalculator()
+
         # Cost tracking
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         self.total_cost_usd = 0.0
-
-        # Pricing for Claude Sonnet 4.5
-        self.input_cost_per_1m = 3.00
-        self.output_cost_per_1m = 15.00
 
     def run(self) -> Dict[str, Any]:
         """Run complete quality review focused on research readiness."""
@@ -399,7 +404,7 @@ Respond ONLY with JSON:
         response.raise_for_status()
         result = response.json()
 
-        # Track costs
+        # Track costs using dynamic pricing
         usage = result.get('usage', {})
         input_tokens = usage.get('prompt_tokens', 0)
         output_tokens = usage.get('completion_tokens', 0)
@@ -407,9 +412,13 @@ Respond ONLY with JSON:
         self.total_input_tokens += input_tokens
         self.total_output_tokens += output_tokens
 
-        input_cost = (input_tokens / 1_000_000) * self.input_cost_per_1m
-        output_cost = (output_tokens / 1_000_000) * self.output_cost_per_1m
-        self.total_cost_usd += input_cost + output_cost
+        # Calculate cost using dynamic pricing from OpenRouter API
+        cost = self.cost_calculator.calculate_cost(
+            self.model,
+            input_tokens,
+            output_tokens
+        )
+        self.total_cost_usd += cost
 
         return result['choices'][0]['message']['content']
 

@@ -6,6 +6,7 @@ with parallel processing and rate limiting
 """
 
 import os
+import sys
 import json
 import copy
 import requests
@@ -15,6 +16,10 @@ from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from pricing import CostCalculator
 
 # Load environment variables
 load_dotenv()
@@ -60,6 +65,9 @@ class StructuredPageCorrector:
         self.api_key = os.getenv('OPEN_ROUTER_API_KEY') or os.getenv('OPENROUTER_API_KEY')
         if not self.api_key:
             raise ValueError("OPEN_ROUTER_API_KEY not found in environment")
+
+        # Initialize cost calculator with dynamic pricing
+        self.cost_calculator = CostCalculator()
 
         # Directories
         self.ocr_dir = self.book_dir / "ocr"
@@ -183,9 +191,12 @@ class StructuredPageCorrector:
         prompt_tokens = usage.get('prompt_tokens', 0)
         completion_tokens = usage.get('completion_tokens', 0)
 
-        # Cost estimate for Claude 3.5 Sonnet via OpenRouter
-        # $3/M input, $15/M output
-        cost = (prompt_tokens / 1_000_000 * 3.0) + (completion_tokens / 1_000_000 * 15.0)
+        # Calculate cost using dynamic pricing from OpenRouter API
+        cost = self.cost_calculator.calculate_cost(
+            self.model,
+            prompt_tokens,
+            completion_tokens
+        )
 
         with self.stats_lock:
             self.stats['total_cost_usd'] += cost

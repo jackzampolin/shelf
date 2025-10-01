@@ -22,6 +22,10 @@ from datetime import datetime
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from pricing import CostCalculator
+
 
 class Agent4TargetedFix:
     """Agent 4: Make targeted fixes based on Agent 3 feedback."""
@@ -42,6 +46,9 @@ class Agent4TargetedFix:
             raise ValueError("No OpenRouter API key found in environment")
 
         self.model = "anthropic/claude-3.5-sonnet"
+
+        # Initialize cost calculator with dynamic pricing
+        self.cost_calculator = CostCalculator()
 
         # Stats (thread-safe)
         import threading
@@ -89,8 +96,12 @@ class Agent4TargetedFix:
                 prompt_tokens = usage.get('prompt_tokens', 0)
                 completion_tokens = usage.get('completion_tokens', 0)
 
-                # Cost: $3/M input, $15/M output
-                cost = (prompt_tokens / 1_000_000 * 3.0) + (completion_tokens / 1_000_000 * 15.0)
+                # Calculate cost using dynamic pricing from OpenRouter API
+                cost = self.cost_calculator.calculate_cost(
+                    self.model,
+                    prompt_tokens,
+                    completion_tokens
+                )
                 with self.stats_lock:
                     self.stats['total_cost_usd'] += cost
 
