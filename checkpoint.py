@@ -72,6 +72,9 @@ class CheckpointManager:
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint_file = self.checkpoint_dir / f"{stage}.json"
 
+        # Clean up any orphaned temporary checkpoint files from previous crashes
+        self._cleanup_temp_files()
+
         # Output validation settings
         self.output_dir = output_dir or self._detect_output_dir(stage)
         self.file_pattern = file_pattern
@@ -135,6 +138,21 @@ class CheckpointManager:
             }
         }
 
+    def _cleanup_temp_files(self):
+        """Clean up orphaned temporary checkpoint files from previous crashes."""
+        try:
+            # Look for temp files matching this stage
+            temp_pattern = f"{self.stage}.json.tmp*"
+            for temp_file in self.checkpoint_dir.glob(temp_pattern):
+                try:
+                    temp_file.unlink()
+                except Exception:
+                    # Best effort cleanup - don't fail if we can't delete
+                    pass
+        except Exception:
+            # If cleanup fails entirely, don't crash - it's not critical
+            pass
+
     def _save_checkpoint(self):
         """Save checkpoint with atomic write (must be called with lock held)."""
         import os
@@ -181,12 +199,39 @@ class CheckpointManager:
         if not output_path.exists():
             return False
 
-        # Validate JSON is parseable
+        # Validate JSON is parseable and has expected structure
         try:
             with open(output_path, 'r') as f:
                 data = json.load(f)
-            # Basic sanity check - file should have some content
-            return len(data) > 0
+
+            # Stage-specific validation
+            if self.stage == "ocr":
+                # OCR output must have page_number and regions
+                return ('page_number' in data and
+                        'regions' in data and
+                        isinstance(data['regions'], list) and
+                        len(data['regions']) > 0)
+
+            elif self.stage == "correction":
+                # Correction output must have page_number and llm_processing with corrected_text
+                return ('page_number' in data and
+                        'llm_processing' in data and
+                        'corrected_text' in data.get('llm_processing', {}))
+
+            elif self.stage == "fix":
+                # Fix output must have llm_processing with agent4_fixes
+                # (even if no fixes were needed, the field should exist)
+                return ('llm_processing' in data and
+                        'agent4_fixes' in data.get('llm_processing', {}))
+
+            elif self.stage == "structure":
+                # Structure metadata must have chapters
+                return 'chapters' in data and isinstance(data['chapters'], list)
+
+            else:
+                # Fallback for unknown stages - just check non-empty
+                return len(data) > 0
+
         except Exception:
             return False
 
@@ -280,12 +325,13 @@ class CheckpointManager:
         """
         with self._lock:
             # Add to completed list if not already there
-            if page_num not in self._state['completed_pages']:
+            # Only accumulate cost for newly completed pages
+            is_new_page = page_num not in self._state['completed_pages']
+            if is_new_page:
                 self._state['completed_pages'].append(page_num)
                 self._state['completed_pages'].sort()
-
-            # Update costs
-            self._state['costs']['total_usd'] += cost_usd
+                # Only add cost for new pages (prevents double-counting on idempotent calls)
+                self._state['costs']['total_usd'] += cost_usd
 
             # Update progress
             total = self._state.get('total_pages', 0)
@@ -296,9 +342,9 @@ class CheckpointManager:
                 "percent": (completed / total * 100) if total > 0 else 0
             }
 
-            # Save checkpoint every 10 pages or if significant cost
-            # This is a performance optimization to reduce I/O
-            if completed % 10 == 0 or cost_usd > 0.5:
+            # Save checkpoint every 5 pages or if significant cost
+            # Reduced from 10 to minimize work loss on crashes
+            if completed % 5 == 0 or cost_usd > 0.25:
                 self._save_checkpoint()
 
     def mark_stage_complete(self, metadata: Optional[Dict[str, Any]] = None):

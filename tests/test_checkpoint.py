@@ -91,11 +91,15 @@ def test_checkpoint_save_load_cycle(checkpoint_manager):
 def test_resume_skips_completed_pages(checkpoint_manager, test_storage):
     """Test that resume mode skips already-completed pages."""
     # Create some output files to simulate completed work
+    # Must match correction stage schema (page_number + llm_processing with corrected_text)
     corrected_dir = test_storage / "test-book" / "corrected"
     for page_num in [1, 2, 3]:
         output_file = corrected_dir / f"page_{page_num:04d}.json"
         with open(output_file, 'w') as f:
-            json.dump({"page": page_num, "text": "test"}, f)
+            json.dump({
+                "page_number": page_num,
+                "llm_processing": {"corrected_text": "test content"}
+            }, f)
 
     # Get remaining pages with resume=True
     remaining = checkpoint_manager.get_remaining_pages(
@@ -141,11 +145,14 @@ def test_validation_rejects_missing_files(checkpoint_manager):
 
 def test_validation_accepts_valid_files(checkpoint_manager, test_storage):
     """Test that validation accepts valid output files."""
-    # Create a valid output file
+    # Create a valid output file matching correction stage schema
     corrected_dir = test_storage / "test-book" / "corrected"
     output_file = corrected_dir / "page_0001.json"
     with open(output_file, 'w') as f:
-        json.dump({"page": 1, "text": "valid content"}, f)
+        json.dump({
+            "page_number": 1,
+            "llm_processing": {"corrected_text": "valid content"}
+        }, f)
 
     assert checkpoint_manager.validate_page_output(1) is True
 
@@ -203,8 +210,8 @@ def test_mark_completed_idempotent(checkpoint_manager):
 
     status = checkpoint_manager.get_status()
     assert len(status['completed_pages']) == 1
-    # Note: cost will accumulate, which may be incorrect behavior
-    # This test documents current behavior
+    # Cost should only be counted once (fixed bug)
+    assert status['costs']['total_usd'] == pytest.approx(0.02, rel=1e-2)
 
 
 def test_stage_complete(checkpoint_manager):
@@ -351,12 +358,15 @@ def test_version_mismatch_recovery(checkpoint_manager):
 
 def test_page_range_with_resume(checkpoint_manager, test_storage):
     """Test resume with custom page ranges (start/end)."""
-    # Create output files for pages 5-10
+    # Create output files for pages 5-10 with valid correction schema
     corrected_dir = test_storage / "test-book" / "corrected"
     for page_num in range(5, 11):
         output_file = corrected_dir / f"page_{page_num:04d}.json"
         with open(output_file, 'w') as f:
-            json.dump({"page": page_num, "text": "test"}, f)
+            json.dump({
+                "page_number": page_num,
+                "llm_processing": {"corrected_text": "test content"}
+            }, f)
 
     # Request pages 1-15, but some are already done
     remaining = checkpoint_manager.get_remaining_pages(
@@ -372,27 +382,53 @@ def test_page_range_with_resume(checkpoint_manager, test_storage):
 
 
 def test_incremental_checkpoint_saves(checkpoint_manager):
-    """Test that checkpoints are saved incrementally (every 10 pages)."""
+    """Test that checkpoints are saved incrementally (every 5 pages now)."""
     checkpoint_manager.get_remaining_pages(total_pages=100, resume=False)
 
-    # Mark 9 pages - checkpoint should not auto-save yet
-    for i in range(1, 10):
+    # Mark 4 pages - checkpoint should not auto-save yet
+    for i in range(1, 5):
         checkpoint_manager.mark_completed(page_num=i, cost_usd=0.02)
 
-    # Load new manager - should not see all 9 pages (only if manually flushed)
-    # This is implementation-dependent
+    # Mark 5th page - should trigger auto-save (interval changed from 10 to 5)
+    checkpoint_manager.mark_completed(page_num=5, cost_usd=0.02)
 
-    # Mark 10th page - should trigger auto-save
-    checkpoint_manager.mark_completed(page_num=10, cost_usd=0.02)
-
-    # Load new manager - should see all 10 pages
+    # Load new manager - should see all 5 pages
     new_manager = CheckpointManager(
         scan_id="test-book",
         stage="correction",
         storage_root=checkpoint_manager.storage_root
     )
     status = new_manager.get_status()
-    assert len(status['completed_pages']) == 10
+    assert len(status['completed_pages']) == 5
+
+
+def test_stage_complete_flushes_pending_pages(checkpoint_manager):
+    """Test that mark_stage_complete saves pending pages before completion.
+
+    This is a critical test for the bug fix in mark_stage_complete() that
+    ensures pages completed since the last incremental save are recorded.
+    """
+    checkpoint_manager.get_remaining_pages(total_pages=15, resume=False)
+
+    # Complete 13 pages (not a multiple of 5, so no auto-save on last pages)
+    for i in range(1, 14):
+        checkpoint_manager.mark_completed(page_num=i, cost_usd=0.02)
+
+    # Mark complete WITHOUT explicit flush
+    # The mark_stage_complete should flush pending pages automatically
+    checkpoint_manager.mark_stage_complete()
+
+    # Load new manager - should see all 13 pages
+    new_manager = CheckpointManager(
+        scan_id="test-book",
+        stage="correction",
+        storage_root=checkpoint_manager.storage_root
+    )
+    status = new_manager.get_status()
+    assert len(status['completed_pages']) == 13, \
+        "mark_stage_complete should flush pending pages before marking complete"
+    assert status['status'] == 'completed'
+    assert status['costs']['total_usd'] == pytest.approx(0.26, rel=1e-2)
 
 
 def test_different_stages_separate_checkpoints(test_storage):
@@ -431,11 +467,14 @@ def test_scan_existing_outputs(checkpoint_manager, test_storage):
     """Test scanning output directory for completed pages."""
     corrected_dir = test_storage / "test-book" / "corrected"
 
-    # Create output files for pages 1, 3, 5 (skip 2, 4)
+    # Create output files for pages 1, 3, 5 (skip 2, 4) with valid correction schema
     for page_num in [1, 3, 5]:
         output_file = corrected_dir / f"page_{page_num:04d}.json"
         with open(output_file, 'w') as f:
-            json.dump({"page": page_num, "text": "test"}, f)
+            json.dump({
+                "page_number": page_num,
+                "llm_processing": {"corrected_text": "test content"}
+            }, f)
 
     valid_pages = checkpoint_manager.scan_existing_outputs(total_pages=10)
     assert valid_pages == {1, 3, 5}
