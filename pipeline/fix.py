@@ -104,38 +104,64 @@ class Agent4TargetedFix:
 
         system_prompt = """You are Agent 4, a precision correction specialist.
 
-Your ONLY job is to fix the SPECIFIC errors that Agent 3 identified as "missed" or "incorrectly applied".
+<task>
+Fix ONLY the specific errors that Agent 3 identified as "missed" or "incorrectly applied".
+</task>
 
-CRITICAL RULES:
-1. Make ONLY the corrections explicitly mentioned in Agent 3's feedback
+<critical_rules>
+1. Make ONLY the corrections explicitly mentioned in Agent 3's structured feedback
 2. Do NOT re-analyze the text for new errors
 3. Do NOT modify anything except the specific missed corrections
 4. Preserve ALL existing [CORRECTED:id] markers
 5. Add new corrections with format [FIXED:A4-id]
-6. Return the complete corrected text
+</critical_rules>
 
-OUTPUT FORMAT:
-Return the full corrected text with targeted fixes applied.
-Do NOT wrap in JSON or code blocks - just return the text."""
+<output_format>
+Return the complete corrected text with targeted fixes applied.
+Your response must begin with the first word of the text.
+</output_format>
 
-        # Build detailed correction instructions
-        correction_details = []
-        for i, correction in enumerate(missed_corrections, 1):
-            correction_details.append(f"{i}. {correction}")
+<critical>
+NO preambles or explanations.
+NO JSON or code block wrappers.
+Just return the corrected text starting with the first word.
+</critical>"""
 
-        user_prompt = f"""Fix ONLY these specific missed/incorrect corrections on page {page_num}:
+        # Format corrections as structured list
+        corrections_list = []
+        for i, corr in enumerate(missed_corrections, 1):
+            if isinstance(corr, dict):
+                # Check if this is an incorrectly applied correction (has 'was_changed_to')
+                if 'was_changed_to' in corr:
+                    corrections_list.append(
+                        f"{i}. Revert '{corr.get('was_changed_to', '')}' back to '{corr.get('should_be', '')}' "
+                        f"({corr.get('reason', 'incorrect change')})"
+                    )
+                else:
+                    # Missed correction (has 'original_text')
+                    corrections_list.append(
+                        f"{i}. Change '{corr.get('original_text', '')}' to '{corr.get('should_be', '')}' "
+                        f"({corr.get('location', 'unknown location')})"
+                    )
+            else:
+                # Fallback for string corrections (backward compatibility)
+                corrections_list.append(f"{i}. {corr}")
 
-AGENT 3 FEEDBACK:
-{agent3_feedback}
+        user_prompt = f"""<page_number>{page_num}</page_number>
 
-MISSED/INCORRECT CORRECTIONS TO APPLY:
-{chr(10).join(correction_details)}
+<missed_corrections>
+{chr(10).join(corrections_list)}
+</missed_corrections>
 
-CURRENT TEXT (with existing corrections):
+<current_text>
 {corrected_text}
+</current_text>
 
-Apply ONLY the corrections listed above. Mark new fixes with [FIXED:A4-id].
-Return the complete corrected text."""
+<instructions>
+Apply ONLY the corrections listed in <missed_corrections>.
+Mark new fixes with [FIXED:A4-id].
+Return the complete corrected text.
+</instructions>"""
 
         try:
             response, usage = self.call_llm(system_prompt, user_prompt, temperature=0.0)
@@ -181,77 +207,50 @@ Return the complete corrected text."""
             return corrected_text
 
     def parse_agent3_feedback(self, review_data: dict):
-        """Extract missed corrections from Agent 3 feedback."""
+        """
+        Extract missed corrections from Agent 3's structured feedback.
+
+        Agent 3 now returns structured arrays in verification JSON:
+        - missed_corrections: Array of {error_id, original_text, should_be, location}
+        - incorrectly_applied: Array of {error_id, was_changed_to, should_be, reason}
+        """
         verification = review_data.get("llm_processing", {}).get("verification", {})
-        review_reason = verification.get("review_reason", "")
 
-        # Parse the review reason to extract specific corrections
-        # This uses Agent 3's structured feedback which identifies specific issues
-        missed = []
+        # Check if Agent 3 returned structured arrays (new format)
+        has_structured_data = ("missed_corrections" in verification or
+                              "incorrectly_applied" in verification)
 
-        # Pattern: Classification codes (Page 4)
-        if "Lec" in review_reason and "LCC" in review_reason:
-            missed.append("Change 'Lec' to 'LCC'")
-        if "£814" in review_reason and "E814" in review_reason:
-            missed.append("Change '£814' to 'E814'")
-        if "pvc" in review_reason and "DDC" in review_reason:
-            missed.append("Change 'pvc' to 'DDC'")
+        if has_structured_data:
+            # Extract structured corrections from Agent 3 (new format)
+            missed_corrections = verification.get("missed_corrections", [])
+            incorrectly_applied = verification.get("incorrectly_applied", [])
 
-        # Pattern: Name corrections (Berenstein, Muehlebach, etc.)
-        if "Berenstein" in review_reason and ("second" in review_reason or "following" in review_reason):
-            missed.append("Change remaining instance(s) of 'Berenstein' to 'Bernstein'")
+            # Combine both types into a single list for Agent 4
+            all_corrections = []
 
-        if "Muehlbach" in review_reason and "Muehlebach" in review_reason:
-            missed.append("Change 'Muehlbach' to 'Muehlebach'")
+            # Add missed corrections
+            for corr in missed_corrections:
+                all_corrections.append(corr)
 
-        if "Mamma" in review_reason and "Mama" in review_reason:
-            missed.append("Change remaining instance(s) of 'Mamma' to 'Mama'")
+            # Add incorrectly applied corrections (need to revert)
+            for corr in incorrectly_applied:
+                all_corrections.append(corr)
 
-        # Pattern: Contractions
-        if "'ve'" in review_reason and "I've" in review_reason:
-            missed.append("Change 've' to 'I've'")
-
-        # Pattern: OCR artifacts
-        if "'28'" in review_reason or "OCR artifact '28'" in review_reason:
-            missed.append("Remove the OCR artifact '28' from the beginning")
-
-        if "'Mf'" in review_reason:
-            missed.append("Remove the OCR artifact 'Mf'")
-
-        # Pattern: Offensive terms
-        if "'Jap'" in review_reason and "Japanese" in review_reason:
-            missed.append("Change remaining instance(s) of 'Jap' to 'Japanese'")
-
-        # Pattern: Incorrect corrections that should be reverted
-        if "incorrectly applied" in review_reason.lower():
-            if "beggared" in review_reason and "beggarred" in review_reason:
-                missed.append("Revert 'beggarred' back to 'beggared' (it was correct)")
-            if "Messall" in review_reason and "Messali" in review_reason:
-                missed.append("Revert 'Messali' back to 'Messall' (it was correct)")
-            if "anyhow" in review_reason and "any how" in review_reason:
-                missed.append("Revert 'any how' back to 'anyhow' (it was correct)")
-            if "self-contained" in review_reason:
-                missed.append("Revert 'selfcontained' back to 'self-contained' (hyphen is correct)")
-            if "wardroom" in review_reason and "war room" in review_reason:
-                missed.append("Revert 'war room' back to 'wardroom' (naval term)")
-            if "been been" in review_reason or "duplicate 'been'" in review_reason:
-                missed.append("Remove duplicate 'been' to fix grammar")
-
-        # Pattern: Common OCR errors
-        if "Tbid" in review_reason:
-            missed.append("Change 'Tbid.' to 'Ibid.'")
-        if "Zruman" in review_reason:
-            missed.append("Change 'Zruman' to 'Truman'")
-        if "70°" in review_reason and "degree symbol" in review_reason:
-            missed.append("Remove degree symbol from '70°'")
-        if "box g" in review_reason and "box 9" in review_reason:
-            missed.append("Change remaining 'box g' to 'box 9'")
-
-        # If we couldn't parse specific corrections, use the full reason
-        if not missed:
-            missed.append(f"Review and fix based on Agent 3 feedback: {review_reason[:200]}")
-
-        return missed
+            return all_corrections
+        else:
+            # Fallback: Use review_reason (old format, backward compatibility)
+            review_reason = verification.get("review_reason", "")
+            if review_reason:
+                # Create a simple correction instruction from review_reason
+                return [{
+                    "original_text": "unknown",
+                    "should_be": "unknown",
+                    "location": "unknown",
+                    "fallback_instruction": f"Review and fix based on: {review_reason[:200]}"
+                }]
+            else:
+                # No corrections needed
+                return []
 
     def process_flagged_page(self, review_file: Path):
         """Process a single flagged page."""

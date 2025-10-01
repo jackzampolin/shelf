@@ -268,40 +268,30 @@ class StructuredPageCorrector:
         # Build target text from correctable regions only
         target_text = self.build_page_text(page_data, correctable_regions)
 
-        system_prompt = """You are an OCR error detection specialist. Your job is to identify potential OCR errors in scanned book text.
+        system_prompt = """You are an OCR error detection specialist.
 
-RULES:
+<task>
+Identify potential OCR errors in scanned book text.
+</task>
+
+<rules>
 1. DO NOT fix or correct anything
 2. ONLY identify and catalog potential errors
 3. Focus ONLY on the specified target page text
 4. Use adjacent pages for context but don't report errors from them
 5. Report errors with high confidence (>0.7) only
+</rules>
 
-ERROR TYPES TO DETECT:
+<error_types>
 - Character substitutions (rn→m, l→1, O→0, vv→w)
 - Spacing errors (word run-together, extra spaces)
 - Hyphenated line breaks that should be joined (e.g., "presi-\\ndent")
 - OCR artifacts (|||, ___, etc. that aren't real text)
 - Obvious typos from OCR confusion
+</error_types>
 
-OUTPUT FORMAT:
-Return ONLY valid JSON. Do NOT include:
-- Markdown code blocks (```json)
-- Explanatory text before or after
-- Commentary or analysis
-Start your response with the opening brace {
-
-CORRECT OUTPUT:
-{"page_number": 1, "total_errors_found": 2, "errors": [...]}
-
-WRONG OUTPUT:
-Here's my analysis of page 1:
-```json
-{"page_number": 1, ...}
-```
-
-WRONG OUTPUT:
-I found 2 errors. {"page_number": 1, ...}
+<output_format>
+Return ONLY valid JSON. Start your response with the opening brace {
 
 JSON Structure:
 {
@@ -319,7 +309,15 @@ JSON Structure:
       "context_after": " room"
     }
   ]
-}"""
+}
+</output_format>
+
+<critical>
+NO markdown code blocks (```json).
+NO explanatory text before or after the JSON.
+NO commentary or analysis.
+Start immediately with {
+</critical>"""
 
         # Build context
         context_parts = []
@@ -384,30 +382,34 @@ Return JSON error catalog for page {page_num} only."""
         if errors_count == 0:
             return target_text  # Return original text, not page_data object!
 
-        system_prompt = """You are an OCR correction specialist. Apply ONLY the specific corrections provided in the error catalog.
+        system_prompt = """You are an OCR correction specialist.
 
-RULES:
+<task>
+Apply ONLY the specific corrections provided in the error catalog.
+</task>
+
+<rules>
 1. Apply ONLY the corrections listed in the error catalog
 2. Do NOT make any other changes, improvements, or "fixes"
 3. Preserve all formatting, paragraph breaks, and structure
 4. If a correction seems wrong, apply it anyway (verification will catch it)
 5. Do NOT rephrase or modernize language
 6. Mark each correction with [CORRECTED:id] immediately after the fix
+</rules>
 
-OUTPUT FORMAT:
+<output_format>
 Return ONLY the corrected text with inline [CORRECTED:id] markers.
+Your response must begin with the first word of the text.
+</output_format>
 
-WRONG - Do NOT include preambles:
-"Here's the corrected text:
-The president walked into the[CORRECTED:1] room."
+<critical>
+NO preambles like "Here's the corrected text:"
+NO explanations like "I've applied the corrections as requested."
+Start immediately with the content.
 
-WRONG - Do NOT include explanations:
-"I've applied the corrections as requested. The president walked..."
-
-CORRECT - Start immediately with content:
-"The president walked into the[CORRECTED:1] room."
-
-Your response must begin with the first word of the text, not with any explanation or introduction."""
+CORRECT: "The president walked into the[CORRECTED:1] room."
+WRONG: "Here's the corrected text: The president..."
+</critical>"""
 
         user_prompt = f"""Apply these specific corrections to page {page_num}.
 
@@ -439,41 +441,31 @@ Return the corrected text with [CORRECTED:id] markers after each fix."""
         correctable_regions = self.filter_correctable_regions(page_data)
         original_text = self.build_page_text(page_data, correctable_regions)
 
-        system_prompt = """You are a text verification specialist. Verify that corrections were applied correctly.
+        system_prompt = """You are a text verification specialist.
 
-VERIFICATION CHECKLIST:
+<task>
+Verify that corrections were applied correctly.
+</task>
+
+<verification_checklist>
 1. Were all identified errors corrected?
 2. Were corrections applied accurately?
 3. Were any unauthorized changes made?
 4. Is document structure preserved?
 5. Are there any new errors introduced?
+6. Are [CORRECTED:id] markers present and correctly placed?
+7. Do marker IDs match the error catalog?
+</verification_checklist>
 
-CONFIDENCE SCORING:
+<confidence_scoring>
 - 1.0: Perfect, all corrections applied correctly
 - 0.9: Minor issues, but acceptable
 - 0.8: Some concerns, may need review
 - <0.8: Significant issues, flag for human review
+</confidence_scoring>
 
-ADDITIONAL CHECKLIST:
-6. Are [CORRECTED:id] markers present and correctly placed?
-7. Do marker IDs match the error catalog?
-
-OUTPUT FORMAT:
-Return ONLY valid JSON, no additional text or commentary.
-Do NOT include explanatory text before or after the JSON.
-Start your response with the opening brace {
-
-CORRECT OUTPUT:
-{"page_number": 5, "all_corrections_applied": true, "confidence_score": 1.0, ...}
-
-WRONG OUTPUT:
-I have verified the corrections. Here are my findings:
-{"page_number": 5, ...}
-
-WRONG OUTPUT:
-```json
-{"page_number": 5, ...}
-```
+<output_format>
+Return ONLY valid JSON. Start your response with the opening brace {
 
 JSON Structure:
 {
@@ -484,13 +476,41 @@ JSON Structure:
     "incorrectly_applied": Y,
     "missed": Z
   },
+  "missed_corrections": [
+    {
+      "error_id": N,
+      "original_text": "text that should have been changed",
+      "should_be": "what it should be changed to",
+      "location": "where in the text"
+    }
+  ],
+  "incorrectly_applied": [
+    {
+      "error_id": N,
+      "was_changed_to": "what Agent 2 incorrectly changed it to",
+      "should_be": "what it should actually be",
+      "reason": "why the change was wrong"
+    }
+  ],
   "unauthorized_changes": [],
   "new_errors_introduced": [],
   "structure_preserved": true/false,
   "confidence_score": 0.0-1.0,
   "needs_human_review": true/false,
   "review_reason": "explanation if needed"
-}"""
+}
+</output_format>
+
+<critical>
+NO markdown code blocks (```json).
+NO explanatory text before or after the JSON.
+NO commentary or analysis.
+Start immediately with {
+
+IMPORTANT: If corrections were missed or incorrectly applied, populate the
+"missed_corrections" and "incorrectly_applied" arrays with specific details.
+This structured data will be used by Agent 4 for targeted fixes.
+</critical>"""
 
         user_prompt = f"""Verify corrections for page {page_num}.
 
