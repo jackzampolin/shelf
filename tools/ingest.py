@@ -21,7 +21,7 @@ from pdf2image import convert_from_path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from pricing import CostCalculator
+from llm_client import LLMClient
 
 from config import Config
 from tools.library import LibraryIndex
@@ -169,39 +169,23 @@ If you cannot find a clear title page, return confidence < 0.5 with null values.
         })
 
     try:
-        # Call OpenRouter API
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {Config.OPEN_ROUTER_API_KEY}",
-                "HTTP-Referer": Config.OPEN_ROUTER_SITE_URL,
-                "X-Title": Config.OPEN_ROUTER_SITE_NAME,
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": Config.STRUCTURE_MODEL,  # Claude Sonnet 4.5
-                "messages": [{"role": "user", "content": content}]
-            },
-            timeout=60
+        # Use unified LLMClient with vision support
+        client = LLMClient()
+
+        messages = [{"role": "user", "content": content}]
+
+        response, usage, cost = client.call(
+            Config.STRUCTURE_MODEL,
+            messages,
+            temperature=0.0,
+            timeout=60,
+            images=[]  # Images already in content
         )
 
-        response.raise_for_status()
-        result = response.json()
-
-        # Track cost using dynamic pricing
-        usage = result.get('usage', {})
-        if usage:
-            calc = CostCalculator()
-            cost = calc.calculate_cost(
-                Config.STRUCTURE_MODEL,
-                usage.get('prompt_tokens', 0),
-                usage.get('completion_tokens', 0),
-                num_images=len(images)
-            )
-            print(f"    💰 LLM cost: ${cost:.4f}")
+        print(f"    💰 LLM cost: ${cost:.4f}")
 
         # Extract JSON from response
-        assistant_message = result["choices"][0]["message"]["content"]
+        assistant_message = response
         metadata = extract_json_from_text(assistant_message)
 
         if metadata:

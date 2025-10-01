@@ -15,8 +15,7 @@ Strategy: Highly focused, surgical corrections based on explicit feedback.
 import os
 import sys
 import json
-import requests
-import time
+import threading
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
@@ -24,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from pricing import CostCalculator
+from llm_client import LLMClient
 
 
 class Agent4TargetedFix:
@@ -41,17 +40,13 @@ class Agent4TargetedFix:
 
         # Load API key
         load_dotenv()
-        self.api_key = os.getenv('OPEN_ROUTER_API_KEY') or os.getenv('OPENROUTER_API_KEY')
-        if not self.api_key:
-            raise ValueError("No OpenRouter API key found in environment")
 
         self.model = "anthropic/claude-3.5-sonnet"
 
-        # Initialize cost calculator with dynamic pricing
-        self.cost_calculator = CostCalculator()
+        # Initialize LLM client
+        self.llm_client = LLMClient()
 
         # Stats (thread-safe)
-        import threading
         self.stats_lock = threading.Lock()
         self.stats = {
             "pages_processed": 0,
@@ -61,77 +56,22 @@ class Agent4TargetedFix:
         }
 
     def call_llm(self, system_prompt: str, user_prompt: str, temperature=0.0):
-        """Make API call to OpenRouter."""
-        url = "https://openrouter.ai/api/v1/chat/completions"
+        """Make API call to OpenRouter with automatic retries."""
+        # Use unified LLMClient (has built-in retry logic)
+        response, usage, cost = self.llm_client.simple_call(
+            self.model,
+            system_prompt,
+            user_prompt,
+            temperature=temperature,
+            timeout=120,
+            max_retries=3
+        )
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/jackzampolin/ar-research",
-            "X-Title": "AR Research Agent 4 Fixes"
-        }
+        # Track cost
+        with self.stats_lock:
+            self.stats['total_cost_usd'] += cost
 
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "temperature": temperature
-        }
-
-        # Retry logic for transient errors
-        max_retries = 3
-        retry_delay = 2  # seconds
-
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(url, headers=headers, json=payload, timeout=120)
-                response.raise_for_status()
-
-                result = response.json()
-
-                # Extract usage for cost tracking
-                usage = result.get('usage', {})
-                prompt_tokens = usage.get('prompt_tokens', 0)
-                completion_tokens = usage.get('completion_tokens', 0)
-
-                # Calculate cost using dynamic pricing from OpenRouter API
-                cost = self.cost_calculator.calculate_cost(
-                    self.model,
-                    prompt_tokens,
-                    completion_tokens
-                )
-                with self.stats_lock:
-                    self.stats['total_cost_usd'] += cost
-
-                return result['choices'][0]['message']['content'], usage
-
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code >= 500:
-                    # Server error - retry with exponential backoff
-                    if attempt < max_retries - 1:
-                        wait_time = retry_delay * (2 ** attempt)
-                        print(f"  ⚠️  Server error {e.response.status_code}, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})...")
-                        time.sleep(wait_time)
-                        continue
-                    else:
-                        print(f"  ❌ Server error after {max_retries} attempts, skipping this page")
-                        raise
-                else:
-                    # Client error (4xx) - don't retry
-                    raise
-            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-                # Handle both Timeout and ConnectionError (which wraps ReadTimeoutError)
-                if attempt < max_retries - 1:
-                    wait_time = retry_delay * (2 ** attempt)
-                    error_type = "timeout" if isinstance(e, requests.exceptions.Timeout) else "connection error"
-                    print(f"  ⚠️  Request {error_type}, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})...")
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    print(f"  ❌ Request failed after {max_retries} attempts, skipping this page")
-                    raise
+        return response, usage
 
     def agent4_targeted_fix(self, page_num: int, page_data: dict, corrected_text: str,
                             agent3_feedback: str, missed_corrections: list):

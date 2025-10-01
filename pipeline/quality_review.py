@@ -9,14 +9,13 @@ Focuses on artifact detection and research-readiness of final output.
 import sys
 import json
 import re
-import requests
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 from datetime import datetime
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from pricing import CostCalculator
+from llm_client import LLMClient
 
 from config import Config
 
@@ -30,8 +29,8 @@ class QualityReview:
         self.structured_dir = self.book_dir / "structured"
         self.model = "anthropic/claude-sonnet-4.5"
 
-        # Initialize cost calculator with dynamic pricing
-        self.cost_calculator = CostCalculator()
+        # Initialize LLM client
+        self.llm_client = LLMClient()
 
         # Cost tracking
         self.total_input_tokens = 0
@@ -376,51 +375,22 @@ Respond ONLY with JSON:
 
     def _call_llm(self, prompt: str) -> str:
         """Call LLM API for quality assessment."""
+        # Use unified LLMClient
+        messages = [{"role": "user", "content": prompt}]
 
-        headers = {
-            "Authorization": f"Bearer {Config.OPEN_ROUTER_API_KEY}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/jackzampolin/ar-research",
-        }
-
-        payload = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "temperature": 0.3,
-        }
-
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=payload,
+        response, usage, cost = self.llm_client.call(
+            self.model,
+            messages,
+            temperature=0.3,
             timeout=300
         )
 
-        response.raise_for_status()
-        result = response.json()
-
-        # Track costs using dynamic pricing
-        usage = result.get('usage', {})
-        input_tokens = usage.get('prompt_tokens', 0)
-        output_tokens = usage.get('completion_tokens', 0)
-
-        self.total_input_tokens += input_tokens
-        self.total_output_tokens += output_tokens
-
-        # Calculate cost using dynamic pricing from OpenRouter API
-        cost = self.cost_calculator.calculate_cost(
-            self.model,
-            input_tokens,
-            output_tokens
-        )
+        # Track costs
+        self.total_input_tokens += usage.get('prompt_tokens', 0)
+        self.total_output_tokens += usage.get('completion_tokens', 0)
         self.total_cost_usd += cost
 
-        return result['choices'][0]['message']['content']
+        return response
 
 
 def main():

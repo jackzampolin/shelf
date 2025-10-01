@@ -9,7 +9,6 @@ import os
 import sys
 import json
 import copy
-import requests
 import time
 import threading
 from pathlib import Path
@@ -19,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from pricing import CostCalculator
+from llm_client import LLMClient
 
 # Load environment variables
 load_dotenv()
@@ -61,13 +60,8 @@ class StructuredPageCorrector:
         self.max_workers = max_workers
         self.rate_limiter = RateLimiter(calls_per_minute)
 
-        # Get API key
-        self.api_key = os.getenv('OPEN_ROUTER_API_KEY') or os.getenv('OPENROUTER_API_KEY')
-        if not self.api_key:
-            raise ValueError("OPEN_ROUTER_API_KEY not found in environment")
-
-        # Initialize cost calculator with dynamic pricing
-        self.cost_calculator = CostCalculator()
+        # Initialize LLM client
+        self.llm_client = LLMClient()
 
         # Directories
         self.ocr_dir = self.book_dir / "ocr"
@@ -163,45 +157,20 @@ class StructuredPageCorrector:
         """Make API call to OpenRouter with rate limiting"""
         self.rate_limiter.wait()
 
-        url = "https://openrouter.ai/api/v1/chat/completions"
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/jackzampolin/ar-research",
-            "X-Title": "AR Research OCR Cleanup"
-        }
-
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "temperature": temperature
-        }
-
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-
-        result = response.json()
-
-        # Extract usage info for cost tracking
-        usage = result.get('usage', {})
-        prompt_tokens = usage.get('prompt_tokens', 0)
-        completion_tokens = usage.get('completion_tokens', 0)
-
-        # Calculate cost using dynamic pricing from OpenRouter API
-        cost = self.cost_calculator.calculate_cost(
+        # Use unified LLMClient
+        response, usage, cost = self.llm_client.simple_call(
             self.model,
-            prompt_tokens,
-            completion_tokens
+            system_prompt,
+            user_prompt,
+            temperature=temperature,
+            timeout=60
         )
 
+        # Track cost
         with self.stats_lock:
             self.stats['total_cost_usd'] += cost
 
-        return result['choices'][0]['message']['content'], usage
+        return response, usage
 
     def load_page_json(self, page_num):
         """Load structured JSON for a page"""
