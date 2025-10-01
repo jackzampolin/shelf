@@ -137,16 +137,34 @@ class CheckpointManager:
 
     def _save_checkpoint(self):
         """Save checkpoint with atomic write (must be called with lock held)."""
+        import os
+
         # Update timestamp
         self._state['updated_at'] = datetime.now().isoformat()
 
-        # Write to temp file first
         temp_file = self.checkpoint_file.with_suffix('.json.tmp')
-        with open(temp_file, 'w') as f:
-            json.dump(self._state, f, indent=2)
 
-        # Atomic rename
-        temp_file.replace(self.checkpoint_file)
+        try:
+            # Write to temp file
+            with open(temp_file, 'w') as f:
+                json.dump(self._state, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())  # Force OS to write
+
+            # Validate temp file is valid JSON before replacing
+            with open(temp_file, 'r') as f:
+                json.load(f)  # Throws if corrupt
+
+            # Atomic rename
+            temp_file.replace(self.checkpoint_file)
+
+        except Exception as e:
+            # Clean up temp file on failure
+            if temp_file.exists():
+                temp_file.unlink()
+            # Log but don't crash - checkpoint save is best-effort
+            import logging
+            logging.error(f"Failed to save checkpoint for {self.scan_id}/{self.stage}: {e}")
 
     def validate_page_output(self, page_num: int) -> bool:
         """
@@ -279,6 +297,7 @@ class CheckpointManager:
             }
 
             # Save checkpoint every 10 pages or if significant cost
+            # This is a performance optimization to reduce I/O
             if completed % 10 == 0 or cost_usd > 0.5:
                 self._save_checkpoint()
 
@@ -286,16 +305,24 @@ class CheckpointManager:
         """
         Mark stage as complete.
 
+        CRITICAL: This saves any pending checkpoint updates before marking complete.
+        This ensures pages completed since the last incremental save are recorded.
+
         Args:
             metadata: Optional metadata to store with completion
         """
         with self._lock:
+            # CRITICAL FIX: Save current state first to capture any pending updates
+            # This ensures pages completed since last incremental save are recorded
+            self._save_checkpoint()
+
             self._state['status'] = 'completed'
             self._state['completed_at'] = datetime.now().isoformat()
 
             if metadata:
                 self._state['metadata'].update(metadata)
 
+            # Save again with completion status
             self._save_checkpoint()
 
     def mark_stage_failed(self, error: str):
@@ -315,6 +342,16 @@ class CheckpointManager:
         """Reset checkpoint to initial state."""
         with self._lock:
             self._state = self._create_new_checkpoint()
+            self._save_checkpoint()
+
+    def flush(self):
+        """
+        Force save of current checkpoint state.
+
+        Use this before critical operations or when you want to ensure
+        the checkpoint is persisted (e.g., before shutdown).
+        """
+        with self._lock:
             self._save_checkpoint()
 
     def get_status(self) -> Dict[str, Any]:
@@ -363,32 +400,3 @@ class CheckpointManager:
                 return f"❌ Failed - {progress['completed']} pages completed before failure"
             else:
                 return "○ Not started"
-
-
-# Context manager for convenient checkpoint usage
-class checkpoint_scope:
-    """
-    Context manager for checkpoint operations.
-
-    Usage:
-        with checkpoint_scope(scan_id, stage) as checkpoint:
-            pages = checkpoint.get_remaining_pages(447, resume=True)
-            for page in pages:
-                process_page(page)
-                checkpoint.mark_completed(page, cost=0.02)
-    """
-
-    def __init__(self, scan_id: str, stage: str, **kwargs):
-        self.checkpoint = CheckpointManager(scan_id, stage, **kwargs)
-
-    def __enter__(self):
-        return self.checkpoint
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is None:
-            # Normal exit - mark as complete
-            self.checkpoint.mark_stage_complete()
-        else:
-            # Exception occurred - mark as failed
-            self.checkpoint.mark_stage_failed(str(exc_val))
-        return False
