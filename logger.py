@@ -8,11 +8,37 @@ Provides structured JSON logging with:
 - Context preservation (scan_id, stage, page numbers)
 - Machine-parseable logs for monitoring
 - Backward compatible with print statements
+
+LOG FILE LOCATIONS:
+  ~/Documents/book_scans/<scan-id>/logs/{stage}_{timestamp}.jsonl
+
+JSON SCHEMA:
+  Required fields: timestamp, level, message, scan_id, stage
+  Optional fields: page, progress, cost_usd, tokens, duration_seconds, error
+
+USAGE:
+  # Preferred: Context manager (auto-cleanup)
+  with create_logger('scan-id', 'stage') as logger:
+      logger.info('Processing...', page=42)
+      logger.progress('Pages', current=10, total=100)
+
+  # Alternative: Manual cleanup
+  logger = create_logger('scan-id', 'stage')
+  try:
+      logger.info('Processing...')
+  finally:
+      logger.close()
+
+THREAD SAFETY:
+  - Logging calls are thread-safe (uses Python logging module)
+  - Context modifications are protected by internal lock
+  - File writes are atomic per log entry
 """
 
 import json
 import logging
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -47,8 +73,6 @@ class JSONFormatter(logging.Formatter):
             log_data['duration_seconds'] = record.duration_seconds
         if hasattr(record, 'error'):
             log_data['error'] = record.error
-        if hasattr(record, 'extra'):
-            log_data.update(record.extra)
 
         return json.dumps(log_data)
 
@@ -128,6 +152,7 @@ class PipelineLogger:
         self.scan_id = scan_id
         self.stage = stage
         self.context = {}  # Additional context to include in all logs
+        self._context_lock = threading.Lock()  # Thread-safe context modifications
 
         # Setup log directory
         if log_dir is None:
@@ -135,11 +160,12 @@ class PipelineLogger:
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create logger
-        logger_name = f"pipeline.{scan_id}.{stage}"
+        # Create logger with unique name to avoid handler accumulation
+        # Use instance id to ensure each PipelineLogger gets its own logging.Logger
+        logger_name = f"pipeline.{scan_id}.{stage}.{id(self)}"
         self.logger = logging.getLogger(logger_name)
         self.logger.setLevel(getattr(logging, level.upper()))
-        self.logger.handlers.clear()  # Clear any existing handlers
+        self.logger.propagate = False  # Don't propagate to parent loggers
 
         # Console handler (human-readable)
         if console_output:
@@ -160,13 +186,14 @@ class PipelineLogger:
 
     def _log(self, level: str, message: str, **kwargs):
         """Internal logging method with context."""
-        # Merge context with kwargs
-        extra = {
-            'scan_id': self.scan_id,
-            'stage': self.stage,
-            **self.context,
-            **kwargs
-        }
+        # Merge context with kwargs (thread-safe)
+        with self._context_lock:
+            extra = {
+                'scan_id': self.scan_id,
+                'stage': self.stage,
+                **self.context.copy(),  # Safe copy under lock
+                **kwargs
+            }
 
         # Create LogRecord with extra attributes
         self.logger.log(
@@ -211,7 +238,7 @@ class PipelineLogger:
             total: Total items
             **kwargs: Additional context (cost_usd, tokens, etc.)
         """
-        percent = (current / total * 100) if total > 0 else 0
+        percent = min(100.0, (current / total * 100) if total > 0 else 0)
         progress_data = {
             'current': current,
             'total': total,
@@ -261,12 +288,36 @@ class PipelineLogger:
             self.context = old_context
 
     def set_context(self, **context):
-        """Permanently add context to all future logs."""
-        self.context.update(context)
+        """Permanently add context to all future logs (thread-safe)."""
+        with self._context_lock:
+            self.context.update(context)
 
     def clear_context(self):
-        """Clear all context."""
-        self.context = {}
+        """Clear all context (thread-safe)."""
+        with self._context_lock:
+            self.context = {}
+
+    def close(self):
+        """Close all handlers and flush logs."""
+        for handler in self.logger.handlers[:]:
+            handler.close()
+            self.logger.removeHandler(handler)
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with cleanup."""
+        self.close()
+        return False
+
+    def __del__(self):
+        """Cleanup on garbage collection."""
+        try:
+            self.close()
+        except:
+            pass  # Ignore errors during cleanup
 
 
 def create_logger(
