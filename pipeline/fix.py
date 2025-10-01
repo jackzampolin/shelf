@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from llm_client import LLMClient
+from logger import create_logger
 
 
 class Agent4TargetedFix:
@@ -37,6 +38,11 @@ class Agent4TargetedFix:
         # Directories
         self.needs_review_dir = self.base_dir / "needs_review"
         self.corrected_dir = self.base_dir / "corrected"
+
+        # Initialize logger
+        logs_dir = self.base_dir / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        self.logger = create_logger(book_slug, "fix", log_dir=logs_dir)
 
         # Load API key
         load_dotenv()
@@ -81,7 +87,7 @@ class Agent4TargetedFix:
         This agent does NOT re-analyze the entire page. It ONLY fixes the
         specific issues that Agent 3 identified as missed.
         """
-        print(f"  Agent 4: Applying targeted fixes...")
+        self.logger.info("Applying targeted fixes", page=page_num, agent="agent4", missed_count=len(missed_corrections))
 
         system_prompt = """You are Agent 4, a precision correction specialist.
 
@@ -137,11 +143,11 @@ Return the complete corrected text."""
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(page_data, f, indent=2, default=str)
 
-            print(f"    ✓ Applied {len(missed_corrections)} targeted fixes")
+            self.logger.info(f"Applied {len(missed_corrections)} targeted fixes", page=page_num, fixes_applied=len(missed_corrections))
             return response
 
         except Exception as e:
-            print(f"    ✗ Error in Agent 4: {e}")
+            self.logger.error("Agent 4 error", page=page_num, error=str(e))
             import traceback
             traceback.print_exc()
 
@@ -240,7 +246,7 @@ Return the complete corrected text."""
             review_data = json.load(f)
 
         page_num = review_data.get("page_number")
-        print(f"\n📄 Processing page {page_num}...")
+        self.logger.info(f"Processing flagged page {page_num}", page=page_num)
 
         # Load corrected page from flat directory
         corrected_file = self.corrected_dir / f"page_{page_num:04d}.json"
@@ -251,7 +257,7 @@ Return the complete corrected text."""
             corrected_data = None
 
         if not corrected_data:
-            print(f"  ✗ Corrected JSON file not found")
+            self.logger.error("Corrected JSON file not found", page=page_num)
             with self.stats_lock:
                 self.stats['pages_failed'] += 1
             return
@@ -259,7 +265,7 @@ Return the complete corrected text."""
         # Checkpoint: Check if this page was already processed by Agent 4
         llm_processing = corrected_data.get('llm_processing', {})
         if 'agent4_fixes' in llm_processing:
-            print(f"  ✓ Already processed (checkpoint found), skipping")
+            self.logger.info("Already processed (checkpoint found), skipping", page=page_num)
             with self.stats_lock:
                 self.stats['pages_processed'] += 1
                 self.stats['pages_fixed'] += 1
@@ -269,7 +275,7 @@ Return the complete corrected text."""
         corrected_text = llm_processing.get('corrected_text', '')
 
         if not corrected_text:
-            print(f"  ✗ No corrected_text in JSON")
+            self.logger.error("No corrected_text in JSON", page=page_num)
             with self.stats_lock:
                 self.stats['pages_failed'] += 1
             return
@@ -280,12 +286,11 @@ Return the complete corrected text."""
         agent3_feedback = verification.get("review_reason", "")
         confidence = verification.get("confidence_score", 0.0)
 
-        print(f"  Original confidence: {confidence:.2f}")
-        print(f"  Agent 3 feedback: {agent3_feedback[:100]}...")
+        self.logger.info(f"Agent 3 feedback", page=page_num, original_confidence=confidence, feedback_preview=agent3_feedback[:100])
 
         # Parse missed corrections
         missed_corrections = self.parse_agent3_feedback(review_data)
-        print(f"  Identified {len(missed_corrections)} missed corrections")
+        self.logger.info(f"Identified {len(missed_corrections)} missed corrections", page=page_num, missed_count=len(missed_corrections))
 
         # Apply targeted fixes (pass corrected_data so we can update the full JSON)
         # Metadata is stored in the JSON's llm_processing.agent4_fixes section
@@ -303,13 +308,20 @@ Return the complete corrected text."""
 
     def process_all_flagged(self):
         """Process all flagged pages."""
+        # Get all flagged pages
+        flagged_files = sorted(self.needs_review_dir.glob("page_*.json"))
+
+        self.logger.start_stage(
+            flagged_pages=len(flagged_files),
+            max_workers=self.max_workers,
+            model=self.model
+        )
+
+        # Also print for compatibility
         print("=" * 70)
         print("🔧 Agent 4: Targeted Fixes")
         print(f"   Book: {self.book_slug}")
         print("=" * 70)
-
-        # Get all flagged pages
-        flagged_files = sorted(self.needs_review_dir.glob("page_*.json"))
         print(f"\n📋 Found {len(flagged_files)} pages flagged for review")
         print(f"⚙️  Processing with {self.max_workers} parallel workers\n")
 
@@ -322,14 +334,30 @@ Return the complete corrected text."""
             }
 
             # Process completions as they finish
+            completed = 0
             for future in as_completed(future_to_file):
                 review_file = future_to_file[future]
                 try:
                     future.result()
+                    completed += 1
+                    self.logger.progress(
+                        "Processing flagged pages",
+                        current=completed,
+                        total=len(flagged_files)
+                    )
                 except Exception as e:
-                    print(f"\n❌ Failed to process {review_file.name}: {e}")
+                    self.logger.error(f"Failed to process page", file=review_file.name, error=str(e))
                     with self.stats_lock:
                         self.stats['pages_failed'] += 1
+
+        # Log summary
+        self.logger.info(
+            "Agent 4 processing complete",
+            pages_processed=self.stats['pages_processed'],
+            pages_fixed=self.stats['pages_fixed'],
+            pages_failed=self.stats['pages_failed'],
+            total_cost_usd=self.stats['total_cost_usd']
+        )
 
         # Print summary
         print("\n" + "=" * 70)
