@@ -3,7 +3,7 @@
 ## First Things First
 
 When starting any session:
-1. Run `tree -L 2` to see current repo structure
+1. Run `tree -L 2 --gitignore` to see current repo structure
 2. Check `git status` for current state
 3. Review open issues on GitHub
 4. Check the project board for priorities

@@ -34,24 +34,28 @@ ls ~/Documents/Scans/
 # ...
 ```
 
-### 2. Ingest Books into Library
+### 2. Add Books to Library
 
 ```bash
-# Smart ingestion with LLM metadata extraction
-ar library ingest ~/Documents/Scans/*.pdf
+# Add book(s) with automatic metadata extraction
+ar add ~/Documents/Scans/accidental-president-*.pdf
 
 # This will:
 # - Analyze first 10 pages with vision LLM
 # - Extract title, author, metadata
-# - Create scan folder with random ID (e.g., "modest-lovelace")
+# - Create scan folder with slugified ID (e.g., "accidental-president")
+# - Combine multi-part PDFs automatically
 # - Register in library.json
+
+# Or specify custom ID:
+ar add ~/Documents/Scans/*.pdf --id my-custom-name
 ```
 
-### 3. Run Full Pipeline
+### 3. Process Books
 
 ```bash
 # Process entire book through all 4 stages
-ar pipeline <scan-id>
+ar process <scan-id>
 
 # Stages:
 # 1. OCR - Tesseract extraction
@@ -105,11 +109,11 @@ ar structure <scan-id>     # Stage 4: Semantic structuring
 ### Monitor Progress
 
 ```bash
-# Real-time monitoring with ETA
-ar monitor <scan-id>
-
 # Quick status check
 ar status <scan-id>
+
+# Live monitoring with real-time updates
+ar status <scan-id> --watch
 ```
 
 ### Review Flagged Pages

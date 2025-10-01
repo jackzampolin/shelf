@@ -126,8 +126,24 @@ def cmd_quality(args):
     return 0
 
 
+def cmd_status(args):
+    """Check processing status (optionally with live monitoring)."""
+    from tools.monitor import monitor_pipeline, print_status
+
+    if args.watch:
+        # Live monitoring
+        monitor_pipeline(args.book_slug, refresh_interval=args.refresh)
+    else:
+        # Quick status snapshot
+        print_status(args.book_slug)
+
+    return 0
+
+
 def cmd_monitor(args):
-    """Real-time progress monitoring."""
+    """Real-time progress monitoring (deprecated - use 'status --watch')."""
+    print("⚠️  'ar monitor' is deprecated. Please use 'ar status --watch' instead.\n")
+
     from tools.monitor import monitor_pipeline
 
     monitor_pipeline(args.book_slug, refresh_interval=args.refresh)
@@ -144,14 +160,6 @@ def cmd_review(args):
         sys.argv.append(f'--page={args.page}')
 
     review_main()
-    return 0
-
-
-def cmd_status(args):
-    """Quick status check."""
-    from tools.monitor import print_status
-
-    print_status(args.book_slug)
     return 0
 
 
@@ -280,8 +288,26 @@ def cmd_library_stats(args):
     return 0
 
 
+def cmd_add(args):
+    """Add book(s) to library with metadata extraction."""
+    from tools.ingest import ingest_from_directories
+
+    # Convert PDF paths to list
+    pdf_paths = [Path(p).expanduser() for p in args.pdfs]
+
+    # Group by parent directory
+    directories = list(set(p.parent for p in pdf_paths))
+
+    scan_ids = ingest_from_directories(directories, auto_confirm=args.yes)
+
+    return 0 if scan_ids else 1
+
+
 def cmd_library_ingest(args):
-    """Smart ingest with LLM + web search."""
+    """Smart ingest with LLM + web search (deprecated - use 'ar add' instead)."""
+    print("⚠️  'ar library ingest' is deprecated. Please use 'ar add' instead.")
+    print("   Example: ar add ~/Documents/Scans/*.pdf\n")
+
     from tools.ingest import ingest_from_directories
 
     directories = [Path(args.directory).expanduser()]
@@ -494,30 +520,39 @@ def main():
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
     # =========================================================================
-    # PIPELINE command
+    # PROCESS command
     # =========================================================================
-    pipeline_parser = subparsers.add_parser('pipeline', help='Run full processing pipeline')
-    pipeline_parser.add_argument('book_slug', help='Book slug (e.g., The-Accidental-President)')
-    pipeline_parser.add_argument('--stages', nargs='+',
+    process_parser = subparsers.add_parser('process', help='Process book through all stages (OCR → Correct → Fix → Structure)')
+    process_parser.add_argument('book_slug', help='Book scan-id (e.g., accidental-president)')
+    process_parser.add_argument('--stages', nargs='+',
                                 choices=['ocr', 'correct', 'fix', 'structure', 'quality'],
                                 help='Run only specific stages')
-    pipeline_parser.add_argument('--start-from', choices=['ocr', 'correct', 'fix', 'structure', 'quality'],
+    process_parser.add_argument('--start-from', choices=['ocr', 'correct', 'fix', 'structure', 'quality'],
                                 help='Start from this stage')
-    pipeline_parser.add_argument('--resume', action='store_true',
+    process_parser.add_argument('--resume', action='store_true',
                                 help='Resume from checkpoints (skip completed pages in all stages)')
-    pipeline_parser.add_argument('--ocr-workers', type=int, default=8,
+    process_parser.add_argument('--ocr-workers', type=int, default=8,
                                 help='OCR parallel workers (default: 8)')
-    pipeline_parser.add_argument('--correct-model', default='openai/gpt-4o-mini',
+    process_parser.add_argument('--correct-model', default='openai/gpt-4o-mini',
                                 help='Correction model (default: openai/gpt-4o-mini)')
-    pipeline_parser.add_argument('--correct-workers', type=int, default=30,
+    process_parser.add_argument('--correct-workers', type=int, default=30,
                                 help='Correction parallel workers (default: 30)')
-    pipeline_parser.add_argument('--correct-rate-limit', type=int, default=150,
+    process_parser.add_argument('--correct-rate-limit', type=int, default=150,
                                 help='Correction API calls/min (default: 150)')
-    pipeline_parser.add_argument('--structure-model', default='anthropic/claude-sonnet-4.5',
+    process_parser.add_argument('--structure-model', default='anthropic/claude-sonnet-4.5',
                                 help='Structure model (default: anthropic/claude-sonnet-4.5)')
-    pipeline_parser.add_argument('--quality-model', default='anthropic/claude-sonnet-4.5',
+    process_parser.add_argument('--quality-model', default='anthropic/claude-sonnet-4.5',
                                 help='Quality review model (default: anthropic/claude-sonnet-4.5)')
-    pipeline_parser.set_defaults(func=cmd_pipeline)
+    process_parser.set_defaults(func=cmd_pipeline)
+
+    # =========================================================================
+    # ADD command
+    # =========================================================================
+    add_parser = subparsers.add_parser('add', help='Add book(s) to library with metadata extraction')
+    add_parser.add_argument('pdfs', nargs='+', help='PDF file(s) to add (supports wildcards)')
+    add_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompts')
+    add_parser.add_argument('--id', dest='custom_id', help='Custom scan-id (default: auto-generate from title)')
+    add_parser.set_defaults(func=cmd_add)
 
     # =========================================================================
     # SCAN command
@@ -585,10 +620,21 @@ def main():
     quality_parser.set_defaults(func=cmd_quality)
 
     # =========================================================================
-    # MONITOR command
+    # STATUS command
     # =========================================================================
-    monitor_parser = subparsers.add_parser('monitor', help='Real-time progress monitoring')
-    monitor_parser.add_argument('book_slug', help='Book slug')
+    status_parser = subparsers.add_parser('status', help='Check processing status')
+    status_parser.add_argument('book_slug', help='Book scan-id')
+    status_parser.add_argument('--watch', action='store_true',
+                              help='Live monitoring with real-time updates')
+    status_parser.add_argument('--refresh', type=int, default=5,
+                              help='Refresh interval in seconds when using --watch (default: 5)')
+    status_parser.set_defaults(func=cmd_status)
+
+    # =========================================================================
+    # MONITOR command (deprecated - use 'status --watch')
+    # =========================================================================
+    monitor_parser = subparsers.add_parser('monitor', help='[DEPRECATED] Use "status --watch" instead')
+    monitor_parser.add_argument('book_slug', help='Book scan-id')
     monitor_parser.add_argument('--refresh', type=int, default=5,
                                help='Refresh interval in seconds (default: 5)')
     monitor_parser.set_defaults(func=cmd_monitor)
@@ -597,18 +643,11 @@ def main():
     # REVIEW command
     # =========================================================================
     review_parser = subparsers.add_parser('review', help='Review flagged pages')
-    review_parser.add_argument('book_slug', help='Book slug')
+    review_parser.add_argument('book_slug', help='Book scan-id')
     review_parser.add_argument('action', choices=['report', 'checklist', 'accept'],
                               help='Action to perform')
     review_parser.add_argument('--page', type=int, help='Specific page to review')
     review_parser.set_defaults(func=cmd_review)
-
-    # =========================================================================
-    # STATUS command
-    # =========================================================================
-    status_parser = subparsers.add_parser('status', help='Quick status check')
-    status_parser.add_argument('book_slug', help='Book slug')
-    status_parser.set_defaults(func=cmd_status)
 
     # =========================================================================
     # LIBRARY command group

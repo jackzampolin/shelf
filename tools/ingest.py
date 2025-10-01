@@ -25,7 +25,7 @@ from llm_client import LLMClient
 
 from config import Config
 from tools.library import LibraryIndex
-from tools.names import ensure_unique_scan_id
+from tools.names import slugify_title, ensure_unique_slug
 
 
 def group_batch_pdfs(pdf_paths: List[Path]) -> Dict[str, List[Path]]:
@@ -325,13 +325,21 @@ def ingest_book_group(
         if not year:
             year = web_metadata.get('year') if web_metadata else None
 
-    # Step 5: Generate scan ID
+    # Step 5: Generate scan ID from title
     existing_ids = [
         scan['scan_id']
         for book in library.data['books'].values()
         for scan in book['scans']
     ]
-    scan_id = ensure_unique_scan_id(existing_ids)
+
+    # Slugify the title to create a readable scan ID
+    base_slug = slugify_title(title)
+
+    try:
+        scan_id = ensure_unique_slug(base_slug, existing_ids)
+    except ValueError as e:
+        print(f"\n   ❌ Error: {str(e)}")
+        return None
 
     print(f"\n   Scan ID: {scan_id}")
 
