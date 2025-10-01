@@ -290,17 +290,48 @@ def cmd_library_stats(args):
 
 def cmd_add(args):
     """Add book(s) to library with metadata extraction."""
-    from tools.ingest import ingest_from_directories
+    from tools.ingest import group_batch_pdfs, ingest_book_group
+    from tools.library import LibraryIndex
 
     # Convert PDF paths to list
     pdf_paths = [Path(p).expanduser() for p in args.pdfs]
 
-    # Group by parent directory
-    directories = list(set(p.parent for p in pdf_paths))
+    # Validate PDFs exist
+    for pdf_path in pdf_paths:
+        if not pdf_path.exists():
+            print(f"❌ Error: PDF not found: {pdf_path}")
+            return 1
 
-    scan_ids = ingest_from_directories(directories, auto_confirm=args.yes)
+    # Group PDFs by base name (e.g., book-1.pdf, book-2.pdf → "book")
+    groups = group_batch_pdfs(pdf_paths)
 
-    return 0 if scan_ids else 1
+    print(f"Found {len(pdf_paths)} PDF(s) in {len(groups)} book(s)\n")
+
+    # Process each book group
+    library = LibraryIndex()
+    scan_ids = []
+
+    for base_name, pdfs in groups.items():
+        print(f"📚 Processing: {base_name}")
+        print(f"   PDFs: {len(pdfs)}")
+
+        scan_id = ingest_book_group(
+            base_name=base_name,
+            pdf_paths=pdfs,
+            library=library,
+            auto_confirm=args.yes
+        )
+
+        if scan_id:
+            scan_ids.append(scan_id)
+            print()
+
+    if scan_ids:
+        print(f"✅ Added {len(scan_ids)} book(s) to library")
+        return 0
+    else:
+        print("❌ No books were added")
+        return 1
 
 
 def cmd_library_ingest(args):
@@ -510,6 +541,71 @@ def cmd_library_validate(args):
     return 1
 
 
+def cmd_library_delete(args):
+    """Delete a book from the library (removes directory and metadata)."""
+    from tools.library import LibraryIndex
+    import shutil
+
+    library = LibraryIndex()
+    scan_id = args.scan_id
+
+    # Check if scan exists
+    scan_dir = library.storage_root / scan_id
+
+    if not scan_dir.exists():
+        print(f"❌ Error: Scan directory not found: {scan_dir}")
+        return 1
+
+    # Check if in library
+    scan_in_library = any(
+        scan_id in [s['scan_id'] for s in book['scans']]
+        for book in library.data['books'].values()
+    )
+
+    if not scan_in_library:
+        print(f"⚠️  Warning: '{scan_id}' not found in library.json")
+        print(f"   But directory exists: {scan_dir}")
+        response = input("   Delete directory anyway? (y/n): ").strip().lower()
+        if response != 'y':
+            return 1
+
+    # Confirm deletion
+    if not args.yes:
+        print(f"\n🗑️  Delete: {scan_id}")
+        print(f"   Directory: {scan_dir}")
+        if scan_in_library:
+            print(f"   Will also remove from library.json")
+        response = input("\n   Are you sure? (y/n): ").strip().lower()
+        if response != 'y':
+            print("   Cancelled.")
+            return 0
+
+    # Delete directory
+    if scan_dir.exists():
+        print(f"   Deleting directory...")
+        shutil.rmtree(scan_dir)
+        print(f"   ✓ Deleted: {scan_dir}")
+
+    # Remove from library.json
+    if scan_in_library:
+        with library._lock:
+            # Find and remove scan
+            for book_id, book in library.data['books'].items():
+                book['scans'] = [s for s in book['scans'] if s['scan_id'] != scan_id]
+
+                # Remove book if no scans left
+                if not book['scans']:
+                    del library.data['books'][book_id]
+                    print(f"   ✓ Removed book from library (no scans remaining)")
+                    break
+
+            library.save()
+            print(f"   ✓ Updated library.json")
+
+    print(f"\n✅ Deleted: {scan_id}")
+    return 0
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -700,6 +796,12 @@ def main():
     validate_parser = library_subparsers.add_parser('validate', help='Validate library consistency with disk')
     validate_parser.add_argument('--fix', action='store_true', help='Automatically fix issues where possible')
     validate_parser.set_defaults(func=cmd_library_validate)
+
+    # library delete
+    delete_parser = library_subparsers.add_parser('delete', help='Delete a book from the library')
+    delete_parser.add_argument('scan_id', help='Scan ID to delete')
+    delete_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompt')
+    delete_parser.set_defaults(func=cmd_library_delete)
 
     # Parse and execute
     args = parser.parse_args()
