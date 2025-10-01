@@ -18,6 +18,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from llm_client import LLMClient
+from utils.parallel import ParallelProcessor
+from config.parallelization import get_config
 
 
 class ContentExtractor:
@@ -199,7 +201,7 @@ Response (page number or 'none'):"""
 
     def extract_footnotes(self, pages: List[Dict], document_map: Dict) -> Dict:
         """
-        Phase 6: Extract footnotes from notes section.
+        Phase 6: Extract footnotes from notes section in parallel chunks.
 
         Args:
             pages: List of page dicts
@@ -211,7 +213,7 @@ Response (page number or 'none'):"""
                 - cost: Cost in USD
         """
         print("\n" + "="*70)
-        print("📝 Phase 6: Footnote Extraction (GPT-4o-mini)")
+        print("📝 Phase 6: Footnote Extraction (GPT-4o-mini, parallel)")
         print("="*70)
 
         # Find notes section
@@ -226,23 +228,80 @@ Response (page number or 'none'):"""
             print("  ℹ️  No notes section found, skipping footnote extraction")
             return {'footnotes': [], 'cost': 0.0}
 
-        # Get text from notes section
-        notes_text_parts = []
-        for page in pages:
-            if notes_section['start_page'] <= page['scan_page'] <= notes_section['end_page']:
-                notes_text_parts.append(page['text'])
+        # Get notes pages
+        notes_pages = [
+            p for p in pages
+            if notes_section['start_page'] <= p['scan_page'] <= notes_section['end_page']
+        ]
 
-        notes_text = "\n\n".join(notes_text_parts)
+        if not notes_pages:
+            print("  ℹ️  No pages in notes section")
+            return {'footnotes': [], 'cost': 0.0}
 
-        print(f"  📄 Notes section: pages {notes_section['start_page']}-{notes_section['end_page']}")
-        print(f"  🔄 Extracting footnotes...")
+        # Get config for parallel processing
+        config = get_config('structure', 'footnotes')
+        chunk_size = config.get('chunk_size', 10)
+        max_workers = config.get('max_workers', 10)
+
+        # Chunk into groups for parallel processing
+        chunks = [
+            notes_pages[i:i+chunk_size]
+            for i in range(0, len(notes_pages), chunk_size)
+        ]
+
+        print(f"  📄 Notes section: pages {notes_section['start_page']}-{notes_section['end_page']} ({len(notes_pages)} pages)")
+        print(f"  🔄 Extracting footnotes from {len(chunks)} chunks in parallel ({chunk_size} pages/chunk)...")
+
+        # Process chunks in parallel
+        processor = ParallelProcessor(
+            max_workers=min(max_workers, len(chunks)),
+            logger=self.logger,
+            description="Footnote extraction"
+        )
+
+        results = processor.process(
+            items=chunks,
+            worker_func=self._extract_footnotes_chunk,
+            progress_interval=2
+        )
+
+        # Merge and sort footnotes
+        all_footnotes = []
+        for result in results:
+            if 'footnotes' in result:
+                all_footnotes.extend(result['footnotes'])
+
+        # Sort by chapter and note_id
+        all_footnotes.sort(key=lambda f: (f.get('chapter', 0), f.get('note_id', 0)))
+
+        total_cost = sum(r.get('cost', 0) for r in results)
+
+        print(f"✅ Footnote extraction complete:")
+        print(f"   Footnotes: {len(all_footnotes)}")
+        print(f"   Cost: ${total_cost:.4f}")
+
+        return {'footnotes': all_footnotes, 'cost': total_cost}
+
+    def _extract_footnotes_chunk(self, chunk_pages: List[Dict]) -> Dict:
+        """
+        Extract footnotes from a chunk of pages (called in parallel).
+
+        Args:
+            chunk_pages: List of page dicts for this chunk
+
+        Returns:
+            Dict with footnotes and cost
+        """
+        chunk_text = "\n\n".join(p['text'] for p in chunk_pages)
+        start_page = chunk_pages[0]['scan_page']
+        end_page = chunk_pages[-1]['scan_page']
 
         system_prompt = """Extract footnotes/endnotes from the notes section. Return as JSON array."""
 
-        user_prompt = f"""Extract all footnotes from this notes section.
+        user_prompt = f"""Extract all footnotes from this notes section chunk (pages {start_page}-{end_page}).
 
 NOTES TEXT:
-{notes_text}
+{chunk_text}
 
 Return JSON array:
 [
@@ -272,14 +331,11 @@ Return ONLY the JSON array, nothing else."""
             else:
                 footnotes = json.loads(response)
 
-            print(f"✅ Footnote extraction complete:")
-            print(f"   Footnotes: {len(footnotes)}")
-            print(f"   Cost: ${cost:.4f}")
-
             return {'footnotes': footnotes, 'cost': cost}
 
         except Exception as e:
-            print(f"  ✗ Error extracting footnotes: {e}")
+            if self.logger:
+                self.logger.error(f"Error extracting footnotes from chunk {start_page}-{end_page}: {e}")
             return {'footnotes': [], 'cost': 0.0}
 
     # =========================================================================
@@ -288,7 +344,7 @@ Return ONLY the JSON array, nothing else."""
 
     def parse_bibliography(self, pages: List[Dict], document_map: Dict) -> Dict:
         """
-        Phase 7: Parse bibliography into structured entries.
+        Phase 7: Parse bibliography into structured entries in parallel chunks.
 
         Args:
             pages: List of page dicts
@@ -300,7 +356,7 @@ Return ONLY the JSON array, nothing else."""
                 - cost: Cost in USD
         """
         print("\n" + "="*70)
-        print("📚 Phase 7: Bibliography Parsing (GPT-4o-mini)")
+        print("📚 Phase 7: Bibliography Parsing (GPT-4o-mini, parallel)")
         print("="*70)
 
         # Find bibliography section
@@ -315,23 +371,81 @@ Return ONLY the JSON array, nothing else."""
             print("  ℹ️  No bibliography section found, skipping")
             return {'bibliography': [], 'cost': 0.0}
 
-        # Get text from bibliography section
-        biblio_text_parts = []
-        for page in pages:
-            if biblio_section['start_page'] <= page['scan_page'] <= biblio_section['end_page']:
-                biblio_text_parts.append(page['text'])
+        # Get bibliography pages
+        biblio_pages = [
+            p for p in pages
+            if biblio_section['start_page'] <= p['scan_page'] <= biblio_section['end_page']
+        ]
 
-        biblio_text = "\n\n".join(biblio_text_parts)
+        if not biblio_pages:
+            print("  ℹ️  No pages in bibliography section")
+            return {'bibliography': [], 'cost': 0.0}
 
-        print(f"  📄 Bibliography section: pages {biblio_section['start_page']}-{biblio_section['end_page']}")
-        print(f"  🔄 Parsing bibliography...")
+        # Get config for parallel processing
+        config = get_config('structure', 'bibliography')
+        chunk_size = config.get('chunk_size', 5)  # Smaller chunks for dense bibliographies
+        max_workers = config.get('max_workers', 10)
+
+        # Chunk into groups for parallel processing
+        chunks = [
+            biblio_pages[i:i+chunk_size]
+            for i in range(0, len(biblio_pages), chunk_size)
+        ]
+
+        print(f"  📄 Bibliography section: pages {biblio_section['start_page']}-{biblio_section['end_page']} ({len(biblio_pages)} pages)")
+        print(f"  🔄 Parsing bibliography from {len(chunks)} chunks in parallel ({chunk_size} pages/chunk)...")
+
+        # Process chunks in parallel
+        processor = ParallelProcessor(
+            max_workers=min(max_workers, len(chunks)),
+            logger=self.logger,
+            description="Bibliography parsing"
+        )
+
+        results = processor.process(
+            items=chunks,
+            worker_func=self._parse_bibliography_chunk,
+            progress_interval=2
+        )
+
+        # Merge bibliography entries
+        all_entries = []
+        for result in results:
+            if 'bibliography' in result:
+                all_entries.extend(result['bibliography'])
+
+        # Renumber entries sequentially
+        for i, entry in enumerate(all_entries, 1):
+            entry['id'] = i
+
+        total_cost = sum(r.get('cost', 0) for r in results)
+
+        print(f"✅ Bibliography parsing complete:")
+        print(f"   Entries: {len(all_entries)}")
+        print(f"   Cost: ${total_cost:.4f}")
+
+        return {'bibliography': all_entries, 'cost': total_cost}
+
+    def _parse_bibliography_chunk(self, chunk_pages: List[Dict]) -> Dict:
+        """
+        Parse bibliography chunk (called in parallel).
+
+        Args:
+            chunk_pages: List of page dicts for this chunk
+
+        Returns:
+            Dict with bibliography entries and cost
+        """
+        chunk_text = "\n\n".join(p['text'] for p in chunk_pages)
+        start_page = chunk_pages[0]['scan_page']
+        end_page = chunk_pages[-1]['scan_page']
 
         system_prompt = """Parse bibliography entries into structured JSON. Extract author, title, publisher, year, and type (book/article/etc)."""
 
-        user_prompt = f"""Parse this bibliography into structured entries.
+        user_prompt = f"""Parse this bibliography chunk (pages {start_page}-{end_page}) into structured entries.
 
 BIBLIOGRAPHY TEXT:
-{biblio_text}
+{chunk_text}
 
 Return JSON array:
 [
@@ -365,12 +479,9 @@ Return ONLY the JSON array, nothing else."""
             else:
                 bibliography = json.loads(response)
 
-            print(f"✅ Bibliography parsing complete:")
-            print(f"   Entries: {len(bibliography)}")
-            print(f"   Cost: ${cost:.4f}")
-
             return {'bibliography': bibliography, 'cost': cost}
 
         except Exception as e:
-            print(f"  ✗ Error parsing bibliography: {e}")
+            if self.logger:
+                self.logger.error(f"Error parsing bibliography chunk {start_page}-{end_page}: {e}")
             return {'bibliography': [], 'cost': 0.0}

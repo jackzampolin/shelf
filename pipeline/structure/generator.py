@@ -9,9 +9,15 @@ Generates three output formats (pure Python, no LLM calls):
 """
 
 import json
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.parallel import ParallelProcessor
+from config.parallelization import get_config
 
 
 class OutputGenerator:
@@ -98,49 +104,95 @@ class OutputGenerator:
         print(f"  ✓ Saved page mappings")
 
     def save_chapters(self, pages: List[Dict], document_map: Dict, footnotes: List[Dict]):
-        """Save chapter files to data/body directory."""
+        """Save chapter files to data/body directory in parallel."""
         chapters = document_map.get('body', {}).get('chapters', [])
 
+        if not chapters:
+            print(f"  ℹ️  No chapters to save")
+            return
+
+        # Prepare chapter data for parallel processing
+        chapter_tasks = []
         for chapter in chapters:
-            ch_num = chapter['number']
-
             # Get pages for this chapter
-            chapter_pages = []
-            for page in pages:
-                if chapter['start_page'] <= page['scan_page'] <= chapter['end_page']:
-                    chapter_pages.append(page)
+            chapter_pages = [
+                p for p in pages
+                if chapter['start_page'] <= p['scan_page'] <= chapter['end_page']
+            ]
 
-            # Build chapter structure
-            chapter_data = {
-                "chapter": ch_num,
-                "title": chapter['title'],
-                "start_page": chapter['start_page'],
-                "end_page": chapter['end_page'],
-                "summary": chapter.get('summary', ''),
-                "paragraphs": [
-                    {
-                        "id": f"ch{ch_num:02d}_p{i+1:03d}",
-                        "text": page['text'],
-                        "scan_pages": [page['scan_page']],
-                        "type": "body"
-                    }
-                    for i, page in enumerate(chapter_pages)
-                ],
-                "word_count": sum(len(p['text'].split()) for p in chapter_pages),
-                "paragraph_count": len(chapter_pages)
-            }
+            # Get notes for this chapter
+            chapter_notes = [n for n in footnotes if n.get('chapter') == chapter['number']]
 
-            # Add notes for this chapter
-            chapter_notes = [n for n in footnotes if n.get('chapter') == ch_num]
-            if chapter_notes:
-                chapter_data['notes'] = chapter_notes
+            chapter_tasks.append({
+                'chapter': chapter,
+                'pages': chapter_pages,
+                'notes': chapter_notes
+            })
 
-            # Save JSON
-            output_path = self.body_dir / f"chapter_{ch_num:02d}.json"
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(chapter_data, f, indent=2, ensure_ascii=False)
+        # Get config for parallel processing
+        config = get_config('structure', 'output_generation')
+        max_workers = config.get('max_workers', 10)
 
-        print(f"  ✓ Saved {len(chapters)} chapter files")
+        # Process chapters in parallel
+        processor = ParallelProcessor(
+            max_workers=min(max_workers, len(chapter_tasks)),
+            logger=self.logger,
+            description="Chapter file generation"
+        )
+
+        results = processor.process(
+            items=chapter_tasks,
+            worker_func=self._save_single_chapter,
+            progress_interval=5
+        )
+
+        print(f"  ✓ Saved {len(chapters)} chapter files (parallel)")
+
+    def _save_single_chapter(self, task: Dict) -> Dict:
+        """
+        Save a single chapter file (called in parallel).
+
+        Args:
+            task: Dict with 'chapter', 'pages', and 'notes'
+
+        Returns:
+            Dict with result status
+        """
+        chapter = task['chapter']
+        chapter_pages = task['pages']
+        chapter_notes = task['notes']
+        ch_num = chapter['number']
+
+        # Build chapter structure
+        chapter_data = {
+            "chapter": ch_num,
+            "title": chapter['title'],
+            "start_page": chapter['start_page'],
+            "end_page": chapter['end_page'],
+            "summary": chapter.get('summary', ''),
+            "paragraphs": [
+                {
+                    "id": f"ch{ch_num:02d}_p{i+1:03d}",
+                    "text": page['text'],
+                    "scan_pages": [page['scan_page']],
+                    "type": "body"
+                }
+                for i, page in enumerate(chapter_pages)
+            ],
+            "word_count": sum(len(p['text'].split()) for p in chapter_pages),
+            "paragraph_count": len(chapter_pages)
+        }
+
+        # Add notes if present
+        if chapter_notes:
+            chapter_data['notes'] = chapter_notes
+
+        # Save JSON
+        output_path = self.body_dir / f"chapter_{ch_num:02d}.json"
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(chapter_data, f, indent=2, ensure_ascii=False)
+
+        return {'chapter': ch_num, 'status': 'success'}
 
     def save_footnotes(self, footnotes: List[Dict]):
         """Save notes.json to back_matter directory."""
