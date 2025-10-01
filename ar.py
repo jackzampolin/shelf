@@ -84,7 +84,7 @@ def cmd_correct(args):
         max_workers=args.workers,
         calls_per_minute=args.rate_limit
     )
-    processor.process_pages(start_page=args.start, end_page=args.end)
+    processor.process_pages(start_page=args.start, end_page=args.end, resume=args.resume)
     return 0
 
 
@@ -453,6 +453,8 @@ def main():
                                help='Start page (default: 1)')
     correct_parser.add_argument('--end', type=int, default=None,
                                help='End page (default: all)')
+    correct_parser.add_argument('--resume', action='store_true',
+                               help='Resume from checkpoint (skip completed pages)')
     correct_parser.set_defaults(func=cmd_correct)
 
     # =========================================================================
