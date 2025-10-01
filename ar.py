@@ -70,7 +70,7 @@ def cmd_ocr(args):
     from pipeline.ocr import BookOCRProcessor
 
     processor = BookOCRProcessor(max_workers=args.workers)
-    processor.process_book(args.book_slug)
+    processor.process_book(args.book_slug, resume=args.resume)
     return 0
 
 
@@ -436,6 +436,8 @@ def main():
     ocr_parser.add_argument('book_slug', help='Book slug')
     ocr_parser.add_argument('--workers', type=int, default=8,
                            help='Parallel workers (default: 8)')
+    ocr_parser.add_argument('--resume', action='store_true',
+                           help='Resume from checkpoint (skip completed pages)')
     ocr_parser.set_defaults(func=cmd_ocr)
 
     # =========================================================================

@@ -21,6 +21,7 @@ import threading
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from logger import create_logger
+from checkpoint import CheckpointManager
 
 
 class BlockClassifier:
@@ -170,13 +171,15 @@ class LayoutAnalyzer:
 class BookOCRProcessor:
     """Enhanced OCR processor with layout analysis."""
 
-    def __init__(self, storage_root=None, max_workers=8):
+    def __init__(self, storage_root=None, max_workers=8, enable_checkpoints=True):
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
         self.max_workers = max_workers
         self.progress_lock = threading.Lock()
         self.logger = None  # Will be initialized per book
+        self.checkpoint = None  # Will be initialized per book
+        self.enable_checkpoints = enable_checkpoints
 
-    def process_book(self, book_title):
+    def process_book(self, book_title, resume=False):
         """Process all batches for a given book."""
         book_dir = self.storage_root / book_title
 
@@ -194,7 +197,18 @@ class BookOCRProcessor:
         logs_dir.mkdir(exist_ok=True)
         self.logger = create_logger(book_title, "ocr", log_dir=logs_dir)
 
-        self.logger.info(f"Processing book: {metadata['title']}")
+        # Initialize checkpoint manager
+        if self.enable_checkpoints:
+            self.checkpoint = CheckpointManager(
+                scan_id=book_title,
+                stage="ocr",
+                storage_root=self.storage_root,
+                output_dir="ocr"
+            )
+            if not resume:
+                self.checkpoint.reset()
+
+        self.logger.info(f"Processing book: {metadata['title']}", resume=resume)
 
         # Create output directories
         ocr_dir = book_dir / "ocr"
@@ -314,10 +328,15 @@ class BookOCRProcessor:
             max_workers=self.max_workers
         )
 
-        # Prepare page tasks
+        # Prepare page tasks (filter already-completed pages if using checkpoints)
         tasks = []
         for i, image in enumerate(images, start=1):
             book_page = page_start + i - 1
+
+            # Skip if checkpoint says page is already done
+            if self.checkpoint and self.checkpoint.validate_page_output(book_page):
+                continue
+
             tasks.append({
                 'image': image,
                 'page_number': book_page,
@@ -326,6 +345,11 @@ class BookOCRProcessor:
                 'batch_ocr_dir': batch_ocr_dir,
                 'images_dir': images_dir
             })
+
+        # If all pages already done, skip batch
+        if len(tasks) == 0:
+            self.logger.info(f"Batch {batch_num} already completed, skipping", batch=batch_num)
+            return num_pages
 
         # Process pages in parallel
         completed = 0
@@ -385,6 +409,10 @@ class BookOCRProcessor:
             json_file = task['batch_ocr_dir'] / f"page_{task['page_number']:04d}.json"
             with open(json_file, 'w', encoding='utf-8') as f:
                 json.dump(page_data, f, indent=2)
+
+            # Mark page as completed in checkpoint
+            if self.checkpoint:
+                self.checkpoint.mark_completed(task['page_number'], cost_usd=0.0)
 
             return True
 
