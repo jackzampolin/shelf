@@ -161,8 +161,8 @@ def cmd_library_list(args):
     print("=" * 88)
 
     for book in books:
-        title = book['title'][:48] if len(book['title']) > 48 else book['title']
-        author = book['author'][:28] if len(book['author']) > 28 else book['author']
+        title = book['title'][:48] if book['title'] and len(book['title']) > 48 else (book['title'] or 'Unknown')
+        author = book['author'][:28] if book['author'] and len(book['author']) > 28 else (book['author'] or 'Unknown')
         print(f"{title:<50} {author:<30} {book['scan_count']:>6}")
 
     return 0
