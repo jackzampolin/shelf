@@ -131,11 +131,18 @@ Just return the corrected text starting with the first word.
         corrections_list = []
         for i, corr in enumerate(missed_corrections, 1):
             if isinstance(corr, dict):
-                # Structured correction from Agent 3
-                corrections_list.append(
-                    f"{i}. Change '{corr.get('original_text', '')}' to '{corr.get('should_be', '')}' "
-                    f"({corr.get('location', 'unknown location')})"
-                )
+                # Check if this is an incorrectly applied correction (has 'was_changed_to')
+                if 'was_changed_to' in corr:
+                    corrections_list.append(
+                        f"{i}. Revert '{corr.get('was_changed_to', '')}' back to '{corr.get('should_be', '')}' "
+                        f"({corr.get('reason', 'incorrect change')})"
+                    )
+                else:
+                    # Missed correction (has 'original_text')
+                    corrections_list.append(
+                        f"{i}. Change '{corr.get('original_text', '')}' to '{corr.get('should_be', '')}' "
+                        f"({corr.get('location', 'unknown location')})"
+                    )
             else:
                 # Fallback for string corrections (backward compatibility)
                 corrections_list.append(f"{i}. {corr}")
@@ -209,34 +216,41 @@ Return the complete corrected text.
         """
         verification = review_data.get("llm_processing", {}).get("verification", {})
 
-        # Extract structured corrections from Agent 3
-        missed_corrections = verification.get("missed_corrections", [])
-        incorrectly_applied = verification.get("incorrectly_applied", [])
+        # Check if Agent 3 returned structured arrays (new format)
+        has_structured_data = ("missed_corrections" in verification or
+                              "incorrectly_applied" in verification)
 
-        # Combine both types into a single list for Agent 4
-        all_corrections = []
+        if has_structured_data:
+            # Extract structured corrections from Agent 3 (new format)
+            missed_corrections = verification.get("missed_corrections", [])
+            incorrectly_applied = verification.get("incorrectly_applied", [])
 
-        # Add missed corrections
-        for corr in missed_corrections:
-            all_corrections.append(corr)
+            # Combine both types into a single list for Agent 4
+            all_corrections = []
 
-        # Add incorrectly applied corrections (need to revert)
-        for corr in incorrectly_applied:
-            all_corrections.append(corr)
+            # Add missed corrections
+            for corr in missed_corrections:
+                all_corrections.append(corr)
 
-        # Fallback: If no structured data, try to parse review_reason (backward compatibility)
-        if not all_corrections:
+            # Add incorrectly applied corrections (need to revert)
+            for corr in incorrectly_applied:
+                all_corrections.append(corr)
+
+            return all_corrections
+        else:
+            # Fallback: Use review_reason (old format, backward compatibility)
             review_reason = verification.get("review_reason", "")
             if review_reason:
                 # Create a simple correction instruction from review_reason
-                all_corrections.append({
+                return [{
                     "original_text": "unknown",
                     "should_be": "unknown",
                     "location": "unknown",
                     "fallback_instruction": f"Review and fix based on: {review_reason[:200]}"
-                })
-
-        return all_corrections
+                }]
+            else:
+                # No corrections needed
+                return []
 
     def process_flagged_page(self, review_file: Path):
         """Process a single flagged page."""
