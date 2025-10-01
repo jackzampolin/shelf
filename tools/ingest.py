@@ -128,6 +128,7 @@ def identify_book_with_llm(pdf_paths: List[Path]) -> Optional[Dict]:
 1. **Title**: The complete book title
 2. **Author**: Author name(s)
 3. **Type**: Type of book (biography, history, memoir, political analysis, etc.)
+4. **Suggested ID**: A short, descriptive 2-3 word identifier (lowercase with hyphens)
 
 You are looking at the FIRST 10 pages of the book, which typically contain:
 - Title page (usually page 1-3)
@@ -141,6 +142,15 @@ Look carefully for:
 - Publisher and publication year on copyright page
 - Subtitle or series information
 
+For the **suggested_id**, create a SHORT identifier that captures the book's essence:
+- Use 2-3 words maximum
+- Use lowercase with hyphens (e.g., "accidental-president", "fiery-peace", "hap-arnold")
+- Prefer memorable, distinctive words from the title
+- Examples:
+  * "The Accidental President: Harry S. Truman..." → "accidental-president"
+  * "A Fiery Peace in a Cold War: Bernard Schriever..." → "fiery-peace"
+  * "Hap Arnold: Inventing the Air Force" → "hap-arnold"
+
 Return ONLY the information you can clearly see. Do not guess based on content.
 
 Return as JSON:
@@ -149,6 +159,7 @@ Return as JSON:
   "title": "Complete Book Title: With Subtitle if Present",
   "author": "Author Full Name",
   "type": "biography",
+  "suggested_id": "short-book-id",
   "confidence": 0.9,
   "year": 2010,
   "publisher": "Publisher Name"
@@ -325,15 +336,20 @@ def ingest_book_group(
         if not year:
             year = web_metadata.get('year') if web_metadata else None
 
-    # Step 5: Generate scan ID from title
+    # Step 5: Generate scan ID (use LLM suggestion or fall back to title slug)
     existing_ids = [
         scan['scan_id']
         for book in library.data['books'].values()
         for scan in book['scans']
     ]
 
-    # Slugify the title to create a readable scan ID
-    base_slug = slugify_title(title)
+    # Prefer LLM's suggested short ID, fall back to slugified title
+    if llm_metadata and llm_metadata.get('suggested_id'):
+        base_slug = llm_metadata['suggested_id']
+        print(f"   Using LLM-suggested ID: {base_slug}")
+    else:
+        base_slug = slugify_title(title)
+        print(f"   Generated ID from title: {base_slug}")
 
     try:
         scan_id = ensure_unique_slug(base_slug, existing_ids)
