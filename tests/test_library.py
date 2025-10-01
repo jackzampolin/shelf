@@ -539,3 +539,14 @@ def test_atomic_save_with_fsync(library_with_books):
     reloaded = LibraryIndex(storage_root=library_with_books.storage_root)
     scan_info = reloaded.get_scan_info("test-one")
     assert scan_info['scan']['pages'] == 500
+
+
+def test_scan_id_uniqueness_validation(library_with_books):
+    """Test that add_book prevents duplicate scan_ids."""
+    # Try to add a book with an existing scan_id
+    with pytest.raises(ValueError, match="Scan ID 'test-one' already exists"):
+        library_with_books.add_book(
+            title="Different Book",
+            author="Different Author",
+            scan_id="test-one"  # This scan_id already exists
+        )

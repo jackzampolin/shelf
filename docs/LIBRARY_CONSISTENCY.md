@@ -375,6 +375,60 @@ except ValueError:
 - Deep copy: ~10ms
 - ✅ Still acceptable
 
+## Limitations
+
+### Multi-Process Concurrency
+
+**IMPORTANT:** The atomic update system only protects against concurrent access **within a single Python process** using `threading.Lock()`.
+
+**Not Protected:** Multiple separate pipeline processes running simultaneously on different books can cause data loss:
+
+```bash
+# UNSAFE: Running two separate processes simultaneously
+Terminal 1: uv run python ar.py pipeline modest-lovelace &
+Terminal 2: uv run python ar.py pipeline wonderful-dirac &
+# These could corrupt library.json!
+```
+
+**What Happens:**
+1. Process A reads library.json (has book-1 status)
+2. Process B reads library.json (has book-1 status)
+3. Process A updates book-1, writes library.json
+4. Process B updates book-2, writes library.json (book-1 changes LOST!)
+
+**Workarounds:**
+- **Run pipelines sequentially** - Wait for one to finish before starting the next
+- **Use a job queue** - Queue pipeline runs and execute one at a time
+- **Implement file locking** (future enhancement - see below)
+
+**Detection:** If you suspect corruption, run:
+```bash
+uv run python ar.py library validate
+```
+
+### Future Enhancement: File-Based Locking
+
+To support concurrent processes safely, the library would need file-based locking:
+
+```python
+import fcntl  # POSIX only, not Windows
+
+def save(self):
+    with open(self.library_file, 'r+') as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # Block until exclusive lock
+        # Reload data to get any concurrent changes
+        self.data = json.load(f)
+        # ... save logic
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+```
+
+This is not currently implemented due to:
+- Platform compatibility concerns (fcntl is POSIX-only)
+- Network filesystem compatibility issues
+- Added complexity for rare use case
+
+For most single-user research workflows, sequential pipeline execution is sufficient.
+
 ## Edge Cases
 
 ### Concurrent Pipeline Execution

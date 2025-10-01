@@ -9,6 +9,7 @@ import json
 import os
 import copy
 import threading
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -93,7 +94,11 @@ class LibraryIndex:
         except Exception as e:
             # Clean up temp file on failure
             if temp_file.exists():
-                temp_file.unlink()
+                try:
+                    temp_file.unlink()
+                except Exception as cleanup_error:
+                    # Log but don't fail on cleanup
+                    logging.warning(f"Could not remove temp file {temp_file}: {cleanup_error}")
             raise RuntimeError(f"Failed to save library: {e}") from e
 
     def _update_stats(self):
@@ -146,6 +151,12 @@ class LibraryIndex:
         """
         # Generate book slug from title
         book_slug = self._generate_book_slug(title)
+
+        # Check scan_id is unique across all books
+        for book in self.data["books"].values():
+            for scan in book["scans"]:
+                if scan["scan_id"] == scan_id:
+                    raise ValueError(f"Scan ID '{scan_id}' already exists in library")
 
         # If book doesn't exist, create it
         if book_slug not in self.data["books"]:
@@ -462,7 +473,6 @@ class LibraryIndex:
 
             except Exception as e:
                 # Rollback: restore original state
-                self.data["books"][book_slug]["scans"][scan_idx] = original_scan
                 self.data = original_data
                 raise  # Re-raise the exception
 
@@ -689,7 +699,8 @@ class LibraryIndex:
                 else:
                     unfixable.append(issue_type)
 
-            except Exception:
+            except Exception as e:
+                logging.warning(f"Could not fix {issue_type} for {scan_id}: {e}")
                 unfixable.append(issue_type)
 
         return {
