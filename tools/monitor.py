@@ -38,7 +38,13 @@ class PipelineMonitor:
         else:
             self.metadata = {}
 
+        # Get total pages from metadata, or infer from OCR directory
         self.total_pages = self.metadata.get('total_pages', 0)
+        if self.total_pages == 0:
+            # Try to infer from OCR output
+            ocr_dir = self.book_dir / "ocr"
+            if ocr_dir.exists():
+                self.total_pages = len(list(ocr_dir.glob("page_*.json")))
 
     def get_stage_progress(self) -> Dict:
         """Get progress for each stage."""
@@ -163,8 +169,17 @@ class PipelineMonitor:
         remaining_pages = total - completed
         remaining_minutes = remaining_pages / rate
 
-        eta = datetime.now() + timedelta(minutes=remaining_minutes)
-        return eta.strftime("%H:%M:%S")
+        # Format as duration (e.g., "2m 30s" or "1h 15m")
+        if remaining_minutes < 1:
+            return f"{int(remaining_minutes * 60)}s"
+        elif remaining_minutes < 60:
+            mins = int(remaining_minutes)
+            secs = int((remaining_minutes - mins) * 60)
+            return f"{mins}m {secs}s"
+        else:
+            hours = int(remaining_minutes / 60)
+            mins = int(remaining_minutes % 60)
+            return f"{hours}h {mins}m"
 
     def print_status(self, clear_screen: bool = False):
         """Print current status."""
