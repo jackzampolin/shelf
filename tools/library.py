@@ -6,9 +6,14 @@ for all books and their associated scans.
 """
 
 import json
+import os
+import copy
+import threading
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+from contextlib import contextmanager
 from config import Config
 from tools.names import ensure_unique_scan_id
 
@@ -25,6 +30,9 @@ class LibraryIndex:
         """
         self.storage_root = storage_root or Config.BOOK_STORAGE_ROOT
         self.library_file = self.storage_root / "library.json"
+
+        # Thread-safe lock for atomic operations
+        self._lock = threading.Lock()
 
         # Ensure storage root exists
         self.storage_root.mkdir(parents=True, exist_ok=True)
@@ -58,12 +66,40 @@ class LibraryIndex:
             }
 
     def save(self):
-        """Save library.json to disk."""
+        """
+        Save library.json to disk with atomic write.
+
+        Uses temp file + atomic rename pattern for crash safety.
+        Must be called with lock held for thread safety.
+        """
         self.data["last_updated"] = datetime.now().isoformat()
         self._update_stats()
 
-        with open(self.library_file, 'w') as f:
-            json.dump(self.data, f, indent=2)
+        temp_file = self.library_file.with_suffix('.json.tmp')
+
+        try:
+            # Write to temp file
+            with open(temp_file, 'w') as f:
+                json.dump(self.data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())  # Force OS to write
+
+            # Validate temp file is valid JSON before replacing
+            with open(temp_file, 'r') as f:
+                json.load(f)  # Throws if corrupt
+
+            # Atomic rename
+            temp_file.replace(self.library_file)
+
+        except Exception as e:
+            # Clean up temp file on failure
+            if temp_file.exists():
+                try:
+                    temp_file.unlink()
+                except Exception as cleanup_error:
+                    # Log but don't fail on cleanup
+                    logging.warning(f"Could not remove temp file {temp_file}: {cleanup_error}")
+            raise RuntimeError(f"Failed to save library: {e}") from e
 
     def _update_stats(self):
         """Recalculate library-wide statistics."""
@@ -115,6 +151,12 @@ class LibraryIndex:
         """
         # Generate book slug from title
         book_slug = self._generate_book_slug(title)
+
+        # Check scan_id is unique across all books
+        for book in self.data["books"].values():
+            for scan in book["scans"]:
+                if scan["scan_id"] == scan_id:
+                    raise ValueError(f"Scan ID '{scan_id}' already exists in library")
 
         # If book doesn't exist, create it
         if book_slug not in self.data["books"]:
@@ -382,3 +424,288 @@ class LibraryIndex:
                 if scan["scan_id"] == scan_id:
                     return book_slug, idx
         return None, None
+
+    @contextmanager
+    def update_scan(self, scan_id: str):
+        """
+        Atomic context manager for updating scan metadata.
+
+        Provides all-or-nothing updates: changes are committed on success,
+        rolled back on exception. Thread-safe.
+
+        Usage:
+            with library.update_scan(scan_id) as scan:
+                scan['status'] = 'corrected'
+                scan['cost_usd'] = 5.50
+                scan['pages'] = 447
+                # Commit happens automatically on success
+                # Rollback on exception
+
+        Args:
+            scan_id: Scan identifier
+
+        Yields:
+            Mutable scan dictionary
+
+        Raises:
+            ValueError: If scan not found
+            RuntimeError: If save fails
+        """
+        with self._lock:
+            # Find the scan
+            book_slug, scan_idx = self._find_scan(scan_id)
+            if book_slug is None:
+                raise ValueError(f"Scan {scan_id} not found in library")
+
+            # Get reference to scan
+            scan = self.data["books"][book_slug]["scans"][scan_idx]
+
+            # Deep copy for rollback
+            original_scan = copy.deepcopy(scan)
+            original_data = copy.deepcopy(self.data)
+
+            try:
+                # Yield mutable scan dict
+                yield scan
+
+                # Commit: save to disk
+                self.save()
+
+            except Exception as e:
+                # Rollback: restore original state
+                self.data = original_data
+                raise  # Re-raise the exception
+
+    def validate_library(self) -> Dict[str, Any]:
+        """
+        Validate library consistency with disk state.
+
+        Checks:
+        1. All scans in library have directories on disk
+        2. All scan directories have entries in library
+        3. Costs match between library and scan metadata.json
+        4. Models match between library and scan metadata.json
+
+        Returns:
+            Dictionary with validation results:
+            {
+                "valid": bool,
+                "issues": [
+                    {
+                        "type": "missing_scan_dir" | "orphaned_scan_dir" | "cost_mismatch" | "model_mismatch",
+                        "scan_id": str,
+                        "details": str,
+                        "expected": Any,
+                        "actual": Any
+                    },
+                    ...
+                ],
+                "stats": {
+                    "total_scans_in_library": int,
+                    "total_scan_dirs_on_disk": int,
+                    "missing_scan_dirs": int,
+                    "orphaned_scan_dirs": int,
+                    "cost_mismatches": int,
+                    "model_mismatches": int
+                }
+            }
+        """
+        from utils import get_scan_total_cost, get_scan_models
+
+        issues = []
+        stats = {
+            "total_scans_in_library": 0,
+            "total_scan_dirs_on_disk": 0,
+            "missing_scan_dirs": 0,
+            "orphaned_scan_dirs": 0,
+            "cost_mismatches": 0,
+            "model_mismatches": 0
+        }
+
+        # Get all scan IDs from library
+        library_scan_ids = set()
+        for book in self.data["books"].values():
+            for scan in book["scans"]:
+                library_scan_ids.add(scan["scan_id"])
+
+        stats["total_scans_in_library"] = len(library_scan_ids)
+
+        # Get all scan directories from disk
+        disk_scan_ids = set()
+        for item in self.storage_root.iterdir():
+            if item.is_dir() and item.name != "library.json":
+                # Check if it looks like a scan directory (has source/ or ocr/ etc.)
+                if (item / "source").exists() or (item / "ocr").exists() or (item / "metadata.json").exists():
+                    disk_scan_ids.add(item.name)
+
+        stats["total_scan_dirs_on_disk"] = len(disk_scan_ids)
+
+        # Check 1: Scans in library but not on disk
+        missing_dirs = library_scan_ids - disk_scan_ids
+        for scan_id in missing_dirs:
+            issues.append({
+                "type": "missing_scan_dir",
+                "scan_id": scan_id,
+                "details": f"Scan {scan_id} is in library but directory not found on disk",
+                "expected": f"{self.storage_root / scan_id}",
+                "actual": None
+            })
+        stats["missing_scan_dirs"] = len(missing_dirs)
+
+        # Check 2: Scan directories on disk but not in library
+        orphaned_dirs = disk_scan_ids - library_scan_ids
+        for scan_id in orphaned_dirs:
+            issues.append({
+                "type": "orphaned_scan_dir",
+                "scan_id": scan_id,
+                "details": f"Scan directory {scan_id} exists on disk but not in library",
+                "expected": None,
+                "actual": f"{self.storage_root / scan_id}"
+            })
+        stats["orphaned_scan_dirs"] = len(orphaned_dirs)
+
+        # Check 3 & 4: For scans in both, validate costs and models
+        common_scans = library_scan_ids & disk_scan_ids
+        for scan_id in common_scans:
+            scan_dir = self.storage_root / scan_id
+            scan_info = self.get_scan_info(scan_id)
+
+            if not scan_info:
+                continue
+
+            # Get actual costs and models from disk
+            try:
+                actual_cost = get_scan_total_cost(scan_dir)
+                actual_models = get_scan_models(scan_dir)
+
+                # Check cost mismatch
+                library_cost = scan_info["scan"].get("cost_usd", 0.0)
+                if abs(library_cost - actual_cost) > 0.01:  # Allow 1 cent rounding
+                    issues.append({
+                        "type": "cost_mismatch",
+                        "scan_id": scan_id,
+                        "details": f"Cost mismatch for {scan_id}",
+                        "expected": actual_cost,
+                        "actual": library_cost
+                    })
+                    stats["cost_mismatches"] += 1
+
+                # Check model mismatch
+                library_models = scan_info["scan"].get("models", {})
+                if actual_models != library_models:
+                    # Find specific differences
+                    all_stages = set(actual_models.keys()) | set(library_models.keys())
+                    for stage in all_stages:
+                        actual = actual_models.get(stage)
+                        library = library_models.get(stage)
+                        if actual != library:
+                            issues.append({
+                                "type": "model_mismatch",
+                                "scan_id": scan_id,
+                                "details": f"Model mismatch for {scan_id} stage '{stage}'",
+                                "expected": actual,
+                                "actual": library
+                            })
+                            stats["model_mismatches"] += 1
+
+            except Exception as e:
+                # Error reading metadata - report as issue
+                issues.append({
+                    "type": "validation_error",
+                    "scan_id": scan_id,
+                    "details": f"Error validating {scan_id}: {str(e)}",
+                    "expected": None,
+                    "actual": None
+                })
+
+        return {
+            "valid": len(issues) == 0,
+            "issues": issues,
+            "stats": stats
+        }
+
+    def auto_fix_validation_issues(self, validation_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Automatically fix validation issues where possible.
+
+        Fixes:
+        - Orphaned scan directories: Add to library with metadata from disk
+        - Cost mismatches: Sync from disk to library
+        - Model mismatches: Sync from disk to library
+
+        Does NOT fix:
+        - Missing scan directories (requires manual recovery)
+
+        Args:
+            validation_result: Result from validate_library()
+
+        Returns:
+            Dictionary with fix results:
+            {
+                "fixed_count": int,
+                "unfixable_count": int,
+                "fixed_issues": [issue_type, ...],
+                "unfixable_issues": [issue_type, ...]
+            }
+        """
+        fixed = []
+        unfixable = []
+
+        for issue in validation_result["issues"]:
+            issue_type = issue["type"]
+            scan_id = issue["scan_id"]
+
+            try:
+                if issue_type == "cost_mismatch":
+                    # Sync cost from disk
+                    self.sync_scan_from_metadata(scan_id)
+                    fixed.append(issue_type)
+
+                elif issue_type == "model_mismatch":
+                    # Sync models from disk
+                    self.sync_scan_from_metadata(scan_id)
+                    fixed.append(issue_type)
+
+                elif issue_type == "orphaned_scan_dir":
+                    # Try to add to library from disk metadata
+                    scan_dir = self.storage_root / scan_id
+                    metadata_file = scan_dir / "metadata.json"
+
+                    if metadata_file.exists():
+                        with open(metadata_file, 'r') as f:
+                            metadata = json.load(f)
+
+                        title = metadata.get("title", scan_id)
+                        author = metadata.get("author", "Unknown")
+
+                        # Add to library
+                        self.add_book(
+                            title=title,
+                            author=author,
+                            scan_id=scan_id,
+                            notes="Auto-recovered from orphaned directory"
+                        )
+
+                        # Sync metadata
+                        self.sync_scan_from_metadata(scan_id)
+                        fixed.append(issue_type)
+                    else:
+                        unfixable.append(issue_type)
+
+                elif issue_type == "missing_scan_dir":
+                    # Cannot auto-fix - directory is gone
+                    unfixable.append(issue_type)
+
+                else:
+                    unfixable.append(issue_type)
+
+            except Exception as e:
+                logging.warning(f"Could not fix {issue_type} for {scan_id}: {e}")
+                unfixable.append(issue_type)
+
+        return {
+            "fixed_count": len(fixed),
+            "unfixable_count": len(unfixable),
+            "fixed_issues": fixed,
+            "unfixable_issues": unfixable
+        }

@@ -289,3 +289,264 @@ def test_library_handles_missing_directory(tmp_path):
 
     assert library_root.exists(), "Should create library directory"
     assert library.library_file.exists(), "Should create library.json"
+
+
+def test_atomic_update_scan_success(library_with_books):
+    """Test atomic update context manager commits on success."""
+    # Update scan atomically
+    with library_with_books.update_scan("test-one") as scan:
+        scan['status'] = 'processing'
+        scan['pages'] = 100
+        scan['cost_usd'] = 5.50
+
+    # Verify changes persisted
+    scan_info = library_with_books.get_scan_info("test-one")
+    assert scan_info['scan']['status'] == 'processing'
+    assert scan_info['scan']['pages'] == 100
+    assert scan_info['scan']['cost_usd'] == 5.50
+
+    # Verify saved to disk (reload library)
+    reloaded = LibraryIndex(storage_root=library_with_books.storage_root)
+    scan_info = reloaded.get_scan_info("test-one")
+    assert scan_info['scan']['status'] == 'processing'
+    assert scan_info['scan']['pages'] == 100
+    assert scan_info['scan']['cost_usd'] == 5.50
+
+
+def test_atomic_update_scan_rollback_on_exception(library_with_books):
+    """Test atomic update context manager rolls back on exception."""
+    # Get initial state
+    initial_info = library_with_books.get_scan_info("test-one")
+    initial_status = initial_info['scan']['status']
+
+    # Attempt update that fails
+    try:
+        with library_with_books.update_scan("test-one") as scan:
+            scan['status'] = 'new_status'
+            scan['pages'] = 999
+            raise ValueError("Simulated error")
+    except ValueError:
+        pass  # Expected
+
+    # Verify rollback - state should be unchanged
+    scan_info = library_with_books.get_scan_info("test-one")
+    assert scan_info['scan']['status'] == initial_status
+    assert scan_info['scan']['pages'] != 999
+
+    # Verify not saved to disk
+    reloaded = LibraryIndex(storage_root=library_with_books.storage_root)
+    scan_info = reloaded.get_scan_info("test-one")
+    assert scan_info['scan']['status'] == initial_status
+
+
+def test_atomic_update_scan_not_found(library_with_books):
+    """Test atomic update raises error for non-existent scan."""
+    with pytest.raises(ValueError, match="not found"):
+        with library_with_books.update_scan("nonexistent") as scan:
+            scan['status'] = 'test'
+
+
+def test_validate_library_all_valid(library_with_books):
+    """Test validation when library is consistent."""
+    # Create scan directories for both scans
+    for scan_id in ["test-one", "test-two"]:
+        scan_dir = library_with_books.storage_root / scan_id
+        scan_dir.mkdir()
+        # Create metadata.json
+        metadata_file = scan_dir / "metadata.json"
+        with open(metadata_file, 'w') as f:
+            json.dump({"processing_history": []}, f)
+
+    validation = library_with_books.validate_library()
+
+    assert validation["valid"] is True
+    assert len(validation["issues"]) == 0
+    assert validation["stats"]["total_scans_in_library"] == 2
+    assert validation["stats"]["total_scan_dirs_on_disk"] == 2
+
+
+def test_validate_library_missing_scan_dir(library_with_books):
+    """Test validation detects missing scan directory."""
+    # Don't create directories - scans exist in library but not on disk
+    validation = library_with_books.validate_library()
+
+    assert validation["valid"] is False
+    assert len(validation["issues"]) == 2  # Both scans missing
+
+    missing_issues = [i for i in validation["issues"] if i["type"] == "missing_scan_dir"]
+    assert len(missing_issues) == 2
+    assert validation["stats"]["missing_scan_dirs"] == 2
+
+
+def test_validate_library_orphaned_scan_dir(empty_library):
+    """Test validation detects orphaned scan directory."""
+    # Create a scan directory without library entry
+    orphan_dir = empty_library.storage_root / "orphan-scan"
+    orphan_dir.mkdir()
+    (orphan_dir / "metadata.json").touch()
+
+    validation = empty_library.validate_library()
+
+    assert validation["valid"] is False
+    orphaned_issues = [i for i in validation["issues"] if i["type"] == "orphaned_scan_dir"]
+    assert len(orphaned_issues) == 1
+    assert orphaned_issues[0]["scan_id"] == "orphan-scan"
+    assert validation["stats"]["orphaned_scan_dirs"] == 1
+
+
+def test_validate_library_cost_mismatch(library_with_books):
+    """Test validation detects cost mismatches."""
+    from utils import update_book_metadata
+
+    # Create scan directory with processing history
+    scan_dir = library_with_books.storage_root / "test-one"
+    scan_dir.mkdir()
+
+    # Create metadata with cost
+    metadata_file = scan_dir / "metadata.json"
+    with open(metadata_file, 'w') as f:
+        json.dump({"processing_history": []}, f)
+
+    update_book_metadata(scan_dir, 'correct', {'cost_usd': 10.00})
+
+    # Set different cost in library
+    library_with_books.update_scan_metadata("test-one", {'cost_usd': 5.00})
+
+    validation = library_with_books.validate_library()
+
+    assert validation["valid"] is False
+    cost_issues = [i for i in validation["issues"] if i["type"] == "cost_mismatch"]
+    assert len(cost_issues) == 1
+    assert cost_issues[0]["expected"] == 10.00
+    assert cost_issues[0]["actual"] == 5.00
+
+
+def test_validate_library_model_mismatch(library_with_books):
+    """Test validation detects model mismatches."""
+    from utils import update_book_metadata
+
+    # Create scan directory with processing history
+    scan_dir = library_with_books.storage_root / "test-one"
+    scan_dir.mkdir()
+
+    # Create metadata with models
+    metadata_file = scan_dir / "metadata.json"
+    with open(metadata_file, 'w') as f:
+        json.dump({"processing_history": []}, f)
+
+    update_book_metadata(scan_dir, 'correct', {'model': 'openai/gpt-4o-mini'})
+
+    # Set different model in library
+    library_with_books.update_scan_metadata("test-one", {
+        'models': {'correct': 'anthropic/claude-sonnet-4.5'}
+    })
+
+    validation = library_with_books.validate_library()
+
+    assert validation["valid"] is False
+    model_issues = [i for i in validation["issues"] if i["type"] == "model_mismatch"]
+    assert len(model_issues) == 1
+    assert model_issues[0]["expected"] == 'openai/gpt-4o-mini'
+    assert model_issues[0]["actual"] == 'anthropic/claude-sonnet-4.5'
+
+
+def test_auto_fix_cost_mismatch(library_with_books):
+    """Test auto-fix resolves cost mismatches."""
+    from utils import update_book_metadata
+
+    # Create scan directory with processing history
+    scan_dir = library_with_books.storage_root / "test-one"
+    scan_dir.mkdir()
+
+    metadata_file = scan_dir / "metadata.json"
+    with open(metadata_file, 'w') as f:
+        json.dump({"processing_history": []}, f)
+
+    update_book_metadata(scan_dir, 'correct', {'cost_usd': 10.00})
+
+    # Set wrong cost in library
+    library_with_books.update_scan_metadata("test-one", {'cost_usd': 5.00})
+
+    # Validate (should find mismatch)
+    validation = library_with_books.validate_library()
+    assert not validation["valid"]
+
+    # Auto-fix
+    fix_result = library_with_books.auto_fix_validation_issues(validation)
+
+    assert fix_result["fixed_count"] > 0
+    assert "cost_mismatch" in fix_result["fixed_issues"]
+
+    # Re-validate (should be fixed)
+    validation = library_with_books.validate_library()
+    # Note: may still have orphaned issues but cost mismatch should be gone
+    cost_issues = [i for i in validation["issues"] if i["type"] == "cost_mismatch"]
+    assert len(cost_issues) == 0
+
+
+def test_auto_fix_orphaned_directory(empty_library):
+    """Test auto-fix adds orphaned directory to library."""
+    # Create orphaned scan directory with metadata
+    orphan_dir = empty_library.storage_root / "orphan-scan"
+    orphan_dir.mkdir()
+
+    metadata_file = orphan_dir / "metadata.json"
+    with open(metadata_file, 'w') as f:
+        json.dump({
+            "title": "Orphaned Book",
+            "author": "Orphan Author",
+            "processing_history": []
+        }, f)
+
+    # Validate (should find orphan)
+    validation = empty_library.validate_library()
+    assert not validation["valid"]
+    assert validation["stats"]["orphaned_scan_dirs"] == 1
+
+    # Auto-fix
+    fix_result = empty_library.auto_fix_validation_issues(validation)
+
+    assert fix_result["fixed_count"] > 0
+    assert "orphaned_scan_dir" in fix_result["fixed_issues"]
+
+    # Verify added to library
+    scan_info = empty_library.get_scan_info("orphan-scan")
+    assert scan_info is not None
+    assert scan_info["title"] == "Orphaned Book"
+    assert scan_info["author"] == "Orphan Author"
+
+    # Re-validate (should be clean)
+    validation = empty_library.validate_library()
+    orphaned_issues = [i for i in validation["issues"] if i["type"] == "orphaned_scan_dir"]
+    assert len(orphaned_issues) == 0
+
+
+def test_atomic_save_with_fsync(library_with_books):
+    """Test that save uses atomic write with fsync."""
+    import os
+
+    # Update library
+    library_with_books.update_scan_metadata("test-one", {'pages': 500})
+
+    # Verify library.json exists and is valid
+    assert library_with_books.library_file.exists()
+
+    # Verify no temp files left behind
+    temp_files = list(library_with_books.storage_root.glob("library.json.tmp*"))
+    assert len(temp_files) == 0
+
+    # Verify can reload
+    reloaded = LibraryIndex(storage_root=library_with_books.storage_root)
+    scan_info = reloaded.get_scan_info("test-one")
+    assert scan_info['scan']['pages'] == 500
+
+
+def test_scan_id_uniqueness_validation(library_with_books):
+    """Test that add_book prevents duplicate scan_ids."""
+    # Try to add a book with an existing scan_id
+    with pytest.raises(ValueError, match="Scan ID 'test-one' already exists"):
+        library_with_books.add_book(
+            title="Different Book",
+            author="Different Author",
+            scan_id="test-one"  # This scan_id already exists
+        )
