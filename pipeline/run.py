@@ -173,16 +173,7 @@ class BookPipeline:
 
             processor = BookOCRProcessor(storage_root=str(self.storage_root), max_workers=max_workers)
             processor.process_book(self.book_slug, resume=resume)
-
-            # Track OCR completion (free, no cost)
-            from utils import update_book_metadata
-            update_book_metadata(self.book_dir, 'ocr', {
-                'model': 'tesseract',
-                'pages_processed': processor.total_pages if hasattr(processor, 'total_pages') else 0,
-                'cost_usd': 0.0  # OCR is free
-            })
-
-            # Atomically update library
+                # Atomically update library
             try:
                 from tools.library import LibraryIndex
                 library = LibraryIndex(storage_root=self.storage_root)
@@ -222,16 +213,6 @@ class BookPipeline:
             if hasattr(processor, 'stats'):
                 cost = processor.stats.get('total_cost_usd', 0)
                 self.logger.log(f"Correction cost: ${cost:.4f}")
-
-                # Persist to metadata
-                from utils import update_book_metadata
-                update_book_metadata(self.book_dir, 'correct', {
-                    'model': model,
-                    'pages_processed': processor.stats.get('pages_processed', 0),
-                    'total_errors_found': processor.stats.get('total_errors', 0),
-                    'cost_usd': cost
-                })
-
                 # Atomically update library
                 try:
                     from tools.library import LibraryIndex
@@ -276,14 +257,6 @@ class BookPipeline:
             if hasattr(agent4, 'stats'):
                 cost = agent4.stats.get('total_cost_usd', 0)
                 self.logger.log(f"Fix cost: ${cost:.4f}")
-
-                # Persist to metadata
-                from utils import update_book_metadata
-                update_book_metadata(self.book_dir, 'fix', {
-                    'model': agent4.model,
-                    'pages_fixed': agent4.stats.get('pages_fixed', 0),
-                    'cost_usd': cost
-                })
 
                 # Atomically update library
                 try:
@@ -332,16 +305,6 @@ class BookPipeline:
                 cost = structurer.stats.get('total_cost_usd', 0)
                 self.logger.log(f"Structure cost: ${cost:.4f}")
 
-                # Persist to metadata
-                from utils import update_book_metadata
-                update_book_metadata(self.book_dir, 'structure', {
-                    'model': model,
-                    'chapters_detected': structurer.stats.get('chapters_detected', 0),
-                    'chunks_created': structurer.stats.get('chunks_created', 0),
-                    'paragraphs_created': structurer.stats.get('paragraphs_created', 0),
-                    'cost_usd': cost
-                })
-
                 # Atomically update library
                 try:
                     from tools.library import LibraryIndex
@@ -380,17 +343,7 @@ class BookPipeline:
             self.logger.log(f"Quality review cost: ${cost:.2f}")
             self.logger.log(f"Overall grade: {report['overall_grade']} ({report['overall_score']}/100)")
 
-            # Persist to metadata
-            from utils import update_book_metadata
-            update_book_metadata(self.book_dir, 'quality', {
-                'model': model,
-                'overall_score': report['overall_score'],
-                'overall_grade': report['overall_grade'],
-                'flagged_issues': len(report['flagged_issues']),
-                'cost_usd': cost
-            })
-
-            # Atomically update library
+                # Atomically update library
             try:
                 from tools.library import LibraryIndex
                 library = LibraryIndex(storage_root=self.storage_root)

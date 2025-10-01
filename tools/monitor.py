@@ -257,7 +257,9 @@ class PipelineMonitor:
             return None
 
         # Calculate rate from elapsed time
-        elapsed = (datetime.now() - stage_status.start_time).total_seconds()
+        # Strip timezone info to avoid offset-naive vs offset-aware comparison errors
+        start_time_naive = stage_status.start_time.replace(tzinfo=None)
+        elapsed = (datetime.now() - start_time_naive).total_seconds()
         if elapsed < 1:
             return None
 
