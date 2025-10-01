@@ -93,7 +93,7 @@ def cmd_fix(args):
     from pipeline.fix import Agent4TargetedFix
 
     agent4 = Agent4TargetedFix(args.book_slug)
-    agent4.process_all_flagged()
+    agent4.process_all_flagged(resume=args.resume)
     return 0
 
 
@@ -464,6 +464,8 @@ def main():
     # =========================================================================
     fix_parser = subparsers.add_parser('fix', help='Run Agent 4 fixes only')
     fix_parser.add_argument('book_slug', help='Book slug')
+    fix_parser.add_argument('--resume', action='store_true',
+                           help='Resume from checkpoint (skip completed pages)')
     fix_parser.set_defaults(func=cmd_fix)
 
     # =========================================================================
