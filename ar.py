@@ -401,6 +401,89 @@ def cmd_library_quality(args):
     return 0
 
 
+def cmd_library_validate(args):
+    """Validate library consistency with disk state."""
+    from tools.library import LibraryIndex
+
+    library = LibraryIndex()
+
+    print("\nValidating library consistency...\n")
+    validation = library.validate_library()
+
+    # Print stats
+    stats = validation["stats"]
+    print(f"Scans in library:    {stats['total_scans_in_library']}")
+    print(f"Scan dirs on disk:   {stats['total_scan_dirs_on_disk']}")
+    print()
+
+    if validation["valid"]:
+        print("Library is consistent with disk state.")
+        return 0
+
+    # Print issues
+    print(f"Found {len(validation['issues'])} issue(s):\n")
+
+    issue_types = {
+        "missing_scan_dir": "Missing Scan Directory",
+        "orphaned_scan_dir": "Orphaned Scan Directory",
+        "cost_mismatch": "Cost Mismatch",
+        "model_mismatch": "Model Mismatch",
+        "validation_error": "Validation Error"
+    }
+
+    for issue in validation["issues"]:
+        issue_label = issue_types.get(issue["type"], issue["type"])
+        print(f"[{issue_label}] {issue['scan_id']}")
+        print(f"  {issue['details']}")
+        if issue.get("expected") is not None:
+            print(f"  Expected: {issue['expected']}")
+        if issue.get("actual") is not None:
+            print(f"  Actual:   {issue['actual']}")
+        print()
+
+    # Print summary by type
+    print("Summary:")
+    if stats["missing_scan_dirs"] > 0:
+        print(f"  Missing scan directories:  {stats['missing_scan_dirs']}")
+    if stats["orphaned_scan_dirs"] > 0:
+        print(f"  Orphaned scan directories: {stats['orphaned_scan_dirs']}")
+    if stats["cost_mismatches"] > 0:
+        print(f"  Cost mismatches:           {stats['cost_mismatches']}")
+    if stats["model_mismatches"] > 0:
+        print(f"  Model mismatches:          {stats['model_mismatches']}")
+
+    # Auto-fix if requested
+    if args.fix:
+        print("\nAttempting auto-fix...\n")
+        fix_result = library.auto_fix_validation_issues(validation)
+
+        if fix_result["fixed_count"] > 0:
+            print(f"Fixed {fix_result['fixed_count']} issue(s):")
+            for issue_type in set(fix_result["fixed_issues"]):
+                count = fix_result["fixed_issues"].count(issue_type)
+                print(f"  - {issue_types.get(issue_type, issue_type)}: {count}")
+            print()
+
+        if fix_result["unfixable_count"] > 0:
+            print(f"Could not fix {fix_result['unfixable_count']} issue(s):")
+            for issue_type in set(fix_result["unfixable_issues"]):
+                count = fix_result["unfixable_issues"].count(issue_type)
+                print(f"  - {issue_types.get(issue_type, issue_type)}: {count}")
+            print("\nThese issues require manual intervention.")
+
+        # Re-validate
+        print("\nRe-validating...\n")
+        validation = library.validate_library()
+        if validation["valid"]:
+            print("Library is now consistent!")
+            return 0
+        else:
+            print(f"Still have {len(validation['issues'])} issue(s) remaining.")
+            return 1
+
+    return 1
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -573,6 +656,11 @@ def main():
     quality_parser = library_subparsers.add_parser('quality', help='Run quality assessment on a scan')
     quality_parser.add_argument('scan_id', help='Scan ID to assess')
     quality_parser.set_defaults(func=cmd_library_quality)
+
+    # library validate
+    validate_parser = library_subparsers.add_parser('validate', help='Validate library consistency with disk')
+    validate_parser.add_argument('--fix', action='store_true', help='Automatically fix issues where possible')
+    validate_parser.set_defaults(func=cmd_library_validate)
 
     # Parse and execute
     args = parser.parse_args()

@@ -182,6 +182,16 @@ class BookPipeline:
                 'cost_usd': 0.0  # OCR is free
             })
 
+            # Atomically update library
+            try:
+                from tools.library import LibraryIndex
+                library = LibraryIndex(storage_root=self.storage_root)
+                with library.update_scan(self.book_slug) as scan:
+                    scan['status'] = 'ocr_complete'
+                self.logger.log("Updated library with OCR completion")
+            except Exception as e:
+                self.logger.log(f"Warning: Could not update library: {e}", level="WARNING")
+
             self.logger.stage_end("ocr", success=True)
             return True
 
@@ -222,6 +232,20 @@ class BookPipeline:
                     'cost_usd': cost
                 })
 
+                # Atomically update library
+                try:
+                    from tools.library import LibraryIndex
+                    library = LibraryIndex(storage_root=self.storage_root)
+                    with library.update_scan(self.book_slug) as scan:
+                        scan['status'] = 'corrected'
+                        scan['cost_usd'] = scan.get('cost_usd', 0.0) + cost
+                        if 'models' not in scan:
+                            scan['models'] = {}
+                        scan['models']['correct'] = model
+                    self.logger.log("Updated library with correction results")
+                except Exception as e:
+                    self.logger.log(f"Warning: Could not update library: {e}", level="WARNING")
+
             self.logger.stage_end("correct", success=True)
             return True
 
@@ -260,6 +284,20 @@ class BookPipeline:
                     'pages_fixed': agent4.stats.get('pages_fixed', 0),
                     'cost_usd': cost
                 })
+
+                # Atomically update library
+                try:
+                    from tools.library import LibraryIndex
+                    library = LibraryIndex(storage_root=self.storage_root)
+                    with library.update_scan(self.book_slug) as scan:
+                        scan['status'] = 'fixed'
+                        scan['cost_usd'] = scan.get('cost_usd', 0.0) + cost
+                        if 'models' not in scan:
+                            scan['models'] = {}
+                        scan['models']['fix'] = agent4.model
+                    self.logger.log("Updated library with fix results")
+                except Exception as e:
+                    self.logger.log(f"Warning: Could not update library: {e}", level="WARNING")
 
             self.logger.stage_end("fix", success=True)
             return True
@@ -304,6 +342,20 @@ class BookPipeline:
                     'cost_usd': cost
                 })
 
+                # Atomically update library
+                try:
+                    from tools.library import LibraryIndex
+                    library = LibraryIndex(storage_root=self.storage_root)
+                    with library.update_scan(self.book_slug) as scan:
+                        scan['status'] = 'structured'
+                        scan['cost_usd'] = scan.get('cost_usd', 0.0) + cost
+                        if 'models' not in scan:
+                            scan['models'] = {}
+                        scan['models']['structure'] = model
+                    self.logger.log("Updated library with structure results")
+                except Exception as e:
+                    self.logger.log(f"Warning: Could not update library: {e}", level="WARNING")
+
             self.logger.stage_end("structure", success=True)
             return True
 
@@ -337,6 +389,20 @@ class BookPipeline:
                 'flagged_issues': len(report['flagged_issues']),
                 'cost_usd': cost
             })
+
+            # Atomically update library
+            try:
+                from tools.library import LibraryIndex
+                library = LibraryIndex(storage_root=self.storage_root)
+                with library.update_scan(self.book_slug) as scan:
+                    scan['status'] = 'quality_reviewed'
+                    scan['cost_usd'] = scan.get('cost_usd', 0.0) + cost
+                    if 'models' not in scan:
+                        scan['models'] = {}
+                    scan['models']['quality'] = model
+                self.logger.log("Updated library with quality review results")
+            except Exception as e:
+                self.logger.log(f"Warning: Could not update library: {e}", level="WARNING")
 
             self.logger.stage_end("quality", success=True)
             return True
@@ -401,15 +467,20 @@ class BookPipeline:
                 self.logger.log(f"Pipeline stopped due to {stage} failure", level="ERROR")
                 break
 
-        # Sync costs to library.json if successful
+        # Note: Library is now updated atomically after each stage,
+        # so no final sync needed. Validate library consistency instead.
         if success:
             try:
                 from tools.library import LibraryIndex
                 library = LibraryIndex(storage_root=self.storage_root)
-                library.sync_scan_from_metadata(self.book_slug)
-                self.logger.log("✅ Synced costs and metadata to library.json")
+                validation = library.validate_library()
+                if validation["valid"]:
+                    self.logger.log("✅ Library is consistent with disk state")
+                else:
+                    self.logger.log(f"⚠️  Library has {len(validation['issues'])} inconsistencies", level="WARNING")
+                    self.logger.log("   Run 'ar library validate --fix' to resolve", level="WARNING")
             except Exception as e:
-                self.logger.log(f"Warning: Could not sync to library: {e}", level="WARNING")
+                self.logger.log(f"Warning: Could not validate library: {e}", level="WARNING")
 
         # Finalize
         self.logger.pipeline_end()
