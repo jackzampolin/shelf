@@ -153,15 +153,13 @@ Return as JSON:
 If you cannot find a clear title page, return confidence < 0.5 with null values.
 """
 
-    # Build message with images
+    # Build message with images (using OpenAI vision format for OpenRouter)
     content = [{"type": "text", "text": prompt}]
     for img_b64 in images:
         content.append({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/png",
-                "data": img_b64
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/png;base64,{img_b64}"
             }
         })
 
