@@ -15,8 +15,7 @@ Strategy: Highly focused, surgical corrections based on explicit feedback.
 import os
 import sys
 import json
-import requests
-import time
+import threading
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
@@ -24,7 +23,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from pricing import CostCalculator
+from llm_client import LLMClient
+from logger import create_logger
 
 
 class Agent4TargetedFix:
@@ -39,19 +39,20 @@ class Agent4TargetedFix:
         self.needs_review_dir = self.base_dir / "needs_review"
         self.corrected_dir = self.base_dir / "corrected"
 
+        # Initialize logger
+        logs_dir = self.base_dir / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        self.logger = create_logger(book_slug, "fix", log_dir=logs_dir)
+
         # Load API key
         load_dotenv()
-        self.api_key = os.getenv('OPEN_ROUTER_API_KEY') or os.getenv('OPENROUTER_API_KEY')
-        if not self.api_key:
-            raise ValueError("No OpenRouter API key found in environment")
 
         self.model = "anthropic/claude-3.5-sonnet"
 
-        # Initialize cost calculator with dynamic pricing
-        self.cost_calculator = CostCalculator()
+        # Initialize LLM client
+        self.llm_client = LLMClient()
 
         # Stats (thread-safe)
-        import threading
         self.stats_lock = threading.Lock()
         self.stats = {
             "pages_processed": 0,
@@ -61,77 +62,22 @@ class Agent4TargetedFix:
         }
 
     def call_llm(self, system_prompt: str, user_prompt: str, temperature=0.0):
-        """Make API call to OpenRouter."""
-        url = "https://openrouter.ai/api/v1/chat/completions"
+        """Make API call to OpenRouter with automatic retries."""
+        # Use unified LLMClient (has built-in retry logic)
+        response, usage, cost = self.llm_client.simple_call(
+            self.model,
+            system_prompt,
+            user_prompt,
+            temperature=temperature,
+            timeout=120,
+            max_retries=3
+        )
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/jackzampolin/ar-research",
-            "X-Title": "AR Research Agent 4 Fixes"
-        }
+        # Track cost
+        with self.stats_lock:
+            self.stats['total_cost_usd'] += cost
 
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "temperature": temperature
-        }
-
-        # Retry logic for transient errors
-        max_retries = 3
-        retry_delay = 2  # seconds
-
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(url, headers=headers, json=payload, timeout=120)
-                response.raise_for_status()
-
-                result = response.json()
-
-                # Extract usage for cost tracking
-                usage = result.get('usage', {})
-                prompt_tokens = usage.get('prompt_tokens', 0)
-                completion_tokens = usage.get('completion_tokens', 0)
-
-                # Calculate cost using dynamic pricing from OpenRouter API
-                cost = self.cost_calculator.calculate_cost(
-                    self.model,
-                    prompt_tokens,
-                    completion_tokens
-                )
-                with self.stats_lock:
-                    self.stats['total_cost_usd'] += cost
-
-                return result['choices'][0]['message']['content'], usage
-
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code >= 500:
-                    # Server error - retry with exponential backoff
-                    if attempt < max_retries - 1:
-                        wait_time = retry_delay * (2 ** attempt)
-                        print(f"  ⚠️  Server error {e.response.status_code}, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})...")
-                        time.sleep(wait_time)
-                        continue
-                    else:
-                        print(f"  ❌ Server error after {max_retries} attempts, skipping this page")
-                        raise
-                else:
-                    # Client error (4xx) - don't retry
-                    raise
-            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-                # Handle both Timeout and ConnectionError (which wraps ReadTimeoutError)
-                if attempt < max_retries - 1:
-                    wait_time = retry_delay * (2 ** attempt)
-                    error_type = "timeout" if isinstance(e, requests.exceptions.Timeout) else "connection error"
-                    print(f"  ⚠️  Request {error_type}, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})...")
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    print(f"  ❌ Request failed after {max_retries} attempts, skipping this page")
-                    raise
+        return response, usage
 
     def agent4_targeted_fix(self, page_num: int, page_data: dict, corrected_text: str,
                             agent3_feedback: str, missed_corrections: list):
@@ -141,7 +87,7 @@ class Agent4TargetedFix:
         This agent does NOT re-analyze the entire page. It ONLY fixes the
         specific issues that Agent 3 identified as missed.
         """
-        print(f"  Agent 4: Applying targeted fixes...")
+        self.logger.info("Applying targeted fixes", page=page_num, agent="agent4", missed_count=len(missed_corrections))
 
         system_prompt = """You are Agent 4, a precision correction specialist.
 
@@ -197,11 +143,11 @@ Return the complete corrected text."""
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(page_data, f, indent=2, default=str)
 
-            print(f"    ✓ Applied {len(missed_corrections)} targeted fixes")
+            self.logger.info(f"Applied {len(missed_corrections)} targeted fixes", page=page_num, fixes_applied=len(missed_corrections))
             return response
 
         except Exception as e:
-            print(f"    ✗ Error in Agent 4: {e}")
+            self.logger.error("Agent 4 error", page=page_num, error=str(e))
             import traceback
             traceback.print_exc()
 
@@ -300,7 +246,7 @@ Return the complete corrected text."""
             review_data = json.load(f)
 
         page_num = review_data.get("page_number")
-        print(f"\n📄 Processing page {page_num}...")
+        self.logger.info(f"Processing flagged page {page_num}", page=page_num)
 
         # Load corrected page from flat directory
         corrected_file = self.corrected_dir / f"page_{page_num:04d}.json"
@@ -311,7 +257,7 @@ Return the complete corrected text."""
             corrected_data = None
 
         if not corrected_data:
-            print(f"  ✗ Corrected JSON file not found")
+            self.logger.error("Corrected JSON file not found", page=page_num)
             with self.stats_lock:
                 self.stats['pages_failed'] += 1
             return
@@ -319,7 +265,7 @@ Return the complete corrected text."""
         # Checkpoint: Check if this page was already processed by Agent 4
         llm_processing = corrected_data.get('llm_processing', {})
         if 'agent4_fixes' in llm_processing:
-            print(f"  ✓ Already processed (checkpoint found), skipping")
+            self.logger.info("Already processed (checkpoint found), skipping", page=page_num)
             with self.stats_lock:
                 self.stats['pages_processed'] += 1
                 self.stats['pages_fixed'] += 1
@@ -329,7 +275,7 @@ Return the complete corrected text."""
         corrected_text = llm_processing.get('corrected_text', '')
 
         if not corrected_text:
-            print(f"  ✗ No corrected_text in JSON")
+            self.logger.error("No corrected_text in JSON", page=page_num)
             with self.stats_lock:
                 self.stats['pages_failed'] += 1
             return
@@ -340,12 +286,11 @@ Return the complete corrected text."""
         agent3_feedback = verification.get("review_reason", "")
         confidence = verification.get("confidence_score", 0.0)
 
-        print(f"  Original confidence: {confidence:.2f}")
-        print(f"  Agent 3 feedback: {agent3_feedback[:100]}...")
+        self.logger.info(f"Agent 3 feedback", page=page_num, original_confidence=confidence, feedback_preview=agent3_feedback[:100])
 
         # Parse missed corrections
         missed_corrections = self.parse_agent3_feedback(review_data)
-        print(f"  Identified {len(missed_corrections)} missed corrections")
+        self.logger.info(f"Identified {len(missed_corrections)} missed corrections", page=page_num, missed_count=len(missed_corrections))
 
         # Apply targeted fixes (pass corrected_data so we can update the full JSON)
         # Metadata is stored in the JSON's llm_processing.agent4_fixes section
@@ -363,13 +308,20 @@ Return the complete corrected text."""
 
     def process_all_flagged(self):
         """Process all flagged pages."""
+        # Get all flagged pages
+        flagged_files = sorted(self.needs_review_dir.glob("page_*.json"))
+
+        self.logger.start_stage(
+            flagged_pages=len(flagged_files),
+            max_workers=self.max_workers,
+            model=self.model
+        )
+
+        # Also print for compatibility
         print("=" * 70)
         print("🔧 Agent 4: Targeted Fixes")
         print(f"   Book: {self.book_slug}")
         print("=" * 70)
-
-        # Get all flagged pages
-        flagged_files = sorted(self.needs_review_dir.glob("page_*.json"))
         print(f"\n📋 Found {len(flagged_files)} pages flagged for review")
         print(f"⚙️  Processing with {self.max_workers} parallel workers\n")
 
@@ -382,14 +334,30 @@ Return the complete corrected text."""
             }
 
             # Process completions as they finish
+            completed = 0
             for future in as_completed(future_to_file):
                 review_file = future_to_file[future]
                 try:
                     future.result()
+                    completed += 1
+                    self.logger.progress(
+                        "Processing flagged pages",
+                        current=completed,
+                        total=len(flagged_files)
+                    )
                 except Exception as e:
-                    print(f"\n❌ Failed to process {review_file.name}: {e}")
+                    self.logger.error(f"Failed to process page", file=review_file.name, error=str(e))
                     with self.stats_lock:
                         self.stats['pages_failed'] += 1
+
+        # Log summary
+        self.logger.info(
+            "Agent 4 processing complete",
+            pages_processed=self.stats['pages_processed'],
+            pages_fixed=self.stats['pages_fixed'],
+            pages_failed=self.stats['pages_failed'],
+            total_cost_usd=self.stats['total_cost_usd']
+        )
 
         # Print summary
         print("\n" + "=" * 70)

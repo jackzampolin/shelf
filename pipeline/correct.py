@@ -9,7 +9,6 @@ import os
 import sys
 import json
 import copy
-import requests
 import time
 import threading
 from pathlib import Path
@@ -19,7 +18,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from pricing import CostCalculator
+from llm_client import LLMClient
+from logger import create_logger
 
 # Load environment variables
 load_dotenv()
@@ -61,13 +61,8 @@ class StructuredPageCorrector:
         self.max_workers = max_workers
         self.rate_limiter = RateLimiter(calls_per_minute)
 
-        # Get API key
-        self.api_key = os.getenv('OPEN_ROUTER_API_KEY') or os.getenv('OPENROUTER_API_KEY')
-        if not self.api_key:
-            raise ValueError("OPEN_ROUTER_API_KEY not found in environment")
-
-        # Initialize cost calculator with dynamic pricing
-        self.cost_calculator = CostCalculator()
+        # Initialize LLM client
+        self.llm_client = LLMClient()
 
         # Directories
         self.ocr_dir = self.book_dir / "ocr"
@@ -78,6 +73,9 @@ class StructuredPageCorrector:
 
         for dir_path in [self.corrected_dir, self.needs_review_dir, self.logs_dir, self.debug_dir]:
             dir_path.mkdir(exist_ok=True)
+
+        # Initialize unified logger
+        self.logger = create_logger(book_title, "correct", log_dir=self.logs_dir)
 
         # Thread-safe stats tracking
         self.stats = {
@@ -163,45 +161,20 @@ class StructuredPageCorrector:
         """Make API call to OpenRouter with rate limiting"""
         self.rate_limiter.wait()
 
-        url = "https://openrouter.ai/api/v1/chat/completions"
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/jackzampolin/ar-research",
-            "X-Title": "AR Research OCR Cleanup"
-        }
-
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "temperature": temperature
-        }
-
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-
-        result = response.json()
-
-        # Extract usage info for cost tracking
-        usage = result.get('usage', {})
-        prompt_tokens = usage.get('prompt_tokens', 0)
-        completion_tokens = usage.get('completion_tokens', 0)
-
-        # Calculate cost using dynamic pricing from OpenRouter API
-        cost = self.cost_calculator.calculate_cost(
+        # Use unified LLMClient
+        response, usage, cost = self.llm_client.simple_call(
             self.model,
-            prompt_tokens,
-            completion_tokens
+            system_prompt,
+            user_prompt,
+            temperature=temperature,
+            timeout=60
         )
 
+        # Track cost
         with self.stats_lock:
             self.stats['total_cost_usd'] += cost
 
-        return result['choices'][0]['message']['content'], usage
+        return response, usage
 
     def load_page_json(self, page_num):
         """Load structured JSON for a page"""
@@ -368,20 +341,17 @@ Return JSON error catalog for page {page_num} only."""
 
                 # Success - log retry if it wasn't first attempt
                 if attempt > 0:
-                    timestamp = datetime.now().strftime("%H:%M:%S")
-                    print(f"    [{timestamp}] ✓ Agent 1 succeeded on retry {attempt} for page {page_num}")
+                    self.logger.info(f"Agent 1 succeeded on retry {attempt}", page=page_num, agent="agent1", retry=attempt)
 
                 return error_catalog
 
             except Exception as e:
                 last_error = e
                 if attempt < max_retries:
-                    timestamp = datetime.now().strftime("%H:%M:%S")
-                    print(f"    [{timestamp}] ↻ Agent 1 retry {attempt + 1}/{max_retries} for page {page_num}: {e}")
+                    self.logger.warning(f"Agent 1 retry {attempt + 1}/{max_retries}", page=page_num, agent="agent1", error=str(e), retry=attempt + 1)
                     time.sleep(0.5 * (attempt + 1))  # Brief exponential backoff
                 else:
-                    timestamp = datetime.now().strftime("%H:%M:%S")
-                    print(f"    [{timestamp}] ✗ Agent 1 failed after {max_retries} retries for page {page_num}: {e}")
+                    self.logger.error(f"Agent 1 failed after {max_retries} retries", page=page_num, agent="agent1", error=str(e), retries=max_retries)
 
         # All retries exhausted
         return {
@@ -447,7 +417,7 @@ Return the corrected text with [CORRECTED:id] markers after each fix."""
             return corrected_text
 
         except Exception as e:
-            print(f"    ✗ Agent 2 error: {e}")
+            self.logger.error("Agent 2 error", page=page_num, agent="agent2", error=str(e))
             return target_text  # Return original on error
 
     def agent3_verify(self, page_num, page_data, error_catalog, corrected_text):
@@ -538,7 +508,7 @@ Verify each correction and check for unauthorized changes."""
             return verification
 
         except Exception as e:
-            print(f"    ✗ Agent 3 error: {e}")
+            self.logger.error("Agent 3 error", page=page_num, agent="agent3", error=str(e))
             return {
                 "page_number": page_num,
                 "confidence_score": 0.0,
@@ -639,13 +609,15 @@ Verify each correction and check for unauthorized changes."""
 
         self.stats['total_pages'] = end_page - start_page + 1
 
-        print(f"\n{'='*60}")
-        print(f"🚀 Starting LLM correction pipeline")
-        print(f"   Pages: {start_page}-{end_page} ({self.stats['total_pages']} total)")
-        print(f"   Model: {self.model}")
-        print(f"   Parallel workers: {self.max_workers}")
-        print(f"   Rate limit: ~{self.rate_limiter.calls_per_minute} calls/min")
-        print(f"{'='*60}\n")
+        # Log stage start with metadata
+        self.logger.start_stage(
+            start_page=start_page,
+            end_page=end_page,
+            total_pages=self.stats['total_pages'],
+            model=self.model,
+            max_workers=self.max_workers,
+            rate_limit=self.rate_limiter.calls_per_minute
+        )
 
         # Prepare page numbers
         page_numbers = list(range(start_page, end_page + 1))
@@ -665,25 +637,54 @@ Verify each correction and check for unauthorized changes."""
                 completed += 1
 
                 with self.progress_lock:
-                    status_icon = {
-                        'success': '✓',
-                        'skipped': '○',
-                        'error': '✗',
-                        'not_found': '?'
-                    }.get(result['status'], '?')
-
-                    timestamp = datetime.now().strftime("%H:%M:%S")
+                    # Log progress with detailed information
                     if result['status'] == 'success':
                         conf = result.get('confidence', 0)
                         errors = result.get('errors_found', 0)
-                        print(f"   [{timestamp}] [{status_icon}] Page {page_num}: {errors} errors, confidence {conf:.2f} ({completed}/{len(page_numbers)})")
+                        self.logger.progress(
+                            f"Page {page_num}: {errors} errors, confidence {conf:.2f}",
+                            current=completed,
+                            total=len(page_numbers),
+                            page=page_num,
+                            errors_found=errors,
+                            confidence=conf,
+                            status=result['status']
+                        )
+                    elif result['status'] == 'skipped':
+                        self.logger.info(
+                            f"Page {page_num}: skipped",
+                            page=page_num,
+                            status=result['status'],
+                            progress_current=completed,
+                            progress_total=len(page_numbers)
+                        )
                     else:
-                        print(f"   [{timestamp}] [{status_icon}] Page {page_num}: {result['status']} ({completed}/{len(page_numbers)})")
+                        self.logger.warning(
+                            f"Page {page_num}: {result['status']}",
+                            page=page_num,
+                            status=result['status'],
+                            error=result.get('error'),
+                            progress_current=completed,
+                            progress_total=len(page_numbers)
+                        )
 
         self.print_summary()
 
     def print_summary(self):
-        """Print processing summary"""
+        """Print processing summary and log completion"""
+        # Log summary to structured logs
+        self.logger.info(
+            "Processing complete",
+            total_pages=self.stats['total_pages'],
+            processed_pages=self.stats['processed_pages'],
+            skipped_pages=self.stats['skipped_pages'],
+            total_errors_found=self.stats['total_errors_found'],
+            corrections_applied=self.stats['corrections_applied'],
+            pages_needing_review=self.stats['pages_needing_review'],
+            total_cost_usd=self.stats['total_cost_usd']
+        )
+
+        # Also print human-readable summary (old format for compatibility)
         print(f"\n{'='*60}")
         print("📊 Processing Complete")
         print(f"{'='*60}")

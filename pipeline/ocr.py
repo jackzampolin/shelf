@@ -7,6 +7,7 @@ Extracts structured text with images, captions, headers, and footers
 import json
 import csv
 import io
+import sys
 from pathlib import Path
 from pdf2image import convert_from_path
 import pytesseract
@@ -16,6 +17,10 @@ import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from logger import create_logger
 
 
 class BlockClassifier:
@@ -169,6 +174,7 @@ class BookOCRProcessor:
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
         self.max_workers = max_workers
         self.progress_lock = threading.Lock()
+        self.logger = None  # Will be initialized per book
 
     def process_book(self, book_title):
         """Process all batches for a given book."""
@@ -183,7 +189,12 @@ class BookOCRProcessor:
         with open(metadata_file, 'r') as f:
             metadata = json.load(f)
 
-        print(f"📖 Processing: {metadata['title']}")
+        # Initialize logger for this book
+        logs_dir = book_dir / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        self.logger = create_logger(book_title, "ocr", log_dir=logs_dir)
+
+        self.logger.info(f"Processing book: {metadata['title']}")
 
         # Create output directories
         ocr_dir = book_dir / "ocr"
@@ -195,10 +206,12 @@ class BookOCRProcessor:
         # Check if using old batch structure or new simple structure
         if 'batches' in metadata and metadata['batches']:
             # Old batch-based structure
-            print(f"   Total batches: {len(metadata['batches'])}")
-            print(f"   Estimated pages: {metadata.get('total_pages', 'unknown')}")
-            print(f"   Mode: Batch-based (old system)")
-            print()
+            self.logger.start_stage(
+                total_batches=len(metadata['batches']),
+                estimated_pages=metadata.get('total_pages', 'unknown'),
+                mode="batch-based",
+                max_workers=self.max_workers
+            )
 
             total_pages = 0
             for batch_info in metadata['batches']:
@@ -206,7 +219,7 @@ class BookOCRProcessor:
                 pdf_path = book_dir / "source" / "batches" / f"batch_{batch_num:03d}" / batch_info['filename']
 
                 if not pdf_path.exists():
-                    print(f"⚠️  Batch {batch_num} PDF not found: {pdf_path}")
+                    self.logger.warning(f"Batch {batch_num} PDF not found", batch=batch_num, pdf_path=str(pdf_path))
                     continue
 
                 pages_processed = self.process_batch(
@@ -229,18 +242,20 @@ class BookOCRProcessor:
             pdf_files = sorted(source_dir.glob("*.pdf"))
 
             if not pdf_files:
-                print(f"⚠️  No PDFs found in {source_dir}")
+                self.logger.error(f"No PDFs found in source directory", source_dir=str(source_dir))
                 return
 
-            print(f"   PDFs: {len(pdf_files)}")
-            print(f"   Mode: Simple (new ingest system)")
-            print()
+            self.logger.start_stage(
+                pdfs=len(pdf_files),
+                mode="simple",
+                max_workers=self.max_workers
+            )
 
             total_pages = 0
             page_offset = 0  # Track page numbering across PDFs
 
             for batch_num, pdf_path in enumerate(pdf_files, 1):
-                print(f"\n📄 Processing: {pdf_path.name}")
+                self.logger.info(f"Processing PDF: {pdf_path.name}", batch=batch_num, pdf=pdf_path.name)
 
                 # Process PDF
                 pages_processed = self.process_batch(
@@ -264,14 +279,21 @@ class BookOCRProcessor:
         with open(metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
 
+        self.logger.info(
+            "OCR complete",
+            total_pages_processed=total_pages,
+            ocr_dir=str(ocr_dir),
+            images_dir=str(images_dir)
+        )
+
+        # Also print for compatibility
         print(f"\n✅ OCR complete: {total_pages} pages processed")
         print(f"   Output: {ocr_dir}")
         print(f"   Images: {images_dir}")
 
     def process_batch(self, pdf_path, batch_num, ocr_dir, images_dir, page_start, page_end):
         """Process a single PDF batch with layout analysis."""
-        print(f"📄 Batch {batch_num}: {pdf_path.name}")
-        print(f"   Converting PDF to images...")
+        self.logger.info(f"Starting batch {batch_num}: {pdf_path.name}", batch=batch_num, pdf=pdf_path.name)
 
         # Write directly to ocr/ directory (flat structure)
         batch_ocr_dir = ocr_dir
@@ -280,11 +302,17 @@ class BookOCRProcessor:
         try:
             images = convert_from_path(pdf_path, dpi=300)
         except Exception as e:
+            self.logger.error(f"Error converting PDF", batch=batch_num, error=str(e))
             print(f"❌ Error converting PDF: {e}")
             return 0
 
         num_pages = len(images)
-        print(f"   Processing {num_pages} pages with layout analysis (parallel, {self.max_workers} workers)...")
+        self.logger.info(
+            f"Processing {num_pages} pages with layout analysis",
+            batch=batch_num,
+            num_pages=num_pages,
+            max_workers=self.max_workers
+        )
 
         # Prepare page tasks
         tasks = []
@@ -321,13 +349,21 @@ class BookOCRProcessor:
                 except Exception as e:
                     errors += 1
                     with self.progress_lock:
-                        print(f"   ❌ Page {task['page_number']}: {e}")
+                        self.logger.error(f"Page processing error", page=task['page_number'], error=str(e))
 
                 # Progress update
                 with self.progress_lock:
-                    progress = completed + errors
-                    print(f"   Progress: {progress}/{num_pages} ({completed} ✓, {errors} ✗)", flush=True)
+                    progress_count = completed + errors
+                    self.logger.progress(
+                        f"Batch {batch_num} progress",
+                        current=progress_count,
+                        total=num_pages,
+                        batch=batch_num,
+                        completed=completed,
+                        errors=errors
+                    )
 
+        self.logger.info(f"Batch {batch_num} complete", batch=batch_num, completed=completed, total=num_pages)
         print(f"   ✅ Batch {batch_num} complete: {completed}/{num_pages} pages\n")
         return completed
 
@@ -353,8 +389,8 @@ class BookOCRProcessor:
             return True
 
         except Exception as e:
-            with self.progress_lock:
-                print(f"   ❌ Page {task['page_number']}: {e}")
+            if self.logger:
+                self.logger.error(f"Page processing failed", page=task['page_number'], error=str(e))
             return False
 
     def process_page(self, pil_image, page_number, images_dir):
