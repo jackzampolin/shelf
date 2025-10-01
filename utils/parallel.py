@@ -20,7 +20,6 @@ import sys
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from logger import PipelineLogger
-from checkpoint import CheckpointManager
 
 
 class RateLimiter:
@@ -82,7 +81,6 @@ class ParallelProcessor:
         max_workers: int = 30,
         rate_limit: Optional[int] = None,
         logger: Optional[PipelineLogger] = None,
-        checkpoint: Optional[CheckpointManager] = None,
         description: str = "Processing"
     ):
         """
@@ -92,13 +90,11 @@ class ParallelProcessor:
             max_workers: Maximum number of concurrent workers
             rate_limit: Optional API calls per minute limit
             logger: Optional logger instance for progress tracking
-            checkpoint: Optional checkpoint manager for resumability
             description: Human-readable description for logging
         """
         self.max_workers = max_workers
         self.rate_limiter = RateLimiter(rate_limit) if rate_limit else None
         self.logger = logger
-        self.checkpoint = checkpoint
         self.description = description
 
         # Thread-safe stats
@@ -114,9 +110,7 @@ class ParallelProcessor:
         self,
         items: List[Any],
         worker_func: Callable,
-        item_key: Optional[Callable[[Any], str]] = None,
-        progress_interval: int = 50,
-        skip_completed: bool = True
+        progress_interval: int = 50
     ) -> List[Dict[str, Any]]:
         """
         Process items in parallel with unified progress tracking.
@@ -124,24 +118,12 @@ class ParallelProcessor:
         Args:
             items: List of items to process
             worker_func: Function that processes one item, returns dict with 'result' and optional 'cost'
-            item_key: Optional function to extract identifier from item (for checkpointing)
             progress_interval: Log progress every N items
-            skip_completed: Skip items already in checkpoint
 
         Returns:
             List of results from worker_func
         """
-        # Filter out already-completed items
-        if self.checkpoint and skip_completed and item_key:
-            items_to_process = [
-                item for item in items
-                if not self.checkpoint.is_complete(item_key(item))
-            ]
-            skipped = len(items) - len(items_to_process)
-            if skipped > 0 and self.logger:
-                self.logger.info(f"Skipping {skipped} completed items (checkpoint)")
-        else:
-            items_to_process = items
+        items_to_process = items
 
         total = len(items_to_process)
 
@@ -177,10 +159,6 @@ class ParallelProcessor:
                         self.stats["succeeded"] += 1
                         if "cost" in result:
                             self.stats["total_cost"] += result.get("cost", 0.0)
-
-                    # Mark checkpoint
-                    if self.checkpoint and item_key:
-                        self.checkpoint.mark_complete(item_key(item), result)
 
                     # Progress logging
                     if self.logger and self.stats["processed"] % progress_interval == 0:
