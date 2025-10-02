@@ -33,10 +33,11 @@ class BookStructurer:
     6. Generate three outputs (Python)
     """
 
-    def __init__(self, book_slug: str, storage_root: Path = None):
+    def __init__(self, book_slug: str, storage_root: Path = None, model: str = None):
         self.book_slug = book_slug
         self.storage_root = storage_root or (Path.home() / "Documents" / "book_scans")
         self.book_dir = self.storage_root / book_slug
+        self.model = model  # Store model for use by sub-modules
 
         # Initialize logger
         logs_dir = self.book_dir / "logs"
@@ -45,7 +46,7 @@ class BookStructurer:
 
         # Initialize phase handlers
         self.loader = PageLoader(self.book_dir)
-        self.detector = StructureDetector()
+        self.detector = StructureDetector(model=model)
         self.extractor = ContentExtractor()
         self.generator = OutputGenerator(self.book_dir)
 

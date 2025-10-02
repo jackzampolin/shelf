@@ -105,44 +105,52 @@ class BookQueryServer:
 
     def search_book(self, scan_id: str, query: str, context_lines: int = 2) -> List[Dict[str, Any]]:
         """Full-text search across book content with context."""
-        chunks_dir = self.storage_root / scan_id / 'structured' / 'chunks'
-        if not chunks_dir.exists():
+        # Updated for v2.0 structure - search through chapters
+        chapter_dir = self.storage_root / scan_id / 'structured' / 'data' / 'body'
+        if not chapter_dir.exists():
             raise ValueError(f'No structured content found for: {scan_id}')
 
         query_lower = query.lower()
         results = []
 
-        for chunk_file in sorted(chunks_dir.glob('chunk_*.json')):
-            with open(chunk_file) as f:
-                chunk = json.load(f)
+        for chapter_file in sorted(chapter_dir.glob('chapter_*.json')):
+            with open(chapter_file) as f:
+                chapter = json.load(f)
 
-            text = chunk.get('text', '')
-            if query_lower not in text.lower():
-                continue
+            chapter_num = chapter.get('chapter', 0)
+            chapter_title = chapter.get('title', '')
 
-            # Find all occurrences in this chunk
-            lines = text.split('\n')
-            for i, line in enumerate(lines):
-                if query_lower in line.lower():
-                    # Extract context
-                    start = max(0, i - context_lines)
-                    end = min(len(lines), i + context_lines + 1)
-                    context = '\n'.join(lines[start:end])
+            # Search through paragraphs
+            for para in chapter.get('paragraphs', []):
+                text = para.get('text', '')
+                if query_lower not in text.lower():
+                    continue
 
-                    results.append({
-                        'chunk_id': chunk['chunk_id'],
-                        'chapter': chunk['chapter'],
-                        'pages': chunk['pages'],
-                        'match_line': line,
-                        'context': context,
-                        'position': i
-                    })
+                # Find all occurrences in this paragraph
+                lines = text.split('\n')
+                for i, line in enumerate(lines):
+                    if query_lower in line.lower():
+                        # Extract context
+                        start = max(0, i - context_lines)
+                        end = min(len(lines), i + context_lines + 1)
+                        context = '\n'.join(lines[start:end])
+
+                        results.append({
+                            'chapter': chapter_num,
+                            'chapter_title': chapter_title,
+                            'paragraph_id': para.get('id'),
+                            'pages': para.get('scan_pages', []),
+                            'match_line': line,
+                            'context': context,
+                            'position': i
+                        })
 
         return results
 
     def get_chapter(self, scan_id: str, chapter_number: int) -> Dict[str, Any]:
         """Retrieve a specific chapter with full text and metadata."""
-        chapter_dir = self.storage_root / scan_id / 'structured' / 'chapters'
+        # Updated path for v2.0 structure
+        chapter_dir = self.storage_root / scan_id / 'structured' / 'data' / 'body'
         chapter_file = chapter_dir / f'chapter_{chapter_number:02d}.json'
 
         if not chapter_file.exists():
@@ -151,55 +159,20 @@ class BookQueryServer:
         with open(chapter_file) as f:
             chapter_data = json.load(f)
 
-        # Also get the markdown version if available
-        md_file = chapter_dir / f'chapter_{chapter_number:02d}.md'
-        if md_file.exists():
-            with open(md_file) as f:
-                chapter_data['markdown'] = f.read()
-
         return chapter_data
 
     def get_chunk(self, scan_id: str, chunk_id: int) -> Dict[str, Any]:
-        """Retrieve a specific semantic chunk by ID."""
-        chunks_dir = self.storage_root / scan_id / 'structured' / 'chunks'
-        chunk_file = chunks_dir / f'chunk_{chunk_id:03d}.json'
-
-        if not chunk_file.exists():
-            raise ValueError(f'Chunk {chunk_id} not found in {scan_id}')
-
-        with open(chunk_file) as f:
-            return json.load(f)
+        """[DEPRECATED in v2.0] Chunks no longer exist. Use get_chapter() instead."""
+        raise NotImplementedError(
+            "Chunks were removed in pipeline v2.0. Use get_chapter() to retrieve chapter content, "
+            "or search_book() to find specific text."
+        )
 
     def get_chunk_context(self, scan_id: str, chunk_id: int, before: int = 1, after: int = 1) -> Dict[str, Any]:
-        """Get a chunk with surrounding chunks for context."""
-        chunks_dir = self.storage_root / scan_id / 'structured' / 'chunks'
-
-        # Get all available chunks
-        all_chunks = sorted(chunks_dir.glob('chunk_*.json'))
-        chunk_ids = [int(f.stem.split('_')[1]) for f in all_chunks]
-
-        if chunk_id not in chunk_ids:
-            raise ValueError(f'Chunk {chunk_id} not found in {scan_id}')
-
-        # Determine range
-        start_id = max(1, chunk_id - before)
-        end_id = min(max(chunk_ids), chunk_id + after)
-
-        result = {
-            'main_chunk_id': chunk_id,
-            'context_range': [start_id, end_id],
-            'chunks': []
-        }
-
-        for cid in range(start_id, end_id + 1):
-            chunk_file = chunks_dir / f'chunk_{cid:03d}.json'
-            if chunk_file.exists():
-                with open(chunk_file) as f:
-                    chunk_data = json.load(f)
-                    chunk_data['is_main'] = (cid == chunk_id)
-                    result['chunks'].append(chunk_data)
-
-        return result
+        """[DEPRECATED in v2.0] Chunks no longer exist. Use get_chapter() instead."""
+        raise NotImplementedError(
+            "Chunks were removed in pipeline v2.0. Use get_chapter() to retrieve chapter content."
+        )
 
     def list_chapters(self, scan_id: str) -> List[Dict[str, Any]]:
         """List all chapters in a book with metadata."""
@@ -213,31 +186,10 @@ class BookQueryServer:
         return metadata.get('chapters', [])
 
     def list_chunks(self, scan_id: str, chapter: Optional[int] = None) -> List[Dict[str, Any]]:
-        """List all chunks in a book, optionally filtered by chapter."""
-        chunks_dir = self.storage_root / scan_id / 'structured' / 'chunks'
-        if not chunks_dir.exists():
-            raise ValueError(f'No structured content found for: {scan_id}')
-
-        chunks = []
-        for chunk_file in sorted(chunks_dir.glob('chunk_*.json')):
-            with open(chunk_file) as f:
-                chunk = json.load(f)
-
-            # Filter by chapter if requested
-            if chapter is not None and chunk.get('chapter') != chapter:
-                continue
-
-            # Return summary (no full text)
-            chunks.append({
-                'chunk_id': chunk['chunk_id'],
-                'chapter': chunk['chapter'],
-                'pages': chunk['pages'],
-                'paragraph_ids': chunk.get('paragraph_ids', []),
-                'token_count': chunk.get('token_count', 0),
-                'preview': chunk.get('text', '')[:200] + '...'
-            })
-
-        return chunks
+        """[DEPRECATED in v2.0] Chunks no longer exist. Use list_chapters() instead."""
+        raise NotImplementedError(
+            "Chunks were removed in pipeline v2.0. Use list_chapters() to see available chapters."
+        )
 
 
 # Initialize MCP server

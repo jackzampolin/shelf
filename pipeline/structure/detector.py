@@ -22,9 +22,9 @@ from llm_client import LLMClient
 class StructureDetector:
     """Detect document structure using Claude Sonnet 4.5."""
 
-    def __init__(self):
+    def __init__(self, model: str = None):
         self.client = LLMClient()
-        self.model = "anthropic/claude-sonnet-4.5"
+        self.model = model or "anthropic/claude-sonnet-4.5"
         self.logger = None  # Will be set by parent BookStructurer
 
     def detect_structure(self, pages: List[Dict]) -> Dict:

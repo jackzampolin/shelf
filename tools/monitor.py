@@ -189,7 +189,8 @@ class PipelineMonitor:
             self.metadata = {}
 
         # Get total pages from metadata, or infer from OCR directory
-        self.total_pages = self.metadata.get('total_pages', 0)
+        # Check both 'total_pages' and 'total_pages_processed' for compatibility
+        self.total_pages = self.metadata.get('total_pages', 0) or self.metadata.get('total_pages_processed', 0)
         if self.total_pages == 0:
             ocr_dir = self.book_dir / "ocr"
             if ocr_dir.exists():
