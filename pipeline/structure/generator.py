@@ -260,7 +260,7 @@ class OutputGenerator:
             reading_parts.append(f"=== Chapter {chapter['number']}: {chapter['title']} ===")
             reading_parts.append("")
 
-            # Add chapter text
+            # Add chapter text (headers already filtered by loader)
             for page in pages:
                 if chapter['start_page'] <= page['scan_page'] <= chapter['end_page']:
                     reading_parts.append(page['text'])

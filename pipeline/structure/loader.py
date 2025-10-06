@@ -34,10 +34,41 @@ class PageLoader:
 
         return text
 
+    def extract_body_text(self, data: Dict) -> str:
+        """Extract text from body regions only, excluding headers/footers."""
+        # Get the best available text (agent4 fixes > corrected > raw)
+        llm_proc = data.get('llm_processing', {})
+        agent4_fixes = llm_proc.get('agent4_fixes', {})
+
+        # Use fixed text if available, otherwise corrected text
+        full_text = agent4_fixes.get('fixed_text') or llm_proc.get('corrected_text', '')
+
+        if not full_text:
+            return ''
+
+        # Get regions - filter to body text only (exclude headers, footers, page numbers)
+        regions = data.get('regions', [])
+        if not regions:
+            # No region info - return full text as fallback
+            return full_text
+
+        # Extract text from body regions only
+        body_text_parts = []
+        for region in sorted(regions, key=lambda r: r.get('reading_order', 0)):
+            region_type = region.get('type', 'body')
+            # Include body, caption, footnote - exclude header, footer, page_number
+            if region_type in ['body', 'caption', 'footnote']:
+                region_text = region.get('text', '')
+                if region_text:
+                    body_text_parts.append(region_text)
+
+        # If we have body regions, use them; otherwise fall back to full text
+        return '\n\n'.join(body_text_parts) if body_text_parts else full_text
+
     def load_pages(self) -> List[Dict]:
-        """Load all corrected pages."""
+        """Load all corrected pages, filtering headers from region data."""
         print("\n" + "="*70)
-        print("📄 Loading Pages")
+        print("📄 Loading Pages (filtering headers via OCR regions)")
         print("="*70)
 
         pages = []
@@ -52,7 +83,7 @@ class PageLoader:
                     data = json.load(f)
 
                 page_num = data.get('page_number')
-                raw_text = data.get('llm_processing', {}).get('corrected_text', '')
+                raw_text = self.extract_body_text(data)
 
                 if not raw_text:
                     continue

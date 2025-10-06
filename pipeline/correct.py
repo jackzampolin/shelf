@@ -549,6 +549,58 @@ Verify each correction and check for unauthorized changes."""
                 "review_reason": f"Verification failed: {str(e)}"
             }
 
+    def apply_corrections_to_regions(self, page_data, corrected_text, error_catalog):
+        """
+        Apply corrections back to individual regions.
+        This preserves the structured OCR output while incorporating LLM fixes.
+        """
+        import re
+
+        # Get correctable regions (same ones correction was applied to)
+        correctable_regions = self.filter_correctable_regions(page_data)
+
+        if not correctable_regions or error_catalog.get('total_errors_found', 0) == 0:
+            # No corrections needed, regions stay as-is
+            return page_data
+
+        # Build mapping of original text to corrected text
+        # Strategy: Use the error catalog to know what changed
+        errors = error_catalog.get('errors', [])
+
+        # For each region, check if it contains any of the corrected errors
+        # and apply those corrections to the region's text
+        for region in page_data.get('regions', []):
+            if region['type'] not in ['header', 'body', 'caption']:
+                continue
+
+            region_text = region.get('text', '')
+            updated_text = region_text
+
+            # Apply each correction if it appears in this region
+            for error in errors:
+                original = error.get('original_text', error.get('error_text', ''))
+                corrected = error.get('corrected_text', '')
+                error_id = error.get('error_id', error.get('id', 0))
+
+                if not original or not corrected:
+                    continue
+
+                # Check if this error appears in this region
+                if original in updated_text:
+                    # Apply correction with marker
+                    updated_text = updated_text.replace(
+                        original,
+                        f"{corrected}[CORRECTED:{error_id}]",
+                        1  # Only replace first occurrence
+                    )
+
+            # Update region text if any corrections were applied
+            if updated_text != region_text:
+                region['text'] = updated_text
+                region['corrected'] = True
+
+        return page_data
+
     def process_single_page(self, page_num, total_pages):
         """Process a single page through the 3-agent pipeline"""
         try:
@@ -590,12 +642,15 @@ Verify each correction and check for unauthorized changes."""
             # Agent 3: Verify
             verification = self.agent3_verify(page_num, page_data, error_catalog, corrected_text)
 
+            # NEW: Apply corrections back to individual regions
+            page_data = self.apply_corrections_to_regions(page_data, corrected_text, error_catalog)
+
             # Update page data with results
             page_data['llm_processing'] = {
                 'timestamp': datetime.now().isoformat(),
                 'model': self.model,
                 'error_catalog': error_catalog,
-                'corrected_text': corrected_text,
+                'corrected_text': corrected_text,  # Keep for backwards compatibility
                 'verification': verification
             }
 
