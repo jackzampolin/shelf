@@ -551,8 +551,11 @@ Verify each correction and check for unauthorized changes."""
 
     def apply_corrections_to_regions(self, page_data, corrected_text, error_catalog):
         """
-        Apply corrections back to individual regions.
-        This preserves the structured OCR output while incorporating LLM fixes.
+        Apply corrections back to individual regions by parsing [CORRECTED:id] markers.
+
+        Agent 2 returns text like: "I ardently[CORRECTED:1] championed it"
+        This tells us that the correction for error_id=1 changed something to "ardently".
+        We use the error catalog to find the original text, then apply the change to regions.
         """
         import re
 
@@ -563,29 +566,67 @@ Verify each correction and check for unauthorized changes."""
             # No corrections needed, regions stay as-is
             return page_data
 
-        # Build mapping of original text to corrected text
-        # Strategy: Use the error catalog to know what changed
-        errors = error_catalog.get('errors', [])
+        # Parse corrected_text to extract what each [CORRECTED:id] marker replaced
+        # Pattern: "word[CORRECTED:id]" or "multiple words[CORRECTED:id]"
+        # The corrected text appears BEFORE the marker
 
-        # For each region, check if it contains any of the corrected errors
-        # and apply those corrections to the region's text
+        errors = error_catalog.get('errors', [])
+        corrections_map = {}  # error_id -> {original, corrected}
+
+        # Build lookup map: error_id -> original_text
+        for error in errors:
+            error_id = error.get('error_id', error.get('id', 0))
+            original = error.get('original_text', error.get('error_text', ''))
+            if error_id and original:
+                corrections_map[error_id] = {'original': original, 'corrected': None}
+
+        # Parse [CORRECTED:id] markers to find what the correction changed TO
+        # We need to look backward from each marker to find the corrected text
+        # Strategy: Find the marker, look for the original text nearby, extract what replaced it
+
+        marker_pattern = r'\[CORRECTED:(\d+)\]'
+        marker_positions = [(m.start(), int(m.group(1))) for m in re.finditer(marker_pattern, corrected_text)]
+
+        for marker_pos, error_id in marker_positions:
+            if error_id not in corrections_map:
+                continue
+
+            original = corrections_map[error_id]['original']
+
+            # Look backward from the marker to find a word/phrase of similar length
+            # The corrected word(s) appear immediately before [CORRECTED:id]
+            # Extract text before marker, split into words, take last N words where N matches original word count
+            text_before = corrected_text[:marker_pos].rstrip()
+
+            # Count words in original to know how many to extract
+            original_words = original.split()
+            num_words = len(original_words)
+
+            # Extract last N words before the marker
+            words_before = text_before.split()
+            if len(words_before) >= num_words:
+                corrected_words = words_before[-num_words:]
+                corrected = ' '.join(corrected_words)
+                corrections_map[error_id]['corrected'] = corrected
+
+        # Now apply corrections to each region
         for region in page_data.get('regions', []):
-            if region['type'] not in ['header', 'body', 'caption']:
+            if region['type'] not in ['header', 'body', 'caption', 'footnote']:
                 continue
 
             region_text = region.get('text', '')
             updated_text = region_text
 
-            # Apply each correction if it appears in this region
-            for error in errors:
-                original = error.get('original_text', error.get('error_text', ''))
-                corrected = error.get('corrected_text', '')
-                error_id = error.get('error_id', error.get('id', 0))
+            # Apply each correction that appears in this region
+            for error_id, correction in corrections_map.items():
+                original = correction['original']
+                corrected = correction['corrected']
 
-                if not original or not corrected:
+                if not corrected:
+                    # Couldn't parse the correction from markers, skip it
                     continue
 
-                # Check if this error appears in this region
+                # Check if this error's original text appears in this region
                 if original in updated_text:
                     # Apply correction with marker
                     updated_text = updated_text.replace(

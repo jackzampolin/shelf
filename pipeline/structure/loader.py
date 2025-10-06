@@ -35,35 +35,40 @@ class PageLoader:
         return text
 
     def extract_body_text(self, data: Dict) -> str:
-        """Extract text from body regions only, excluding headers/footers."""
-        # Get the best available text (agent4 fixes > corrected > raw)
-        llm_proc = data.get('llm_processing', {})
-        agent4_fixes = llm_proc.get('agent4_fixes', {})
+        """
+        Extract corrected text from body regions only, excluding headers/footers.
 
-        # Use fixed text if available, otherwise corrected text
-        full_text = agent4_fixes.get('fixed_text') or llm_proc.get('corrected_text', '')
-
-        if not full_text:
-            return ''
-
-        # Get regions - filter to body text only (exclude headers, footers, page numbers)
+        Now that the correction stage updates region text directly, we extract
+        body regions which have corrections applied. This ensures:
+        1. Headers/footers/page numbers are excluded
+        2. Corrected text (not OCR text) is used
+        3. No need to fall back to full_text (which includes headers)
+        """
         regions = data.get('regions', [])
+
         if not regions:
-            # No region info - return full text as fallback
-            return full_text
+            # Fallback for pages without region data (shouldn't happen but handle gracefully)
+            llm_proc = data.get('llm_processing', {})
+            agent4_fixes = llm_proc.get('agent4_fixes', {})
+            return agent4_fixes.get('fixed_text') or llm_proc.get('corrected_text', '')
 
         # Extract text from body regions only
+        # These regions now have corrections applied by the correction stage
         body_text_parts = []
         for region in sorted(regions, key=lambda r: r.get('reading_order', 0)):
             region_type = region.get('type', 'body')
+
             # Include body, caption, footnote - exclude header, footer, page_number
             if region_type in ['body', 'caption', 'footnote']:
                 region_text = region.get('text', '')
                 if region_text:
                     body_text_parts.append(region_text)
 
-        # If we have body regions, use them; otherwise fall back to full text
-        return '\n\n'.join(body_text_parts) if body_text_parts else full_text
+        if not body_text_parts:
+            # Page has no body content (e.g., blank page, image-only page)
+            return ''
+
+        return '\n\n'.join(body_text_parts)
 
     def load_pages(self) -> List[Dict]:
         """Load all corrected pages, filtering headers from region data."""
