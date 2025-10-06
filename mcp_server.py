@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MCP Server for AR Research Book Library
+MCP Server for Scanshelf Book Library
 
 Provides Claude Desktop with direct access to processed books through MCP protocol.
 
@@ -18,9 +18,9 @@ Usage:
     Add to Claude Desktop config, then restart Claude:
     {
       "mcpServers": {
-        "ar-research": {
+        "scanshelf": {
           "command": "python",
-          "args": ["/path/to/ar-research/mcp_server.py"]
+          "args": ["/path/to/scanshelf/mcp_server.py"]
         }
       }
     }
@@ -193,7 +193,7 @@ class BookQueryServer:
 
 
 # Initialize MCP server
-server = Server("ar-research-books")
+server = Server("scanshelf-books")
 query_server = BookQueryServer()
 
 
@@ -370,7 +370,7 @@ async def main():
             read_stream,
             write_stream,
             InitializationOptions(
-                server_name="ar-research-books",
+                server_name="scanshelf-books",
                 server_version="0.1.0",
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(),

@@ -1,5 +1,5 @@
 """
-Centralized configuration management for AR Research pipeline.
+Centralized configuration management for Scanshelf pipeline.
 
 Loads configuration from environment variables with sensible defaults.
 """
@@ -21,8 +21,8 @@ class Config:
     OPEN_ROUTER_API_KEY = os.getenv('OPEN_ROUTER_API_KEY') or os.getenv('OPENROUTER_API_KEY')
 
     # OpenRouter site info (optional)
-    OPEN_ROUTER_SITE_URL = os.getenv('OPEN_ROUTER_SITE_URL', 'https://github.com/jackzampolin/ar-research')
-    OPEN_ROUTER_SITE_NAME = os.getenv('OPEN_ROUTER_SITE_NAME', 'AR Research Pipeline')
+    OPEN_ROUTER_SITE_URL = os.getenv('OPEN_ROUTER_SITE_URL', 'https://github.com/jackzampolin/scanshelf')
+    OPEN_ROUTER_SITE_NAME = os.getenv('OPEN_ROUTER_SITE_NAME', 'Scanshelf')
 
     # =========================================================================
     # Storage Paths
@@ -135,7 +135,7 @@ class Config:
     def print_config(cls):
         """Print current configuration (for debugging)."""
         print("=" * 70)
-        print("AR Research Configuration")
+        print("Scanshelf Configuration")
         print("=" * 70)
         print(f"Book Storage: {cls.BOOK_STORAGE_ROOT}")
         print(f"\nModels:")

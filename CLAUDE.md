@@ -180,7 +180,7 @@ GitHub Actions will run on:
 - PR approved
 - Linked issue closed
 
-## AR Research Specific Patterns
+## Scanshelf Specific Patterns
 
 ### Project Architecture
 

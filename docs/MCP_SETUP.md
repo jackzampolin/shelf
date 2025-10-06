@@ -1,10 +1,10 @@
 # MCP Server Setup Guide
 
-The AR Research MCP server provides Claude Desktop with direct access to your processed book library. This enables natural language queries against your book collection directly from Claude chat.
+The Scanshelf MCP server provides Claude Desktop with direct access to your processed book library. This enables natural language queries against your book collection directly from Claude chat.
 
 ## What is MCP?
 
-**Model Context Protocol (MCP)** is a standard protocol that allows LLMs like Claude to access external data sources and tools. By running the AR Research MCP server, you can:
+**Model Context Protocol (MCP)** is a standard protocol that allows LLMs like Claude to access external data sources and tools. By running the Scanshelf MCP server, you can:
 
 - List books in your library
 - Search across all book content
@@ -51,18 +51,18 @@ The configuration file location varies by platform:
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
-### 2. Add AR Research Server
+### 2. Add Scanshelf Server
 
 Edit `claude_desktop_config.json` and add the MCP server configuration:
 
 ```json
 {
   "mcpServers": {
-    "ar-research": {
+    "scanshelf": {
       "command": "python",
-      "args": ["/absolute/path/to/ar-research/mcp_server.py"],
+      "args": ["/absolute/path/to/scanshelf/mcp_server.py"],
       "env": {
-        "PYTHONPATH": "/absolute/path/to/ar-research"
+        "PYTHONPATH": "/absolute/path/to/scanshelf"
       }
     }
   }
@@ -70,7 +70,7 @@ Edit `claude_desktop_config.json` and add the MCP server configuration:
 ```
 
 **Important:**
-- Replace `/absolute/path/to/ar-research` with your actual project path
+- Replace `/absolute/path/to/scanshelf` with your actual project path
 - Use absolute paths, not relative paths or `~`
 - On macOS/Linux, find your path with: `pwd` in the project directory
 
@@ -79,11 +79,11 @@ Edit `claude_desktop_config.json` and add the MCP server configuration:
 ```json
 {
   "mcpServers": {
-    "ar-research": {
+    "scanshelf": {
       "command": "python",
-      "args": ["/Users/johnzampolin/go/src/github.com/jackzampolin/ar-research/mcp_server.py"],
+      "args": ["/Users/johnzampolin/go/src/github.com/jackzampolin/scanshelf/mcp_server.py"],
       "env": {
-        "PYTHONPATH": "/Users/johnzampolin/go/src/github.com/jackzampolin/ar-research"
+        "PYTHONPATH": "/Users/johnzampolin/go/src/github.com/jackzampolin/scanshelf"
       }
     }
   }
@@ -199,9 +199,9 @@ The MCP server uses your local `~/Documents/book_scans/library.json` catalog. En
 
 Claude Desktop logs MCP server output. To debug:
 
-1. **macOS**: `~/Library/Logs/Claude/mcp-server-ar-research.log`
-2. **Windows**: `%APPDATA%\Claude\logs\mcp-server-ar-research.log`
-3. **Linux**: `~/.local/share/Claude/logs/mcp-server-ar-research.log`
+1. **macOS**: `~/Library/Logs/Claude/mcp-server-scanshelf.log`
+2. **Windows**: `%APPDATA%\Claude\logs\mcp-server-scanshelf.log`
+3. **Linux**: `~/.local/share/Claude/logs/mcp-server-scanshelf.log`
 
 ## Architecture
 
@@ -239,4 +239,4 @@ The MCP server:
 
 - [MCP Specification](https://spec.modelcontextprotocol.io/)
 - [Claude Desktop Documentation](https://claude.ai/desktop)
-- [AR Research CLI Guide](../README.md)
+- [Scanshelf CLI Guide](../README.md)

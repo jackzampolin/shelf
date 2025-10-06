@@ -1,13 +1,19 @@
-# AR Research - Book Processing Pipeline
+# Scanshelf - Turn Physical Books into Digital Libraries
 
-Automated pipeline for processing scanned books through OCR, LLM-based error correction, and semantic structuring.
+Automated pipeline for processing scanned books into structured, searchable digital libraries. Built for researchers, audiobook creators, and anyone who wants AI-powered access to physical book collections.
+
+**Use Cases:**
+- 📚 **Research Libraries** - Convert book scans into queryable knowledge bases
+- 🎧 **Audiobook Creation** - Generate TTS-ready markdown from scans (future: direct TTS integration)
+- 🤖 **AI Chat** - Query books with Claude via MCP integration
+- 🔍 **Full-Text Search** - Semantic chunking for RAG applications
 
 ## Quick Start
 
 ```bash
 # Clone repo
-git clone <repo-url>
-cd ar-research
+git clone https://github.com/jackzampolin/scanshelf
+cd scanshelf
 
 # Setup Python environment
 uv venv
@@ -183,16 +189,6 @@ FIX_MODEL=anthropic/claude-3.5-sonnet     # Fix model
 STRUCTURE_MODEL=anthropic/claude-sonnet-4.5  # Structure model
 ```
 
-## Thesis Context
-
-This infrastructure supports research on how US decisions during 1935-1955 created the "Aerospace Republic" - a system prioritizing aerospace dominance and financial hegemony over industrial strength.
-
-**Key Research Questions:**
-- How did choosing Europe over Asia doom American manufacturing?
-- What warnings were ignored from MacArthur and the China Lobby?
-- How did Bretton Woods hollow out industrial capacity?
-- What alternative paths existed at decision points?
-
 ---
 
-*Built for systematic historical analysis with modern LLM infrastructure.*
+**Powered by Claude Sonnet 4.5** for intelligent document understanding and structure extraction.

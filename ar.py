@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AR Research CLI - Unified command-line interface for book processing
+Scanshelf CLI - Turn physical books into digital libraries
 
 Usage:
     ar pipeline <book-slug>           # Run full pipeline
@@ -609,7 +609,7 @@ def cmd_library_delete(args):
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        description='AR Research - Book Processing Pipeline',
+        description='Scanshelf - Turn Physical Books into Digital Libraries',
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 

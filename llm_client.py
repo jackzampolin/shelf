@@ -35,8 +35,8 @@ class LLMClient:
     """
 
     def __init__(self,
-                 site_url: str = "https://github.com/jackzampolin/ar-research",
-                 site_name: str = "AR Research"):
+                 site_url: str = "https://github.com/jackzampolin/scanshelf",
+                 site_name: str = "Scanshelf"):
         """
         Initialize LLM client.
 

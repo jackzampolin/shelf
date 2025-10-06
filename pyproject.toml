@@ -1,7 +1,7 @@
 [project]
-name = "ar-research"
+name = "scanshelf"
 version = "0.1.0"
-description = "Book scanning and OCR pipeline for historical research"
+description = "Turn physical books into digital libraries - OCR, correction, and structure extraction pipeline"
 requires-python = ">=3.12"
 dependencies = [
     "watchdog>=6.0.0",

@@ -1,5 +1,5 @@
 """
-Utility functions for AR Research pipeline.
+Utility functions for Scanshelf pipeline.
 """
 
 import json

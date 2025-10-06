@@ -1,9 +1,9 @@
-# AR Research Output Schema Documentation
+# Scanshelf Output Schema Documentation
 
 **Schema Version:** 2.0
 **Last Updated:** 2025-01-15
 
-This document describes the **actual** data structures produced by the AR Research pipeline. All schemas are based on the current implementation, not aspirational features.
+This document describes the **actual** data structures produced by the Scanshelf pipeline. All schemas are based on the current implementation, not aspirational features.
 
 ---
 

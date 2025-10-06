@@ -1,4 +1,4 @@
-# AR Research Test Suite
+# Scanshelf Test Suite
 
 Comprehensive end-to-end tests for the book processing pipeline.
 
