@@ -72,98 +72,36 @@ This enables: **Given text → find chunk → get scan_pages → open PDF to exa
 
 ---
 
-## Architecture: 3-Phase Hybrid Pipeline
+## Architecture: 2-Phase Bottom-Up Pipeline
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 1: Light Structure Detection (Claude Sonnet 4.5)     │
-│ • Input: Chapter start pages only (~20 pages)              │
-│ • Output: Approximate chapter boundaries + titles          │
-│ • Time: 5-10 seconds                                        │
-│ • Cost: ~$0.10                                              │
-└─────────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────────┐
-│ Phase 2: Content Extraction (GPT-4o-mini, parallel)        │
-│ • Input: Overlapping page batches                          │
-│ • Extract: Clean text, verify boundaries, find footnotes   │
+│ Phase 1: SLIDING WINDOW EXTRACTION (GPT-4o-mini, parallel) │
+│ • Input: Overlapping page batches (10 pages, 3 overlap)    │
+│ • Extract: Clean text + chapter markers + footnotes        │
+│ • Verify: Word counts, overlap consensus (3-agent pattern) │
 │ • Parallelization: 30 workers, ~91 batches                 │
 │ • Time: 2-3 minutes                                         │
 │ • Cost: ~$0.80                                              │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 3: Assembly & Chunking (GPT-4o-mini + Python)        │
+│ Phase 2: ASSEMBLY & CHUNKING (GPT-4o-mini + Python)        │
 │ • Merge batches (reconcile overlaps)                        │
-│ • Create semantic chunks for RAG                            │
+│ • Build document map from chapter evidence (bottom-up)     │
+│ • Create semantic chunks for RAG (500-1000 words)          │
 │ • Generate three output formats                             │
 │ • Verify completeness                                       │
 │ • Time: 30-60 seconds                                       │
 │ • Cost: ~$0.30                                              │
 └─────────────────────────────────────────────────────────────┘
 
-Total: ~3-4 minutes, ~$1.20 (40% cheaper than top-down only)
+Total: ~3-4 minutes, ~$1.10 (45% cheaper than old approach)
 ```
 
 ---
 
-## Phase 1: Light Structure Detection
-
-**Goal:** Get approximate chapter boundaries quickly without reading entire book.
-
-**Approach:**
-1. Use document map hints from metadata (if available)
-2. Sample first page of suspected chapter starts
-3. Ask Claude to identify chapter titles and boundaries
-
-**Input:**
-```python
-# For a book with ~25 chapters
-sample_pages = [
-    1,   # Title page
-    10,  # First chapter likely starts
-    25, 35, 50, 65, ...  # Every ~15 pages
-]
-# Total: ~20 pages instead of 636
-```
-
-**Prompt:**
-```
-Analyze these sampled pages and identify chapter boundaries.
-
-SAMPLED PAGES:
-[page 1 text]
-...
-[page 25 text - starts with "CHAPTER III: THE SALOON KEEPER"]
-...
-
-Return JSON:
-{
-  "chapters": [
-    {
-      "number": 3,
-      "title": "The Saloon Keeper",
-      "approximate_start_page": 25,
-      "confidence": "high"
-    },
-    ...
-  ]
-}
-```
-
-**Output:**
-- Approximate chapter boundaries (±2 pages)
-- Chapter titles
-- Section markers (preface, index, etc.)
-
-**Why not full-book pass?**
-- Full: Read 636 pages → $1.50, 60-90 seconds
-- Light: Read 20 pages → $0.10, 5-10 seconds
-- Extraction phase will verify/adjust boundaries anyway
-
----
-
-## Phase 2: Content Extraction (Sliding Windows)
+## Phase 1: Sliding Window Extraction
 
 **Goal:** Extract clean body text in parallel batches, removing running headers while preserving all substantive content.
 
@@ -384,7 +322,7 @@ if covered_pages != set(range(1, total_pages + 1)):
 
 ---
 
-## Phase 3: Assembly & Chunking
+## Phase 2: Assembly & Chunking
 
 **Goal:** Merge batches into final outputs with semantic chunking for RAG.
 
@@ -530,23 +468,21 @@ save('structured/archive/full_book.md', '\n'.join(md))
 
 | Phase | Model | Time | Cost | Notes |
 |-------|-------|------|------|-------|
-| Phase 1: Light Structure | Claude Sonnet 4.5 | 5-10s | $0.10 | 20 pages sampled |
-| Phase 2: Extraction | GPT-4o-mini | 2-3min | $0.80 | 91 batches × 30 workers |
-| Phase 3: Chunking | GPT-4o-mini | 30-60s | $0.30 | Semantic splitting |
-| **Total** | | **~4min** | **$1.20** | 40% cheaper than old approach |
+| Phase 1: Extraction | GPT-4o-mini | 2-3min | $0.80 | 91 batches × 30 workers |
+| Phase 2: Chunking | GPT-4o-mini | 30-60s | $0.30 | Semantic splitting |
+| **Total** | | **~3-4min** | **$1.10** | 45% cheaper than old approach |
 
 **Comparison with old approach:**
 - Old: Top-down structure ($1.50) + extraction ($0.50) = $2.00, 4-5 minutes
-- New: Hybrid approach = $1.20, 3-4 minutes
-- **Savings: 40% cost, 20% time**
+- New: Bottom-up extraction + chunking = $1.10, 3-4 minutes
+- **Savings: 45% cost, 20% time**
 
 ---
 
 ## Implementation Checklist
 
-- [ ] Phase 1: Light structure detector
-- [ ] Phase 2: Sliding window extractor with 3-agent verification
-- [ ] Phase 3: Batch merger and semantic chunker
+- [ ] Phase 1: Sliding window extractor with 3-agent verification
+- [ ] Phase 2: Batch merger and semantic chunker
 - [ ] Output generators (reading, data, archive)
 - [ ] Provenance tracking (chunk → scan pages)
 - [ ] Verification checkpoints
@@ -560,15 +496,17 @@ save('structured/archive/full_book.md', '\n'.join(md))
 
 ```
 pipeline/structure/
-├── __init__.py           # Main BookStructurer orchestrator
-├── light_detector.py     # Phase 1: Light structure detection
-├── window_extractor.py   # Phase 2: Sliding window extraction
-│   ├── extractor.py     # Agent 1
-│   ├── verifier.py      # Agent 2
-│   └── reconciler.py    # Agent 3
-├── chunker.py           # Phase 3: Semantic chunking
-├── generator.py         # Output generation (reuse/adapt existing)
-└── utils.py             # Shared utilities
+├── __init__.py              # Main BookStructurer orchestrator
+├── extractor.py            # Phase 1: Sliding window extraction orchestrator
+├── assembler.py            # Phase 2: Assembly & chunking orchestrator
+├── agents/
+│   ├── __init__.py
+│   ├── extract_agent.py    # Agent 1: Extract clean text
+│   ├── verify_agent.py     # Agent 2: Verify quality
+│   └── reconcile_agent.py  # Agent 3: Reconcile overlaps
+├── chunker.py              # Semantic chunking logic
+├── generator.py            # Output generation (adapted from v1)
+└── utils.py                # Shared utilities
 ```
 
 ---
