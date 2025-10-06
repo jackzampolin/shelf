@@ -55,12 +55,14 @@ OCR creates **regions** - structured blocks of text with types (header, body, fo
 **Output:** `corrected/page_*.json`
 
 **What it does:**
-1. Concatenates correctable regions (body, caption, footnote - excludes headers)
+1. Concatenates correctable regions (header, body, caption, footnote)
+   - **Note:** Headers are included because OCR sometimes misclassifies body text as "header" (e.g., chapter endings, large captions at page top)
+   - Headers will be filtered out later in the structure stage
 2. LLM detects OCR errors, returns error catalog
 3. LLM applies corrections, returns text with `[CORRECTED:id]` markers
 4. LLM verifies corrections, flags low-confidence pages for review
 5. **Parses markers** to find what was corrected
-6. **Updates each region** with corrections
+6. **Updates each region** with corrections (including headers)
 7. Marks regions as `corrected: true`
 
 **Example output:**
@@ -71,14 +73,15 @@ OCR creates **regions** - structured blocks of text with types (header, body, fo
     {
       "id": "r0",
       "type": "header",
-      "text": "80 THEODORE ROOSEVELT—AN AUTOBIOGRAPHY",
+      "text": "80 THEODORE ROOSEVELT—AN AUTOBIOGRAPHY in question made me feel that, whatever the theories might be, as a matter of practical common sense I could not conscientiously[CORRECTED:1] vote for the continuance...",
       "confidence": 0.95,
-      "reading_order": 1
+      "reading_order": 1,
+      "corrected": true
     },
     {
       "id": "r1",
       "type": "body",
-      "text": "Instead of opposing the bill I ardently[CORRECTED:1] championed it. It[CORRECTED:2] was poorly drawn...",
+      "text": "Instead of opposing the bill I ardently championed it. It[CORRECTED:3] was a poorly drawn measure...",
       "confidence": 0.92,
       "reading_order": 2,
       "corrected": true
@@ -101,12 +104,6 @@ OCR creates **regions** - structured blocks of text with types (header, body, fo
   }
 }
 ```
-
-**What changed:**
-- Body region text updated with corrections and `[CORRECTED:id]` markers
-- Region marked `corrected: true`
-- Header unchanged (will be filtered later)
-- `llm_processing` metadata for debugging
 
 **Code:** `pipeline/correct.py`
 
@@ -157,12 +154,7 @@ OCR creates **regions** - structured blocks of text with types (header, body, fo
 }
 ```
 
-**What changed:**
-- "Tt[CORRECTED:2]" → "It[FIXED:A4-1]" (fixed the missed correction)
-- Region marked `fixed: true`
-- `agent4_fixes` section added for debugging
-
-**Note:** Only ~50% of pages go through this stage (those flagged for review).
+**Note:** Only pages flagged for review go through this stage (typically 30-50% of total pages).
 
 **Code:** `pipeline/fix.py`
 

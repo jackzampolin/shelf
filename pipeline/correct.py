@@ -725,13 +725,22 @@ Verify each correction and check for unauthorized changes."""
         """Process range of pages with parallel execution"""
 
         if total_pages is None:
-            metadata_file = self.book_dir / "metadata.json"
-            if metadata_file.exists():
-                with open(metadata_file) as f:
-                    metadata = json.load(f)
-                    total_pages = metadata.get('total_pages', 447)
+            # Count actual OCR files instead of using hardcoded fallback
+            ocr_dir = self.book_dir / "ocr"
+            if ocr_dir.exists():
+                total_pages = len(list(ocr_dir.glob("page_*.json")))
             else:
-                total_pages = 447
+                # Try metadata as fallback
+                metadata_file = self.book_dir / "metadata.json"
+                if metadata_file.exists():
+                    with open(metadata_file) as f:
+                        metadata = json.load(f)
+                        total_pages = metadata.get('total_pages_processed', metadata.get('total_pages', 0))
+                else:
+                    total_pages = 0
+
+            if total_pages == 0:
+                raise ValueError(f"Could not determine total pages for {self.book_dir}")
 
         if end_page is None:
             end_page = total_pages
