@@ -126,7 +126,7 @@ You are an elite codebase analyst specializing in comprehensive code archaeology
 
 ## Project-Specific Context
 
-For this AR Research codebase:
+For this Scanshelf codebase:
 - Understand the pipeline architecture (OCR → Correct → Fix → Structure)
 - Recognize data flow patterns (pages → chapters → chunks)
 - Consider cost implications for LLM-based operations

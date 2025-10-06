@@ -105,7 +105,7 @@ Once configured, you can query your books naturally in Claude chat:
 
 **List all books:**
 ```
-What books do you have in the AR research library?
+What books do you have in the library?
 ```
 
 **Search for content:**

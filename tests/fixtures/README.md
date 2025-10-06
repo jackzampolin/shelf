@@ -1,6 +1,6 @@
 # Test Fixtures
 
-This directory contains test data for the AR Research pipeline.
+This directory contains test data for the Scanshelf pipeline.
 
 ## test_book/
 

@@ -30,39 +30,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ar-research"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "mcp" },
-    { name = "numpy" },
-    { name = "opencv-python" },
-    { name = "pdf2image" },
-    { name = "pillow" },
-    { name = "pypdf2" },
-    { name = "pytesseract" },
-    { name = "pytest" },
-    { name = "python-dotenv" },
-    { name = "requests" },
-    { name = "watchdog" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "mcp", specifier = ">=0.1.0" },
-    { name = "numpy", specifier = ">=1.24.0" },
-    { name = "opencv-python", specifier = ">=4.8.0" },
-    { name = "pdf2image", specifier = ">=1.17.0" },
-    { name = "pillow", specifier = ">=10.0.0" },
-    { name = "pypdf2", specifier = ">=3.0.0" },
-    { name = "pytesseract", specifier = ">=0.3.10" },
-    { name = "pytest", specifier = ">=7.4.0" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "requests", specifier = ">=2.31.0" },
-    { name = "watchdog", specifier = ">=6.0.0" },
-]
-
-[[package]]
 name = "attrs"
 version = "25.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -692,6 +659,39 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/dd/10/6b283707780a81919f71625351182b4f98932ac89a09023cb61865136244/rpds_py-0.27.1-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:f39f58a27cc6e59f432b568ed8429c7e1641324fbe38131de852cd77b2d534b0", size = 555813 },
     { url = "https://files.pythonhosted.org/packages/04/2e/30b5ea18c01379da6272a92825dd7e53dc9d15c88a19e97932d35d430ef7/rpds_py-0.27.1-cp314-cp314t-win32.whl", hash = "sha256:d5fa0ee122dc09e23607a28e6d7b150da16c662e66409bbe85230e4c85bb528a", size = 217385 },
     { url = "https://files.pythonhosted.org/packages/32/7d/97119da51cb1dd3f2f3c0805f155a3aa4a95fa44fe7d78ae15e69edf4f34/rpds_py-0.27.1-cp314-cp314t-win_amd64.whl", hash = "sha256:6567d2bb951e21232c2f660c24cf3470bb96de56cdcb3f071a83feeaff8a2772", size = 230097 },
+]
+
+[[package]]
+name = "scanshelf"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "mcp" },
+    { name = "numpy" },
+    { name = "opencv-python" },
+    { name = "pdf2image" },
+    { name = "pillow" },
+    { name = "pypdf2" },
+    { name = "pytesseract" },
+    { name = "pytest" },
+    { name = "python-dotenv" },
+    { name = "requests" },
+    { name = "watchdog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", specifier = ">=0.1.0" },
+    { name = "numpy", specifier = ">=1.24.0" },
+    { name = "opencv-python", specifier = ">=4.8.0" },
+    { name = "pdf2image", specifier = ">=1.17.0" },
+    { name = "pillow", specifier = ">=10.0.0" },
+    { name = "pypdf2", specifier = ">=3.0.0" },
+    { name = "pytesseract", specifier = ">=0.3.10" },
+    { name = "pytest", specifier = ">=7.4.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "requests", specifier = ">=2.31.0" },
+    { name = "watchdog", specifier = ">=6.0.0" },
 ]
 
 [[package]]

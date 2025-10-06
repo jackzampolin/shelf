@@ -31,11 +31,11 @@ class PricingCache:
         Initialize pricing cache.
 
         Args:
-            cache_dir: Directory to store cache file (default: ~/.cache/ar-research)
+            cache_dir: Directory to store cache file (default: ~/.cache/scanshelf)
             cache_ttl_hours: Hours before cache expires (default: 24)
         """
         if cache_dir is None:
-            cache_dir = Path.home() / ".cache" / "ar-research"
+            cache_dir = Path.home() / ".cache" / "scanshelf"
 
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
