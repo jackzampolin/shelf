@@ -216,7 +216,7 @@ For brevity in these docs, we show `ar <command>`, but **always expand it to `uv
 ar library list                    # See what books exist (run as: uv run python ar.py library list)
 ar library show <scan-id>          # Get book details
 ar library stats                   # Collection statistics
-ar library ingest <directory>      # Smart add with LLM metadata
+ar library add <directory>      # Smart add with LLM metadata
 ```
 
 **Processing Pipeline:**
@@ -236,16 +236,16 @@ ar monitor <scan-id>               # Real-time progress with ETA
 
 **Common Patterns:**
 ```bash
-# Discover available books to ingest
+# Discover available books to add
 ar library discover ~/Documents/Scans
 
-# Compare available vs. ingested books
+# Compare available vs. added books
 ar library list                    # See what's already in library
 ar library discover ~/Documents/Scans  # See what PDFs are available
-# Compare the two lists to find books not yet ingested
+# Compare the two lists to find books not yet added
 
-# Add a new book (run ingest on specific directory)
-ar library ingest ~/Documents/Scans/fiery-peace-1.pdf ~/Documents/Scans/fiery-peace-2.pdf ...
+# Add a new book (run added on specific directory)
+ar library add ~/Documents/Scans/fiery-peace-1.pdf ~/Documents/Scans/fiery-peace-2.pdf ...
 
 # Process it completely
 ar pipeline modest-lovelace

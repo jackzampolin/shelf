@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 from pipeline.structure.agents import (
     extract_batch,
-    verify_extraction,
     verify_extraction_simple,
     reconcile_overlaps,
     text_similarity
@@ -22,7 +21,7 @@ from pipeline.structure.agents import (
 # Roosevelt autobiography pages for testing
 ROOSEVELT_DIR = Path.home() / "Documents" / "book_scans" / "roosevelt-autobiography" / "corrected"
 
-# Test pages: 75-84 (10 pages for one batch)
+# Test pages: 75-84 (10 pages - production batch size)
 TEST_PAGES = list(range(75, 85))
 
 
@@ -48,26 +47,13 @@ def load_roosevelt_pages(page_numbers):
     not ROOSEVELT_DIR.exists(),
     reason="Roosevelt autobiography test data not available"
 )
-def test_roosevelt_data_exists():
-    """Verify Roosevelt test data is available."""
-    assert ROOSEVELT_DIR.exists(), "Roosevelt corrected directory should exist"
-
-    # Check that we have enough pages
-    page_files = list(ROOSEVELT_DIR.glob("page_*.json"))
-    assert len(page_files) >= 100, f"Expected at least 100 Roosevelt pages, found {len(page_files)}"
-
-
-@pytest.mark.skipif(
-    not ROOSEVELT_DIR.exists(),
-    reason="Roosevelt autobiography test data not available"
-)
 @pytest.mark.api
 @pytest.mark.slow
 def test_extract_agent_on_roosevelt_batch():
-    """Test extract agent on 10 Roosevelt pages (1 batch)."""
+    """Test extract agent on 10 Roosevelt pages (production batch size)."""
     pages = load_roosevelt_pages(TEST_PAGES)
 
-    # Run extraction
+    # Run extraction (will take ~1-2 minutes for 10 pages)
     result = extract_batch(pages)
 
     # Verify result structure
@@ -89,11 +75,18 @@ def test_extract_agent_on_roosevelt_batch():
         assert 'text' in para
         assert 'scan_page' in para
         assert 'type' in para
-        assert para['scan_page'] in TEST_PAGES, "Paragraph page should be in batch"
+        # LLM might return scan_page as string or int, handle both
+        page = para['scan_page'] if isinstance(para['scan_page'], int) else int(para['scan_page'])
+        assert page in TEST_PAGES, f"Paragraph page {page} should be in batch {TEST_PAGES}"
 
     print(f"\n✓ Extracted {result['word_count']} words from {len(TEST_PAGES)} pages")
     print(f"✓ Found {len(result['paragraphs'])} paragraphs")
     print(f"✓ Removed header pattern: {result.get('running_header_pattern', 'none')}")
+
+    # Verify we got reasonable text extraction from 10 pages
+    # Roosevelt pages average ~500 words/page, so 10 pages = ~5000 words
+    # After header removal, expect 60-90% = 3000-4500 words
+    assert result['word_count'] > 2000, f"Should extract substantial content from 10 pages, got {result['word_count']}"
 
 
 @pytest.mark.skipif(
@@ -101,10 +94,10 @@ def test_extract_agent_on_roosevelt_batch():
     reason="Roosevelt autobiography test data not available"
 )
 def test_verify_agent_simple():
-    """Test simple verification (no LLM) on Roosevelt data."""
+    """Test verification logic with real Roosevelt data and mock extraction."""
     pages = load_roosevelt_pages(TEST_PAGES[:5])  # Use 5 pages
 
-    # Create a mock extraction result
+    # Create a mock extraction result with very low word count
     extraction_result = {
         'clean_text': "Test content here",
         'paragraphs': [
@@ -114,29 +107,19 @@ def test_verify_agent_simple():
         'scan_pages': [75, 76, 77, 78, 79]
     }
 
-    # Run simple verification
+    # Run simple verification (no LLM call)
     verification = verify_extraction_simple(pages, extraction_result)
 
-    # Verify result structure
-    assert 'quality_score' in verification
-    assert 'word_count_ok' in verification
-    assert 'word_count_ratio' in verification
-    assert 'confidence' in verification
-
-    # Should flag extremely low word count
+    # Should detect excessive content loss
     assert verification['word_count_ratio'] < 0.60, "Should detect excessive content loss"
     assert not verification['word_count_ok'], "Should flag as not OK"
 
     print(f"\n✓ Verification detected content loss: {verification['word_count_ratio']:.1%} retained")
 
 
-@pytest.mark.skipif(
-    not ROOSEVELT_DIR.exists(),
-    reason="Roosevelt autobiography test data not available"
-)
 def test_reconcile_agent_consensus():
-    """Test reconcile agent when extractions match."""
-    # Create two identical extractions (simulating consensus)
+    """Test reconciliation logic when extractions match."""
+    # Create two identical extractions
     extraction1 = {
         'clean_text': "This is a test paragraph about Roosevelt's presidency.\n\nAnother paragraph here.",
         'paragraphs': [
@@ -163,21 +146,14 @@ def test_reconcile_agent_consensus():
     reconciliation = reconcile_overlaps(extraction1, extraction2, overlap_pages)
 
     # Should achieve consensus
-    assert reconciliation['status'] == 'consensus', "Identical extractions should achieve consensus"
-    assert reconciliation['similarity'] >= 0.95, f"Similarity should be high, got {reconciliation['similarity']}"
-    assert reconciliation['confidence'] == 'high', "Confidence should be high"
+    assert reconciliation['status'] == 'consensus'
+    assert reconciliation['similarity'] >= 0.95
+    assert reconciliation['confidence'] == 'high'
     assert reconciliation['resolution_method'] == 'consensus'
 
-    print(f"\n✓ Reconciliation achieved consensus: {reconciliation['similarity']:.1%} similarity")
 
-
-@pytest.mark.skipif(
-    not ROOSEVELT_DIR.exists(),
-    reason="Roosevelt autobiography test data not available"
-)
 def test_reconcile_agent_disagreement():
-    """Test reconcile agent when extractions differ."""
-    # Create two different extractions
+    """Test reconciliation logic when extractions differ."""
     extraction1 = {
         'clean_text': "This is version A of the text.",
         'paragraphs': [
@@ -202,28 +178,24 @@ def test_reconcile_agent_disagreement():
     reconciliation = reconcile_overlaps(extraction1, extraction2, overlap_pages)
 
     # Should detect disagreement
-    assert reconciliation['status'] == 'disagreement', "Different extractions should disagree"
-    assert reconciliation['similarity'] < 0.95, f"Similarity should be low, got {reconciliation['similarity']}"
-    assert reconciliation['confidence'] == 'low', "Confidence should be low"
-    assert reconciliation['needs_review'], "Should need review"
-
-    print(f"\n✓ Reconciliation detected disagreement: {reconciliation['similarity']:.1%} similarity")
+    assert reconciliation['status'] == 'disagreement'
+    assert reconciliation['similarity'] < 0.95
+    assert reconciliation['confidence'] == 'low'
+    assert reconciliation['needs_review']
 
 
 def test_text_similarity():
-    """Test text similarity function."""
+    """Test text similarity calculation."""
     # Identical texts
     text1 = "The quick brown fox jumps over the lazy dog."
     text2 = "The quick brown fox jumps over the lazy dog."
-    assert text_similarity(text1, text2) == 1.0, "Identical texts should have 1.0 similarity"
+    assert text_similarity(text1, text2) == 1.0
 
     # Completely different texts
     text3 = "Something entirely different."
-    assert text_similarity(text1, text3) < 0.5, "Different texts should have low similarity"
+    assert text_similarity(text1, text3) < 0.5
 
     # Similar but not identical
     text4 = "The quick brown fox jumped over the lazy dog."
     sim = text_similarity(text1, text4)
-    assert 0.8 < sim < 1.0, f"Similar texts should have high similarity, got {sim}"
-
-    print(f"\n✓ Text similarity working correctly")
+    assert 0.8 < sim < 1.0

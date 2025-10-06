@@ -142,12 +142,13 @@ Start immediately with the opening brace {
 Note: chapter_markers and footnotes arrays may be empty if not present. That's expected.
 </output_schema>"""
 
-    # Call LLM
+    # Call LLM (with extended timeout for large batches)
     response, usage, cost = call_llm(
         model="openai/gpt-4o-mini",
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        temperature=0.1
+        temperature=0.1,
+        timeout=300  # 5 minutes for 10-page batches
     )
 
     # Parse response

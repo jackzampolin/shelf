@@ -230,7 +230,7 @@ The MCP server:
 
 ## Next Steps
 
-- Add more books with `ar library ingest <directory>`
+- Add more books with `ar library add <directory>`
 - Process books through the full pipeline with `ar pipeline <scan-id>`
 - Query your collection naturally from Claude Desktop
 - For programmatic access, see `docs/FLASK_API.md` (coming soon)
