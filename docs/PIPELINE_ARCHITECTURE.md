@@ -2,43 +2,42 @@
 
 ## Overview
 
-The Scanshelf pipeline transforms scanned book PDFs into structured, corrected text through four main stages. Each stage builds on the previous one, progressively refining the text while maintaining a consistent region-based data model.
+The Scanshelf pipeline transforms scanned book PDFs into structured, corrected text through four stages: OCR, Correction, Fix, and Structure. Each stage builds on the previous one using a region-based data model.
 
-## Core Principle: Region-Based Corrections
+## Core Principle: Regions
 
-**Key Insight:** Corrections and fixes are applied to individual OCR regions, not to flat text. This allows us to:
-1. Filter out headers/footers by region type
-2. Preserve OCR structure (reading order, region types)
-3. Apply corrections incrementally without losing context
-4. Extract clean body text for the structure stage
+OCR creates **regions** - structured blocks of text with types (header, body, footer, etc.). Corrections are applied to individual regions, not flat text. This lets us filter by region type while preserving corrections.
 
-## Data Transformation Through Pipeline
+## Stage 1: OCR
 
-### Stage 1: OCR
-
-**Input:** PDF page image
-**Output:** `ocr/page_0100.json`
+**Input:** PDF file
+**Output:** `ocr/page_*.json` + `images/page_*.png`
 
 **What it does:**
-- Extracts text using Tesseract OCR
-- Identifies regions (header, body, footer, etc.)
-- Assigns reading order to regions
-- Creates initial page JSON with raw OCR text
+1. Converts PDF to images (one per page)
+2. Runs Tesseract OCR on each image
+3. Detects regions (header, body, caption, footer, page number)
+4. Assigns reading order to regions
+5. Saves JSON with raw OCR text in each region
 
-**Example Output:**
+**Example output:**
 ```json
 {
   "page_number": 100,
   "regions": [
     {
+      "id": "r0",
       "type": "header",
       "text": "80 THEODORE ROOSEVELT—AN AUTOBIOGRAPHY",
+      "bbox": [100, 50, 500, 80],
       "confidence": 0.95,
       "reading_order": 1
     },
     {
+      "id": "r1",
       "type": "body",
-      "text": "Instead of opposing the bill I ardontly championed it. Tt was a poorly drawn measure...",
+      "text": "Instead of opposing the bill I ardontly championed it. Tt was poorly drawn...",
+      "bbox": [100, 100, 500, 800],
       "confidence": 0.92,
       "reading_order": 2
     }
@@ -46,42 +45,48 @@ The Scanshelf pipeline transforms scanned book PDFs into structured, corrected t
 }
 ```
 
-**Note:**
-- Region text has OCR errors: "ardontly" → should be "ardently", "Tt" → should be "It"
-- Header region will be filtered out later
+**What's wrong:** OCR errors in region text ("ardontly" → "ardently", "Tt" → "It")
 
-### Stage 2: Correction (3-Agent Pipeline)
+---
 
-**Input:** `ocr/page_0100.json`
-**Output:** `corrected/page_0100.json`
+## Stage 2: Correction
+
+**Input:** `ocr/page_*.json`
+**Output:** `corrected/page_*.json`
 
 **What it does:**
-1. **Agent 1**: Detects OCR errors, creates error catalog
-2. **Agent 2**: Applies corrections, returns text with `[CORRECTED:id]` markers
-3. **Agent 3**: Verifies corrections, flags issues for review
-4. **Region Update**: Parses markers and updates individual regions
+1. Concatenates correctable regions (body, caption, footnote - excludes headers)
+2. LLM detects OCR errors, returns error catalog
+3. LLM applies corrections, returns text with `[CORRECTED:id]` markers
+4. LLM verifies corrections, flags low-confidence pages for review
+5. **Parses markers** to find what was corrected
+6. **Updates each region** with corrections
+7. Marks regions as `corrected: true`
 
-**Example Output:**
+**Example output:**
 ```json
 {
   "page_number": 100,
   "regions": [
     {
+      "id": "r0",
       "type": "header",
       "text": "80 THEODORE ROOSEVELT—AN AUTOBIOGRAPHY",
       "confidence": 0.95,
-      "reading_order": 1,
-      "corrected": false
+      "reading_order": 1
     },
     {
+      "id": "r1",
       "type": "body",
-      "text": "Instead of opposing the bill I ardently[CORRECTED:1] championed it. Tt[CORRECTED:2] was a poorly drawn measure...",
+      "text": "Instead of opposing the bill I ardently[CORRECTED:1] championed it. It[CORRECTED:2] was poorly drawn...",
       "confidence": 0.92,
       "reading_order": 2,
       "corrected": true
     }
   ],
   "llm_processing": {
+    "timestamp": "2025-10-06T12:37:00",
+    "model": "openai/gpt-4o-mini",
     "error_catalog": {
       "total_errors_found": 2,
       "errors": [
@@ -89,93 +94,95 @@ The Scanshelf pipeline transforms scanned book PDFs into structured, corrected t
         {"error_id": 2, "original_text": "Tt", "error_type": "obvious_typo"}
       ]
     },
-    "corrected_text": "80 THEODORE ROOSEVELT—AN AUTOBIOGRAPHY\n\nInstead of opposing the bill I ardently[CORRECTED:1] championed it. Tt[CORRECTED:2] was...",
     "verification": {
-      "confidence_score": 0.7,
-      "needs_human_review": true,
-      "missed_corrections": [{"error_id": 2, "should_be": "It"}]
+      "confidence_score": 0.8,
+      "needs_human_review": false
     }
   }
 }
 ```
 
 **What changed:**
-- Body region text updated with corrections and markers
+- Body region text updated with corrections and `[CORRECTED:id]` markers
 - Region marked `corrected: true`
-- Header region unchanged (will be filtered later)
-- `llm_processing` added with full pipeline metadata
+- Header unchanged (will be filtered later)
+- `llm_processing` metadata for debugging
 
-**Note:** Some corrections may be imperfect (e.g., "Tt" not fully fixed). That's what the fix stage is for.
+**Code:** `pipeline/correct.py`
 
-**Code:** `pipeline/correct.py:552` - `apply_corrections_to_regions()`
+---
 
-### Stage 3: Fix (Agent 4)
+## Stage 3: Fix
 
-**Input:** Pages flagged in `needs_review/` (subset of pages with low confidence)
-**Output:** Updated `corrected/page_0100.json` (overwrites)
+**Input:** Pages flagged for review (subset with low confidence)
+**Output:** Updated `corrected/page_*.json` (overwrites)
 
 **What it does:**
-1. **Agent 4**: Reads Agent 3's feedback, makes targeted fixes
-2. **Region Update**: Parses `[FIXED:A4-id]` markers and updates regions
+1. Reads verification feedback from correction stage
+2. LLM makes targeted fixes for missed/incorrect corrections
+3. Returns text with `[FIXED:A4-id]` markers
+4. **Parses markers** to find what was fixed
+5. **Updates each region** with fixes
+6. Marks regions as `fixed: true`
 
-**Example Output:**
+**Example output:**
 ```json
 {
   "page_number": 100,
   "regions": [
     {
+      "id": "r0",
       "type": "header",
       "text": "80 THEODORE ROOSEVELT—AN AUTOBIOGRAPHY",
-      "confidence": 0.95,
       "reading_order": 1
     },
     {
+      "id": "r1",
       "type": "body",
-      "text": "Instead of opposing the bill I ardently[CORRECTED:1] championed it. It[FIXED:A4-1] was a poorly drawn measure...",
-      "confidence": 0.92,
+      "text": "Instead of opposing the bill I ardently[CORRECTED:1] championed it. It[FIXED:A4-1] was poorly drawn...",
       "reading_order": 2,
       "corrected": true,
       "fixed": true
     }
   ],
   "llm_processing": {
-    "error_catalog": { /* ... */ },
-    "corrected_text": "...",
-    "verification": { /* ... */ },
+    "...": "...",
     "agent4_fixes": {
       "timestamp": "2025-10-06T12:45:00",
       "missed_corrections": [
         {"original_text": "Tt", "should_be": "It"}
-      ],
-      "fixed_text": "80 THEODORE ROOSEVELT—AN AUTOBIOGRAPHY\n\nInstead of opposing the bill I ardently[CORRECTED:1] championed it. It[FIXED:A4-1] was..."
+      ]
     }
   }
 }
 ```
 
 **What changed:**
-- "Tt" → "It" with `[FIXED:A4-1]` marker
+- "Tt[CORRECTED:2]" → "It[FIXED:A4-1]" (fixed the missed correction)
 - Region marked `fixed: true`
-- `agent4_fixes` section added to `llm_processing`
+- `agent4_fixes` section added for debugging
 
-**Note:** Only pages flagged by Agent 3 go through this stage. High-confidence pages skip it.
+**Note:** Only ~50% of pages go through this stage (those flagged for review).
 
-**Code:** `pipeline/fix.py:212` - `apply_fixes_to_regions()`
+**Code:** `pipeline/fix.py`
 
-### Stage 4: Structure
+---
+
+## Stage 4: Structure
 
 **Input:** All `corrected/page_*.json` files
-**Output:** `structured/chapters/`, `structured/chunks/`, `structured/full_book.md`
+**Output:** `structured/chapters/*.json`, `structured/chunks/*.json`, `structured/full_book.md`
 
 **What it does:**
-1. **Load & Filter**: Extract body regions only, remove markers
-2. **Detect Chapters**: Use LLM to find chapter boundaries
-3. **Create Chunks**: Split into ~5-page semantic chunks
-4. **Generate Output**: Markdown files for reading
+1. **Load pages:** Extract body regions only (filter out headers/footers)
+2. **Clean text:** Remove `[CORRECTED:id]` and `[FIXED:A4-id]` markers
+3. **Detect chapters:** LLM identifies chapter boundaries
+4. **Create chunks:** Split into ~5-page semantic chunks for RAG
+5. **Generate output:** Markdown files for reading
 
-**Example: Loading Page 100**
+**Example transformation:**
 
-From this JSON:
+From JSON:
 ```json
 {
   "regions": [
@@ -185,115 +192,95 @@ From this JSON:
 }
 ```
 
-Structure loader extracts:
+Loader extracts:
 ```
-"Instead of opposing the bill I ardently championed it. It was a poorly drawn measure..."
+Instead of opposing the bill I ardently championed it. It was poorly drawn...
 ```
 
-**What changed:**
-- Header region filtered out (type != body)
-- Body region text extracted
-- Markers removed (`[CORRECTED:1]`, `[FIXED:A4-1]`)
-- Clean corrected text ready for reading
-
-**Final Output Example** (`structured/full_book.md`):
+Final output (`full_book.md`):
 ```markdown
 # Theodore Roosevelt: An Autobiography
 
 ## Chapter 1: Boyhood and Youth
 
-Instead of opposing the bill I ardently championed it. It was a poorly
-drawn measure, and the Governor, Grover Cleveland, was at first doubtful
-about signing it...
+Instead of opposing the bill I ardently championed it. It was a poorly drawn measure...
 ```
 
-**Code:** `pipeline/structure/loader.py:37` - `extract_body_text()`
+**What changed:**
+- Header filtered out (type != body)
+- Markers removed
+- Clean corrected text
 
-## Summary: Data Flow
+**Code:** `pipeline/structure.py`, `pipeline/structure/loader.py`
+
+---
+
+## Data Flow Summary
 
 ```
-┌─────────────┐
-│  PDF Page   │
-└──────┬──────┘
-       │
-   ┌───▼───┐ Stage 1: OCR
-   │  OCR  │ ─────────────────────────────────────
-   └───┬───┘ Creates regions with raw OCR text
-       │     Errors: "ardontly", "Tt"
-       │
-┌──────▼──────────┐
-│ ocr/page_*.json │ regions[].text = "ardontly... Tt was..."
-└──────┬──────────┘
-       │
-  ┌────▼────┐ Stage 2: Correction
-  │ Agent 1 │ ─────────────────────────────────────
-  │ Agent 2 │ Detects + corrects errors
-  │ Agent 3 │ Updates regions with corrections
-  └────┬────┘ Markers: [CORRECTED:id]
-       │
-┌──────▼────────────────┐
-│ corrected/page_*.json │ regions[].text = "ardently[CORRECTED:1]... Tt[CORRECTED:2] was..."
-└──────┬────────────────┘ regions[].corrected = true
-       │
-  ┌────▼────┐ Stage 3: Fix (if flagged)
-  │ Agent 4 │ ─────────────────────────────────────
-  └────┬────┘ Targeted fixes for missed corrections
-       │     Markers: [FIXED:A4-id]
-       │
-┌──────▼────────────────┐
-│ corrected/page_*.json │ regions[].text = "ardently[CORRECTED:1]... It[FIXED:A4-1] was..."
-└──────┬────────────────┘ regions[].fixed = true
-       │
-  ┌────▼─────┐ Stage 4: Structure
-  │  Loader  │ ─────────────────────────────────────
-  │ Detector │ Extract body regions (exclude headers)
-  │ Chunker  │ Remove markers, create chapters/chunks
-  └────┬─────┘
-       │
-┌──────▼──────────────┐
-│ structured/*.md     │ Clean corrected text
-│ structured/*.json   │ No headers, no markers
-└─────────────────────┘ "ardently... It was..."
+PDF
+ ↓
+[OCR] Creates regions with raw text
+ ↓
+ocr/page_*.json
+regions[].text = "ardontly... Tt was..."
+ ↓
+[Correction] Updates regions with corrections
+ ↓
+corrected/page_*.json
+regions[].text = "ardently[CORRECTED:1]... It[CORRECTED:2] was..."
+regions[].corrected = true
+ ↓
+[Fix] Updates flagged regions with fixes (subset)
+ ↓
+corrected/page_*.json (updated)
+regions[].text = "ardently[CORRECTED:1]... It[FIXED:A4-1] was..."
+regions[].fixed = true
+ ↓
+[Structure] Extracts body regions, removes markers
+ ↓
+structured/full_book.md
+"ardently... It was..."
 ```
 
-## Why Region-Based Architecture?
+---
 
-**The Problem:**
-- OCR creates structured regions (header, body, footer)
-- LLMs return flat text with corrections
-- How do we keep corrections AND filter headers?
+## Why Regions?
 
-**The Solution:**
-Parse LLM output markers and apply corrections back to individual regions. This lets us:
-- Filter by region type (exclude headers/footers)
-- Use corrected text (not raw OCR)
-- Track what changed (markers show provenance)
+**Problem:** OCR creates typed regions. LLMs return flat text. How do we keep both corrections AND filter headers?
+
+**Solution:** Parse LLM markers and update regions individually.
 
 **Benefits:**
-1. Headers excluded automatically (filter by `type`)
-2. Corrections preserved (applied to regions)
-3. Debugging easy (`llm_processing` has full text)
-4. Future-proof (enables per-paragraph features)
+- Filter by type (exclude headers automatically)
+- Preserve corrections (in region text)
+- Track changes (markers show what changed)
+- Enable features (per-paragraph annotations, etc.)
 
-## Implementation Checklist
+---
 
-When adding a new correction/fix stage:
+## Implementation Pattern
 
-- [ ] Parse output for markers (`[CORRECTED:id]`, `[FIXED:A4-id]`, etc.)
-- [ ] Create mapping of error_id → {original, corrected}
-- [ ] Iterate through regions
-- [ ] Apply changes to regions that contain the original text
-- [ ] Mark regions as updated (`corrected: true`, `fixed: true`, etc.)
-- [ ] Save updated page JSON
+When adding correction/fix logic to a new stage:
 
-See `pipeline/correct.py:552` or `pipeline/fix.py:212` for reference implementations.
+1. LLM returns text with `[MARKER:id]` annotations
+2. Parse markers to extract what changed
+3. Match changes to original regions by text
+4. Update region text with correction + marker
+5. Mark region as updated (e.g., `corrected: true`)
+
+**Example:** `pipeline/correct.py:552` - `apply_corrections_to_regions()`
+
+---
 
 ## Common Mistakes
 
-1. ❌ **Falling back to full_text** - Contains headers. Always use regions.
-2. ❌ **Only updating llm_processing** - Structure stage won't see it. Update regions.
-3. ❌ **Skipping marker parsing** - Can't update regions without parsing markers.
-4. ❌ **Overwriting regions** - Preserves nothing. Always update in place.
+1. ❌ **Using full_text instead of regions** - Full text includes headers
+2. ❌ **Only updating llm_processing** - Structure stage extracts from regions
+3. ❌ **Skipping marker parsing** - Can't update regions without parsing
+4. ❌ **Overwriting regions** - Update in place to preserve structure
+
+---
 
 ## Testing
 
@@ -311,5 +298,4 @@ python3 -c "import json; \
 
 ---
 
-**Related Docs:**
-- `CLAUDE.md` - General workflow and conventions
+**Related:** See `CLAUDE.md` for workflow conventions
