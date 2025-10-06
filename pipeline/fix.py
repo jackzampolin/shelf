@@ -177,6 +177,9 @@ Return the complete corrected text.
                 'agent3_feedback': agent3_feedback
             }
 
+            # Apply fixes to regions (same as correction stage does)
+            page_data = self.apply_fixes_to_regions(page_data, response, missed_corrections)
+
             # Save updated JSON back to corrected directory (overwrite)
             output_file = self.corrected_dir / f"page_{page_num:04d}.json"
             with open(output_file, 'w', encoding='utf-8') as f:
@@ -205,6 +208,67 @@ Return the complete corrected text.
                 json.dump(page_data, f, indent=2, default=str)
 
             return corrected_text
+
+    def apply_fixes_to_regions(self, page_data, fixed_text, missed_corrections):
+        """
+        Apply Agent 4's fixes back to regions by parsing [FIXED:A4-id] markers.
+
+        This maintains the same architecture as the correction stage - fixes are
+        applied to individual regions so structure stage can extract clean body text.
+        """
+        import re
+
+        regions = page_data.get('regions', [])
+        if not regions or not missed_corrections:
+            return page_data
+
+        # Parse [FIXED:A4-id] markers from fixed_text
+        # Similar to correction stage, but looking for [FIXED:A4-X] instead of [CORRECTED:X]
+        marker_pattern = r'\[FIXED:A4-(\d+)\]'
+        marker_positions = [(m.start(), int(m.group(1))) for m in re.finditer(marker_pattern, fixed_text)]
+
+        # Build map of what each fix changed
+        fixes_map = {}  # correction_id -> {original, fixed}
+
+        for i, correction in enumerate(missed_corrections):
+            correction_id = i + 1
+            original = correction.get('original_text', '')
+            should_be = correction.get('should_be', '')
+
+            if original and should_be:
+                fixes_map[correction_id] = {
+                    'original': original,
+                    'fixed': should_be
+                }
+
+        # Apply fixes to regions
+        for region in regions:
+            if region.get('type') not in ['header', 'body', 'caption', 'footnote']:
+                continue
+
+            region_text = region.get('text', '')
+            updated_text = region_text
+
+            # Apply each fix that appears in this region
+            for fix_id, fix_data in fixes_map.items():
+                original = fix_data['original']
+                fixed = fix_data['fixed']
+
+                # Check if this error's original text appears in this region
+                if original in updated_text:
+                    # Apply fix with marker
+                    updated_text = updated_text.replace(
+                        original,
+                        f"{fixed}[FIXED:A4-{fix_id}]",
+                        1  # Only first occurrence
+                    )
+
+            # Update region if fixes were applied
+            if updated_text != region_text:
+                region['text'] = updated_text
+                region['fixed'] = True  # Mark that Agent 4 updated this region
+
+        return page_data
 
     def parse_agent3_feedback(self, review_data: dict):
         """

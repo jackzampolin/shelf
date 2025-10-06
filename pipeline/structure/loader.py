@@ -38,22 +38,26 @@ class PageLoader:
         """
         Extract corrected text from body regions only, excluding headers/footers.
 
-        Now that the correction stage updates region text directly, we extract
-        body regions which have corrections applied. This ensures:
-        1. Headers/footers/page numbers are excluded
-        2. Corrected text (not OCR text) is used
-        3. No need to fall back to full_text (which includes headers)
+        Pipeline Architecture (as of region correction fix):
+        1. OCR stage creates regions with raw text
+        2. Correction stage updates regions with corrected text + [CORRECTED:id] markers
+        3. Fix stage updates regions with fixes + [FIXED:A4-id] markers
+        4. Structure stage extracts body regions (this method)
+
+        This ensures:
+        - Headers/footers/page numbers are excluded via region type filtering
+        - Corrections and fixes are applied to region text
+        - No need to use full_text (which includes headers)
         """
         regions = data.get('regions', [])
 
         if not regions:
-            # Fallback for pages without region data (shouldn't happen but handle gracefully)
-            llm_proc = data.get('llm_processing', {})
-            agent4_fixes = llm_proc.get('agent4_fixes', {})
-            return agent4_fixes.get('fixed_text') or llm_proc.get('corrected_text', '')
+            # Should not happen - all pages should have regions from OCR
+            # If it does, return empty rather than falling back to full_text with headers
+            return ''
 
         # Extract text from body regions only
-        # These regions now have corrections applied by the correction stage
+        # These regions have corrections/fixes applied by correction and fix stages
         body_text_parts = []
         for region in sorted(regions, key=lambda r: r.get('reading_order', 0)):
             region_type = region.get('type', 'body')
@@ -65,7 +69,7 @@ class PageLoader:
                     body_text_parts.append(region_text)
 
         if not body_text_parts:
-            # Page has no body content (e.g., blank page, image-only page)
+            # Page has no body content (e.g., blank page, image-only page, title page)
             return ''
 
         return '\n\n'.join(body_text_parts)
