@@ -1,273 +1,187 @@
-# Session Handoff: Test Coverage Improvements (Continued)
+# Session 6: Internet Archive E2E Validation
 
-**Session**: 3 (Part 2) → Session 4
-**Date**: October 2025
-**Status**: In Progress - Paused for handoff
+**Previous Session**: Test migration complete (134 tests, 31 unit tests in 18s)
 
----
-
-## What We Accomplished This Session
-
-### ✅ Completed
-
-1. **Fixed Import Errors**
-   - Consolidated `utils.py` into `utils/__init__.py` package
-   - Fixed test_cost_tracking.py import error
-   - Removed deprecated files (utils.py, pipeline/structure/generator.py)
-   - All 6 cost tracking tests now working
-
-2. **Added OCR Stage Tests**
-   - Created `tests/test_ocr_stage.py` with 20 comprehensive tests
-   - Tested BlockClassifier, ImageDetector, LayoutAnalyzer
-   - All 20 tests passing (100% success rate)
-   - Zero API costs (pure Python logic tests)
-
-3. **Updated Documentation**
-   - Updated `tests/TEST_COVERAGE.md` with current stats
-   - Test count: 99 → 112 tests (+13 net)
-   - Test Quality Score: 8/10 → 8.5/10
-
-### 📊 Current Test Coverage
-
-| Component | Tests | Status |
-|-----------|-------|--------|
-| Checkpoint System | 25 | ✅ Comprehensive |
-| Library Management | 25 | ✅ Comprehensive |
-| Parallel Processing | 6 | ✅ Good |
-| Cost Tracking | 6 | ✅ Fixed |
-| Pipeline E2E | 6 | ✅ Good |
-| Pipeline Restart | 7 | ✅ Good |
-| Structure Phase 1 | 5 | ✅ Good |
-| Structure Phase 2 | 17 | ✅ Comprehensive |
-| **OCR Stage** | **20** | **✅ New!** |
-| **Correct Stage** | **0** | **❌ Next** |
-| **Fix Stage** | **0** | **❌ Next** |
+**Current State**: Downloaded IA ground truth data (51.6 MB) for Roosevelt autobiography
 
 ---
 
-## Next Session Tasks
+## What We Have
 
-### 🎯 Primary Goal: Complete Pipeline Stage Test Coverage
+1. **Clean Test Suite**
+   - 134 tests total (removed 15 stale e2e tests)
+   - 31 unit tests pass in 18s using committed fixtures (105KB)
+   - Clear unit/integration separation with pytest markers
 
-Add unit tests for the remaining two pipeline stages:
+2. **IA Ground Truth Data Downloaded**
+   - `abbyy.gz` (18 MB) - XML with character-level coordinates and confidence
+   - `hocr.html` (32 MB) - Alternative OCR format
+   - `djvu_text.txt` (1.5 MB) - Plain text fulltext
+   - `page_numbers.json` (106 KB) - Page number mapping
 
-#### 1. Correct Stage Tests (Priority 1)
-**File to create**: `tests/test_correct_stage.py`
+3. **Full Roosevelt Book**
+   - 637 pages processed through: OCR → Correct (has needs_review)
+   - Fix and Structure stages NOT yet run on full book
+   - Location: ~/Documents/book_scans/roosevelt-autobiography
 
-**What to test**:
-- LLM correction logic patterns
-- Error detection and fixing
-- Word-by-word comparison
-- Parallel processing of pages
-- Checkpoint integration
-- Metadata tracking (errors found, fixes applied)
+---
 
-**Reference implementation**: `pipeline/correct.py`
+## Session 6 Goals
 
-**Approach**:
+**Objective**: Create e2e validation test that runs full pipeline and compares against IA ground truth
+
+### Task 1: Explore ABBYY Data Structure (30 min)
+
+The ABBYY XML has rich structure we need to understand:
+
+```bash
+# Decompress and explore
+gunzip -c tests/fixtures/roosevelt/ia_ground_truth/abbyy.gz | less
+
+# Key questions:
+# - How is text organized by page?
+# - Can we extract plain text per page easily?
+# - What confidence scores are available?
+# - How are bounding boxes structured?
+```
+
+### Task 2: Create Simple ABBYY Parser (1 hour)
+
+**File**: `tests/validation/abbyy_parser.py`
+
+Goal: Extract plain text per page from ABBYY for comparison
+
 ```python
-# Test components:
-- ErrorDetector (finds OCR errors)
-- CorrectionApplier (applies fixes)
-- PageCorrector (main orchestrator)
-- Checkpoint handling
-- Metadata generation
+class ABBYYParser:
+    """Parse ABBYY GZ format to extract ground truth text."""
+
+    def __init__(self, abbyy_gz_path):
+        # Load and parse XML
+        pass
+
+    def get_page_text(self, page_num: int) -> str:
+        """Get clean text for a specific page."""
+        # Extract text from page
+        pass
+
+    def get_page_count(self) -> int:
+        """Total pages in document."""
+        pass
 ```
 
-**Estimated tests**: 15-20 tests
-**API costs**: None (mock LLM responses)
+### Task 3: Create Text Comparison Helper (30 min)
 
-#### 2. Fix Stage Tests (Priority 2)
-**File to create**: `tests/test_fix_stage.py`
+**File**: `tests/validation/comparison.py`
 
-**What to test**:
-- Agent 4 targeted fix logic
-- Pattern recognition for common errors
-- Selective page fixing (not all pages)
-- Integration with correct stage output
-- Cost tracking (minimal API calls)
-
-**Reference implementation**: `pipeline/fix.py`
-
-**Approach**:
 ```python
-# Test components:
-- FixPatternDetector (identifies fixable patterns)
-- Agent4Fixer (applies targeted fixes)
-- PageSelector (determines which pages need fixing)
+def calculate_accuracy(our_text: str, ground_truth: str) -> dict:
+    """
+    Compare our OCR/corrected text against IA ground truth.
+
+    Returns:
+        {
+            'character_accuracy': 0.95,  # 95% accuracy
+            'word_accuracy': 0.97,
+            'cer': 0.05,  # Character Error Rate
+            'sample_diff': '...'  # First few differences
+        }
+    """
+    pass
 ```
 
-**Estimated tests**: 10-15 tests
-**API costs**: None (mock Agent 4 responses)
+### Task 4: Create E2E Validation Test (1 hour)
 
-#### 3. Run Full Test Suite
-Once both test files are created:
-```bash
-uv run python -m pytest tests/ -v --tb=short
+**File**: `tests/test_ia_validation.py`
+
+```python
+@pytest.mark.e2e
+@pytest.mark.slow
+def test_full_pipeline_validation():
+    """
+    Full pipeline e2e test with IA validation.
+
+    1. Use existing Roosevelt OCR (already done)
+    2. Run Correct stage on full book (~$10, 1 hour)
+    3. Run Fix stage on flagged pages (~$1, 15 min)
+    4. Compare final output vs IA ground truth
+    5. Generate quality report
+
+    Expected: >95% accuracy vs IA
+    Cost: ~$12
+    Duration: ~1.5 hours
+    """
+    # Load IA ground truth
+    # Run pipeline stages
+    # Compare outputs
+    # Assert quality thresholds
+    pass
 ```
 
-Expected: ~140+ tests, all passing
-
-#### 4. Update Documentation
-- Update `tests/TEST_COVERAGE.md` with final numbers
-- Update Test Quality Score (target: 9/10)
-- Mark Correct and Fix stages as ✅ Comprehensive
-
----
-
-## How to Continue
-
-### Step 1: Review Current Code
-
-First, understand what needs to be tested:
+### Task 5: Run the E2E Test (2-3 hours)
 
 ```bash
-# Check Correct stage implementation
-cat pipeline/correct.py | head -100
+# This will cost ~$12 and take 2-3 hours
+pytest tests/test_ia_validation.py::test_full_pipeline_validation -v -s
 
-# Check Fix stage implementation
-cat pipeline/fix.py | head -100
-
-# Review existing test patterns
-cat tests/test_ocr_stage.py | head -50
-```
-
-### Step 2: Create Test Files
-
-Follow the pattern from `test_ocr_stage.py`:
-- Use class-based organization (TestCorrector, TestErrorDetector, etc.)
-- Include docstrings explaining what each test validates
-- Use pytest fixtures for setup/teardown
-- Mock LLM calls to avoid API costs
-- Test both success and error paths
-
-### Step 3: Iterate Until Passing
-
-```bash
-# Run tests as you write them
-uv run python -m pytest tests/test_correct_stage.py -v
-
-# Fix failures
-# Add more tests
-# Repeat
-```
-
-### Step 4: Commit and Update Docs
-
-```bash
-git add tests/test_correct_stage.py tests/test_fix_stage.py tests/TEST_COVERAGE.md
-git commit -m "test: add Correct and Fix stage tests"
+# Expected output:
+# - Pipeline completes successfully
+# - OCR accuracy: ~95%
+# - Corrected accuracy: ~97%
+# - Final accuracy: ~98%
+# - Quality report generated
 ```
 
 ---
 
-## Testing Patterns to Follow
+## Key Decisions Needed
 
-### ✅ Good Test Patterns (from OCR tests)
+1. **Which stages to validate?**
+   - Option A: Just OCR vs IA ABBYY (fast, no cost)
+   - Option B: Full pipeline OCR → Correct → Fix (slow, $12)
+   - **Recommend**: Start with Option A, then run Option B
 
-1. **Test Components in Isolation**
-   ```python
-   def test_classifier_header():
-       result = BlockClassifier.classify(bbox, text, width, height)
-       assert result == "header"
-   ```
+2. **How to handle differences?**
+   - IA data isn't perfect either
+   - Need to define "acceptable" error rate
+   - Focus on detecting regressions, not absolute perfection
 
-2. **Test Output Format**
-   ```python
-   def test_page_json_structure():
-       assert 'page_number' in output
-       assert 'regions' in output
-   ```
-
-3. **Test Error Handling**
-   ```python
-   def test_handles_missing_file():
-       # Verify graceful handling
-       assert processor.handle_missing() is not None
-   ```
-
-4. **Test Integration**
-   ```python
-   def test_full_pipeline_flow():
-       result = processor.process(input_data)
-       assert result['status'] == 'success'
-   ```
-
-### ❌ Avoid
-
-- Don't make real API calls (use mocks)
-- Don't test implementation details (test behavior)
-- Don't write flaky tests (use deterministic inputs)
-- Don't skip docstrings
+3. **Test execution**
+   - Mark as `@pytest.mark.e2e` (not run by default)
+   - Separate validation from development tests
+   - Run manually before releases
 
 ---
 
-## Reference Files
+## Quick Start Commands
 
-**Test examples**:
-- `tests/test_ocr_stage.py` - 20 tests, all passing
-- `tests/test_structure_assembly.py` - 17 tests, integration examples
-- `tests/test_checkpoint.py` - 25 tests, mocking examples
+```bash
+# Explore ABBYY structure
+gunzip -c tests/fixtures/roosevelt/ia_ground_truth/abbyy.gz | head -500
 
-**Implementation to test**:
-- `pipeline/correct.py` - Correct stage
-- `pipeline/fix.py` - Fix stage
-- `pipeline/run.py` - Pipeline orchestrator
+# Check what we have
+ls -lh tests/fixtures/roosevelt/ia_ground_truth/
+ls -lh ~/Documents/book_scans/roosevelt-autobiography/
 
-**Documentation**:
-- `tests/TEST_COVERAGE.md` - Current coverage report
-- `CLAUDE.md` - Project workflow guide
-- `STRUCTURE_MIGRATION_PLAN.md` - Architecture docs
+# Start with simple parser
+mkdir -p tests/validation
+touch tests/validation/abbyy_parser.py
+touch tests/validation/comparison.py
+
+# Create test file
+touch tests/test_ia_validation.py
+```
 
 ---
 
 ## Success Criteria
 
-**Session 4 Complete When**:
-- ✅ `test_correct_stage.py` created with 15-20 tests
-- ✅ `test_fix_stage.py` created with 10-15 tests
-- ✅ All tests passing (`pytest tests/ -v`)
-- ✅ Total test count: ~140+ tests
-- ✅ Test Quality Score: 9/10
-- ✅ `TEST_COVERAGE.md` updated
-- ✅ All changes committed
-
-**Estimated Time**: 2-3 hours
+- [ ] Can extract text from ABBYY XML
+- [ ] Can compare our OCR vs IA ground truth
+- [ ] Accuracy calculation works (CER, word accuracy)
+- [ ] E2E test runs full pipeline
+- [ ] Quality report shows >95% accuracy
+- [ ] Validation test is repeatable
 
 ---
 
-## Quick Start Command
-
-```bash
-# Jump right in with this prompt:
-"Continue test coverage improvements from Session 3.
-Add unit tests for Correct and Fix pipeline stages.
-Follow patterns from tests/test_ocr_stage.py.
-Reference: NEXT_SESSION.md for details."
-```
-
----
-
-## Questions to Consider
-
-1. Should we mock LLM responses or use fixtures?
-   - **Recommendation**: Use fixtures with saved LLM responses
-
-2. How to test parallel processing without actual API calls?
-   - **Recommendation**: Test ParallelProcessor separately, mock worker function
-
-3. Should we test checkpoint integration in stage tests?
-   - **Recommendation**: Yes, basic save/load validation
-
----
-
-## Notes
-
-- All tests should run quickly (<1 second per test)
-- Zero API costs for unit tests
-- Mark any API-calling tests with `@pytest.mark.api`
-- Update todo list in test files as you go
-
----
-
-**Ready to continue? Use the Quick Start Command above!**
+**Next Session Focus**: Build the validation infrastructure, then run the full e2e test
