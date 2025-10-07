@@ -197,22 +197,62 @@ class PipelineMonitor:
                 self.total_pages = len(list(ocr_dir.glob("page_*.json")))
 
     def get_stage_status(self, stage: str) -> StageStatus:
-        """Get status for a specific stage by checking actual output files on disk."""
-        logs = LogParser.get_stage_logs(self.logs_dir, stage)
+        """Get status for a specific stage using hybrid checkpoint + file-based approach.
 
-        if not logs:
-            return StageStatus(stage=stage, status='not_started')
+        Strategy:
+        - Completion status (completed vs in_progress): From checkpoint (authoritative)
+        - Progress percentage: Count actual files on disk (real-time for in-progress stages)
+        - Cost & timing: From checkpoint (accurate tracking)
+        """
+        from checkpoint import CheckpointManager
+        from datetime import datetime
 
-        # Check if completed
-        is_complete = LogParser.is_stage_complete(logs)
-        status = 'completed' if is_complete else 'in_progress'
+        # Initialize checkpoint manager for this stage
+        checkpoint = CheckpointManager(
+            scan_id=self.scan_id,
+            stage=stage,
+            storage_root=self.storage_root
+        )
 
-        # Count actual files on disk instead of relying on log progress
+        # Get checkpoint status (authoritative for completion)
+        checkpoint_state = checkpoint.get_status()
+        status = checkpoint_state.get('status', 'not_started')
+
+        # If checkpoint says "not_started" but has completed pages, it's actually in_progress
+        # (This handles stages that don't explicitly mark themselves as in_progress)
+        if status == 'not_started':
+            completed_pages = checkpoint_state.get('completed_pages', [])
+            if len(completed_pages) > 0:
+                status = 'in_progress'
+
+        # Extract cost and timing from checkpoint (always use checkpoint data)
+        costs = checkpoint_state.get('costs', {})
+        cost_usd = costs.get('total_usd', 0.0)
+
+        start_time = None
+        end_time = None
+        duration = None
+
+        if checkpoint_state.get('created_at'):
+            try:
+                start_time = datetime.fromisoformat(checkpoint_state['created_at'])
+            except:
+                pass
+
+        if checkpoint_state.get('completed_at'):
+            try:
+                end_time = datetime.fromisoformat(checkpoint_state['completed_at'])
+                if start_time and end_time:
+                    duration = (end_time - start_time).total_seconds()
+            except:
+                pass
+
+        # For progress: Use real-time file counting (especially for in-progress stages)
         progress_current = 0
         progress_total = 0
         progress_percent = 0.0
 
-        # Determine output directory and pattern based on stage
+        # Determine output directory based on stage
         if stage == 'ocr':
             output_dir = self.book_dir / 'ocr'
             pattern = 'page_*.json'
@@ -221,40 +261,44 @@ class PipelineMonitor:
             pattern = 'page_*.json'
         elif stage == 'fix':
             output_dir = self.book_dir / 'corrected'
-            pattern = 'page_*.json'  # Fix updates corrected files
+            pattern = 'page_*.json'
         elif stage == 'structure':
             output_dir = self.book_dir / 'structured'
-            pattern = None  # Check for structured/ directory existence
+            pattern = None  # Will check for specific output files
         else:
             output_dir = None
             pattern = None
 
-        # Count completed pages from actual files on disk
+        # Count actual completed files on disk
         if output_dir and output_dir.exists():
             if pattern:
                 completed_files = list(output_dir.glob(pattern))
                 progress_current = len(completed_files)
-            elif stage == 'structure' and output_dir.exists():
-                # For structure, check if outputs exist
+            elif stage == 'structure':
+                # For structure, check if final outputs exist
                 if (output_dir / 'archive' / 'full_book.md').exists():
                     progress_current = 1
                     progress_total = 1
                     progress_percent = 100.0
 
-        # Get total pages from source PDFs or checkpoint
+        # Get total pages from checkpoint or metadata
         if progress_total == 0:
-            # Try to get total from metadata.json
-            metadata_file = self.book_dir / 'metadata.json'
-            if metadata_file.exists():
-                try:
-                    import json
-                    with open(metadata_file) as f:
-                        metadata = json.load(f)
-                        progress_total = metadata.get('total_pages_processed', 0)
-                except:
-                    pass
+            # First try checkpoint
+            progress_total = checkpoint_state.get('total_pages', 0)
 
-            # If still no total, count source PDF pages
+            # If not in checkpoint, try metadata.json
+            if progress_total == 0:
+                metadata_file = self.book_dir / 'metadata.json'
+                if metadata_file.exists():
+                    try:
+                        import json
+                        with open(metadata_file) as f:
+                            metadata = json.load(f)
+                            progress_total = metadata.get('total_pages_processed', 0)
+                    except:
+                        pass
+
+            # Last resort: count PDF pages
             if progress_total == 0:
                 source_dir = self.book_dir / 'source'
                 if source_dir.exists():
@@ -270,30 +314,23 @@ class PipelineMonitor:
                         pass
 
         # Calculate percentage
-        if progress_total > 0:
+        if progress_total > 0 and stage != 'structure':
             progress_percent = (progress_current / progress_total) * 100
 
-        # Get cost
-        cost_usd = LogParser.get_accumulated_cost(logs)
-
-        # Get timing
-        start_time = LogParser.get_start_time(logs)
-        end_time = LogParser.get_end_time(logs)
-        duration = LogParser.get_stage_duration(logs)
-
-        # Get errors and warnings
+        # Get logs for errors/warnings (still useful)
+        logs = LogParser.get_stage_logs(self.logs_dir, stage)
         errors, warnings = LogParser.get_errors_warnings(logs, limit=5)
 
         return StageStatus(
             stage=stage,
-            status=status,
-            progress_current=progress_current,
+            status=status,  # From checkpoint (authoritative)
+            progress_current=progress_current,  # From disk (real-time)
             progress_total=progress_total,
             progress_percent=progress_percent,
-            cost_usd=cost_usd,
-            start_time=start_time,
-            end_time=end_time,
-            duration_seconds=duration,
+            cost_usd=cost_usd,  # From checkpoint (accurate)
+            start_time=start_time,  # From checkpoint
+            end_time=end_time,  # From checkpoint
+            duration_seconds=duration,  # From checkpoint
             errors=errors,
             warnings=warnings
         )
