@@ -269,8 +269,9 @@ def cmd_library_scans(args):
 
 
 def cmd_library_stats(args):
-    """Show library-wide statistics."""
+    """Show library-wide statistics with per-stage cost breakdown."""
     from tools.library import LibraryIndex
+    import json
 
     library = LibraryIndex()
     stats = library.get_stats()
@@ -284,6 +285,59 @@ def cmd_library_stats(args):
     if stats['total_pages'] > 0:
         avg_cost_per_page = stats['total_cost_usd'] / stats['total_pages']
         print(f"Cost/Page:   ${avg_cost_per_page:.4f}")
+
+    # Aggregate per-stage costs across all scans
+    print("\n💰 Cost Breakdown by Stage:\n")
+
+    stage_costs = {}
+    total_checkpointed_cost = 0.0
+
+    # Iterate through all scans to collect checkpoint data
+    for book_slug, book in library.data['books'].items():
+        for scan in book['scans']:
+            scan_id = scan['scan_id']
+            checkpoints_dir = library.storage_root / scan_id / "checkpoints"
+
+            if not checkpoints_dir.exists():
+                continue
+
+            # Read each stage checkpoint
+            for checkpoint_file in checkpoints_dir.glob("*.json"):
+                stage_name = checkpoint_file.stem  # e.g., "ocr", "correction", "fix", "structure"
+
+                try:
+                    with open(checkpoint_file) as f:
+                        checkpoint_data = json.load(f)
+
+                    # Extract cost from checkpoint
+                    stage_cost = checkpoint_data.get('costs', {}).get('total_usd', 0.0)
+
+                    if stage_cost > 0:
+                        if stage_name not in stage_costs:
+                            stage_costs[stage_name] = 0.0
+                        stage_costs[stage_name] += stage_cost
+                        total_checkpointed_cost += stage_cost
+                except Exception:
+                    pass  # Skip malformed checkpoints
+
+    # Display stage breakdown
+    if stage_costs:
+        for stage in ['ocr', 'correction', 'fix', 'structure', 'quality']:
+            if stage in stage_costs:
+                cost = stage_costs[stage]
+                percentage = (cost / total_checkpointed_cost * 100) if total_checkpointed_cost > 0 else 0
+                print(f"  {stage.capitalize():12} ${cost:8.2f}  ({percentage:5.1f}%)")
+
+        print(f"  {'─' * 35}")
+        print(f"  {'Total':12} ${total_checkpointed_cost:8.2f}  (100.0%)")
+
+        # Note if there's a discrepancy
+        if abs(total_checkpointed_cost - stats['total_cost_usd']) > 0.01:
+            print(f"\n  Note: Library total (${stats['total_cost_usd']:.2f}) differs from checkpoint sum")
+            print(f"        This is normal if scans were processed before checkpoint tracking.")
+    else:
+        print("  No checkpoint cost data available yet.")
+        print("  Process books through the pipeline to see cost breakdown.")
 
     return 0
 

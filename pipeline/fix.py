@@ -316,13 +316,21 @@ Return the complete corrected text.
                 # No corrections needed
                 return []
 
-    def process_flagged_page(self, review_file: Path):
-        """Process a single flagged page."""
+    def process_flagged_page(self, review_file: Path) -> float:
+        """
+        Process a single flagged page.
+
+        Returns:
+            float: Cost in USD for processing this page
+        """
         with open(review_file) as f:
             review_data = json.load(f)
 
         page_num = review_data.get("page_number")
         self.logger.info(f"Processing flagged page {page_num}", page=page_num)
+
+        # Track cost for this specific page
+        cost_before = self.stats['total_cost_usd']
 
         # Load corrected page from flat directory
         corrected_file = self.corrected_dir / f"page_{page_num:04d}.json"
@@ -336,7 +344,7 @@ Return the complete corrected text.
             self.logger.error("Corrected JSON file not found", page=page_num)
             with self.stats_lock:
                 self.stats['pages_failed'] += 1
-            return
+            return 0.0  # No cost for missing files
 
         # Checkpoint: Check if this page was already processed by Agent 4
         llm_processing = corrected_data.get('llm_processing', {})
@@ -345,7 +353,7 @@ Return the complete corrected text.
             with self.stats_lock:
                 self.stats['pages_processed'] += 1
                 self.stats['pages_fixed'] += 1
-            return
+            return 0.0  # No cost for skipped pages
 
         # Extract corrected text from llm_processing section
         corrected_text = llm_processing.get('corrected_text', '')
@@ -354,7 +362,7 @@ Return the complete corrected text.
             self.logger.error("No corrected_text in JSON", page=page_num)
             with self.stats_lock:
                 self.stats['pages_failed'] += 1
-            return
+            return 0.0  # No cost for failed pages
 
         # Get Agent 3's feedback from the structured JSON
         llm_processing = review_data.get("llm_processing", {})
@@ -381,6 +389,10 @@ Return the complete corrected text.
         with self.stats_lock:
             self.stats['pages_processed'] += 1
             self.stats['pages_fixed'] += 1
+            # Calculate cost for this page
+            page_cost = self.stats['total_cost_usd'] - cost_before
+
+        return page_cost
 
     def process_all_flagged(self, resume: bool = False):
         """Process all flagged pages."""
@@ -441,12 +453,12 @@ Return the complete corrected text.
             for future in as_completed(future_to_page):
                 page_num, review_file = future_to_page[future]
                 try:
-                    future.result()
+                    page_cost = future.result()  # Get cost from process_flagged_page
                     completed += 1
 
-                    # Mark page as completed in checkpoint
+                    # Mark page as completed in checkpoint with actual cost
                     if self.checkpoint:
-                        self.checkpoint.mark_completed(page_num, cost_usd=0.0)  # TODO: track actual cost
+                        self.checkpoint.mark_completed(page_num, cost_usd=page_cost)
 
                     self.logger.progress(
                         "Processing flagged pages",
