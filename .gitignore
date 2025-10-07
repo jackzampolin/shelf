@@ -36,3 +36,8 @@ dist/
 
 # Log files
 *.log
+
+# Validation data - exclude full text extractions
+tests/fixtures/**/extracted_text/
+tests/fixtures/**/fulltext_*.txt
+tests/validation_reports/
