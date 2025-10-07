@@ -10,9 +10,15 @@ Tests for the LLM correction pipeline stage including:
 - Correction application to regions
 - Checkpoint integration
 
-Uses real API calls with Roosevelt book fixtures.
-Tests are marked with @pytest.mark.api for selective execution.
-Cost: ~$0.02-0.05 per full test run.
+Test Organization:
+- Unit tests: Use committed fixtures (roosevelt_fixtures)
+- Integration tests: Use full book (roosevelt_full_book)
+- API tests: Real LLM calls (~$0.02-0.05 per run)
+
+Run patterns:
+- pytest -m unit: Fast unit tests with committed fixtures
+- pytest -m integration: Full book integration tests
+- pytest -m api: Tests that make real API calls
 """
 
 import pytest
@@ -85,6 +91,7 @@ def temp_test_book(tmp_path, roosevelt_full_book):
 # RATE LIMITER TESTS
 # ============================================================================
 
+@pytest.mark.unit
 class TestRateLimiter:
     """Test API rate limiting."""
 
@@ -140,6 +147,7 @@ class TestRateLimiter:
 # STRUCTURED PAGE CORRECTOR TESTS
 # ============================================================================
 
+@pytest.mark.unit
 class TestStructuredPageCorrector:
     """Test main correction orchestrator."""
 
@@ -219,10 +227,11 @@ class TestStructuredPageCorrector:
         # Should not include image regions
         assert '[image]' not in text.lower()
 
+    @pytest.mark.integration
     def test_get_page_context(self, roosevelt_full_book):
-        """Test loading page with context from adjacent pages."""
+        """Test loading page with context from adjacent pages (integration test)."""
         if roosevelt_full_book is None:
-            pytest.skip("Full Roosevelt book not available")
+            pytest.skip("Full Roosevelt book required for integration test")
 
         corrector = StructuredPageCorrector(
             book_title="roosevelt-autobiography",
@@ -246,6 +255,7 @@ class TestStructuredPageCorrector:
 # JSON EXTRACTION TESTS
 # ============================================================================
 
+@pytest.mark.unit
 class TestJSONExtraction:
     """Test JSON extraction from LLM responses."""
 
@@ -323,6 +333,7 @@ class TestJSONExtraction:
 # ============================================================================
 
 @pytest.mark.api
+@pytest.mark.integration
 class TestAgent1ErrorDetection:
     """Test Agent 1 error detection with real API calls."""
 
@@ -383,6 +394,7 @@ class TestAgent1ErrorDetection:
 
 
 @pytest.mark.api
+@pytest.mark.integration
 class TestAgent2Correction:
     """Test Agent 2 correction application with real API calls."""
 
@@ -465,6 +477,7 @@ class TestAgent2Correction:
 
 
 @pytest.mark.api
+@pytest.mark.integration
 class TestAgent3Verification:
     """Test Agent 3 verification with real API calls."""
 
@@ -516,6 +529,7 @@ class TestAgent3Verification:
 # ============================================================================
 
 @pytest.mark.api
+@pytest.mark.integration
 class TestCorrectionIntegration:
     """Test full correction pipeline integration."""
 
@@ -593,6 +607,7 @@ class TestCorrectionIntegration:
 # CHECKPOINT TESTS
 # ============================================================================
 
+@pytest.mark.unit
 class TestCorrectionCheckpoints:
     """Test checkpoint integration."""
 

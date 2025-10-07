@@ -1,10 +1,14 @@
 """
 Test structure stage agents on real Roosevelt autobiography data.
 
-Uses actual corrected pages from ~/Documents/book_scans/roosevelt-autobiography/
-to test the 3-agent extraction pattern.
+Test Organization:
+- Integration tests: Use full book (roosevelt_full_book)
+- Requires full Roosevelt book processed through correction stage
+- API tests: Real LLM calls (~$0.05 per run for 10 pages)
 
-Cost per run: ~$0.05 (10 pages through gpt-4o-mini)
+Run patterns:
+- pytest -m integration: Full book integration tests
+- pytest -m api: Tests that make real API calls
 """
 
 import pytest
@@ -19,22 +23,23 @@ from pipeline.structure.agents import (
 from pipeline.structure.extractor import ExtractionOrchestrator
 
 
-# Roosevelt autobiography pages for testing
-ROOSEVELT_DIR = Path.home() / "Documents" / "book_scans" / "roosevelt-autobiography" / "corrected"
-
 # Test pages: 75-84 (10 pages - production batch size)
 TEST_PAGES = list(range(75, 85))
 
 
-def load_roosevelt_pages(page_numbers):
+def load_roosevelt_pages(roosevelt_full_book, page_numbers):
     """Load Roosevelt pages from corrected directory."""
+    if roosevelt_full_book is None:
+        pytest.skip("Full Roosevelt book required for integration test")
+
     pages = []
+    corrected_dir = roosevelt_full_book / "corrected"
 
     for page_num in page_numbers:
-        page_file = ROOSEVELT_DIR / f"page_{page_num:04d}.json"
+        page_file = corrected_dir / f"page_{page_num:04d}.json"
 
         if not page_file.exists():
-            pytest.skip(f"Roosevelt test data not available: {page_file}")
+            pytest.skip(f"Roosevelt page not available: {page_file}")
 
         with open(page_file) as f:
             page_data = json.load(f)
@@ -44,15 +49,12 @@ def load_roosevelt_pages(page_numbers):
     return pages
 
 
-@pytest.mark.skipif(
-    not ROOSEVELT_DIR.exists(),
-    reason="Roosevelt autobiography test data not available"
-)
+@pytest.mark.integration
 @pytest.mark.api
 @pytest.mark.slow
-def test_extract_agent_on_roosevelt_batch():
+def test_extract_agent_on_roosevelt_batch(roosevelt_full_book):
     """Test extract agent on 10 Roosevelt pages (production batch size)."""
-    pages = load_roosevelt_pages(TEST_PAGES)
+    pages = load_roosevelt_pages(roosevelt_full_book, TEST_PAGES)
 
     # Run extraction (will take ~1-2 minutes for 10 pages)
     result = extract_batch(pages)
@@ -90,6 +92,7 @@ def test_extract_agent_on_roosevelt_batch():
     assert result['word_count'] > 2000, f"Should extract substantial content from 10 pages, got {result['word_count']}"
 
 
+@pytest.mark.unit
 def test_reconcile_agent_consensus():
     """Test reconciliation logic when extractions match."""
     # Create two identical extractions
@@ -125,6 +128,7 @@ def test_reconcile_agent_consensus():
     assert reconciliation['resolution_method'] == 'consensus'
 
 
+@pytest.mark.unit
 def test_reconcile_agent_disagreement():
     """Test reconciliation logic when extractions differ."""
     extraction1 = {
@@ -157,6 +161,7 @@ def test_reconcile_agent_disagreement():
     assert reconciliation['needs_review']
 
 
+@pytest.mark.unit
 def test_text_similarity():
     """Test text similarity calculation."""
     # Identical texts
@@ -174,13 +179,10 @@ def test_text_similarity():
     assert 0.8 < sim < 1.0
 
 
-@pytest.mark.skipif(
-    not ROOSEVELT_DIR.exists(),
-    reason="Roosevelt autobiography test data not available"
-)
+@pytest.mark.integration
 @pytest.mark.api
 @pytest.mark.slow
-def test_extractor_orchestrator_on_roosevelt_sample():
+def test_extractor_orchestrator_on_roosevelt_sample(roosevelt_full_book):
     """
     Test full extractor orchestrator on Roosevelt pages 75-90.
 
@@ -193,6 +195,9 @@ def test_extractor_orchestrator_on_roosevelt_sample():
     Expected: 2 batches (pages 75-84 and 82-90 with 3-page overlap)
     Cost: ~$0.02
     """
+    if roosevelt_full_book is None:
+        pytest.skip("Full Roosevelt book required for integration test")
+
     orchestrator = ExtractionOrchestrator(
         scan_id="roosevelt-autobiography",
         window_size=10,

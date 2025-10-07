@@ -1,8 +1,14 @@
 """
 Test structure stage Phase 2: Assembly & Chunking
 
-Tests the assembly pipeline using real extraction batch data from Roosevelt autobiography.
-Uses pages 75-90 sample data (no API costs - pure Python tests).
+Test Organization:
+- Unit tests: Use committed extraction batch fixtures
+- Integration tests: Use full book extraction data
+- No API costs - pure Python logic tests
+
+Run patterns:
+- pytest -m unit: Fast unit tests with committed fixtures
+- pytest -m integration: Full book assembly tests
 """
 
 import pytest
@@ -13,43 +19,45 @@ from pipeline.structure.chunker import SemanticChunker
 from pipeline.structure.output_generator import OutputGenerator
 
 
-# Roosevelt autobiography extraction data
-ROOSEVELT_DIR = Path.home() / "Documents" / "book_scans" / "roosevelt-autobiography"
-EXTRACTION_DIR = ROOSEVELT_DIR / "structured" / "extraction"
+@pytest.fixture
+def extraction_metadata_unit(roosevelt_fixtures):
+    """Load extraction metadata from committed fixtures."""
+    metadata_file = roosevelt_fixtures / "structured" / "extraction" / "metadata.json"
+    with open(metadata_file) as f:
+        return json.load(f)
 
 
 @pytest.fixture
-def roosevelt_book_dir():
-    """Roosevelt book directory for testing."""
-    if not ROOSEVELT_DIR.exists():
-        pytest.skip("Roosevelt test data not available")
-    return ROOSEVELT_DIR
+def sample_batch_data(roosevelt_fixtures):
+    """Load a sample batch from committed fixtures for unit testing."""
+    batch_file = roosevelt_fixtures / "structured" / "extraction" / "batch_000.json"
+    with open(batch_file) as f:
+        return json.load(f)
 
 
 @pytest.fixture
-def extraction_metadata():
-    """Load extraction metadata."""
-    metadata_file = EXTRACTION_DIR / "metadata.json"
+def extraction_metadata_integration(roosevelt_full_book):
+    """Load extraction metadata from full book for integration tests."""
+    if roosevelt_full_book is None:
+        pytest.skip("Full Roosevelt book required for integration test")
 
+    metadata_file = roosevelt_full_book / "structured" / "extraction" / "metadata.json"
     if not metadata_file.exists():
-        pytest.skip("Roosevelt extraction data not available - run Phase 1 first")
+        pytest.skip("Roosevelt extraction data not available - run structure stage first")
 
     with open(metadata_file) as f:
         return json.load(f)
 
 
 @pytest.fixture
-def sample_batch_data():
-    """Load a sample batch for unit testing."""
-    batch_file = EXTRACTION_DIR / "batch_001.json"
-
-    if not batch_file.exists():
-        pytest.skip("Roosevelt extraction data not available")
-
-    with open(batch_file) as f:
-        return json.load(f)
+def roosevelt_book_dir(roosevelt_full_book):
+    """Roosevelt book directory for integration tests."""
+    if roosevelt_full_book is None:
+        pytest.skip("Full Roosevelt book required for integration test")
+    return roosevelt_full_book
 
 
+@pytest.mark.integration
 class TestBatchAssembler:
     """Test batch assembly functionality."""
 
@@ -183,6 +191,7 @@ class TestBatchAssembler:
 class TestSemanticChunker:
     """Test semantic chunking functionality."""
 
+    @pytest.mark.unit
     def test_chunker_initialization(self):
         """Test chunker can be initialized."""
         chunker = SemanticChunker()
@@ -192,6 +201,7 @@ class TestSemanticChunker:
         assert chunker.chunk_min == 500
         assert chunker.chunk_max == 1000
 
+    @pytest.mark.unit
     def test_fallback_chunking(self):
         """Test fallback paragraph-based chunking."""
         chunker = SemanticChunker()
@@ -262,6 +272,7 @@ class TestSemanticChunker:
         assert stats['total_words'] > 0
 
 
+@pytest.mark.integration
 class TestOutputGenerator:
     """Test output generation functionality."""
 
@@ -338,6 +349,7 @@ class TestOutputGenerator:
         assert 'statistics' in metadata
 
 
+@pytest.mark.integration
 class TestPhase2Integration:
     """Integration tests for full Phase 2 pipeline."""
 

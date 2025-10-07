@@ -9,9 +9,15 @@ Tests for Agent 4 targeted fix pipeline including:
 - Checkpoint integration
 - Processing flagged pages
 
-Uses real API calls with Roosevelt book fixtures.
-Tests are marked with @pytest.mark.api for selective execution.
-Cost: ~$0.01-0.02 per full test run.
+Test Organization:
+- Unit tests: Use committed fixtures (roosevelt_fixtures)
+- Integration tests: Use full book (roosevelt_full_book)
+- API tests: Real LLM calls (~$0.01-0.02 per run)
+
+Run patterns:
+- pytest -m unit: Fast unit tests with committed fixtures
+- pytest -m integration: Full book integration tests
+- pytest -m api: Tests that make real API calls
 """
 
 import pytest
@@ -26,32 +32,20 @@ from pipeline.fix import Agent4TargetedFix
 # ============================================================================
 
 @pytest.fixture
-def roosevelt_book_dir():
-    """Path to Roosevelt book with real data."""
-    book_dir = Path.home() / "Documents" / "book_scans" / "roosevelt-autobiography"
-    if not book_dir.exists():
-        pytest.skip("Roosevelt book not found - run pipeline first")
-    return book_dir
-
-
-@pytest.fixture
-def sample_review_page(roosevelt_book_dir):
-    """Load a real review page from Roosevelt if available."""
-    review_dir = roosevelt_book_dir / "needs_review"
+def sample_review_page(roosevelt_fixtures):
+    """Load a committed review page fixture for unit tests."""
+    review_dir = roosevelt_fixtures / "needs_review"
     review_files = list(review_dir.glob("page_*.json"))
 
-    if not review_files:
-        pytest.skip("No review pages available - run correction stage first")
-
-    # Return first review page
+    # Load first available review page
     with open(review_files[0]) as f:
         return json.load(f)
 
 
 @pytest.fixture
-def temp_test_book(tmp_path, roosevelt_book_dir):
-    """Create a temporary test book with Roosevelt pages for Fix stage testing."""
-    test_book = tmp_path / "test-roosevelt-fix"
+def temp_test_book_unit(tmp_path, roosevelt_fixtures):
+    """Create a temporary test book with committed fixtures for unit tests."""
+    test_book = tmp_path / "test-roosevelt-fix-unit"
     test_book.mkdir()
 
     # Create directory structure
@@ -59,19 +53,42 @@ def temp_test_book(tmp_path, roosevelt_book_dir):
     (test_book / "needs_review").mkdir()
     (test_book / "logs").mkdir()
 
-    # Copy a few corrected pages
-    corrected_src = roosevelt_book_dir / "corrected"
-    if corrected_src.exists():
-        for page_file in list(corrected_src.glob("page_*.json"))[:3]:
-            dst = test_book / "corrected" / page_file.name
-            shutil.copy(page_file, dst)
+    # Copy committed corrected pages
+    corrected_src = roosevelt_fixtures / "corrected"
+    for page_file in corrected_src.glob("page_*.json"):
+        shutil.copy(page_file, test_book / "corrected" / page_file.name)
 
-    # Copy review pages if they exist
-    review_src = roosevelt_book_dir / "needs_review"
-    if review_src.exists():
-        for page_file in list(review_src.glob("page_*.json"))[:2]:
-            dst = test_book / "needs_review" / page_file.name
-            shutil.copy(page_file, dst)
+    # Copy committed review pages
+    review_src = roosevelt_fixtures / "needs_review"
+    for page_file in review_src.glob("page_*.json"):
+        shutil.copy(page_file, test_book / "needs_review" / page_file.name)
+
+    return test_book
+
+
+@pytest.fixture
+def temp_test_book_integration(tmp_path, roosevelt_full_book):
+    """Create a temporary test book with full book data for integration tests."""
+    if roosevelt_full_book is None:
+        pytest.skip("Full Roosevelt book required for integration test")
+
+    test_book = tmp_path / "test-roosevelt-fix-integration"
+    test_book.mkdir()
+
+    # Create directory structure
+    (test_book / "corrected").mkdir()
+    (test_book / "needs_review").mkdir()
+    (test_book / "logs").mkdir()
+
+    # Copy a few corrected pages from full book
+    corrected_src = roosevelt_full_book / "corrected"
+    for page_file in list(corrected_src.glob("page_*.json"))[:3]:
+        shutil.copy(page_file, test_book / "corrected" / page_file.name)
+
+    # Copy review pages from full book
+    review_src = roosevelt_full_book / "needs_review"
+    for page_file in list(review_src.glob("page_*.json"))[:2]:
+        shutil.copy(page_file, test_book / "needs_review" / page_file.name)
 
     return test_book
 
@@ -127,6 +144,7 @@ def mock_review_page():
 # AGENT 4 INITIALIZATION TESTS
 # ============================================================================
 
+@pytest.mark.unit
 class TestAgent4Initialization:
     """Test Agent4TargetedFix initialization."""
 
@@ -185,6 +203,7 @@ class TestAgent4Initialization:
 # AGENT 3 FEEDBACK PARSING TESTS
 # ============================================================================
 
+@pytest.mark.unit
 class TestAgent3FeedbackParsing:
     """Test parsing Agent 3 feedback structures."""
 
@@ -292,6 +311,7 @@ class TestAgent3FeedbackParsing:
 # FIX APPLICATION TESTS
 # ============================================================================
 
+@pytest.mark.unit
 class TestFixApplication:
     """Test applying fixes to regions."""
 
@@ -382,6 +402,7 @@ class TestFixApplication:
 # ============================================================================
 
 @pytest.mark.api
+@pytest.mark.integration
 class TestAgent4RealAPICalls:
     """Test Agent 4 with real API calls."""
 
@@ -441,21 +462,17 @@ class TestAgent4RealAPICalls:
         # Verify cost was tracked
         assert agent4.stats['total_cost_usd'] > 0
 
-    def test_process_flagged_page_end_to_end(self, temp_test_book):
-        """Test processing a flagged page end-to-end."""
-        if not list((temp_test_book / "needs_review").glob("*.json")):
-            pytest.skip("No review pages in temp test book")
-
+    def test_process_flagged_page_end_to_end(self, temp_test_book_integration):
+        """Test processing a flagged page end-to-end (integration test)."""
         agent4 = Agent4TargetedFix(
-            book_slug=temp_test_book.name,
+            book_slug=temp_test_book_integration.name,
             max_workers=1,
             enable_checkpoints=False
         )
 
-        # Get a review file
-        review_files = list((temp_test_book / "needs_review").glob("page_*.json"))
-        if not review_files:
-            pytest.skip("No review pages available")
+        # Get a review file from full book data
+        review_files = list((temp_test_book_integration / "needs_review").glob("page_*.json"))
+        assert review_files, "Integration fixture should have review pages"
 
         review_file = review_files[0]
 
@@ -465,13 +482,10 @@ class TestAgent4RealAPICalls:
         # Verify stats updated
         assert agent4.stats['pages_processed'] > 0
 
-    def test_process_all_flagged_pages(self, temp_test_book):
-        """Test processing all flagged pages."""
-        if not list((temp_test_book / "needs_review").glob("*.json")):
-            pytest.skip("No review pages in temp test book")
-
+    def test_process_all_flagged_pages(self, temp_test_book_integration):
+        """Test processing all flagged pages (integration test)."""
         agent4 = Agent4TargetedFix(
-            book_slug=temp_test_book.name,
+            book_slug=temp_test_book_integration.name,
             max_workers=2,
             enable_checkpoints=False
         )
@@ -487,6 +501,7 @@ class TestAgent4RealAPICalls:
 # CHECKPOINT TESTS
 # ============================================================================
 
+@pytest.mark.unit
 class TestFixCheckpoints:
     """Test checkpoint integration for Fix stage."""
 
@@ -558,6 +573,7 @@ class TestFixCheckpoints:
 # ERROR HANDLING TESTS
 # ============================================================================
 
+@pytest.mark.unit
 class TestFixErrorHandling:
     """Test error handling in Fix stage."""
 
