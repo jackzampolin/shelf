@@ -27,7 +27,7 @@ class QualityReview:
         self.scan_id = scan_id
         self.book_dir = Config.BOOK_STORAGE_ROOT / scan_id
         self.structured_dir = self.book_dir / "structured"
-        self.model = "anthropic/claude-sonnet-4.5"
+        self.model = Config.QUALITY_MODEL
 
         # Initialize LLM client
         self.llm_client = LLMClient()

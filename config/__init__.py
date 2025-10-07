@@ -50,6 +50,12 @@ class Config:
     # Structure Stage - Assemble Phase (Chunking)
     CHUNK_MODEL = os.getenv('CHUNK_MODEL', 'openai/gpt-4o-mini')
 
+    # Backward compatibility - STRUCTURE_MODEL defaults to EXTRACT_MODEL
+    STRUCTURE_MODEL = os.getenv('STRUCTURE_MODEL', EXTRACT_MODEL)
+
+    # Quality Review Stage
+    QUALITY_MODEL = os.getenv('QUALITY_MODEL', 'anthropic/claude-sonnet-4.5')
+
     # =========================================================================
     # Debug & Logging
     # =========================================================================
@@ -75,7 +81,10 @@ class Config:
         stage_models = {
             'correct': cls.CORRECT_MODEL,
             'fix': cls.FIX_MODEL,
-            'structure': cls.STRUCTURE_MODEL
+            'structure': cls.STRUCTURE_MODEL,
+            'extract': cls.EXTRACT_MODEL,
+            'assemble': cls.CHUNK_MODEL,
+            'quality': cls.QUALITY_MODEL
         }
         return stage_models.get(stage, cls.CORRECT_MODEL)
 
@@ -92,7 +101,8 @@ class Config:
                 'correct': cls.CORRECT_MODEL,
                 'fix': cls.FIX_MODEL,
                 'extract': cls.EXTRACT_MODEL,
-                'chunk': cls.CHUNK_MODEL
+                'chunk': cls.CHUNK_MODEL,
+                'quality': cls.QUALITY_MODEL
             },
             'settings': {
                 'ocr_workers': cls.OCR_WORKERS,
@@ -147,6 +157,7 @@ class Config:
         print(f"  Fix:         {cls.FIX_MODEL}")
         print(f"  Extract:     {cls.EXTRACT_MODEL}")
         print(f"  Chunk:       {cls.CHUNK_MODEL}")
+        print(f"  Quality:     {cls.QUALITY_MODEL}")
         print(f"\nConcurrency:")
         print(f"  OCR Workers: {cls.OCR_WORKERS}")
         print(f"  Correction Workers: {cls.CORRECT_WORKERS}")

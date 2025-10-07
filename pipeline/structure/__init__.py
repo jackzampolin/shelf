@@ -31,13 +31,15 @@ class BookStructurer:
         self.scan_id = scan_id
         self.logger = logger
         self.enable_checkpoints = enable_checkpoints
-        self.model = model  # Store for potential future use (currently agents are hardcoded)
+        self.model = model  # Store for backward compatibility with CLI argument
 
-        # Determine book directory
+        # Determine storage root and book directory
         if storage_root:
+            self.storage_root = storage_root
             self.book_dir = storage_root / scan_id
         else:
-            self.book_dir = Path.home() / "Documents" / "book_scans" / scan_id
+            self.storage_root = Path.home() / "Documents" / "book_scans"
+            self.book_dir = self.storage_root / scan_id
 
         if not self.book_dir.exists():
             error_msg = f"Book directory not found: {self.book_dir}"
@@ -49,13 +51,12 @@ class BookStructurer:
         # Initialize separate checkpoint managers for each phase
         if self.enable_checkpoints:
             from checkpoint import CheckpointManager
-            storage_root_path = storage_root or Path.home() / "Documents" / "book_scans"
 
             # Phase 1: Extraction checkpoint
             self.checkpoint_extract = CheckpointManager(
                 scan_id=scan_id,
                 stage="extract",
-                storage_root=storage_root_path,
+                storage_root=self.storage_root,
                 output_dir="structured/extraction"
             )
 
@@ -63,7 +64,7 @@ class BookStructurer:
             self.checkpoint_assemble = CheckpointManager(
                 scan_id=scan_id,
                 stage="assemble",
-                storage_root=storage_root_path,
+                storage_root=self.storage_root,
                 output_dir="structured"
             )
 
@@ -108,7 +109,8 @@ class BookStructurer:
                 print("\n🔍 Running Phase 1: Extraction...")
 
                 extractor = ExtractionOrchestrator(
-                    book_dir=self.book_dir,
+                    scan_id=self.scan_id,
+                    storage_root=self.storage_root,
                     logger=self.logger
                 )
 
@@ -212,9 +214,11 @@ class BookStructurer:
             }
 
         except Exception as e:
-            # Mark stage as failed in checkpoint
-            if self.checkpoint:
-                self.checkpoint.mark_stage_failed(error=str(e))
+            # Mark stages as failed in checkpoints
+            if self.checkpoint_extract:
+                self.checkpoint_extract.mark_stage_failed(error=str(e))
+            if self.checkpoint_assemble:
+                self.checkpoint_assemble.mark_stage_failed(error=str(e))
 
             # Log and re-raise
             if self.logger:

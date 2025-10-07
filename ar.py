@@ -8,7 +8,8 @@ Usage:
     ar ocr <book-slug>                # OCR stage only
     ar correct <book-slug>            # Correction stage only
     ar fix <book-slug>                # Agent 4 fixes only
-    ar structure <book-slug>          # Structure stage only
+    ar extract <book-slug>            # Extract phase: sliding window extraction
+    ar assemble <book-slug>           # Assemble phase: chunking & output generation
     ar quality <book-slug>            # Quality review stage only
     ar monitor <book-slug>            # Real-time progress monitoring
     ar review <book-slug> <action>    # Review flagged pages
@@ -98,22 +99,42 @@ def cmd_fix(args):
     return 0
 
 
-def cmd_structure(args):
-    """Run structure stage only."""
+def cmd_extract(args):
+    """Run extraction phase only (sliding window extraction)."""
     from pipeline.structure import BookStructurer
     from pathlib import Path
 
-    # Simple checkpoint: check if output already exists
+    # Check if extraction already complete
     book_dir = Path.home() / "Documents" / "book_scans" / args.book_slug
-    metadata_file = book_dir / "structured" / "metadata.json"
+    extraction_metadata = book_dir / "structured" / "extraction" / "metadata.json"
 
-    if args.resume and metadata_file.exists():
-        print("✅ Structure already complete")
+    if args.resume and extraction_metadata.exists():
+        print("✅ Extract phase already complete")
+        print(f"   Output: {book_dir / 'structured' / 'extraction'}")
+        return 0
+
+    structurer = BookStructurer(args.book_slug)
+    structurer.process_book(skip_extraction=False)
+    return 0
+
+
+def cmd_assemble(args):
+    """Run assembly phase only (chunking & output generation)."""
+    from pipeline.structure import BookStructurer
+    from pathlib import Path
+
+    # Check if assembly already complete
+    book_dir = Path.home() / "Documents" / "book_scans" / args.book_slug
+    final_output = book_dir / "structured" / "archive" / "full_book.md"
+
+    if args.resume and final_output.exists():
+        print("✅ Assemble phase already complete")
         print(f"   Output: {book_dir / 'structured'}")
         return 0
 
-    structurer = BookStructurer(args.book_slug, model=args.model)
-    structurer.process_book()
+    structurer = BookStructurer(args.book_slug)
+    # Skip extraction - assumes it's already done
+    structurer.process_book(skip_extraction=True)
     return 0
 
 
@@ -750,15 +771,22 @@ def main():
     fix_parser.set_defaults(func=cmd_fix)
 
     # =========================================================================
-    # STRUCTURE command
+    # EXTRACT command (Phase 1 of structure)
     # =========================================================================
-    structure_parser = subparsers.add_parser('structure', help='Run structure stage only')
-    structure_parser.add_argument('book_slug', help='Book slug')
-    structure_parser.add_argument('--model', default='anthropic/claude-sonnet-4.5',
-                                 help='Model (default: anthropic/claude-sonnet-4.5)')
-    structure_parser.add_argument('--resume', action='store_true',
-                                 help='Skip if structure already complete')
-    structure_parser.set_defaults(func=cmd_structure)
+    extract_parser = subparsers.add_parser('extract', help='Run extraction phase (sliding window)')
+    extract_parser.add_argument('book_slug', help='Book slug')
+    extract_parser.add_argument('--resume', action='store_true',
+                                help='Skip if extraction already complete')
+    extract_parser.set_defaults(func=cmd_extract)
+
+    # =========================================================================
+    # ASSEMBLE command (Phase 2 of structure)
+    # =========================================================================
+    assemble_parser = subparsers.add_parser('assemble', help='Run assembly phase (chunking & output)')
+    assemble_parser.add_argument('book_slug', help='Book slug')
+    assemble_parser.add_argument('--resume', action='store_true',
+                                 help='Skip if assembly already complete')
+    assemble_parser.set_defaults(func=cmd_assemble)
 
     # =========================================================================
     # QUALITY command
