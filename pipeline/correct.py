@@ -740,7 +740,10 @@ Verify each correction and check for unauthorized changes."""
                     total_pages = 0
 
             if total_pages == 0:
-                raise ValueError(f"Could not determine total pages for {self.book_dir}")
+                error_msg = f"Could not determine total pages for {self.book_dir}"
+                if self.checkpoint:
+                    self.checkpoint.mark_stage_failed(error=error_msg)
+                raise ValueError(error_msg)
 
         if end_page is None:
             end_page = total_pages

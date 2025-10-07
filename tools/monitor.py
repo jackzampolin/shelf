@@ -197,7 +197,7 @@ class PipelineMonitor:
                 self.total_pages = len(list(ocr_dir.glob("page_*.json")))
 
     def get_stage_status(self, stage: str) -> StageStatus:
-        """Get status for a specific stage from JSON logs."""
+        """Get status for a specific stage by checking actual output files on disk."""
         logs = LogParser.get_stage_logs(self.logs_dir, stage)
 
         if not logs:
@@ -207,17 +207,71 @@ class PipelineMonitor:
         is_complete = LogParser.is_stage_complete(logs)
         status = 'completed' if is_complete else 'in_progress'
 
-        # Get latest progress
-        progress_entry = LogParser.get_latest_progress(logs)
+        # Count actual files on disk instead of relying on log progress
         progress_current = 0
         progress_total = 0
         progress_percent = 0.0
 
-        if progress_entry and 'progress' in progress_entry:
-            prog = progress_entry['progress']
-            progress_current = prog.get('current', 0)
-            progress_total = prog.get('total', 0)
-            progress_percent = prog.get('percent', 0.0)
+        # Determine output directory and pattern based on stage
+        if stage == 'ocr':
+            output_dir = self.book_dir / 'ocr'
+            pattern = 'page_*.json'
+        elif stage == 'correction':
+            output_dir = self.book_dir / 'corrected'
+            pattern = 'page_*.json'
+        elif stage == 'fix':
+            output_dir = self.book_dir / 'corrected'
+            pattern = 'page_*.json'  # Fix updates corrected files
+        elif stage == 'structure':
+            output_dir = self.book_dir / 'structured'
+            pattern = None  # Check for structured/ directory existence
+        else:
+            output_dir = None
+            pattern = None
+
+        # Count completed pages from actual files on disk
+        if output_dir and output_dir.exists():
+            if pattern:
+                completed_files = list(output_dir.glob(pattern))
+                progress_current = len(completed_files)
+            elif stage == 'structure' and output_dir.exists():
+                # For structure, check if outputs exist
+                if (output_dir / 'archive' / 'full_book.md').exists():
+                    progress_current = 1
+                    progress_total = 1
+                    progress_percent = 100.0
+
+        # Get total pages from source PDFs or checkpoint
+        if progress_total == 0:
+            # Try to get total from metadata.json
+            metadata_file = self.book_dir / 'metadata.json'
+            if metadata_file.exists():
+                try:
+                    import json
+                    with open(metadata_file) as f:
+                        metadata = json.load(f)
+                        progress_total = metadata.get('total_pages_processed', 0)
+                except:
+                    pass
+
+            # If still no total, count source PDF pages
+            if progress_total == 0:
+                source_dir = self.book_dir / 'source'
+                if source_dir.exists():
+                    try:
+                        from PyPDF2 import PdfReader
+                        for pdf_file in source_dir.glob('*.pdf'):
+                            try:
+                                reader = PdfReader(str(pdf_file))
+                                progress_total += len(reader.pages)
+                            except:
+                                pass
+                    except ImportError:
+                        pass
+
+        # Calculate percentage
+        if progress_total > 0:
+            progress_percent = (progress_current / progress_total) * 100
 
         # Get cost
         cost_usd = LogParser.get_accumulated_cost(logs)

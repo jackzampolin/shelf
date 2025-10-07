@@ -284,6 +284,13 @@ class BookOCRProcessor:
                 total_pages += pages_processed
                 page_offset += pages_processed
 
+        # Mark stage complete in checkpoint (saves pending pages + sets status)
+        if self.checkpoint:
+            self.checkpoint.mark_stage_complete(metadata={
+                "total_pages_processed": total_pages,
+                "ocr_mode": "structured"
+            })
+
         # Update metadata
         metadata['ocr_complete'] = True
         metadata['ocr_completion_date'] = datetime.now().isoformat()
@@ -318,7 +325,13 @@ class BookOCRProcessor:
         except Exception as e:
             self.logger.error(f"Error converting PDF", batch=batch_num, error=str(e))
             print(f"❌ Error converting PDF: {e}")
-            return 0
+
+            # Mark stage as failed if this is a fatal error
+            if self.checkpoint:
+                self.checkpoint.mark_stage_failed(error=f"PDF conversion failed: {str(e)}")
+
+            # Raise to propagate error (don't silently continue)
+            raise RuntimeError(f"PDF conversion failed for {pdf_path}: {e}") from e
 
         num_pages = len(images)
         self.logger.info(
