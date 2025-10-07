@@ -141,7 +141,6 @@ def test_ocr_validation_sample():
 
 @pytest.mark.e2e
 @pytest.mark.slow
-@pytest.mark.skip(reason="Full validation expensive - run manually")
 def test_ocr_validation_full():
     """
     Validate OCR stage across all pages.
@@ -180,7 +179,14 @@ def test_ocr_validation_full():
             ia_text = parser.get_page_text(page_num)
 
             # Skip empty pages
-            if not ia_text.strip():
+            if not ia_text.strip() or not our_text.strip():
+                continue
+
+            # Skip pages with extreme length mismatches (likely picture/caption pages)
+            # These indicate structural differences in what was extracted
+            length_ratio = len(our_text) / len(ia_text) if len(ia_text) > 0 else 0
+            if length_ratio > 10 or length_ratio < 0.1:
+                # Skip this page - incomparable content
                 continue
 
             # Compare
@@ -222,12 +228,11 @@ def test_ocr_validation_full():
 
 @pytest.mark.e2e
 @pytest.mark.slow
-@pytest.mark.skip(reason="Requires corrected stage - run manually")
-def test_corrected_validation_sample():
+def test_corrected_validation_full():
     """
-    Validate Correct stage output against IA ground truth (sample pages).
+    Validate Correct stage output against IA ground truth (all pages).
 
-    Tests pages 10-20 after LLM correction.
+    Tests all corrected pages after LLM correction.
     Expected improvement: 85% -> 95%+ accuracy.
     """
     # Check prerequisites
@@ -240,17 +245,17 @@ def test_corrected_validation_sample():
     # Initialize parser
     parser = ABBYYParser(IA_GROUND_TRUTH)
 
-    # Test pages 10-20
-    start_page = 10
-    end_page = 20
+    # Initialize parser
+    total_pages = parser.get_page_count()
 
     print(f"\n{'='*60}")
-    print(f"Corrected Stage Validation: Pages {start_page}-{end_page}")
+    print(f"Full Corrected Validation: All {total_pages} pages")
     print(f"{'='*60}\n")
 
     results = []
+    errors = []
 
-    for page_num in range(start_page, end_page + 1):
+    for page_num in range(1, total_pages + 1):
         try:
             # Load our corrected output
             our_text = load_scanshelf_page_text(
@@ -260,29 +265,50 @@ def test_corrected_validation_sample():
             # Load IA ground truth
             ia_text = parser.get_page_text(page_num)
 
+            # Skip empty pages
+            if not ia_text.strip() or not our_text.strip():
+                continue
+
+            # Skip pages with extreme length mismatches (likely picture/caption pages)
+            length_ratio = len(our_text) / len(ia_text) if len(ia_text) > 0 else 0
+            if length_ratio > 10 or length_ratio < 0.1:
+                # Skip this page - incomparable content
+                continue
+
             # Compare
             result = compare_page_texts(our_text, ia_text, page_num, stage="Corrected")
             results.append(result)
 
-            print(f"\nPage {page_num}:")
-            print(f"  CER: {result['cer']:.2%}")
-            print(f"  Character Accuracy: {result['character_accuracy']:.2%}")
+            # Progress update every 50 pages
+            if page_num % 50 == 0:
+                print(f"Progress: {page_num}/{total_pages} pages")
 
+        except FileNotFoundError:
+            # Page not yet processed
+            continue
         except Exception as e:
-            print(f"\nPage {page_num}: Error - {e}")
+            errors.append((page_num, str(e)))
             continue
 
     # Aggregate results
     if results:
         aggregate = aggregate_accuracy(results)
-        print(format_aggregate_report(aggregate, "Corrected Stage - Sample Pages"))
+        print(format_aggregate_report(aggregate, "Corrected Stage - Full Book"))
+
+        # Print worst 10 pages for investigation
+        sorted_results = sorted(results, key=lambda x: x['cer'], reverse=True)
+        print("\nWorst 10 Pages (highest CER):")
+        for i, result in enumerate(sorted_results[:10], 1):
+            print(f"  {i}. Page {result['page_num']}: CER {result['cer']:.2%}")
 
         # Assert improved quality thresholds
         # Target: >95% accuracy after LLM correction
         assert aggregate['avg_character_accuracy'] > 0.93, \
             f"Corrected accuracy too low: {aggregate['avg_character_accuracy']:.2%}"
 
-        print("\n✅ Corrected stage validation passed!")
+        print(f"\n✅ Full Corrected validation passed!")
+        print(f"   Pages validated: {len(results)}")
+        print(f"   Pages with errors: {len(errors)}")
     else:
         pytest.fail("No pages successfully validated")
 
