@@ -1,0 +1,37 @@
+{
+  "page_number": 100,
+  "page_dimensions": {
+    "width": 1517,
+    "height": 2481
+  },
+  "ocr_timestamp": "2025-10-06T13:23:51.708762",
+  "ocr_mode": "structured",
+  "regions": [
+    {
+      "id": 1,
+      "type": "header",
+      "bbox": [
+        208,
+        151,
+        1257,
+        1566
+      ],
+      "text": "80 THEODORE ROOSEVELT\u2014AN AUTOBIOGRAPHY in question made me feel that, whatever the theories might be, as a matter of practical common sense I could not con- scientiously vote for the continuance of the conditions which I saw. These conditions rendered it impossible for the families of the tenement-house workers to live so that the children might grow up fitted for the exacting duties of American citizenship. I visited the tenement-houses once with my colleagues of the committee, once with some of the labor union representatives, and once or twice by myself. In a few of the tenement-houses there were suites of rooms ample in number where the work on the tobacco was done in rooms not occupied for cooking or sleeping or living. In the overwhelming majority of cases, however, there were one, two, or three room apartments, and the work of manu- facturing the tobacco by men, women, and children went on day and night in the eating, living, and sleeping rooms\u2014 sometimes in one room. I have always remembered one room in which two families were living. On my inquiry as to who the third adult male was I was told that he was a boarder with one of the families. There were several chil- dren, three men, and two women in this room. The tobacco was stowed about everywhere, alongside the foul bedding, and in a corner where there were scraps of food. The men, women, and children in this room worked by day and far on into the evening, and they slept and ate there. They were Bohemians, unable to speak English, except that one of the children knew enough to act as interpreter.",
+      "confidence": 0.958,
+      "reading_order": 1
+    },
+    {
+      "id": 2,
+      "type": "body",
+      "bbox": [
+        208,
+        1726,
+        1255,
+        596
+      ],
+      "text": "Instead of opposing the bill I ardently championed it. Tt was a poorly drawn measure, and the Governor, Grover Cleveland, was at first doubtful about signing it. The Cigar- Makers\u2019 Union then asked me to appear before the Governor and argue for it. I accordingly did so, acting as spokesman for the battered, undersized foreigners who represented the Union and the workers. The Governor signed the bill. Afterwards this tenement-house cigar legislation was de- elared invalid by the Court of Appeals in the Jacobs de- cision. Jacobs was one of the rare tenement-house manu- facturers of cigars who occupied quite a suite of rooms, so",
+      "confidence": 0.95,
+      "reading_order": 2
+    }
+  ]
+}

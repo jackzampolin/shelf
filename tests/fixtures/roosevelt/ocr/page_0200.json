@@ -1,0 +1,37 @@
+{
+  "page_number": 200,
+  "page_dimensions": {
+    "width": 1517,
+    "height": 2481
+  },
+  "ocr_timestamp": "2025-10-06T13:24:09.962527",
+  "ocr_mode": "structured",
+  "regions": [
+    {
+      "id": 1,
+      "type": "header",
+      "bbox": [
+        204,
+        145,
+        1260,
+        958
+      ],
+      "text": "178 THEODORE ROOSEVELT\u2014AN AUTOBIOGRAPHY then Secretary of the Treasury, John Sherman, to give him a medal for distinguished gallantry in saving life. The Life-Saving Society had also given him its medal, and so had the Police Department. There was not a complaint in all his record against him for any infraction of duty, and he was sober and trustworthy. He was entitled to his pro- motion; and. he got it, there and then. It may be worth mentioning that he kept on saving life after he was given his sergeantcy. On October 21, 1896, he again rescued a man from drowning. It was at night, nobody else was in the neighborhood, and the dock from which he jumped was in absolute darkness, and he was ten minutes in the water, which was very cold. He was fifty-five years old when he saved this man. It was the twenty-ninth person whose life he had saved during his twenty-three years\u2019 service in the Department.",
+      "confidence": 0.955,
+      "reading_order": 1
+    },
+    {
+      "id": 2,
+      "type": "body",
+      "bbox": [
+        204,
+        1111,
+        1258,
+        1195
+      ],
+      "text": "The other man was a patrolman whom we promoted to Troundsman for activity in catching a burglar under rather peculiar circumstances. I happened to note his getting a burglar one week. Apparently he had fallen into the habit, for he got another next week. In the latter case the burglar escaped from the house soon after midnight, and ran away toward Park Avenue, with the policeman in hot chase. The New York Central Railroad runs under Park Avenue, and there is a succession of openings in the top of the tun- nel. Finding that the policeman was gaining on him, the burglar took a desperate chance and leaped down one of these openings, at the risk of breaking his neck. Now the burglar was running for his liberty, and it was the part of wisdom for him to imperil life or limb; but the policeman was merely doing his duty, and nobody could have blamed him for not taking the jump. However, he jumped; and in this particular case the hand of the Lord was heavy upon the unrighteous. The burglar had the breath knocked out of him, and the \u2018\u2018cop\u2019\u2019 didn\u2019t. When his victim could walk, the officer trotted him around to the station-house; and a week after I had the officer up and promoted him, for he was sober, trustworthy, and strictly attentive to duty.",
+      "confidence": 0.958,
+      "reading_order": 2
+    }
+  ]
+}

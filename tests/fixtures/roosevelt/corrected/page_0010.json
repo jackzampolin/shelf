@@ -1,0 +1,96 @@
+{
+  "page_number": 10,
+  "page_dimensions": {
+    "width": 1602,
+    "height": 2426
+  },
+  "ocr_timestamp": "2025-10-06T13:23:34.958827",
+  "ocr_mode": "structured",
+  "regions": [
+    {
+      "id": 2,
+      "type": "image",
+      "bbox": [
+        260,
+        290,
+        1219,
+        1639
+      ],
+      "image_file": "page_0010_img_002.png",
+      "reading_order": 1
+    },
+    {
+      "id": 1,
+      "type": "body",
+      "bbox": [
+        266,
+        1939,
+        1201,
+        76
+      ],
+      "text": "Copyright[CORRECTED:1] by Arthur Lee. From a painting by[CORRECTED:2] P. L\u00e1szl\u00f3.[CORRECTED:3] PRESIDENT THEODORE ROOSEVELT",
+      "confidence": 0.869,
+      "reading_order": 2,
+      "corrected": true
+    }
+  ],
+  "llm_processing": {
+    "timestamp": "2025-10-06T13:50:46.854078",
+    "model": "openai/gpt-4o-mini",
+    "error_catalog": {
+      "page_number": 10,
+      "total_errors_found": 3,
+      "errors": [
+        {
+          "error_id": 1,
+          "location": "line 1",
+          "original_text": "Copynpnt",
+          "error_type": "obvious_typo",
+          "confidence": 0.9,
+          "suggested_correction": "Copyright",
+          "context_before": "",
+          "context_after": " by Arthur Lee."
+        },
+        {
+          "error_id": 2,
+          "location": "line 1",
+          "original_text": "vy",
+          "error_type": "character_substitution",
+          "confidence": 0.85,
+          "suggested_correction": "by",
+          "context_before": "painting ",
+          "context_after": " P. laszlo."
+        },
+        {
+          "error_id": 3,
+          "location": "line 1",
+          "original_text": "laszlo.",
+          "error_type": "character_substitution",
+          "confidence": 0.8,
+          "suggested_correction": "L\u00e1szl\u00f3.",
+          "context_before": "P. ",
+          "context_after": " PRESIDENT THEODORE ROOSEVELT"
+        }
+      ],
+      "processing_timestamp": "2025-10-06T13:50:31.044511"
+    },
+    "corrected_text": "Copyright[CORRECTED:1] by Arthur Lee. From a painting by[CORRECTED:2] P. L\u00e1szl\u00f3.[CORRECTED:3] PRESIDENT THEODORE ROOSEVELT",
+    "verification": {
+      "page_number": 10,
+      "all_corrections_applied": true,
+      "corrections_verified": {
+        "correctly_applied": 3,
+        "incorrectly_applied": 0,
+        "missed": 0
+      },
+      "missed_corrections": [],
+      "incorrectly_applied": [],
+      "unauthorized_changes": [],
+      "new_errors_introduced": [],
+      "structure_preserved": true,
+      "confidence_score": 1.0,
+      "needs_human_review": false,
+      "verification_timestamp": "2025-10-06T13:50:46.854054"
+    }
+  }
+}

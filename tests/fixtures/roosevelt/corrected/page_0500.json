@@ -1,0 +1,139 @@
+{
+  "page_number": 500,
+  "page_dimensions": {
+    "width": 1517,
+    "height": 2481
+  },
+  "ocr_timestamp": "2025-10-06T13:25:04.789782",
+  "ocr_mode": "structured",
+  "regions": [
+    {
+      "id": 1,
+      "type": "header",
+      "bbox": [
+        204,
+        166,
+        1255,
+        408
+      ],
+      "text": "468 THEODORE ROOSEVELT\u2014AN AUTOBIOGRAPHY the propertied classes. The operators, however, absolutely refused to acquiesce in the appointment of any represenunderstanding,[CORRECTED:1]- tive of labor, and also announced that they would refuse ta accept a sixth man on the Commission; although they spoke much less decidedly on this point. The labor men left every- thing in my hands.",
+      "confidence": 0.952,
+      "reading_order": 1,
+      "corrected": true
+    },
+    {
+      "id": 2,
+      "type": "body",
+      "bbox": [
+        203,
+        585,
+        1255,
+        697
+      ],
+      "text": "The final conferences with the represenunderstanding,[CORRECTED:1]tives of the operators took place in my rooms on the evening of October 15. Hour after hour went by while I endeavored to make the operators through their representatives see that the country would not tolerate their insisting upon such condi- tions; but in vain. The two representatives of the operators were Robert Bacon and George W. Perkins. They were [CORRECTED:1][CORRECTED:2] tirely reasonable. But the operators themselves were [CORRECTED:2][CORRECTED:3] tirely unreasonable. They had worked themselves into a frame of mind where they were prepared to sacrifice every- thing and see civil war in the country rather than back down and acquiesce in the appointment of a representative of labor. It looked as if a deadlock were inevitable.",
+      "confidence": 0.944,
+      "reading_order": 2,
+      "corrected": true
+    },
+    {
+      "id": 3,
+      "type": "body",
+      "bbox": [
+        203,
+        1301,
+        1254,
+        1035
+      ],
+      "text": "Then, suddenly, after about two hours\u2019 argument, it dawned on me that they were not objecting to the thing, but to the name. I found that they did not mind my appointing any man, whether he was a labor man or not, so long as he was not appointed as a labor man, or as a represenunderstanding,[CORRECTED:1]tive of labor ; they did not object to my exercising any latitude I chose in the appointments so long as they were made under the headings they had given. I shall never forget the mixture of relief and amusement I felt when I thoroughly grasped the fact that while they would hero- ically submit to anarchy rather than have Tweedledum, yet if I would [CORRECTED:3][CORRECTED:4] it Tweedledee they would accept it with rap- ture; it gave me an illuminating glimpse into one corner of the mighty brains of these \u2018\u2018captains of industry.\u2019\u2019 In order to carry the great and vital point and secure agree- ment by both parties, all that was necessary for me to do was to commit a technical and nominal absurdity with a solemn face. This I gladly did. I [CORRECTED:4][CORRECTED:5] at once that I accepted the terms laid down. With this understanding,",
+      "confidence": 0.951,
+      "reading_order": 3,
+      "corrected": true
+    }
+  ],
+  "llm_processing": {
+    "timestamp": "2025-10-06T14:30:17.556306",
+    "model": "openai/gpt-4o-mini",
+    "error_catalog": {
+      "page_number": 500,
+      "total_errors_found": 5,
+      "errors": [
+        {
+          "error_id": 1,
+          "location": "paragraph 1",
+          "original_text": "ta",
+          "error_type": "character_substitution",
+          "confidence": 0.9,
+          "suggested_correction": "to",
+          "context_before": "would refuse ",
+          "context_after": " accept a sixth man on the Commission;"
+        },
+        {
+          "error_id": 2,
+          "location": "paragraph 1",
+          "original_text": "en-",
+          "error_type": "hyphenated_line_breaks",
+          "confidence": 0.85,
+          "suggested_correction": "entirely",
+          "context_before": "were ",
+          "context_after": "reasonable."
+        },
+        {
+          "error_id": 3,
+          "location": "paragraph 1",
+          "original_text": "en-",
+          "error_type": "hyphenated_line_breaks",
+          "confidence": 0.85,
+          "suggested_correction": "entirely",
+          "context_before": "were ",
+          "context_after": "unreasonable."
+        },
+        {
+          "error_id": 4,
+          "location": "paragraph 3",
+          "original_text": "eall",
+          "error_type": "obvious_typo",
+          "confidence": 0.95,
+          "suggested_correction": "call",
+          "context_before": "if I would ",
+          "context_after": "it Tweedledee they would accept it with rap- ture;"
+        },
+        {
+          "error_id": 5,
+          "location": "paragraph 4",
+          "original_text": "announeed",
+          "error_type": "obvious_typo",
+          "confidence": 0.95,
+          "suggested_correction": "announced",
+          "context_before": "I ",
+          "context_after": "at once that I accepted the terms laid down."
+        }
+      ],
+      "processing_timestamp": "2025-10-06T14:29:56.332994"
+    },
+    "corrected_text": "468 THEODORE ROOSEVELT\u2014AN AUTOBIOGRAPHY the propertied classes. The operators, however, absolutely refused to acquiesce in the appointment of any representa- tive of labor, and also announced that they would refuse to accept a sixth man on the Commission; although they spoke much less decidedly on this point. The labor men left every- thing in my hands.\n\nThe final conferences with the representatives of the operators took place in my rooms on the evening of October 15. Hour after hour went by while I endeavored to make the operators through their representatives see that the country would not tolerate their insisting upon such condi- tions; but in vain. The two representatives of the operators were Robert Bacon and George W. Perkins. They were entirely reasonable. But the operators themselves were entirely unreasonable. They had worked themselves into a frame of mind where they were prepared to sacrifice every- thing and see civil war in the country rather than back down and acquiesce in the appointment of a representative of labor. It looked as if a deadlock were inevitable.\n\nThen, suddenly, after about two hours\u2019 argument, it dawned on me that they were not objecting to the thing, but to the name. I found that they did not mind my appointing any man, whether he was a labor man or not, so long as he was not appointed as a labor man, or as a representative of labor ; they did not object to my exercising any latitude I chose in the appointments so long as they were made under the headings they had given. I shall never forget the mixture of relief and amusement I felt when I thoroughly grasped the fact that while they would hero- ically submit to anarchy rather than have Tweedledum, yet if I would call it Tweedledee they would accept it with rap- ture; it gave me an illuminating glimpse into one corner of the mighty brains of these \u2018\u2018captains of industry.\u2019\u2019 In order to carry the great and vital point and secure agree- ment by both parties, all that was necessary for me to do was to commit a technical and nominal absurdity with a solemn face. This I gladly did. I announced at once that I accepted the terms laid down. With this understanding, [CORRECTED:1] [CORRECTED:2] [CORRECTED:3] [CORRECTED:4] [CORRECTED:5]",
+    "verification": {
+      "page_number": 500,
+      "all_corrections_applied": false,
+      "corrections_verified": {
+        "correctly_applied": 4,
+        "incorrectly_applied": 0,
+        "missed": 1
+      },
+      "missed_corrections": [
+        {
+          "error_id": 3,
+          "original_text": "en-",
+          "should_be": "entirely",
+          "location": "paragraph 1"
+        }
+      ],
+      "incorrectly_applied": [],
+      "unauthorized_changes": [],
+      "new_errors_introduced": [],
+      "structure_preserved": true,
+      "confidence_score": 0.9,
+      "needs_human_review": false,
+      "verification_timestamp": "2025-10-06T14:30:17.556135"
+    }
+  }
+}

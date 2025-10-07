@@ -1,0 +1,22 @@
+{
+  "title": "Theodore Roosevelt: An Autobiography",
+  "author": "Theodore Roosevelt",
+  "isbn": null,
+  "scan_date": "2025-10-06T13:19:53.373371",
+  "source_files": [
+    "roosevelt-autobiography-1.pdf"
+  ],
+  "status": "registered",
+  "ocr_complete": true,
+  "ocr_completion_date": "2025-10-06T13:25:29.556174",
+  "total_pages_processed": 636,
+  "ocr_mode": "structured",
+  "fixture": true,
+  "test_pages": [
+    10,
+    50,
+    100,
+    200,
+    500
+  ]
+}

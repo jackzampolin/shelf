@@ -1,0 +1,50 @@
+{
+  "page_number": 500,
+  "page_dimensions": {
+    "width": 1517,
+    "height": 2481
+  },
+  "ocr_timestamp": "2025-10-06T13:25:04.789782",
+  "ocr_mode": "structured",
+  "regions": [
+    {
+      "id": 1,
+      "type": "header",
+      "bbox": [
+        204,
+        166,
+        1255,
+        408
+      ],
+      "text": "468 THEODORE ROOSEVELT\u2014AN AUTOBIOGRAPHY the propertied classes. The operators, however, absolutely refused to acquiesce in the appointment of any representa- tive of labor, and also announced that they would refuse ta accept a sixth man on the Commission; although they spoke much less decidedly on this point. The labor men left every- thing in my hands.",
+      "confidence": 0.952,
+      "reading_order": 1
+    },
+    {
+      "id": 2,
+      "type": "body",
+      "bbox": [
+        203,
+        585,
+        1255,
+        697
+      ],
+      "text": "The final conferences with the representatives of the operators took place in my rooms on the evening of October 15. Hour after hour went by while I endeavored to make the operators through their representatives see that the country would not tolerate their insisting upon such condi- tions; but in vain. The two representatives of the operators were Robert Bacon and George W. Perkins. They were en- tirely reasonable. But the operators themselves were en- tirely unreasonable. They had worked themselves into a frame of mind where they were prepared to sacrifice every- thing and see civil war in the country rather than back down and acquiesce in the appointment of a representative of labor. It looked as if a deadlock were inevitable.",
+      "confidence": 0.944,
+      "reading_order": 2
+    },
+    {
+      "id": 3,
+      "type": "body",
+      "bbox": [
+        203,
+        1301,
+        1254,
+        1035
+      ],
+      "text": "Then, suddenly, after about two hours\u2019 argument, it dawned on me that they were not objecting to the thing, but to the name. I found that they did not mind my appointing any man, whether he was a labor man or not, so long as he was not appointed as a labor man, or as a representative of labor ; they did not object to my exercising any latitude I chose in the appointments so long as they were made under the headings they had given. I shall never forget the mixture of relief and amusement I felt when I thoroughly grasped the fact that while they would hero- ically submit to anarchy rather than have Tweedledum, yet if I would eall it Tweedledee they would accept it with rap- ture; it gave me an illuminating glimpse into one corner of the mighty brains of these \u2018\u2018captains of industry.\u2019\u2019 In order to carry the great and vital point and secure agree- ment by both parties, all that was necessary for me to do was to commit a technical and nominal absurdity with a solemn face. This I gladly did. I announeed at once that I accepted the terms laid down. With this understanding,",
+      "confidence": 0.951,
+      "reading_order": 3
+    }
+  ]
+}

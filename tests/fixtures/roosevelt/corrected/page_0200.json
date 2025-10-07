@@ -1,0 +1,119 @@
+{
+  "page_number": 200,
+  "page_dimensions": {
+    "width": 1517,
+    "height": 2481
+  },
+  "ocr_timestamp": "2025-10-06T13:24:09.962527",
+  "ocr_mode": "structured",
+  "regions": [
+    {
+      "id": 1,
+      "type": "header",
+      "bbox": [
+        204,
+        145,
+        1260,
+        958
+      ],
+      "text": "178 THEODORE ROOSEVELT\u2014AN AUTOBIOGRAPHY then Secretary of the Treasury, John Sherman, to give him a medal for distinguished gallantry in saving life. The Life-Saving Society had also given him its medal, and so had the Police Department. There was not a complaint in all his record against him for any infraction of duty, and he was sober and trustworthy. He was entitled to his his promotion;[CORRECTED:1] and. he got it, there and then. It may be worth mentioning that he kept on saving life after he was given his sergeantcy.[CORRECTED:2] On October 21, 1896, he again rescued a man from drowning. It was at night, nobody else was in the neighborhood, and the dock from which he jumped was in absolute darkness, and he was ten minutes in the water, which was very cold. He was fifty-five years old when he saved this man. It was the twenty-ninth person whose life he had saved during his twenty-three years\u2019 service in the Department.",
+      "confidence": 0.955,
+      "reading_order": 1,
+      "corrected": true
+    },
+    {
+      "id": 2,
+      "type": "body",
+      "bbox": [
+        204,
+        1111,
+        1258,
+        1195
+      ],
+      "text": "The other man was a patrolman whom we promoted to roundsman[CORRECTED:3] for activity in catching a burglar under rather peculiar circumstances. I happened to note his getting a burglar one week. Apparently he had fallen into the habit, for he got another next week. In the latter case the burglar escaped from the house soon after midnight, and ran away toward Park Avenue, with the policeman in hot chase. The New York Central Railroad runs under Park Avenue, and there is a succession of openings in the top of the tun- nel. Finding that the policeman was gaining on him, the burglar took a desperate chance and leaped down one of these openings, at the risk of breaking his neck. Now the burglar was running for his liberty, and it was the part of wisdom for him to imperil life or limb; but the policeman was merely doing his duty, and nobody could have blamed him for not taking the jump. However, he jumped; and in this particular case the hand of the Lord was heavy upon the unrighteous. The burglar had the breath knocked out of him, and the \u2018\u2018cop\u2019\u2019 didn\u2019t. When his victim could walk, the officer trotted him around to the station-house; and a week after I had the officer up and promoted him, for he was sober, trustworthy, and strictly attentive to duty.",
+      "confidence": 0.958,
+      "reading_order": 2,
+      "corrected": true
+    }
+  ],
+  "llm_processing": {
+    "timestamp": "2025-10-06T13:54:31.031891",
+    "model": "openai/gpt-4o-mini",
+    "error_catalog": {
+      "page_number": 200,
+      "total_errors_found": 3,
+      "errors": [
+        {
+          "error_id": 1,
+          "location": "paragraph 1",
+          "original_text": "pro- motion;",
+          "error_type": "hyphenated_line_break",
+          "confidence": 0.9,
+          "suggested_correction": "promotion;",
+          "context_before": "to his ",
+          "context_after": "and. he got it, there and then."
+        },
+        {
+          "error_id": 2,
+          "location": "paragraph 1",
+          "original_text": "sergeantcy.",
+          "error_type": "obvious_typo",
+          "confidence": 0.85,
+          "suggested_correction": "sergeantcy",
+          "context_before": "his ",
+          "context_after": "On October 21, 1896, he again rescued a man from drowning."
+        },
+        {
+          "error_id": 3,
+          "location": "paragraph 2",
+          "original_text": "Troundsman",
+          "error_type": "character_substitution",
+          "confidence": 0.95,
+          "suggested_correction": "roundsman",
+          "context_before": "to ",
+          "context_after": "for activity in catching a burglar under rather peculiar circumstances."
+        }
+      ],
+      "processing_timestamp": "2025-10-06T13:54:06.547844"
+    },
+    "corrected_text": "178 THEODORE ROOSEVELT\u2014AN AUTOBIOGRAPHY then Secretary of the Treasury, John Sherman, to give him a medal for distinguished gallantry in saving life. The Life-Saving Society had also given him its medal, and so had the Police Department. There was not a complaint in all his record against him for any infraction of duty, and he was sober and trustworthy. He was entitled to his promotion;[CORRECTED:1] and. he got it, there and then. It may be worth mentioning that he kept on saving life after he was given his sergeantcy.[CORRECTED:2] On October 21, 1896, he again rescued a man from drowning. It was at night, nobody else was in the neighborhood, and the dock from which he jumped was in absolute darkness, and he was ten minutes in the water, which was very cold. He was fifty-five years old when he saved this man. It was the twenty-ninth person whose life he had saved during his twenty-three years\u2019 service in the Department.\n\nThe other man was a patrolman whom we promoted to roundsman[CORRECTED:3] for activity in catching a burglar under rather peculiar circumstances. I happened to note his getting a burglar one week. Apparently he had fallen into the habit, for he got another next week. In the latter case the burglar escaped from the house soon after midnight, and ran away toward Park Avenue, with the policeman in hot chase. The New York Central Railroad runs under Park Avenue, and there is a succession of openings in the top of the tun- nel. Finding that the policeman was gaining on him, the burglar took a desperate chance and leaped down one of these openings, at the risk of breaking his neck. Now the burglar was running for his liberty, and it was the part of wisdom for him to imperil life or limb; but the policeman was merely doing his duty, and nobody could have blamed him for not taking the jump. However, he jumped; and in this particular case the hand of the Lord was heavy upon the unrighteous. The burglar had the breath knocked out of him, and the \u2018\u2018cop\u2019\u2019 didn\u2019t. When his victim could walk, the officer trotted him around to the station-house; and a week after I had the officer up and promoted him, for he was sober, trustworthy, and strictly attentive to duty.",
+    "verification": {
+      "page_number": 200,
+      "all_corrections_applied": false,
+      "corrections_verified": {
+        "correctly_applied": 2,
+        "incorrectly_applied": 1,
+        "missed": 0
+      },
+      "missed_corrections": [],
+      "incorrectly_applied": [
+        {
+          "error_id": 2,
+          "was_changed_to": "sergeantcy.",
+          "should_be": "sergeantcy",
+          "reason": "The period at the end of 'sergeantcy' was incorrectly retained."
+        }
+      ],
+      "unauthorized_changes": [],
+      "new_errors_introduced": [],
+      "structure_preserved": true,
+      "confidence_score": 0.9,
+      "needs_human_review": true,
+      "review_reason": "The period after 'sergeantcy' was not part of the original error and should not have been included.",
+      "verification_timestamp": "2025-10-06T13:54:31.031807"
+    },
+    "agent4_fixes": {
+      "timestamp": "2025-10-06T14:15:07.999039",
+      "missed_corrections": [
+        {
+          "error_id": 2,
+          "was_changed_to": "sergeantcy.",
+          "should_be": "sergeantcy",
+          "reason": "The period at the end of 'sergeantcy' was incorrectly retained."
+        }
+      ],
+      "fixed_text": "178 THEODORE ROOSEVELT\u2014AN AUTOBIOGRAPHY then Secretary of the Treasury, John Sherman, to give him a medal for distinguished gallantry in saving life. The Life-Saving Society had also given him its medal, and so had the Police Department. There was not a complaint in all his record against him for any infraction of duty, and he was sober and trustworthy. He was entitled to his promotion;[CORRECTED:1] and. he got it, there and then. It may be worth mentioning that he kept on saving life after he was given his sergeantcy[FIXED:A4-1]. On October 21, 1896, he again rescued a man from drowning. It was at night, nobody else was in the neighborhood, and the dock from which he jumped was in absolute darkness, and he was ten minutes in the water, which was very cold. He was fifty-five years old when he saved this man. It was the twenty-ninth person whose life he had saved during his twenty-three years' service in the Department.\n\nThe other man was a patrolman whom we promoted to roundsman[CORRECTED:3] for activity in catching a burglar under rather peculiar circumstances. I happened to note his getting a burglar one week. Apparently he had fallen into the habit, for he got another next week. In the latter case the burglar escaped from the house soon after midnight, and ran away toward Park Avenue, with the policeman in hot chase. The New York Central Railroad runs under Park Avenue, and there is a succession of openings in the top of the tun- nel. Finding that the policeman was gaining on him, the burglar took a desperate chance and leaped down one of these openings, at the risk of breaking his neck. Now the burglar was running for his liberty, and it was the part of wisdom for him to imperil life or limb; but the policeman was merely doing his duty, and nobody could have blamed him for not taking the jump. However, he jumped; and in this particular case the hand of the Lord was heavy upon the unrighteous. The burglar had the breath knocked out of him, and the ''cop'' didn't. When his victim could walk, the officer trotted him around to the station-house; and a week after I had the officer up and promoted him, for he was sober, trustworthy, and strictly attentive to duty.",
+      "agent3_feedback": "The period after 'sergeantcy' was not part of the original error and should not have been included."
+    }
+  }
+}

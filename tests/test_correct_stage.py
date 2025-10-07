@@ -31,39 +31,27 @@ from pipeline.correct import (
 # ============================================================================
 
 @pytest.fixture
-def roosevelt_book_dir():
-    """Path to Roosevelt book with real OCR data."""
-    book_dir = Path.home() / "Documents" / "book_scans" / "roosevelt-autobiography"
-    if not book_dir.exists():
-        pytest.skip("Roosevelt book not found - run pipeline first")
-    return book_dir
-
-
-@pytest.fixture
-def sample_ocr_page(roosevelt_book_dir):
-    """Load a real OCR page from Roosevelt."""
-    ocr_file = roosevelt_book_dir / "ocr" / "page_0010.json"
-    if not ocr_file.exists():
-        pytest.skip("OCR data not available")
-
+def sample_ocr_page(roosevelt_fixtures):
+    """Load a real OCR page from Roosevelt fixtures."""
+    ocr_file = roosevelt_fixtures / "ocr" / "page_0010.json"
     with open(ocr_file) as f:
         return json.load(f)
 
 
 @pytest.fixture
-def sample_corrected_page(roosevelt_book_dir):
-    """Load a real corrected page from Roosevelt."""
-    corrected_file = roosevelt_book_dir / "corrected" / "page_0010.json"
-    if not corrected_file.exists():
-        pytest.skip("Corrected data not available")
-
+def sample_corrected_page(roosevelt_fixtures):
+    """Load a real corrected page from Roosevelt fixtures."""
+    corrected_file = roosevelt_fixtures / "corrected" / "page_0010.json"
     with open(corrected_file) as f:
         return json.load(f)
 
 
 @pytest.fixture
-def temp_test_book(tmp_path, roosevelt_book_dir):
+def temp_test_book(tmp_path, roosevelt_full_book):
     """Create a temporary test book with a few Roosevelt pages for testing."""
+    if roosevelt_full_book is None:
+        pytest.skip("Full Roosevelt book required for this test")
+
     test_book = tmp_path / "test-roosevelt"
     test_book.mkdir()
 
@@ -76,7 +64,7 @@ def temp_test_book(tmp_path, roosevelt_book_dir):
 
     # Copy a few OCR pages for testing (pages 10-12)
     for page_num in range(10, 13):
-        src = roosevelt_book_dir / "ocr" / f"page_{page_num:04d}.json"
+        src = roosevelt_full_book / "ocr" / f"page_{page_num:04d}.json"
         if src.exists():
             dst = test_book / "ocr" / f"page_{page_num:04d}.json"
             shutil.copy(src, dst)
@@ -231,18 +219,21 @@ class TestStructuredPageCorrector:
         # Should not include image regions
         assert '[image]' not in text.lower()
 
-    def test_get_page_context(self, roosevelt_book_dir):
+    def test_get_page_context(self, roosevelt_full_book):
         """Test loading page with context from adjacent pages."""
+        if roosevelt_full_book is None:
+            pytest.skip("Full Roosevelt book not available")
+
         corrector = StructuredPageCorrector(
             book_title="roosevelt-autobiography",
-            storage_root=roosevelt_book_dir.parent,
+            storage_root=roosevelt_full_book.parent,
             enable_checkpoints=False
         )
 
         # Test page with context
         prev_text, current_data, next_text = corrector.get_page_context(
             page_num=50,
-            total_pages=600
+            total_pages=636
         )
 
         assert current_data is not None
@@ -352,8 +343,7 @@ class TestAgent1ErrorDetection:
             page_num, total_pages=12
         )
 
-        if not page_data:
-            pytest.skip("Page data not available")
+        assert page_data is not None, "Page data should be available from temp_test_book fixture"
 
         # Run Agent 1
         error_catalog = corrector.agent1_detect_errors(
