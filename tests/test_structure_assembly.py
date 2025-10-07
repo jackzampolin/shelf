@@ -66,9 +66,10 @@ class TestBatchAssembler:
         assembler = BatchAssembler(roosevelt_book_dir)
 
         assert assembler.book_dir == roosevelt_book_dir
-        assert assembler.extraction_dir == EXTRACTION_DIR
+        expected_extraction_dir = roosevelt_book_dir / "structured" / "extraction"
+        assert assembler.extraction_dir == expected_extraction_dir
 
-    def test_load_metadata(self, roosevelt_book_dir, extraction_metadata):
+    def test_load_metadata(self, roosevelt_book_dir, extraction_metadata_integration):
         """Test metadata loading."""
         assembler = BatchAssembler(roosevelt_book_dir)
         metadata = assembler._load_metadata()
@@ -77,10 +78,10 @@ class TestBatchAssembler:
         assert 'statistics' in metadata
         assert 'configuration' in metadata
 
-    def test_load_batches(self, roosevelt_book_dir, extraction_metadata):
+    def test_load_batches(self, roosevelt_book_dir, extraction_metadata_integration):
         """Test batch loading."""
         assembler = BatchAssembler(roosevelt_book_dir)
-        total_batches = extraction_metadata['statistics']['processed_batches']
+        total_batches = extraction_metadata_integration['statistics']['processed_batches']
 
         batches = assembler._load_batches(total_batches)
 
