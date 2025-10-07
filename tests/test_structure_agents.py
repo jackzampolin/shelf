@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from pipeline.structure.agents import (
     extract_batch,
-    verify_extraction_simple,
+    verify_extraction,
     reconcile_overlaps,
     text_similarity
 )
@@ -88,34 +88,6 @@ def test_extract_agent_on_roosevelt_batch():
     # Roosevelt pages average ~500 words/page, so 10 pages = ~5000 words
     # After header removal, expect 60-90% = 3000-4500 words
     assert result['word_count'] > 2000, f"Should extract substantial content from 10 pages, got {result['word_count']}"
-
-
-@pytest.mark.skipif(
-    not ROOSEVELT_DIR.exists(),
-    reason="Roosevelt autobiography test data not available"
-)
-def test_verify_agent_simple():
-    """Test verification logic with real Roosevelt data and mock extraction."""
-    pages = load_roosevelt_pages(TEST_PAGES[:5])  # Use 5 pages
-
-    # Create a mock extraction result with very low word count
-    extraction_result = {
-        'clean_text': "Test content here",
-        'paragraphs': [
-            {'text': 'Test content here', 'scan_page': 75, 'type': 'body'}
-        ],
-        'word_count': 3,
-        'scan_pages': [75, 76, 77, 78, 79]
-    }
-
-    # Run simple verification (no LLM call)
-    verification = verify_extraction_simple(pages, extraction_result)
-
-    # Should detect excessive content loss
-    assert verification['word_count_ratio'] < 0.60, "Should detect excessive content loss"
-    assert not verification['word_count_ok'], "Should flag as not OK"
-
-    print(f"\n✓ Verification detected content loss: {verification['word_count_ratio']:.1%} retained")
 
 
 def test_reconcile_agent_consensus():

@@ -8,7 +8,7 @@ Three agents work together to extract clean text from page batches:
 """
 
 from .extract_agent import extract_batch, extract_batch_safe
-from .verify_agent import verify_extraction, verify_extraction_simple
+from .verify_agent import verify_extraction
 from .reconcile_agent import (
     reconcile_overlaps,
     reconcile_overlaps_with_llm,
@@ -20,7 +20,6 @@ __all__ = [
     'extract_batch',
     'extract_batch_safe',
     'verify_extraction',
-    'verify_extraction_simple',
     'reconcile_overlaps',
     'reconcile_overlaps_with_llm',
     'merge_batch_results',

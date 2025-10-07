@@ -31,7 +31,6 @@ from utils.parallel import ParallelProcessor
 from pipeline.structure.agents import (
     extract_batch,
     verify_extraction,
-    verify_extraction_simple,
     reconcile_overlaps
 )
 
