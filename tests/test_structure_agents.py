@@ -16,6 +16,7 @@ from pipeline.structure.agents import (
     reconcile_overlaps,
     text_similarity
 )
+from pipeline.structure.extractor import ExtractionOrchestrator
 
 
 # Roosevelt autobiography pages for testing
@@ -199,3 +200,73 @@ def test_text_similarity():
     text4 = "The quick brown fox jumped over the lazy dog."
     sim = text_similarity(text1, text4)
     assert 0.8 < sim < 1.0
+
+
+@pytest.mark.skipif(
+    not ROOSEVELT_DIR.exists(),
+    reason="Roosevelt autobiography test data not available"
+)
+@pytest.mark.api
+@pytest.mark.slow
+def test_extractor_orchestrator_on_roosevelt_sample():
+    """
+    Test full extractor orchestrator on Roosevelt pages 75-90.
+
+    This tests the complete sliding window extraction pipeline:
+    - Batch creation with overlap
+    - Parallel processing
+    - 3-agent coordination (extract → verify)
+    - Overlap reconciliation
+
+    Expected: 2 batches (pages 75-84 and 82-90 with 3-page overlap)
+    Cost: ~$0.02
+    """
+    orchestrator = ExtractionOrchestrator(
+        scan_id="roosevelt-autobiography",
+        window_size=10,
+        overlap=3,
+        max_workers=30
+    )
+
+    # Run extraction on sample pages
+    results = orchestrator.extract_sliding_window(start_page=75, end_page=90)
+
+    # Verify results structure
+    assert len(results) == 2, "Should create 2 batches for 16 pages"
+
+    # Check batch 0 (pages 75-84)
+    batch0 = results[0]
+    assert batch0['status'] == 'success'
+    assert batch0['batch_id'] == 0
+    assert batch0['batch_metadata']['start_page'] == 75
+    assert batch0['batch_metadata']['end_page'] == 84
+    assert batch0['result']['scan_pages'] == list(range(75, 85))
+
+    # Check batch 1 (pages 82-90, overlaps with batch 0 on pages 82-84)
+    batch1 = results[1]
+    assert batch1['status'] == 'success'
+    assert batch1['batch_id'] == 1
+    assert batch1['batch_metadata']['start_page'] == 82
+    assert batch1['batch_metadata']['end_page'] == 90
+    assert batch1['result']['scan_pages'] == list(range(82, 91))
+    assert batch1['batch_metadata']['overlap_with_prev'] == [82, 83, 84]
+
+    # Verify reconciliation happened
+    assert 'reconciliation' in batch1
+    reconciliation = batch1['reconciliation']
+    assert 'status' in reconciliation
+    assert 'similarity' in reconciliation
+    assert reconciliation['overlap_pages'] == [82, 83, 84]
+
+    # Verify extraction quality
+    assert batch0['result']['word_count'] > 1000, "Should extract substantial content"
+    assert batch1['result']['word_count'] > 1000, "Should extract substantial content"
+
+    # Verify cost tracking
+    assert batch0['cost'] > 0
+    assert batch1['cost'] > 0
+
+    print(f"\n✓ Batch 0: {batch0['result']['word_count']} words from pages {batch0['batch_metadata']['start_page']}-{batch0['batch_metadata']['end_page']}")
+    print(f"✓ Batch 1: {batch1['result']['word_count']} words from pages {batch1['batch_metadata']['start_page']}-{batch1['batch_metadata']['end_page']}")
+    print(f"✓ Overlap reconciliation: {reconciliation['status']} (similarity: {reconciliation['similarity']:.2%})")
+    print(f"✓ Total cost: ${batch0['cost'] + batch1['cost']:.2f}")
