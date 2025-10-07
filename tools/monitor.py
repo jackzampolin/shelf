@@ -128,20 +128,53 @@ class LogParser:
 
     @staticmethod
     def get_errors_warnings(logs: List[Dict[str, Any]], limit: int = 5) -> tuple[List[Dict], List[Dict]]:
-        """Get recent ERROR and WARNING entries."""
-        errors = []
-        warnings = []
+        """Get recent actionable ERROR entries only.
 
+        Strategy:
+        - Only include actual errors that affected output
+        - Skip retry warnings (they're noisy and usually succeed)
+        - Skip errors that were later resolved by successful retry
+        """
+        errors = []
+
+        # Track which pages had retry successes
+        retry_successes = set()
+        for entry in logs:
+            msg = entry.get('message', '')
+            # Look for "Agent X succeeded on retry" messages
+            if 'succeeded on retry' in msg.lower():
+                # Extract page number if present
+                if '[page' in msg:
+                    try:
+                        page_str = msg.split('[page')[1].split(']')[0].strip()
+                        retry_successes.add(page_str)
+                    except:
+                        pass
+
+        # Collect only unresolved errors
         for entry in reversed(logs):
             if entry.get('level') == 'ERROR' and len(errors) < limit:
-                errors.append(entry)
-            elif entry.get('level') == 'WARNING' and len(warnings) < limit:
-                warnings.append(entry)
+                msg = entry.get('message', '')
 
-            if len(errors) >= limit and len(warnings) >= limit:
+                # Check if this error was later resolved
+                is_resolved = False
+                if '[page' in msg:
+                    try:
+                        page_str = msg.split('[page')[1].split(']')[0].strip()
+                        if page_str in retry_successes:
+                            is_resolved = True
+                    except:
+                        pass
+
+                # Only include unresolved errors
+                if not is_resolved:
+                    errors.append(entry)
+
+            if len(errors) >= limit:
                 break
 
-        return errors, warnings
+        # Don't return warnings - they're too noisy (retries are normal)
+        return errors, []
 
     @staticmethod
     def is_stage_complete(logs: List[Dict[str, Any]]) -> bool:
