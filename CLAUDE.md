@@ -221,7 +221,7 @@ ar library add <directory>      # Smart add with LLM metadata
 
 **Processing Pipeline:**
 ```bash
-ar pipeline <scan-id>              # Run full pipeline (all stages)
+ar process <scan-id>               # Run full pipeline (all stages)
 ar ocr <scan-id>                   # Stage 1: OCR only
 ar correct <scan-id>               # Stage 2: LLM corrections only
 ar fix <scan-id>                   # Stage 3: Agent 4 targeted fixes
@@ -248,10 +248,10 @@ ar library discover ~/Documents/Scans  # See what PDFs are available
 ar library add ~/Documents/Scans/fiery-peace-1.pdf ~/Documents/Scans/fiery-peace-2.pdf ...
 
 # Process it completely
-ar pipeline modest-lovelace
+ar process modest-lovelace
 
 # Check progress
-ar monitor modest-lovelace
+ar status modest-lovelace --watch
 
 # View results
 ar library show modest-lovelace

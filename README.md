@@ -139,15 +139,19 @@ After processing, each book has structured outputs:
 ```
 ~/Documents/book_scans/<scan-id>/
 ├── source/                # Original PDFs
-├── ocr/                   # Raw OCR output
-├── corrected/             # LLM-corrected pages
+├── ocr/                   # Raw OCR output (page_*.json)
+├── corrected/             # LLM-corrected pages (page_*.json)
 └── structured/            # Semantic outputs
+    ├── extraction/        # Phase 1: Batch extraction results
+    ├── data/              # Phase 2: RAG-ready JSON
+    │   ├── body/          # Per-chapter JSON files
+    │   ├── front_matter/  # Preface, introduction, etc.
+    │   └── back_matter/   # Notes, bibliography, index
     ├── reading/           # TTS-optimized clean text
-    ├── data/              # RAG-ready JSON (chapters, notes, bibliography)
-    └── archive/           # Complete markdown
+    └── archive/           # Complete markdown (full_book.md)
 ```
 
-See **[docs/structure_schema.md](docs/structure_schema.md)** for detailed output format.
+See **[docs/STRUCTURE.md](docs/STRUCTURE.md)** for detailed architecture and output formats.
 
 ## Pipeline Details
 

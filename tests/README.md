@@ -36,17 +36,33 @@ pytest
 ### Run Specific Test Files
 
 ```bash
-# End-to-end pipeline tests
-uv run pytest tests/test_pipeline_e2e.py
+# OCR stage tests
+pytest tests/test_ocr_stage.py
 
-# Pipeline restart tests
-uv run pytest tests/test_restart.py
+# Correction stage tests
+pytest tests/test_correct_stage.py
+
+# Fix stage tests
+pytest tests/test_fix_stage.py
+
+# Structure stage tests
+pytest tests/test_structure_agents.py
+pytest tests/test_structure_assembly.py
 
 # Library/catalog tests
-uv run pytest tests/test_library.py
+pytest tests/test_library.py
 
-# Cost tracking tests
-uv run pytest tests/test_cost_tracking.py
+# Pipeline validation (E2E)
+pytest tests/test_pipeline_validation.py
+
+# Internet Archive validation
+pytest tests/test_ia_validation.py
+
+# Checkpoint system tests
+pytest tests/test_checkpoint.py
+
+# Parallel processing tests
+pytest tests/test_parallel.py
 ```
 
 ### Run by Marker
@@ -88,17 +104,20 @@ uv run pytest -vs
 
 ```
 tests/
-├── README.md                    # This file
-├── fixtures/                    # Test data
-│   ├── README.md               # Fixture documentation
-│   ├── extract_test_pages.py  # Fixture generation script
-│   └── test_book/              # 5-page test book
-│       ├── metadata.json
-│       └── source/pdfs/        # Individual page PDFs
-├── test_pipeline_e2e.py        # Full pipeline tests
-├── test_restart.py             # Pipeline restart tests
-├── test_library.py             # Library/catalog tests
-└── test_cost_tracking.py       # Cost tracking tests
+├── README.md                           # This file
+├── INTERNET_ARCHIVE_VALIDATION_PLAN.md # IA validation (completed)
+├── fixtures/                           # Test data and validation data
+│   └── validation/                     # IA reference data for Roosevelt
+├── test_ocr_stage.py                   # OCR stage unit tests
+├── test_correct_stage.py               # Correction stage unit tests
+├── test_fix_stage.py                   # Fix stage unit tests
+├── test_structure_agents.py            # Structure extraction agents tests
+├── test_structure_assembly.py          # Structure assembly tests
+├── test_checkpoint.py                  # Checkpoint system tests
+├── test_parallel.py                    # Parallel processing tests
+├── test_library.py                     # Library/catalog management tests
+├── test_pipeline_validation.py         # E2E pipeline validation
+└── test_ia_validation.py               # Internet Archive ground truth validation
 ```
 
 ## Test Fixtures
@@ -125,49 +144,59 @@ This extracts from `~/Documents/book_scans/modest-lovelace/source/pdfs/`.
 
 ## Test Categories
 
-### End-to-End Tests (`test_pipeline_e2e.py`)
+### Stage-Specific Tests
+Individual pipeline stage validation with real LLM calls:
 
-Tests the complete pipeline flow:
-- ✅ Full pipeline: OCR → Correct → Fix → Structure
-- ✅ Error handling on difficult pages
-- ✅ Valid JSON output verification
-- ✅ Text quality spot checks
+**OCR Stage** (`test_ocr_stage.py`)
+- ✅ Tesseract OCR with region detection
+- ✅ Region type classification (header, body, footer, etc.)
+- ✅ Page-level JSON output validation
 
-**Markers**: `@pytest.mark.e2e`, `@pytest.mark.api`, `@pytest.mark.slow`
+**Correction Stage** (`test_correct_stage.py`)
+- ✅ 3-agent correction pipeline (detect, apply, verify)
+- ✅ OCR error detection and fixing
+- ✅ Correction marker validation
+- ✅ Parallel processing with checkpoints
 
-### Restart Tests (`test_restart.py`)
+**Fix Stage** (`test_fix_stage.py`)
+- ✅ Agent 4 targeted fixes for flagged pages
+- ✅ Claude-based surgical corrections
+- ✅ Quality improvement validation
 
-Tests pipeline restart capabilities:
-- ✅ Restart from correction stage
-- ✅ Restart from structure stage
-- ✅ Run specific stages only
-- ✅ Idempotent reruns
-- ✅ Fix stage skipping logic
+**Structure Stage** (`test_structure_agents.py`, `test_structure_assembly.py`)
+- ✅ Phase 1: Sliding window extraction with 3-agent pattern
+- ✅ Phase 2: Assembly with overlap reconciliation
+- ✅ Semantic chunking for RAG
+- ✅ Multi-format output generation
 
-**Markers**: `@pytest.mark.e2e`, `@pytest.mark.api`
+### Infrastructure Tests
 
-### Library Tests (`test_library.py`)
+**Checkpoint System** (`test_checkpoint.py`)
+- ✅ Progress tracking and resumability
+- ✅ Idempotent stage reruns
+- ✅ Cost tracking per page/stage
 
-Tests catalog management:
-- ✅ Add books to library
-- ✅ Update scan metadata
-- ✅ Query books and scans
+**Parallel Processing** (`test_parallel.py`)
+- ✅ ParallelProcessor class functionality
+- ✅ Rate limiting for API calls
+- ✅ Error handling in parallel contexts
+
+**Library Management** (`test_library.py`)
+- ✅ Book catalog CRUD operations
+- ✅ Metadata tracking and sync
 - ✅ Statistics aggregation
-- ✅ Sync from metadata.json
-- ✅ Persistence to disk
 
-**Markers**: `@pytest.mark.filesystem`
+### Validation Tests
 
-### Cost Tracking Tests (`test_cost_tracking.py`)
+**Pipeline Validation** (`test_pipeline_validation.py`)
+- ✅ E2E pipeline execution
+- ✅ Output completeness verification
+- ✅ Cost and performance benchmarks
 
-Tests cost tracking accuracy:
-- ✅ Costs recorded per stage
-- ✅ Total cost calculation
-- ✅ Library sync of costs
-- ✅ Cost breakdown by stage
-- ✅ Rerun cost tracking
-
-**Markers**: `@pytest.mark.e2e`, `@pytest.mark.api`
+**Internet Archive Validation** (`test_ia_validation.py`)
+- ✅ 92% accuracy against IA ground truth (Roosevelt, 636 pages)
+- ✅ Printed page number extraction validation
+- ✅ Word Error Rate (WER) calculation
 
 ## What Tests Verify
 
