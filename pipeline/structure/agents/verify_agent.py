@@ -21,10 +21,12 @@ def count_words(text: str) -> int:
 
 def verify_extraction(original_pages: List[Dict], extraction_result: Dict) -> Dict[str, Any]:
     """
-    Verify extraction quality.
+    Verify extraction quality using LLM to compare FULL original vs extracted text.
+
+    With 3-page batches, we can send complete text to LLM for thorough verification.
 
     Args:
-        original_pages: List of original page dicts
+        original_pages: List of original page dicts (typically 3 pages)
         extraction_result: Result from extract_agent
 
     Returns:
@@ -32,59 +34,62 @@ def verify_extraction(original_pages: List[Dict], extraction_result: Dict) -> Di
         - quality_score: 0.0-1.0
         - issues: List of issues found
         - confidence: "high" | "medium" | "low"
-        - word_count_ok: bool
         - needs_review: bool
+        - headers_removed_correctly: bool
+        - body_text_preserved: bool
     """
 
-    # Calculate original word count from corrected_text or regions
-    original_word_count = 0
+    # Build FULL original text (what the extract_agent saw)
+    original_texts = []
     for page in original_pages:
+        page_num = page['page_number']
+
+        # Get corrected_text if available (this is what extract_agent receives)
         if 'llm_processing' in page and 'corrected_text' in page['llm_processing']:
             text = page['llm_processing']['corrected_text']
-            original_word_count += count_words(text)
         else:
-            # Fallback: count words in regions
-            for region in page.get('regions', []):
-                if region.get('type') in ['header', 'body', 'caption', 'footnote']:
-                    original_word_count += count_words(region.get('text', ''))
+            # Fallback: concatenate regions
+            regions = sorted(page.get('regions', []), key=lambda r: r.get('reading_order', 0))
+            text = '\n\n'.join(r['text'] for r in regions if 'text' in r)
 
-    extracted_word_count = extraction_result.get('word_count', 0)
+        original_texts.append(f"[PAGE {page_num}]\n{text}")
 
-    # Get sample of original and extracted text
-    original_sample = ""
-    if original_pages:
-        first_page = original_pages[0]
-        if 'llm_processing' in first_page and 'corrected_text' in first_page['llm_processing']:
-            original_sample = first_page['llm_processing']['corrected_text'][:500]
-        else:
-            regions = first_page.get('regions', [])
-            if regions:
-                original_sample = regions[0].get('text', '')[:500]
+    original_full_text = '\n\n'.join(original_texts)
+    extracted_text = extraction_result.get('clean_text', '')
 
-    extracted_sample = extraction_result.get('clean_text', '')[:500]
+    # Calculate word counts using Python (facts for LLM)
+    original_word_count = count_words(original_full_text)
+    extracted_word_count = count_words(extracted_text)
+    word_count_ratio = extracted_word_count / original_word_count if original_word_count > 0 else 0
 
-    system_prompt = """You are a quality verification specialist.
+    system_prompt = """You are a text extraction quality verification specialist.
 
 <task>
-Verify that text extraction preserved substantive content while removing only repetitive headers/footers.
+Compare the COMPLETE original text (with headers) to the COMPLETE extracted clean text.
+Verify that headers/footers were removed correctly while preserving all body content.
 </task>
 
 <verification_checklist>
-1. Word count reasonable? (varies by book type - some have heavy headers, some minimal)
-   - Red flag: >40% loss (likely removing body text by mistake)
-   - Red flag: <5% loss (likely not removing headers at all)
-   - Acceptable range varies: academic (60-85%), fiction (90-98%), etc.
-2. No substantive content lost? (compare samples)
-3. Paragraph structure preserved?
-4. Only repetitive elements removed?
-5. No unauthorized changes or "improvements"?
-</verification_checklist>
+1. Headers removed correctly?
+   - Check if repetitive page numbers removed (e.g., "62", "63")
+   - Check if running headers removed (e.g., "CHAPTER 3", "PRACTICAL POLITICS")
+   - Check if book title headers removed (e.g., "THEODORE ROOSEVELT—AN AUTOBIOGRAPHY")
 
-<confidence_scoring>
-- high: Samples match well, structure preserved, word count makes sense for this book type
-- medium: Minor concerns, but generally acceptable
-- low: Significant content loss, structural issues, or suspicious word count
-</confidence_scoring>
+2. Body text preserved?
+   - All paragraphs present?
+   - No missing sentences?
+   - Text flows naturally?
+
+3. Word count ratio makes sense?
+   - Given what you see removed, does the ratio seem appropriate?
+   - Heavy headers → lower ratio (60-80%) is acceptable
+   - Light headers → higher ratio (85-95%) expected
+
+4. Overall quality
+   - Paragraph structure maintained?
+   - No unauthorized changes?
+   - Reading flow intact?
+</verification_checklist>
 
 <critical>
 NO markdown code blocks (```json).
@@ -92,40 +97,40 @@ NO explanatory text before or after the JSON.
 Start immediately with the opening brace {
 </critical>"""
 
-    user_prompt = f"""Verify this extraction:
+    user_prompt = f"""Verify this extraction by comparing COMPLETE original to COMPLETE extracted text.
 
-<original_stats>
+<original_text>
 Pages: {len(original_pages)}
-Word count: ~{original_word_count}
-Sample (first 500 chars):
-{original_sample}
-</original_stats>
+Word count: {original_word_count}
 
-<extracted_stats>
+FULL TEXT:
+{original_full_text}
+</original_text>
+
+<extracted_text>
 Word count: {extracted_word_count}
-Running header pattern removed: {extraction_result.get('running_header_pattern', 'none')}
-Paragraphs extracted: {len(extraction_result.get('paragraphs', []))}
-Sample (first 500 chars):
-{extracted_sample}
-</extracted_stats>
+Word count ratio: {word_count_ratio:.1%} (extracted/original)
+
+FULL TEXT:
+{extracted_text}
+</extracted_text>
 
 <verification_task>
-Check if extraction preserved content while removing headers:
-1. Word count ratio: {extracted_word_count}/{original_word_count} = {extracted_word_count/original_word_count if original_word_count > 0 else 0:.2%}
-2. Evaluate if this ratio makes sense:
-   - >95%: Check if headers were actually removed
-   - 60-95%: Likely reasonable (depends on header density)
-   - <60%: Check if body text was incorrectly removed
-3. Compare samples to verify content preservation (this is more important than the ratio)
+Compare the COMPLETE texts above:
+1. Were headers removed correctly? List what was removed.
+2. Was body text preserved completely? Any missing content?
+3. Does the {word_count_ratio:.1%} ratio make sense given what was removed?
+4. Overall assessment: Is this a good extraction?
 </verification_task>
 
 <output_schema>
 {{
   "quality_score": 0.95,
-  "issues": ["issue description if any"],
+  "headers_removed_correctly": true,
+  "body_text_preserved": true,
+  "issues": ["list any problems found"],
+  "headers_identified": ["list headers that were removed"],
   "confidence": "high" | "medium" | "low",
-  "word_count_ok": true,
-  "word_count_ratio": 0.92,
   "needs_review": false,
   "review_reason": "explanation if needs_review is true"
 }}
@@ -152,19 +157,20 @@ Check if extraction preserved content while removing headers:
             else:
                 raise ValueError(f"Failed to parse verification response as JSON")
 
-        # Add calculated fields
-        if original_word_count > 0:
-            result['word_count_ratio'] = extracted_word_count / original_word_count
-        else:
-            result['word_count_ratio'] = 0
+        # Add Python-calculated metrics
+        result['word_count_ratio'] = word_count_ratio
+        result['original_word_count'] = original_word_count
+        result['extracted_word_count'] = extracted_word_count
 
         # Set defaults
         result.setdefault('quality_score', 0.8)
         result.setdefault('issues', [])
         result.setdefault('confidence', 'medium')
-        result.setdefault('word_count_ok', True)
+        result.setdefault('headers_removed_correctly', True)
+        result.setdefault('body_text_preserved', True)
         result.setdefault('needs_review', False)
         result.setdefault('review_reason', '')
+        result.setdefault('headers_identified', [])
 
         return result
 
@@ -174,8 +180,11 @@ Check if extraction preserved content while removing headers:
             'quality_score': 0.0,
             'issues': [f"Verification failed: {str(e)}"],
             'confidence': 'low',
-            'word_count_ok': False,
-            'word_count_ratio': extracted_word_count / original_word_count if original_word_count > 0 else 0,
+            'headers_removed_correctly': False,
+            'body_text_preserved': False,
+            'word_count_ratio': word_count_ratio,
+            'original_word_count': original_word_count,
+            'extracted_word_count': extracted_word_count,
             'needs_review': True,
             'review_reason': f"Verification error: {str(e)}"
         }
@@ -185,19 +194,22 @@ def verify_extraction_simple(original_pages: List[Dict], extraction_result: Dict
     """
     Simple verification without LLM (fallback or for testing).
 
-    Just checks word counts and basic heuristics.
+    Just checks word counts and basic heuristics using Python calculations.
     """
-    # Calculate original word count
+    # Calculate original word count from what the LLM actually SAW as input
+    # This is corrected_text (which includes headers that should be removed)
     original_word_count = 0
     for page in original_pages:
+        # Use corrected_text if available (this is what extract_agent sees)
         if 'llm_processing' in page and 'corrected_text' in page['llm_processing']:
             text = page['llm_processing']['corrected_text']
             original_word_count += count_words(text)
         else:
+            # Fallback: concatenate all regions (same as extract_agent.concatenate_pages)
             for region in page.get('regions', []):
-                if region.get('type') in ['header', 'body', 'caption', 'footnote']:
-                    original_word_count += count_words(region.get('text', ''))
+                original_word_count += count_words(region.get('text', ''))
 
+    # Python-calculated word count from extracted text (already in result from extract_agent)
     extracted_word_count = extraction_result.get('word_count', 0)
 
     # Check word count ratio
@@ -206,15 +218,17 @@ def verify_extraction_simple(original_pages: List[Dict], extraction_result: Dict
     else:
         ratio = 0
 
-    # Determine if acceptable (flexible range based on red flags)
-    word_count_ok = 0.60 <= ratio <= 0.98  # Wide range - most books fall here
+    # Determine if acceptable
+    # Since we're comparing body-to-body (headers already excluded from baseline),
+    # we expect ~85-100% retention (small variations from paragraph stitching)
+    word_count_ok = 0.80 <= ratio <= 1.05  # Allow slight variation
     quality_score = ratio if word_count_ok else max(0, ratio - 0.2)
 
     issues = []
-    if ratio < 0.60:
-        issues.append(f"Excessive content loss: {ratio:.1%} retained (red flag: >40% loss)")
-    elif ratio > 0.98:
-        issues.append(f"Minimal text removed: {ratio:.1%} retained (check if headers were removed)")
+    if ratio < 0.80:
+        issues.append(f"Content loss detected: {ratio:.1%} retained (expected >80%)")
+    elif ratio > 1.05:
+        issues.append(f"Unexpected content increase: {ratio:.1%} retained (check extraction logic)")
 
     return {
         'quality_score': quality_score,

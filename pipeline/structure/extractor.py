@@ -3,15 +3,18 @@
 Extractor Orchestrator - Phase 1 of Structure Stage
 
 Coordinates sliding window extraction using the 3-agent pattern:
-1. Create overlapping batches (10 pages, 3 overlap)
+1. Create overlapping batches (3 pages, 1 overlap)
 2. Process batches in parallel (30 workers)
-3. Extract → Verify → Reconcile for each batch
+3. Extract → Verify (full LLM) → Reconcile for each batch
 4. Aggregate results with overlap reconciliation
 
 Expected performance (636-page book):
-- Batches: 91 (window_size=10, overlap=3, stride=7)
-- Runtime: ~2-3 minutes
-- Cost: ~$0.80
+- Batches: ~318 (window_size=3, overlap=1, stride=2)
+- Runtime: ~5-7 minutes
+- Cost: ~$3.18 (~$0.01 per 3-page batch)
+
+Note: 3-page batches provide better reliability (shorter JSON responses)
+and enable full-text verification within LLM context limits.
 """
 
 import json
@@ -206,12 +209,14 @@ class ExtractionOrchestrator:
             extraction_result = extract_batch(pages)
 
             # Step 2: Verify extraction quality
-            # Use simple verification (no LLM call) for speed
-            verification_result = verify_extraction_simple(pages, extraction_result)
+            # Use full LLM verification (compares complete original vs extracted text)
+            verification_result = verify_extraction(pages, extraction_result)
 
-            # Calculate cost (rough estimate - extract_batch costs ~$0.01 per 10 pages)
-            # verify_extraction_simple is free (no LLM)
-            cost_estimate = 0.01  # gpt-4o-mini for extraction
+            # Calculate cost estimate
+            # - extract_batch: ~$0.003-0.005 per 3-page batch (gpt-4o-mini)
+            # - verify_extraction: ~$0.003-0.005 per 3-page batch (gpt-4o-mini)
+            # Total: ~$0.01 per batch
+            cost_estimate = 0.01
 
             return {
                 'batch_id': batch_id,

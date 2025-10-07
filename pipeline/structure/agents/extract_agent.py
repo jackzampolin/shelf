@@ -106,16 +106,25 @@ Start immediately with the opening brace {
    - Maintain paragraph breaks (separate with \\n\\n)
    - Keep reading order intact
 
-4. DETECT structural markers (if present):
+4. PAGE BOUNDARIES (critical for consistency):
+   - Text often flows across page breaks - stitch it together naturally
+   - Assign paragraphs to pages based on where they START, not where they end
+   - If a paragraph spans pages, attribute it to the first page
+   - At page boundaries, ask: "Does this header/text make sense HERE?"
+   - Running headers (e.g., "CHAPTER 3" at top) should be removed EVEN if they appear mid-batch
+   - Section headers that introduce new content should be KEPT
+   - When uncertain about a page boundary, preserve the text (over-preserve vs under-preserve)
+
+5. DETECT structural markers (if present):
    - Chapter/section divisions (format varies: numbered, titled, or both)
    - Footnote references
    - Part divisions
    - Note: Some books have NO chapters - that's fine
 
-5. OUTPUT requirements:
+6. OUTPUT requirements:
    - Each paragraph as separate entry with type
    - Types: "body" (main text), "footnote", "caption", "heading", "quote"
-   - Track scan_page for each element
+   - Track scan_page as INTEGER (e.g., 77, not "PAGE 77")
    - Count total words in clean text
 </instructions>
 
@@ -125,21 +134,22 @@ Start immediately with the opening brace {
   "paragraphs": [
     {{
       "text": "paragraph content",
-      "scan_page": PAGE_NUMBER,
-      "type": "body" | "footnote" | "caption" | "heading" | "quote"
+      "scan_page": 77,
+      "type": "body"
     }}
   ],
   "running_header_pattern": "pattern found (null if none)",
   "chapter_markers": [
-    {{"chapter_number": N, "title": "...", "scan_page": PAGE}}
+    {{"chapter_number": 3, "title": "Chapter Title", "scan_page": 75}}
   ],
   "footnotes": [
-    {{"number": "1", "text": "...", "scan_page": PAGE}}
-  ],
-  "word_count": TOTAL_WORDS_IN_CLEAN_TEXT
+    {{"number": "1", "text": "footnote text", "scan_page": 76}}
+  ]
 }}
 
+CRITICAL: scan_page MUST be an integer (77), NOT a string ("PAGE 77").
 Note: chapter_markers and footnotes arrays may be empty if not present. That's expected.
+DO NOT include word_count - this will be calculated automatically.
 </output_schema>"""
 
     # Call LLM (with extended timeout for large batches)
@@ -166,7 +176,7 @@ Note: chapter_markers and footnotes arrays may be empty if not present. That's e
     result['scan_pages'] = [p['page_number'] for p in pages]
 
     # Validate result
-    required_fields = ['clean_text', 'paragraphs', 'word_count']
+    required_fields = ['clean_text', 'paragraphs']
     for field in required_fields:
         if field not in result:
             raise ValueError(f"Missing required field in extraction result: {field}")
@@ -175,6 +185,10 @@ Note: chapter_markers and footnotes arrays may be empty if not present. That's e
     result.setdefault('running_header_pattern', None)
     result.setdefault('chapter_markers', [])
     result.setdefault('footnotes', [])
+
+    # Calculate word count in Python (don't trust LLM to count)
+    clean_text = result.get('clean_text', '')
+    result['word_count'] = len(clean_text.split()) if clean_text else 0
 
     return result
 
