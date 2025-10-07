@@ -28,6 +28,7 @@ class StageStatus:
     progress_total: int = 0
     progress_percent: float = 0.0
     cost_usd: float = 0.0
+    model: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     duration_seconds: Optional[float] = None
@@ -258,25 +259,42 @@ class PipelineMonitor:
             if len(completed_pages) > 0:
                 status = 'in_progress'
 
-        # Extract cost from checkpoint metadata (single source of truth)
+        # Extract cost, duration, and model from checkpoint metadata (single source of truth)
         metadata = checkpoint_state.get('metadata', {})
         cost_usd = metadata.get('total_cost_usd', 0.0)
+        duration = metadata.get('accumulated_duration_seconds', None)
+        model = metadata.get('model', None)
 
+        # If no accumulated duration, fall back to timestamp calculation (backwards compatibility)
+        if duration is None:
+            start_time = None
+            end_time = None
+
+            if checkpoint_state.get('created_at'):
+                try:
+                    start_time = datetime.fromisoformat(checkpoint_state['created_at'])
+                except:
+                    pass
+
+            if checkpoint_state.get('completed_at'):
+                try:
+                    end_time = datetime.fromisoformat(checkpoint_state['completed_at'])
+                    if start_time and end_time:
+                        duration = (end_time - start_time).total_seconds()
+                except:
+                    pass
+
+        # Still parse timestamps for display purposes (even though we use accumulated duration)
         start_time = None
         end_time = None
-        duration = None
-
         if checkpoint_state.get('created_at'):
             try:
                 start_time = datetime.fromisoformat(checkpoint_state['created_at'])
             except:
                 pass
-
         if checkpoint_state.get('completed_at'):
             try:
                 end_time = datetime.fromisoformat(checkpoint_state['completed_at'])
-                if start_time and end_time:
-                    duration = (end_time - start_time).total_seconds()
             except:
                 pass
 
@@ -295,9 +313,12 @@ class PipelineMonitor:
         elif stage == 'fix':
             output_dir = self.book_dir / 'corrected'
             pattern = 'page_*.json'
-        elif stage == 'structure':
+        elif stage == 'extract':
+            output_dir = self.book_dir / 'structured' / 'extraction'
+            pattern = None  # Will check for extraction completion
+        elif stage == 'assemble':
             output_dir = self.book_dir / 'structured'
-            pattern = None  # Will check for specific output files
+            pattern = None  # Will check for final outputs
         else:
             output_dir = None
             pattern = None
@@ -307,8 +328,14 @@ class PipelineMonitor:
             if pattern:
                 completed_files = list(output_dir.glob(pattern))
                 progress_current = len(completed_files)
-            elif stage == 'structure':
-                # For structure, check if final outputs exist
+            elif stage == 'extract':
+                # For extract, check if extraction outputs exist
+                if (output_dir / 'metadata.json').exists():
+                    progress_current = 1
+                    progress_total = 1
+                    progress_percent = 100.0
+            elif stage == 'assemble':
+                # For assemble, check if final outputs exist
                 if (output_dir / 'archive' / 'full_book.md').exists():
                     progress_current = 1
                     progress_total = 1
@@ -350,9 +377,13 @@ class PipelineMonitor:
         if progress_total > 0 and stage != 'structure':
             progress_percent = (progress_current / progress_total) * 100
 
-        # Get logs for errors/warnings (still useful)
-        logs = LogParser.get_stage_logs(self.logs_dir, stage)
-        errors, warnings = LogParser.get_errors_warnings(logs, limit=5)
+        # Get logs for errors/warnings (only if stage is not complete)
+        # Completed stages shouldn't show stale errors
+        errors = []
+        warnings = []
+        if status != 'completed':
+            logs = LogParser.get_stage_logs(self.logs_dir, stage)
+            errors, warnings = LogParser.get_errors_warnings(logs, limit=5)
 
         return StageStatus(
             stage=stage,
@@ -361,6 +392,7 @@ class PipelineMonitor:
             progress_total=progress_total,
             progress_percent=progress_percent,
             cost_usd=cost_usd,  # From checkpoint (accurate)
+            model=model,  # From checkpoint
             start_time=start_time,  # From checkpoint
             end_time=end_time,  # From checkpoint
             duration_seconds=duration,  # From checkpoint
@@ -370,7 +402,8 @@ class PipelineMonitor:
 
     def get_all_stages_status(self) -> Dict[str, StageStatus]:
         """Get status for all pipeline stages."""
-        stages = ['ocr', 'correction', 'fix', 'structure']
+        # Separate extract/assemble instead of combined structure
+        stages = ['ocr', 'correction', 'fix', 'extract', 'assemble']
         return {stage: self.get_stage_status(stage) for stage in stages}
 
     def calculate_eta(self, stage_status: StageStatus) -> Optional[str]:
@@ -440,9 +473,12 @@ class PipelineMonitor:
 
         # Display each stage
         total_cost = 0.0
+        total_duration = 0.0
 
         for stage_name, stage_status in stages_status.items():
             total_cost += stage_status.cost_usd
+            if stage_status.duration_seconds:
+                total_duration += stage_status.duration_seconds
 
             # Choose icon
             if stage_status.status == 'completed':
@@ -452,18 +488,28 @@ class PipelineMonitor:
             else:
                 icon = "○"
 
-            # Format stage name
+            # Format stage name (consistent width)
             display_name = stage_name.capitalize()[:10].ljust(10)
 
-            # Build status line
+            # Build status line with consistent spacing
             if stage_status.status == 'not_started':
                 status_line = f"{icon} {display_name} Not started"
             elif stage_status.status == 'completed':
+                # Format duration (right-aligned in 8 chars: "9m 39s")
                 duration_str = self.format_duration(stage_status.duration_seconds)
-                cost_str = f"${stage_status.cost_usd:.2f}" if stage_status.cost_usd > 0 else ""
-                status_line = f"{icon} {display_name} Complete ({duration_str})"
-                if cost_str:
-                    status_line += f" - {cost_str}"
+                duration_str = duration_str.rjust(8)
+
+                # Format cost (right-aligned with 2 decimals)
+                cost_str = f"${stage_status.cost_usd:6.2f}" if stage_status.cost_usd > 0 else " " * 7
+
+                # Format model (short form)
+                model_str = ""
+                if stage_status.model:
+                    # Extract short model name (e.g., "gpt-4o-mini" from "openai/gpt-4o-mini")
+                    model_short = stage_status.model.split('/')[-1] if '/' in stage_status.model else stage_status.model
+                    model_str = f" [{model_short}]"
+
+                status_line = f"{icon} {display_name} Complete ({duration_str}) - {cost_str}{model_str}"
             else:  # in_progress
                 if stage_status.progress_total > 0:
                     status_line = f"{icon} {display_name} {stage_status.progress_current}/{stage_status.progress_total} ({stage_status.progress_percent:.1f}%)"
@@ -483,9 +529,13 @@ class PipelineMonitor:
 
         print()
 
-        # Total cost
+        # Total cost and time
         if total_cost > 0:
             print(f"💰 Total Cost: ${total_cost:.2f}")
+        if total_duration > 0:
+            duration_formatted = self.format_duration(total_duration)
+            print(f"⏱️  Total Time: {duration_formatted}")
+        if total_cost > 0 or total_duration > 0:
             print()
 
         # Show recent errors/warnings

@@ -87,10 +87,15 @@ class StructuredPageCorrector:
                 storage_root=self.storage_root,
                 output_dir="corrected"
             )
+            # Load existing cost from checkpoint if resuming
+            checkpoint_state = self.checkpoint.get_status()
+            existing_cost = checkpoint_state.get('metadata', {}).get('total_cost_usd', 0.0)
         else:
             self.checkpoint = None
+            existing_cost = 0.0
 
         # Thread-safe stats tracking
+        # Start with existing cost from previous runs (accumulate, don't replace)
         self.stats = {
             "total_pages": 0,
             "processed_pages": 0,
@@ -98,7 +103,7 @@ class StructuredPageCorrector:
             "total_errors_found": 0,
             "corrections_applied": 0,
             "pages_needing_review": 0,
-            "total_cost_usd": 0.0
+            "total_cost_usd": existing_cost
         }
         self.stats_lock = threading.Lock()
         self.progress_lock = threading.Lock()
@@ -259,7 +264,7 @@ class StructuredPageCorrector:
         return prev_text, current_data, next_text
 
     def agent1_detect_errors(self, page_num, prev_text, page_data, next_text, max_retries=2):
-        """Agent 1: Detect OCR errors in body/caption regions with retry logic"""
+        """Agent 1: Detect OCR errors in body/caption regions with automatic JSON retry"""
 
         correctable_regions = self.filter_correctable_regions(page_data)
         if not correctable_regions:
@@ -337,40 +342,50 @@ Use adjacent pages for sentence context, but ONLY report errors from page {page_
 
 Return JSON error catalog for page {page_num} only."""
 
-        # Retry logic for Agent 1
-        last_error = None
-        for attempt in range(max_retries + 1):
-            try:
-                response, usage = self.call_llm(system_prompt, user_prompt, temperature=0.1)
-                json_text = self.extract_json(response, debug_label=f"page_{page_num:04d}_agent1")
-                error_catalog = json.loads(json_text)
-                error_catalog['processing_timestamp'] = datetime.now().isoformat()
+        # Define JSON parser that includes extraction + validation
+        def parse_agent1_response(response):
+            json_text = self.extract_json(response, debug_label=f"page_{page_num:04d}_agent1")
+            return json.loads(json_text)
 
-                errors_found = error_catalog.get('total_errors_found', 0)
-                with self.stats_lock:
-                    self.stats['total_errors_found'] += errors_found
+        # Use LLMClient's automatic JSON retry
+        try:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
 
-                # Success - log retry if it wasn't first attempt
-                if attempt > 0:
-                    self.logger.info(f"Agent 1 succeeded on retry {attempt}", page=page_num, agent="agent1", retry=attempt)
+            self.rate_limiter.wait()
+            error_catalog, usage, cost = self.llm_client.call_with_json_retry(
+                model=self.model,
+                messages=messages,
+                json_parser=parse_agent1_response,
+                temperature=0.1,
+                max_retries=max_retries,
+                timeout=60
+            )
 
-                return error_catalog
+            # Track cost
+            with self.stats_lock:
+                self.stats['total_cost_usd'] += cost
 
-            except Exception as e:
-                last_error = e
-                if attempt < max_retries:
-                    self.logger.warning(f"Agent 1 retry {attempt + 1}/{max_retries}", page=page_num, agent="agent1", error=str(e), retry=attempt + 1)
-                    time.sleep(0.5 * (attempt + 1))  # Brief exponential backoff
-                else:
-                    self.logger.error(f"Agent 1 failed after {max_retries} retries", page=page_num, agent="agent1", error=str(e), retries=max_retries)
+            # Add timestamp
+            error_catalog['processing_timestamp'] = datetime.now().isoformat()
 
-        # All retries exhausted
-        return {
-            "page_number": page_num,
-            "total_errors_found": 0,
-            "errors": [],
-            "error_message": str(last_error)
-        }
+            # Update stats
+            errors_found = error_catalog.get('total_errors_found', 0)
+            with self.stats_lock:
+                self.stats['total_errors_found'] += errors_found
+
+            return error_catalog
+
+        except Exception as e:
+            self.logger.error(f"Agent 1 failed after retries", page=page_num, agent="agent1", error=str(e))
+            return {
+                "page_number": page_num,
+                "total_errors_found": 0,
+                "errors": [],
+                "error_message": str(e)
+            }
 
     def agent2_correct(self, page_num, page_data, error_catalog):
         """Agent 2: Apply corrections to regions"""
@@ -435,8 +450,8 @@ Return the corrected text with [CORRECTED:id] markers after each fix."""
             self.logger.error("Agent 2 error", page=page_num, agent="agent2", error=str(e))
             return target_text  # Return original on error
 
-    def agent3_verify(self, page_num, page_data, error_catalog, corrected_text):
-        """Agent 3: Verify corrections"""
+    def agent3_verify(self, page_num, page_data, error_catalog, corrected_text, max_retries=2):
+        """Agent 3: Verify corrections with automatic JSON retry"""
 
         correctable_regions = self.filter_correctable_regions(page_data)
         original_text = self.build_page_text(page_data, correctable_regions)
@@ -525,12 +540,35 @@ CORRECTED TEXT (what Agent 2 produced):
 
 Verify each correction and check for unauthorized changes."""
 
-        try:
-            response, usage = self.call_llm(system_prompt, user_prompt, temperature=0)
+        # Define JSON parser that includes extraction + validation
+        def parse_agent3_response(response):
             json_text = self.extract_json(response, debug_label=f"page_{page_num:04d}_agent3")
-            verification = json.loads(json_text)
+            return json.loads(json_text)
+
+        try:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+
+            self.rate_limiter.wait()
+            verification, usage, cost = self.llm_client.call_with_json_retry(
+                model=self.model,
+                messages=messages,
+                json_parser=parse_agent3_response,
+                temperature=0,
+                max_retries=max_retries,
+                timeout=60
+            )
+
+            # Track cost
+            with self.stats_lock:
+                self.stats['total_cost_usd'] += cost
+
+            # Add timestamp
             verification['verification_timestamp'] = datetime.now().isoformat()
 
+            # Update stats
             confidence = verification.get('confidence_score', 0)
             needs_review = verification.get('needs_human_review', False)
 

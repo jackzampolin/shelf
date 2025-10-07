@@ -46,18 +46,38 @@ class BookStructurer:
 
         self.extraction_dir = self.book_dir / "structured" / "extraction"
 
-        # Initialize checkpoint manager
+        # Initialize separate checkpoint managers for each phase
         if self.enable_checkpoints:
             from checkpoint import CheckpointManager
             storage_root_path = storage_root or Path.home() / "Documents" / "book_scans"
-            self.checkpoint = CheckpointManager(
+
+            # Phase 1: Extraction checkpoint
+            self.checkpoint_extract = CheckpointManager(
                 scan_id=scan_id,
-                stage="structure",
+                stage="extract",
+                storage_root=storage_root_path,
+                output_dir="structured/extraction"
+            )
+
+            # Phase 2: Assembly checkpoint
+            self.checkpoint_assemble = CheckpointManager(
+                scan_id=scan_id,
+                stage="assemble",
                 storage_root=storage_root_path,
                 output_dir="structured"
             )
+
+            # Load existing costs from both checkpoints if resuming
+            extract_state = self.checkpoint_extract.get_status()
+            assemble_state = self.checkpoint_assemble.get_status()
+
+            self.existing_extract_cost = extract_state.get('metadata', {}).get('total_cost_usd', 0.0)
+            self.existing_assemble_cost = assemble_state.get('metadata', {}).get('total_cost_usd', 0.0)
         else:
-            self.checkpoint = None
+            self.checkpoint_extract = None
+            self.checkpoint_assemble = None
+            self.existing_extract_cost = 0.0
+            self.existing_assemble_cost = 0.0
 
     def process_book(self,
                     start_page: Optional[int] = None,
@@ -83,6 +103,7 @@ class BookStructurer:
             statistics = {}
 
             # Phase 1: Extraction (if needed)
+            extraction_cost = 0.0
             if not skip_extraction or not self._extraction_exists():
                 print("\n🔍 Running Phase 1: Extraction...")
 
@@ -96,10 +117,21 @@ class BookStructurer:
                     end_page=end_page
                 )
 
-                total_cost += extraction_result.get('total_cost', 0.0)
+                extraction_cost = extraction_result.get('total_cost', 0.0)
+                total_cost += extraction_cost
                 statistics['extraction'] = extraction_result.get('statistics', {})
 
-                print(f"\n✅ Phase 1 complete: ${extraction_result.get('total_cost', 0.0):.4f}")
+                # Mark extraction phase complete
+                accumulated_extract_cost = self.existing_extract_cost + extraction_cost
+                if self.checkpoint_extract:
+                    from config import Config
+                    self.checkpoint_extract.mark_stage_complete(metadata={
+                        'total_cost_usd': accumulated_extract_cost,
+                        'model': Config.EXTRACT_MODEL,
+                        'pages_processed': extraction_result.get('statistics', {}).get('pages_processed', 0)
+                    })
+
+                print(f"\n✅ Phase 1 complete: ${extraction_cost:.4f}")
             else:
                 print("\n✓ Phase 1: Extraction already complete (skipping)")
 
@@ -149,13 +181,18 @@ class BookStructurer:
                 stats=stats
             )
 
-            # Mark stage complete in checkpoint (saves pending pages + sets status)
-            if self.checkpoint:
-                self.checkpoint.mark_stage_complete(metadata={
-                    'total_cost_usd': total_cost,
+            # Mark assembly phase complete
+            # Assembly cost = chunking cost (assembler itself has no LLM calls)
+            assembly_cost = chunking_result.get('cost', 0.0)
+            accumulated_assemble_cost = self.existing_assemble_cost + assembly_cost
+
+            if self.checkpoint_assemble:
+                from config import Config
+                self.checkpoint_assemble.mark_stage_complete(metadata={
+                    'total_cost_usd': accumulated_assemble_cost,
+                    'model': Config.CHUNK_MODEL,
                     'chunks_created': len(chunking_result.get('chunks', [])),
                     'pages_processed': assembly_result.get('statistics', {}).get('pages_covered', 0),
-                    'extraction_cost_usd': statistics.get('extraction', {}).get('total_cost', 0.0),
                     'chunking_cost_usd': chunking_result.get('cost', 0.0),
                     'total_words': assembly_result.get('word_count', 0)
                 })

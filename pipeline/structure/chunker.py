@@ -24,8 +24,9 @@ class SemanticChunker:
     """Creates semantic chunks for RAG from assembled text."""
 
     def __init__(self, logger=None):
+        from config import Config
         self.logger = logger
-        self.model = "openai/gpt-4o-mini"  # Cost-effective for chunking
+        self.model = Config.CHUNK_MODEL
 
         # Chunking parameters
         self.target_chunk_size = 750  # words

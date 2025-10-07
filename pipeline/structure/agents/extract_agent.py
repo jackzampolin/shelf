@@ -9,6 +9,7 @@ import json
 import re
 from typing import Dict, List, Any
 from llm_client import call_llm
+from config import Config
 
 
 def concatenate_pages(pages: List[Dict]) -> str:
@@ -154,7 +155,7 @@ DO NOT include word_count - this will be calculated automatically.
 
     # Call LLM (with extended timeout for large batches)
     response, usage, cost = call_llm(
-        model="openai/gpt-4o-mini",
+        model=Config.EXTRACT_MODEL,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         temperature=0.1,

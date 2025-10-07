@@ -358,11 +358,28 @@ class CheckpointManager:
             # This ensures pages completed since last incremental save are recorded
             self._save_checkpoint()
 
+            # Calculate this run's duration
+            current_run_duration = 0.0
+            if self._state.get('created_at'):
+                try:
+                    start_time = datetime.fromisoformat(self._state['created_at'])
+                    end_time = datetime.now()
+                    current_run_duration = (end_time - start_time).total_seconds()
+                except:
+                    pass
+
+            # Accumulate duration in metadata (don't rely on created_at/completed_at timestamps)
+            existing_duration = self._state.get('metadata', {}).get('accumulated_duration_seconds', 0.0)
+            total_duration = existing_duration + current_run_duration
+
             self._state['status'] = 'completed'
             self._state['completed_at'] = datetime.now().isoformat()
 
             if metadata:
                 self._state['metadata'].update(metadata)
+
+            # Always set accumulated duration
+            self._state['metadata']['accumulated_duration_seconds'] = total_duration
 
             # Save again with completion status
             self._save_checkpoint()

@@ -42,10 +42,13 @@ class Config:
     CORRECT_RATE_LIMIT = int(os.getenv('CORRECT_RATE_LIMIT', '150'))
 
     # Fix Stage (Agent 4)
-    FIX_MODEL = os.getenv('FIX_MODEL', 'anthropic/claude-3.5-sonnet')
+    FIX_MODEL = os.getenv('FIX_MODEL', 'anthropic/claude-sonnet-4.5')
 
-    # Structure Stage
-    STRUCTURE_MODEL = os.getenv('STRUCTURE_MODEL', 'anthropic/claude-sonnet-4.5')
+    # Structure Stage - Extract Phase
+    EXTRACT_MODEL = os.getenv('EXTRACT_MODEL', 'openai/gpt-4o-mini')
+
+    # Structure Stage - Assemble Phase (Chunking)
+    CHUNK_MODEL = os.getenv('CHUNK_MODEL', 'openai/gpt-4o-mini')
 
     # =========================================================================
     # Debug & Logging
@@ -88,7 +91,8 @@ class Config:
                 'ocr': 'tesseract',  # OCR is always Tesseract
                 'correct': cls.CORRECT_MODEL,
                 'fix': cls.FIX_MODEL,
-                'structure': cls.STRUCTURE_MODEL
+                'extract': cls.EXTRACT_MODEL,
+                'chunk': cls.CHUNK_MODEL
             },
             'settings': {
                 'ocr_workers': cls.OCR_WORKERS,
@@ -141,7 +145,8 @@ class Config:
         print(f"\nModels:")
         print(f"  Correction:  {cls.CORRECT_MODEL}")
         print(f"  Fix:         {cls.FIX_MODEL}")
-        print(f"  Structure:   {cls.STRUCTURE_MODEL}")
+        print(f"  Extract:     {cls.EXTRACT_MODEL}")
+        print(f"  Chunk:       {cls.CHUNK_MODEL}")
         print(f"\nConcurrency:")
         print(f"  OCR Workers: {cls.OCR_WORKERS}")
         print(f"  Correction Workers: {cls.CORRECT_WORKERS}")

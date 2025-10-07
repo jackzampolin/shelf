@@ -54,24 +54,30 @@ class Agent4TargetedFix:
                 storage_root=self.base_dir.parent,
                 output_dir="corrected"
             )
+            # Load existing cost from checkpoint if resuming
+            checkpoint_state = self.checkpoint.get_status()
+            existing_cost = checkpoint_state.get('metadata', {}).get('total_cost_usd', 0.0)
         else:
             self.checkpoint = None
+            existing_cost = 0.0
 
-        # Load API key
+        # Load API key and config
         load_dotenv()
+        from config import Config
 
-        self.model = "anthropic/claude-3.5-sonnet"
+        self.model = Config.FIX_MODEL
 
         # Initialize LLM client
         self.llm_client = LLMClient()
 
         # Stats (thread-safe)
+        # Start with existing cost from previous runs (accumulate, don't replace)
         self.stats_lock = threading.Lock()
         self.stats = {
             "pages_processed": 0,
             "pages_fixed": 0,
             "pages_failed": 0,
-            "total_cost_usd": 0.0
+            "total_cost_usd": existing_cost
         }
 
     def call_llm(self, system_prompt: str, user_prompt: str, temperature=0.0):
@@ -474,6 +480,7 @@ Return the complete corrected text.
         # Mark stage complete in checkpoint
         if self.checkpoint:
             self.checkpoint.mark_stage_complete(metadata={
+                "model": self.model,
                 "pages_processed": self.stats['pages_processed'],
                 "pages_fixed": self.stats['pages_fixed'],
                 "total_cost_usd": self.stats['total_cost_usd']

@@ -319,6 +319,71 @@ class LLMClient:
 
         return self.call(model, messages, temperature=temperature, **kwargs)
 
+    def call_with_json_retry(self,
+                            model: str,
+                            messages: List[Dict[str, str]],
+                            json_parser,
+                            temperature: float = 0.0,
+                            max_retries: int = 2,
+                            **kwargs) -> Tuple[Dict, Dict, float]:
+        """
+        Make LLM call with automatic retry on JSON parsing failures.
+
+        This method wraps the standard call() with JSON parsing retry logic.
+        If the LLM response fails to parse as JSON, it automatically retries
+        the entire LLM call (not just the parsing).
+
+        Args:
+            model: OpenRouter model name
+            messages: List of message dicts
+            json_parser: Callable that takes response text and returns parsed JSON
+                        Should raise json.JSONDecodeError or ValueError on parse failure
+            temperature: Sampling temperature
+            max_retries: Number of retries on JSON parse failure (default: 2)
+            **kwargs: Additional arguments passed to call()
+
+        Returns:
+            Tuple of (parsed_json_dict, usage_dict, total_cost_usd)
+
+        Raises:
+            json.JSONDecodeError: If parsing fails after all retries
+            ValueError: If json_parser raises ValueError
+        """
+        total_cost = 0.0
+        last_error = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                # Make LLM call
+                response, usage, cost = self.call(
+                    model,
+                    messages,
+                    temperature=temperature,
+                    **kwargs
+                )
+                total_cost += cost
+
+                # Parse JSON
+                parsed = json_parser(response)
+
+                # Success! Return parsed result
+                if attempt > 0:
+                    # Log that retry succeeded (if caller wants to track this)
+                    pass  # Could add logging here
+
+                return parsed, usage, total_cost
+
+            except (json.JSONDecodeError, ValueError) as e:
+                last_error = e
+                if attempt < max_retries:
+                    # JSON parsing failed, retry entire LLM call
+                    delay = 0.5 * (attempt + 1)  # 0.5s, 1.0s
+                    time.sleep(delay)
+                    continue
+
+        # All retries exhausted
+        raise last_error
+
 
 # Convenience function for quick one-off calls
 def call_llm(model: str,

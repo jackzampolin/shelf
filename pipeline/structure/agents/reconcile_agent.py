@@ -9,6 +9,7 @@ import json
 from typing import Dict, List, Any, Tuple
 from difflib import SequenceMatcher
 from llm_client import call_llm
+from config import Config
 
 
 def text_similarity(text1: str, text2: str) -> float:
@@ -167,9 +168,10 @@ Compare both extractions and decide:
 }}
 </output_schema>"""
 
+    # Overlap boundary reconciliation
     try:
         response, usage, cost = call_llm(
-            model="openai/gpt-4o-mini",
+            model=Config.EXTRACT_MODEL,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             temperature=0.1
