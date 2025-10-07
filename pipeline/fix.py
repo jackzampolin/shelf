@@ -456,9 +456,9 @@ Return the complete corrected text.
                     page_cost = future.result()  # Get cost from process_flagged_page
                     completed += 1
 
-                    # Mark page as completed in checkpoint with actual cost
+                    # Mark page as completed in checkpoint
                     if self.checkpoint:
-                        self.checkpoint.mark_completed(page_num, cost_usd=page_cost)
+                        self.checkpoint.mark_completed(page_num)
 
                     self.logger.progress(
                         "Processing flagged pages",

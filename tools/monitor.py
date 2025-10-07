@@ -258,15 +258,9 @@ class PipelineMonitor:
             if len(completed_pages) > 0:
                 status = 'in_progress'
 
-        # Extract cost and timing from checkpoint (always use checkpoint data)
-        # Prefer metadata.total_cost_usd (actual tracked) over costs.total_usd (estimates)
+        # Extract cost from checkpoint metadata (single source of truth)
         metadata = checkpoint_state.get('metadata', {})
         cost_usd = metadata.get('total_cost_usd', 0.0)
-
-        # Fallback to costs.total_usd if metadata doesn't have it (for stages that don't track in metadata)
-        if cost_usd == 0.0:
-            costs = checkpoint_state.get('costs', {})
-            cost_usd = costs.get('total_usd', 0.0)
 
         start_time = None
         end_time = None

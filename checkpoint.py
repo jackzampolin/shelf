@@ -128,9 +128,6 @@ class CheckpointManager:
                 "remaining": 0,
                 "percent": 0.0
             },
-            "costs": {
-                "total_usd": 0.0
-            },
             "metadata": {},
             "validation": {
                 "output_dir": self.output_dir,
@@ -315,23 +312,23 @@ class CheckpointManager:
 
             return remaining_pages
 
-    def mark_completed(self, page_num: int, cost_usd: float = 0.0):
+    def mark_completed(self, page_num: int):
         """
         Mark a page as completed (thread-safe).
 
         Args:
             page_num: Page number that was completed
-            cost_usd: Cost of processing this page
+
+        Note:
+            Cost tracking is handled separately via metadata.total_cost_usd
+            at stage completion. This method only tracks page completion status.
         """
         with self._lock:
             # Add to completed list if not already there
-            # Only accumulate cost for newly completed pages
             is_new_page = page_num not in self._state['completed_pages']
             if is_new_page:
                 self._state['completed_pages'].append(page_num)
                 self._state['completed_pages'].sort()
-                # Only add cost for new pages (prevents double-counting on idempotent calls)
-                self._state['costs']['total_usd'] += cost_usd
 
             # Update progress
             total = self._state.get('total_pages', 0)
@@ -342,9 +339,8 @@ class CheckpointManager:
                 "percent": (completed / total * 100) if total > 0 else 0
             }
 
-            # Save checkpoint every 5 pages or if significant cost
-            # Reduced from 10 to minimize work loss on crashes
-            if completed % 5 == 0 or cost_usd > 0.25:
+            # Save checkpoint every 5 pages to minimize work loss on crashes
+            if completed % 5 == 0:
                 self._save_checkpoint()
 
     def mark_stage_complete(self, metadata: Optional[Dict[str, Any]] = None):
@@ -410,19 +406,34 @@ class CheckpointManager:
         with self._lock:
             return self._state.copy()
 
-    def estimate_cost_saved(self, avg_cost_per_page: float = 0.02) -> float:
+    def estimate_cost_saved(self) -> float:
         """
-        Estimate cost saved by resuming.
-
-        Args:
-            avg_cost_per_page: Average cost per page (default: $0.02)
+        Estimate cost saved by resuming based on actual costs if available.
 
         Returns:
-            Estimated cost saved in USD
+            Estimated cost saved in USD, or 0.0 if no cost data available
+
+        Note:
+            Uses actual costs from metadata.total_cost_usd when available.
+            Returns 0.0 if no actual cost data exists (honest estimate).
         """
         with self._lock:
-            completed = len(self._state['completed_pages'])
-            return completed * avg_cost_per_page
+            completed_pages = len(self._state['completed_pages'])
+            total_pages = self._state.get('total_pages', 0)
+
+            if completed_pages == 0 or total_pages == 0:
+                return 0.0
+
+            # Try to use actual cost from metadata
+            actual_cost = self._state.get('metadata', {}).get('total_cost_usd', 0.0)
+
+            if actual_cost > 0 and completed_pages > 0:
+                # Calculate actual cost per page
+                cost_per_page = actual_cost / completed_pages
+                return completed_pages * cost_per_page
+            else:
+                # No actual data - can't provide honest estimate
+                return 0.0
 
     def get_progress_summary(self) -> str:
         """

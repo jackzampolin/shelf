@@ -425,7 +425,7 @@ class BookOCRProcessor:
 
             # Mark page as completed in checkpoint
             if self.checkpoint:
-                self.checkpoint.mark_completed(task['page_number'], cost_usd=0.0)
+                self.checkpoint.mark_completed(task['page_number'])
 
             return True
 

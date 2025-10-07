@@ -760,7 +760,7 @@ Verify each correction and check for unauthorized changes."""
             # Log resume information
             skipped = (end_page - start_page + 1) - len(page_numbers)
             if skipped > 0:
-                cost_saved = self.checkpoint.estimate_cost_saved(avg_cost_per_page=0.022)
+                cost_saved = self.checkpoint.estimate_cost_saved()
                 self.logger.info(
                     f"Resuming from checkpoint: {skipped} pages already completed",
                     skipped_pages=skipped,
@@ -812,8 +812,7 @@ Verify each correction and check for unauthorized changes."""
                 # Update checkpoint OUTSIDE progress_lock to avoid lock ordering issues
                 # CheckpointManager has its own thread-safe lock
                 if self.checkpoint and result['status'] in ['success', 'skipped']:
-                    page_cost = result.get('cost_usd', 0.022)  # Estimate if not provided
-                    self.checkpoint.mark_completed(page_num, cost_usd=page_cost)
+                    self.checkpoint.mark_completed(page_num)
 
                 with self.progress_lock:
                     # Log progress with detailed information
