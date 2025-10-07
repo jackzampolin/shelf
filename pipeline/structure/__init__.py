@@ -114,10 +114,16 @@ class BookStructurer:
                     logger=self.logger
                 )
 
-                extraction_result = extractor.extract(
-                    start_page=start_page,
+                batch_results = extractor.extract_sliding_window(
+                    start_page=start_page or 1,
                     end_page=end_page
                 )
+
+                # Build extraction result from orchestrator stats
+                extraction_result = {
+                    'total_cost': extractor.stats.get('total_cost', 0.0),
+                    'statistics': extractor.stats
+                }
 
                 extraction_cost = extraction_result.get('total_cost', 0.0)
                 total_cost += extraction_cost
