@@ -71,6 +71,8 @@ class ExtractionOrchestrator:
         self.storage_root = Path(storage_root or Path.home() / "Documents" / "book_scans")
         self.book_dir = self.storage_root / scan_id
         self.corrected_dir = self.book_dir / "corrected"
+        self.structured_dir = self.book_dir / "structured"
+        self.extraction_dir = self.structured_dir / "extraction"
         self.logs_dir = self.book_dir / "logs"
 
         # Sliding window parameters
@@ -80,6 +82,8 @@ class ExtractionOrchestrator:
         self.max_workers = max_workers
 
         # Create directories
+        self.structured_dir.mkdir(exist_ok=True)
+        self.extraction_dir.mkdir(exist_ok=True)
         self.logs_dir.mkdir(exist_ok=True)
 
         # Logger
@@ -313,6 +317,57 @@ class ExtractionOrchestrator:
 
         return batch_results
 
+    def save_batch_result(self, batch_result: Dict[str, Any]) -> None:
+        """
+        Save a single batch result to disk.
+
+        Args:
+            batch_result: Batch result dict from process_batch
+        """
+        batch_id = batch_result['batch_id']
+        batch_file = self.extraction_dir / f"batch_{batch_id:03d}.json"
+
+        with open(batch_file, 'w', encoding='utf-8') as f:
+            json.dump(batch_result, f, indent=2)
+
+        self.logger.debug(f"Saved batch {batch_id} to {batch_file}")
+
+    def save_extraction_metadata(
+        self,
+        start_page: int,
+        end_page: int,
+        total_batches: int
+    ) -> None:
+        """
+        Save extraction run metadata.
+
+        Args:
+            start_page: First page processed
+            end_page: Last page processed
+            total_batches: Total number of batches
+        """
+        metadata = {
+            'scan_id': self.scan_id,
+            'timestamp': datetime.now().isoformat(),
+            'configuration': {
+                'window_size': self.window_size,
+                'overlap': self.overlap,
+                'stride': self.stride,
+                'max_workers': self.max_workers,
+                'start_page': start_page,
+                'end_page': end_page
+            },
+            'statistics': self.stats,
+            'total_batches': total_batches
+        }
+
+        metadata_file = self.extraction_dir / "metadata.json"
+
+        with open(metadata_file, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2)
+
+        self.logger.info(f"Saved extraction metadata to {metadata_file}")
+
     def extract_sliding_window(
         self,
         start_page: int = 1,
@@ -388,6 +443,14 @@ class ExtractionOrchestrator:
         # Reconcile overlaps between consecutive batches
         batch_results = self.reconcile_consecutive_batches(batch_results)
 
+        # Save batch results to disk (after reconciliation)
+        self.logger.info("Saving batch results to disk")
+        for batch_result in batch_results:
+            self.save_batch_result(batch_result)
+
+        # Save extraction metadata
+        self.save_extraction_metadata(start_page, end_page, len(batches))
+
         # Log summary
         self.logger.info(
             "Extraction complete",
@@ -411,6 +474,7 @@ class ExtractionOrchestrator:
         print(f"Verification issues: {self.stats['verification_issues']}")
         print(f"Overlap disagreements: {self.stats['reconciliation_disagreements']} ({self.stats['llm_reconciliations']} LLM arbitrated)")
         print(f"Total cost: ${self.stats['total_cost']:.2f}")
+        print(f"Results saved: {self.extraction_dir}")
         print(f"{'='*60}\n")
 
         return batch_results
