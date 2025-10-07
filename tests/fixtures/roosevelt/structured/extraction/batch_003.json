@@ -1,0 +1,15 @@
+{
+  "batch_id": 3,
+  "status": "failed",
+  "error": "Expecting value: line 163 column 1 (char 891)",
+  "cost": 0.0,
+  "batch_metadata": {
+    "batch_id": 3,
+    "start_page": 81,
+    "end_page": 83,
+    "overlap_with_prev": [
+      81
+    ],
+    "page_count": 3
+  }
+}
