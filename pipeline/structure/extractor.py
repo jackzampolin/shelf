@@ -31,7 +31,8 @@ from utils.parallel import ParallelProcessor
 from pipeline.structure.agents import (
     extract_batch,
     verify_extraction,
-    reconcile_overlaps
+    reconcile_overlaps,
+    reconcile_overlaps_with_llm
 )
 
 
@@ -93,7 +94,8 @@ class ExtractionOrchestrator:
             'total_word_count': 0,
             'total_cost': 0.0,
             'verification_issues': 0,
-            'reconciliation_disagreements': 0
+            'reconciliation_disagreements': 0,
+            'llm_reconciliations': 0
         }
 
     def load_pages(self, start_page: int, end_page: int) -> List[Dict]:
@@ -273,26 +275,41 @@ class ExtractionOrchestrator:
             if not overlap_pages:
                 continue
 
-            # Reconcile
+            # Step 1: Check similarity with automatic reconciliation
             reconciliation = reconcile_overlaps(
                 prev_batch['result'],
                 curr_batch['result'],
                 overlap_pages
             )
 
-            # Store reconciliation info
-            curr_batch['reconciliation'] = reconciliation
-
-            # Track disagreements
+            # Step 2: If disagreement, use LLM to arbitrate
             if reconciliation.get('status') == 'disagreement':
-                self.stats['reconciliation_disagreements'] += 1
-                self.logger.warning(
-                    f"Batch {curr_batch['batch_id']} overlap disagreement",
+                self.logger.info(
+                    f"Batch {curr_batch['batch_id']} overlap disagreement - using LLM arbitration",
                     batch_id=curr_batch['batch_id'],
                     overlap_pages=overlap_pages,
-                    similarity=reconciliation.get('similarity'),
-                    resolution=reconciliation.get('resolution_method')
+                    similarity=reconciliation.get('similarity')
                 )
+
+                # Call LLM to resolve disagreement
+                llm_reconciliation = reconcile_overlaps_with_llm(
+                    prev_batch['result'],
+                    curr_batch['result'],
+                    overlap_pages
+                )
+
+                # Use LLM's decision
+                reconciliation = llm_reconciliation
+
+                # Track LLM reconciliation
+                self.stats['llm_reconciliations'] += 1
+                self.stats['reconciliation_disagreements'] += 1
+
+                # Track cost (~$0.003-0.005 per call with gpt-4o-mini)
+                self.stats['total_cost'] += 0.005
+
+            # Store reconciliation info
+            curr_batch['reconciliation'] = reconciliation
 
         return batch_results
 
@@ -381,6 +398,7 @@ class ExtractionOrchestrator:
             total_word_count=self.stats['total_word_count'],
             verification_issues=self.stats['verification_issues'],
             reconciliation_disagreements=self.stats['reconciliation_disagreements'],
+            llm_reconciliations=self.stats['llm_reconciliations'],
             total_cost=self.stats['total_cost']
         )
 
@@ -391,7 +409,7 @@ class ExtractionOrchestrator:
         print(f"Pages processed: {self.stats['total_pages']}")
         print(f"Total words extracted: {self.stats['total_word_count']:,}")
         print(f"Verification issues: {self.stats['verification_issues']}")
-        print(f"Overlap disagreements: {self.stats['reconciliation_disagreements']}")
+        print(f"Overlap disagreements: {self.stats['reconciliation_disagreements']} ({self.stats['llm_reconciliations']} LLM arbitrated)")
         print(f"Total cost: ${self.stats['total_cost']:.2f}")
         print(f"{'='*60}\n")
 
