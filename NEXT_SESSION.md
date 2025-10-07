@@ -1,187 +1,198 @@
-# Session 6: Internet Archive E2E Validation
+# Next Session: Documentation & Code Cleanup Audit
 
-**Previous Session**: Test migration complete (134 tests, 31 unit tests in 18s)
+**Previous Session**: Built comprehensive E2E validation against IA ground truth. Pipeline validated at 92% accuracy on Roosevelt book.
 
-**Current State**: Downloaded IA ground truth data (51.6 MB) for Roosevelt autobiography
-
----
-
-## What We Have
-
-1. **Clean Test Suite**
-   - 134 tests total (removed 15 stale e2e tests)
-   - 31 unit tests pass in 18s using committed fixtures (105KB)
-   - Clear unit/integration separation with pytest markers
-
-2. **IA Ground Truth Data Downloaded**
-   - `abbyy.gz` (18 MB) - XML with character-level coordinates and confidence
-   - `hocr.html` (32 MB) - Alternative OCR format
-   - `djvu_text.txt` (1.5 MB) - Plain text fulltext
-   - `page_numbers.json` (106 KB) - Page number mapping
-
-3. **Full Roosevelt Book**
-   - 637 pages processed through: OCR → Correct (has needs_review)
-   - Fix and Structure stages NOT yet run on full book
-   - Location: ~/Documents/book_scans/roosevelt-autobiography
+**Current State**:
+- Pipeline fully functional and validated
+- 17 commits ahead on main branch
+- Ready to process more books at scale
+- Need to ensure docs and code are clean before production use
 
 ---
 
-## Session 6 Goals
+## Objective
 
-**Objective**: Create e2e validation test that runs full pipeline and compares against IA ground truth
+Systematic audit of documentation and code to remove stale content, update outdated instructions, and ensure everything reflects current architecture.
 
-### Task 1: Explore ABBYY Data Structure (30 min)
+**Why Now?** Before running many books through the pipeline, we need confidence that:
+- Documentation accurately describes current behavior
+- No stale code paths or unused functions
+- Instructions work for new users
+- Architecture docs match implementation
 
-The ABBYY XML has rich structure we need to understand:
+---
 
+## Session Tasks
+
+### 1. Documentation Audit (60-90 min)
+
+**Files to Review:**
+- `README.md` - Does it reflect current CLI and features?
+- `CLAUDE.md` - Are workflow instructions current?
+- `CONTRIBUTING.md` - Are setup steps accurate?
+- `docs/PIPELINE_ARCHITECTURE.md` - Does it match current structure?
+- `docs/STRUCTURE.md` - Are structure stage docs accurate?
+- `docs/OCR_CLEAN.md` - Still relevant?
+- `docs/MCP_SETUP.md` - Does MCP setup work?
+
+**For Each Doc:**
+- [ ] Read through completely
+- [ ] Test any code examples or commands
+- [ ] Check if references to files/functions are accurate
+- [ ] Update or remove outdated sections
+- [ ] Flag any TODOs or placeholders
+- [ ] Verify examples match current output formats
+
+**Key Questions:**
+- Are there references to old file structures?
+- Do CLI commands still work as documented?
+- Are stage names consistent (OCR/Correct/Fix/Structure)?
+- Do JSON schemas in docs match actual output?
+- Are costs and performance estimates current?
+
+### 2. Code Cleanup Audit (45-60 min)
+
+**Dead Code Detection:**
 ```bash
-# Decompress and explore
-gunzip -c tests/fixtures/roosevelt/ia_ground_truth/abbyy.gz | less
+# Find potentially unused functions
+grep -r "^def " pipeline/ tools/ | cut -d: -f2 | sort
 
-# Key questions:
-# - How is text organized by page?
-# - Can we extract plain text per page easily?
-# - What confidence scores are available?
-# - How are bounding boxes structured?
+# Check for commented-out code blocks
+grep -rn "^# def\|^# class" pipeline/ tools/
+
+# Find TODO/FIXME comments
+grep -rn "TODO\|FIXME\|XXX\|HACK" pipeline/ tools/ tests/
 ```
 
-### Task 2: Create Simple ABBYY Parser (1 hour)
+**Files to Review:**
+- `pipeline/` - Any unused pipeline stages or functions?
+- `tools/` - Deprecated tools or old implementations?
+- `tests/` - Stale tests or fixtures that don't match current code?
+- Root scripts - Any old entry points no longer used?
 
-**File**: `tests/validation/abbyy_parser.py`
+**For Each Module:**
+- [ ] Check if all functions are actually called
+- [ ] Look for commented-out code to remove
+- [ ] Verify imports are used
+- [ ] Check for duplicate implementations
+- [ ] Remove debug print statements
+- [ ] Update docstrings to match current behavior
 
-Goal: Extract plain text per page from ABBYY for comparison
+**Specific Areas:**
+- `pipeline/merge.py` - Is this still used? (might be old)
+- `pipeline/quality_review.py` - Is this integrated?
+- Old test files - Any skipped tests that should be removed?
+- Example outputs - Are they current?
 
-```python
-class ABBYYParser:
-    """Parse ABBYY GZ format to extract ground truth text."""
+### 3. Configuration & Dependencies (30 min)
 
-    def __init__(self, abbyy_gz_path):
-        # Load and parse XML
-        pass
+**pyproject.toml Review:**
+- [ ] Are all dependencies still used?
+- [ ] Any missing dependencies?
+- [ ] Version pins appropriate?
+- [ ] Scripts section accurate?
 
-    def get_page_text(self, page_num: int) -> str:
-        """Get clean text for a specific page."""
-        # Extract text from page
-        pass
+**Config Files:**
+- [ ] `.gitignore` - Any missing patterns?
+- [ ] `pytest.ini` - Markers accurate?
+- [ ] `.env.example` - All required vars documented?
 
-    def get_page_count(self) -> int:
-        """Total pages in document."""
-        pass
-```
+### 4. Create Cleanup Report (15 min)
 
-### Task 3: Create Text Comparison Helper (30 min)
+Document findings in `docs/CLEANUP_AUDIT.md`:
+```markdown
+# Cleanup Audit Report
 
-**File**: `tests/validation/comparison.py`
+Date: [date]
 
-```python
-def calculate_accuracy(our_text: str, ground_truth: str) -> dict:
-    """
-    Compare our OCR/corrected text against IA ground truth.
+## Documentation Issues Found
+- [ ] Issue 1
+- [ ] Issue 2
 
-    Returns:
-        {
-            'character_accuracy': 0.95,  # 95% accuracy
-            'word_accuracy': 0.97,
-            'cer': 0.05,  # Character Error Rate
-            'sample_diff': '...'  # First few differences
-        }
-    """
-    pass
-```
+## Code Issues Found
+- [ ] Dead code in X
+- [ ] Unused function Y
 
-### Task 4: Create E2E Validation Test (1 hour)
+## Action Items
+1. Remove X
+2. Update Y
+3. ...
 
-**File**: `tests/test_ia_validation.py`
-
-```python
-@pytest.mark.e2e
-@pytest.mark.slow
-def test_full_pipeline_validation():
-    """
-    Full pipeline e2e test with IA validation.
-
-    1. Use existing Roosevelt OCR (already done)
-    2. Run Correct stage on full book (~$10, 1 hour)
-    3. Run Fix stage on flagged pages (~$1, 15 min)
-    4. Compare final output vs IA ground truth
-    5. Generate quality report
-
-    Expected: >95% accuracy vs IA
-    Cost: ~$12
-    Duration: ~1.5 hours
-    """
-    # Load IA ground truth
-    # Run pipeline stages
-    # Compare outputs
-    # Assert quality thresholds
-    pass
-```
-
-### Task 5: Run the E2E Test (2-3 hours)
-
-```bash
-# This will cost ~$12 and take 2-3 hours
-pytest tests/test_ia_validation.py::test_full_pipeline_validation -v -s
-
-# Expected output:
-# - Pipeline completes successfully
-# - OCR accuracy: ~95%
-# - Corrected accuracy: ~97%
-# - Final accuracy: ~98%
-# - Quality report generated
-```
-
----
-
-## Key Decisions Needed
-
-1. **Which stages to validate?**
-   - Option A: Just OCR vs IA ABBYY (fast, no cost)
-   - Option B: Full pipeline OCR → Correct → Fix (slow, $12)
-   - **Recommend**: Start with Option A, then run Option B
-
-2. **How to handle differences?**
-   - IA data isn't perfect either
-   - Need to define "acceptable" error rate
-   - Focus on detecting regressions, not absolute perfection
-
-3. **Test execution**
-   - Mark as `@pytest.mark.e2e` (not run by default)
-   - Separate validation from development tests
-   - Run manually before releases
-
----
-
-## Quick Start Commands
-
-```bash
-# Explore ABBYY structure
-gunzip -c tests/fixtures/roosevelt/ia_ground_truth/abbyy.gz | head -500
-
-# Check what we have
-ls -lh tests/fixtures/roosevelt/ia_ground_truth/
-ls -lh ~/Documents/book_scans/roosevelt-autobiography/
-
-# Start with simple parser
-mkdir -p tests/validation
-touch tests/validation/abbyy_parser.py
-touch tests/validation/comparison.py
-
-# Create test file
-touch tests/test_ia_validation.py
+## Verified Working
+- ✅ Feature A works as documented
+- ✅ CLI command B produces expected output
 ```
 
 ---
 
 ## Success Criteria
 
-- [ ] Can extract text from ABBYY XML
-- [ ] Can compare our OCR vs IA ground truth
-- [ ] Accuracy calculation works (CER, word accuracy)
-- [ ] E2E test runs full pipeline
-- [ ] Quality report shows >95% accuracy
-- [ ] Validation test is repeatable
+- [ ] All documentation tested and verified accurate
+- [ ] No commented-out code blocks remaining
+- [ ] All TODOs either resolved or documented
+- [ ] No dead code or unused functions
+- [ ] Test suite reflects current architecture
+- [ ] Examples and fixtures are current
+- [ ] Cleanup report documents any deferred items
 
 ---
 
-**Next Session Focus**: Build the validation infrastructure, then run the full e2e test
+## Commands to Start
+
+```bash
+# 1. Check repo status
+tree -L 2 --gitignore
+git status
+
+# 2. Start documentation review
+cat README.md
+cat CLAUDE.md
+cat docs/PIPELINE_ARCHITECTURE.md
+
+# 3. Look for dead code
+grep -rn "TODO\|FIXME" pipeline/ tools/
+grep -r "^# def " pipeline/ | head -20
+
+# 4. Check test coverage
+pytest --collect-only | grep "test session starts" -A 20
+```
+
+---
+
+## Session Start Prompt
+
+```
+I want to do a systematic audit of our documentation and code before running
+more books through the pipeline. Let's:
+
+1. Review each doc file to ensure it's accurate and current
+2. Find and remove any dead code or commented-out sections
+3. Verify all examples and commands still work
+4. Create a cleanup report for any issues found
+
+Start by reading NEXT_SESSION.md for the plan, then let's begin with the
+documentation audit.
+```
+
+---
+
+## Notes
+
+**Why This Matters:**
+- Prevents confusion when onboarding new developers
+- Ensures docs don't mislead about current behavior
+- Removes maintenance burden of unused code
+- Builds confidence before scaling to many books
+- Makes codebase easier to understand and modify
+
+**Scope:**
+- Focus on accuracy, not adding new features
+- Remove rather than fix deprecated code
+- Update docs to match reality, not aspirations
+- Be ruthless with stale content
+
+**Not in Scope:**
+- Adding new features
+- Refactoring working code
+- Improving test coverage (unless tests are broken)
+- Performance optimization
