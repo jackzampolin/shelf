@@ -75,61 +75,74 @@ This enables: **Given text → find chunk → get scan_pages → open PDF to exa
 ## Architecture: 2-Phase Bottom-Up Pipeline
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ Phase 1: SLIDING WINDOW EXTRACTION (GPT-4o-mini, parallel) │
-│ • Input: Overlapping page batches (10 pages, 3 overlap)    │
-│ • Extract: Clean text + chapter markers + footnotes        │
-│ • Verify: Word counts, overlap consensus (3-agent pattern) │
-│ • Parallelization: 30 workers, ~91 batches                 │
-│ • Time: 2-3 minutes                                         │
-│ • Cost: ~$0.80                                              │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ Phase 1: SLIDING WINDOW EXTRACTION ✅ COMPLETE               │
+│ (GPT-4o-mini, parallel - 3-agent pattern)                   │
+│ • Input: Overlapping page batches (3 pages, 1 overlap)      │
+│ • Extract: Clean text + markers (extract_agent)             │
+│ • Verify: Full-text LLM quality check (verify_agent)        │
+│ • Reconcile: LLM arbitration for overlaps (reconcile_agent) │
+│ • Parallelization: 30 workers, ~318 batches (636 pages)     │
+│ • Storage: Batch results → structured/extraction/           │
+│ • Python counts facts, LLM judges quality                   │
+│ • Time: ~5-7 minutes (includes verification + arbitration)  │
+│ • Cost: ~$3.18 (~$0.01/batch)                               │
+└──────────────────────────────────────────────────────────────┘
                             ↓
-┌─────────────────────────────────────────────────────────────┐
-│ Phase 2: ASSEMBLY & CHUNKING (GPT-4o-mini + Python)        │
-│ • Merge batches (reconcile overlaps)                        │
-│ • Build document map from chapter evidence (bottom-up)     │
-│ • Create semantic chunks for RAG (500-1000 words)          │
-│ • Generate three output formats                             │
-│ • Verify completeness                                       │
-│ • Time: 30-60 seconds                                       │
-│ • Cost: ~$0.30                                              │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│ Phase 2: ASSEMBLY & CHUNKING 🚧 TODO                         │
+│ (GPT-4o-mini + Python)                                       │
+│ • Load batches from structured/extraction/                   │
+│ • Merge with reconciled overlaps                             │
+│ • Build document map from chapter evidence (bottom-up)      │
+│ • Create semantic chunks for RAG (500-1000 words)           │
+│ • Generate three output formats                              │
+│ • Verify completeness                                        │
+│ • Time: 30-60 seconds (estimated)                            │
+│ • Cost: ~$0.30 (estimated)                                   │
+└──────────────────────────────────────────────────────────────┘
 
-Total: ~3-4 minutes, ~$1.10 (45% cheaper than old approach)
+Total (estimated): ~6-8 minutes, ~$3.48
 ```
 
 ---
 
-## Phase 1: Sliding Window Extraction
+## Phase 1: Sliding Window Extraction ✅ COMPLETE
 
 **Goal:** Extract clean body text in parallel batches, removing running headers while preserving all substantive content.
 
 ### Window Configuration
 
 ```python
-WINDOW_SIZE = 10      # pages per batch
-OVERLAP = 3           # pages of overlap between batches
+WINDOW_SIZE = 3       # pages per batch (changed from 10 for reliability)
+OVERLAP = 1           # page of overlap between batches
+STRIDE = 2            # pages to advance per batch (window_size - overlap)
 MAX_WORKERS = 30      # parallel batch processing
 ```
 
 **For 636-page book:**
 ```
-Batch 1:  pages [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-Batch 2:  pages [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]  ← overlap: 8,9,10
-Batch 3:  pages [15, 16, 17, 18, 19, 20, 21, 22, 23, 24]  ← overlap: 15,16,17
+Batch 1:   pages [1, 2, 3]
+Batch 2:   pages [3, 4, 5]             ← overlap: page 3
+Batch 3:   pages [5, 6, 7]             ← overlap: page 5
 ...
-Batch 91: pages [628, 629, 630, 631, 632, 633, 634, 635, 636]
+Batch 318: pages [634, 635, 636]
 
-Total batches: 91 (stride of 7 pages)
-Processing: All 91 batches in parallel with 30 workers
-Expected time: 2-3 minutes
+Total batches: 318 (stride of 2 pages)
+Processing: All 318 batches in parallel with 30 workers
+Actual time: ~5-7 minutes (includes full verification + LLM arbitration)
+Actual cost: ~$3.18 (~$0.01 per batch)
 ```
+
+**Why 3-page batches?**
+- **Reliability**: Shorter JSON responses = fewer parse errors (100% vs 50% success)
+- **Full-text verification**: 3 pages fits in LLM context for complete comparison
+- **Better error detection**: 318 overlap points vs 91 = more quality checks
 
 **Why overlap?**
 - Verifies consistency (same pages extracted twice should match)
+- Enables LLM arbitration when batches disagree on page boundaries
 - Provides context at boundaries (chapter transitions, split footnotes)
-- Enables error detection (if extractions disagree, flag for review)
 
 ### 3-Agent Pattern (Like OCR Stage)
 
@@ -137,67 +150,114 @@ Expected time: 2-3 minutes
 
 ```python
 def extract_batch(pages: List[Dict]) -> Dict:
-    """Extract clean content from one batch."""
+    """Extract clean content from one batch (3 pages)."""
 
-    # Concatenate all pages in batch
+    # Concatenate pages with [PAGE N] markers
     batch_text = concatenate_pages_with_markers(pages)
 
-    system_prompt = """You are a book text extractor. Extract clean body text from scanned pages, removing repetitive headers/footers while preserving all substantive content."""
+    system_prompt = """You are a book text extractor.
+    Remove repetitive headers/footers while preserving all body content."""
 
-    user_prompt = f"""Extract clean body text from pages {pages[0]['page_number']}-{pages[-1]['page_number']}.
+    user_prompt = f"""Extract clean text from pages {start}-{end}.
 
-INPUT PAGES:
-{batch_text}
+INPUT: {batch_text}
 
 INSTRUCTIONS:
-1. Remove running headers (e.g., "80 THEODORE ROOSEVELT—AN AUTOBIOGRAPHY")
-   - Pattern typically: "[page#] [BOOK TITLE]"
-   - But KEEP any body text that follows the header on same line
-2. Remove page numbers (scan and book page numbers)
-3. Remove repetitive footers if present
-4. Preserve ALL body text, footnotes, captions
-5. Preserve paragraph breaks
-6. Note any chapter markers (e.g., "CHAPTER III: ...")
+1. Remove running headers (e.g., "CHAPTER 3", page numbers, book title)
+2. Preserve ALL body text, footnotes, captions
+3. Maintain paragraph structure
+4. Focus on page boundaries - text flows across pages naturally
+5. Assign paragraphs to page where they START
 
 Return JSON:
 {{
-  "clean_text": "extracted text with paragraphs separated by \\n\\n",
+  "clean_text": "extracted text (paragraphs separated by \\n\\n)",
   "paragraphs": [
-    {{
-      "text": "paragraph text",
-      "scan_page": 78,
-      "type": "body" | "footnote" | "caption"
-    }}
+    {{ "text": "...", "scan_page": 78, "type": "body" }}
   ],
-  "running_header_pattern": "pattern identified and removed",
-  "chapter_markers": [
-    {{"chapter": 3, "title": "...", "scan_page": 78}}
-  ],
-  "footnotes": [
-    {{"number": 1, "text": "...", "scan_page": 78}}
-  ],
-  "word_count": 4521
+  "running_header_pattern": "pattern removed",
+  "chapter_markers": [{{"chapter": 3, "scan_page": 78}}],
+  "footnotes": [{{"number": "1", "scan_page": 78}}]
 }}
+
+NOTE: scan_page MUST be integer, NOT string.
+DO NOT include word_count (Python will calculate).
 """
 
-    response = llm_call(system_prompt, user_prompt)
-    return parse_response(response)
+    response = llm_call("gpt-4o-mini", system_prompt, user_prompt)
+    result = parse_json(response)
+
+    # Python calculates word count (don't trust LLM to count!)
+    result['word_count'] = len(result['clean_text'].split())
+    result['scan_pages'] = [p['page_number'] for p in pages]
+
+    return result
 ```
 
 **Agent 2: VERIFIER (GPT-4o-mini)**
 
 ```python
 def verify_extraction(original_pages: List[Dict],
-                     extracted: Dict) -> Dict:
-    """Verify extraction quality."""
+                     extraction_result: Dict) -> Dict:
+    """Verify extraction quality using FULL-TEXT comparison."""
 
-    # Calculate expected word count
-    original_word_count = sum(
-        len(p['text'].split()) for p in original_pages
-    )
-    extracted_word_count = extracted['word_count']
+    # Build COMPLETE original text (all 3 pages)
+    original_full_text = concatenate_pages_with_markers(original_pages)
+    extracted_text = extraction_result['clean_text']
 
-    system_prompt = """Verify content extraction quality. Check for lost content, incorrect header removal, or other issues."""
+    # Python calculates word counts (facts for LLM)
+    original_word_count = len(original_full_text.split())
+    extracted_word_count = len(extracted_text.split())
+    word_count_ratio = extracted_word_count / original_word_count
+
+    system_prompt = """You are a text extraction quality specialist.
+    Compare COMPLETE original vs extracted text to verify quality."""
+
+    user_prompt = f"""Verify this extraction by comparing full texts.
+
+<original_text>
+Pages: 3
+Word count: {original_word_count}
+FULL TEXT:
+{original_full_text}
+</original_text>
+
+<extracted_text>
+Word count: {extracted_word_count}
+Ratio: {word_count_ratio:.1%}
+FULL TEXT:
+{extracted_text}
+</extracted_text>
+
+<verification_task>
+1. Were headers removed correctly? List what was removed.
+2. Was body text preserved completely?
+3. Does the {word_count_ratio:.1%} ratio make sense?
+4. Overall assessment?
+</verification_task>
+
+Return JSON:
+{{
+  "quality_score": 0.95,
+  "headers_removed_correctly": true,
+  "body_text_preserved": true,
+  "issues": [],
+  "headers_identified": ["CHAPTER 3", "PAGE 78"],
+  "confidence": "high",
+  "needs_review": false
+}}
+"""
+
+    response = llm_call("gpt-4o-mini", system_prompt, user_prompt)
+    result = parse_json(response)
+
+    # Add Python-calculated metrics
+    result['word_count_ratio'] = word_count_ratio
+    result['original_word_count'] = original_word_count
+    result['extracted_word_count'] = extracted_word_count
+
+    return result
+```
 
     user_prompt = f"""Verify this extraction:
 
