@@ -12,7 +12,7 @@ import base64
 import sys
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
 from io import BytesIO
 
@@ -504,6 +504,39 @@ def ingest_from_directories(
             print(f"  ar pipeline {scan_id}")
 
     return scan_ids
+
+
+def add_books_to_library(pdf_paths: List[Path], storage_root: Path = None) -> Dict[str, Any]:
+    """
+    Add books to library (CLI wrapper).
+
+    Args:
+        pdf_paths: List of PDF file paths
+        storage_root: Storage root (defaults to Config.BOOK_STORAGE_ROOT)
+
+    Returns:
+        Dict with books_added count and scan_ids list
+    """
+    library = LibraryIndex(storage_root=storage_root)
+
+    # Group PDFs by book
+    groups = group_batch_pdfs(pdf_paths)
+
+    print(f"\nDetected {len(groups)} book(s):")
+    for base_name, pdfs in groups.items():
+        print(f"  • {base_name}: {len(pdfs)} PDF(s)")
+
+    # Process each group
+    scan_ids = []
+    for base_name, pdfs in groups.items():
+        scan_id = ingest_book_group(base_name, pdfs, library, auto_confirm=True)
+        if scan_id:
+            scan_ids.append(scan_id)
+
+    return {
+        'books_added': len(scan_ids),
+        'scan_ids': scan_ids
+    }
 
 
 if __name__ == "__main__":

@@ -23,6 +23,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from infra.logger import create_logger
 from infra.checkpoint import CheckpointManager
 
+# Import schemas for validation
+import importlib
+schemas_module = importlib.import_module('pipeline.1_ocr.schemas')
+OCRPageOutput = schemas_module.OCRPageOutput
+
 
 class BlockClassifier:
     """Classifies text blocks by type based on position and content."""
@@ -418,7 +423,21 @@ class BookOCRProcessor:
                 task['images_dir']
             )
 
-            # Save structured JSON
+            # Validate against schema before saving
+            try:
+                validated_page = OCRPageOutput(**page_data)
+                # Convert back to dict for JSON serialization
+                page_data = validated_page.model_dump()
+            except Exception as validation_error:
+                if self.logger:
+                    self.logger.error(
+                        f"Schema validation failed",
+                        page=task['page_number'],
+                        error=str(validation_error)
+                    )
+                raise ValueError(f"OCR output failed schema validation: {validation_error}") from validation_error
+
+            # Save structured JSON (now schema-validated)
             json_file = task['batch_ocr_dir'] / f"page_{task['page_number']:04d}.json"
             with open(json_file, 'w', encoding='utf-8') as f:
                 json.dump(page_data, f, indent=2)
@@ -607,6 +626,80 @@ class BookOCRProcessor:
             print()
 
         return books
+
+    def clean_stage(self, scan_id: str, confirm: bool = False):
+        """
+        Clean/delete all OCR outputs and checkpoint for a book.
+
+        Useful for testing and re-running OCR stage from scratch.
+
+        Args:
+            scan_id: Book scan ID
+            confirm: If False, prompts for confirmation before deleting
+
+        Returns:
+            bool: True if cleaned, False if cancelled
+        """
+        book_dir = self.storage_root / scan_id
+
+        if not book_dir.exists():
+            print(f"❌ Book directory not found: {book_dir}")
+            return False
+
+        ocr_dir = book_dir / "ocr"
+        images_dir = book_dir / "images"
+        checkpoint_file = book_dir / "checkpoints" / "ocr.json"
+        metadata_file = book_dir / "metadata.json"
+
+        # Count what will be deleted
+        ocr_files = list(ocr_dir.glob("*.json")) if ocr_dir.exists() else []
+        image_files = list(images_dir.glob("page_*.png")) if images_dir.exists() else []
+
+        print(f"\n🗑️  Clean OCR stage for: {scan_id}")
+        print(f"   OCR outputs: {len(ocr_files)} files")
+        print(f"   Images: {len(image_files)} files")
+        print(f"   Checkpoint: {'exists' if checkpoint_file.exists() else 'none'}")
+
+        if not confirm:
+            response = input("\n   Proceed? (yes/no): ").strip().lower()
+            if response != 'yes':
+                print("   Cancelled.")
+                return False
+
+        # Delete OCR outputs
+        if ocr_dir.exists():
+            import shutil
+            shutil.rmtree(ocr_dir)
+            print(f"   ✓ Deleted {len(ocr_files)} OCR files")
+
+        # Delete images
+        if images_dir.exists():
+            import shutil
+            shutil.rmtree(images_dir)
+            print(f"   ✓ Deleted {len(image_files)} image files")
+
+        # Reset checkpoint
+        if checkpoint_file.exists():
+            checkpoint_file.unlink()
+            print(f"   ✓ Deleted checkpoint")
+
+        # Update metadata
+        if metadata_file.exists():
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+
+            metadata['ocr_complete'] = False
+            metadata.pop('ocr_completion_date', None)
+            metadata.pop('total_pages_processed', None)
+            metadata.pop('ocr_mode', None)
+
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
+
+            print(f"   ✓ Reset metadata")
+
+        print(f"\n✅ OCR stage cleaned for {scan_id}")
+        return True
 
 
 def interactive_mode():
