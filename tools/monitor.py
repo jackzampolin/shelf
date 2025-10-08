@@ -315,7 +315,7 @@ class PipelineMonitor:
             pattern = 'page_*.json'
         elif stage == 'extract':
             output_dir = self.book_dir / 'structured' / 'extraction'
-            pattern = None  # Will check for extraction completion
+            pattern = 'batch_*.json'  # Track batch files
         elif stage == 'assemble':
             output_dir = self.book_dir / 'structured'
             pattern = None  # Will check for final outputs
@@ -329,11 +329,16 @@ class PipelineMonitor:
                 completed_files = list(output_dir.glob(pattern))
                 progress_current = len(completed_files)
             elif stage == 'extract':
-                # For extract, check if extraction outputs exist
-                if (output_dir / 'metadata.json').exists():
-                    progress_current = 1
-                    progress_total = 1
-                    progress_percent = 100.0
+                # For extract, check extraction metadata for total batches
+                metadata_file = output_dir / 'metadata.json'
+                if metadata_file.exists():
+                    try:
+                        import json
+                        with open(metadata_file) as f:
+                            metadata = json.load(f)
+                            progress_total = metadata.get('total_batches', 0)
+                    except:
+                        pass
             elif stage == 'assemble':
                 # For assemble, check if final outputs exist
                 if (output_dir / 'archive' / 'full_book.md').exists():
@@ -343,8 +348,15 @@ class PipelineMonitor:
 
         # Get total pages from checkpoint or metadata
         if progress_total == 0:
+            # For extract stage, look for total_batches in checkpoint metadata
+            if stage == 'extract':
+                total_batches = metadata.get('total_batches', 0)
+                if total_batches > 0:
+                    progress_total = total_batches
+
             # First try checkpoint
-            progress_total = checkpoint_state.get('total_pages', 0)
+            if progress_total == 0:
+                progress_total = checkpoint_state.get('total_pages', 0)
 
             # If not in checkpoint, try metadata.json
             if progress_total == 0:

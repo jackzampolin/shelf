@@ -8,7 +8,7 @@ Detects chapter markers and footnotes organically during extraction.
 import json
 import re
 from typing import Dict, List, Any
-from llm_client import call_llm
+from llm_client import LLMClient
 from config import Config
 
 
@@ -153,25 +153,33 @@ Note: chapter_markers and footnotes arrays may be empty if not present. That's e
 DO NOT include word_count - this will be calculated automatically.
 </output_schema>"""
 
-    # Call LLM (with extended timeout for large batches)
-    response, usage, cost = call_llm(
+    # Define JSON parser with markdown fallback
+    def parse_extract_response(response):
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError as e:
+            # Try to extract JSON from markdown code block
+            json_match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', response, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(1))
+            else:
+                raise ValueError(f"Failed to parse LLM response as JSON: {e}")
+
+    # Call LLM with automatic JSON retry
+    llm_client = LLMClient()
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+
+    result, usage, cost = llm_client.call_with_json_retry(
         model=Config.EXTRACT_MODEL,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
+        messages=messages,
+        json_parser=parse_extract_response,
         temperature=0.1,
+        max_retries=2,
         timeout=300  # 5 minutes for 10-page batches
     )
-
-    # Parse response
-    try:
-        result = json.loads(response)
-    except json.JSONDecodeError as e:
-        # Try to extract JSON from markdown code block
-        json_match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', response, re.DOTALL)
-        if json_match:
-            result = json.loads(json_match.group(1))
-        else:
-            raise ValueError(f"Failed to parse LLM response as JSON: {e}\nResponse: {response[:500]}")
 
     # Add scan_pages list
     result['scan_pages'] = [p['page_number'] for p in pages]

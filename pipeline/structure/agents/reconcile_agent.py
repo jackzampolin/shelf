@@ -8,7 +8,7 @@ Uses consensus when extractions match, LLM arbitration when they differ.
 import json
 from typing import Dict, List, Any, Tuple
 from difflib import SequenceMatcher
-from llm_client import call_llm
+from llm_client import LLMClient
 from config import Config
 
 
@@ -168,25 +168,33 @@ Compare both extractions and decide:
 }}
 </output_schema>"""
 
-    # Overlap boundary reconciliation
-    try:
-        response, usage, cost = call_llm(
-            model=Config.EXTRACT_MODEL,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            temperature=0.1
-        )
-
-        # Parse response
+    # Define JSON parser with markdown fallback
+    def parse_reconcile_response(response):
         import re
         try:
-            result = json.loads(response)
+            return json.loads(response)
         except json.JSONDecodeError:
             json_match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', response, re.DOTALL)
             if json_match:
-                result = json.loads(json_match.group(1))
+                return json.loads(json_match.group(1))
             else:
                 raise ValueError("Failed to parse LLM reconciliation response")
+
+    # Overlap boundary reconciliation with automatic JSON retry
+    try:
+        llm_client = LLMClient()
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        result, usage, cost = llm_client.call_with_json_retry(
+            model=Config.EXTRACT_MODEL,
+            messages=messages,
+            json_parser=parse_reconcile_response,
+            temperature=0.1,
+            max_retries=2
+        )
 
         # Build return dict
         return {
