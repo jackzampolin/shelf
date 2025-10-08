@@ -108,6 +108,11 @@ class BookStructurer:
             if not skip_extraction or not self._extraction_exists():
                 print("\n🔍 Running Phase 1: Extraction...")
 
+                # Mark extraction as in_progress so status shows it running
+                if self.checkpoint_extract:
+                    self.checkpoint_extract._state['status'] = 'in_progress'
+                    self.checkpoint_extract._save_checkpoint()
+
                 extractor = ExtractionOrchestrator(
                     scan_id=self.scan_id,
                     storage_root=self.storage_root,
