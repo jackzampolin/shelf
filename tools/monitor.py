@@ -240,6 +240,7 @@ class PipelineMonitor:
         """
         from checkpoint import CheckpointManager
         from datetime import datetime
+        import os
 
         # Initialize checkpoint manager for this stage
         checkpoint = CheckpointManager(
@@ -258,6 +259,28 @@ class PipelineMonitor:
             completed_pages = checkpoint_state.get('completed_pages', [])
             if len(completed_pages) > 0:
                 status = 'in_progress'
+
+        # Also check for recent log activity (for stages that don't update checkpoints during processing)
+        if status == 'not_started' and self.logs_dir.exists():
+            import time
+            import glob as glob_module
+
+            # Check for recent log files for this stage
+            log_pattern = str(self.logs_dir / f"{stage}_*.jsonl")
+            log_files = glob_module.glob(log_pattern)
+
+            if log_files:
+                # Check if any log file was modified in the last 5 minutes
+                now = time.time()
+                for log_file in log_files:
+                    try:
+                        mtime = os.path.getmtime(log_file)
+                        age_seconds = now - mtime
+                        if age_seconds < 300:  # 5 minutes
+                            status = 'in_progress'
+                            break
+                    except:
+                        pass
 
         # Extract cost, duration, and model from checkpoint metadata (single source of truth)
         metadata = checkpoint_state.get('metadata', {})
