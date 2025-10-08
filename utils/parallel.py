@@ -19,7 +19,7 @@ import sys
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from logger import PipelineLogger
+from platform.logger import PipelineLogger
 
 
 class RateLimiter:

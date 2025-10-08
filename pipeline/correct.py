@@ -18,9 +18,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from llm_client import LLMClient
-from logger import create_logger
-from checkpoint import CheckpointManager
+from platform.llm_client import LLMClient
+from platform.logger import create_logger
+from platform.checkpoint import CheckpointManager
 
 # Load environment variables
 load_dotenv()

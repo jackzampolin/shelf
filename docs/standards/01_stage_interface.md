@@ -15,6 +15,33 @@ Every pipeline stage (OCR, Correct, Fix, Structure) follows a common pattern for
 - **Resumable** - Can resume from checkpoint after failures
 - **Monitorable** - Reports status for external monitoring tools
 
+### Platform Infrastructure
+
+All stages depend on core infrastructure modules located in `platform/`:
+
+```
+platform/
+├── __init__.py          # Exports: Checkpoint, PipelineLogger, LLMClient, etc.
+├── checkpoint.py        # Resume capability and progress tracking
+├── logger.py            # Structured logging and console output
+├── llm_client.py        # API calls with retry logic and cost tracking
+└── pricing.py           # Token counting and cost calculation
+```
+
+**Import pattern:**
+```python
+from platform.checkpoint import CheckpointManager
+from platform.logger import PipelineLogger, create_logger
+from platform.llm_client import LLMClient
+from platform.pricing import CostCalculator, estimate_cost, count_tokens
+```
+
+**Why `platform/`?**
+- Centralizes all stage dependencies in one place
+- Clear separation: `pipeline/` (stages) vs `platform/` (infrastructure)
+- Makes it obvious what's required for stage implementation
+- Easier to maintain and test infrastructure independently
+
 ---
 
 ## 1. Standard Initialization

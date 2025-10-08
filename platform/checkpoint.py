@@ -10,7 +10,7 @@ Provides:
 - Validation of existing outputs
 
 Usage:
-    from checkpoint import CheckpointManager
+    from platform.checkpoint import CheckpointManager
 
     checkpoint = CheckpointManager(scan_id="modest-lovelace", stage="correction")
 

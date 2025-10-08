@@ -14,7 +14,7 @@ import json
 import threading
 import time
 from pathlib import Path
-from checkpoint import CheckpointManager
+from platform.checkpoint import CheckpointManager
 
 
 @pytest.fixture
