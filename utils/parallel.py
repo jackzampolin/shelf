@@ -81,7 +81,9 @@ class ParallelProcessor:
         max_workers: int = 30,
         rate_limit: Optional[int] = None,
         logger: Optional[PipelineLogger] = None,
-        description: str = "Processing"
+        description: str = "Processing",
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        result_callback: Optional[Callable[[Any], None]] = None
     ):
         """
         Initialize parallel processor.
@@ -91,11 +93,15 @@ class ParallelProcessor:
             rate_limit: Optional API calls per minute limit
             logger: Optional logger instance for progress tracking
             description: Human-readable description for logging
+            progress_callback: Optional callback(completed, total) called on progress updates
+            result_callback: Optional callback(result) called for each completed item
         """
         self.max_workers = max_workers
         self.rate_limiter = RateLimiter(rate_limit) if rate_limit else None
         self.logger = logger
         self.description = description
+        self.progress_callback = progress_callback
+        self.result_callback = result_callback
 
         # Thread-safe stats
         self.stats_lock = threading.Lock()
@@ -160,11 +166,19 @@ class ParallelProcessor:
                         if "cost" in result:
                             self.stats["total_cost"] += result.get("cost", 0.0)
 
-                    # Progress logging
-                    if self.logger and self.stats["processed"] % progress_interval == 0:
-                        self.logger.info(
-                            f"Progress: {self.stats['processed']}/{total} items processed"
-                        )
+                    # Call result callback immediately (for incremental saves)
+                    if self.result_callback:
+                        self.result_callback(result)
+
+                    # Progress logging and callback
+                    if self.stats["processed"] % progress_interval == 0:
+                        if self.logger:
+                            self.logger.info(
+                                f"Progress: {self.stats['processed']}/{total} items processed"
+                            )
+                        # Call progress callback for checkpoint updates
+                        if self.progress_callback:
+                            self.progress_callback(self.stats["processed"], total)
 
                 except Exception as e:
                     with self.stats_lock:

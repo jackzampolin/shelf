@@ -34,12 +34,15 @@ class StageStatus:
     duration_seconds: Optional[float] = None
     errors: List[Dict[str, Any]] = None
     warnings: List[Dict[str, Any]] = None
+    metadata: Dict[str, Any] = None
 
     def __post_init__(self):
         if self.errors is None:
             self.errors = []
         if self.warnings is None:
             self.warnings = []
+        if self.metadata is None:
+            self.metadata = {}
 
 
 class LogParser:
@@ -374,8 +377,12 @@ class PipelineMonitor:
             # For extract stage, look for total_batches in checkpoint metadata
             if stage == 'extract':
                 total_batches = metadata.get('total_batches', 0)
+                completed_batches = metadata.get('completed_batches', 0)
                 if total_batches > 0:
                     progress_total = total_batches
+                    # Use checkpoint's completed_batches if available (more accurate than file count)
+                    if completed_batches > 0:
+                        progress_current = completed_batches
 
             # First try checkpoint
             if progress_total == 0:
@@ -432,7 +439,8 @@ class PipelineMonitor:
             end_time=end_time,  # From checkpoint
             duration_seconds=duration,  # From checkpoint
             errors=errors,
-            warnings=warnings
+            warnings=warnings,
+            metadata=metadata  # Pass through checkpoint metadata
         )
 
     def get_all_stages_status(self) -> Dict[str, StageStatus]:
@@ -545,6 +553,12 @@ class PipelineMonitor:
                     model_str = f" [{model_short}]"
 
                 status_line = f"{icon} {display_name} Complete ({duration_str}) - {cost_str}{model_str}"
+
+                # Add failure count for extract stage if any batches failed
+                if stage_name == 'extract':
+                    failed_batches = stage_status.metadata.get('failed_batches', 0)
+                    if failed_batches > 0:
+                        status_line += f" - ⚠️ {failed_batches} failed"
             else:  # in_progress
                 if stage_status.progress_total > 0:
                     status_line = f"{icon} {display_name} {stage_status.progress_current}/{stage_status.progress_total} ({stage_status.progress_percent:.1f}%)"
@@ -553,6 +567,12 @@ class PipelineMonitor:
                     eta = self.calculate_eta(stage_status)
                     if eta:
                         status_line += f" - ETA: {eta}"
+
+                    # Add failure indicator if applicable (for extract stage)
+                    if stage_name == 'extract':
+                        failed_batches = stage_status.metadata.get('failed_batches', 0)
+                        if failed_batches > 0:
+                            status_line += f" - ⚠️ {failed_batches} failed"
 
                     # Add cost if present
                     if stage_status.cost_usd > 0:
@@ -571,37 +591,6 @@ class PipelineMonitor:
             duration_formatted = self.format_duration(total_duration)
             print(f"⏱️  Total Time: {duration_formatted}")
         if total_cost > 0 or total_duration > 0:
-            print()
-
-        # Show recent errors/warnings
-        all_errors = []
-        all_warnings = []
-
-        for stage_status in stages_status.values():
-            all_errors.extend(stage_status.errors)
-            all_warnings.extend(stage_status.warnings)
-
-        if all_errors:
-            print("❌ Recent Errors:")
-            for error in all_errors[:3]:
-                stage = error.get('stage', 'unknown')
-                msg = error.get('message', '')
-                page = error.get('page', '')
-                page_str = f" [page {page}]" if page else ""
-                error_detail = error.get('error', '')
-                print(f"   [{stage}]{page_str} {msg}")
-                if error_detail:
-                    print(f"      → {error_detail}")
-            print()
-
-        if all_warnings:
-            print("⚠️  Recent Warnings:")
-            for warning in all_warnings[:3]:
-                stage = warning.get('stage', 'unknown')
-                msg = warning.get('message', '')
-                page = warning.get('page', '')
-                page_str = f" [page {page}]" if page else ""
-                print(f"   [{stage}]{page_str} {msg}")
             print()
 
         print("=" * 70)

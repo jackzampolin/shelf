@@ -116,7 +116,8 @@ class BookStructurer:
                 extractor = ExtractionOrchestrator(
                     scan_id=self.scan_id,
                     storage_root=self.storage_root,
-                    logger=self.logger
+                    logger=self.logger,
+                    checkpoint=self.checkpoint_extract
                 )
 
                 batch_results = extractor.extract_sliding_window(

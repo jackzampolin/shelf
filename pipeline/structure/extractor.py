@@ -54,7 +54,8 @@ class ExtractionOrchestrator:
         window_size: int = 10,
         overlap: int = 3,
         max_workers: int = 30,
-        logger=None
+        logger=None,
+        checkpoint=None
     ):
         """
         Initialize extractor orchestrator.
@@ -66,6 +67,7 @@ class ExtractionOrchestrator:
             overlap: Pages of overlap between batches (default: 3)
             max_workers: Parallel workers (default: 30)
             logger: Optional logger instance
+            checkpoint: Optional CheckpointManager for progress tracking
         """
         self.scan_id = scan_id
         self.storage_root = Path(storage_root or Path.home() / "Documents" / "book_scans")
@@ -80,6 +82,9 @@ class ExtractionOrchestrator:
         self.overlap = overlap
         self.stride = window_size - overlap  # Pages to advance per batch
         self.max_workers = max_workers
+
+        # Checkpoint manager for progress tracking
+        self.checkpoint = checkpoint
 
         # Create directories
         self.structured_dir.mkdir(exist_ok=True)
@@ -398,6 +403,13 @@ class ExtractionOrchestrator:
         self.stats['total_batches'] = len(batches)
         self.stats['total_pages'] = end_page - start_page + 1
 
+        # Update checkpoint with total_batches at start
+        if self.checkpoint:
+            self.checkpoint._state['metadata']['total_batches'] = len(batches)
+            self.checkpoint._state['metadata']['completed_batches'] = 0
+            self.checkpoint._state['metadata']['failed_batches'] = 0
+            self.checkpoint._save_checkpoint()
+
         self.logger.info(
             f"Starting extraction: {len(batches)} batches, {self.stats['total_pages']} pages",
             total_batches=len(batches),
@@ -408,12 +420,48 @@ class ExtractionOrchestrator:
             workers=self.max_workers
         )
 
+        # Create progress callback for checkpoint updates
+        def on_progress(completed: int, total: int):
+            """Update checkpoint with batch progress."""
+            if self.checkpoint:
+                # Get current stats
+                failed = self.stats.get('failed_batches', 0)
+                current_cost = self.stats.get('total_cost', 0.0)
+
+                # Update checkpoint metadata
+                self.checkpoint._state['metadata']['completed_batches'] = completed
+                self.checkpoint._state['metadata']['failed_batches'] = failed
+                self.checkpoint._state['metadata']['total_cost_usd'] = current_cost
+                self.checkpoint._save_checkpoint()
+
+                self.logger.debug(
+                    f"Checkpoint updated: {completed}/{total} batches, {failed} failed, ${current_cost:.4f}"
+                )
+
+        # Create result callback for incremental batch saving
+        def on_batch_complete(batch_result: Dict[str, Any]):
+            """Save batch immediately as it completes."""
+            try:
+                self.save_batch_result(batch_result)
+                self.logger.debug(
+                    f"Saved batch {batch_result.get('batch_id')} to disk",
+                    batch_id=batch_result.get('batch_id')
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to save batch {batch_result.get('batch_id')}",
+                    batch_id=batch_result.get('batch_id'),
+                    error=str(e)
+                )
+
         # Process batches in parallel
         processor = ParallelProcessor(
             max_workers=self.max_workers,
             rate_limit=None,  # No rate limit needed (agents handle it internally)
             logger=self.logger,
-            description="Processing batches"
+            description="Processing batches",
+            progress_callback=on_progress if self.checkpoint else None,
+            result_callback=on_batch_complete
         )
 
         batch_results = processor.process(
@@ -443,10 +491,17 @@ class ExtractionOrchestrator:
         # Reconcile overlaps between consecutive batches
         batch_results = self.reconcile_consecutive_batches(batch_results)
 
-        # Save batch results to disk (after reconciliation)
-        self.logger.info("Saving batch results to disk")
+        # Re-save batches that had reconciliation updates
+        # (Batches were already saved incrementally, only update those with reconciliation)
+        self.logger.info("Updating batches with reconciliation data")
         for batch_result in batch_results:
-            self.save_batch_result(batch_result)
+            # Only re-save batches that have reconciliation info
+            if 'reconciliation' in batch_result:
+                self.save_batch_result(batch_result)
+                self.logger.debug(
+                    f"Updated batch {batch_result['batch_id']} with reconciliation",
+                    batch_id=batch_result['batch_id']
+                )
 
         # Save extraction metadata
         self.save_extraction_metadata(start_page, end_page, len(batches))
