@@ -1,5 +1,41 @@
 # AI Assistant Workflow Guide
 
+## ⚠️ REFACTOR IN PROGRESS
+
+**Branch:** `refactor/pipeline-redesign`
+**Meta Issue:** [#56 - Pipeline Refactor](https://github.com/jackzampolin/scanshelf/issues/56)
+**Source of Truth:** `docs/standards/` (production patterns extracted from existing stages)
+
+### Multi-Session Refactor Workflow
+
+**Starting a refactor session:**
+1. Check [Issue #56](https://github.com/jackzampolin/scanshelf/issues/56) for overall progress
+2. Find the next unchecked issue in the checklist (#48-54)
+3. Read the issue description and acceptance criteria
+4. Review relevant patterns from `docs/standards/` (see [README](docs/standards/README.md))
+
+**During implementation:**
+- Build schemas **iteratively** from observed data (no upfront design)
+- Test on actual book data at each stage
+- Reference `docs/standards/` for mandatory patterns:
+  - Checkpointing, cost tracking, error handling
+  - LLM client usage, parallelization, logging
+- Follow [Production Checklist](docs/standards/09_production_checklist.md)
+
+**Completing a refactor task:**
+1. Validate on test book end-to-end
+2. Update checklist in Issue #56
+3. Commit with reference to issue number
+4. Move to next issue
+
+**Key Refactor Principles:**
+- **Test-book-driven:** Run on real data, observe, then formalize
+- **Preserve patterns:** Use existing checkpoint, logging, cost tracking patterns
+- **Schema discovery:** Build schemas from what we see, not what we imagine
+- **Incremental:** Each issue is independently testable
+
+---
+
 ## First Things First
 
 When starting any session:
