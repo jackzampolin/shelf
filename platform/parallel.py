@@ -17,8 +17,6 @@ from typing import Callable, List, Dict, Any, Optional
 from pathlib import Path
 import sys
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
 from platform.logger import PipelineLogger
 
 

@@ -1,22 +1,14 @@
-"""Utility functions and classes for scanshelf pipeline."""
+"""
+Metadata management utilities for scan directories.
+
+Helper functions for working with metadata.json in scan directories,
+including processing history, cost tracking, and model tracking.
+"""
 
 import json
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any
-
-# Re-export parallel utilities for convenience
-from .parallel import ParallelProcessor, RateLimiter
-
-__all__ = [
-    'ParallelProcessor',
-    'RateLimiter',
-    'update_book_metadata',
-    'get_latest_processing_record',
-    'get_scan_total_cost',
-    'get_scan_models',
-    'format_processing_summary'
-]
 
 
 def update_book_metadata(book_dir: Path, stage: str, metadata: Dict[str, Any]):

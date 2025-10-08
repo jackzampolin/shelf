@@ -25,7 +25,24 @@ from platform.llm_client import LLMClient
 
 from platform.config import Config
 from tools.library import LibraryIndex
-from tools.names import slugify_title, ensure_unique_slug
+
+
+def _slugify_title(title: str) -> str:
+    """Convert title to URL-safe slug (inline replacement for deleted tools.names)."""
+    import re
+    slug = title.lower()
+    slug = re.sub(r'^(the|a|an)\s+', '', slug)
+    slug = re.sub(r'[^\w\s-]', '', slug)
+    slug = re.sub(r'\s+', '-', slug)
+    slug = re.sub(r'-+', '-', slug)
+    return slug.strip('-')[:50]
+
+
+def _ensure_unique_slug(base_slug: str, existing_ids: list) -> str:
+    """Ensure slug is unique (inline replacement for deleted tools.names)."""
+    if base_slug in existing_ids:
+        raise ValueError(f"Scan ID '{base_slug}' already exists. Use --id to specify different name.")
+    return base_slug
 
 
 def group_batch_pdfs(pdf_paths: List[Path]) -> Dict[str, List[Path]]:
@@ -348,11 +365,11 @@ def ingest_book_group(
         base_slug = llm_metadata['suggested_id']
         print(f"   Using LLM-suggested ID: {base_slug}")
     else:
-        base_slug = slugify_title(title)
+        base_slug = _slugify_title(title)
         print(f"   Generated ID from title: {base_slug}")
 
     try:
-        scan_id = ensure_unique_slug(base_slug, existing_ids)
+        scan_id = _ensure_unique_slug(base_slug, existing_ids)
     except ValueError as e:
         print(f"\n   ❌ Error: {str(e)}")
         return None

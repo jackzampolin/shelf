@@ -15,7 +15,6 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from contextlib import contextmanager
 from platform.config import Config
-from tools.names import ensure_unique_scan_id
 
 
 class LibraryIndex:
@@ -254,7 +253,7 @@ class LibraryIndex:
         Args:
             scan_id: Scan identifier
         """
-        from utils import get_scan_total_cost, get_scan_models
+        from platform.metadata import get_scan_total_cost, get_scan_models
 
         scan_dir = self.storage_root / scan_id
         if not scan_dir.exists():
@@ -342,58 +341,6 @@ class LibraryIndex:
     def get_stats(self) -> Dict[str, Any]:
         """Get library-wide statistics."""
         return self.data["stats"]
-
-    def migrate_existing_folder(
-        self,
-        old_folder_name: str,
-        title: str = None,
-        author: str = None
-    ) -> str:
-        """
-        Migrate an existing folder to the new naming system.
-
-        Args:
-            old_folder_name: Current folder name (e.g., "The-Accidental-President")
-            title: Book title (if not provided, will attempt to read from metadata)
-            author: Book author (if not provided, will attempt to read from metadata)
-
-        Returns:
-            New scan_id
-        """
-        old_path = self.storage_root / old_folder_name
-
-        if not old_path.exists():
-            raise ValueError(f"Folder {old_folder_name} not found")
-
-        # Try to read metadata from folder
-        metadata_file = old_path / "metadata.json"
-        if metadata_file.exists() and (title is None or author is None):
-            with open(metadata_file, 'r') as f:
-                metadata = json.load(f)
-                title = title or metadata.get("title", old_folder_name)
-                author = author or metadata.get("author", "Unknown")
-
-        # Generate unique scan ID
-        existing_scan_ids = [
-            scan["scan_id"]
-            for book in self.data["books"].values()
-            for scan in book["scans"]
-        ]
-        scan_id = ensure_unique_scan_id(existing_scan_ids)
-
-        # Rename folder
-        new_path = self.storage_root / scan_id
-        old_path.rename(new_path)
-
-        # Add to library
-        self.add_book(
-            title=title,
-            author=author,
-            scan_id=scan_id,
-            notes=f"Migrated from {old_folder_name}"
-        )
-
-        return scan_id
 
     def _generate_book_slug(self, title: str) -> str:
         """
@@ -510,7 +457,7 @@ class LibraryIndex:
                 }
             }
         """
-        from utils import get_scan_total_cost, get_scan_models
+        from platform.metadata import get_scan_total_cost, get_scan_models
 
         issues = []
         stats = {

@@ -183,7 +183,7 @@ def test_add_multiple_scans_same_book(empty_library):
 
 def test_sync_scan_from_metadata(empty_library, tmp_path):
     """Test syncing scan data from metadata.json to library.json."""
-    from utils import update_book_metadata
+    from platform.metadata import update_book_metadata
 
     # Setup: Create a scan directory with metadata
     scan_id = "test-sync"
@@ -396,7 +396,7 @@ def test_validate_library_orphaned_scan_dir(empty_library):
 
 def test_validate_library_cost_mismatch(library_with_books):
     """Test validation detects cost mismatches."""
-    from utils import update_book_metadata
+    from platform.metadata import update_book_metadata
 
     # Create scan directory with processing history
     scan_dir = library_with_books.storage_root / "test-one"
@@ -423,7 +423,7 @@ def test_validate_library_cost_mismatch(library_with_books):
 
 def test_validate_library_model_mismatch(library_with_books):
     """Test validation detects model mismatches."""
-    from utils import update_book_metadata
+    from platform.metadata import update_book_metadata
 
     # Create scan directory with processing history
     scan_dir = library_with_books.storage_root / "test-one"
@@ -452,7 +452,7 @@ def test_validate_library_model_mismatch(library_with_books):
 
 def test_auto_fix_cost_mismatch(library_with_books):
     """Test auto-fix resolves cost mismatches."""
-    from utils import update_book_metadata
+    from platform.metadata import update_book_metadata
 
     # Create scan directory with processing history
     scan_dir = library_with_books.storage_root / "test-one"
