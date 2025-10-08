@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from platform.llm_client import LLMClient
 from platform.pricing import CostCalculator
 
-from config import Config
+from platform.config import Config
 
 
 def extract_book_metadata(pdf_path: Path) -> Optional[Dict[str, Any]]:

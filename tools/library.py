@@ -14,7 +14,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from contextlib import contextmanager
-from config import Config
+from platform.config import Config
 from tools.names import ensure_unique_scan_id
 
 

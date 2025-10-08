@@ -23,7 +23,7 @@ from pdf2image import convert_from_path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from platform.llm_client import LLMClient
 
-from config import Config
+from platform.config import Config
 from tools.library import LibraryIndex
 from tools.names import slugify_title, ensure_unique_slug
 

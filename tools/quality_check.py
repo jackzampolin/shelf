@@ -8,7 +8,7 @@ Analyzes OCR quality, correction accuracy, and structural completeness.
 import json
 from pathlib import Path
 from typing import Dict, Any, List
-from config import Config
+from platform.config import Config
 
 
 class QualityAssessment:
