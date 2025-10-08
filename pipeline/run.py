@@ -169,7 +169,10 @@ class BookPipeline:
 
         try:
             # Import and run OCR
-            from pipeline.ocr import BookOCRProcessor
+            # TODO: Update import after Issue #48 (OCR refactor)
+            import importlib
+            ocr_module = importlib.import_module('pipeline.1_ocr')
+            BookOCRProcessor = getattr(ocr_module, 'BookOCRProcessor')
 
             processor = BookOCRProcessor(storage_root=str(self.storage_root), max_workers=max_workers)
             processor.process_book(self.book_slug, resume=resume)
@@ -198,7 +201,10 @@ class BookPipeline:
 
         try:
             # Import and run correction
-            from pipeline.correct import StructuredPageCorrector
+            # TODO: Update import after Issue #49 (Correction refactor)
+            import importlib
+            correct_module = importlib.import_module('pipeline.2_correction')
+            StructuredPageCorrector = getattr(correct_module, 'StructuredPageCorrector')
 
             processor = StructuredPageCorrector(
                 self.book_slug,
@@ -235,135 +241,16 @@ class BookPipeline:
             self.logger.stage_end("correct", success=False, error=str(e))
             return False
 
-    def run_stage_fix(self, resume: bool = False):
-        """Stage 3: Agent 4 targeted fixes."""
-        self.logger.stage_start("fix")
+    # NOTE: Fix stage removed - functionality absorbed into enhanced Correction (Issue #49)
 
-        # Check if there are pages to fix
-        needs_review_dir = self.book_dir / "needs_review"
-        if not needs_review_dir.exists() or not list(needs_review_dir.glob("page_*.json")):
-            self.logger.log("No pages need review, skipping fix stage...")
-            self.logger.stage_end("fix", success=True)
-            return True
+    # NOTE: Structure stages (3-6) will be implemented in Issues #50-53
+    # New architecture:
+    #   Stage 3: Discovery (Issue #50)
+    #   Stage 4: Classification (Issue #51)
+    #   Stage 5: Stitching (Issue #52)
+    #   Stage 6: Assembly (Issue #53)
 
-        try:
-            # Import and run fix
-            from pipeline.fix import Agent4TargetedFix
-
-            agent4 = Agent4TargetedFix(self.book_slug)
-            agent4.process_all_flagged(resume=resume)
-
-            # Log cost from agent4 stats
-            if hasattr(agent4, 'stats'):
-                cost = agent4.stats.get('total_cost_usd', 0)
-                self.logger.log(f"Fix cost: ${cost:.4f}")
-
-                # Atomically update library
-                try:
-                    from tools.library import LibraryIndex
-                    library = LibraryIndex(storage_root=self.storage_root)
-                    with library.update_scan(self.book_slug) as scan:
-                        scan['status'] = 'fixed'
-                        scan['cost_usd'] = scan.get('cost_usd', 0.0) + cost
-                        if 'models' not in scan:
-                            scan['models'] = {}
-                        scan['models']['fix'] = agent4.model
-                    self.logger.log("Updated library with fix results")
-                except Exception as e:
-                    self.logger.log(f"Warning: Could not update library: {e}", level="WARNING")
-
-            self.logger.stage_end("fix", success=True)
-            return True
-
-        except Exception as e:
-            self.logger.log(f"Fix stage failed: {e}", level="ERROR")
-            self.logger.stage_end("fix", success=False, error=str(e))
-            return False
-
-    def run_stage_structure(self, model: str = "anthropic/claude-sonnet-4.5", resume: bool = False):
-        """Stage 4: Semantic structuring."""
-        self.logger.stage_start("structure")
-
-        # Check if already complete (simple resume: check if output exists)
-        if resume:
-            structured_dir = self.book_dir / "structured"
-            metadata_file = structured_dir / "metadata.json"
-            if metadata_file.exists():
-                self.logger.log("Structure already complete, skipping...")
-                self.logger.stage_end("structure", success=True)
-                return True
-
-        try:
-            # Import and run structure
-            from pipeline.structure import BookStructurer
-
-            structurer = BookStructurer(self.book_slug, model=model, storage_root=self.storage_root)
-            structurer.process_book()
-
-            # Log cost from structurer stats
-            if hasattr(structurer, 'stats'):
-                cost = structurer.stats.get('total_cost_usd', 0)
-                self.logger.log(f"Structure cost: ${cost:.4f}")
-
-                # Atomically update library
-                try:
-                    from tools.library import LibraryIndex
-                    library = LibraryIndex(storage_root=self.storage_root)
-                    with library.update_scan(self.book_slug) as scan:
-                        scan['status'] = 'structured'
-                        scan['cost_usd'] = scan.get('cost_usd', 0.0) + cost
-                        if 'models' not in scan:
-                            scan['models'] = {}
-                        scan['models']['structure'] = model
-                    self.logger.log("Updated library with structure results")
-                except Exception as e:
-                    self.logger.log(f"Warning: Could not update library: {e}", level="WARNING")
-
-            self.logger.stage_end("structure", success=True)
-            return True
-
-        except Exception as e:
-            self.logger.log(f"Structure stage failed: {e}", level="ERROR")
-            self.logger.stage_end("structure", success=False, error=str(e))
-            return False
-
-    def run_stage_quality(self, model: str = "anthropic/claude-sonnet-4.5"):
-        """Stage 5: LLM-based quality review."""
-        self.logger.stage_start("quality")
-
-        try:
-            # Import and run quality review
-            from pipeline.quality_review import QualityReview
-
-            reviewer = QualityReview(self.book_slug)
-            report = reviewer.run()
-
-            # Log cost and results
-            cost = report['cost_tracking']['total_cost_usd']
-            self.logger.log(f"Quality review cost: ${cost:.2f}")
-            self.logger.log(f"Overall grade: {report['overall_grade']} ({report['overall_score']}/100)")
-
-                # Atomically update library
-            try:
-                from tools.library import LibraryIndex
-                library = LibraryIndex(storage_root=self.storage_root)
-                with library.update_scan(self.book_slug) as scan:
-                    scan['status'] = 'quality_reviewed'
-                    scan['cost_usd'] = scan.get('cost_usd', 0.0) + cost
-                    if 'models' not in scan:
-                        scan['models'] = {}
-                    scan['models']['quality'] = model
-                self.logger.log("Updated library with quality review results")
-            except Exception as e:
-                self.logger.log(f"Warning: Could not update library: {e}", level="WARNING")
-
-            self.logger.stage_end("quality", success=True)
-            return True
-
-        except Exception as e:
-            self.logger.log(f"Quality review stage failed: {e}", level="ERROR")
-            self.logger.stage_end("quality", success=False, error=str(e))
-            return False
+    # NOTE: Quality review stage removed - will be revisited after refactor
 
     def run(self, stages: list = None, start_from: str = None,
             resume: bool = False,
@@ -375,7 +262,8 @@ class BookPipeline:
             quality_model: str = "anthropic/claude-sonnet-4.5"):
         """Run the complete pipeline or selected stages."""
 
-        available_stages = ['ocr', 'correct', 'fix', 'structure', 'quality']
+        # NOTE: Only OCR and Correction currently available during refactor
+        available_stages = ['ocr', 'correct']
 
         # Determine which stages to run
         if stages:
@@ -409,12 +297,7 @@ class BookPipeline:
                     rate_limit=correct_rate_limit,
                     resume=resume
                 )
-            elif stage == 'fix':
-                success = self.run_stage_fix(resume=resume)
-            elif stage == 'structure':
-                success = self.run_stage_structure(model=structure_model, resume=resume)
-            elif stage == 'quality':
-                success = self.run_stage_quality(model=quality_model)
+            # NOTE: Other stages removed/not yet implemented during refactor
 
             if not success:
                 self.logger.log(f"Pipeline stopped due to {stage} failure", level="ERROR")
