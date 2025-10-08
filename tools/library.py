@@ -14,7 +14,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from contextlib import contextmanager
-from platform.config import Config
+from infra.config import Config
 
 
 class LibraryIndex:
@@ -253,7 +253,7 @@ class LibraryIndex:
         Args:
             scan_id: Scan identifier
         """
-        from platform.metadata import get_scan_total_cost, get_scan_models
+        from infra.metadata import get_scan_total_cost, get_scan_models
 
         scan_dir = self.storage_root / scan_id
         if not scan_dir.exists():
@@ -457,7 +457,7 @@ class LibraryIndex:
                 }
             }
         """
-        from platform.metadata import get_scan_total_cost, get_scan_models
+        from infra.metadata import get_scan_total_cost, get_scan_models
 
         issues = []
         stats = {

@@ -21,3 +21,6 @@ dependencies = [
 
 [project.scripts]
 ar = "ar:main"
+
+[tool.setuptools.packages.find]
+include = ["infra*", "pipeline*", "tools*"]

@@ -241,7 +241,7 @@ class PipelineMonitor:
         - Progress percentage: Count actual files on disk (real-time for in-progress stages)
         - Cost & timing: From checkpoint (accurate tracking)
         """
-        from platform.checkpoint import CheckpointManager
+        from infra.checkpoint import CheckpointManager
         from datetime import datetime
         import os
 

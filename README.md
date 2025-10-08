@@ -2,10 +2,7 @@
 
 > **⚠️ REFACTOR IN PROGRESS**
 >
-> This branch (`refactor/pipeline-redesign`) is undergoing a major pipeline refactor.
-> See [Issue #56](https://github.com/jackzampolin/scanshelf/issues/56) for the refactor plan.
->
-> **Documentation:** [docs/standards/](docs/standards/) contains production patterns for all pipeline stages.
+> Branch: `refactor/pipeline-redesign` | [Issue #56](https://github.com/jackzampolin/scanshelf/issues/56)
 
 ---
 
@@ -26,39 +23,49 @@ cp .env.example .env
 # Add your OPENROUTER_API_KEY
 
 # Verify
-ar --help
+uv run python ar.py --help
 ```
 
 ---
 
-## Basic Usage
+## Usage
+
+All commands use `uv run python ar.py`:
 
 ```bash
-# Add a book
-ar add ~/Documents/Scans/book.pdf
+# Library management
+uv run python ar.py library list              # View books
+uv run python ar.py library show <scan-id>    # Book details
 
-# Process through available stages
-ar ocr <scan-id>
-ar correct <scan-id>
-ar fix <scan-id>
+# Add books (temporary)
+uv run python tools/ingest.py ~/Documents/Scans/book.pdf
 
-# Monitor progress
-ar status <scan-id> --watch
+# Process pipeline stages
+uv run python ar.py ocr <scan-id>         # Stage 1: OCR
+uv run python ar.py correct <scan-id>     # Stage 2: Correction
+```
 
-# View library
-ar library list
-ar library show <scan-id>
+**Status:** Infrastructure and OCR/Correction stages active. Other stages coming in #48-54.
+
+---
+
+## Testing
+
+```bash
+# Run all tests
+uv run python -m pytest tests/ -v
+
+# Run specific modules
+uv run python -m pytest tests/infra/ -v
+uv run python -m pytest tests/tools/ -v
 ```
 
 ---
 
 ## Documentation
 
-**For refactor work:**
-- [docs/standards/](docs/standards/) - Production patterns and standards
-- [CLAUDE.md](CLAUDE.md) - AI assistant workflow
-
-**For users:**
+- [docs/standards/](docs/standards/) - Production patterns
+- [CLAUDE.md](CLAUDE.md) - AI workflow guide
 - [docs/MCP_SETUP.md](docs/MCP_SETUP.md) - Claude Desktop integration
 
 ---

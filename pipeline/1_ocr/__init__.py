@@ -20,8 +20,8 @@ import threading
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from platform.logger import create_logger
-from platform.checkpoint import CheckpointManager
+from infra.logger import create_logger
+from infra.checkpoint import CheckpointManager
 
 
 class BlockClassifier:

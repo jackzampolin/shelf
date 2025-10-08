@@ -21,9 +21,9 @@ from pdf2image import convert_from_path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from platform.llm_client import LLMClient
+from infra.llm_client import LLMClient
 
-from platform.config import Config
+from infra.config import Config
 from tools.library import LibraryIndex
 
 
