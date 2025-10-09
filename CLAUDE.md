@@ -4,19 +4,23 @@
 
 **Branch:** `refactor/pipeline-redesign`
 **Meta Issue:** [#56 - Pipeline Refactor](https://github.com/jackzampolin/scanshelf/issues/56)
-**Source of Truth:** `docs/standards/` (production patterns extracted from existing stages)
+**Architecture & Principles:** See Issue #56 for full context
+**Production Patterns:** `docs/standards/` (checkpointing, logging, LLM integration, etc.)
 
 ### Multi-Session Refactor Workflow
 
 **Starting a refactor session:**
-1. Check [Issue #56](https://github.com/jackzampolin/scanshelf/issues/56) for overall progress
-2. Find the next unchecked issue in the checklist (#48-54)
-3. Read the issue description and acceptance criteria
+1. Check [Issue #56](https://github.com/jackzampolin/scanshelf/issues/56) for:
+   - Architecture principles (leverage labels, page mapping, etc.)
+   - Current progress (which issues complete/pending)
+   - Stage flow and cost expectations
+2. Pick the next unchecked issue (#57-61)
+3. Read the issue for specific implementation guidance
 4. Review relevant patterns from `docs/standards/` (see [README](docs/standards/README.md))
 
 **During implementation:**
 - Build schemas **iteratively** from observed data (no upfront design)
-- Test on actual book data at each stage
+- Test on actual book data (`accidental-president`) at each stage
 - Reference `docs/standards/` for mandatory patterns
 - Follow [Production Checklist](docs/standards/09_production_checklist.md)
 
@@ -28,8 +32,8 @@
 
 **Key Refactor Principles:**
 - **Test-book-driven:** Run on real data, observe, then formalize
+- **No speculative design:** Schemas emerge from implementation, not docs
 - **Preserve patterns:** Use existing checkpoint, logging, cost tracking patterns
-- **Schema discovery:** Build schemas from what we see, not what we imagine
 - **Incremental:** Each issue is independently testable
 
 ---
@@ -202,7 +206,9 @@ Core labels:
 ## Project-Specific Notes
 
 ### Architecture
-Book processing pipeline: `PDF → OCR → LLM Correction → Discovery → Classification → Assembly`
+Book processing pipeline: `PDF → OCR → LLM Correction → Merge & Enrich → Structure Detection → Chunk Assembly`
+
+**Current architecture (stages 3-5):** See [Issue #56](https://github.com/jackzampolin/scanshelf/issues/56) for principles and stage flow
 
 ### Key Concepts
 - **Library:** `~/Documents/book_scans/library.json` - catalog of all books
@@ -222,10 +228,12 @@ This pipeline costs money (OpenRouter API). Be mindful:
 
 ### Current State
 - ✅ Infrastructure (`infra/`) - Complete and tested
-- ✅ OCR and Correction stages - Active
-- 🚧 Discovery/Classification/Assembly - Being refactored (Issues #48-54)
+- ✅ Stages 0-2 (Ingest, OCR, Correction) - Complete
+- 🚧 Stages 3-5 (Merge, Structure, Chunks) - Implementation in progress
 
 **For current implementation details, see:**
+- [Issue #56](https://github.com/jackzampolin/scanshelf/issues/56) - Architecture & principles
+- Issues #57-61 - Individual stage implementations
 - `README.md` - Usage and commands
 - `docs/standards/` - Production patterns
 - Code itself - The source of truth
