@@ -10,12 +10,13 @@
 
 This directory contains focused documentation on the **battle-tested patterns** from our existing pipeline (OCR, Correct, Fix, Structure). These patterns **must be preserved** during refactoring.
 
-These standards were extracted from:
-- `pipeline/ocr.py` (657 lines)
-- `pipeline/correct.py` (986 lines)
-- `pipeline/fix.py` (524 lines)
-- `pipeline/structure/` (2-phase architecture)
+These standards were extracted from **pre-refactor** production code:
+- Old `pipeline/ocr.py`, `correct.py`, `fix.py` (now refactored → `1_ocr/`, `2_correction/`)
+- Old `pipeline/structure/` (removed - future design TBD)
 - Supporting utilities: `checkpoint.py`, `llm_client.py`, `logger.py`, `pricing.py`, `utils/parallel.py`
+
+**Note**: While specific file references are now obsolete, the **patterns** remain valid.
+The refactored stages (0_ingest, 1_ocr, 2_correction) implement these same patterns.
 
 ---
 

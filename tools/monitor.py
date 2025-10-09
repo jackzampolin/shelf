@@ -336,15 +336,6 @@ class PipelineMonitor:
         elif stage == 'correction':
             output_dir = self.book_dir / 'corrected'
             pattern = 'page_*.json'
-        elif stage == 'fix':
-            output_dir = self.book_dir / 'corrected'
-            pattern = 'page_*.json'
-        elif stage == 'extract':
-            output_dir = self.book_dir / 'structured' / 'extraction'
-            pattern = 'batch_*.json'  # Track batch files
-        elif stage == 'assemble':
-            output_dir = self.book_dir / 'structured'
-            pattern = None  # Will check for final outputs
         else:
             output_dir = None
             pattern = None
@@ -354,39 +345,11 @@ class PipelineMonitor:
             if pattern:
                 completed_files = list(output_dir.glob(pattern))
                 progress_current = len(completed_files)
-            elif stage == 'extract':
-                # For extract, check extraction metadata for total batches
-                metadata_file = output_dir / 'metadata.json'
-                if metadata_file.exists():
-                    try:
-                        import json
-                        with open(metadata_file) as f:
-                            metadata = json.load(f)
-                            progress_total = metadata.get('total_batches', 0)
-                    except:
-                        pass
-            elif stage == 'assemble':
-                # For assemble, check if final outputs exist
-                if (output_dir / 'archive' / 'full_book.md').exists():
-                    progress_current = 1
-                    progress_total = 1
-                    progress_percent = 100.0
 
         # Get total pages from checkpoint or metadata
         if progress_total == 0:
-            # For extract stage, look for total_batches in checkpoint metadata
-            if stage == 'extract':
-                total_batches = metadata.get('total_batches', 0)
-                completed_batches = metadata.get('completed_batches', 0)
-                if total_batches > 0:
-                    progress_total = total_batches
-                    # Use checkpoint's completed_batches if available (more accurate than file count)
-                    if completed_batches > 0:
-                        progress_current = completed_batches
-
-            # First try checkpoint
-            if progress_total == 0:
-                progress_total = checkpoint_state.get('total_pages', 0)
+            # Try checkpoint first
+            progress_total = checkpoint_state.get('total_pages', 0)
 
             # If not in checkpoint, try metadata.json
             if progress_total == 0:
@@ -416,7 +379,7 @@ class PipelineMonitor:
                         pass
 
         # Calculate percentage
-        if progress_total > 0 and stage != 'structure':
+        if progress_total > 0:
             progress_percent = (progress_current / progress_total) * 100
 
         # Get logs for errors/warnings (only if stage is not complete)
@@ -445,8 +408,7 @@ class PipelineMonitor:
 
     def get_all_stages_status(self) -> Dict[str, StageStatus]:
         """Get status for all pipeline stages."""
-        # Separate extract/assemble instead of combined structure
-        stages = ['ocr', 'correction', 'fix', 'extract', 'assemble']
+        stages = ['ocr', 'correction']
         return {stage: self.get_stage_status(stage) for stage in stages}
 
     def calculate_eta(self, stage_status: StageStatus) -> Optional[str]:
@@ -553,12 +515,6 @@ class PipelineMonitor:
                     model_str = f" [{model_short}]"
 
                 status_line = f"{icon} {display_name} Complete ({duration_str}) - {cost_str}{model_str}"
-
-                # Add failure count for extract stage if any batches failed
-                if stage_name == 'extract':
-                    failed_batches = stage_status.metadata.get('failed_batches', 0)
-                    if failed_batches > 0:
-                        status_line += f" - ⚠️ {failed_batches} failed"
             else:  # in_progress
                 if stage_status.progress_total > 0:
                     status_line = f"{icon} {display_name} {stage_status.progress_current}/{stage_status.progress_total} ({stage_status.progress_percent:.1f}%)"
@@ -567,12 +523,6 @@ class PipelineMonitor:
                     eta = self.calculate_eta(stage_status)
                     if eta:
                         status_line += f" - ETA: {eta}"
-
-                    # Add failure indicator if applicable (for extract stage)
-                    if stage_name == 'extract':
-                        failed_batches = stage_status.metadata.get('failed_batches', 0)
-                        if failed_batches > 0:
-                            status_line += f" - ⚠️ {failed_batches} failed"
 
                     # Add cost if present
                     if stage_status.cost_usd > 0:

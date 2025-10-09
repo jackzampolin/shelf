@@ -57,7 +57,7 @@ class CheckpointManager:
 
         Args:
             scan_id: Scan identifier (e.g., "modest-lovelace")
-            stage: Pipeline stage (e.g., "ocr", "correction", "fix", "structure")
+            stage: Pipeline stage (e.g., "ocr", "correction")
             storage_root: Base directory (default: ~/Documents/book_scans)
             output_dir: Output directory name for validation (auto-detected if None)
             file_pattern: Output file pattern (default: page_{:04d}.json)
@@ -87,9 +87,7 @@ class CheckpointManager:
         """Auto-detect output directory based on stage."""
         mapping = {
             "ocr": "ocr",
-            "correction": "corrected",
-            "fix": "corrected",  # Fix updates corrected files
-            "structure": "structured"
+            "correction": "corrected"
         }
         return mapping.get(stage, stage)
 
@@ -213,16 +211,6 @@ class CheckpointManager:
                 return ('page_number' in data and
                         'blocks' in data and
                         isinstance(data['blocks'], list))
-
-            elif self.stage == "fix":
-                # Fix output must have llm_processing with agent4_fixes
-                # (even if no fixes were needed, the field should exist)
-                return ('llm_processing' in data and
-                        'agent4_fixes' in data.get('llm_processing', {}))
-
-            elif self.stage == "structure":
-                # Structure metadata must have chapters
-                return 'chapters' in data and isinstance(data['chapters'], list)
 
             else:
                 # Fallback for unknown stages - just check non-empty

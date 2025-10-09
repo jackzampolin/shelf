@@ -127,8 +127,10 @@ You are an elite codebase analyst specializing in comprehensive code archaeology
 ## Project-Specific Context
 
 For this Scanshelf codebase:
-- Understand the pipeline architecture (OCR → Correct → Fix → Structure)
-- Recognize data flow patterns (pages → chapters → chunks)
+- Understand the pipeline architecture (Ingest → OCR → Correction → [Structure TBD])
+- Current stages: 0_ingest, 1_ocr, 2_correction (refactored design)
+- Future stages under redesign (see Issue #56)
+- Recognize data flow patterns (PDF → pages → [structure TBD])
 - Consider cost implications for LLM-based operations
 - Respect the library.json as single source of truth
 - Follow established file naming conventions
