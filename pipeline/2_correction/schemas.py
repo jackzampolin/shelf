@@ -51,25 +51,17 @@ class BlockType(str, Enum):
     OTHER = "OTHER"  # Catch-all
 
 
-class TextFix(BaseModel):
-    """Details about a specific text correction."""
-
-    original: str = Field(..., description="Original incorrect text")
-    corrected: str = Field(..., description="Corrected text")
-    reason: str = Field(..., description="Reason for correction (e.g., 'OCR artifact', 'hyphenation')")
-
-
 class ParagraphCorrection(BaseModel):
     """Correction information for a single paragraph."""
 
     par_num: int = Field(..., ge=1, description="Paragraph number within block (matches OCR)")
 
-    # Only present if corrections were made
-    corrected_text: Optional[str] = Field(None, description="Corrected text (omit if no errors found)")
-    corrections: Optional[List[TextFix]] = Field(None, description="List of specific fixes made")
+    # Only present if corrections were made - outputs FULL corrected paragraph text
+    text: Optional[str] = Field(None, description="Full corrected paragraph text (omit if no errors found)")
+    notes: Optional[str] = Field(None, description="Brief explanation of changes made (e.g., 'Fixed hyphenation, 2 OCR errors')")
 
-    # Confidence in the correction (1.0 if no changes needed)
-    correction_confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in correction quality")
+    # Confidence in the text quality (1.0 if no changes needed)
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in text quality")
 
 
 class BlockClassification(BaseModel):
@@ -98,6 +90,6 @@ class CorrectionPageOutput(BaseModel):
 
     # Summary statistics
     total_blocks: int = Field(..., ge=0, description="Total number of blocks classified")
-    total_corrections: int = Field(..., ge=0, description="Total number of corrections made")
+    total_corrections: int = Field(..., ge=0, description="Total number of paragraphs corrected")
     avg_classification_confidence: float = Field(..., ge=0.0, le=1.0, description="Average classification confidence")
-    avg_correction_confidence: float = Field(..., ge=0.0, le=1.0, description="Average correction confidence")
+    avg_confidence: float = Field(..., ge=0.0, le=1.0, description="Average text confidence")

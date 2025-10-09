@@ -295,13 +295,28 @@ def cmd_status(args):
             icon = "○"
             print(f"{icon} {display_name} Not started")
         elif stage_status == 'completed':
-            icon = "✅"
-            pct_str = "100.0%"
+            # Calculate failures
+            total_pages = status.get('total_pages', 0)
+            completed_pages = len(status.get('completed_pages', []))
+            failed_pages = total_pages - completed_pages
+
+            # Choose icon based on failures
+            if failed_pages > 0:
+                icon = "⚠️ "
+                success_pct = (completed_pages / total_pages * 100) if total_pages > 0 else 100.0
+                pct_str = f"{success_pct:.1f}%"
+            else:
+                icon = "✅"
+                pct_str = "100.0%"
+
             duration_str = format_duration(duration) if duration else "N/A"
             cost_str = f"${cost:.2f}" if cost > 0 else "$0.00"
 
             # Columns: stage | % | time | cost
-            print(f"{icon} {display_name} {pct_str:>6}  {duration_str:>8}  {cost_str:>7}")
+            status_line = f"{icon} {display_name} {pct_str:>6}  {duration_str:>8}  {cost_str:>7}"
+            if failed_pages > 0:
+                status_line += f"  ({failed_pages} failed)"
+            print(status_line)
 
             total_cost += cost
             if duration:
