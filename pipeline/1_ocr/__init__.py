@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Book OCR Processor - Enhanced with Layout Analysis
-Extracts structured text with images, captions, headers, and footers
+Book OCR Processor
+Extracts hierarchical text blocks (Tesseract) and image regions (OpenCV)
 """
 
 import json
@@ -27,46 +27,6 @@ from infra.checkpoint import CheckpointManager
 import importlib
 schemas_module = importlib.import_module('pipeline.1_ocr.schemas')
 OCRPageOutput = schemas_module.OCRPageOutput
-
-
-class BlockClassifier:
-    """Classifies text blocks by type based on position and content."""
-
-    @staticmethod
-    def classify(bbox, text, page_width, page_height):
-        """
-        Classify a text block as header, footer, caption, or body.
-
-        Args:
-            bbox: (x, y, width, height) bounding box
-            text: The text content
-            page_width, page_height: Page dimensions
-
-        Returns:
-            str: Block type ('header', 'footer', 'caption', 'body')
-        """
-        x, y, w, h = bbox
-
-        # Header: top 8% of page
-        if y < page_height * 0.08:
-            return "header"
-
-        # Footer: bottom 5% of page
-        if y + h > page_height * 0.95:
-            return "footer"
-
-        # Caption heuristics:
-        # - ALL CAPS (common for photo credits)
-        # - Contains certain keywords
-        # - Very short text
-        text_upper = text.strip()
-        if text_upper.isupper() and len(text_upper) > 5:
-            caption_keywords = ['LIBRARY', 'MUSEUM', 'ARCHIVES', 'COLLECTION', 'GETTY', 'PHOTO']
-            if any(kw in text_upper for kw in caption_keywords):
-                return "caption"
-
-        # Default: body text
-        return "body"
 
 
 class ImageDetector:
@@ -127,54 +87,8 @@ class ImageDetector:
         return image_boxes
 
 
-class LayoutAnalyzer:
-    """Analyzes page layout and associates captions with images."""
-
-    @staticmethod
-    def associate_captions(caption_blocks, image_blocks, proximity=100):
-        """
-        Associate caption blocks with nearby image blocks.
-
-        Args:
-            caption_blocks: List of caption block dicts with 'bbox'
-            image_blocks: List of image block dicts with 'bbox'
-            proximity: Maximum distance in pixels to associate
-
-        Returns:
-            Dict mapping caption IDs to image IDs
-        """
-        associations = {}
-
-        for caption in caption_blocks:
-            cx, cy, cw, ch = caption['bbox']
-            caption_center_y = cy + ch / 2
-
-            closest_image = None
-            closest_dist = float('inf')
-
-            for image in image_blocks:
-                ix, iy, iw, ih = image['bbox']
-
-                # Check if caption is above or below image
-                if cy + ch < iy:  # Caption above image
-                    dist = iy - (cy + ch)
-                elif cy > iy + ih:  # Caption below image
-                    dist = cy - (iy + ih)
-                else:  # Overlapping vertically (side by side - unlikely for captions)
-                    continue
-
-                if dist < proximity and dist < closest_dist:
-                    closest_dist = dist
-                    closest_image = image
-
-            if closest_image:
-                associations[caption['id']] = closest_image['id']
-
-        return associations
-
-
 class BookOCRProcessor:
-    """Enhanced OCR processor with layout analysis."""
+    """OCR processor with hierarchical text extraction and image detection."""
 
     def __init__(self, storage_root=None, max_workers=8, enable_checkpoints=True):
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
@@ -218,6 +132,9 @@ class BookOCRProcessor:
         # Create output directories
         ocr_dir = book_dir / "ocr"
         ocr_dir.mkdir(exist_ok=True)
+
+        needs_review_dir = book_dir / "ocr" / "needs_review"
+        needs_review_dir.mkdir(exist_ok=True)
 
         images_dir = book_dir / "images"
         images_dir.mkdir(exist_ok=True)
@@ -264,8 +181,25 @@ class BookOCRProcessor:
                 self.logger.error(f"No PDFs found in source directory", source_dir=str(source_dir))
                 return
 
+            # Count total pages across all PDFs upfront
+            self.logger.info(f"Counting pages in {len(pdf_files)} PDFs...")
+            pdf_page_counts = []
+            total_book_pages = 0
+            for pdf_path in pdf_files:
+                try:
+                    # Quick page count without loading images
+                    from pdf2image.pdf2image import pdfinfo_from_path
+                    info = pdfinfo_from_path(pdf_path)
+                    page_count = info['Pages']
+                    pdf_page_counts.append(page_count)
+                    total_book_pages += page_count
+                except Exception as e:
+                    self.logger.warning(f"Could not count pages in {pdf_path.name}", error=str(e))
+                    pdf_page_counts.append(0)
+
             self.logger.start_stage(
                 pdfs=len(pdf_files),
+                total_pages=total_book_pages,
                 mode="simple",
                 max_workers=self.max_workers
             )
@@ -283,7 +217,8 @@ class BookOCRProcessor:
                     ocr_dir,
                     images_dir,
                     page_start=page_offset + 1,
-                    page_end=None  # Will be determined during processing
+                    page_end=None,  # Will be determined during processing
+                    total_book_pages=total_book_pages  # For overall progress
                 )
 
                 total_pages += pages_processed
@@ -292,15 +227,13 @@ class BookOCRProcessor:
         # Mark stage complete in checkpoint (saves pending pages + sets status)
         if self.checkpoint:
             self.checkpoint.mark_stage_complete(metadata={
-                "total_pages_processed": total_pages,
-                "ocr_mode": "structured"
+                "total_pages_processed": total_pages
             })
 
         # Update metadata
         metadata['ocr_complete'] = True
         metadata['ocr_completion_date'] = datetime.now().isoformat()
         metadata['total_pages_processed'] = total_pages
-        metadata['ocr_mode'] = 'structured'
 
         with open(metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
@@ -317,7 +250,7 @@ class BookOCRProcessor:
         print(f"   Output: {ocr_dir}")
         print(f"   Images: {images_dir}")
 
-    def process_batch(self, pdf_path, batch_num, ocr_dir, images_dir, page_start, page_end):
+    def process_batch(self, pdf_path, batch_num, ocr_dir, images_dir, page_start, page_end, total_book_pages=None):
         """Process a single PDF batch with layout analysis."""
         self.logger.info(f"Starting batch {batch_num}: {pdf_path.name}", batch=batch_num, pdf=pdf_path.name)
 
@@ -361,6 +294,7 @@ class BookOCRProcessor:
                 'index': i,
                 'total': num_pages,
                 'batch_ocr_dir': batch_ocr_dir,
+                'needs_review_dir': batch_ocr_dir / "needs_review",
                 'images_dir': images_dir
             })
 
@@ -396,14 +330,27 @@ class BookOCRProcessor:
                 # Progress update
                 with self.progress_lock:
                     progress_count = completed + errors
-                    self.logger.progress(
-                        f"Batch {batch_num} progress",
-                        current=progress_count,
-                        total=num_pages,
-                        batch=batch_num,
-                        completed=completed,
-                        errors=errors
-                    )
+                    # If we know total book pages, show overall progress
+                    if total_book_pages:
+                        current_page = task['page_number']
+                        self.logger.progress(
+                            f"Processing book",
+                            current=current_page,
+                            total=total_book_pages,
+                            page=current_page,
+                            completed=completed + (page_start - 1),
+                            errors=errors
+                        )
+                    else:
+                        # Fallback to batch progress
+                        self.logger.progress(
+                            f"Batch {batch_num} progress",
+                            current=progress_count,
+                            total=num_pages,
+                            batch=batch_num,
+                            completed=completed,
+                            errors=errors
+                        )
 
         self.logger.info(f"Batch {batch_num} complete", batch=batch_num, completed=completed, total=num_pages)
         print(f"   ✅ Batch {batch_num} complete: {completed}/{num_pages} pages\n")
@@ -429,15 +376,25 @@ class BookOCRProcessor:
                 # Convert back to dict for JSON serialization
                 page_data = validated_page.model_dump()
             except Exception as validation_error:
+                # Save invalid output to needs_review for debugging
+                needs_review_file = task['needs_review_dir'] / f"page_{task['page_number']:04d}.json"
+                with open(needs_review_file, 'w', encoding='utf-8') as f:
+                    json.dump({
+                        'page_number': task['page_number'],
+                        'validation_error': str(validation_error),
+                        'raw_output': page_data
+                    }, f, indent=2)
+
                 if self.logger:
                     self.logger.error(
-                        f"Schema validation failed",
+                        f"Schema validation failed - saved to needs_review/",
                         page=task['page_number'],
-                        error=str(validation_error)
+                        error=str(validation_error),
+                        needs_review_file=str(needs_review_file)
                     )
                 raise ValueError(f"OCR output failed schema validation: {validation_error}") from validation_error
 
-            # Save structured JSON (now schema-validated)
+            # Save validated JSON
             json_file = task['batch_ocr_dir'] / f"page_{task['page_number']:04d}.json"
             with open(json_file, 'w', encoding='utf-8') as f:
                 json.dump(page_data, f, indent=2)
@@ -455,101 +412,78 @@ class BookOCRProcessor:
 
     def process_page(self, pil_image, page_number, images_dir):
         """
-        Process a single page with full layout analysis.
+        Process a single page - extract hierarchical text blocks and images.
 
         Returns:
-            dict: Structured page data with regions
+            dict: Structured page data matching OCRPageOutput schema
         """
         width, height = pil_image.size
 
         # Step 1: Get TSV output from Tesseract
         tsv_output = pytesseract.image_to_data(pil_image, lang='eng', output_type=pytesseract.Output.STRING)
 
-        # Step 2: Parse TSV into text blocks
-        text_blocks = self._parse_tsv(tsv_output, width, height)
+        # Step 2: Parse TSV into hierarchical blocks
+        blocks_data = self._parse_tesseract_hierarchy(tsv_output)
 
         # Step 3: Detect image regions
-        text_boxes = [b['bbox'] for b in text_blocks]
+        # Collect all paragraph bboxes for image detection
+        text_boxes = []
+        for block in blocks_data:
+            for para in block['paragraphs']:
+                text_boxes.append(para['bbox'])
+
         image_boxes = ImageDetector.detect_images(pil_image, text_boxes)
 
-        # Step 4: Create region list
-        regions = []
-        next_id = 1
-
-        # Add text blocks
-        for block in text_blocks:
-            regions.append({
-                'id': next_id,
-                'type': block['type'],
-                'bbox': block['bbox'],
-                'text': block['text'],
-                'confidence': block['confidence'],
-                'reading_order': next_id
-            })
-            next_id += 1
-
-        # Add image blocks
-        for img_box in image_boxes:
+        # Step 4: Create image regions
+        images = []
+        for img_id, img_box in enumerate(image_boxes, 1):
             # Crop and save image
             x, y, w, h = img_box
             cropped = pil_image.crop((x, y, x + w, y + h))
-            img_filename = f"page_{page_number:04d}_img_{next_id:03d}.png"
+            img_filename = f"page_{page_number:04d}_img_{img_id:03d}.png"
             img_path = images_dir / img_filename
             cropped.save(img_path)
 
-            regions.append({
-                'id': next_id,
-                'type': 'image',
+            images.append({
+                'image_id': img_id,
                 'bbox': list(img_box),
-                'image_file': img_filename,
-                'reading_order': next_id
+                'image_file': img_filename
             })
-            next_id += 1
-
-        # Step 5: Associate captions with images
-        caption_blocks = [r for r in regions if r['type'] == 'caption']
-        image_blocks = [r for r in regions if r['type'] == 'image']
-        associations = LayoutAnalyzer.associate_captions(caption_blocks, image_blocks)
-
-        # Add associations to caption blocks
-        for region in regions:
-            if region['type'] == 'caption' and region['id'] in associations:
-                region['associated_image'] = associations[region['id']]
-
-        # Step 6: Sort by reading order (top to bottom, left to right)
-        regions.sort(key=lambda r: (r['bbox'][1], r['bbox'][0]))
-        for i, region in enumerate(regions, 1):
-            region['reading_order'] = i
 
         return {
             'page_number': page_number,
             'page_dimensions': {'width': width, 'height': height},
             'ocr_timestamp': datetime.now().isoformat(),
-            'ocr_mode': 'structured',
-            'regions': regions
+            'blocks': blocks_data,
+            'images': images
         }
 
-    def _parse_tsv(self, tsv_string, page_width, page_height):
+    def _parse_tesseract_hierarchy(self, tsv_string):
         """
-        Parse Tesseract TSV output into text blocks.
+        Parse Tesseract TSV into hierarchical blocks->paragraphs structure.
+
+        This preserves Tesseract's spatial layout analysis:
+        - Blocks: isolated regions (headers/footers) or continuous regions (body)
+        - Paragraphs: grouped text within blocks
 
         Returns:
-            List of dicts with 'bbox', 'text', 'confidence', 'type'
+            List of block dicts with nested paragraphs
         """
         # IMPORTANT: Use QUOTE_NONE because Tesseract TSV contains unescaped quotes
-        # which cause csv.DictReader to incorrectly parse multi-line quoted fields
         reader = csv.DictReader(io.StringIO(tsv_string), delimiter='\t', quoting=csv.QUOTE_NONE)
 
-        # Group by paragraph
-        paragraphs = {}
+        # Group by block_num -> par_num (preserving Tesseract hierarchy)
+        blocks = {}
+
         for row in reader:
             try:
                 level = int(row['level'])
                 if level != 5:  # We want word level (5)
                     continue
 
+                block_num = int(row['block_num'])
                 par_num = int(row['par_num'])
-                conf = float(row['conf'])  # Fixed: conf is a float, not int
+                conf = float(row['conf'])
                 text = row['text'].strip()
 
                 if conf < 0 or not text:
@@ -560,17 +494,28 @@ class BookOCRProcessor:
                 width = int(row['width'])
                 height = int(row['height'])
 
-                if par_num not in paragraphs:
-                    paragraphs[par_num] = {
+                # Initialize block
+                if block_num not in blocks:
+                    blocks[block_num] = {
+                        'block_num': block_num,
+                        'paragraphs': {}
+                    }
+
+                block = blocks[block_num]
+
+                # Initialize paragraph within block
+                if par_num not in block['paragraphs']:
+                    block['paragraphs'][par_num] = {
+                        'par_num': par_num,
                         'words': [],
+                        'confidences': [],
                         'min_x': left,
                         'min_y': top,
                         'max_x': left + width,
-                        'max_y': top + height,
-                        'confidences': []
+                        'max_y': top + height
                     }
 
-                para = paragraphs[par_num]
+                para = block['paragraphs'][par_num]
                 para['words'].append(text)
                 para['confidences'].append(conf)
                 para['min_x'] = min(para['min_x'], left)
@@ -581,51 +526,57 @@ class BookOCRProcessor:
             except (ValueError, KeyError):
                 continue
 
-        # Convert paragraphs to blocks
-        blocks = []
-        for par_num, para in paragraphs.items():
-            text = ' '.join(para['words'])
-            bbox = [
-                para['min_x'],
-                para['min_y'],
-                para['max_x'] - para['min_x'],
-                para['max_y'] - para['min_y']
+        # Convert to list format and calculate final bboxes
+        blocks_list = []
+
+        for block_num, block in blocks.items():
+            paragraphs_list = []
+
+            for par_num, para in block['paragraphs'].items():
+                if not para['words']:
+                    continue
+
+                # Calculate paragraph bbox and text
+                para_bbox = [
+                    para['min_x'],
+                    para['min_y'],
+                    para['max_x'] - para['min_x'],
+                    para['max_y'] - para['min_y']
+                ]
+                para_text = ' '.join(para['words'])
+                para_conf = sum(para['confidences']) / len(para['confidences']) / 100.0
+
+                paragraphs_list.append({
+                    'par_num': par_num,
+                    'bbox': para_bbox,
+                    'text': para_text,
+                    'avg_confidence': round(para_conf, 3)
+                })
+
+            if not paragraphs_list:
+                continue
+
+            # Calculate block bbox from all paragraphs
+            all_bboxes = [p['bbox'] for p in paragraphs_list]
+            xs = [bbox[0] for bbox in all_bboxes]
+            ys = [bbox[1] for bbox in all_bboxes]
+            x2s = [bbox[0] + bbox[2] for bbox in all_bboxes]
+            y2s = [bbox[1] + bbox[3] for bbox in all_bboxes]
+
+            block_bbox = [
+                min(xs),
+                min(ys),
+                max(x2s) - min(xs),
+                max(y2s) - min(ys)
             ]
-            confidence = sum(para['confidences']) / len(para['confidences']) / 100.0
 
-            block_type = BlockClassifier.classify(bbox, text, page_width, page_height)
-
-            blocks.append({
-                'bbox': bbox,
-                'text': text,
-                'confidence': round(confidence, 3),
-                'type': block_type
+            blocks_list.append({
+                'block_num': block_num,
+                'bbox': block_bbox,
+                'paragraphs': paragraphs_list
             })
 
-        return blocks
-
-    def list_books(self):
-        """List all books available for OCR processing."""
-        books = []
-        for book_dir in self.storage_root.iterdir():
-            if book_dir.is_dir():
-                metadata_file = book_dir / "metadata.json"
-                if metadata_file.exists():
-                    with open(metadata_file) as f:
-                        metadata = json.load(f)
-                        books.append(metadata)
-
-        print("\n📚 Books available for OCR:")
-        for book in books:
-            ocr_status = "✅ Complete" if book.get('ocr_complete') else "⏳ Pending"
-            ocr_mode = book.get('ocr_mode', 'plain')
-            print(f"{ocr_status} {book['title']} (mode: {ocr_mode})")
-            print(f"         {len(book['batches'])} batches, ~{book['total_pages']} pages")
-            if book.get('ocr_complete'):
-                print(f"         Processed: {book.get('total_pages_processed', 0)} pages")
-            print()
-
-        return books
+        return blocks_list
 
     def clean_stage(self, scan_id: str, confirm: bool = False):
         """
@@ -691,7 +642,6 @@ class BookOCRProcessor:
             metadata['ocr_complete'] = False
             metadata.pop('ocr_completion_date', None)
             metadata.pop('total_pages_processed', None)
-            metadata.pop('ocr_mode', None)
 
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
@@ -700,51 +650,3 @@ class BookOCRProcessor:
 
         print(f"\n✅ OCR stage cleaned for {scan_id}")
         return True
-
-
-def interactive_mode():
-    """Simple CLI for OCR processing."""
-    processor = BookOCRProcessor()
-
-    print("🔍 Book OCR Processor (Enhanced)")
-    print("-" * 40)
-
-    while True:
-        print("\nCommands:")
-        print("  1. List books")
-        print("  2. Process a book")
-        print("  3. Exit")
-
-        choice = input("\nChoice: ").strip()
-
-        if choice == "1":
-            processor.list_books()
-
-        elif choice == "2":
-            books = processor.list_books()
-            book_title = input("\nEnter book safe title (e.g., 'The-Accidental-President'): ").strip()
-
-            if book_title:
-                processor.process_book(book_title)
-            else:
-                print("❌ No book title provided")
-
-        elif choice == "3":
-            break
-
-        else:
-            print("Invalid choice")
-
-    print("\n👋 Done!")
-
-
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) > 1:
-        # Command-line mode
-        processor = BookOCRProcessor()
-        processor.process_book(sys.argv[1])
-    else:
-        # Interactive mode
-        interactive_mode()

@@ -1,25 +1,23 @@
 """
-OCR Output Schemas
+OCR Output Schemas - Hierarchical Layout Structure
 
-Based on:
-1. Tesseract's official TSV/DICT output format
-2. Observed output from running OCR on test books
-3. Requirements from downstream correction stage
+Based on Tesseract's block/paragraph detection.
+Preserves spatial layout intelligence without word/line bloat.
 
-References:
-- Tesseract TSV format: level, page_num, block_num, par_num, line_num, word_num,
-  left, top, width, height, conf, text
-- pytesseract Output.DICT provides same fields as dict
+Design philosophy:
+- Trust Tesseract's block detection (isolated vs continuous regions)
+- Keep paragraph-level text (the unit LLMs actually correct)
+- Preserve spatial bboxes (for visual context alignment)
+- Skip line/word detail (saves 6x on multimodal input costs)
+
+For correction stage:
+- LLM receives: PDF page image + this structure
+- Visual + spatial context enables smart corrections
+- Block structure enables semantic classification
 """
 
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
-
-
-class PageDimensions(BaseModel):
-    """Page dimensions in pixels."""
-    width: int = Field(..., ge=1, description="Page width in pixels")
-    height: int = Field(..., ge=1, description="Page height in pixels")
 
 
 class BoundingBox(BaseModel):
@@ -40,25 +38,29 @@ class BoundingBox(BaseModel):
         """Convert to [x, y, w, h] list."""
         return [self.x, self.y, self.width, self.height]
 
+    @property
+    def y_center(self) -> float:
+        """Y coordinate of center point."""
+        return self.y + (self.height / 2)
 
-class TextRegion(BaseModel):
-    """
-    A text region on a page (paragraph, header, footer, or caption).
 
-    This is our enhanced output format that aggregates Tesseract's word-level
-    output into semantic regions with classification.
+class PageDimensions(BaseModel):
+    """Page dimensions in pixels."""
+    width: int = Field(..., ge=1, description="Page width in pixels")
+    height: int = Field(..., ge=1, description="Page height in pixels")
+
+
+class Paragraph(BaseModel):
     """
-    id: int = Field(..., ge=1, description="Unique region ID within page")
-    type: Literal["header", "footer", "caption", "body"] = Field(
-        ..., description="Region type based on position and content"
-    )
-    bbox: BoundingBox = Field(..., description="Region bounding box")
-    text: str = Field(..., min_length=1, description="Text content")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="OCR confidence (0.0-1.0)")
-    reading_order: int = Field(..., ge=1, description="Reading order index")
-    associated_image: Optional[int] = Field(
-        None, description="ID of associated image (for captions)"
-    )
+    A paragraph detected by Tesseract.
+
+    Tesseract groups related text into paragraphs based on spatial proximity
+    and text flow. This is the primary unit for LLM correction.
+    """
+    par_num: int = Field(..., ge=0, description="Tesseract paragraph number within block")
+    bbox: BoundingBox = Field(..., description="Paragraph bounding box")
+    text: str = Field(..., min_length=1, description="Full paragraph text")
+    avg_confidence: float = Field(..., ge=0.0, le=1.0, description="Average OCR confidence (0.0-1.0)")
 
     @field_validator('bbox', mode='before')
     @classmethod
@@ -69,13 +71,61 @@ class TextRegion(BaseModel):
         return v
 
 
+class Block(BaseModel):
+    """
+    A text block detected by Tesseract.
+
+    Tesseract's block detection identifies spatially isolated regions:
+    - Headers/footers (isolated at top/bottom)
+    - Columns (side-by-side continuous regions)
+    - Body text (large continuous region)
+    - Captions (small isolated near images)
+
+    This structure is gold - don't classify it, just preserve it for the LLM.
+    """
+    block_num: int = Field(..., ge=0, description="Tesseract block number")
+    bbox: BoundingBox = Field(..., description="Block bounding box")
+    paragraphs: List[Paragraph] = Field(default_factory=list, description="Paragraphs in this block")
+
+    @field_validator('bbox', mode='before')
+    @classmethod
+    def parse_bbox(cls, v):
+        """Handle bbox as list or BoundingBox."""
+        if isinstance(v, list):
+            return BoundingBox.from_list(v)
+        return v
+
+    @field_validator('paragraphs')
+    @classmethod
+    def validate_paragraphs(cls, paragraphs):
+        """Ensure paragraphs is not empty."""
+        if len(paragraphs) == 0:
+            raise ValueError("Block must contain at least one paragraph")
+        return paragraphs
+
+    @property
+    def is_isolated(self) -> bool:
+        """
+        Heuristic: single-paragraph blocks are likely isolated elements.
+        (headers, footers, captions, page numbers)
+        """
+        return len(self.paragraphs) == 1
+
+    @property
+    def text(self) -> str:
+        """Get all text in block concatenated."""
+        return "\n\n".join(p.text for p in self.paragraphs)
+
+
 class ImageRegion(BaseModel):
-    """An image region detected on a page."""
-    id: int = Field(..., ge=1, description="Unique region ID within page")
-    type: Literal["image"] = "image"
+    """
+    An image region detected on page.
+
+    Detected via OpenCV contour analysis of non-text regions.
+    """
+    image_id: int = Field(..., ge=1, description="Unique image ID within page")
     bbox: BoundingBox = Field(..., description="Image bounding box")
     image_file: str = Field(..., description="Saved image filename")
-    reading_order: int = Field(..., ge=1, description="Reading order index")
 
     @field_validator('bbox', mode='before')
     @classmethod
@@ -91,68 +141,64 @@ class OCRPageOutput(BaseModel):
     Complete OCR output for a single page.
 
     This is the schema we save to page_XXXX.json files.
+    Designed to be input to correction stage (multimodal LLM).
     """
     page_number: int = Field(..., ge=1, description="Page number in book")
     page_dimensions: PageDimensions = Field(..., description="Page dimensions")
     ocr_timestamp: str = Field(..., description="ISO format timestamp")
-    ocr_mode: Literal["structured"] = "structured"
-    regions: List[TextRegion | ImageRegion] = Field(
-        default_factory=list, description="Text and image regions"
-    )
 
-    @field_validator('regions')
+    blocks: List[Block] = Field(default_factory=list, description="Text blocks detected by Tesseract")
+    images: List[ImageRegion] = Field(default_factory=list, description="Images detected via OpenCV")
+
+    @field_validator('blocks')
     @classmethod
-    def validate_unique_ids(cls, regions):
-        """Ensure region IDs are unique within page."""
-        ids = [r.id for r in regions]
-        if len(ids) != len(set(ids)):
-            raise ValueError("Region IDs must be unique within page")
-        return regions
+    def validate_blocks(cls, blocks):
+        """Ensure block numbers are unique."""
+        block_nums = [b.block_num for b in blocks]
+        if len(block_nums) != len(set(block_nums)):
+            raise ValueError("Block numbers must be unique within page")
+        return blocks
 
-    def get_text_regions(self) -> List[TextRegion]:
-        """Get only text regions."""
-        return [r for r in self.regions if isinstance(r, TextRegion)]
+    @field_validator('images')
+    @classmethod
+    def validate_images(cls, images):
+        """Ensure image IDs are unique."""
+        image_ids = [img.image_id for img in images]
+        if len(image_ids) != len(set(image_ids)):
+            raise ValueError("Image IDs must be unique within page")
+        return images
 
-    def get_image_regions(self) -> List[ImageRegion]:
-        """Get only image regions."""
-        return [r for r in self.regions if isinstance(r, ImageRegion)]
+    def get_isolated_blocks(self) -> List[Block]:
+        """Get likely headers/footers/captions (single-paragraph blocks)."""
+        return [b for b in self.blocks if b.is_isolated]
 
-    def get_body_text(self) -> str:
-        """Get all body text concatenated."""
-        body_regions = [r for r in self.regions if isinstance(r, TextRegion) and r.type == "body"]
-        return "\n\n".join(r.text for r in sorted(body_regions, key=lambda x: x.reading_order))
+    def get_continuous_blocks(self) -> List[Block]:
+        """Get likely body text (multi-paragraph blocks)."""
+        return [b for b in self.blocks if not b.is_isolated]
 
+    def get_all_text(self) -> str:
+        """Get all text from all blocks concatenated."""
+        return "\n\n".join(b.text for b in self.blocks)
 
-# ============================================================================
-# Tesseract Raw Output Schemas (for reference and potential future use)
-# ============================================================================
+    def find_nearby_blocks(self, image: ImageRegion, proximity: int = 100) -> List[Block]:
+        """
+        Find blocks near an image (for caption detection).
 
-class TesseractWordData(BaseModel):
-    """
-    Single word from Tesseract's TSV/DICT output.
+        Args:
+            image: Image region to check
+            proximity: Maximum distance in pixels
 
-    This matches Tesseract's official output format at level=5 (word level).
-    We may use this in the future for more fine-grained processing.
-    """
-    level: Literal[5] = Field(..., description="Always 5 for word level")
-    page_num: int = Field(..., ge=1)
-    block_num: int = Field(..., ge=0)
-    par_num: int = Field(..., ge=0)
-    line_num: int = Field(..., ge=0)
-    word_num: int = Field(..., ge=0)
-    left: int = Field(..., ge=0, description="X coordinate")
-    top: int = Field(..., ge=0, description="Y coordinate")
-    width: int = Field(..., ge=0)
-    height: int = Field(..., ge=0)
-    conf: int = Field(..., ge=-1, le=100, description="Confidence 0-100, -1 for empty")
-    text: str = Field(..., description="Word text (may be empty)")
+        Returns:
+            List of blocks within proximity distance
+        """
+        nearby = []
+        img_y = image.bbox.y_center
 
-    @property
-    def bbox(self) -> BoundingBox:
-        """Get bounding box."""
-        return BoundingBox(x=self.left, y=self.top, width=self.width, height=self.height)
+        for block in self.blocks:
+            block_y = block.bbox.y_center
+            distance = abs(img_y - block_y)
 
-    @property
-    def confidence_normalized(self) -> float:
-        """Get confidence as 0.0-1.0 float."""
-        return max(0.0, self.conf / 100.0)
+            if distance <= proximity:
+                nearby.append(block)
+
+        return nearby
