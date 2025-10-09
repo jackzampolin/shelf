@@ -34,20 +34,49 @@ ParagraphCorrection = correction_schemas.ParagraphCorrection
 
 
 class VisionCorrector:
-    """Vision-based OCR correction and block classification."""
+    """
+    Vision-based OCR correction and block classification.
+
+    Uses multimodal LLM to:
+    1. Correct OCR errors by comparing text against page images
+    2. Classify content blocks (body, footnote, header, etc.)
+
+    Supports checkpoint-based resume and parallel processing.
+    """
 
     def __init__(self, storage_root=None, model="x-ai/grok-4-fast", max_workers=30, enable_checkpoints=True):
+        """
+        Initialize the VisionCorrector.
+
+        Args:
+            storage_root: Root directory for book storage (default: ~/Documents/book_scans)
+            model: LLM model to use for correction (default: x-ai/grok-4-fast)
+            max_workers: Number of parallel workers (default: 30)
+            enable_checkpoints: Enable checkpoint-based resume (default: True)
+        """
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
         self.model = model
         self.max_workers = max_workers
         self.progress_lock = threading.Lock()
+        self.stats_lock = threading.Lock()  # Lock for thread-safe statistics updates
+        self.stats = {
+            "total_cost_usd": 0.0,
+            "pages_processed": 0,
+            "failed_pages": 0
+        }
         self.logger = None  # Will be initialized per book
         self.checkpoint = None  # Will be initialized per book
         self.enable_checkpoints = enable_checkpoints
         self.llm_client = None  # Will be initialized per book
 
     def process_book(self, book_title, resume=False):
-        """Process all pages for correction and classification."""
+        """
+        Process all pages for correction and classification.
+
+        Args:
+            book_title: Scan ID of the book to process
+            resume: If True, resume from checkpoint (default: False)
+        """
         book_dir = self.storage_root / book_title
 
         if not book_dir.exists():
@@ -83,63 +112,73 @@ class VisionCorrector:
             )
             if not resume:
                 self.checkpoint.reset()
+                # Reset stats on fresh start
+                with self.stats_lock:
+                    self.stats = {
+                        "total_cost_usd": 0.0,
+                        "pages_processed": 0,
+                        "failed_pages": 0
+                    }
+            else:
+                # Load existing cost from checkpoint for resume runs
+                checkpoint_state = self.checkpoint.get_status()
+                existing_cost = checkpoint_state.get('metadata', {}).get('total_cost_usd', 0.0)
+                with self.stats_lock:
+                    self.stats['total_cost_usd'] = existing_cost
 
         self.logger.info(f"Processing book: {metadata.get('title', book_title)}", resume=resume, model=self.model)
 
-        # Create output directory
-        corrected_dir = book_dir / "corrected"
-        corrected_dir.mkdir(exist_ok=True)
+        try:
+            # Create output directory
+            corrected_dir = book_dir / "corrected"
+            corrected_dir.mkdir(exist_ok=True)
 
-        # Get list of OCR outputs
-        ocr_files = sorted(ocr_dir.glob("page_*.json"))
-        total_pages = len(ocr_files)
+            # Get list of OCR outputs
+            ocr_files = sorted(ocr_dir.glob("page_*.json"))
+            total_pages = len(ocr_files)
 
-        self.logger.start_stage(
-            total_pages=total_pages,
-            model=self.model,
-            max_workers=self.max_workers
-        )
-
-        # Get source PDF paths
-        source_dir = book_dir / "source"
-        pdf_files = sorted(source_dir.glob("*.pdf"))
-        if not pdf_files:
-            self.logger.error("No source PDF found", source_dir=str(source_dir))
-            return
-
-        # Get pages to process (this sets checkpoint status to "in_progress")
-        if self.checkpoint:
-            pages_to_process = self.checkpoint.get_remaining_pages(
+            self.logger.start_stage(
                 total_pages=total_pages,
-                resume=resume
+                model=self.model,
+                max_workers=self.max_workers
             )
-        else:
-            pages_to_process = list(range(1, total_pages + 1))
 
-        # Build tasks for remaining pages
-        tasks = []
-        for page_num in pages_to_process:
-            ocr_file = ocr_dir / f"page_{page_num:04d}.json"
-            if not ocr_file.exists():
-                continue
+            # Get source PDF paths
+            source_dir = book_dir / "source"
+            pdf_files = sorted(source_dir.glob("*.pdf"))
+            if not pdf_files:
+                self.logger.error("No source PDF found", source_dir=str(source_dir))
+                raise FileNotFoundError(f"No PDF files found in {source_dir}")
 
-            tasks.append({
-                'page_num': page_num,
-                'ocr_file': ocr_file,
-                'pdf_files': pdf_files,
-                'corrected_dir': corrected_dir
-            })
+            # Get pages to process (this sets checkpoint status to "in_progress")
+            if self.checkpoint:
+                pages_to_process = self.checkpoint.get_remaining_pages(
+                    total_pages=total_pages,
+                    resume=resume
+                )
+            else:
+                pages_to_process = list(range(1, total_pages + 1))
 
-        if len(tasks) == 0:
-            self.logger.info("All pages already corrected, skipping")
-            print("✅ All pages already corrected")
-            return
+            # Build tasks for remaining pages
+            tasks = []
+            for page_num in pages_to_process:
+                ocr_file = ocr_dir / f"page_{page_num:04d}.json"
+                if not ocr_file.exists():
+                    continue
 
-        # Process in parallel
-        completed = 0
-        errors = 0
-        total_cost = 0.0
+                tasks.append({
+                    'page_num': page_num,
+                    'ocr_file': ocr_file,
+                    'pdf_files': pdf_files,
+                    'corrected_dir': corrected_dir
+                })
 
+            if len(tasks) == 0:
+                self.logger.info("All pages already corrected, skipping")
+                print("✅ All pages already corrected")
+                return
+
+        # Process in parallel with thread-safe statistics
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_task = {
                 executor.submit(self._process_single_page, task): task
@@ -150,17 +189,24 @@ class VisionCorrector:
                 task = future_to_task[future]
                 try:
                     success, cost = future.result()
-                    if success:
-                        completed += 1
-                        total_cost += cost
-                    else:
-                        errors += 1
+                    with self.stats_lock:
+                        if success:
+                            self.stats['pages_processed'] += 1
+                            self.stats['total_cost_usd'] += cost
+                        else:
+                            self.stats['failed_pages'] += 1
                 except Exception as e:
-                    errors += 1
+                    with self.stats_lock:
+                        self.stats['failed_pages'] += 1
                     with self.progress_lock:
                         self.logger.error(f"Page processing error", page=task['page_num'], error=str(e))
 
-                # Progress update
+                # Progress update (read stats under lock)
+                with self.stats_lock:
+                    completed = self.stats['pages_processed']
+                    errors = self.stats['failed_pages']
+                    total_cost = self.stats['total_cost_usd']
+
                 with self.progress_lock:
                     progress_count = completed + errors
                     self.logger.progress(
@@ -172,12 +218,18 @@ class VisionCorrector:
                         cost=total_cost
                     )
 
-        # Mark stage complete
+        # Get final stats under lock
+        with self.stats_lock:
+            completed = self.stats['pages_processed']
+            errors = self.stats['failed_pages']
+            total_cost = self.stats['total_cost_usd']
+
+        # Mark stage complete with cost in metadata
         if self.checkpoint:
             self.checkpoint.mark_stage_complete(metadata={
-                "total_pages_corrected": completed,
+                "model": self.model,
                 "total_cost_usd": total_cost,
-                "model": self.model
+                "pages_processed": completed
             })
 
         # Update metadata
@@ -200,6 +252,54 @@ class VisionCorrector:
         print(f"   Total cost: ${total_cost:.2f}")
         print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
         print(f"   Output: {corrected_dir}")
+
+        # Auto-retry failed pages (xAI cache workaround)
+        # If there were failures and this wasn't already a resume, automatically retry
+        if errors > 0 and not resume:
+            retry_count = 0
+            max_auto_retries = 2
+
+            while errors > 0 and retry_count < max_auto_retries:
+                retry_count += 1
+
+                # Wait before retrying to allow xAI cache to expire
+                # Exponential backoff: 30s, 60s
+                delay = 30 * retry_count
+                print(f"\n⚠️  {errors} page(s) failed. Waiting {delay}s for xAI cache to clear...")
+                print(f"   Then auto-retrying (attempt {retry_count}/{max_auto_retries})")
+
+                import time
+                time.sleep(delay)
+
+                # Recursively call with resume=True to retry failed pages
+                self.process_book(book_title, resume=True)
+
+                # Check how many failures remain
+                if self.checkpoint:
+                    status = self.checkpoint.get_status()
+                    total = status.get('total_pages', 0)
+                    completed_pages = len(status.get('completed_pages', []))
+                    errors = total - completed_pages
+
+                if errors == 0:
+                    print(f"\n🎉 All pages succeeded after {retry_count} auto-retry(ies)!")
+                    break
+
+            if errors > 0:
+                print(f"\n⚠️  {errors} page(s) still failing after {max_auto_retries} auto-retries")
+                print(f"   Run with --resume to try again, or these may be persistent xAI issues")
+
+        except Exception as e:
+            # Stage-level error handler
+            self.logger.error(f"Correction stage failed", error=str(e))
+            if self.checkpoint:
+                self.checkpoint.mark_stage_failed(error=str(e))
+            print(f"\n❌ Correction stage failed: {e}")
+            raise
+        finally:
+            # Always clean up logger
+            if self.logger:
+                self.logger.close()
 
     def _process_single_page(self, task):
         """
@@ -338,23 +438,11 @@ class VisionCorrector:
                                             "type": "object",
                                             "properties": {
                                                 "par_num": {"type": "integer"},
-                                                "corrected_text": {"type": ["string", "null"]},
-                                                "corrections": {
-                                                    "type": ["array", "null"],
-                                                    "items": {
-                                                        "type": "object",
-                                                        "properties": {
-                                                            "original": {"type": "string"},
-                                                            "corrected": {"type": "string"},
-                                                            "reason": {"type": "string"}
-                                                        },
-                                                        "required": ["original", "corrected", "reason"],
-                                                        "additionalProperties": False
-                                                    }
-                                                },
-                                                "correction_confidence": {"type": "number"}
+                                                "text": {"type": ["string", "null"]},
+                                                "notes": {"type": ["string", "null"]},
+                                                "confidence": {"type": "number"}
                                             },
-                                            "required": ["par_num", "corrected_text", "corrections", "correction_confidence"],
+                                            "required": ["par_num", "text", "notes", "confidence"],
                                             "additionalProperties": False
                                         }
                                     }
@@ -398,14 +486,14 @@ class VisionCorrector:
 
         # Calculate summary stats
         total_corrections = sum(
-            len(block.get('paragraphs', []))
-            for block in correction_data['blocks']
-            if any(p.get('corrected_text') for p in block.get('paragraphs', []))
+            1 for block in correction_data['blocks']
+            for p in block.get('paragraphs', [])
+            if p.get('text') is not None
         )
 
         avg_class_conf = sum(b.get('classification_confidence', 0) for b in correction_data['blocks']) / len(correction_data['blocks']) if correction_data['blocks'] else 0
-        avg_corr_conf = sum(
-            p.get('correction_confidence', 1.0)
+        avg_conf = sum(
+            p.get('confidence', 1.0)
             for b in correction_data['blocks']
             for p in b.get('paragraphs', [])
         ) / sum(len(b.get('paragraphs', [])) for b in correction_data['blocks']) if correction_data['blocks'] else 1.0
@@ -413,7 +501,7 @@ class VisionCorrector:
         correction_data['total_blocks'] = len(correction_data['blocks'])
         correction_data['total_corrections'] = total_corrections
         correction_data['avg_classification_confidence'] = round(avg_class_conf, 3)
-        correction_data['avg_correction_confidence'] = round(avg_corr_conf, 3)
+        correction_data['avg_confidence'] = round(avg_conf, 3)
 
         return correction_data, cost
 
@@ -427,7 +515,7 @@ Your task is to:
 
 For each block, provide:
 - A classification from the allowed types with confidence score (0.0-1.0)
-- Corrections for each paragraph (ONLY if errors are found)
+- For each paragraph: ONLY if corrections needed, output the FULL corrected paragraph text
 
 **Block Types:**
 TITLE_PAGE, COPYRIGHT, DEDICATION, TABLE_OF_CONTENTS, PREFACE, FOREWORD, INTRODUCTION,
@@ -439,7 +527,9 @@ ILLUSTRATION_CAPTION, TABLE, OTHER
 
 **Correction Guidelines:**
 - Use the page image to verify text accuracy - you can see formatting, layout, and actual characters
-- ONLY include `corrected_text` if you found actual errors (set to null otherwise)
+- ONLY include `text` field if you found actual errors (set to null otherwise)
+- When you DO correct: output the COMPLETE corrected paragraph text (not deltas/patches)
+- Add brief `notes` explaining what you fixed (e.g., "Fixed 3 OCR errors, removed hyphenation")
 - Common OCR errors: character substitution (rn→m, cl→d, tbe→the), spacing issues, hyphenation
 - Confidence scores: 0.0-1.0 (be honest about uncertainty)"""
 
@@ -452,10 +542,11 @@ ILLUSTRATION_CAPTION, TABLE, OTHER
 Please:
 1. Classify each block by its content type (using the types listed above)
 2. Compare the OCR text to the page image and identify any errors
-3. For each paragraph, provide corrected_text ONLY if you find errors (otherwise set to null)
-4. Provide confidence scores for both classification and corrections
+3. For each paragraph with errors: output the FULL corrected paragraph text in `text` field (null if clean)
+4. Add brief `notes` explaining changes (e.g., "Fixed 'tlie' → 'the', removed hyphen at line break")
+5. Provide confidence scores for both classification and text quality
 
-Focus on accuracy - only mark text as corrected if you're confident there's an error."""
+Focus on accuracy - only output corrected text if you're confident there's an error."""
 
     def _format_ocr_for_prompt(self, ocr_page):
         """Format OCR page data for the vision prompt."""
