@@ -3,6 +3,7 @@
 import json
 import importlib
 from pathlib import Path
+import pytest
 
 
 # Import OCR module
@@ -221,3 +222,136 @@ def test_schema_helpers():
     # Test find_nearby_blocks
     nearby = page.find_nearby_blocks(page.images[0], proximity=100)
     assert len(nearby) >= 0  # Just test it doesn't crash
+
+
+# ============================================================================
+# Fixture-Based Tests (Real Production Data)
+# ============================================================================
+
+@pytest.mark.parametrize("page_num,expected_blocks,expected_images", [
+    (1, 1, 0),    # Simple title page
+    (20, 4, 0),   # Complex body text with dialogue
+    (215, 5, 3),  # Photo page with images
+])
+def test_real_ocr_outputs_validate(page_num, expected_blocks, expected_images):
+    """Test that real production OCR outputs validate against schema.
+
+    Uses actual OCR output from accidental-president book processing.
+    These pages were successfully processed with 0 validation errors.
+    """
+    fixture_path = Path(__file__).parent.parent / "fixtures" / "ocr_outputs" / f"page_{page_num:04d}.json"
+
+    with open(fixture_path) as f:
+        page_data = json.load(f)
+
+    # Should validate without errors
+    validated = OCRPageOutput(**page_data)
+
+    # Verify basic structure
+    assert validated.page_number == page_num
+    assert len(validated.blocks) == expected_blocks
+    assert len(validated.images) == expected_images
+
+    # All blocks must have at least one paragraph
+    assert all(len(b.paragraphs) > 0 for b in validated.blocks)
+
+    # All paragraphs must have non-empty text
+    for block in validated.blocks:
+        for para in block.paragraphs:
+            assert len(para.text) > 0
+            assert 0.0 <= para.avg_confidence <= 1.0
+
+
+def test_real_page_image_detection():
+    """Test image detection results on real photo page.
+
+    Page 215 is a photo page with 3 detected images.
+    Validates that image detection logic works correctly.
+    """
+    fixture_path = Path(__file__).parent.parent / "fixtures" / "ocr_outputs" / "page_0215.json"
+
+    with open(fixture_path) as f:
+        page_data = json.load(f)
+
+    page = OCRPageOutput(**page_data)
+
+    # Page 215 should have 3 images
+    assert len(page.images) == 3
+
+    # All images should have reasonable dimensions
+    for img in page.images:
+        assert img.bbox.width > 100, f"Image {img.image_id} too narrow: {img.bbox.width}px"
+        assert img.bbox.height > 100, f"Image {img.image_id} too short: {img.bbox.height}px"
+
+        # Aspect ratio should be reasonable (0.2 to 5.0)
+        aspect_ratio = img.bbox.width / img.bbox.height
+        assert 0.2 < aspect_ratio < 5.0, f"Image {img.image_id} has extreme aspect ratio: {aspect_ratio}"
+
+        # Image should have a filename
+        assert img.image_file.startswith("page_0215_img_")
+        assert img.image_file.endswith(".png")
+
+
+def test_real_page_hierarchical_structure():
+    """Test hierarchical block/paragraph structure on complex page.
+
+    Page 20 has 4 blocks with varying paragraph counts.
+    Validates that Tesseract's hierarchical structure is preserved.
+    """
+    fixture_path = Path(__file__).parent.parent / "fixtures" / "ocr_outputs" / "page_0020.json"
+
+    with open(fixture_path) as f:
+        page_data = json.load(f)
+
+    page = OCRPageOutput(**page_data)
+
+    # Page 20 has 4 blocks total
+    assert len(page.blocks) == 4
+
+    # Total paragraph count across all blocks
+    total_paragraphs = sum(len(b.paragraphs) for b in page.blocks)
+    assert total_paragraphs == 12
+
+    # Block numbers should be unique
+    block_nums = [b.block_num for b in page.blocks]
+    assert len(block_nums) == len(set(block_nums))
+
+    # Each block should have proper bbox hierarchy
+    for block in page.blocks:
+        # Block bbox should contain all its paragraphs
+        for para in block.paragraphs:
+            # Paragraph should be within or equal to block bounds
+            assert para.bbox.x >= block.bbox.x - 5  # Allow small margin for rounding
+            assert para.bbox.y >= block.bbox.y - 5
+            # Note: We can't check right/bottom edges strictly as block bbox is calculated from paragraphs
+
+
+def test_real_page_helper_methods():
+    """Test schema helper methods on real page data.
+
+    Uses page 20 which has both isolated and continuous blocks.
+    """
+    fixture_path = Path(__file__).parent.parent / "fixtures" / "ocr_outputs" / "page_0020.json"
+
+    with open(fixture_path) as f:
+        page_data = json.load(f)
+
+    page = OCRPageOutput(**page_data)
+
+    # Test get_all_text
+    all_text = page.get_all_text()
+    assert len(all_text) > 0
+    assert isinstance(all_text, str)
+
+    # Test that get_isolated_blocks + get_continuous_blocks = all blocks
+    isolated = page.get_isolated_blocks()
+    continuous = page.get_continuous_blocks()
+    assert len(isolated) + len(continuous) == len(page.blocks)
+
+    # Isolated blocks should have exactly 1 paragraph
+    for block in isolated:
+        assert len(block.paragraphs) == 1
+
+    # Continuous blocks should have more than 1 paragraph
+    for block in continuous:
+        assert len(block.paragraphs) > 1
