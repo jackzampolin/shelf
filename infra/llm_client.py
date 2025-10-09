@@ -161,6 +161,17 @@ class LLMClient:
             json=payload,
             timeout=timeout
         )
+
+        # Better error reporting for 4xx errors
+        if not response.ok:
+            try:
+                error_data = response.json()
+                print(f"❌ API Error Response:")
+                print(json.dumps(error_data, indent=2))
+                error_msg = error_data.get('error', {}).get('message', response.text)
+            except:
+                print(f"❌ API Error (raw): {response.text}")
+
         response.raise_for_status()
 
         result = response.json()
@@ -255,7 +266,7 @@ class LLMClient:
 
         Args:
             messages: Original message list
-            images: List of images (bytes, base64 strings, or file paths)
+            images: List of images (bytes, base64 strings, PIL Images, or file paths)
 
         Returns:
             Modified messages with images embedded
@@ -283,6 +294,13 @@ class LLMClient:
             elif isinstance(img, Path) or (isinstance(img, str) and os.path.exists(img)):
                 with open(img, 'rb') as f:
                     img_b64 = base64.b64encode(f.read()).decode('utf-8')
+            elif hasattr(img, 'save'):  # PIL Image object
+                # Convert PIL Image to bytes then base64
+                import io
+                buffered = io.BytesIO()
+                img.save(buffered, format="PNG")
+                img_bytes = buffered.getvalue()
+                img_b64 = base64.b64encode(img_bytes).decode('utf-8')
             else:
                 # Assume it's already base64
                 img_b64 = img

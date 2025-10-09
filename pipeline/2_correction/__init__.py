@@ -36,7 +36,7 @@ ParagraphCorrection = correction_schemas.ParagraphCorrection
 class VisionCorrector:
     """Vision-based OCR correction and block classification."""
 
-    def __init__(self, storage_root=None, model="openai/gpt-4o", max_workers=10, enable_checkpoints=True):
+    def __init__(self, storage_root=None, model="x-ai/grok-4-fast", max_workers=30, enable_checkpoints=True):
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
         self.model = model
         self.max_workers = max_workers
@@ -71,7 +71,7 @@ class VisionCorrector:
         self.logger = create_logger(book_title, "correction", log_dir=logs_dir)
 
         # Initialize LLM client
-        self.llm_client = LLMClient(logger=self.logger)
+        self.llm_client = LLMClient()
 
         # Initialize checkpoint manager
         if self.enable_checkpoints:
@@ -100,29 +100,33 @@ class VisionCorrector:
             max_workers=self.max_workers
         )
 
-        # Get source PDF path
+        # Get source PDF paths
         source_dir = book_dir / "source"
         pdf_files = sorted(source_dir.glob("*.pdf"))
         if not pdf_files:
             self.logger.error("No source PDF found", source_dir=str(source_dir))
             return
 
-        # For simplicity, assume single PDF (can extend later for multi-PDF books)
-        pdf_path = pdf_files[0]
+        # Get pages to process (this sets checkpoint status to "in_progress")
+        if self.checkpoint:
+            pages_to_process = self.checkpoint.get_remaining_pages(
+                total_pages=total_pages,
+                resume=resume
+            )
+        else:
+            pages_to_process = list(range(1, total_pages + 1))
 
-        # Process pages in parallel
+        # Build tasks for remaining pages
         tasks = []
-        for ocr_file in ocr_files:
-            page_num = int(ocr_file.stem.split('_')[1])
-
-            # Skip if checkpoint says already done
-            if self.checkpoint and self.checkpoint.validate_page_output(page_num):
+        for page_num in pages_to_process:
+            ocr_file = ocr_dir / f"page_{page_num:04d}.json"
+            if not ocr_file.exists():
                 continue
 
             tasks.append({
                 'page_num': page_num,
                 'ocr_file': ocr_file,
-                'pdf_path': pdf_path,
+                'pdf_files': pdf_files,
                 'corrected_dir': corrected_dir
             })
 
@@ -172,7 +176,8 @@ class VisionCorrector:
         if self.checkpoint:
             self.checkpoint.mark_stage_complete(metadata={
                 "total_pages_corrected": completed,
-                "total_cost": total_cost
+                "total_cost_usd": total_cost,
+                "model": self.model
             })
 
         # Update metadata
@@ -211,8 +216,8 @@ class VisionCorrector:
             # Validate OCR input
             ocr_page = OCRPageOutput(**ocr_data)
 
-            # Convert PDF page to image
-            page_image = self._pdf_page_to_image(task['pdf_path'], ocr_page.page_number)
+            # Convert PDF page to image (handles multi-PDF books)
+            page_image = self._get_page_image(task['pdf_files'], ocr_page.page_number)
 
             # Call vision model for correction and classification
             corrected_data, cost = self._correct_page_with_vision(ocr_page, page_image)
@@ -234,9 +239,9 @@ class VisionCorrector:
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(corrected_data, f, indent=2)
 
-            # Mark complete in checkpoint
+            # Mark complete in checkpoint with cost
             if self.checkpoint:
-                self.checkpoint.mark_completed(task['page_num'])
+                self.checkpoint.mark_completed(task['page_num'], cost_usd=cost)
 
             return True, cost
 
@@ -245,17 +250,17 @@ class VisionCorrector:
                 self.logger.error(f"Page correction failed", page=task['page_num'], error=str(e))
             return False, 0.0
 
-    def _pdf_page_to_image(self, pdf_path, page_number, dpi=300):
+    def _pdf_page_to_image(self, pdf_path, page_number, dpi=150):
         """
         Convert a specific PDF page to PIL Image.
 
         Args:
             pdf_path: Path to PDF file
             page_number: Page number (1-indexed)
-            dpi: Resolution for conversion
+            dpi: Resolution for conversion (default 150 for reasonable file size)
 
         Returns:
-            PIL.Image: Page image
+            PIL.Image: Page image (resized if too large)
         """
         # pdf2image uses 1-indexed page numbers
         images = convert_from_path(
@@ -264,7 +269,25 @@ class VisionCorrector:
             first_page=page_number,
             last_page=page_number
         )
-        return images[0]
+
+        image = images[0]
+
+        # Resize if image is too large (OpenAI has limits on image size)
+        # Max dimension should be around 2000px for reasonable processing
+        max_dimension = 2000
+        width, height = image.size
+
+        if width > max_dimension or height > max_dimension:
+            # Calculate scaling factor
+            scale = max_dimension / max(width, height)
+            new_width = int(width * scale)
+            new_height = int(height * scale)
+
+            # Resize using high-quality resampling
+            from PIL import Image as PILImage
+            image = image.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
+
+        return image
 
     def _image_to_base64(self, pil_image):
         """Convert PIL Image to base64 string for vision API."""
@@ -291,10 +314,8 @@ class VisionCorrector:
         system_prompt = self._build_system_prompt()
         user_prompt = self._build_user_prompt(ocr_page, ocr_text)
 
-        # Generate JSON Schema from Pydantic model for structured outputs
-        # We need to create a schema for just the blocks array since that's what the LLM returns
-        from pipeline.2_correction.schemas import BlockClassification
-
+        # Generate simplified JSON Schema for structured outputs
+        # OpenRouter's strict mode requires basic JSON Schema (no refs, no complex nesting)
         response_schema = {
             "type": "json_schema",
             "json_schema": {
@@ -305,7 +326,42 @@ class VisionCorrector:
                     "properties": {
                         "blocks": {
                             "type": "array",
-                            "items": BlockClassification.model_json_schema()
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "block_num": {"type": "integer"},
+                                    "classification": {"type": "string"},
+                                    "classification_confidence": {"type": "number"},
+                                    "paragraphs": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "par_num": {"type": "integer"},
+                                                "corrected_text": {"type": ["string", "null"]},
+                                                "corrections": {
+                                                    "type": ["array", "null"],
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "original": {"type": "string"},
+                                                            "corrected": {"type": "string"},
+                                                            "reason": {"type": "string"}
+                                                        },
+                                                        "required": ["original", "corrected", "reason"],
+                                                        "additionalProperties": False
+                                                    }
+                                                },
+                                                "correction_confidence": {"type": "number"}
+                                            },
+                                            "required": ["par_num", "corrected_text", "corrections", "correction_confidence"],
+                                            "additionalProperties": False
+                                        }
+                                    }
+                                },
+                                "required": ["block_num", "classification", "classification_confidence", "paragraphs"],
+                                "additionalProperties": False
+                            }
                         }
                     },
                     "required": ["blocks"],
@@ -314,21 +370,25 @@ class VisionCorrector:
             }
         }
 
-        # Call vision model with structured output
-        response, usage, cost = self.llm_client.call(
+        # Call vision model with automatic JSON retry on parse failures
+        def parse_correction_json(response_text):
+            """Parse and validate correction JSON."""
+            data = json.loads(response_text)  # Will raise JSONDecodeError if invalid
+            return data
+
+        correction_data, usage, cost = self.llm_client.call_with_json_retry(
             model=self.model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            images=[page_image],
+            json_parser=parse_correction_json,
             temperature=0.1,
+            max_retries=2,  # Retry up to 2 times on JSON parse failures (3 total attempts)
+            images=[page_image],
             timeout=180,
-            response_format=response_schema
+            response_format=response_schema  # ✓ Structured outputs enabled
         )
-
-        # Response is guaranteed to be valid JSON with structured outputs
-        correction_data = json.loads(response)
 
         # Add metadata
         correction_data['page_number'] = ocr_page.page_number
@@ -400,11 +460,43 @@ Focus on accuracy - only mark text as corrected if you're confident there's an e
     def _format_ocr_for_prompt(self, ocr_page):
         """Format OCR page data for the vision prompt."""
         lines = []
-        for block in ocr_page.blocks:
+        # Convert to dict to access fields
+        page_dict = ocr_page.model_dump()
+        for block in page_dict['blocks']:
             lines.append(f"\n--- Block {block['block_num']} ---")
             for para in block['paragraphs']:
                 lines.append(f"  Paragraph {para['par_num']}: {para['text']}")
         return '\n'.join(lines)
+
+    def _get_page_image(self, pdf_files, page_number, dpi=150):
+        """
+        Get page image from multi-PDF book by calculating which PDF contains the page.
+
+        Args:
+            pdf_files: Sorted list of PDF file paths
+            page_number: Global page number (1-indexed, continuous across PDFs)
+            dpi: Resolution for conversion
+
+        Returns:
+            PIL.Image: Page image
+        """
+        from pdf2image.pdf2image import pdfinfo_from_path
+
+        # Find which PDF contains this page
+        page_offset = 0
+        for pdf_path in pdf_files:
+            info = pdfinfo_from_path(pdf_path)
+            page_count = info['Pages']
+
+            # Check if page is in this PDF
+            if page_number <= page_offset + page_count:
+                # Calculate local page number within this PDF
+                local_page = page_number - page_offset
+                return self._pdf_page_to_image(pdf_path, local_page, dpi=dpi)
+
+            page_offset += page_count
+
+        raise ValueError(f"Page {page_number} not found in any PDF (total pages: {page_offset})")
 
     def clean_stage(self, scan_id: str, confirm: bool = False):
         """

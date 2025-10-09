@@ -6,6 +6,7 @@ Available commands:
   add <pdf...>              Add book(s) to library
   process ocr <scan-id>     Run OCR stage
   process correct <scan-id> Run Correction stage
+  status <scan-id>          Show pipeline status
   library list              List all books
   library show <scan-id>    Show book details
 
@@ -106,6 +107,17 @@ def cmd_process_clean(args):
             )
             processor.clean_stage(args.scan_id, confirm=args.yes)
 
+        elif args.stage == 'correct':
+            # Import Correction stage
+            correct_module = importlib.import_module('pipeline.2_correction')
+            VisionCorrector = getattr(correct_module, 'VisionCorrector')
+
+            # Clean Correction stage
+            processor = VisionCorrector(
+                storage_root=str(Path.home() / "Documents" / "book_scans")
+            )
+            processor.clean_stage(args.scan_id, confirm=args.yes)
+
         else:
             print(f"❌ Clean not implemented for stage: {args.stage}")
             sys.exit(1)
@@ -124,17 +136,15 @@ def cmd_process_correct(args):
     try:
         # Import Correction stage
         correct_module = importlib.import_module('pipeline.2_correction')
-        StructuredPageCorrector = getattr(correct_module, 'StructuredPageCorrector')
+        VisionCorrector = getattr(correct_module, 'VisionCorrector')
 
         # Run Correction
-        processor = StructuredPageCorrector(
-            book_slug=args.scan_id,
+        processor = VisionCorrector(
             storage_root=str(Path.home() / "Documents" / "book_scans"),
             model=args.model,
-            max_workers=args.workers,
-            calls_per_minute=args.rate_limit
+            max_workers=args.workers
         )
-        processor.process_pages(resume=args.resume)
+        processor.process_book(args.scan_id, resume=args.resume)
 
         print(f"\n✅ Correction complete for {args.scan_id}")
 
@@ -199,6 +209,161 @@ def cmd_library_show(args):
     print()
 
 
+def cmd_status(args):
+    """Show pipeline status for a book."""
+    from infra.checkpoint import CheckpointManager
+    from datetime import datetime
+
+    book_dir = Path.home() / "Documents" / "book_scans" / args.scan_id
+
+    if not book_dir.exists():
+        print(f"❌ Book not found: {args.scan_id}")
+        sys.exit(1)
+
+    # Load metadata
+    metadata_file = book_dir / "metadata.json"
+    if metadata_file.exists():
+        import json
+        with open(metadata_file) as f:
+            metadata = json.load(f)
+        title = metadata.get('title', args.scan_id)
+    else:
+        title = args.scan_id
+
+    print(f"\n📊 Pipeline Status: {title}")
+    print(f"   Scan ID: {args.scan_id}")
+    print("=" * 70)
+    print()
+
+    # Track totals
+    total_cost = 0.0
+    total_duration = 0.0
+
+    # Check OCR and Correction stages
+    stages = ['ocr', 'correction']
+
+    for stage in stages:
+        checkpoint = CheckpointManager(
+            scan_id=args.scan_id,
+            stage=stage,
+            storage_root=Path.home() / "Documents" / "book_scans"
+        )
+
+        status = checkpoint.get_status()
+        stage_status = status.get('status', 'not_started')
+
+        # Get metadata
+        stage_metadata = status.get('metadata', {})
+        cost = stage_metadata.get('total_cost_usd', 0.0) or stage_metadata.get('total_cost', 0.0)
+        model = stage_metadata.get('model', None)
+
+        # Calculate duration
+        duration = None
+        if stage_status == 'completed' and status.get('created_at') and status.get('completed_at'):
+            try:
+                start = datetime.fromisoformat(status['created_at'])
+                end = datetime.fromisoformat(status['completed_at'])
+                duration = (end - start).total_seconds()
+            except:
+                pass
+        elif stage_status == 'in_progress' and status.get('created_at'):
+            # For in-progress, calculate elapsed time from start to now
+            try:
+                start = datetime.fromisoformat(status['created_at'])
+                duration = (datetime.now() - start).total_seconds()
+            except:
+                pass
+
+        # Count progress from disk
+        if stage == 'ocr':
+            output_dir = book_dir / 'ocr'
+        elif stage == 'correction':
+            output_dir = book_dir / 'corrected'
+        else:
+            output_dir = None
+
+        progress_current = 0
+        progress_total = status.get('total_pages', 0)
+
+        if output_dir and output_dir.exists():
+            progress_current = len(list(output_dir.glob('page_*.json')))
+
+        # Display stage with columnar formatting
+        display_name = stage.capitalize().ljust(10)
+
+        if stage_status == 'not_started':
+            icon = "○"
+            print(f"{icon} {display_name} Not started")
+        elif stage_status == 'completed':
+            icon = "✅"
+            pct_str = "100.0%"
+            duration_str = format_duration(duration) if duration else "N/A"
+            cost_str = f"${cost:.2f}" if cost > 0 else "$0.00"
+
+            # Columns: stage | % | time | cost
+            print(f"{icon} {display_name} {pct_str:>6}  {duration_str:>8}  {cost_str:>7}")
+
+            total_cost += cost
+            if duration:
+                total_duration += duration
+        else:  # in_progress
+            icon = "⏳"
+            if progress_total > 0:
+                progress_pct = (progress_current / progress_total) * 100
+                pct_str = f"{progress_pct:.1f}%"
+                duration_str = format_duration(duration) if duration else "..."
+                cost_str = f"${cost:.2f}" if cost > 0 else "$0.00"
+
+                # Estimate time remaining
+                eta_str = ""
+                if duration and progress_current > 0:
+                    rate = duration / progress_current  # seconds per page
+                    remaining_pages = progress_total - progress_current
+                    eta_seconds = rate * remaining_pages
+                    eta_str = f"  ~{format_duration(eta_seconds)} left"
+
+                # Columns: stage | % | time | cost | eta
+                print(f"{icon} {display_name} {pct_str:>6}  {duration_str:>8}  {cost_str:>7}{eta_str}")
+
+                # Add totals for in-progress stages
+                if cost > 0:
+                    total_cost += cost
+                if duration:
+                    total_duration += duration
+            else:
+                print(f"{icon} {display_name} In progress...")
+
+    print()
+
+    # Show totals
+    if total_cost > 0:
+        print(f"💰 Total Cost: ${total_cost:.2f}")
+    if total_duration > 0:
+        print(f"⏱️  Total Time: {format_duration(total_duration)}")
+
+    if total_cost > 0 or total_duration > 0:
+        print()
+
+    print("=" * 70)
+
+
+def format_duration(seconds):
+    """Format duration in seconds to human-readable format."""
+    if seconds is None or seconds < 0:
+        return "N/A"
+
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    elif seconds < 3600:
+        mins = int(seconds / 60)
+        secs = int(seconds % 60)
+        return f"{mins}m {secs}s"
+    else:
+        hours = int(seconds / 3600)
+        mins = int((seconds % 3600) / 60)
+        return f"{hours}h {mins}m"
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog='ar',
@@ -209,6 +374,7 @@ Examples:
   ar library add ~/Documents/Scans/accidental-president-*.pdf
   ar library list
   ar library show accidental-president
+  ar status accidental-president
   ar process ocr accidental-president
   ar process ocr accidental-president --resume
   ar process clean ocr accidental-president
@@ -236,11 +402,10 @@ Note: Minimal CLI during refactor (Issue #55).
     ocr_parser.set_defaults(func=cmd_process_ocr)
 
     # ar process correct
-    correct_parser = process_subparsers.add_parser('correct', help='Stage 2: Correction')
+    correct_parser = process_subparsers.add_parser('correct', help='Stage 2: Correction (Vision)')
     correct_parser.add_argument('scan_id', help='Book scan ID')
-    correct_parser.add_argument('--model', default='openai/gpt-4o-mini', help='LLM model (default: gpt-4o-mini)')
+    correct_parser.add_argument('--model', default='x-ai/grok-4-fast', help='Vision model (default: grok-4-fast)')
     correct_parser.add_argument('--workers', type=int, default=30, help='Parallel workers (default: 30)')
-    correct_parser.add_argument('--rate-limit', type=int, default=150, help='API calls/min (default: 150)')
     correct_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     correct_parser.set_defaults(func=cmd_process_correct)
 
@@ -250,6 +415,11 @@ Note: Minimal CLI during refactor (Issue #55).
     clean_parser.add_argument('scan_id', help='Book scan ID')
     clean_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompt')
     clean_parser.set_defaults(func=cmd_process_clean)
+
+    # ===== ar status =====
+    status_parser = subparsers.add_parser('status', help='Show pipeline status')
+    status_parser.add_argument('scan_id', help='Book scan ID')
+    status_parser.set_defaults(func=cmd_status)
 
     # ===== ar library =====
     library_parser = subparsers.add_parser('library', help='Library management')

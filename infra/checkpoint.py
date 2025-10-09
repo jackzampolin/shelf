@@ -203,17 +203,16 @@ class CheckpointManager:
 
             # Stage-specific validation
             if self.stage == "ocr":
-                # OCR output must have page_number and regions
+                # OCR output must have page_number and blocks
                 return ('page_number' in data and
-                        'regions' in data and
-                        isinstance(data['regions'], list) and
-                        len(data['regions']) > 0)
+                        'blocks' in data and
+                        isinstance(data['blocks'], list))
 
             elif self.stage == "correction":
-                # Correction output must have page_number and llm_processing with corrected_text
+                # Correction output must have page_number and blocks
                 return ('page_number' in data and
-                        'llm_processing' in data and
-                        'corrected_text' in data.get('llm_processing', {}))
+                        'blocks' in data and
+                        isinstance(data['blocks'], list))
 
             elif self.stage == "fix":
                 # Fix output must have llm_processing with agent4_fixes
@@ -312,16 +311,13 @@ class CheckpointManager:
 
             return remaining_pages
 
-    def mark_completed(self, page_num: int):
+    def mark_completed(self, page_num: int, cost_usd: float = 0.0):
         """
         Mark a page as completed (thread-safe).
 
         Args:
             page_num: Page number that was completed
-
-        Note:
-            Cost tracking is handled separately via metadata.total_cost_usd
-            at stage completion. This method only tracks page completion status.
+            cost_usd: Cost for this page in USD (accumulated in metadata)
         """
         with self._lock:
             # Add to completed list if not already there
@@ -329,6 +325,11 @@ class CheckpointManager:
             if is_new_page:
                 self._state['completed_pages'].append(page_num)
                 self._state['completed_pages'].sort()
+
+            # Accumulate cost in metadata
+            if cost_usd > 0:
+                current_cost = self._state['metadata'].get('total_cost_usd', 0.0)
+                self._state['metadata']['total_cost_usd'] = current_cost + cost_usd
 
             # Update progress
             total = self._state.get('total_pages', 0)
@@ -339,9 +340,8 @@ class CheckpointManager:
                 "percent": (completed / total * 100) if total > 0 else 0
             }
 
-            # Save checkpoint every 5 pages to minimize work loss on crashes
-            if completed % 5 == 0:
-                self._save_checkpoint()
+            # Save checkpoint on every page (disk I/O is negligible vs LLM latency)
+            self._save_checkpoint()
 
     def mark_stage_complete(self, metadata: Optional[Dict[str, Any]] = None):
         """
