@@ -87,7 +87,8 @@ class CheckpointManager:
         """Auto-detect output directory based on stage."""
         mapping = {
             "ocr": "ocr",
-            "correction": "corrected"
+            "correction": "corrected",
+            "merge": "processed"
         }
         return mapping.get(stage, stage)
 
@@ -211,6 +212,17 @@ class CheckpointManager:
                 return ('page_number' in data and
                         'blocks' in data and
                         isinstance(data['blocks'], list))
+
+            elif self.stage == "merge":
+                # Validate against MergedPageOutput schema
+                try:
+                    import importlib
+                    merge_schemas = importlib.import_module('pipeline.3_merge.schemas')
+                    MergedPageOutput = getattr(merge_schemas, 'MergedPageOutput')
+                    MergedPageOutput(**data)
+                    return True
+                except Exception:
+                    return False
 
             else:
                 # Fallback for unknown stages - just check non-empty

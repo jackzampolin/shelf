@@ -178,116 +178,116 @@ class VisionCorrector:
                 print("✅ All pages already corrected")
                 return
 
-        # Process in parallel with thread-safe statistics
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_task = {
-                executor.submit(self._process_single_page, task): task
-                for task in tasks
-            }
+            # Process in parallel with thread-safe statistics
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                future_to_task = {
+                    executor.submit(self._process_single_page, task): task
+                    for task in tasks
+                }
 
-            for future in as_completed(future_to_task):
-                task = future_to_task[future]
-                try:
-                    success, cost = future.result()
-                    with self.stats_lock:
-                        if success:
-                            self.stats['pages_processed'] += 1
-                            self.stats['total_cost_usd'] += cost
-                        else:
+                for future in as_completed(future_to_task):
+                    task = future_to_task[future]
+                    try:
+                        success, cost = future.result()
+                        with self.stats_lock:
+                            if success:
+                                self.stats['pages_processed'] += 1
+                                self.stats['total_cost_usd'] += cost
+                            else:
+                                self.stats['failed_pages'] += 1
+                    except Exception as e:
+                        with self.stats_lock:
                             self.stats['failed_pages'] += 1
-                except Exception as e:
+                        with self.progress_lock:
+                            self.logger.error(f"Page processing error", page=task['page_num'], error=str(e))
+
+                    # Progress update (read stats under lock)
                     with self.stats_lock:
-                        self.stats['failed_pages'] += 1
+                        completed = self.stats['pages_processed']
+                        errors = self.stats['failed_pages']
+                        total_cost = self.stats['total_cost_usd']
+
                     with self.progress_lock:
-                        self.logger.error(f"Page processing error", page=task['page_num'], error=str(e))
+                        progress_count = completed + errors
+                        self.logger.progress(
+                            f"Correcting pages",
+                            current=progress_count,
+                            total=len(tasks),
+                            completed=completed,
+                            errors=errors,
+                            cost=total_cost
+                        )
 
-                # Progress update (read stats under lock)
-                with self.stats_lock:
-                    completed = self.stats['pages_processed']
-                    errors = self.stats['failed_pages']
-                    total_cost = self.stats['total_cost_usd']
+            # Get final stats under lock
+            with self.stats_lock:
+                completed = self.stats['pages_processed']
+                errors = self.stats['failed_pages']
+                total_cost = self.stats['total_cost_usd']
 
-                with self.progress_lock:
-                    progress_count = completed + errors
-                    self.logger.progress(
-                        f"Correcting pages",
-                        current=progress_count,
-                        total=len(tasks),
-                        completed=completed,
-                        errors=errors,
-                        cost=total_cost
-                    )
+            # Mark stage complete with cost in metadata
+            if self.checkpoint:
+                self.checkpoint.mark_stage_complete(metadata={
+                    "model": self.model,
+                    "total_cost_usd": total_cost,
+                    "pages_processed": completed
+                })
 
-        # Get final stats under lock
-        with self.stats_lock:
-            completed = self.stats['pages_processed']
-            errors = self.stats['failed_pages']
-            total_cost = self.stats['total_cost_usd']
+            # Update metadata
+            metadata['correction_complete'] = True
+            metadata['correction_completion_date'] = datetime.now().isoformat()
+            metadata['correction_total_cost'] = total_cost
 
-        # Mark stage complete with cost in metadata
-        if self.checkpoint:
-            self.checkpoint.mark_stage_complete(metadata={
-                "model": self.model,
-                "total_cost_usd": total_cost,
-                "pages_processed": completed
-            })
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
 
-        # Update metadata
-        metadata['correction_complete'] = True
-        metadata['correction_completion_date'] = datetime.now().isoformat()
-        metadata['correction_total_cost'] = total_cost
+            self.logger.info(
+                "Correction complete",
+                pages_corrected=completed,
+                total_cost=total_cost,
+                avg_cost_per_page=total_cost / completed if completed > 0 else 0,
+                corrected_dir=str(corrected_dir)
+            )
 
-        with open(metadata_file, 'w') as f:
-            json.dump(metadata, f, indent=2)
+            print(f"\n✅ Correction complete: {completed} pages")
+            print(f"   Total cost: ${total_cost:.2f}")
+            print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
+            print(f"   Output: {corrected_dir}")
 
-        self.logger.info(
-            "Correction complete",
-            pages_corrected=completed,
-            total_cost=total_cost,
-            avg_cost_per_page=total_cost / completed if completed > 0 else 0,
-            corrected_dir=str(corrected_dir)
-        )
+            # Auto-retry failed pages (xAI cache workaround)
+            # If there were failures and this wasn't already a resume, automatically retry
+            if errors > 0 and not resume:
+                retry_count = 0
+                max_auto_retries = 2
 
-        print(f"\n✅ Correction complete: {completed} pages")
-        print(f"   Total cost: ${total_cost:.2f}")
-        print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
-        print(f"   Output: {corrected_dir}")
+                while errors > 0 and retry_count < max_auto_retries:
+                    retry_count += 1
 
-        # Auto-retry failed pages (xAI cache workaround)
-        # If there were failures and this wasn't already a resume, automatically retry
-        if errors > 0 and not resume:
-            retry_count = 0
-            max_auto_retries = 2
+                    # Wait before retrying to allow xAI cache to expire
+                    # Exponential backoff: 30s, 60s
+                    delay = 30 * retry_count
+                    print(f"\n⚠️  {errors} page(s) failed. Waiting {delay}s for xAI cache to clear...")
+                    print(f"   Then auto-retrying (attempt {retry_count}/{max_auto_retries})")
 
-            while errors > 0 and retry_count < max_auto_retries:
-                retry_count += 1
+                    import time
+                    time.sleep(delay)
 
-                # Wait before retrying to allow xAI cache to expire
-                # Exponential backoff: 30s, 60s
-                delay = 30 * retry_count
-                print(f"\n⚠️  {errors} page(s) failed. Waiting {delay}s for xAI cache to clear...")
-                print(f"   Then auto-retrying (attempt {retry_count}/{max_auto_retries})")
+                    # Recursively call with resume=True to retry failed pages
+                    self.process_book(book_title, resume=True)
 
-                import time
-                time.sleep(delay)
+                    # Check how many failures remain
+                    if self.checkpoint:
+                        status = self.checkpoint.get_status()
+                        total = status.get('total_pages', 0)
+                        completed_pages = len(status.get('completed_pages', []))
+                        errors = total - completed_pages
 
-                # Recursively call with resume=True to retry failed pages
-                self.process_book(book_title, resume=True)
+                    if errors == 0:
+                        print(f"\n🎉 All pages succeeded after {retry_count} auto-retry(ies)!")
+                        break
 
-                # Check how many failures remain
-                if self.checkpoint:
-                    status = self.checkpoint.get_status()
-                    total = status.get('total_pages', 0)
-                    completed_pages = len(status.get('completed_pages', []))
-                    errors = total - completed_pages
-
-                if errors == 0:
-                    print(f"\n🎉 All pages succeeded after {retry_count} auto-retry(ies)!")
-                    break
-
-            if errors > 0:
-                print(f"\n⚠️  {errors} page(s) still failing after {max_auto_retries} auto-retries")
-                print(f"   Run with --resume to try again, or these may be persistent xAI issues")
+                if errors > 0:
+                    print(f"\n⚠️  {errors} page(s) still failing after {max_auto_retries} auto-retries")
+                    print(f"   Run with --resume to try again, or these may be persistent xAI issues")
 
         except Exception as e:
             # Stage-level error handler

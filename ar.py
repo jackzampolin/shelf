@@ -118,6 +118,17 @@ def cmd_process_clean(args):
             )
             processor.clean_stage(args.scan_id, confirm=args.yes)
 
+        elif args.stage == 'merge':
+            # Import Merge stage
+            merge_module = importlib.import_module('pipeline.3_merge')
+            MergeProcessor = getattr(merge_module, 'MergeProcessor')
+
+            # Clean Merge stage
+            processor = MergeProcessor(
+                storage_root=str(Path.home() / "Documents" / "book_scans")
+            )
+            processor.clean_stage(args.scan_id, confirm=args.yes)
+
         else:
             print(f"❌ Clean not implemented for stage: {args.stage}")
             sys.exit(1)
@@ -147,6 +158,31 @@ def cmd_process_correct(args):
         processor.process_book(args.scan_id, resume=args.resume)
 
         print(f"\n✅ Correction complete for {args.scan_id}")
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+def cmd_process_merge(args):
+    """Run Merge & Enrich stage (Stage 3)."""
+    import importlib
+
+    try:
+        # Import Merge stage
+        merge_module = importlib.import_module('pipeline.3_merge')
+        MergeProcessor = getattr(merge_module, 'MergeProcessor')
+
+        # Run Merge
+        processor = MergeProcessor(
+            storage_root=str(Path.home() / "Documents" / "book_scans"),
+            max_workers=args.workers
+        )
+        processor.process_book(args.scan_id, resume=args.resume)
+
+        print(f"\n✅ Merge complete for {args.scan_id}")
 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -239,8 +275,8 @@ def cmd_status(args):
     total_cost = 0.0
     total_duration = 0.0
 
-    # Check OCR and Correction stages
-    stages = ['ocr', 'correction']
+    # Check OCR, Correction, and Merge stages
+    stages = ['ocr', 'correction', 'merge']
 
     for stage in stages:
         checkpoint = CheckpointManager(
@@ -279,6 +315,8 @@ def cmd_status(args):
             output_dir = book_dir / 'ocr'
         elif stage == 'correction':
             output_dir = book_dir / 'corrected'
+        elif stage == 'merge':
+            output_dir = book_dir / 'processed'
         else:
             output_dir = None
 
@@ -424,9 +462,16 @@ Note: Minimal CLI during refactor (Issue #55).
     correct_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     correct_parser.set_defaults(func=cmd_process_correct)
 
+    # ar process merge
+    merge_parser = process_subparsers.add_parser('merge', help='Stage 3: Merge & Enrich')
+    merge_parser.add_argument('scan_id', help='Book scan ID')
+    merge_parser.add_argument('--workers', type=int, default=8, help='Parallel workers (default: 8)')
+    merge_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
+    merge_parser.set_defaults(func=cmd_process_merge)
+
     # ar process clean
     clean_parser = process_subparsers.add_parser('clean', help='Clean/delete stage outputs')
-    clean_parser.add_argument('stage', choices=['ocr', 'correct'], help='Stage to clean')
+    clean_parser.add_argument('stage', choices=['ocr', 'correct', 'merge'], help='Stage to clean')
     clean_parser.add_argument('scan_id', help='Book scan ID')
     clean_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompt')
     clean_parser.set_defaults(func=cmd_process_clean)
