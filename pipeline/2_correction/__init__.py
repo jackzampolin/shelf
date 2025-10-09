@@ -1,83 +1,77 @@
 #!/usr/bin/env python3
 """
-LLM Text Cleanup Pipeline - Structured JSON Processing
-Processes structured OCR JSON through error detection, correction, and verification
-with parallel processing and rate limiting
+Vision-Based OCR Correction with Block Classification
+
+Corrects OCR errors and classifies content blocks using multimodal LLM.
 """
 
-import os
-import sys
 import json
-import copy
-import time
-import threading
+import sys
+import base64
+import io
 from pathlib import Path
+from pdf2image import convert_from_path
 from datetime import datetime
-from dotenv import load_dotenv
+from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from infra.llm_client import LLMClient
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from infra.logger import create_logger
 from infra.checkpoint import CheckpointManager
+from infra.llm_client import LLMClient
 
-# Load environment variables
-load_dotenv()
+# Import schemas
+import importlib
+ocr_schemas = importlib.import_module('pipeline.1_ocr.schemas')
+OCRPageOutput = ocr_schemas.OCRPageOutput
 
-
-class RateLimiter:
-    """Rate limiter for API calls"""
-    def __init__(self, calls_per_minute=15):
-        self.calls_per_minute = calls_per_minute
-        self.min_interval = 60.0 / calls_per_minute
-        self.last_call = 0
-        self.lock = threading.Lock()
-
-    def wait(self):
-        """Wait if necessary to respect rate limit"""
-        with self.lock:
-            now = time.time()
-            time_since_last = now - self.last_call
-            if time_since_last < self.min_interval:
-                sleep_time = self.min_interval - time_since_last
-                time.sleep(sleep_time)
-            self.last_call = time.time()
+correction_schemas = importlib.import_module('pipeline.2_correction.schemas')
+CorrectionPageOutput = correction_schemas.CorrectionPageOutput
+BlockClassification = correction_schemas.BlockClassification
+ParagraphCorrection = correction_schemas.ParagraphCorrection
 
 
-class StructuredPageCorrector:
-    """
-    Process structured OCR JSON through 3-agent LLM pipeline:
-    - Agent 1: Detect OCR errors in body/caption regions
-    - Agent 2: Apply corrections to those regions
-    - Agent 3: Verify corrections
-    """
+class VisionCorrector:
+    """Vision-based OCR correction and block classification."""
 
-    def __init__(self, book_title, storage_root=None, model="openai/gpt-4o-mini",
-                 max_workers=30, calls_per_minute=150, enable_checkpoints=True):
-        self.book_title = book_title
+    def __init__(self, storage_root=None, model="openai/gpt-4o", max_workers=10, enable_checkpoints=True):
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
-        self.book_dir = self.storage_root / book_title
         self.model = model
         self.max_workers = max_workers
-        self.rate_limiter = RateLimiter(calls_per_minute)
+        self.progress_lock = threading.Lock()
+        self.logger = None  # Will be initialized per book
+        self.checkpoint = None  # Will be initialized per book
         self.enable_checkpoints = enable_checkpoints
+        self.llm_client = None  # Will be initialized per book
+
+    def process_book(self, book_title, resume=False):
+        """Process all pages for correction and classification."""
+        book_dir = self.storage_root / book_title
+
+        if not book_dir.exists():
+            print(f"❌ Book directory not found: {book_dir}")
+            return
+
+        # Check for OCR outputs
+        ocr_dir = book_dir / "ocr"
+        if not ocr_dir.exists() or not list(ocr_dir.glob("page_*.json")):
+            print(f"❌ No OCR outputs found. Run OCR stage first.")
+            return
+
+        # Load metadata
+        metadata_file = book_dir / "metadata.json"
+        with open(metadata_file, 'r') as f:
+            metadata = json.load(f)
+
+        # Initialize logger
+        logs_dir = book_dir / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        self.logger = create_logger(book_title, "correction", log_dir=logs_dir)
 
         # Initialize LLM client
-        self.llm_client = LLMClient()
-
-        # Directories
-        self.ocr_dir = self.book_dir / "ocr"
-        self.corrected_dir = self.book_dir / "corrected"
-        self.needs_review_dir = self.book_dir / "needs_review"
-        self.logs_dir = self.book_dir / "logs"
-        self.debug_dir = self.logs_dir / "debug"
-
-        for dir_path in [self.corrected_dir, self.needs_review_dir, self.logs_dir, self.debug_dir]:
-            dir_path.mkdir(exist_ok=True)
-
-        # Initialize unified logger
-        self.logger = create_logger(book_title, "correction", log_dir=self.logs_dir)
+        self.llm_client = LLMClient(logger=self.logger)
 
         # Initialize checkpoint manager
         if self.enable_checkpoints:
@@ -87,900 +81,389 @@ class StructuredPageCorrector:
                 storage_root=self.storage_root,
                 output_dir="corrected"
             )
-            # Load existing cost from checkpoint if resuming
-            checkpoint_state = self.checkpoint.get_status()
-            existing_cost = checkpoint_state.get('metadata', {}).get('total_cost_usd', 0.0)
-        else:
-            self.checkpoint = None
-            existing_cost = 0.0
+            if not resume:
+                self.checkpoint.reset()
 
-        # Thread-safe stats tracking
-        # Start with existing cost from previous runs (accumulate, don't replace)
-        self.stats = {
-            "total_pages": 0,
-            "processed_pages": 0,
-            "skipped_pages": 0,  # No correctable content
-            "total_errors_found": 0,
-            "corrections_applied": 0,
-            "pages_needing_review": 0,
-            "total_cost_usd": existing_cost
-        }
-        self.stats_lock = threading.Lock()
-        self.progress_lock = threading.Lock()
+        self.logger.info(f"Processing book: {metadata.get('title', book_title)}", resume=resume, model=self.model)
 
-    def extract_json(self, text, debug_label=""):
-        """
-        Extract JSON from LLM response with robust error handling.
-        Uses multiple fallback strategies to handle common JSON issues.
-        """
-        import re
+        # Create output directory
+        corrected_dir = book_dir / "corrected"
+        corrected_dir.mkdir(exist_ok=True)
 
-        original_text = text
-        text = text.strip()
+        # Get list of OCR outputs
+        ocr_files = sorted(ocr_dir.glob("page_*.json"))
+        total_pages = len(ocr_files)
 
-        # Remove markdown code blocks
-        if '```json' in text or '```' in text:
-            json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-            if json_match:
-                text = json_match.group(1).strip()
-            else:
-                text = text.replace('```json', '').replace('```', '').strip()
-
-        # Find the first { and last } for JSON object
-        first_brace = text.find('{')
-        last_brace = text.rfind('}')
-
-        if first_brace != -1 and last_brace != -1:
-            text = text[first_brace:last_brace + 1]
-
-        # Strategy 1: Try to parse as-is
-        try:
-            json.loads(text)
-            return text
-        except json.JSONDecodeError:
-            pass  # Try fallback strategies
-
-        # Strategy 2: Fix common JSON syntax errors
-        fixed_text = text
-
-        # Fix trailing commas before closing brackets
-        fixed_text = re.sub(r',(\s*[}\]])', r'\1', fixed_text)
-
-        # Fix missing commas between objects in arrays
-        fixed_text = re.sub(r'}\s*{', '},{', fixed_text)
-
-        # Fix missing commas between array elements
-        fixed_text = re.sub(r'"\s*\n\s*"', '",\n"', fixed_text)
-
-        last_error = None
-        try:
-            json.loads(fixed_text)
-            return fixed_text
-        except json.JSONDecodeError as e:
-            # Capture error details before leaving except block
-            last_error = {"msg": str(e), "lineno": e.lineno, "colno": e.colno}
-
-        # Save debug info before raising
-        if debug_label and last_error:
-            debug_file = self.debug_dir / f"{debug_label}_json_error.txt"
-            with open(debug_file, 'w', encoding='utf-8') as f:
-                f.write(f"JSON Parse Error: {last_error['msg']}\n")
-                f.write(f"Error at line {last_error['lineno']}, column {last_error['colno']}\n\n")
-                f.write("=== ORIGINAL RESPONSE ===\n")
-                f.write(original_text)
-                f.write("\n\n=== EXTRACTED JSON ===\n")
-                f.write(text)
-                f.write("\n\n=== AFTER REGEX FIXES ===\n")
-                f.write(fixed_text)
-
-        raise json.JSONDecodeError(f"Could not parse JSON after all strategies", fixed_text, 0)
-
-    def call_llm(self, system_prompt, user_prompt, temperature=0.1):
-        """Make API call to OpenRouter with rate limiting"""
-        self.rate_limiter.wait()
-
-        # Use unified LLMClient
-        response, usage, cost = self.llm_client.simple_call(
-            self.model,
-            system_prompt,
-            user_prompt,
-            temperature=temperature,
-            timeout=60
+        self.logger.start_stage(
+            total_pages=total_pages,
+            model=self.model,
+            max_workers=self.max_workers
         )
 
-        # Track cost
-        with self.stats_lock:
-            self.stats['total_cost_usd'] += cost
-
-        return response, usage
-
-    def load_page_json(self, page_num):
-        """Load structured JSON for a page"""
-        # Find the page file across all batches
-        # Load page from flat ocr/ directory
-        page_file = self.ocr_dir / f"page_{page_num:04d}.json"
-        if page_file.exists():
-            with open(page_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return None
-
-    def filter_correctable_regions(self, page_data):
-        """
-        Filter regions that need correction: headers, body, and captions.
-
-        Note: We include headers because OCR sometimes misclassifies large text
-        blocks as "header" when they're actually body text (especially on pages
-        with chapter endings or photo captions that start at the top).
-
-        Skip: footers, images
-        """
-        return [
-            r for r in page_data.get('regions', [])
-            if r['type'] in ['header', 'body', 'caption']
-        ]
-
-    def build_page_text(self, page_data, regions_subset=None):
-        """
-        Build text from page regions in reading order
-        If regions_subset provided, only include those regions
-        """
-        regions = regions_subset if regions_subset else page_data.get('regions', [])
-        sorted_regions = sorted(regions, key=lambda r: r.get('reading_order', 0))
-
-        text_parts = []
-        for region in sorted_regions:
-            if region['type'] != 'image' and 'text' in region:
-                text_parts.append(region['text'])
-
-        return '\n\n'.join(text_parts)
-
-    def get_page_context(self, page_num, total_pages):
-        """
-        Get 3-page context for body regions only
-        Returns: (prev_text, current_page_data, next_text)
-        """
-        # Load current page (full data)
-        current_data = self.load_page_json(page_num)
-        if not current_data:
-            return None, None, None
-
-        # Load adjacent pages (text only from body regions)
-        prev_text = None
-        if page_num > 1:
-            prev_data = self.load_page_json(page_num - 1)
-            if prev_data:
-                prev_body = [r for r in prev_data['regions'] if r['type'] == 'body']
-                if prev_body:
-                    prev_text = self.build_page_text(prev_data, prev_body)[-500:]  # Last 500 chars
-
-        next_text = None
-        if page_num < total_pages:
-            next_data = self.load_page_json(page_num + 1)
-            if next_data:
-                next_body = [r for r in next_data['regions'] if r['type'] == 'body']
-                if next_body:
-                    next_text = self.build_page_text(next_data, next_body)[:500]  # First 500 chars
-
-        return prev_text, current_data, next_text
-
-    def agent1_detect_errors(self, page_num, prev_text, page_data, next_text, max_retries=2):
-        """Agent 1: Detect OCR errors in body/caption regions with automatic JSON retry"""
-
-        correctable_regions = self.filter_correctable_regions(page_data)
-        if not correctable_regions:
-            return {"page_number": page_num, "total_errors_found": 0, "errors": []}
-
-        # Build target text from correctable regions only
-        target_text = self.build_page_text(page_data, correctable_regions)
-
-        system_prompt = """You are an OCR error detection specialist.
-
-<task>
-Identify potential OCR errors in scanned book text.
-</task>
-
-<rules>
-1. DO NOT fix or correct anything
-2. ONLY identify and catalog potential errors
-3. Focus ONLY on the specified target page text
-4. Use adjacent pages for context but don't report errors from them
-5. Report errors with high confidence (>0.7) only
-</rules>
-
-<error_types>
-- Character substitutions (rn→m, l→1, O→0, vv→w)
-- Spacing errors (word run-together, extra spaces)
-- Hyphenated line breaks that should be joined (e.g., "presi-\\ndent")
-- OCR artifacts (|||, ___, etc. that aren't real text)
-- Obvious typos from OCR confusion
-</error_types>
-
-<output_format>
-Return ONLY valid JSON. Start your response with the opening brace {
-
-JSON Structure:
-{
-  "page_number": N,
-  "total_errors_found": X,
-  "errors": [
-    {
-      "error_id": 1,
-      "location": "paragraph 2",
-      "original_text": "tbe",
-      "error_type": "character_substitution",
-      "confidence": 0.95,
-      "suggested_correction": "the",
-      "context_before": "walked into ",
-      "context_after": " room"
-    }
-  ]
-}
-</output_format>
-
-<critical>
-NO markdown code blocks (```json).
-NO explanatory text before or after the JSON.
-NO commentary or analysis.
-Start immediately with {
-</critical>"""
-
-        # Build context
-        context_parts = []
-        if prev_text:
-            context_parts.append(f"PREVIOUS PAGE (context only):\n...{prev_text}\n")
-
-        context_parts.append(f"PAGE {page_num} (TARGET - ANALYZE THIS ONLY):\n{target_text}\n")
-
-        if next_text:
-            context_parts.append(f"NEXT PAGE (context only):\n{next_text}...")
-
-        user_prompt = f"""Analyze PAGE {page_num} body text ONLY for OCR errors.
-
-Use adjacent pages for sentence context, but ONLY report errors from page {page_num}.
-
-{chr(10).join(context_parts)}
-
-Return JSON error catalog for page {page_num} only."""
-
-        # Define JSON parser that includes extraction + validation
-        def parse_agent1_response(response):
-            json_text = self.extract_json(response, debug_label=f"page_{page_num:04d}_agent1")
-            return json.loads(json_text)
-
-        # Use LLMClient's automatic JSON retry
-        try:
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-
-            self.rate_limiter.wait()
-            error_catalog, usage, cost = self.llm_client.call_with_json_retry(
-                model=self.model,
-                messages=messages,
-                json_parser=parse_agent1_response,
-                temperature=0.1,
-                max_retries=max_retries,
-                timeout=60
-            )
-
-            # Track cost
-            with self.stats_lock:
-                self.stats['total_cost_usd'] += cost
-
-            # Add timestamp
-            error_catalog['processing_timestamp'] = datetime.now().isoformat()
-
-            # Update stats
-            errors_found = error_catalog.get('total_errors_found', 0)
-            with self.stats_lock:
-                self.stats['total_errors_found'] += errors_found
-
-            return error_catalog
-
-        except Exception as e:
-            self.logger.error(f"Agent 1 failed after retries", page=page_num, agent="agent1", error=str(e))
-            return {
-                "page_number": page_num,
-                "total_errors_found": 0,
-                "errors": [],
-                "error_message": str(e)
-            }
-
-    def agent2_correct(self, page_num, page_data, error_catalog):
-        """Agent 2: Apply corrections to regions"""
-
-        errors_count = error_catalog.get('total_errors_found', 0)
-        correctable_regions = self.filter_correctable_regions(page_data)
-        target_text = self.build_page_text(page_data, correctable_regions)
-
-        if errors_count == 0:
-            return target_text  # Return original text, not page_data object!
-
-        system_prompt = """You are an OCR correction specialist.
-
-<task>
-Apply ONLY the specific corrections provided in the error catalog.
-</task>
-
-<rules>
-1. Apply ONLY the corrections listed in the error catalog
-2. Do NOT make any other changes, improvements, or "fixes"
-3. Preserve all formatting, paragraph breaks, and structure
-4. If a correction seems wrong, apply it anyway (verification will catch it)
-5. Do NOT rephrase or modernize language
-6. Mark each correction with [CORRECTED:id] immediately after the fix
-</rules>
-
-<output_format>
-Return ONLY the corrected text with inline [CORRECTED:id] markers.
-Your response must begin with the first word of the text.
-</output_format>
-
-<critical>
-NO preambles like "Here's the corrected text:"
-NO explanations like "I've applied the corrections as requested."
-Start immediately with the content.
-
-CORRECT: "The president walked into the[CORRECTED:1] room."
-WRONG: "Here's the corrected text: The president..."
-</critical>"""
-
-        user_prompt = f"""Apply these specific corrections to page {page_num}.
-
-ERROR CATALOG:
-{json.dumps(error_catalog['errors'], indent=2)}
-
-ORIGINAL TEXT (Page {page_num}):
-{target_text}
-
-Return the corrected text with [CORRECTED:id] markers after each fix."""
-
-        try:
-            response, usage = self.call_llm(system_prompt, user_prompt, temperature=0)
-            corrected_text = response.strip()
-
-            # Store corrected text (will be split back into regions later if needed)
-            with self.stats_lock:
-                self.stats['corrections_applied'] += errors_count
-
-            return corrected_text
-
-        except Exception as e:
-            self.logger.error("Agent 2 error", page=page_num, agent="agent2", error=str(e))
-            return target_text  # Return original on error
-
-    def agent3_verify(self, page_num, page_data, error_catalog, corrected_text, max_retries=2):
-        """Agent 3: Verify corrections with automatic JSON retry"""
-
-        correctable_regions = self.filter_correctable_regions(page_data)
-        original_text = self.build_page_text(page_data, correctable_regions)
-
-        system_prompt = """You are a text verification specialist.
-
-<task>
-Verify that corrections were applied correctly.
-</task>
-
-<verification_checklist>
-1. Were all identified errors corrected?
-2. Were corrections applied accurately?
-3. Were any unauthorized changes made?
-4. Is document structure preserved?
-5. Are there any new errors introduced?
-6. Are [CORRECTED:id] markers present and correctly placed?
-7. Do marker IDs match the error catalog?
-</verification_checklist>
-
-<confidence_scoring>
-- 1.0: Perfect, all corrections applied correctly
-- 0.9: Minor issues, but acceptable
-- 0.8: Some concerns, may need review
-- <0.8: Significant issues, flag for human review
-</confidence_scoring>
-
-<output_format>
-Return ONLY valid JSON. Start your response with the opening brace {
-
-JSON Structure:
-{
-  "page_number": N,
-  "all_corrections_applied": true/false,
-  "corrections_verified": {
-    "correctly_applied": X,
-    "incorrectly_applied": Y,
-    "missed": Z
-  },
-  "missed_corrections": [
-    {
-      "error_id": N,
-      "original_text": "text that should have been changed",
-      "should_be": "what it should be changed to",
-      "location": "where in the text"
-    }
-  ],
-  "incorrectly_applied": [
-    {
-      "error_id": N,
-      "was_changed_to": "what Agent 2 incorrectly changed it to",
-      "should_be": "what it should actually be",
-      "reason": "why the change was wrong"
-    }
-  ],
-  "unauthorized_changes": [],
-  "new_errors_introduced": [],
-  "structure_preserved": true/false,
-  "confidence_score": 0.0-1.0,
-  "needs_human_review": true/false,
-  "review_reason": "explanation if needed"
-}
-</output_format>
-
-<critical>
-NO markdown code blocks (```json).
-NO explanatory text before or after the JSON.
-NO commentary or analysis.
-Start immediately with {
-
-IMPORTANT: If corrections were missed or incorrectly applied, populate the
-"missed_corrections" and "incorrectly_applied" arrays with specific details.
-This structured data will be used by Agent 4 for targeted fixes.
-</critical>"""
-
-        user_prompt = f"""Verify corrections for page {page_num}.
-
-ORIGINAL TEXT:
-{original_text}
-
-ERROR CATALOG (what should be fixed):
-{json.dumps(error_catalog.get('errors', []), indent=2)}
-
-CORRECTED TEXT (what Agent 2 produced):
-{corrected_text}
-
-Verify each correction and check for unauthorized changes."""
-
-        # Define JSON parser that includes extraction + validation
-        def parse_agent3_response(response):
-            json_text = self.extract_json(response, debug_label=f"page_{page_num:04d}_agent3")
-            return json.loads(json_text)
-
-        try:
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-
-            self.rate_limiter.wait()
-            verification, usage, cost = self.llm_client.call_with_json_retry(
-                model=self.model,
-                messages=messages,
-                json_parser=parse_agent3_response,
-                temperature=0,
-                max_retries=max_retries,
-                timeout=60
-            )
-
-            # Track cost
-            with self.stats_lock:
-                self.stats['total_cost_usd'] += cost
-
-            # Add timestamp
-            verification['verification_timestamp'] = datetime.now().isoformat()
-
-            # Update stats
-            confidence = verification.get('confidence_score', 0)
-            needs_review = verification.get('needs_human_review', False)
-
-            if needs_review or confidence < 0.8:
-                with self.stats_lock:
-                    self.stats['pages_needing_review'] += 1
-
-            return verification
-
-        except Exception as e:
-            self.logger.error("Agent 3 error", page=page_num, agent="agent3", error=str(e))
-            return {
-                "page_number": page_num,
-                "confidence_score": 0.0,
-                "needs_human_review": True,
-                "review_reason": f"Verification failed: {str(e)}"
-            }
-
-    def apply_corrections_to_regions(self, page_data, corrected_text, error_catalog):
-        """
-        Apply corrections back to individual regions by parsing [CORRECTED:id] markers.
-
-        Agent 2 returns text like: "I ardently[CORRECTED:1] championed it"
-        This tells us that the correction for error_id=1 changed something to "ardently".
-        We use the error catalog to find the original text, then apply the change to regions.
-        """
-        import re
-
-        # Get correctable regions (same ones correction was applied to)
-        correctable_regions = self.filter_correctable_regions(page_data)
-
-        if not correctable_regions or error_catalog.get('total_errors_found', 0) == 0:
-            # No corrections needed, regions stay as-is
-            return page_data
-
-        # Parse corrected_text to extract what each [CORRECTED:id] marker replaced
-        # Pattern: "word[CORRECTED:id]" or "multiple words[CORRECTED:id]"
-        # The corrected text appears BEFORE the marker
-
-        errors = error_catalog.get('errors', [])
-        corrections_map = {}  # error_id -> {original, corrected}
-
-        # Build lookup map: error_id -> original_text
-        for error in errors:
-            error_id = error.get('error_id', error.get('id', 0))
-            original = error.get('original_text', error.get('error_text', ''))
-            if error_id and original:
-                corrections_map[error_id] = {'original': original, 'corrected': None}
-
-        # Parse [CORRECTED:id] markers to find what the correction changed TO
-        # We need to look backward from each marker to find the corrected text
-        # Strategy: Find the marker, look for the original text nearby, extract what replaced it
-
-        marker_pattern = r'\[CORRECTED:(\d+)\]'
-        marker_positions = [(m.start(), int(m.group(1))) for m in re.finditer(marker_pattern, corrected_text)]
-
-        for marker_pos, error_id in marker_positions:
-            if error_id not in corrections_map:
-                continue
-
-            original = corrections_map[error_id]['original']
-
-            # Look backward from the marker to find a word/phrase of similar length
-            # The corrected word(s) appear immediately before [CORRECTED:id]
-            # Extract text before marker, split into words, take last N words where N matches original word count
-            text_before = corrected_text[:marker_pos].rstrip()
-
-            # Count words in original to know how many to extract
-            original_words = original.split()
-            num_words = len(original_words)
-
-            # Extract last N words before the marker
-            words_before = text_before.split()
-            if len(words_before) >= num_words:
-                corrected_words = words_before[-num_words:]
-                corrected = ' '.join(corrected_words)
-                corrections_map[error_id]['corrected'] = corrected
-
-        # Now apply corrections to each region
-        for region in page_data.get('regions', []):
-            if region['type'] not in ['header', 'body', 'caption', 'footnote']:
-                continue
-
-            region_text = region.get('text', '')
-            updated_text = region_text
-
-            # Apply each correction that appears in this region
-            for error_id, correction in corrections_map.items():
-                original = correction['original']
-                corrected = correction['corrected']
-
-                if not corrected:
-                    # Couldn't parse the correction from markers, skip it
-                    continue
-
-                # Check if this error's original text appears in this region
-                if original in updated_text:
-                    # Apply correction with marker
-                    updated_text = updated_text.replace(
-                        original,
-                        f"{corrected}[CORRECTED:{error_id}]",
-                        1  # Only replace first occurrence
-                    )
-
-            # Update region text if any corrections were applied
-            if updated_text != region_text:
-                region['text'] = updated_text
-                region['corrected'] = True
-
-        return page_data
-
-    def process_single_page(self, page_num, total_pages):
-        """Process a single page through the 3-agent pipeline"""
-        try:
-            # Load page with context
-            prev_text, page_data, next_text = self.get_page_context(page_num, total_pages)
-
-            if not page_data:
-                return {'page': page_num, 'status': 'not_found'}
-
-            # Make a deep copy to avoid circular reference issues
-            page_data = copy.deepcopy(page_data)
-
-            # Check if page has correctable content
-            correctable_regions = self.filter_correctable_regions(page_data)
-            if not correctable_regions:
-                # Save original with skip marker
-                page_data['llm_processing'] = {
-                    'skipped': True,
-                    'skip_reason': 'no_correctable_regions',
-                    'timestamp': datetime.now().isoformat()
-                }
-
-                # Save to flat corrected directory
-                output_file = self.corrected_dir / f"page_{page_num:04d}.json"
-                with open(output_file, 'w', encoding='utf-8') as f:
-                    json.dump(page_data, f, indent=2, default=str)
-
-                with self.stats_lock:
-                    self.stats['skipped_pages'] += 1
-
-                return {'page': page_num, 'status': 'skipped'}
-
-            # Agent 1: Detect errors
-            error_catalog = self.agent1_detect_errors(page_num, prev_text, page_data, next_text)
-
-            # Agent 2: Apply corrections
-            corrected_text = self.agent2_correct(page_num, page_data, error_catalog)
-
-            # Agent 3: Verify
-            verification = self.agent3_verify(page_num, page_data, error_catalog, corrected_text)
-
-            # NEW: Apply corrections back to individual regions
-            page_data = self.apply_corrections_to_regions(page_data, corrected_text, error_catalog)
-
-            # Update page data with results
-            page_data['llm_processing'] = {
-                'timestamp': datetime.now().isoformat(),
-                'model': self.model,
-                'error_catalog': error_catalog,
-                'corrected_text': corrected_text,  # Keep for backwards compatibility
-                'verification': verification
-            }
-
-            # Save corrected JSON to flat directory
-            output_file = self.corrected_dir / f"page_{page_num:04d}.json"
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(page_data, f, indent=2, default=str)
-
-            # Save to review if flagged
-            if verification.get('needs_human_review') or verification.get('confidence_score', 1.0) < 0.8:
-                review_file = self.needs_review_dir / f"page_{page_num:04d}.json"
-                with open(review_file, 'w', encoding='utf-8') as f:
-                    json.dump(page_data, f, indent=2, default=str)
-
-            with self.stats_lock:
-                self.stats['processed_pages'] += 1
-
-            return {
-                'page': page_num,
-                'status': 'success',
-                'errors_found': error_catalog.get('total_errors_found', 0),
-                'confidence': verification.get('confidence_score', 0)
-            }
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return {'page': page_num, 'status': 'error', 'error': str(e)}
-
-    def process_pages(self, start_page=1, end_page=None, total_pages=None, resume=False):
-        """Process range of pages with parallel execution"""
-
-        if total_pages is None:
-            # Count actual OCR files instead of using hardcoded fallback
-            ocr_dir = self.book_dir / "ocr"
-            if ocr_dir.exists():
-                total_pages = len(list(ocr_dir.glob("page_*.json")))
-            else:
-                # Try metadata as fallback
-                metadata_file = self.book_dir / "metadata.json"
-                if metadata_file.exists():
-                    with open(metadata_file) as f:
-                        metadata = json.load(f)
-                        total_pages = metadata.get('total_pages_processed', metadata.get('total_pages', 0))
-                else:
-                    total_pages = 0
-
-            if total_pages == 0:
-                error_msg = f"Could not determine total pages for {self.book_dir}"
-                if self.checkpoint:
-                    self.checkpoint.mark_stage_failed(error=error_msg)
-                raise ValueError(error_msg)
-
-        if end_page is None:
-            end_page = total_pages
-
-        # Use checkpoint system to determine which pages to process
-        if self.checkpoint and resume:
-            page_numbers = self.checkpoint.get_remaining_pages(
-                total_pages=total_pages,
-                resume=True,
-                start_page=start_page,
-                end_page=end_page
-            )
-
-            # Log resume information
-            skipped = (end_page - start_page + 1) - len(page_numbers)
-            if skipped > 0:
-                cost_saved = self.checkpoint.estimate_cost_saved()
-                self.logger.info(
-                    f"Resuming from checkpoint: {skipped} pages already completed",
-                    skipped_pages=skipped,
-                    remaining_pages=len(page_numbers),
-                    estimated_cost_saved=cost_saved
-                )
-                print(f"✅ Resuming: {skipped} pages already completed (saved ~${cost_saved:.2f})")
-                print(f"⏳ Processing {len(page_numbers)} remaining pages...")
-        elif self.checkpoint:
-            # Start fresh - reset checkpoint
-            self.checkpoint.reset()
-            page_numbers = list(range(start_page, end_page + 1))
-        else:
-            # No checkpoint system
-            page_numbers = list(range(start_page, end_page + 1))
-
-        self.stats['total_pages'] = len(page_numbers)
-
-        if len(page_numbers) == 0:
-            self.logger.info("All pages already completed - nothing to process")
-            print("✅ All pages already completed!")
+        # Get source PDF path
+        source_dir = book_dir / "source"
+        pdf_files = sorted(source_dir.glob("*.pdf"))
+        if not pdf_files:
+            self.logger.error("No source PDF found", source_dir=str(source_dir))
             return
 
-        # Log stage start with metadata
-        self.logger.start_stage(
-            start_page=start_page,
-            end_page=end_page,
-            total_pages=self.stats['total_pages'],
-            model=self.model,
-            max_workers=self.max_workers,
-            rate_limit=self.rate_limiter.calls_per_minute,
-            resume=resume
-        )
+        # For simplicity, assume single PDF (can extend later for multi-PDF books)
+        pdf_path = pdf_files[0]
 
-        # Process in parallel
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_page = {
-                executor.submit(self.process_single_page, page_num, total_pages): page_num
-                for page_num in page_numbers
-            }
+        # Process pages in parallel
+        tasks = []
+        for ocr_file in ocr_files:
+            page_num = int(ocr_file.stem.split('_')[1])
 
-            completed = 0
-            for future in as_completed(future_to_page):
-                page_num = future_to_page[future]
-                result = future.result()
+            # Skip if checkpoint says already done
+            if self.checkpoint and self.checkpoint.validate_page_output(page_num):
+                continue
 
-                completed += 1
-
-                # Update checkpoint OUTSIDE progress_lock to avoid lock ordering issues
-                # CheckpointManager has its own thread-safe lock
-                if self.checkpoint and result['status'] in ['success', 'skipped']:
-                    self.checkpoint.mark_completed(page_num)
-
-                with self.progress_lock:
-                    # Log progress with detailed information
-                    if result['status'] == 'success':
-                        conf = result.get('confidence', 0)
-                        errors = result.get('errors_found', 0)
-                        self.logger.progress(
-                            f"Page {page_num}: {errors} errors, confidence {conf:.2f}",
-                            current=completed,
-                            total=len(page_numbers),
-                            page=page_num,
-                            errors_found=errors,
-                            confidence=conf,
-                            status=result['status']
-                        )
-                    elif result['status'] == 'skipped':
-                        self.logger.info(
-                            f"Page {page_num}: skipped",
-                            page=page_num,
-                            status=result['status'],
-                            progress_current=completed,
-                            progress_total=len(page_numbers)
-                        )
-                    else:
-                        self.logger.warning(
-                            f"Page {page_num}: {result['status']}",
-                            page=page_num,
-                            status=result['status'],
-                            error=result.get('error'),
-                            progress_current=completed,
-                            progress_total=len(page_numbers)
-                        )
-
-        self.print_summary()
-
-        # Mark stage complete in checkpoint
-        if self.checkpoint:
-            self.checkpoint.mark_stage_complete(metadata={
-                "model": self.model,
-                "workers": self.max_workers,
-                "total_cost_usd": self.stats['total_cost_usd']
+            tasks.append({
+                'page_num': page_num,
+                'ocr_file': ocr_file,
+                'pdf_path': pdf_path,
+                'corrected_dir': corrected_dir
             })
 
-    def print_summary(self):
-        """Print processing summary and log completion"""
-        # Log summary to structured logs
+        if len(tasks) == 0:
+            self.logger.info("All pages already corrected, skipping")
+            print("✅ All pages already corrected")
+            return
+
+        # Process in parallel
+        completed = 0
+        errors = 0
+        total_cost = 0.0
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_task = {
+                executor.submit(self._process_single_page, task): task
+                for task in tasks
+            }
+
+            for future in as_completed(future_to_task):
+                task = future_to_task[future]
+                try:
+                    success, cost = future.result()
+                    if success:
+                        completed += 1
+                        total_cost += cost
+                    else:
+                        errors += 1
+                except Exception as e:
+                    errors += 1
+                    with self.progress_lock:
+                        self.logger.error(f"Page processing error", page=task['page_num'], error=str(e))
+
+                # Progress update
+                with self.progress_lock:
+                    progress_count = completed + errors
+                    self.logger.progress(
+                        f"Correcting pages",
+                        current=progress_count,
+                        total=len(tasks),
+                        completed=completed,
+                        errors=errors,
+                        cost=total_cost
+                    )
+
+        # Mark stage complete
+        if self.checkpoint:
+            self.checkpoint.mark_stage_complete(metadata={
+                "total_pages_corrected": completed,
+                "total_cost": total_cost
+            })
+
+        # Update metadata
+        metadata['correction_complete'] = True
+        metadata['correction_completion_date'] = datetime.now().isoformat()
+        metadata['correction_total_cost'] = total_cost
+
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
         self.logger.info(
-            "Processing complete",
-            total_pages=self.stats['total_pages'],
-            processed_pages=self.stats['processed_pages'],
-            skipped_pages=self.stats['skipped_pages'],
-            total_errors_found=self.stats['total_errors_found'],
-            corrections_applied=self.stats['corrections_applied'],
-            pages_needing_review=self.stats['pages_needing_review'],
-            total_cost_usd=self.stats['total_cost_usd']
+            "Correction complete",
+            pages_corrected=completed,
+            total_cost=total_cost,
+            avg_cost_per_page=total_cost / completed if completed > 0 else 0,
+            corrected_dir=str(corrected_dir)
         )
 
-        # Also print human-readable summary (old format for compatibility)
-        print(f"\n{'='*60}")
-        print("📊 Processing Complete")
-        print(f"{'='*60}")
-        print(f"Total pages: {self.stats['total_pages']}")
-        print(f"  Processed: {self.stats['processed_pages']}")
-        print(f"  Skipped: {self.stats['skipped_pages']} (no correctable content)")
-        print(f"Total errors found: {self.stats['total_errors_found']}")
-        print(f"Corrections applied: {self.stats['corrections_applied']}")
-        print(f"Pages needing review: {self.stats['pages_needing_review']}")
-        print(f"Total cost: ${self.stats['total_cost_usd']:.2f}")
-        print(f"{'='*60}\n")
+        print(f"\n✅ Correction complete: {completed} pages")
+        print(f"   Total cost: ${total_cost:.2f}")
+        print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
+        print(f"   Output: {corrected_dir}")
 
-
-def main():
-    """Main entry point"""
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description='Process book OCR through 3-agent LLM correction pipeline',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Process full book with default model (GPT-4o-mini)
-  python pipeline/correct.py The-Accidental-President
-
-  # Process pages 1-50
-  python pipeline/correct.py The-Accidental-President --start 1 --end 50
-
-  # Use different model
-  python pipeline/correct.py The-Accidental-President --model anthropic/claude-3.5-haiku
-
-  # Adjust concurrency
-  python pipeline/correct.py The-Accidental-President --workers 30 --rate-limit 60
-
-Default models and pricing (per 447-page book):
-  - openai/gpt-4o-mini: ~$0.32 (default, excellent quality)
-  - anthropic/claude-3-haiku: ~$0.61 (Claude family)
-  - google/gemini-2.5-flash: ~$1.02 (fast, 1M context)
-  - deepseek/deepseek-chat-v3.1: ~$0.43 (structured output)
+    def _process_single_page(self, task):
         """
-    )
+        Process a single page (called by ThreadPoolExecutor).
 
-    parser.add_argument('book_slug', help='Book slug (e.g., The-Accidental-President)')
-    parser.add_argument('--start', type=int, default=1, help='Start page (default: 1)')
-    parser.add_argument('--end', type=int, default=None, help='End page (default: all pages)')
-    parser.add_argument('--model', default='openai/gpt-4o-mini',
-                        help='OpenRouter model ID (default: openai/gpt-4o-mini)')
-    parser.add_argument('--workers', type=int, default=30,
-                        help='Max concurrent workers (default: 30)')
-    parser.add_argument('--rate-limit', type=int, default=150,
-                        help='API calls per minute (default: 150 for paid models)')
-    parser.add_argument('--resume', action='store_true',
-                        help='Resume from checkpoint (skip already-completed pages)')
+        Returns:
+            tuple: (success: bool, cost: float)
+        """
+        try:
+            # Load OCR output
+            with open(task['ocr_file'], 'r') as f:
+                ocr_data = json.load(f)
 
-    args = parser.parse_args()
+            # Validate OCR input
+            ocr_page = OCRPageOutput(**ocr_data)
 
-    print(f"📊 Configuration:")
-    print(f"   Model: {args.model}")
-    print(f"   Workers: {args.workers}")
-    print(f"   Rate limit: {args.rate_limit}/min")
-    print(f"   Page range: {args.start}-{args.end or 'end'}")
-    print(f"   Resume: {args.resume}")
-    print()
+            # Convert PDF page to image
+            page_image = self._pdf_page_to_image(task['pdf_path'], ocr_page.page_number)
 
-    processor = StructuredPageCorrector(
-        args.book_slug,
-        model=args.model,
-        max_workers=args.workers,
-        calls_per_minute=args.rate_limit
-    )
-    processor.process_pages(args.start, args.end, resume=args.resume)
+            # Call vision model for correction and classification
+            corrected_data, cost = self._correct_page_with_vision(ocr_page, page_image)
 
+            # Validate output against schema
+            try:
+                validated = CorrectionPageOutput(**corrected_data)
+                corrected_data = validated.model_dump()
+            except Exception as validation_error:
+                self.logger.error(
+                    f"Schema validation failed",
+                    page=task['page_num'],
+                    error=str(validation_error)
+                )
+                raise ValueError(f"Correction output failed schema validation: {validation_error}") from validation_error
 
-if __name__ == "__main__":
-    main()
+            # Save corrected output
+            output_file = task['corrected_dir'] / f"page_{task['page_num']:04d}.json"
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(corrected_data, f, indent=2)
+
+            # Mark complete in checkpoint
+            if self.checkpoint:
+                self.checkpoint.mark_completed(task['page_num'])
+
+            return True, cost
+
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Page correction failed", page=task['page_num'], error=str(e))
+            return False, 0.0
+
+    def _pdf_page_to_image(self, pdf_path, page_number, dpi=300):
+        """
+        Convert a specific PDF page to PIL Image.
+
+        Args:
+            pdf_path: Path to PDF file
+            page_number: Page number (1-indexed)
+            dpi: Resolution for conversion
+
+        Returns:
+            PIL.Image: Page image
+        """
+        # pdf2image uses 1-indexed page numbers
+        images = convert_from_path(
+            pdf_path,
+            dpi=dpi,
+            first_page=page_number,
+            last_page=page_number
+        )
+        return images[0]
+
+    def _image_to_base64(self, pil_image):
+        """Convert PIL Image to base64 string for vision API."""
+        buffered = io.BytesIO()
+        pil_image.save(buffered, format="PNG")
+        img_bytes = buffered.getvalue()
+        return base64.b64encode(img_bytes).decode('utf-8')
+
+    def _correct_page_with_vision(self, ocr_page, page_image):
+        """
+        Correct OCR errors and classify blocks using vision model.
+
+        Args:
+            ocr_page: OCRPageOutput object
+            page_image: PIL Image of the page
+
+        Returns:
+            tuple: (correction_data: dict, cost: float)
+        """
+        # Build OCR text representation for the prompt
+        ocr_text = self._format_ocr_for_prompt(ocr_page)
+
+        # Build the vision prompt
+        system_prompt = self._build_system_prompt()
+        user_prompt = self._build_user_prompt(ocr_page, ocr_text)
+
+        # Generate JSON Schema from Pydantic model for structured outputs
+        # We need to create a schema for just the blocks array since that's what the LLM returns
+        from pipeline.2_correction.schemas import BlockClassification
+
+        response_schema = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "ocr_correction",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "blocks": {
+                            "type": "array",
+                            "items": BlockClassification.model_json_schema()
+                        }
+                    },
+                    "required": ["blocks"],
+                    "additionalProperties": False
+                }
+            }
+        }
+
+        # Call vision model with structured output
+        response, usage, cost = self.llm_client.call(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            images=[page_image],
+            temperature=0.1,
+            timeout=180,
+            response_format=response_schema
+        )
+
+        # Response is guaranteed to be valid JSON with structured outputs
+        correction_data = json.loads(response)
+
+        # Add metadata
+        correction_data['page_number'] = ocr_page.page_number
+        correction_data['model_used'] = self.model
+        correction_data['processing_cost'] = cost
+        correction_data['timestamp'] = datetime.now().isoformat()
+
+        # Calculate summary stats
+        total_corrections = sum(
+            len(block.get('paragraphs', []))
+            for block in correction_data['blocks']
+            if any(p.get('corrected_text') for p in block.get('paragraphs', []))
+        )
+
+        avg_class_conf = sum(b.get('classification_confidence', 0) for b in correction_data['blocks']) / len(correction_data['blocks']) if correction_data['blocks'] else 0
+        avg_corr_conf = sum(
+            p.get('correction_confidence', 1.0)
+            for b in correction_data['blocks']
+            for p in b.get('paragraphs', [])
+        ) / sum(len(b.get('paragraphs', [])) for b in correction_data['blocks']) if correction_data['blocks'] else 1.0
+
+        correction_data['total_blocks'] = len(correction_data['blocks'])
+        correction_data['total_corrections'] = total_corrections
+        correction_data['avg_classification_confidence'] = round(avg_class_conf, 3)
+        correction_data['avg_correction_confidence'] = round(avg_corr_conf, 3)
+
+        return correction_data, cost
+
+    def _build_system_prompt(self):
+        """Build the system prompt for vision correction."""
+        return """You are an expert OCR correction assistant with vision capabilities.
+
+Your task is to:
+1. **Classify content blocks** - Identify what type of content each block contains
+2. **Correct OCR errors** - Fix any OCR mistakes by comparing the text to the actual page image
+
+For each block, provide:
+- A classification from the allowed types with confidence score (0.0-1.0)
+- Corrections for each paragraph (ONLY if errors are found)
+
+**Block Types:**
+TITLE_PAGE, COPYRIGHT, DEDICATION, TABLE_OF_CONTENTS, PREFACE, FOREWORD, INTRODUCTION,
+CHAPTER_HEADING, SECTION_HEADING, BODY, QUOTE, EPIGRAPH,
+FOOTNOTE, ENDNOTES, BIBLIOGRAPHY, REFERENCES, INDEX,
+APPENDIX, GLOSSARY, ACKNOWLEDGMENTS,
+HEADER, FOOTER, PAGE_NUMBER,
+ILLUSTRATION_CAPTION, TABLE, OTHER
+
+**Correction Guidelines:**
+- Use the page image to verify text accuracy - you can see formatting, layout, and actual characters
+- ONLY include `corrected_text` if you found actual errors (set to null otherwise)
+- Common OCR errors: character substitution (rn→m, cl→d, tbe→the), spacing issues, hyphenation
+- Confidence scores: 0.0-1.0 (be honest about uncertainty)"""
+
+    def _build_user_prompt(self, ocr_page, ocr_text):
+        """Build the user prompt with OCR data."""
+        return f"""Here is the OCR output for page {ocr_page.page_number}:
+
+{ocr_text}
+
+Please:
+1. Classify each block by its content type (using the types listed above)
+2. Compare the OCR text to the page image and identify any errors
+3. For each paragraph, provide corrected_text ONLY if you find errors (otherwise set to null)
+4. Provide confidence scores for both classification and corrections
+
+Focus on accuracy - only mark text as corrected if you're confident there's an error."""
+
+    def _format_ocr_for_prompt(self, ocr_page):
+        """Format OCR page data for the vision prompt."""
+        lines = []
+        for block in ocr_page.blocks:
+            lines.append(f"\n--- Block {block['block_num']} ---")
+            for para in block['paragraphs']:
+                lines.append(f"  Paragraph {para['par_num']}: {para['text']}")
+        return '\n'.join(lines)
+
+    def clean_stage(self, scan_id: str, confirm: bool = False):
+        """
+        Clean/delete all correction outputs and checkpoint for a book.
+
+        Args:
+            scan_id: Book scan ID
+            confirm: If False, prompts for confirmation before deleting
+
+        Returns:
+            bool: True if cleaned, False if cancelled
+        """
+        book_dir = self.storage_root / scan_id
+
+        if not book_dir.exists():
+            print(f"❌ Book directory not found: {book_dir}")
+            return False
+
+        corrected_dir = book_dir / "corrected"
+        checkpoint_file = book_dir / "checkpoints" / "correction.json"
+        metadata_file = book_dir / "metadata.json"
+
+        # Count what will be deleted
+        corrected_files = list(corrected_dir.glob("*.json")) if corrected_dir.exists() else []
+
+        print(f"\n🗑️  Clean Correction stage for: {scan_id}")
+        print(f"   Corrected outputs: {len(corrected_files)} files")
+        print(f"   Checkpoint: {'exists' if checkpoint_file.exists() else 'none'}")
+
+        if not confirm:
+            response = input("\n   Proceed? (yes/no): ").strip().lower()
+            if response != 'yes':
+                print("   Cancelled.")
+                return False
+
+        # Delete corrected outputs
+        if corrected_dir.exists():
+            import shutil
+            shutil.rmtree(corrected_dir)
+            print(f"   ✓ Deleted {len(corrected_files)} corrected files")
+
+        # Reset checkpoint
+        if checkpoint_file.exists():
+            checkpoint_file.unlink()
+            print(f"   ✓ Deleted checkpoint")
+
+        # Update metadata
+        if metadata_file.exists():
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+
+            metadata['correction_complete'] = False
+            metadata.pop('correction_completion_date', None)
+            metadata.pop('correction_total_cost', None)
+
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
+
+            print(f"   ✓ Reset metadata")
+
+        print(f"\n✅ Correction stage cleaned for {scan_id}")
+        return True

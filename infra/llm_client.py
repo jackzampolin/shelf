@@ -66,7 +66,8 @@ class LLMClient:
              timeout: int = 120,
              max_retries: int = 3,
              stream: bool = False,
-             images: Optional[List[Union[bytes, str, Path]]] = None) -> Tuple[str, Dict, float]:
+             images: Optional[List[Union[bytes, str, Path]]] = None,
+             response_format: Optional[Dict] = None) -> Tuple[str, Dict, float]:
         """
         Make LLM API call with automatic retries and cost tracking.
 
@@ -80,6 +81,8 @@ class LLMClient:
             stream: Enable streaming response (shows progress)
             images: Optional list of images for vision models
                     Can be bytes, base64 strings, or file paths
+            response_format: Optional structured output schema
+                           Use {"type": "json_schema", "json_schema": {...}} for guaranteed JSON
 
         Returns:
             Tuple of (response_text, usage_dict, cost_usd)
@@ -108,6 +111,9 @@ class LLMClient:
 
         if max_tokens:
             payload["max_tokens"] = max_tokens
+
+        if response_format:
+            payload["response_format"] = response_format
 
         # Retry loop for server errors
         for attempt in range(max_retries):
