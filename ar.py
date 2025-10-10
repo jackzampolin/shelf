@@ -129,6 +129,15 @@ def cmd_process_clean(args):
             )
             processor.clean_stage(args.scan_id, confirm=args.yes)
 
+        elif args.stage == 'structure':
+            # Import Structure stage
+            structure_module = importlib.import_module('pipeline.4_structure')
+            clean_stage = getattr(structure_module, 'clean_stage')
+
+            # Clean Structure stage
+            storage_root = Path.home() / "Documents" / "book_scans"
+            clean_stage(args.scan_id, storage_root, confirm=args.yes)
+
         else:
             print(f"❌ Clean not implemented for stage: {args.stage}")
             sys.exit(1)
@@ -183,6 +192,50 @@ def cmd_process_merge(args):
         processor.process_book(args.scan_id, resume=args.resume)
 
         print(f"\n✅ Merge complete for {args.scan_id}")
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+def cmd_process_structure(args):
+    """Run Structure Detection stage (Stage 4)."""
+    import importlib
+
+    try:
+        # Import Structure stage
+        structure_module = importlib.import_module('pipeline.4_structure')
+        detect_structure = getattr(structure_module, 'detect_structure')
+
+        from infra.checkpoint import CheckpointManager
+
+        storage_root = Path.home() / "Documents" / "book_scans"
+        book_dir = storage_root / args.scan_id
+
+        # Initialize checkpoint
+        checkpoint = CheckpointManager(
+            scan_id=args.scan_id,
+            stage="structure",
+            storage_root=storage_root,
+            output_dir="chapters"
+        )
+
+        if not args.resume:
+            checkpoint.reset()
+
+        # Run structure detection
+        chapters_output = detect_structure(
+            book_dir=book_dir,
+            scan_id=args.scan_id,
+            checkpoint_manager=checkpoint
+        )
+
+        print(f"\n✅ Structure detection complete for {args.scan_id}")
+        print(f"   Chapters: {chapters_output.total_chapters}")
+        print(f"   Cost: ${chapters_output.total_cost:.3f}")
+        print(f"   Time: {chapters_output.processing_time_seconds:.1f}s")
 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -469,9 +522,15 @@ Note: Minimal CLI during refactor (Issue #55).
     merge_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     merge_parser.set_defaults(func=cmd_process_merge)
 
+    # ar process structure
+    structure_parser = process_subparsers.add_parser('structure', help='Stage 4: Structure Detection')
+    structure_parser.add_argument('scan_id', help='Book scan ID')
+    structure_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
+    structure_parser.set_defaults(func=cmd_process_structure)
+
     # ar process clean
     clean_parser = process_subparsers.add_parser('clean', help='Clean/delete stage outputs')
-    clean_parser.add_argument('stage', choices=['ocr', 'correct', 'merge'], help='Stage to clean')
+    clean_parser.add_argument('stage', choices=['ocr', 'correct', 'merge', 'structure'], help='Stage to clean')
     clean_parser.add_argument('scan_id', help='Book scan ID')
     clean_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompt')
     clean_parser.set_defaults(func=cmd_process_clean)

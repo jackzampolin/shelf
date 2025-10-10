@@ -153,6 +153,8 @@ def _parse_with_llm(toc_text: str, model: str) -> Tuple[List[TocEntry], float]:
     - Hierarchy level (Part, Chapter, Section)
     - Book page numbers (roman, arabic, or none)
     - Confidence in each extraction
+
+    Uses OpenRouter structured outputs for guaranteed valid JSON.
     """
     system_prompt = """You are a Table of Contents parser. Extract structured ToC entries from the provided text.
 
@@ -164,22 +166,6 @@ For each entry, extract:
 - numbering_style: "roman", "arabic", or "none"
 - confidence: Your confidence in this extraction (0.0-1.0)
 - raw_text: The original text for this entry
-
-Respond with a JSON object:
-{
-  "entries": [
-    {
-      "title": "Introduction",
-      "level": 1,
-      "entry_type": "chapter",
-      "book_page": "ix",
-      "numbering_style": "roman",
-      "confidence": 0.95,
-      "raw_text": "Introduction ix"
-    },
-    ...
-  ]
-}
 
 Guidelines:
 - Part headings have no page numbers
@@ -198,34 +184,58 @@ Return structured JSON with all entries."""
     # Initialize LLM client
     client = LLMClient()
 
-    # Define JSON parser
-    def parse_json(response_text: str) -> Dict:
-        """Parse LLM response as JSON, handling markdown code blocks."""
-        # Strip markdown code blocks if present
-        text = response_text.strip()
-        if text.startswith("```json"):
-            text = text[7:]  # Remove ```json
-        elif text.startswith("```"):
-            text = text[3:]  # Remove ```
-        if text.endswith("```"):
-            text = text[:-3]  # Remove closing ```
-        text = text.strip()
+    # Build JSON schema from Pydantic model
+    # We need a wrapper schema for the list of entries
+    # NOTE: OpenRouter strict mode requires ALL fields in "required" array, even nullable ones
+    response_schema = {
+        "type": "object",
+        "properties": {
+            "entries": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "level": {"type": "integer", "minimum": 0, "maximum": 3},
+                        "entry_type": {
+                            "type": "string",
+                            "enum": ["part_heading", "chapter", "section", "subsection", "other"]
+                        },
+                        "book_page": {"type": ["string", "null"]},
+                        "numbering_style": {"type": ["string", "null"]},
+                        "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                        "raw_text": {"type": "string"}
+                    },
+                    "required": ["title", "level", "entry_type", "book_page", "numbering_style", "confidence", "raw_text"],
+                    "additionalProperties": False
+                }
+            }
+        },
+        "required": ["entries"],
+        "additionalProperties": False
+    }
 
-        # Parse JSON
-        return json.loads(text)
-
-    # Call LLM with JSON retry
+    # Call LLM with structured output
     try:
-        result, usage, cost = client.call_with_json_retry(
+        response, usage, cost = client.call(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            json_parser=parse_json,
             temperature=0.0,
-            max_retries=2,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "toc_parsing",
+                    "strict": True,
+                    "schema": response_schema
+                }
+            }
         )
+
+        # Parse response as JSON (guaranteed valid by OpenRouter)
+        result = json.loads(response)
 
         # Parse into TocEntry objects
         entries = [TocEntry(**entry_data) for entry_data in result["entries"]]

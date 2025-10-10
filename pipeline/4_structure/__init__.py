@@ -13,7 +13,7 @@ Entry point: detect_structure()
 
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 import json
 import time
 import importlib
@@ -35,6 +35,12 @@ ChaptersOutput = getattr(structure_schemas, 'ChaptersOutput')
 
 toc_parser_module = importlib.import_module('pipeline.4_structure.toc_parser')
 parse_toc = getattr(toc_parser_module, 'parse_toc')
+
+page_mapper_module = importlib.import_module('pipeline.4_structure.page_mapper')
+build_page_mapping_from_anchors = getattr(page_mapper_module, 'build_page_mapping_from_anchors')
+
+validator_module = importlib.import_module('pipeline.4_structure.page_mapping_validator')
+find_toc_anchors_with_llm = getattr(validator_module, 'validate_page_mapping_with_llm')  # Still named this for compatibility
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +92,10 @@ def detect_structure(
     logger.info(f"Parsed ToC with {toc_output.total_entries} entries")
     total_cost += toc_output.cost
 
-    # Substage 4b: Build page mapping
-    page_mapping = _build_page_mapping(pages, toc_output, scan_id, chapters_dir)
+    # Substage 4b: Build page mapping (LLM finds anchors, deterministic interpolation)
+    page_mapping, mapping_cost = _build_page_mapping_with_anchors(pages, toc_output, scan_id, chapters_dir)
     logger.info(f"Built page mapping: {len(page_mapping.mappings)} pages mapped")
+    total_cost += mapping_cost
 
     # Substage 4c: Detect boundary candidates
     candidates = _detect_boundary_candidates(pages, toc_output, page_mapping, scan_id, chapters_dir)
@@ -114,7 +121,11 @@ def detect_structure(
     )
 
     # Mark checkpoint complete
-    checkpoint_manager.mark_completed()
+    checkpoint_manager.mark_stage_complete(metadata={
+        "total_chapters": chapters_output.total_chapters,
+        "total_cost_usd": total_cost,
+        "processing_time_seconds": chapters_output.processing_time_seconds
+    })
 
     return chapters_output
 
@@ -162,41 +173,53 @@ def _parse_toc(
     return parse_toc(pages, scan_id, output_dir)
 
 
-def _build_page_mapping(
+def _build_page_mapping_with_anchors(
     pages: List[MergedPageOutput],
     toc: TocOutput,
     scan_id: str,
     output_dir: Path,
-) -> PageMappingOutput:
+) -> tuple[PageMappingOutput, float]:
     """
-    Substage 4b: Build PDF ↔ Book page mapping.
+    Substage 4b: Build PDF ↔ Book page mapping using ToC anchors.
 
-    Matches ToC entries to CHAPTER_HEADING labels to derive
-    the mapping between PDF pages and book page numbers.
+    Process:
+    1. LLM finds ToC anchors (matches ToC entries to PDF pages)
+    2. Deterministic interpolation between anchors
+    3. Detect front/body/back matter from ToC structure
+
+    Returns:
+        (PageMappingOutput, llm_cost)
     """
-    # TODO: Implement page mapping
-    logger.warning("Page mapping not yet implemented, using placeholder")
+    logger.info("Substage 4b: Building page mapping with ToC anchors...")
 
-    mapping_output = PageMappingOutput(
-        scan_id=scan_id,
-        total_pages=len(pages),
-        mappings=[],
-        front_matter_pages=[],
-        body_pages=[],
-        back_matter_pages=[],
-        toc_match_count=0,
-        header_validated_count=0,
-        unmapped_pages=len(pages),
-        timestamp=datetime.now().isoformat(),
+    # Step 1: LLM finds ToC anchor points
+    anchor_result, llm_cost = find_toc_anchors_with_llm(
+        toc_entries=toc.entries,
+        pages=pages,
+        initial_mappings=[]  # Not used anymore
     )
 
-    # Save checkpoint
-    output_file = output_dir / "page_mapping.json"
-    with open(output_file, "w") as f:
-        f.write(mapping_output.model_dump_json(indent=2))
-    logger.info(f"Saved page mapping to {output_file}")
+    # Save anchor result for debugging
+    anchor_file = output_dir / "page_mapping_anchors.json"
+    with open(anchor_file, "w") as f:
+        json.dump(anchor_result, f, indent=2)
+    logger.info(f"Saved ToC anchors to {anchor_file}")
 
-    return mapping_output
+    # Step 2: Build complete mapping using anchors + interpolation
+    page_mapping = build_page_mapping_from_anchors(
+        pages=pages,
+        toc_entries=toc.entries,
+        toc_anchors=anchor_result['anchors'],
+        scan_id=scan_id,
+        output_dir=output_dir
+    )
+
+    logger.info(
+        f"Page mapping complete: {page_mapping.toc_match_count} ToC anchors, "
+        f"{page_mapping.unmapped_pages} unmapped pages"
+    )
+
+    return page_mapping, llm_cost
 
 
 def _detect_boundary_candidates(
@@ -318,3 +341,55 @@ def _assemble_chapters(
     logger.info(f"Saved final chapters output to {output_file}")
 
     return chapters_output
+
+
+# Removed _apply_mapping_corrections - no longer needed with deterministic approach
+
+
+def clean_stage(scan_id: str, storage_root: Path, confirm: bool = False) -> bool:
+    """
+    Clean/delete all structure outputs and checkpoint for a book.
+
+    Args:
+        scan_id: Book scan ID
+        storage_root: Root storage directory
+        confirm: If False, prompts for confirmation before deleting
+
+    Returns:
+        bool: True if cleaned, False if cancelled
+    """
+    book_dir = storage_root / scan_id
+
+    if not book_dir.exists():
+        print(f"❌ Book directory not found: {book_dir}")
+        return False
+
+    chapters_dir = book_dir / "chapters"
+    checkpoint_file = book_dir / "checkpoints" / "structure.json"
+
+    # Count what will be deleted
+    chapter_files = list(chapters_dir.glob("*.json")) if chapters_dir.exists() else []
+
+    print(f"\n🗑️  Clean Structure stage for: {scan_id}")
+    print(f"   Chapter outputs: {len(chapter_files)} files")
+    print(f"   Checkpoint: {'exists' if checkpoint_file.exists() else 'none'}")
+
+    if not confirm:
+        response = input("\n   Proceed? (yes/no): ").strip().lower()
+        if response != 'yes':
+            print("   Cancelled.")
+            return False
+
+    # Delete chapter outputs
+    if chapters_dir.exists():
+        import shutil
+        shutil.rmtree(chapters_dir)
+        print(f"   ✓ Deleted {len(chapter_files)} chapter files")
+
+    # Reset checkpoint
+    if checkpoint_file.exists():
+        checkpoint_file.unlink()
+        print(f"   ✓ Deleted checkpoint")
+
+    print(f"\n✅ Structure stage cleaned for {scan_id}")
+    return True
