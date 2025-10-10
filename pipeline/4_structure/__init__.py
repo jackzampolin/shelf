@@ -32,6 +32,7 @@ PageMappingOutput = getattr(structure_schemas, 'PageMappingOutput')
 BoundaryCandidatesOutput = getattr(structure_schemas, 'BoundaryCandidatesOutput')
 ValidatedBoundariesOutput = getattr(structure_schemas, 'ValidatedBoundariesOutput')
 ChaptersOutput = getattr(structure_schemas, 'ChaptersOutput')
+Chapter = getattr(structure_schemas, 'Chapter')
 
 toc_parser_module = importlib.import_module('pipeline.4_structure.toc_parser')
 parse_toc = getattr(toc_parser_module, 'parse_toc')
@@ -271,25 +272,88 @@ def _assemble_chapters(
 
     Converts validated boundaries into chapter ranges with
     start/end pages, calculates statistics, and writes final output.
+
+    Process:
+    1. Sort boundaries by PDF page (ensure sequential order)
+    2. For each boundary, calculate chapter range:
+       - start_pdf = boundary.pdf_page
+       - end_pdf = next_boundary.pdf_page - 1 (or total_pages for last chapter)
+    3. Look up book pages from page_mapping
+    4. Build Chapter objects with all metadata
+    5. Calculate statistics and save
     """
-    # TODO: Implement chapter assembly
-    logger.warning("Chapter assembly not yet implemented, using placeholder")
+    logger.info("Substage 4e: Assembling final chapter structure...")
+
+    # Build page mapping lookup (PDF page → book page)
+    page_map = {m.pdf_page: m for m in page_mapping.mappings}
+
+    # Sort boundaries by PDF page (should already be sorted, but ensure)
+    sorted_boundaries = sorted(validated.boundaries, key=lambda b: b.pdf_page)
+
+    # Build chapters from boundaries
+    chapters = []
+    for i, boundary in enumerate(sorted_boundaries):
+        # Start of this chapter
+        start_pdf = boundary.pdf_page
+        start_book = boundary.book_page
+
+        # End of this chapter (start of next chapter - 1, or total_pages for last)
+        if i < len(sorted_boundaries) - 1:
+            end_pdf = sorted_boundaries[i + 1].pdf_page - 1
+        else:
+            end_pdf = total_pages
+
+        # Look up end book page from mapping
+        end_book = None
+        if end_pdf in page_map:
+            end_book = page_map[end_pdf].book_page
+
+        # Calculate page count
+        page_count = end_pdf - start_pdf + 1
+
+        # Create Chapter
+        chapter = Chapter(
+            chapter_num=i + 1,
+            title=boundary.title,
+            start_pdf_page=start_pdf,
+            end_pdf_page=end_pdf,
+            start_book_page=start_book,
+            end_book_page=end_book,
+            page_count=page_count,
+            detected_by=boundary.detected_by,
+            confidence=boundary.final_confidence,
+            toc_match=boundary.toc_match,
+        )
+        chapters.append(chapter)
+
+        logger.info(
+            f"Chapter {i+1}: \"{chapter.title}\" "
+            f"(PDF {start_pdf}-{end_pdf}, {page_count} pages, "
+            f"confidence: {chapter.confidence:.2f})"
+        )
+
+    # Calculate statistics
+    total_chapters = len(chapters)
+    avg_confidence = sum(c.confidence for c in chapters) / total_chapters if total_chapters > 0 else 0.0
+    low_confidence_count = sum(1 for c in chapters if c.confidence < 0.7)
+    toc_mismatch_count = validated.llm_corrections_made  # LLM corrections = ToC mismatches
 
     processing_time = time.time() - start_time
 
+    # Build final output
     chapters_output = ChaptersOutput(
         scan_id=scan_id,
         total_pages=total_pages,
-        chapters=[],
-        total_chapters=0,
-        front_matter_pages=[],
-        back_matter_pages=[],
-        detection_method="TOC_FIRST + HEADING_LABELS + LLM_VALIDATION",
-        toc_available=False,
-        llm_validation_used=False,
-        avg_chapter_confidence=0.0,
-        low_confidence_chapters=0,
-        toc_mismatch_count=0,
+        chapters=chapters,
+        total_chapters=total_chapters,
+        front_matter_pages=page_mapping.front_matter_pages,
+        back_matter_pages=page_mapping.back_matter_pages,
+        detection_method="TOC_FIRST + PAGE_MAPPING + LLM_VALIDATION",
+        toc_available=(total_chapters > 0),  # We have ToC if we found chapters
+        llm_validation_used=True,  # We always validate with LLM
+        avg_chapter_confidence=avg_confidence,
+        low_confidence_chapters=low_confidence_count,
+        toc_mismatch_count=toc_mismatch_count,
         total_cost=total_cost,
         processing_time_seconds=processing_time,
         timestamp=datetime.now().isoformat(),
@@ -300,6 +364,12 @@ def _assemble_chapters(
     with open(output_file, "w") as f:
         f.write(chapters_output.model_dump_json(indent=2))
     logger.info(f"Saved final chapters output to {output_file}")
+
+    logger.info(
+        f"Chapter assembly complete: {total_chapters} chapters, "
+        f"avg confidence: {avg_confidence:.2f}, "
+        f"{low_confidence_count} low confidence"
+    )
 
     return chapters_output
 
