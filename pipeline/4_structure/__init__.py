@@ -42,6 +42,9 @@ build_page_mapping_from_anchors = getattr(page_mapper_module, 'build_page_mappin
 validator_module = importlib.import_module('pipeline.4_structure.page_mapping_validator')
 find_toc_anchors_with_llm = getattr(validator_module, 'validate_page_mapping_with_llm')  # Still named this for compatibility
 
+boundary_detector_module = importlib.import_module('pipeline.4_structure.boundary_detector')
+detect_and_validate_boundaries = getattr(boundary_detector_module, 'detect_and_validate_boundaries')
+
 logger = logging.getLogger(__name__)
 
 
@@ -97,16 +100,10 @@ def detect_structure(
     logger.info(f"Built page mapping: {len(page_mapping.mappings)} pages mapped")
     total_cost += mapping_cost
 
-    # Substage 4c: Detect boundary candidates
-    candidates = _detect_boundary_candidates(pages, toc_output, page_mapping, scan_id, chapters_dir)
-    logger.info(f"Detected {candidates.total_candidates} chapter boundary candidates")
-
-    # Substage 4d: LLM validate all boundaries
-    validated = _validate_boundaries_with_llm(
-        pages, candidates, page_mapping, scan_id, chapters_dir
-    )
+    # Substages 4c+4d: Detect and validate boundaries (combined - direct ToC validation)
+    validated = _detect_and_validate_boundaries(pages, toc_output, page_mapping, scan_id, chapters_dir)
     logger.info(
-        f"Validated {validated.total_boundaries} boundaries "
+        f"Detected and validated {validated.total_boundaries} boundaries "
         f"({validated.llm_corrections_made} corrections made)"
     )
     total_cost += validated.validation_cost
@@ -222,69 +219,33 @@ def _build_page_mapping_with_anchors(
     return page_mapping, llm_cost
 
 
-def _detect_boundary_candidates(
+def _detect_and_validate_boundaries(
     pages: List[MergedPageOutput],
     toc: TocOutput,
     page_mapping: PageMappingOutput,
     scan_id: str,
     output_dir: Path,
-) -> BoundaryCandidatesOutput:
-    """
-    Substage 4c: Detect chapter boundary candidates.
-
-    Scans for CHAPTER_HEADING labels and cross-validates
-    against ToC entries to build initial boundary candidates.
-    """
-    # TODO: Implement boundary detection
-    logger.warning("Boundary detection not yet implemented, using placeholder")
-
-    candidates_output = BoundaryCandidatesOutput(
-        scan_id=scan_id,
-        candidates=[],
-        total_candidates=0,
-        toc_matched_count=0,
-        label_only_count=0,
-        toc_only_count=0,
-        timestamp=datetime.now().isoformat(),
-    )
-
-    # Save checkpoint
-    output_file = output_dir / "boundary_candidates.json"
-    with open(output_file, "w") as f:
-        f.write(candidates_output.model_dump_json(indent=2))
-    logger.info(f"Saved boundary candidates to {output_file}")
-
-    return candidates_output
-
-
-def _validate_boundaries_with_llm(
-    pages: List[MergedPageOutput],
-    candidates: BoundaryCandidatesOutput,
-    page_mapping: PageMappingOutput,
-    scan_id: str,
-    output_dir: Path,
 ) -> ValidatedBoundariesOutput:
     """
-    Substage 4d: Validate boundaries with LLM.
+    Substages 4c+4d: Detect and validate boundaries (combined).
 
-    For EACH boundary, provide 3-page context and ask LLM
-    to confirm/correct the boundary location and title.
-    Liberal strategy: validate all, not just ambiguous ones.
+    Direct ToC validation approach:
+    1. For each ToC entry, look up expected PDF page from page mapping
+    2. Create ±1 page window (3 pages total)
+    3. Ask LLM to validate boundary location
+    4. Return validated boundaries
+
+    Much simpler than collecting all CHAPTER_HEADING labels and filtering.
     """
-    # TODO: Implement LLM validation
-    logger.warning("LLM validation not yet implemented, using placeholder")
+    logger.info("Substages 4c+4d: Detecting and validating boundaries from ToC...")
 
-    validated_output = ValidatedBoundariesOutput(
+    # Call combined detector/validator
+    validated_output = detect_and_validate_boundaries(
+        pages=pages,
+        toc_entries=toc.entries,
+        page_mappings=page_mapping.mappings,
         scan_id=scan_id,
-        boundaries=[],
-        total_boundaries=0,
-        llm_corrections_made=0,
-        high_confidence_count=0,
-        low_confidence_count=0,
-        model_used="gpt-4o-mini",
-        validation_cost=0.0,
-        avg_validation_time_seconds=0.0,
-        timestamp=datetime.now().isoformat(),
+        model="openai/gpt-4o-mini",
     )
 
     # Save checkpoint
