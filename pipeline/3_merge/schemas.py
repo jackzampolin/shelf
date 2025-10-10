@@ -29,7 +29,7 @@ class MergedParagraph(BaseModel):
     spatial location, and provenance tracking.
     """
     par_num: int = Field(..., ge=1, description="Paragraph number within block")
-    text: str = Field(..., min_length=1, description="Final paragraph text (corrected or OCR)")
+    text: str = Field(..., min_length=0, description="Final paragraph text (corrected or OCR, may be empty if correction removed artifact)")
     bbox: List[int] = Field(..., description="Bounding box [x, y, width, height]")
 
     # Provenance tracking
