@@ -345,6 +345,11 @@ class MergeProcessor:
                 "width": ocr_page.page_dimensions.width,
                 "height": ocr_page.page_dimensions.height
             },
+            # Page number extraction (from correction stage)
+            "printed_page_number": correction_page.printed_page_number,
+            "numbering_style": correction_page.numbering_style,
+            "page_number_location": correction_page.page_number_location,
+            "page_number_confidence": correction_page.page_number_confidence,
             "blocks": merged_blocks,
             "continuation": continuation,
             "metadata": {

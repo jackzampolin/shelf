@@ -424,6 +424,10 @@ class VisionCorrector:
                 "schema": {
                     "type": "object",
                     "properties": {
+                        "printed_page_number": {"type": ["string", "null"]},
+                        "numbering_style": {"type": ["string", "null"]},
+                        "page_number_location": {"type": ["string", "null"]},
+                        "page_number_confidence": {"type": "number"},
                         "blocks": {
                             "type": "array",
                             "items": {
@@ -452,7 +456,7 @@ class VisionCorrector:
                             }
                         }
                     },
-                    "required": ["blocks"],
+                    "required": ["printed_page_number", "numbering_style", "page_number_location", "page_number_confidence", "blocks"],
                     "additionalProperties": False
                 }
             }
@@ -510,12 +514,22 @@ class VisionCorrector:
         return """You are an expert OCR correction assistant with vision capabilities.
 
 Your task is to:
-1. **Classify content blocks** - Identify what type of content each block contains
-2. **Correct OCR errors** - Fix any OCR mistakes by comparing the text to the actual page image
+1. **Extract the printed page number** - Look for page numbers in headers or footers
+2. **Classify content blocks** - Identify what type of content each block contains
+3. **Correct OCR errors** - Fix any OCR mistakes by comparing the text to the actual page image
 
-For each block, provide:
-- A classification from the allowed types with confidence score (0.0-1.0)
-- For each paragraph: ONLY if corrections needed, output the FULL corrected paragraph text
+**Page Number Extraction:**
+First, look at the page image for printed page numbers (usually in headers or footers):
+- Common locations: top-right, top-center, bottom-center of page
+- Common formats:
+  - Roman numerals: i, ii, iii, iv, v, vi, vii, viii, ix, x, xi, xii, etc. (front matter)
+  - Arabic numerals: 1, 2, 3, 45, 100, etc. (main body)
+- If you find a page number, extract:
+  - `printed_page_number`: the exact text (e.g., "ix", "45")
+  - `numbering_style`: "roman", "arabic", or "none"
+  - `page_number_location`: "header", "footer", or "none"
+  - `page_number_confidence`: your confidence (0.0-1.0)
+- If NO page number visible: set all fields to null/"none" and confidence to 1.0
 
 **Block Types:**
 TITLE_PAGE, COPYRIGHT, DEDICATION, TABLE_OF_CONTENTS, PREFACE, FOREWORD, INTRODUCTION,
@@ -540,11 +554,12 @@ ILLUSTRATION_CAPTION, TABLE, OTHER
 {ocr_text}
 
 Please:
-1. Classify each block by its content type (using the types listed above)
-2. Compare the OCR text to the page image and identify any errors
-3. For each paragraph with errors: output the FULL corrected paragraph text in `text` field (null if clean)
-4. Add brief `notes` explaining changes (e.g., "Fixed 'tlie' → 'the', removed hyphen at line break")
-5. Provide confidence scores for both classification and text quality
+1. **Extract the printed page number** from the image (look in headers/footers, set to null if none)
+2. Classify each block by its content type (using the types listed above)
+3. Compare the OCR text to the page image and identify any errors
+4. For each paragraph with errors: output the FULL corrected paragraph text in `text` field (null if clean)
+5. Add brief `notes` explaining changes (e.g., "Fixed 'tlie' → 'the', removed hyphen at line break")
+6. Provide confidence scores for page number, classification, and text quality
 
 Focus on accuracy - only output corrected text if you're confident there's an error."""
 

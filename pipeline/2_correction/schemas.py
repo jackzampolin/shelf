@@ -80,6 +80,26 @@ class CorrectionPageOutput(BaseModel):
     # Page identification
     page_number: int = Field(..., ge=1)
 
+    # Page number extraction (from vision analysis)
+    printed_page_number: Optional[str] = Field(
+        None,
+        description="Page number as printed on the page (e.g., 'ix', '45', None if unnumbered)"
+    )
+    numbering_style: Optional[Literal["roman", "arabic", "none"]] = Field(
+        None,
+        description="Style of page numbering detected"
+    )
+    page_number_location: Optional[Literal["header", "footer", "none"]] = Field(
+        None,
+        description="Where the page number was found"
+    )
+    page_number_confidence: float = Field(
+        1.0,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in page number extraction (1.0 if no number found)"
+    )
+
     # Classified and corrected blocks
     blocks: List[BlockClassification] = Field(..., description="Block classifications and corrections")
 

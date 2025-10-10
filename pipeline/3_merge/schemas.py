@@ -87,6 +87,26 @@ class MergedPageOutput(BaseModel):
     page_number: int = Field(..., ge=1, description="Page number in book")
     page_dimensions: PageDimensions = Field(..., description="Page dimensions")
 
+    # Page number extraction (from correction stage)
+    printed_page_number: Optional[str] = Field(
+        None,
+        description="Page number as printed on the page (from vision extraction)"
+    )
+    numbering_style: Optional[str] = Field(
+        None,
+        description="Style of page numbering (roman/arabic/none)"
+    )
+    page_number_location: Optional[str] = Field(
+        None,
+        description="Where the page number was found (header/footer/none)"
+    )
+    page_number_confidence: float = Field(
+        1.0,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in page number extraction"
+    )
+
     blocks: List[MergedBlock] = Field(..., description="Merged blocks with full text and classifications")
     continuation: ContinuationInfo = Field(..., description="Paragraph continuation information")
 
