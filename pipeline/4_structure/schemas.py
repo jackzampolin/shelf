@@ -227,14 +227,69 @@ class ValidatedBoundariesOutput(BaseModel):
 
 
 # ==============================================================================
+# Substage 4d: Vision Validation Schemas
+# ==============================================================================
+
+class VisionValidationResult(BaseModel):
+    """
+    Vision model validation result for a single boundary.
+
+    Vision model reviews PDF images + JSON context and confirms/corrects the boundary.
+    """
+    is_correct: bool = Field(..., description="Vision model says boundary is correct")
+    correct_pdf_page: int = Field(..., ge=1, description="Correct PDF page (may differ from candidate)")
+    correct_title: str = Field(..., min_length=1, description="Correct boundary title")
+    boundary_type: Literal["part", "chapter", "section", "subsection"] = Field(
+        ..., description="Type of structural boundary"
+    )
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Vision model confidence")
+    visual_evidence: str = Field(..., description="What the model saw in images")
+    reasoning: str = Field(..., description="Vision model explanation of decision")
+
+
+# ==============================================================================
 # Substage 4e: Chapter Assembly Schemas (Final Output)
 # ==============================================================================
 
+class StructuralBoundary(BaseModel):
+    """
+    Any structural boundary: Part, Chapter, Section, etc.
+
+    Represents the complete hierarchy of book structure.
+    Final output after assembling all validated boundaries.
+    """
+    boundary_num: int = Field(..., ge=1, description="Sequential boundary number")
+    boundary_type: Literal["part", "chapter", "section", "subsection"] = Field(
+        ..., description="Type of structural boundary"
+    )
+    title: str = Field(..., min_length=1, description="Boundary title")
+    hierarchy_level: int = Field(..., ge=0, le=3, description="Hierarchy level (0=Part, 1=Chapter, 2=Section, 3=Subsection)")
+
+    # PDF pages
+    start_pdf_page: int = Field(..., ge=1, description="First PDF page of this section")
+    end_pdf_page: int = Field(..., ge=1, description="Last PDF page of this section")
+
+    # Book pages
+    start_book_page: Optional[str] = Field(None, description="First book page (as printed)")
+    end_book_page: Optional[str] = Field(None, description="Last book page (as printed)")
+
+    # Metadata
+    page_count: int = Field(..., ge=1, description="Total pages in this section")
+    detected_by: str = Field(..., description="Detection provenance (TEXT_SEARCH, PAGE_MAPPING, etc.)")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Overall confidence")
+    toc_match: bool = Field(..., description="Whether boundary was in ToC")
+
+    # Hierarchy
+    parent_boundary_num: Optional[int] = Field(None, description="Parent boundary number (e.g., Chapter belongs to Part)")
+
+
+# Legacy Chapter schema (for backward compatibility)
 class Chapter(BaseModel):
     """
     Complete chapter definition with page ranges.
 
-    Final output after assembling all validated boundaries.
+    DEPRECATED: Use StructuralBoundary instead.
+    Kept for backward compatibility with existing code.
     """
     chapter_num: int = Field(..., ge=1, description="Sequential chapter number")
     title: str = Field(..., min_length=1, description="Chapter title")
@@ -254,9 +309,55 @@ class Chapter(BaseModel):
     toc_match: bool = Field(..., description="Whether chapter was in ToC")
 
 
+class BookStructure(BaseModel):
+    """
+    Complete book structure with full hierarchy.
+
+    Final output of Stage 4, saved as chapters/structure.json.
+    This is the canonical book structure used by downstream stages.
+
+    Includes Parts, Chapters, Sections - the complete structural hierarchy.
+    """
+    scan_id: str = Field(..., description="Scan identifier")
+    total_pages: int = Field(..., ge=1, description="Total PDF pages in book")
+
+    # All structural boundaries in document order
+    boundaries: List[StructuralBoundary] = Field(..., description="All structural boundaries (Parts, Chapters, Sections)")
+    total_boundaries: int = Field(..., ge=0, description="Total number of boundaries")
+
+    # Convenience views by type
+    part_count: int = Field(..., ge=0, description="Number of Part boundaries")
+    chapter_count: int = Field(..., ge=0, description="Number of Chapter boundaries")
+    section_count: int = Field(..., ge=0, description="Number of Section boundaries")
+
+    # Front/back matter
+    front_matter_pages: List[int] = Field(..., description="Pages before first boundary")
+    back_matter_pages: List[int] = Field(..., description="Pages after last boundary")
+
+    # Detection metadata
+    detection_method: str = Field(..., description="High-level detection strategy used")
+    toc_available: bool = Field(..., description="Whether ToC was found and used")
+    vision_validation_used: bool = Field(..., description="Whether vision model validation was performed")
+
+    # Quality metrics
+    avg_boundary_confidence: float = Field(..., ge=0.0, le=1.0, description="Average confidence across all boundaries")
+    low_confidence_boundaries: int = Field(..., ge=0, description="Boundaries with confidence < 0.7")
+    toc_mismatch_count: int = Field(..., ge=0, description="Boundaries where ToC page didn't match detected")
+
+    # Cost tracking
+    total_cost: float = Field(..., ge=0.0, description="Total cost for Stage 4 (USD)")
+    processing_time_seconds: float = Field(..., ge=0.0, description="Total processing time")
+
+    timestamp: str = Field(..., description="When structure detection completed")
+
+
+# Legacy ChaptersOutput (for backward compatibility)
 class ChaptersOutput(BaseModel):
     """
     Complete book chapter structure.
+
+    DEPRECATED: Use BookStructure instead.
+    Kept for backward compatibility with existing code.
 
     Final output of Stage 4, saved as chapters/chapters.json.
     This is the canonical book structure used by downstream stages.
