@@ -306,7 +306,15 @@ class CheckpointManager:
                 "percent": (len(completed_set) / total_pages * 100) if total_pages > 0 else 0
             }
 
-            self._state['status'] = 'in_progress'
+            # Only set status to "in_progress" if there's work to do
+            # Preserve "completed" status if already marked complete
+            if len(remaining_pages) > 0:
+                self._state['status'] = 'in_progress'
+            elif self._state['status'] == 'not_started':
+                # All pages complete but never marked complete
+                self._state['status'] = 'in_progress'
+            # else: preserve existing status (completed, failed, etc.)
+
             self._save_checkpoint()
 
             return remaining_pages

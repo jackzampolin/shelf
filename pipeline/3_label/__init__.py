@@ -99,20 +99,47 @@ class VisionLabeler:
         # Initialize logger
         logs_dir = book_dir / "logs"
         logs_dir.mkdir(exist_ok=True)
-        self.logger = create_logger(book_title, "labels", log_dir=logs_dir)
+        self.logger = create_logger(book_title, "label", log_dir=logs_dir)
 
         # Initialize LLM client
         self.llm_client = LLMClient()
 
         # Initialize checkpoint manager
         if self.enable_checkpoints:
+            # Migrate old "labels" checkpoint to "label" (temporary migration code)
+            checkpoint_dir = book_dir / "checkpoints"
+            old_checkpoint = checkpoint_dir / "labels.json"
+            new_checkpoint = checkpoint_dir / "label.json"
+            if old_checkpoint.exists() and not new_checkpoint.exists():
+                import shutil
+                shutil.move(str(old_checkpoint), str(new_checkpoint))
+                print(f"   Migrated checkpoint: labels.json → label.json")
+
             self.checkpoint = CheckpointManager(
                 scan_id=book_title,
-                stage="labels",
+                stage="label",
                 storage_root=self.storage_root,
                 output_dir="labels"
             )
             if not resume:
+                # Check if checkpoint exists with progress before resetting
+                if self.checkpoint.checkpoint_file.exists():
+                    status = self.checkpoint.get_status()
+                    completed = len(status.get('completed_pages', []))
+                    total = status.get('total_pages', 0)
+                    cost = status.get('metadata', {}).get('total_cost_usd', 0.0)
+
+                    if completed > 0:
+                        print(f"\n⚠️  Checkpoint exists with progress:")
+                        print(f"   Pages: {completed}/{total} complete ({completed/total*100:.1f}%)" if total > 0 else f"   Pages: {completed} complete")
+                        print(f"   Cost: ${cost:.2f}")
+                        print(f"   This will DELETE progress and start over.")
+
+                        response = input("\n   Continue with reset? (type 'yes' to confirm): ").strip().lower()
+                        if response != 'yes':
+                            print("   Cancelled. Use --resume to continue from checkpoint.")
+                            return
+
                 self.checkpoint.reset()
                 # Reset stats on fresh start
                 with self.stats_lock:
@@ -697,7 +724,7 @@ Remember: Analyze structure only. Do NOT correct OCR text."""
             return False
 
         labels_dir = book_dir / "labels"
-        checkpoint_file = book_dir / "checkpoints" / "labels.json"
+        checkpoint_file = book_dir / "checkpoints" / "label.json"
         metadata_file = book_dir / "metadata.json"
 
         # Count what will be deleted

@@ -111,6 +111,24 @@ class VisionCorrector:
                 output_dir="corrected"
             )
             if not resume:
+                # Check if checkpoint exists with progress before resetting
+                if self.checkpoint.checkpoint_file.exists():
+                    status = self.checkpoint.get_status()
+                    completed = len(status.get('completed_pages', []))
+                    total = status.get('total_pages', 0)
+                    cost = status.get('metadata', {}).get('total_cost_usd', 0.0)
+
+                    if completed > 0:
+                        print(f"\n⚠️  Checkpoint exists with progress:")
+                        print(f"   Pages: {completed}/{total} complete ({completed/total*100:.1f}%)" if total > 0 else f"   Pages: {completed} complete")
+                        print(f"   Cost: ${cost:.2f}")
+                        print(f"   This will DELETE progress and start over.")
+
+                        response = input("\n   Continue with reset? (type 'yes' to confirm): ").strip().lower()
+                        if response != 'yes':
+                            print("   Cancelled. Use --resume to continue from checkpoint.")
+                            return
+
                 self.checkpoint.reset()
                 # Reset stats on fresh start
                 with self.stats_lock:
@@ -253,20 +271,20 @@ class VisionCorrector:
             print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
             print(f"   Output: {corrected_dir}")
 
-            # Auto-retry failed pages (xAI cache workaround)
-            # If there were failures and this wasn't already a resume, automatically retry
-            if errors > 0 and not resume:
+            # Auto-retry failed pages until complete or max retries reached
+            if errors > 0:
                 retry_count = 0
-                max_auto_retries = 2
+                max_auto_retries = 10  # Aggressive retry (up to 10 attempts)
+
+                print(f"\n⚠️  {errors} page(s) failed. Starting auto-retry loop...")
+                print(f"   Will retry up to {max_auto_retries} times until all pages succeed")
 
                 while errors > 0 and retry_count < max_auto_retries:
                     retry_count += 1
 
-                    # Wait before retrying to allow xAI cache to expire
-                    # Longer delays to avoid cache hits: 90s, 180s
-                    delay = 90 * retry_count
-                    print(f"\n⚠️  {errors} page(s) failed. Waiting {delay}s for xAI cache to clear...")
-                    print(f"   Then auto-retrying (attempt {retry_count}/{max_auto_retries})")
+                    # Short delay for transient errors (422s recover quickly)
+                    delay = min(30, 10 * retry_count)  # 10s, 20s, 30s, then stay at 30s
+                    print(f"\n   Retry attempt {retry_count}/{max_auto_retries} after {delay}s...")
 
                     import time
                     time.sleep(delay)
@@ -327,8 +345,27 @@ class VisionCorrector:
                         break
 
                 if errors > 0:
-                    print(f"\n⚠️  {errors} page(s) still failing after {max_auto_retries} auto-retries")
-                    print(f"   Run with --resume to try again, or these may be persistent xAI issues")
+                    # Get list of failed pages for better diagnostics
+                    if self.checkpoint:
+                        status = self.checkpoint.get_status()
+                        total_pages_set = set(range(1, status.get('total_pages', 0) + 1))
+                        completed_set = set(status.get('completed_pages', []))
+                        failed_pages = sorted(total_pages_set - completed_set)
+
+                        print(f"\n⚠️  {errors} page(s) still failing after {max_auto_retries} auto-retries")
+                        print(f"   Failed pages: {failed_pages[:20]}")  # Show first 20
+                        if len(failed_pages) > 20:
+                            print(f"   ... and {len(failed_pages) - 20} more")
+                        print(f"\n   These may be:")
+                        print(f"   - Pages with oversized content (>1MB)")
+                        print(f"   - Pages with complex layouts causing xAI issues")
+                        print(f"   - Persistent model errors")
+                        print(f"\n   Try:")
+                        print(f"   1. Run again with --resume (will retry {max_auto_retries} more times)")
+                        print(f"   2. Check logs for specific error patterns")
+                        print(f"   3. Consider skipping these pages if non-critical")
+                    else:
+                        print(f"\n⚠️  {errors} page(s) still failing after {max_auto_retries} auto-retries")
 
         except Exception as e:
             # Stage-level error handler
