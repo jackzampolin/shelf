@@ -24,11 +24,11 @@ from infra.llm_client import LLMClient
 import importlib
 
 # Import schemas
-structure_schemas = importlib.import_module('pipeline.4_structure.schemas')
+structure_schemas = importlib.import_module('pipeline.5_structure.schemas')
 TocEntry = getattr(structure_schemas, 'TocEntry')
 PageMapping = getattr(structure_schemas, 'PageMapping')
 
-merge_schemas = importlib.import_module('pipeline.3_merge.schemas')
+merge_schemas = importlib.import_module('pipeline.4_merge.schemas')
 MergedPageOutput = getattr(merge_schemas, 'MergedPageOutput')
 
 logger = logging.getLogger(__name__)

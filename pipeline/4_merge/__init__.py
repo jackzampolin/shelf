@@ -1,10 +1,11 @@
 """
 Stage 3: Merge & Enrich
 
-Merges OCR and correction data into unified page records with:
+Merges OCR, correction, and label data into unified page records with:
 - Full text (corrected where available, OCR otherwise)
 - Bounding boxes from OCR
-- Classifications from correction
+- Classifications from labels
+- Page numbers from labels
 - Paragraph continuation tracking
 
 Cost: $0 (deterministic merge, no LLM)
@@ -23,16 +24,19 @@ import importlib
 from infra.checkpoint import CheckpointManager
 from infra.logger import create_logger
 
-# Import OCR and Correction schemas using importlib (handles numeric module names)
+# Import OCR, Correction, and Label schemas using importlib (handles numeric module names)
 ocr_schemas = importlib.import_module('pipeline.1_ocr.schemas')
 OCRPageOutput = getattr(ocr_schemas, 'OCRPageOutput')
 
 correction_schemas = importlib.import_module('pipeline.2_correction.schemas')
 CorrectionOutput = getattr(correction_schemas, 'CorrectionPageOutput')
 
+label_schemas = importlib.import_module('pipeline.3_label.schemas')
+LabelOutput = getattr(label_schemas, 'LabelPageOutput')
+
 
 class MergeProcessor:
-    """Merges OCR and correction data into unified page records."""
+    """Merges OCR, correction, and label data into unified page records."""
 
     def __init__(self, storage_root=None, max_workers=8, enable_checkpoints=True):
         """Initialize merge processor.
@@ -95,7 +99,7 @@ class MergeProcessor:
                 total_pages=total_pages,
                 max_workers=self.max_workers
             )
-            self.logger.info("Stage 3: Merge & Enrich - Deterministic merge ($0 cost)")
+            self.logger.info("Stage 3: Merge & Enrich - Three-way merge (OCR + Correction + Label, $0 cost)")
 
             # Initialize checkpoint
             if self.enable_checkpoints:
@@ -246,8 +250,18 @@ class MergeProcessor:
                 correction_data = json.load(f)
             correction_page = CorrectionOutput(**correction_data)
 
-            # Merge page data
-            merged_page, corrections_used, has_continuation = self._merge_page_data(ocr_page, correction_page)
+            # Load label data
+            label_file = book_dir / "labels" / f"page_{page_num:04d}.json"
+            if not label_file.exists():
+                self.logger.error(f"Label file not found", page=page_num, file=str(label_file))
+                return False, 0, False
+
+            with open(label_file, 'r') as f:
+                label_data = json.load(f)
+            label_page = LabelOutput(**label_data)
+
+            # Merge page data (three-way merge)
+            merged_page, corrections_used, has_continuation = self._merge_page_data(ocr_page, correction_page, label_page)
 
             # Save output
             output_file = output_dir / f"page_{page_num:04d}.json"
@@ -270,12 +284,13 @@ class MergeProcessor:
                 self.logger.error(f"Page merge failed", page=page_num, error=str(e))
             return False, 0, False
 
-    def _merge_page_data(self, ocr_page: OCRPageOutput, correction_page: CorrectionOutput) -> Tuple[Dict, int, bool]:
-        """Merge OCR and correction data for a single page.
+    def _merge_page_data(self, ocr_page: OCRPageOutput, correction_page: CorrectionOutput, label_page: LabelOutput) -> Tuple[Dict, int, bool]:
+        """Merge OCR, correction, and label data for a single page (three-way merge).
 
         Args:
-            ocr_page: OCR page output
-            correction_page: Correction page output
+            ocr_page: OCR page output (original text, bboxes)
+            correction_page: Correction page output (corrected text, sparse)
+            label_page: Label page output (classifications, page numbers)
 
         Returns:
             (merged_page_dict, corrections_used_count, has_continuation)
@@ -290,9 +305,23 @@ class MergeProcessor:
                 None
             )
 
+            # Find matching label block (has classifications)
+            label_block = next(
+                (lb for lb in label_page.blocks if lb.block_num == ocr_block.block_num),
+                None
+            )
+
             if not corr_block:
                 self.logger.warning(
                     f"No correction block found for OCR block",
+                    page=ocr_page.page_number,
+                    block_num=ocr_block.block_num
+                )
+                continue
+
+            if not label_block:
+                self.logger.warning(
+                    f"No label block found for OCR block",
                     page=ocr_page.page_number,
                     block_num=ocr_block.block_num
                 )
@@ -303,6 +332,12 @@ class MergeProcessor:
                 # Find matching correction paragraph
                 corr_para = next(
                     (cp for cp in corr_block.paragraphs if cp.par_num == ocr_para.par_num),
+                    None
+                )
+
+                # Find matching label paragraph (for confidence)
+                label_para = next(
+                    (lp for lp in label_block.paragraphs if lp.par_num == ocr_para.par_num),
                     None
                 )
 
@@ -327,10 +362,11 @@ class MergeProcessor:
                     "correction_notes": corr_para.notes if corr_para and corr_para.notes else None
                 })
 
+            # Use classification from label_block
             merged_blocks.append({
                 "block_num": ocr_block.block_num,
-                "classification": corr_block.classification,
-                "classification_confidence": corr_block.classification_confidence,
+                "classification": label_block.classification.value if label_block.classification else "OTHER",
+                "classification_confidence": label_block.classification_confidence,
                 "bbox": ocr_block.bbox.to_list(),
                 "paragraphs": merged_paragraphs
             })
@@ -345,17 +381,19 @@ class MergeProcessor:
                 "width": ocr_page.page_dimensions.width,
                 "height": ocr_page.page_dimensions.height
             },
-            # Page number extraction (from correction stage)
-            "printed_page_number": correction_page.printed_page_number,
-            "numbering_style": correction_page.numbering_style,
-            "page_number_location": correction_page.page_number_location,
-            "page_number_confidence": correction_page.page_number_confidence,
+            # Page number extraction (from label stage)
+            "printed_page_number": label_page.printed_page_number,
+            "numbering_style": label_page.numbering_style,
+            "page_number_location": label_page.page_number_location,
+            "page_number_confidence": label_page.page_number_confidence,
             "blocks": merged_blocks,
             "continuation": continuation,
             "metadata": {
                 "ocr_timestamp": ocr_page.ocr_timestamp,
                 "correction_timestamp": correction_page.timestamp,
                 "correction_model": correction_page.model_used,
+                "label_timestamp": label_page.timestamp,
+                "label_model": label_page.model_used,
                 "merge_timestamp": datetime.now().isoformat(),
                 "total_blocks": len(merged_blocks),
                 "total_corrections_applied": corrections_used

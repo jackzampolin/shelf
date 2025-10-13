@@ -118,9 +118,20 @@ def cmd_process_clean(args):
             )
             processor.clean_stage(args.scan_id, confirm=args.yes)
 
+        elif args.stage == 'label':
+            # Import Label stage
+            label_module = importlib.import_module('pipeline.3_label')
+            VisionLabeler = getattr(label_module, 'VisionLabeler')
+
+            # Clean Label stage
+            processor = VisionLabeler(
+                storage_root=str(Path.home() / "Documents" / "book_scans")
+            )
+            processor.clean_stage(args.scan_id, confirm=args.yes)
+
         elif args.stage == 'merge':
             # Import Merge stage
-            merge_module = importlib.import_module('pipeline.3_merge')
+            merge_module = importlib.import_module('pipeline.4_merge')
             MergeProcessor = getattr(merge_module, 'MergeProcessor')
 
             # Clean Merge stage
@@ -131,7 +142,7 @@ def cmd_process_clean(args):
 
         elif args.stage == 'structure':
             # Import Structure stage
-            structure_module = importlib.import_module('pipeline.4_structure')
+            structure_module = importlib.import_module('pipeline.5_structure')
             clean_stage = getattr(structure_module, 'clean_stage')
 
             # Clean Structure stage
@@ -175,13 +186,39 @@ def cmd_process_correct(args):
         sys.exit(1)
 
 
+def cmd_process_label(args):
+    """Run Label stage (Stage 3)."""
+    import importlib
+
+    try:
+        # Import Label stage
+        label_module = importlib.import_module('pipeline.3_label')
+        VisionLabeler = getattr(label_module, 'VisionLabeler')
+
+        # Run Label
+        processor = VisionLabeler(
+            storage_root=str(Path.home() / "Documents" / "book_scans"),
+            model=args.model,
+            max_workers=args.workers
+        )
+        processor.process_book(args.scan_id, resume=args.resume)
+
+        print(f"\n✅ Label complete for {args.scan_id}")
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
 def cmd_process_merge(args):
-    """Run Merge & Enrich stage (Stage 3)."""
+    """Run Merge & Enrich stage (Stage 4)."""
     import importlib
 
     try:
         # Import Merge stage
-        merge_module = importlib.import_module('pipeline.3_merge')
+        merge_module = importlib.import_module('pipeline.4_merge')
         MergeProcessor = getattr(merge_module, 'MergeProcessor')
 
         # Run Merge
@@ -206,7 +243,7 @@ def cmd_process_structure(args):
 
     try:
         # Import Structure stage
-        structure_module = importlib.import_module('pipeline.4_structure')
+        structure_module = importlib.import_module('pipeline.5_structure')
         detect_structure = getattr(structure_module, 'detect_structure')
 
         from infra.checkpoint import CheckpointManager
@@ -515,6 +552,14 @@ Note: Minimal CLI during refactor (Issue #55).
     correct_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     correct_parser.set_defaults(func=cmd_process_correct)
 
+    # ar process label
+    label_parser = process_subparsers.add_parser('label', help='Stage 3: Label (Vision)')
+    label_parser.add_argument('scan_id', help='Book scan ID')
+    label_parser.add_argument('--model', default='x-ai/grok-4-fast', help='Vision model (default: grok-4-fast)')
+    label_parser.add_argument('--workers', type=int, default=30, help='Parallel workers (default: 30)')
+    label_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
+    label_parser.set_defaults(func=cmd_process_label)
+
     # ar process merge
     merge_parser = process_subparsers.add_parser('merge', help='Stage 3: Merge & Enrich')
     merge_parser.add_argument('scan_id', help='Book scan ID')
@@ -530,7 +575,7 @@ Note: Minimal CLI during refactor (Issue #55).
 
     # ar process clean
     clean_parser = process_subparsers.add_parser('clean', help='Clean/delete stage outputs')
-    clean_parser.add_argument('stage', choices=['ocr', 'correct', 'merge', 'structure'], help='Stage to clean')
+    clean_parser.add_argument('stage', choices=['ocr', 'correct', 'label', 'merge', 'structure'], help='Stage to clean')
     clean_parser.add_argument('scan_id', help='Book scan ID')
     clean_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompt')
     clean_parser.set_defaults(func=cmd_process_clean)

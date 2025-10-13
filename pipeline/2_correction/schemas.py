@@ -64,12 +64,10 @@ class ParagraphCorrection(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in text quality")
 
 
-class BlockClassification(BaseModel):
-    """Classification and corrections for a single block."""
+class BlockCorrection(BaseModel):
+    """Corrections for a single block (no classification)."""
 
     block_num: int = Field(..., ge=1, description="Block number (matches OCR)")
-    classification: BlockType = Field(..., description="Classified content type")
-    classification_confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in classification")
 
     paragraphs: List[ParagraphCorrection] = Field(..., description="Paragraph-level corrections")
 
@@ -80,28 +78,8 @@ class CorrectionPageOutput(BaseModel):
     # Page identification
     page_number: int = Field(..., ge=1)
 
-    # Page number extraction (from vision analysis)
-    printed_page_number: Optional[str] = Field(
-        None,
-        description="Page number as printed on the page (e.g., 'ix', '45', None if unnumbered)"
-    )
-    numbering_style: Optional[Literal["roman", "arabic", "none"]] = Field(
-        None,
-        description="Style of page numbering detected"
-    )
-    page_number_location: Optional[Literal["header", "footer", "none"]] = Field(
-        None,
-        description="Where the page number was found"
-    )
-    page_number_confidence: float = Field(
-        1.0,
-        ge=0.0,
-        le=1.0,
-        description="Confidence in page number extraction (1.0 if no number found)"
-    )
-
-    # Classified and corrected blocks
-    blocks: List[BlockClassification] = Field(..., description="Block classifications and corrections")
+    # Corrected blocks (no classification or page number extraction)
+    blocks: List[BlockCorrection] = Field(..., description="Block corrections")
 
     # Processing metadata
     model_used: str = Field(..., description="Model used for correction (e.g., 'gpt-4o')")
@@ -109,7 +87,6 @@ class CorrectionPageOutput(BaseModel):
     timestamp: str = Field(..., description="ISO timestamp of processing")
 
     # Summary statistics
-    total_blocks: int = Field(..., ge=0, description="Total number of blocks classified")
+    total_blocks: int = Field(..., ge=0, description="Total number of blocks corrected")
     total_corrections: int = Field(..., ge=0, description="Total number of paragraphs corrected")
-    avg_classification_confidence: float = Field(..., ge=0.0, le=1.0, description="Average classification confidence")
     avg_confidence: float = Field(..., ge=0.0, le=1.0, description="Average text confidence")

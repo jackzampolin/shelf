@@ -1,0 +1,33 @@
+"""Analyze page {page_number} using both the visual image and OCR text.
+
+OCR TEXT (for reference - DO NOT correct):
+{ocr_text}
+
+REQUIRED TASKS:
+
+1. PAGE NUMBER EXTRACTION
+   Look at the page image for any printed page number.
+   - Check headers and footers carefully
+   - Note the exact text, style, and location
+   - If no number is visible, explicitly confirm this
+
+2. BLOCK CLASSIFICATION
+   For each OCR block below:
+   - Examine its visual presentation in the image
+   - Consider its content and structural role
+   - Assign the most appropriate BlockType
+   - Rate your confidence in the classification
+
+3. PARAGRAPH ASSESSMENT
+   For each paragraph within a block:
+   - Confirm it belongs with its block's classification
+   - Rate confidence (1.0 = definitely belongs, lower = uncertain)
+
+VISUAL ANALYSIS CHECKLIST:
+☐ Font sizes and styles compared
+☐ Indentation and alignment noted
+☐ Spacing patterns identified
+☐ Page position considered
+☐ Structural elements recognized
+
+Remember: Focus on classification accuracy. Do not modify any OCR text."""

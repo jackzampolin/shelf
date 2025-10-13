@@ -16,10 +16,10 @@ import logging
 from infra.llm_client import LLMClient
 
 # Import from numeric module names using importlib
-merge_schemas = importlib.import_module('pipeline.3_merge.schemas')
+merge_schemas = importlib.import_module('pipeline.4_merge.schemas')
 MergedPageOutput = getattr(merge_schemas, 'MergedPageOutput')
 
-structure_schemas = importlib.import_module('pipeline.4_structure.schemas')
+structure_schemas = importlib.import_module('pipeline.5_structure.schemas')
 TocEntry = getattr(structure_schemas, 'TocEntry')
 TocOutput = getattr(structure_schemas, 'TocOutput')
 

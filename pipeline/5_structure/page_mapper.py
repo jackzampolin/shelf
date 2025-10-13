@@ -19,10 +19,10 @@ import logging
 import importlib
 
 # Import schemas
-merge_schemas = importlib.import_module('pipeline.3_merge.schemas')
+merge_schemas = importlib.import_module('pipeline.4_merge.schemas')
 MergedPageOutput = getattr(merge_schemas, 'MergedPageOutput')
 
-structure_schemas = importlib.import_module('pipeline.4_structure.schemas')
+structure_schemas = importlib.import_module('pipeline.5_structure.schemas')
 PageMapping = getattr(structure_schemas, 'PageMapping')
 PageMappingOutput = getattr(structure_schemas, 'PageMappingOutput')
 TocEntry = getattr(structure_schemas, 'TocEntry')

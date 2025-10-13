@@ -217,7 +217,7 @@ class CheckpointManager:
                 # Validate against MergedPageOutput schema
                 try:
                     import importlib
-                    merge_schemas = importlib.import_module('pipeline.3_merge.schemas')
+                    merge_schemas = importlib.import_module('pipeline.4_merge.schemas')
                     MergedPageOutput = getattr(merge_schemas, 'MergedPageOutput')
                     MergedPageOutput(**data)
                     return True

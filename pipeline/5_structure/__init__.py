@@ -1,5 +1,5 @@
 """
-Stage 4: Structure Detection
+Stage 5: Structure Detection
 
 ToC-first approach to detecting book structure:
 1. Parse ToC with LLM
@@ -23,10 +23,10 @@ import logging
 from infra.checkpoint import CheckpointManager
 
 # Import schemas from numeric module names using importlib
-merge_schemas = importlib.import_module('pipeline.3_merge.schemas')
+merge_schemas = importlib.import_module('pipeline.4_merge.schemas')
 MergedPageOutput = getattr(merge_schemas, 'MergedPageOutput')
 
-structure_schemas = importlib.import_module('pipeline.4_structure.schemas')
+structure_schemas = importlib.import_module('pipeline.5_structure.schemas')
 TocOutput = getattr(structure_schemas, 'TocOutput')
 PageMappingOutput = getattr(structure_schemas, 'PageMappingOutput')
 BoundaryCandidatesOutput = getattr(structure_schemas, 'BoundaryCandidatesOutput')
@@ -34,16 +34,16 @@ ValidatedBoundariesOutput = getattr(structure_schemas, 'ValidatedBoundariesOutpu
 ChaptersOutput = getattr(structure_schemas, 'ChaptersOutput')
 Chapter = getattr(structure_schemas, 'Chapter')
 
-toc_parser_module = importlib.import_module('pipeline.4_structure.toc_parser')
+toc_parser_module = importlib.import_module('pipeline.5_structure.toc_parser')
 parse_toc = getattr(toc_parser_module, 'parse_toc')
 
-page_mapper_module = importlib.import_module('pipeline.4_structure.page_mapper')
+page_mapper_module = importlib.import_module('pipeline.5_structure.page_mapper')
 build_page_mapping_from_anchors = getattr(page_mapper_module, 'build_page_mapping_from_anchors')
 
-validator_module = importlib.import_module('pipeline.4_structure.page_mapping_validator')
+validator_module = importlib.import_module('pipeline.5_structure.page_mapping_validator')
 find_toc_anchors_with_llm = getattr(validator_module, 'validate_page_mapping_with_llm')  # Still named this for compatibility
 
-boundary_detector_module = importlib.import_module('pipeline.4_structure.boundary_detector')
+boundary_detector_module = importlib.import_module('pipeline.5_structure.boundary_detector')
 detect_and_validate_boundaries = getattr(boundary_detector_module, 'detect_and_validate_boundaries')
 
 logger = logging.getLogger(__name__)
@@ -76,56 +76,69 @@ def detect_structure(
     logger.info(f"Starting structure detection for {scan_id}")
     start_time = time.time()
 
-    # Create output directory
-    chapters_dir = book_dir / "chapters"
-    chapters_dir.mkdir(exist_ok=True)
+    try:
+        # Create output directory
+        chapters_dir = book_dir / "chapters"
+        chapters_dir.mkdir(exist_ok=True)
 
-    # Load all processed pages
-    processed_dir = book_dir / "processed"
-    if not processed_dir.exists():
-        raise FileNotFoundError(f"Processed directory not found: {processed_dir}")
+        # Load all processed pages
+        processed_dir = book_dir / "processed"
+        if not processed_dir.exists():
+            raise FileNotFoundError(f"Processed directory not found: {processed_dir}")
 
-    pages = _load_processed_pages(processed_dir, start_page, end_page)
-    logger.info(f"Loaded {len(pages)} processed pages")
+        pages = _load_processed_pages(processed_dir, start_page, end_page)
+        logger.info(f"Loaded {len(pages)} processed pages")
 
-    # Track costs
-    total_cost = 0.0
+        # Track costs - load existing cost from checkpoint for resume runs
+        existing_cost = 0.0
+        if checkpoint_manager:
+            checkpoint_state = checkpoint_manager.get_status()
+            existing_cost = checkpoint_state.get('metadata', {}).get('total_cost_usd', 0.0)
 
-    # Substage 4a: Parse ToC
-    toc_output = _parse_toc(pages, scan_id, chapters_dir)
-    logger.info(f"Parsed ToC with {toc_output.total_entries} entries")
-    total_cost += toc_output.cost
+        total_cost = existing_cost
 
-    # Substage 4b: Build page mapping (LLM finds anchors, deterministic interpolation)
-    page_mapping, mapping_cost = _build_page_mapping_with_anchors(pages, toc_output, scan_id, chapters_dir)
-    logger.info(f"Built page mapping: {len(page_mapping.mappings)} pages mapped")
-    total_cost += mapping_cost
+        # Substage 4a: Parse ToC
+        toc_output = _parse_toc(pages, scan_id, chapters_dir)
+        logger.info(f"Parsed ToC with {toc_output.total_entries} entries")
+        total_cost += toc_output.cost
 
-    # Substages 4c+4d: Detect and validate boundaries (combined - direct ToC validation)
-    validated = _detect_and_validate_boundaries(pages, toc_output, page_mapping, scan_id, chapters_dir)
-    logger.info(
-        f"Detected and validated {validated.total_boundaries} boundaries "
-        f"({validated.llm_corrections_made} corrections made)"
-    )
-    total_cost += validated.validation_cost
+        # Substage 4b: Build page mapping (LLM finds anchors, deterministic interpolation)
+        page_mapping, mapping_cost = _build_page_mapping_with_anchors(pages, toc_output, scan_id, chapters_dir)
+        logger.info(f"Built page mapping: {len(page_mapping.mappings)} pages mapped")
+        total_cost += mapping_cost
 
-    # Substage 4e: Assemble final chapter structure
-    chapters_output = _assemble_chapters(
-        validated, page_mapping, len(pages), scan_id, chapters_dir, total_cost, start_time
-    )
-    logger.info(
-        f"Assembled {chapters_output.total_chapters} chapters "
-        f"(cost: ${chapters_output.total_cost:.3f}, time: {chapters_output.processing_time_seconds:.1f}s)"
-    )
+        # Substages 4c+4d: Detect and validate boundaries (combined - vision validation)
+        validated = _detect_and_validate_boundaries(pages, toc_output, page_mapping, scan_id, chapters_dir, book_dir)
+        logger.info(
+            f"Detected and validated {validated.total_boundaries} boundaries "
+            f"({validated.llm_corrections_made} corrections made)"
+        )
+        total_cost += validated.validation_cost
 
-    # Mark checkpoint complete
-    checkpoint_manager.mark_stage_complete(metadata={
-        "total_chapters": chapters_output.total_chapters,
-        "total_cost_usd": total_cost,
-        "processing_time_seconds": chapters_output.processing_time_seconds
-    })
+        # Substage 4e: Assemble final chapter structure
+        chapters_output = _assemble_chapters(
+            validated, page_mapping, len(pages), scan_id, chapters_dir, total_cost, start_time
+        )
+        logger.info(
+            f"Assembled {chapters_output.total_chapters} chapters "
+            f"(cost: ${chapters_output.total_cost:.3f}, time: {chapters_output.processing_time_seconds:.1f}s)"
+        )
 
-    return chapters_output
+        # Mark checkpoint complete
+        checkpoint_manager.mark_stage_complete(metadata={
+            "total_chapters": chapters_output.total_chapters,
+            "total_cost_usd": total_cost,
+            "processing_time_seconds": chapters_output.processing_time_seconds
+        })
+
+        return chapters_output
+
+    except Exception as e:
+        # Stage-level error handler
+        logger.error(f"Structure detection stage failed: {e}")
+        if checkpoint_manager:
+            checkpoint_manager.mark_stage_failed(error=str(e))
+        raise
 
 
 def _load_processed_pages(
@@ -226,27 +239,29 @@ def _detect_and_validate_boundaries(
     page_mapping: PageMappingOutput,
     scan_id: str,
     output_dir: Path,
+    book_dir: Path,
 ) -> ValidatedBoundariesOutput:
     """
     Substages 4c+4d: Detect and validate boundaries (combined).
 
-    Direct ToC validation approach:
+    Vision-based validation approach:
     1. For each ToC entry, look up expected PDF page from page mapping
-    2. Create ±1 page window (3 pages total)
-    3. Ask LLM to validate boundary location
+    2. Extract PDF images (±1 page) + JSON context (±2 pages)
+    3. Ask vision model to validate boundary location
     4. Return validated boundaries
 
-    Much simpler than collecting all CHAPTER_HEADING labels and filtering.
+    Vision model can distinguish running headers from actual boundaries.
     """
-    logger.info("Substages 4c+4d: Detecting and validating boundaries from ToC...")
+    logger.info("Substages 4c+4d: Detecting and validating boundaries from ToC (vision-based)...")
 
-    # Call combined detector/validator
+    # Call combined detector/validator with vision model
     validated_output = detect_and_validate_boundaries(
         pages=pages,
         toc_entries=toc.entries,
         page_mappings=page_mapping.mappings,
         scan_id=scan_id,
-        model="openai/gpt-4o-mini",
+        book_dir=book_dir,
+        model="x-ai/grok-4-fast",
     )
 
     # Save checkpoint

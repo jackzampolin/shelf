@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Vision-Based OCR Correction (Text Only)
+Vision-Based Page Labeling
 
-Corrects OCR errors using multimodal LLM.
-Block classification and page number extraction are handled in Stage 3 (Label).
+Extracts page numbers and classifies content blocks using multimodal LLM.
+Text correction is handled in Stage 2 (Correct).
 """
 
 import json
@@ -28,29 +28,31 @@ import importlib
 ocr_schemas = importlib.import_module('pipeline.1_ocr.schemas')
 OCRPageOutput = ocr_schemas.OCRPageOutput
 
-correction_schemas = importlib.import_module('pipeline.2_correction.schemas')
-CorrectionPageOutput = correction_schemas.CorrectionPageOutput
-BlockCorrection = correction_schemas.BlockCorrection
-ParagraphCorrection = correction_schemas.ParagraphCorrection
+label_schemas = importlib.import_module('pipeline.3_label.schemas')
+LabelPageOutput = label_schemas.LabelPageOutput
+BlockClassification = label_schemas.BlockClassification
+ParagraphLabel = label_schemas.ParagraphLabel
 
 
-class VisionCorrector:
+class VisionLabeler:
     """
-    Vision-based OCR correction (text only).
+    Vision-based page number extraction and block classification.
 
-    Uses multimodal LLM to correct OCR errors by comparing text against page images.
-    Block classification and page number extraction are handled in Stage 3 (Label).
+    Uses multimodal LLM to:
+    1. Extract printed page numbers from headers/footers
+    2. Classify content blocks (body, footnote, header, etc.)
 
+    Text correction is handled in Stage 2 (Correct).
     Supports checkpoint-based resume and parallel processing.
     """
 
     def __init__(self, storage_root=None, model="x-ai/grok-4-fast", max_workers=30, enable_checkpoints=True):
         """
-        Initialize the VisionCorrector.
+        Initialize the VisionLabeler.
 
         Args:
             storage_root: Root directory for book storage (default: ~/Documents/book_scans)
-            model: LLM model to use for correction (default: x-ai/grok-4-fast)
+            model: LLM model to use for labeling (default: x-ai/grok-4-fast)
             max_workers: Number of parallel workers (default: 30)
             enable_checkpoints: Enable checkpoint-based resume (default: True)
         """
@@ -71,7 +73,7 @@ class VisionCorrector:
 
     def process_book(self, book_title, resume=False):
         """
-        Process all pages for OCR text correction only.
+        Process all pages for page number extraction and block classification.
 
         Args:
             book_title: Scan ID of the book to process
@@ -97,7 +99,7 @@ class VisionCorrector:
         # Initialize logger
         logs_dir = book_dir / "logs"
         logs_dir.mkdir(exist_ok=True)
-        self.logger = create_logger(book_title, "correction", log_dir=logs_dir)
+        self.logger = create_logger(book_title, "labels", log_dir=logs_dir)
 
         # Initialize LLM client
         self.llm_client = LLMClient()
@@ -106,9 +108,9 @@ class VisionCorrector:
         if self.enable_checkpoints:
             self.checkpoint = CheckpointManager(
                 scan_id=book_title,
-                stage="correction",
+                stage="labels",
                 storage_root=self.storage_root,
-                output_dir="corrected"
+                output_dir="labels"
             )
             if not resume:
                 self.checkpoint.reset()
@@ -130,8 +132,8 @@ class VisionCorrector:
 
         try:
             # Create output directory
-            corrected_dir = book_dir / "corrected"
-            corrected_dir.mkdir(exist_ok=True)
+            labels_dir = book_dir / "labels"
+            labels_dir.mkdir(exist_ok=True)
 
             # Get list of OCR outputs
             ocr_files = sorted(ocr_dir.glob("page_*.json"))
@@ -170,12 +172,12 @@ class VisionCorrector:
                     'page_num': page_num,
                     'ocr_file': ocr_file,
                     'pdf_files': pdf_files,
-                    'corrected_dir': corrected_dir
+                    'labels_dir': labels_dir
                 })
 
             if len(tasks) == 0:
-                self.logger.info("All pages already corrected, skipping")
-                print("✅ All pages already corrected")
+                self.logger.info("All pages already labeled, skipping")
+                print("✅ All pages already labeled")
                 return
 
             # Process in parallel with thread-safe statistics
@@ -210,7 +212,7 @@ class VisionCorrector:
                     with self.progress_lock:
                         progress_count = completed + errors
                         self.logger.progress(
-                            f"Correcting pages",
+                            f"Labeling pages",
                             current=progress_count,
                             total=len(tasks),
                             completed=completed,
@@ -233,25 +235,25 @@ class VisionCorrector:
                 })
 
             # Update metadata
-            metadata['correction_complete'] = True
-            metadata['correction_completion_date'] = datetime.now().isoformat()
-            metadata['correction_total_cost'] = total_cost
+            metadata['labels_complete'] = True
+            metadata['labels_completion_date'] = datetime.now().isoformat()
+            metadata['labels_total_cost'] = total_cost
 
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
 
             self.logger.info(
-                "Correction complete",
-                pages_corrected=completed,
+                "Labeling complete",
+                pages_labeled=completed,
                 total_cost=total_cost,
                 avg_cost_per_page=total_cost / completed if completed > 0 else 0,
-                corrected_dir=str(corrected_dir)
+                labels_dir=str(labels_dir)
             )
 
-            print(f"\n✅ Correction complete: {completed} pages")
+            print(f"\n✅ Labeling complete: {completed} pages")
             print(f"   Total cost: ${total_cost:.2f}")
             print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
-            print(f"   Output: {corrected_dir}")
+            print(f"   Output: {labels_dir}")
 
             # Auto-retry failed pages (xAI cache workaround)
             # If there were failures and this wasn't already a resume, automatically retry
@@ -289,7 +291,7 @@ class VisionCorrector:
                                 'page_num': page_num,
                                 'ocr_file': ocr_file,
                                 'pdf_files': pdf_files,
-                                'corrected_dir': corrected_dir
+                                'labels_dir': labels_dir
                             })
 
                         if retry_tasks:
@@ -332,10 +334,10 @@ class VisionCorrector:
 
         except Exception as e:
             # Stage-level error handler
-            self.logger.error(f"Correction stage failed", error=str(e))
+            self.logger.error(f"Labeling stage failed", error=str(e))
             if self.checkpoint:
                 self.checkpoint.mark_stage_failed(error=str(e))
-            print(f"\n❌ Correction stage failed: {e}")
+            print(f"\n❌ Labeling stage failed: {e}")
             raise
         finally:
             # Always clean up logger
@@ -360,25 +362,25 @@ class VisionCorrector:
             # Convert PDF page to image (handles multi-PDF books)
             page_image = self._get_page_image(task['pdf_files'], ocr_page.page_number)
 
-            # Call vision model for correction only
-            corrected_data, cost = self._correct_page_with_vision(ocr_page, page_image)
+            # Call vision model for page number extraction and classification
+            label_data, cost = self._label_page_with_vision(ocr_page, page_image)
 
             # Validate output against schema
             try:
-                validated = CorrectionPageOutput(**corrected_data)
-                corrected_data = validated.model_dump()
+                validated = LabelPageOutput(**label_data)
+                label_data = validated.model_dump()
             except Exception as validation_error:
                 self.logger.error(
                     f"Schema validation failed",
                     page=task['page_num'],
                     error=str(validation_error)
                 )
-                raise ValueError(f"Correction output failed schema validation: {validation_error}") from validation_error
+                raise ValueError(f"Label output failed schema validation: {validation_error}") from validation_error
 
-            # Save corrected output
-            output_file = task['corrected_dir'] / f"page_{task['page_num']:04d}.json"
+            # Save label output
+            output_file = task['labels_dir'] / f"page_{task['page_num']:04d}.json"
             with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(corrected_data, f, indent=2)
+                json.dump(label_data, f, indent=2)
 
             # Mark complete in checkpoint with cost
             if self.checkpoint:
@@ -388,7 +390,7 @@ class VisionCorrector:
 
         except Exception as e:
             if self.logger:
-                self.logger.error(f"Page correction failed", page=task['page_num'], error=str(e))
+                self.logger.error(f"Page labeling failed", page=task['page_num'], error=str(e))
             return False, 0.0
 
     def _pdf_page_to_image(self, pdf_path, page_number, dpi=150):
@@ -437,16 +439,16 @@ class VisionCorrector:
         img_bytes = buffered.getvalue()
         return base64.b64encode(img_bytes).decode('utf-8')
 
-    def _correct_page_with_vision(self, ocr_page, page_image):
+    def _label_page_with_vision(self, ocr_page, page_image):
         """
-        Correct OCR errors using vision model (text corrections only).
+        Extract page numbers and classify blocks using vision model (no text correction).
 
         Args:
             ocr_page: OCRPageOutput object
             page_image: PIL Image of the page
 
         Returns:
-            tuple: (correction_data: dict, cost: float)
+            tuple: (label_data: dict, cost: float)
         """
         # Build OCR text representation for the prompt
         ocr_text = self._format_ocr_for_prompt(ocr_page)
@@ -460,56 +462,60 @@ class VisionCorrector:
         response_schema = {
             "type": "json_schema",
             "json_schema": {
-                "name": "ocr_correction",
+                "name": "page_labeling",
                 "strict": True,
                 "schema": {
                     "type": "object",
                     "properties": {
+                        "printed_page_number": {"type": ["string", "null"]},
+                        "numbering_style": {"type": ["string", "null"]},
+                        "page_number_location": {"type": ["string", "null"]},
+                        "page_number_confidence": {"type": "number"},
                         "blocks": {
                             "type": "array",
                             "items": {
                                 "type": "object",
                                 "properties": {
                                     "block_num": {"type": "integer"},
+                                    "classification": {"type": "string"},
+                                    "classification_confidence": {"type": "number"},
                                     "paragraphs": {
                                         "type": "array",
                                         "items": {
                                             "type": "object",
                                             "properties": {
                                                 "par_num": {"type": "integer"},
-                                                "text": {"type": ["string", "null"]},
-                                                "notes": {"type": ["string", "null"]},
                                                 "confidence": {"type": "number"}
                                             },
-                                            "required": ["par_num", "text", "notes", "confidence"],
+                                            "required": ["par_num", "confidence"],
                                             "additionalProperties": False
                                         }
                                     }
                                 },
-                                "required": ["block_num", "paragraphs"],
+                                "required": ["block_num", "classification", "classification_confidence", "paragraphs"],
                                 "additionalProperties": False
                             }
                         }
                     },
-                    "required": ["blocks"],
+                    "required": ["printed_page_number", "numbering_style", "page_number_location", "page_number_confidence", "blocks"],
                     "additionalProperties": False
                 }
             }
         }
 
         # Call vision model with automatic JSON retry on parse failures
-        def parse_correction_json(response_text):
-            """Parse and validate correction JSON."""
+        def parse_label_json(response_text):
+            """Parse and validate label JSON."""
             data = json.loads(response_text)  # Will raise JSONDecodeError if invalid
             return data
 
-        correction_data, usage, cost = self.llm_client.call_with_json_retry(
+        label_data, usage, cost = self.llm_client.call_with_json_retry(
             model=self.model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            json_parser=parse_correction_json,
+            json_parser=parse_label_json,
             temperature=0.1,
             max_retries=2,  # Retry up to 2 times on JSON parse failures (3 total attempts)
             images=[page_image],
@@ -518,80 +524,119 @@ class VisionCorrector:
         )
 
         # Add metadata
-        correction_data['page_number'] = ocr_page.page_number
-        correction_data['model_used'] = self.model
-        correction_data['processing_cost'] = cost
-        correction_data['timestamp'] = datetime.now().isoformat()
+        label_data['page_number'] = ocr_page.page_number
+        label_data['model_used'] = self.model
+        label_data['processing_cost'] = cost
+        label_data['timestamp'] = datetime.now().isoformat()
 
         # Calculate summary stats
-        total_corrections = sum(
-            1 for block in correction_data['blocks']
-            for p in block.get('paragraphs', [])
-            if p.get('text') is not None
-        )
-
+        avg_class_conf = sum(b.get('classification_confidence', 0) for b in label_data['blocks']) / len(label_data['blocks']) if label_data['blocks'] else 0
         avg_conf = sum(
             p.get('confidence', 1.0)
-            for b in correction_data['blocks']
+            for b in label_data['blocks']
             for p in b.get('paragraphs', [])
-        ) / sum(len(b.get('paragraphs', [])) for b in correction_data['blocks']) if correction_data['blocks'] else 1.0
+        ) / sum(len(b.get('paragraphs', [])) for b in label_data['blocks']) if label_data['blocks'] else 1.0
 
-        correction_data['total_blocks'] = len(correction_data['blocks'])
-        correction_data['total_corrections'] = total_corrections
-        correction_data['avg_confidence'] = round(avg_conf, 3)
+        label_data['total_blocks'] = len(label_data['blocks'])
+        label_data['avg_classification_confidence'] = round(avg_class_conf, 3)
+        label_data['avg_confidence'] = round(avg_conf, 3)
 
-        return correction_data, cost
+        return label_data, cost
 
     def _build_system_prompt(self):
-        """Build the system prompt for vision correction."""
-        return """You are an expert OCR correction assistant with vision capabilities.
+        """Build the system prompt for vision labeling."""
+        return """You are an expert page analysis assistant with vision capabilities.
 
-Your task is to **correct OCR errors** by comparing the OCR text to the actual page image.
+Your task is to:
+1. **Extract the printed page number** from headers/footers
+2. **Classify content blocks** by type based on visual and textual signals
 
-**Important Context:** Most paragraphs (80-90%) are error-free. Be conservative - only correct clear OCR mistakes.
+**IMPORTANT:** Do NOT correct any OCR text - just analyze structure and classify.
 
-**Common OCR Errors to Fix:**
-- Character substitution: rn→m, cl→d, li→h, tbe→the, 1→l, 0→O
-- Ligature failures: fi, fl, ff, ffi, ffl often misread
-- Line-break hyphens: "presi- dent" → "president" (remove break hyphen, keep compound hyphens)
-- Spacing issues: missing/extra spaces, word boundaries
-- Punctuation: smart quotes, em dashes, ellipses
+**Page Number Extraction:**
+Look at the page image for printed page numbers:
+- **Location**: Top-right, top-center, or bottom-center of page
+- **Formats**:
+  - Roman numerals (i, ii, iii, iv, v...) typically in front matter
+  - Arabic numerals (1, 2, 3...) typically in body
+  - Unnumbered pages exist (title pages, blank pages)
+- **Output**:
+  - `printed_page_number`: exact text (e.g., "ix", "45", or null)
+  - `numbering_style`: "roman", "arabic", or "none"
+  - `page_number_location`: "header", "footer", or "none"
+  - `page_number_confidence`: 0.0-1.0
 
-**Correction Rules:**
-- Set `text` to null for clean paragraphs (most should be null)
-- When correcting: output the COMPLETE corrected paragraph text (not patches)
-- Preserve original formatting intent (keep italics/bold indicators if present)
-- Only fix errors you can visually confirm in the image
+**Block Classification - Visual Signals:**
+
+**Structural (Front/Back Matter):**
+- TITLE_PAGE: Large centered text, minimal content, first page
+- COPYRIGHT: Small text, "©" symbol, verso of title page
+- DEDICATION: Short centered text, often italicized
+- TABLE_OF_CONTENTS: "Contents"/"Table of Contents" heading, dot leaders, page numbers
+- PREFACE/FOREWORD: Heading with these words, before main content
+- INTRODUCTION: "Introduction" heading, before Chapter 1
+
+**Content Hierarchy:**
+- CHAPTER_HEADING: Large centered/left-aligned, "Chapter N" or number, whitespace around
+- SECTION_HEADING: Bold/larger than body, left-aligned, breaks text flow
+- BODY: Standard paragraph text, consistent font size (10-12pt)
+- QUOTE: Indented, often italicized, smaller margins
+- EPIGRAPH: Short quote, often at chapter start, centered/right-aligned
+
+**Reference Material:**
+- FOOTNOTE: Small font (<8pt), bottom 20% of page, superscript numbers
+- ENDNOTES: "Notes" heading, numbered list, end of chapter/book
+- BIBLIOGRAPHY/REFERENCES: "Bibliography"/"References" heading, hanging indent
+- INDEX: "Index" heading, multi-column, alphabetical entries
+
+**Back Matter:**
+- APPENDIX: "Appendix" heading, supplementary content
+- GLOSSARY: "Glossary" heading, definition list
+- ACKNOWLEDGMENTS: "Acknowledgments" heading, thank-you text
+
+**Page Metadata:**
+- HEADER: Top of page, repeating text (chapter title, book title)
+- FOOTER: Bottom of page, repeating text (often includes page number)
+- PAGE_NUMBER: Standalone number (not embedded in header/footer)
+
+**Special Content:**
+- ILLUSTRATION_CAPTION: Near image, "Figure N:" or "Plate:" prefix
+- TABLE: Grid structure, aligned columns
+- OTHER: Doesn't fit above categories
 
 **Confidence Scoring:**
-- 0.9-1.0: Perfect clarity, all text clearly visible
-- 0.7-0.8: Minor uncertainty on 1-2 characters
-- 0.5-0.6: Partial blur or obstruction affecting readability
-- <0.5: Significant image quality issues
+- 0.9-1.0: Clear visual signals, unambiguous type
+- 0.7-0.8: Most signals present, minor ambiguity
+- 0.5-0.6: Ambiguous (e.g., SECTION_HEADING vs BODY)
+- <0.5: Very unclear, multiple types possible
 
-**Output:**
-- `text`: Complete corrected paragraph or null (no partial corrections)
-- `notes`: Brief summary (e.g., "Fixed 2 ligatures: 'fi'→'fi', removed line hyphen")
-- `confidence`: Score based on image clarity and correction certainty
+**Classification Strategy:**
+1. Check position on page (top/middle/bottom)
+2. Compare font size/style to surrounding text
+3. Look for whitespace and alignment patterns
+4. Check for type-specific keywords or formatting
+5. Consider page context (front matter, body, back matter)
 
-**Important:** Do NOT extract page numbers or classify blocks - that is handled in a separate stage.
-Focus exclusively on fixing OCR text errors."""
+**Remember:** You are labeling structure, NOT correcting text. Focus on "what is this" not "what should it say"."""
 
     def _build_user_prompt(self, ocr_page, ocr_text):
         """Build the user prompt with OCR data."""
-        return f"""Page {ocr_page.page_number} OCR output to verify:
+        return f"""Page {ocr_page.page_number} OCR output to analyze:
 
 {ocr_text}
 
-Compare this text to the page image and identify OCR errors.
+Analyze the page image to:
+1. **Extract page number** - Look in headers/footers (set to null if unnumbered)
+2. **Classify each block** - Use visual signals (font, position, whitespace, alignment) + textual content
 
-For each block/paragraph:
-- Set `text` to null if NO errors found (expected for most paragraphs)
-- Set `text` to full corrected text ONLY if you see clear OCR mistakes in the image
-- Add brief `notes` explaining what you fixed
-- Provide confidence score based on image clarity
+For each block, follow the classification strategy:
+- Check position on page
+- Compare font size/style to context
+- Look for type-specific formatting
+- Assign appropriate block type from the categories above
+- Provide confidence score (0.9-1.0 for clear, 0.7-0.8 for minor ambiguity, etc.)
 
-Remember: This is error detection, not rewriting. Only flag genuine OCR failures visible in the image."""
+Remember: Analyze structure only. Do NOT correct OCR text."""
 
     def _format_ocr_for_prompt(self, ocr_page):
         """Format OCR page data for the vision prompt."""
@@ -636,7 +681,7 @@ Remember: This is error detection, not rewriting. Only flag genuine OCR failures
 
     def clean_stage(self, scan_id: str, confirm: bool = False):
         """
-        Clean/delete all correction outputs and checkpoint for a book.
+        Clean/delete all label outputs and checkpoint for a book.
 
         Args:
             scan_id: Book scan ID
@@ -651,15 +696,15 @@ Remember: This is error detection, not rewriting. Only flag genuine OCR failures
             print(f"❌ Book directory not found: {book_dir}")
             return False
 
-        corrected_dir = book_dir / "corrected"
-        checkpoint_file = book_dir / "checkpoints" / "correction.json"
+        labels_dir = book_dir / "labels"
+        checkpoint_file = book_dir / "checkpoints" / "labels.json"
         metadata_file = book_dir / "metadata.json"
 
         # Count what will be deleted
-        corrected_files = list(corrected_dir.glob("*.json")) if corrected_dir.exists() else []
+        label_files = list(labels_dir.glob("*.json")) if labels_dir.exists() else []
 
-        print(f"\n🗑️  Clean Correction stage for: {scan_id}")
-        print(f"   Corrected outputs: {len(corrected_files)} files")
+        print(f"\n🗑️  Clean Label stage for: {scan_id}")
+        print(f"   Label outputs: {len(label_files)} files")
         print(f"   Checkpoint: {'exists' if checkpoint_file.exists() else 'none'}")
 
         if not confirm:
@@ -668,11 +713,11 @@ Remember: This is error detection, not rewriting. Only flag genuine OCR failures
                 print("   Cancelled.")
                 return False
 
-        # Delete corrected outputs
-        if corrected_dir.exists():
+        # Delete label outputs
+        if labels_dir.exists():
             import shutil
-            shutil.rmtree(corrected_dir)
-            print(f"   ✓ Deleted {len(corrected_files)} corrected files")
+            shutil.rmtree(labels_dir)
+            print(f"   ✓ Deleted {len(label_files)} label files")
 
         # Reset checkpoint
         if checkpoint_file.exists():
@@ -684,14 +729,14 @@ Remember: This is error detection, not rewriting. Only flag genuine OCR failures
             with open(metadata_file, 'r') as f:
                 metadata = json.load(f)
 
-            metadata['correction_complete'] = False
-            metadata.pop('correction_completion_date', None)
-            metadata.pop('correction_total_cost', None)
+            metadata['labels_complete'] = False
+            metadata.pop('labels_completion_date', None)
+            metadata.pop('labels_total_cost', None)
 
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
 
             print(f"   ✓ Reset metadata")
 
-        print(f"\n✅ Correction stage cleaned for {scan_id}")
+        print(f"\n✅ Label stage cleaned for {scan_id}")
         return True

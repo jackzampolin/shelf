@@ -7,11 +7,11 @@ import pytest
 
 
 # Import merge module
-merge_module = importlib.import_module('pipeline.3_merge')
+merge_module = importlib.import_module('pipeline.4_merge')
 MergeProcessor = getattr(merge_module, 'MergeProcessor')
 
 # Import schemas
-merge_schemas = importlib.import_module('pipeline.3_merge.schemas')
+merge_schemas = importlib.import_module('pipeline.4_merge.schemas')
 MergedPageOutput = getattr(merge_schemas, 'MergedPageOutput')
 MergedBlock = getattr(merge_schemas, 'MergedBlock')
 MergedParagraph = getattr(merge_schemas, 'MergedParagraph')

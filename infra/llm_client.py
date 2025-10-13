@@ -145,7 +145,7 @@ class LLMClient:
                             error_type = "Provider deserialization error"
 
                 if should_retry and attempt < max_retries - 1:
-                    delay = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    delay = (2 ** attempt) * 4  # Exponential backoff: 4s, 8s, 16s
                     print(f"  ⚠️  {error_type} (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
                     time.sleep(delay)
                     continue
@@ -158,7 +158,7 @@ class LLMClient:
 
             except requests.exceptions.Timeout:
                 if attempt < max_retries - 1:
-                    delay = 2 ** attempt
+                    delay = (2 ** attempt) * 4  # Exponential backoff: 4s, 8s, 16s
                     print(f"  ⚠️  Timeout (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
                     time.sleep(delay)
                     continue
