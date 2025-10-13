@@ -284,6 +284,7 @@ def cmd_process_structure(args):
 def cmd_library_list(args):
     """List all books in library."""
     from tools.library import LibraryIndex
+    from infra.checkpoint import CheckpointManager
 
     library = LibraryIndex(storage_root=Path.home() / "Documents" / "book_scans")
     scans = library.list_all_scans()
@@ -293,14 +294,45 @@ def cmd_library_list(args):
         return
 
     print(f"\n📚 Library ({len(scans)} books)\n")
-    print(f"{'Scan ID':<30} {'Title':<40} {'Status'}")
-    print("-" * 100)
+    print(f"{'Scan ID':<30} {'Title':<35} {'Pipeline Status'}")
+    print("-" * 95)
+
+    storage_root = Path.home() / "Documents" / "book_scans"
 
     for scan in scans:
         scan_id = scan['scan_id']
-        title = scan.get('title', 'Unknown')[:38]
-        status = scan.get('status', 'unknown')
-        print(f"{scan_id:<30} {title:<40} {status}")
+        title = scan.get('title', 'Unknown')[:33]
+
+        # Check checkpoint status for each stage
+        stages = ['ocr', 'correction', 'labels', 'merge', 'structure']
+        stage_symbols = []
+
+        for stage in stages:
+            checkpoint = CheckpointManager(
+                scan_id=scan_id,
+                stage=stage,
+                storage_root=storage_root
+            )
+            status = checkpoint.get_status()
+            stage_status = status.get('status', 'not_started')
+
+            if stage_status == 'completed':
+                stage_symbols.append('✅')
+            elif stage_status == 'in_progress':
+                # Check if actually complete (all pages done)
+                total = status.get('total_pages', 0)
+                completed = len(status.get('completed_pages', []))
+                if total > 0 and completed == total:
+                    stage_symbols.append('✅')  # Show as complete even if status says in_progress
+                else:
+                    stage_symbols.append('⏳')
+            else:
+                stage_symbols.append('○')
+
+        # Format status string
+        status_str = f"OCR:{stage_symbols[0]} COR:{stage_symbols[1]} LAB:{stage_symbols[2]} MRG:{stage_symbols[3]} STR:{stage_symbols[4]}"
+
+        print(f"{scan_id:<30} {title:<35} {status_str}")
 
 
 def cmd_library_show(args):
