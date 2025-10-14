@@ -142,12 +142,12 @@ def ingest_book_group(
         # Extract each page to source/ directory
         for local_page in range(1, page_count + 1):
             try:
-                # Convert single page to image
+                # Convert single page to image at high quality for OCR
                 page_images = convert_from_path(
                     pdf_path,
                     first_page=local_page,
                     last_page=local_page,
-                    dpi=150  # Good balance of quality and file size
+                    dpi=Config.PDF_EXTRACTION_DPI_OCR  # 600 DPI for high-quality OCR
                 )
 
                 if page_images:

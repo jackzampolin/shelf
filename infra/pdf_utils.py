@@ -5,6 +5,7 @@ Helper functions for working with PDF files:
 - Extract page images for vision model validation
 - Handle multi-PDF books (e.g., book split across multiple PDFs)
 - Convert images to base64 for API calls
+- Downsample images for vision model efficiency
 """
 
 from pathlib import Path
@@ -13,6 +14,11 @@ import base64
 import io
 from PIL import Image
 import logging
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from infra.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +29,44 @@ except ImportError:
     logger.warning("pdf2image not available - PDF image extraction will fail")
     convert_from_path = None
     pdfinfo_from_path = None
+
+
+def downsample_for_vision(image: Image.Image) -> Image.Image:
+    """
+    Downsample high-resolution OCR images to vision-appropriate resolution.
+
+    Converts 600 DPI images (extracted for OCR) to 300 DPI equivalent for vision models.
+    This reduces token costs while maintaining sufficient quality for visual analysis.
+
+    Args:
+        image: PIL Image (typically 600 DPI from source/ directory)
+
+    Returns:
+        PIL Image downsampled to 300 DPI equivalent (50% of original dimensions)
+
+    Example:
+        Original: 1800×2700 pixels (600 DPI, 6"×9" page)
+        Result:   900×1350 pixels (300 DPI equivalent)
+    """
+    # Calculate downsampling ratio based on configured DPIs
+    ratio = Config.PDF_EXTRACTION_DPI_VISION / Config.PDF_EXTRACTION_DPI_OCR
+
+    # If already at target resolution or lower, return as-is
+    if ratio >= 1.0:
+        return image
+
+    # Calculate new dimensions
+    width, height = image.size
+    new_width = int(width * ratio)
+    new_height = int(height * ratio)
+
+    logger.debug(
+        f"Downsampling image: {width}×{height} → {new_width}×{new_height} "
+        f"(ratio: {ratio:.2f})"
+    )
+
+    # Use high-quality Lanczos resampling
+    return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
 
 def get_page_from_book(

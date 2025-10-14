@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from infra.logger import create_logger
 from infra.checkpoint import CheckpointManager
 from infra.llm_client import LLMClient
+from infra.pdf_utils import downsample_for_vision
 
 # Import schemas
 import importlib
@@ -172,12 +173,16 @@ class VisionLabeler:
                 max_workers=self.max_workers
             )
 
-            # Get source PDF paths
+            # Get source page images (extracted during 'ar library add')
             source_dir = book_dir / "source"
-            pdf_files = sorted(source_dir.glob("*.pdf"))
-            if not pdf_files:
-                self.logger.error("No source PDF found", source_dir=str(source_dir))
-                raise FileNotFoundError(f"No PDF files found in {source_dir}")
+            if not source_dir.exists():
+                self.logger.error("Source directory not found", source_dir=str(source_dir))
+                raise FileNotFoundError(f"Source directory not found: {source_dir}")
+
+            page_files = sorted(source_dir.glob("page_*.png"))
+            if not page_files:
+                self.logger.error("No page images found", source_dir=str(source_dir))
+                raise FileNotFoundError(f"No page images found in {source_dir}. Run 'ar library add' to extract pages first.")
 
             # Get pages to process (this sets checkpoint status to "in_progress")
             if self.checkpoint:
@@ -192,13 +197,15 @@ class VisionLabeler:
             tasks = []
             for page_num in pages_to_process:
                 ocr_file = ocr_dir / f"page_{page_num:04d}.json"
-                if not ocr_file.exists():
+                page_file = source_dir / f"page_{page_num:04d}.png"
+
+                if not ocr_file.exists() or not page_file.exists():
                     continue
 
                 tasks.append({
                     'page_num': page_num,
                     'ocr_file': ocr_file,
-                    'pdf_files': pdf_files,
+                    'page_file': page_file,
                     'labels_dir': labels_dir
                 })
 
@@ -386,8 +393,11 @@ class VisionLabeler:
             # Validate OCR input
             ocr_page = OCRPageOutput(**ocr_data)
 
-            # Convert PDF page to image (handles multi-PDF books)
-            page_image = self._get_page_image(task['pdf_files'], ocr_page.page_number)
+            # Load page image from source directory (600 DPI)
+            page_image = Image.open(task['page_file'])
+
+            # Downsample to 300 DPI for vision model (reduces token cost)
+            page_image = downsample_for_vision(page_image)
 
             # Call vision model for page number extraction and classification
             label_data, cost = self._label_page_with_vision(ocr_page, page_image)

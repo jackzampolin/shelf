@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from infra.logger import create_logger
 from infra.checkpoint import CheckpointManager
 from infra.llm_client import LLMClient
+from infra.pdf_utils import downsample_for_vision
 
 # Import schemas
 import importlib
@@ -404,8 +405,11 @@ class VisionCorrector:
             # Validate OCR input
             ocr_page = OCRPageOutput(**ocr_data)
 
-            # Load page image from source directory
+            # Load page image from source directory (600 DPI)
             page_image = Image.open(task['page_file'])
+
+            # Downsample to 300 DPI for vision model (reduces token cost)
+            page_image = downsample_for_vision(page_image)
 
             # Call vision model for correction only
             corrected_data, cost = self._correct_page_with_vision(ocr_page, page_image)

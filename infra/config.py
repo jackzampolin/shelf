@@ -25,6 +25,12 @@ class Config:
     # Storage
     BOOK_STORAGE_ROOT = Path(os.getenv('BOOK_STORAGE_ROOT', '~/Documents/book_scans')).expanduser()
 
+    # PDF Extraction DPI
+    # High-quality extraction for OCR (Tesseract benefits from high resolution)
+    PDF_EXTRACTION_DPI_OCR = int(os.getenv('PDF_EXTRACTION_DPI_OCR', '600'))
+    # Downsampled for vision models (balance quality vs token cost)
+    PDF_EXTRACTION_DPI_VISION = int(os.getenv('PDF_EXTRACTION_DPI_VISION', '300'))
+
     @classmethod
     def validate(cls) -> tuple[bool, list[str]]:
         """
