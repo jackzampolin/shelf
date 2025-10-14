@@ -4,6 +4,9 @@ Vision-Based OCR Correction (Text Only)
 
 Corrects OCR errors using multimodal LLM.
 Block classification and page number extraction are handled in Stage 3 (Label).
+
+Reads source page images from {scan_id}/source/page_XXXX.png
+Writes corrected output to {scan_id}/corrected/page_XXXX.json
 """
 
 import json
@@ -11,7 +14,6 @@ import sys
 import base64
 import io
 from pathlib import Path
-from pdf2image import convert_from_path
 from datetime import datetime
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -161,12 +163,16 @@ class VisionCorrector:
                 max_workers=self.max_workers
             )
 
-            # Get source PDF paths
+            # Get source page images (extracted during 'ar library add')
             source_dir = book_dir / "source"
-            pdf_files = sorted(source_dir.glob("*.pdf"))
-            if not pdf_files:
-                self.logger.error("No source PDF found", source_dir=str(source_dir))
-                raise FileNotFoundError(f"No PDF files found in {source_dir}")
+            if not source_dir.exists():
+                self.logger.error("Source directory not found", source_dir=str(source_dir))
+                raise FileNotFoundError(f"Source directory not found: {source_dir}")
+
+            page_files = sorted(source_dir.glob("page_*.png"))
+            if not page_files:
+                self.logger.error("No page images found", source_dir=str(source_dir))
+                raise FileNotFoundError(f"No page images found in {source_dir}. Run 'ar library add' to extract pages first.")
 
             # Get pages to process (this sets checkpoint status to "in_progress")
             if self.checkpoint:
@@ -181,13 +187,15 @@ class VisionCorrector:
             tasks = []
             for page_num in pages_to_process:
                 ocr_file = ocr_dir / f"page_{page_num:04d}.json"
-                if not ocr_file.exists():
+                page_file = source_dir / f"page_{page_num:04d}.png"
+
+                if not ocr_file.exists() or not page_file.exists():
                     continue
 
                 tasks.append({
                     'page_num': page_num,
                     'ocr_file': ocr_file,
-                    'pdf_files': pdf_files,
+                    'page_file': page_file,
                     'corrected_dir': corrected_dir
                 })
 
@@ -300,13 +308,15 @@ class VisionCorrector:
                         retry_tasks = []
                         for page_num in remaining_pages:
                             ocr_file = ocr_dir / f"page_{page_num:04d}.json"
-                            if not ocr_file.exists():
+                            page_file = source_dir / f"page_{page_num:04d}.png"
+
+                            if not ocr_file.exists() or not page_file.exists():
                                 continue
 
                             retry_tasks.append({
                                 'page_num': page_num,
                                 'ocr_file': ocr_file,
-                                'pdf_files': pdf_files,
+                                'page_file': page_file,
                                 'corrected_dir': corrected_dir
                             })
 
@@ -394,8 +404,8 @@ class VisionCorrector:
             # Validate OCR input
             ocr_page = OCRPageOutput(**ocr_data)
 
-            # Convert PDF page to image (handles multi-PDF books)
-            page_image = self._get_page_image(task['pdf_files'], ocr_page.page_number)
+            # Load page image from source directory
+            page_image = Image.open(task['page_file'])
 
             # Call vision model for correction only
             corrected_data, cost = self._correct_page_with_vision(ocr_page, page_image)
@@ -427,45 +437,6 @@ class VisionCorrector:
             if self.logger:
                 self.logger.error(f"Page correction failed", page=task['page_num'], error=str(e))
             return False, 0.0
-
-    def _pdf_page_to_image(self, pdf_path, page_number, dpi=150):
-        """
-        Convert a specific PDF page to PIL Image.
-
-        Args:
-            pdf_path: Path to PDF file
-            page_number: Page number (1-indexed)
-            dpi: Resolution for conversion (default 150 for reasonable file size)
-
-        Returns:
-            PIL.Image: Page image (resized if too large)
-        """
-        # pdf2image uses 1-indexed page numbers
-        images = convert_from_path(
-            pdf_path,
-            dpi=dpi,
-            first_page=page_number,
-            last_page=page_number
-        )
-
-        image = images[0]
-
-        # Resize if image is too large (OpenAI has limits on image size)
-        # Max dimension should be around 2000px for reasonable processing
-        max_dimension = 2000
-        width, height = image.size
-
-        if width > max_dimension or height > max_dimension:
-            # Calculate scaling factor
-            scale = max_dimension / max(width, height)
-            new_width = int(width * scale)
-            new_height = int(height * scale)
-
-            # Resize using high-quality resampling
-            from PIL import Image as PILImage
-            image = image.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
-
-        return image
 
     def _image_to_base64(self, pil_image):
         """Convert PIL Image to base64 string for vision API."""
@@ -544,7 +515,8 @@ class VisionCorrector:
             model=self.model,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_prompt},
+                {"role": "assistant", "content": '{"blocks": ['}  # Response prefilling for structure enforcement
             ],
             json_parser=parse_correction_json,
             temperature=0.1,
@@ -583,36 +555,190 @@ class VisionCorrector:
         """Build the system prompt for vision correction."""
         return """You are an expert OCR correction assistant with vision capabilities.
 
-Your task is to **correct OCR errors** by comparing the OCR text to the actual page image.
+<task>
+Your ONLY job is to fix CHARACTER-LEVEL OCR READING ERRORS by comparing the OCR text to the page image.
+</task>
 
-**Important Context:** Most paragraphs (80-90%) are error-free. Be conservative - only correct clear OCR mistakes.
+<context>
+Why this matters: You are correcting OCR transcription errors, NOT editing or validating content.
+The original text may contain:
+- Archaic or unusual language (intentional by author)
+- Historical spellings or terminology (correct for the time period)
+- Factual errors or inconsistencies (not your job to fix)
 
-**Common OCR Errors to Fix:**
-- Character substitution: rn→m, cl→d, li→h, tbe→the, 1→l, 0→O
-- Ligature failures: fi, fl, ff, ffi, ffl often misread
-- Line-break hyphens: "presi- dent" → "president" (remove break hyphen, keep compound hyphens)
-- Spacing issues: missing/extra spaces, word boundaries
-- Punctuation: smart quotes, em dashes, ellipses
+Your job is ONLY to fix cases where the OCR software misread the characters in the image.
+Most paragraphs (80-90%) are error-free. Be conservative - only correct clear OCR mistakes.
+</context>
 
-**Correction Rules:**
-- Set `text` to null for clean paragraphs (most should be null)
-- When correcting: output the COMPLETE corrected paragraph text (not patches)
-- Preserve original formatting intent (keep italics/bold indicators if present)
-- Only fix errors you can visually confirm in the image
+<scope_constraints>
+✅ ONLY CORRECT THESE (Character-Level OCR Errors):
 
-**Confidence Scoring:**
-- 0.9-1.0: Perfect clarity, all text clearly visible
-- 0.7-0.8: Minor uncertainty on 1-2 characters
-- 0.5-0.6: Partial blur or obstruction affecting readability
-- <0.5: Significant image quality issues
+1. Character substitution errors you can SEE in the image:
+   - rn→m, cl→d, li→h, vv→w, tbe→the
+   - 1→l, 0→O, 5→S, 8→B
+   - Example: "modem" in OCR but image shows "modern" (rn ligature)
 
-**Output:**
-- `text`: Complete corrected paragraph or null (no partial corrections)
-- `notes`: Brief summary (e.g., "Fixed 2 ligatures: 'fi'→'fi', removed line hyphen")
-- `confidence`: Score based on image clarity and correction certainty
+2. Ligature failures visible in the image:
+   - fi, fl, ff, ffi, ffl often misread
+   - Example: "filhrer" → "Führer" (visible in image)
 
-**Important:** Do NOT extract page numbers or classify blocks - that is handled in a separate stage.
-Focus exclusively on fixing OCR text errors."""
+3. Line-break hyphens (word split across lines):
+   - "presi- dent" → "president" (MOST COMMON correction - 60-75% of all fixes)
+   - Pattern: word at end of line with hyphen, continues on next line
+   - KEEP compound hyphens: "self-aware", "pre-WWI", "T-Force", "fifty-one"
+   - How to distinguish: Line-break = hyphen at line end + word continues; Compound = hyphen between complete words
+
+4. Spacing errors visible in the image:
+   - Missing spaces: "thebook" → "the book"
+   - Extra spaces: "a  book" → "a book"
+
+5. Punctuation OCR errors visible in the image:
+   - Smart quotes, em dashes, ellipses
+   - Symbol misreads: ©→—, ¢→-, @→•
+
+❌ DO NOT DO THESE (Out of Scope):
+
+1. Content validation:
+   - Do NOT remove text because it "doesn't match" the image semantically
+   - Do NOT change dates, numbers, or facts based on interpretation
+   - Do NOT reconstruct missing content not present in OCR output
+
+2. Style improvements:
+   - Do NOT "fix" capitalization preferences (unless clear OCR error like "suLy" → "July")
+   - Do NOT change quote placement style
+   - Do NOT normalize ellipsis formatting (... vs . . .)
+   - Do NOT change compound hyphen style
+   - Do NOT modernize historical spelling
+
+3. Semantic corrections:
+   - Do NOT fix grammar or writing quality
+   - Do NOT improve word choice
+   - Do NOT correct historical/factual errors
+
+REMEMBER: If the OCR text is readable but might be factually wrong, that's for human review, NOT Stage 2 correction.
+Only fix character-level reading errors where OCR misread the actual characters visible in the image.
+</scope_constraints>
+
+<correction_process>
+For each paragraph:
+1. Compare OCR text to what you SEE in the image (character by character)
+2. If characters match the image → Set `text` to null (no correction needed)
+3. If you find character-level OCR errors → Output COMPLETE corrected paragraph
+4. Add brief `notes` explaining what you fixed (use format below)
+
+Never output partial corrections - always the full corrected paragraph text.
+Preserve original formatting intent (keep italics/bold indicators if present).
+</correction_process>
+
+<confidence_guidance>
+Base confidence scores ONLY on:
+1. Visual clarity: Can you clearly see the characters in the image?
+2. OCR error plausibility: Is this a common OCR error pattern?
+
+Do NOT base confidence on semantic meaning, factual accuracy, or topic knowledge.
+
+Confidence Scale (provide meaningful variation):
+
+CERTAIN (0.95-1.0):
+- Character is perfectly clear in image
+- Obvious OCR error pattern (rn→m, line-break hyphen, etc.)
+- No ambiguity about what the image shows
+
+CONFIDENT (0.85-0.94):
+- Character is clear in image
+- Plausible OCR confusion
+- Minor ambiguity but correction is well-supported
+
+UNCERTAIN (0.70-0.84):
+- Character is somewhat unclear in image
+- Unusual error pattern
+- Some ambiguity about correct reading
+
+LOW_CONFIDENCE (0.50-0.69):
+- Character is ambiguous in image
+- Very unusual error pattern
+- Multiple possible interpretations
+
+VERY_LOW (<0.50):
+- Cannot reliably determine correct reading from image
+- Consider returning `text: null` instead
+
+IMPORTANT: Review your confidence scores before finalizing. Expected distribution:
+- ~40-50% at 0.95-1.0 (obvious errors)
+- ~30-40% at 0.85-0.94 (plausible errors)
+- ~10-20% at 0.70-0.84 (uncertain cases)
+- <10% below 0.70 (very uncertain)
+
+If you assign 0.95-1.0 to everything, reconsider - some corrections are more ambiguous than others.
+</confidence_guidance>
+
+<notes_standards>
+For every correction, provide a note in this standardized format:
+
+Format: "[Action]: [specific change]"
+
+Action Verbs:
+- "Removed" - Deleted characters/artifacts (e.g., line-break hyphens)
+- "Fixed" - Corrected character(s)
+- "Corrected" - Fixed word(s) or formatting
+- "Normalized" - Standardized formatting
+
+Examples:
+- "Removed line-break hyphen in 'president'"
+- "Fixed 'T' to 'I' in 'Important' (OCR character confusion)"
+- "Corrected 'filhrer' to 'Führer' (character substitution)"
+- "Fixed spacing in 'aconcession' → 'a concession'"
+- "Removed line-break hyphen in 'example'; Fixed 'tum'→'turn'" (multiple)
+
+When no correction: "No OCR errors detected"
+</notes_standards>
+
+<examples>
+Example 1: Clear OCR Error (High Confidence)
+OCR: "The modem world was shaped by technology."
+Image: "The modern world was shaped by technology."
+Output: {
+  "text": "The modern world was shaped by technology.",
+  "notes": "Fixed 'modem'→'modern' (rn ligature read as m)",
+  "confidence": 0.98
+}
+
+Example 2: Line-Break Hyphen (High Confidence)
+OCR: "The presi- dent announced the policy."
+Image: "The presi-[line break]dent announced the policy."
+Output: {
+  "text": "The president announced the policy.",
+  "notes": "Removed line-break hyphen in 'president'",
+  "confidence": 0.97
+}
+
+Example 3: No Error - Archaic Spelling (No Correction)
+OCR: "The connexion between the events was clear."
+Image: "The connexion between the events was clear."
+Output: {
+  "text": null,
+  "notes": "No OCR errors detected",
+  "confidence": 1.0
+}
+
+Example 4: Compound Hyphen - Preserve (No Correction)
+OCR: "The T-Force operated behind enemy lines."
+Image: "The T-Force operated behind enemy lines."
+Output: {
+  "text": null,
+  "notes": "No OCR errors detected",
+  "confidence": 1.0
+}
+</examples>
+
+<output_format>
+For each paragraph:
+- `text`: Complete corrected paragraph text, OR null if no errors
+- `notes`: Brief explanation using standardized format
+- `confidence`: Score from 0.0-1.0 based on image clarity and error certainty
+
+Focus exclusively on fixing OCR text errors - page numbers and block classification are handled in Stage 3.
+</output_format>"""
 
     def _build_user_prompt(self, ocr_page, ocr_text):
         """Build the user prompt with OCR data."""
@@ -620,15 +746,16 @@ Focus exclusively on fixing OCR text errors."""
 
 {ocr_text}
 
-Compare this text to the page image and identify OCR errors.
+Compare this OCR text to the page image you see above.
 
 For each block/paragraph:
-- Set `text` to null if NO errors found (expected for most paragraphs)
-- Set `text` to full corrected text ONLY if you see clear OCR mistakes in the image
-- Add brief `notes` explaining what you fixed
-- Provide confidence score based on image clarity
+1. Visually check if OCR text matches what you SEE in the image (character by character)
+2. If characters match → Set `text` to null (no correction needed)
+3. If you find character-level OCR reading errors → Output full corrected text
+4. Add brief `notes` explaining what you fixed (use standardized format)
+5. Provide `confidence` score based on image clarity and error certainty
 
-Remember: This is error detection, not rewriting. Only flag genuine OCR failures visible in the image."""
+Remember: You are correcting OCR reading errors, not editing content. Most paragraphs (80-90%) should have `text: null`."""
 
     def _format_ocr_for_prompt(self, ocr_page):
         """Format OCR page data for the vision prompt."""
@@ -640,36 +767,6 @@ Remember: This is error detection, not rewriting. Only flag genuine OCR failures
             for para in block['paragraphs']:
                 lines.append(f"  Paragraph {para['par_num']}: {para['text']}")
         return '\n'.join(lines)
-
-    def _get_page_image(self, pdf_files, page_number, dpi=150):
-        """
-        Get page image from multi-PDF book by calculating which PDF contains the page.
-
-        Args:
-            pdf_files: Sorted list of PDF file paths
-            page_number: Global page number (1-indexed, continuous across PDFs)
-            dpi: Resolution for conversion
-
-        Returns:
-            PIL.Image: Page image
-        """
-        from pdf2image.pdf2image import pdfinfo_from_path
-
-        # Find which PDF contains this page
-        page_offset = 0
-        for pdf_path in pdf_files:
-            info = pdfinfo_from_path(pdf_path)
-            page_count = info['Pages']
-
-            # Check if page is in this PDF
-            if page_number <= page_offset + page_count:
-                # Calculate local page number within this PDF
-                local_page = page_number - page_offset
-                return self._pdf_page_to_image(pdf_path, local_page, dpi=dpi)
-
-            page_offset += page_count
-
-        raise ValueError(f"Page {page_number} not found in any PDF (total pages: {page_offset})")
 
     def clean_stage(self, scan_id: str, confirm: bool = False):
         """
