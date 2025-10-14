@@ -17,8 +17,9 @@ from datetime import datetime
 from PIL import Image
 import cv2
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import threading
+from typing import Tuple, Dict, Any
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -29,6 +30,184 @@ from infra.checkpoint import CheckpointManager
 import importlib
 schemas_module = importlib.import_module('pipeline.1_ocr.schemas')
 OCRPageOutput = schemas_module.OCRPageOutput
+
+
+def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str, Any]]:
+    """
+    Standalone worker function for parallel OCR processing.
+
+    Args:
+        task: Dict with page_file, page_number, ocr_dir, images_dir
+
+    Returns:
+        (success, page_number, error_msg, page_data)
+    """
+    try:
+        # Load image
+        pil_image = Image.open(task['page_file'])
+        page_number = task['page_number']
+        images_dir = task['images_dir']
+
+        # Extract dimensions
+        width, height = pil_image.size
+
+        # Run Tesseract OCR
+        tsv_output = pytesseract.image_to_data(pil_image, lang='eng', output_type=pytesseract.Output.STRING)
+
+        # Parse TSV into hierarchical blocks
+        blocks_data = _parse_tesseract_hierarchy(tsv_output)
+
+        # Detect image regions
+        text_boxes = []
+        for block in blocks_data:
+            for para in block['paragraphs']:
+                text_boxes.append(para['bbox'])
+
+        image_boxes = ImageDetector.detect_images(pil_image, text_boxes)
+
+        # Create image regions
+        images = []
+        for img_id, img_box in enumerate(image_boxes, 1):
+            x, y, w, h = img_box
+            cropped = pil_image.crop((x, y, x + w, y + h))
+            img_filename = f"page_{page_number:04d}_img_{img_id:03d}.png"
+            img_path = images_dir / img_filename
+            cropped.save(img_path)
+
+            images.append({
+                'image_id': img_id,
+                'bbox': list(img_box),
+                'image_file': img_filename
+            })
+
+        # Build page data
+        page_data = {
+            'page_number': page_number,
+            'page_dimensions': {'width': width, 'height': height},
+            'ocr_timestamp': datetime.now().isoformat(),
+            'blocks': blocks_data,
+            'images': images
+        }
+
+        # Validate against schema
+        validated_page = OCRPageOutput(**page_data)
+        page_data = validated_page.model_dump()
+
+        return (True, page_number, None, page_data)
+
+    except Exception as e:
+        return (False, task['page_number'], str(e), None)
+
+
+def _parse_tesseract_hierarchy(tsv_string):
+    """
+    Parse Tesseract TSV into hierarchical blocks->paragraphs structure.
+
+    Standalone version for use in worker processes.
+    """
+    reader = csv.DictReader(io.StringIO(tsv_string), delimiter='\t', quoting=csv.QUOTE_NONE)
+    blocks = {}
+
+    for row in reader:
+        try:
+            level = int(row['level'])
+            if level != 5:  # Word level
+                continue
+
+            block_num = int(row['block_num'])
+            par_num = int(row['par_num'])
+            conf = float(row['conf'])
+            text = row['text'].strip()
+
+            if conf < 0 or not text:
+                continue
+
+            left = int(row['left'])
+            top = int(row['top'])
+            width = int(row['width'])
+            height = int(row['height'])
+
+            # Initialize block
+            if block_num not in blocks:
+                blocks[block_num] = {
+                    'block_num': block_num,
+                    'paragraphs': {}
+                }
+
+            block = blocks[block_num]
+
+            # Initialize paragraph
+            if par_num not in block['paragraphs']:
+                block['paragraphs'][par_num] = {
+                    'par_num': par_num,
+                    'words': [],
+                    'confidences': [],
+                    'min_x': left,
+                    'min_y': top,
+                    'max_x': left + width,
+                    'max_y': top + height
+                }
+
+            para = block['paragraphs'][par_num]
+            para['words'].append(text)
+            para['confidences'].append(conf)
+            para['min_x'] = min(para['min_x'], left)
+            para['min_y'] = min(para['min_y'], top)
+            para['max_x'] = max(para['max_x'], left + width)
+            para['max_y'] = max(para['max_y'], top + height)
+
+        except (ValueError, KeyError):
+            continue
+
+    # Convert to list format
+    blocks_list = []
+    for block_num, block in blocks.items():
+        paragraphs_list = []
+
+        for par_num, para in block['paragraphs'].items():
+            if not para['words']:
+                continue
+
+            para_bbox = [
+                para['min_x'],
+                para['min_y'],
+                para['max_x'] - para['min_x'],
+                para['max_y'] - para['min_y']
+            ]
+            para_text = ' '.join(para['words'])
+            para_conf = sum(para['confidences']) / len(para['confidences']) / 100.0
+
+            paragraphs_list.append({
+                'par_num': par_num,
+                'bbox': para_bbox,
+                'text': para_text,
+                'avg_confidence': round(para_conf, 3)
+            })
+
+        if not paragraphs_list:
+            continue
+
+        # Calculate block bbox
+        all_bboxes = [p['bbox'] for p in paragraphs_list]
+        xs = [bbox[0] for bbox in all_bboxes]
+        ys = [bbox[1] for bbox in all_bboxes]
+        x2s = [bbox[0] + bbox[2] for bbox in all_bboxes]
+        y2s = [bbox[1] + bbox[3] for bbox in all_bboxes]
+
+        block_bbox = [
+            min(xs),
+            min(ys),
+            max(x2s) - min(xs),
+            max(y2s) - min(ys)
+        ]
+
+        blocks_list.append({
+            'block_num': block_num,
+            'bbox': block_bbox,
+            'paragraphs': paragraphs_list
+        })
+
+    return blocks_list
 
 
 class ImageDetector:
@@ -191,13 +370,13 @@ class BookOCRProcessor:
             print(f"✅ All {total_pages} pages already processed")
             return
 
-        # Process pages in parallel
+        # Process pages in parallel using ProcessPoolExecutor (true parallelism for CPU-bound Tesseract)
         completed = 0
         errors = 0
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+        with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
             # Submit all tasks
             future_to_task = {
-                executor.submit(self._process_single_page, task): task
+                executor.submit(_process_page_worker, task): task
                 for task in tasks
             }
 
@@ -205,15 +384,28 @@ class BookOCRProcessor:
             for future in as_completed(future_to_task):
                 task = future_to_task[future]
                 try:
-                    success = future.result()
+                    success, page_number, error_msg, page_data = future.result()
+
                     if success:
+                        # Save page data
+                        json_file = ocr_dir / f"page_{page_number:04d}.json"
+                        with open(json_file, 'w', encoding='utf-8') as f:
+                            json.dump(page_data, f, indent=2)
+
+                        # Mark complete in checkpoint
+                        if self.checkpoint:
+                            self.checkpoint.mark_completed(page_number)
+
                         completed += 1
                     else:
                         errors += 1
+                        with self.progress_lock:
+                            self.logger.error(f"Page processing error", page=page_number, error=error_msg)
+
                 except Exception as e:
                     errors += 1
                     with self.progress_lock:
-                        self.logger.error(f"Page processing error", page=task['page_number'], error=str(e))
+                        self.logger.error(f"Page processing exception", page=task['page_number'], error=str(e))
 
                 # Progress update
                 with self.progress_lock:
@@ -252,232 +444,6 @@ class BookOCRProcessor:
         if errors > 0:
             print(f"   ⚠️  {errors} pages failed")
         print(f"   Output: {ocr_dir}")
-
-    def _process_single_page(self, task):
-        """
-        Process a single page (called by ThreadPoolExecutor).
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            # Load image from file
-            pil_image = Image.open(task['page_file'])
-
-            # Process page
-            page_data = self.process_page(
-                pil_image,
-                task['page_number'],
-                task['images_dir']
-            )
-
-            # Validate against schema before saving
-            try:
-                validated_page = OCRPageOutput(**page_data)
-                # Convert back to dict for JSON serialization
-                page_data = validated_page.model_dump()
-            except Exception as validation_error:
-                # Save invalid output to needs_review for debugging
-                needs_review_file = task['needs_review_dir'] / f"page_{task['page_number']:04d}.json"
-                with open(needs_review_file, 'w', encoding='utf-8') as f:
-                    json.dump({
-                        'page_number': task['page_number'],
-                        'validation_error': str(validation_error),
-                        'raw_output': page_data
-                    }, f, indent=2)
-
-                if self.logger:
-                    self.logger.error(
-                        f"Schema validation failed - saved to needs_review/",
-                        page=task['page_number'],
-                        error=str(validation_error),
-                        needs_review_file=str(needs_review_file)
-                    )
-                raise ValueError(f"OCR output failed schema validation: {validation_error}") from validation_error
-
-            # Save validated JSON
-            json_file = task['ocr_dir'] / f"page_{task['page_number']:04d}.json"
-            with open(json_file, 'w', encoding='utf-8') as f:
-                json.dump(page_data, f, indent=2)
-
-            # Mark page as completed in checkpoint
-            if self.checkpoint:
-                self.checkpoint.mark_completed(task['page_number'])
-
-            return True
-
-        except Exception as e:
-            if self.logger:
-                self.logger.error(f"Page processing failed", page=task['page_number'], error=str(e))
-            return False
-
-    def process_page(self, pil_image, page_number, images_dir):
-        """
-        Process a single page - extract hierarchical text blocks and images.
-
-        Returns:
-            dict: Structured page data matching OCRPageOutput schema
-        """
-        width, height = pil_image.size
-
-        # Step 1: Get TSV output from Tesseract
-        tsv_output = pytesseract.image_to_data(pil_image, lang='eng', output_type=pytesseract.Output.STRING)
-
-        # Step 2: Parse TSV into hierarchical blocks
-        blocks_data = self._parse_tesseract_hierarchy(tsv_output)
-
-        # Step 3: Detect image regions
-        # Collect all paragraph bboxes for image detection
-        text_boxes = []
-        for block in blocks_data:
-            for para in block['paragraphs']:
-                text_boxes.append(para['bbox'])
-
-        image_boxes = ImageDetector.detect_images(pil_image, text_boxes)
-
-        # Step 4: Create image regions
-        images = []
-        for img_id, img_box in enumerate(image_boxes, 1):
-            # Crop and save image
-            x, y, w, h = img_box
-            cropped = pil_image.crop((x, y, x + w, y + h))
-            img_filename = f"page_{page_number:04d}_img_{img_id:03d}.png"
-            img_path = images_dir / img_filename
-            cropped.save(img_path)
-
-            images.append({
-                'image_id': img_id,
-                'bbox': list(img_box),
-                'image_file': img_filename
-            })
-
-        return {
-            'page_number': page_number,
-            'page_dimensions': {'width': width, 'height': height},
-            'ocr_timestamp': datetime.now().isoformat(),
-            'blocks': blocks_data,
-            'images': images
-        }
-
-    def _parse_tesseract_hierarchy(self, tsv_string):
-        """
-        Parse Tesseract TSV into hierarchical blocks->paragraphs structure.
-
-        This preserves Tesseract's spatial layout analysis:
-        - Blocks: isolated regions (headers/footers) or continuous regions (body)
-        - Paragraphs: grouped text within blocks
-
-        Returns:
-            List of block dicts with nested paragraphs
-        """
-        # IMPORTANT: Use QUOTE_NONE because Tesseract TSV contains unescaped quotes
-        reader = csv.DictReader(io.StringIO(tsv_string), delimiter='\t', quoting=csv.QUOTE_NONE)
-
-        # Group by block_num -> par_num (preserving Tesseract hierarchy)
-        blocks = {}
-
-        for row in reader:
-            try:
-                level = int(row['level'])
-                if level != 5:  # We want word level (5)
-                    continue
-
-                block_num = int(row['block_num'])
-                par_num = int(row['par_num'])
-                conf = float(row['conf'])
-                text = row['text'].strip()
-
-                if conf < 0 or not text:
-                    continue
-
-                left = int(row['left'])
-                top = int(row['top'])
-                width = int(row['width'])
-                height = int(row['height'])
-
-                # Initialize block
-                if block_num not in blocks:
-                    blocks[block_num] = {
-                        'block_num': block_num,
-                        'paragraphs': {}
-                    }
-
-                block = blocks[block_num]
-
-                # Initialize paragraph within block
-                if par_num not in block['paragraphs']:
-                    block['paragraphs'][par_num] = {
-                        'par_num': par_num,
-                        'words': [],
-                        'confidences': [],
-                        'min_x': left,
-                        'min_y': top,
-                        'max_x': left + width,
-                        'max_y': top + height
-                    }
-
-                para = block['paragraphs'][par_num]
-                para['words'].append(text)
-                para['confidences'].append(conf)
-                para['min_x'] = min(para['min_x'], left)
-                para['min_y'] = min(para['min_y'], top)
-                para['max_x'] = max(para['max_x'], left + width)
-                para['max_y'] = max(para['max_y'], top + height)
-
-            except (ValueError, KeyError):
-                continue
-
-        # Convert to list format and calculate final bboxes
-        blocks_list = []
-
-        for block_num, block in blocks.items():
-            paragraphs_list = []
-
-            for par_num, para in block['paragraphs'].items():
-                if not para['words']:
-                    continue
-
-                # Calculate paragraph bbox and text
-                para_bbox = [
-                    para['min_x'],
-                    para['min_y'],
-                    para['max_x'] - para['min_x'],
-                    para['max_y'] - para['min_y']
-                ]
-                para_text = ' '.join(para['words'])
-                para_conf = sum(para['confidences']) / len(para['confidences']) / 100.0
-
-                paragraphs_list.append({
-                    'par_num': par_num,
-                    'bbox': para_bbox,
-                    'text': para_text,
-                    'avg_confidence': round(para_conf, 3)
-                })
-
-            if not paragraphs_list:
-                continue
-
-            # Calculate block bbox from all paragraphs
-            all_bboxes = [p['bbox'] for p in paragraphs_list]
-            xs = [bbox[0] for bbox in all_bboxes]
-            ys = [bbox[1] for bbox in all_bboxes]
-            x2s = [bbox[0] + bbox[2] for bbox in all_bboxes]
-            y2s = [bbox[1] + bbox[3] for bbox in all_bboxes]
-
-            block_bbox = [
-                min(xs),
-                min(ys),
-                max(x2s) - min(xs),
-                max(y2s) - min(ys)
-            ]
-
-            blocks_list.append({
-                'block_num': block_num,
-                'bbox': block_bbox,
-                'paragraphs': paragraphs_list
-            })
-
-        return blocks_list
 
     def clean_stage(self, scan_id: str, confirm: bool = False):
         """
