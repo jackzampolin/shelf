@@ -98,10 +98,10 @@ class VisionCorrector:
         with open(metadata_file, 'r') as f:
             metadata = json.load(f)
 
-        # Initialize logger
+        # Initialize logger (file only, no console spam)
         logs_dir = book_dir / "logs"
         logs_dir.mkdir(exist_ok=True)
-        self.logger = create_logger(book_title, "correction", log_dir=logs_dir)
+        self.logger = create_logger(book_title, "correction", log_dir=logs_dir, console_output=False)
 
         # Initialize LLM client
         self.llm_client = LLMClient()
