@@ -46,13 +46,13 @@ class VisionLabeler:
     Supports checkpoint-based resume and parallel processing.
     """
 
-    def __init__(self, storage_root=None, model="google/gemma-3-27b-it", max_workers=30, enable_checkpoints=True):
+    def __init__(self, storage_root=None, model="google/gemini-2.5-flash-lite-preview-09-2025", max_workers=30, enable_checkpoints=True):
         """
         Initialize the VisionLabeler.
 
         Args:
             storage_root: Root directory for book storage (default: ~/Documents/book_scans)
-            model: LLM model to use for labeling (default: google/gemma-3-27b-it)
+            model: LLM model to use for labeling (default: google/gemini-2.5-flash-lite-preview-09-2025)
             max_workers: Number of parallel workers (default: 30)
             enable_checkpoints: Enable checkpoint-based resume (default: True)
         """

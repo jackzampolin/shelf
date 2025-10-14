@@ -635,7 +635,7 @@ Note: Minimal CLI during refactor (Issue #55).
     # ar process correct
     correct_parser = process_subparsers.add_parser('correct', help='Stage 2: Correction (Vision)')
     correct_parser.add_argument('scan_id', help='Book scan ID')
-    correct_parser.add_argument('--model', default='google/gemma-3-27b-it', help='Vision model (default: grok-4-fast)')
+    correct_parser.add_argument('--model', default='google/gemini-2.5-flash-lite-preview-09-2025', help='Vision model (default: google/gemini-2.5-flash-lite-preview-09-2025)')
     correct_parser.add_argument('--workers', type=int, default=30, help='Parallel workers (default: 30)')
     correct_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     correct_parser.set_defaults(func=cmd_process_correct)
@@ -643,7 +643,7 @@ Note: Minimal CLI during refactor (Issue #55).
     # ar process label
     label_parser = process_subparsers.add_parser('label', help='Stage 3: Label (Vision)')
     label_parser.add_argument('scan_id', help='Book scan ID')
-    label_parser.add_argument('--model', default='google/gemma-3-27b-it', help='Vision model (default: grok-4-fast)')
+    label_parser.add_argument('--model', default='google/gemini-2.5-flash-lite-preview-09-2025', help='Vision model (default: google/gemini-2.5-flash-lite-preview-09-2025)')
     label_parser.add_argument('--workers', type=int, default=30, help='Parallel workers (default: 30)')
     label_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     label_parser.set_defaults(func=cmd_process_label)
