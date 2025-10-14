@@ -1,27 +1,23 @@
 """
-Smart Book Ingestion Tool
+Book Ingestion Tool
 
-Scans directories for book PDFs, intelligently identifies them using LLM + web search,
-and properly registers them in the library system.
+Scans directories for book PDFs, extracts pages, and registers them in the library system.
+Book identification is based on filename patterns.
 """
 
 import re
 import json
 import shutil
-import base64
 import sys
 from pathlib import Path
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from collections import defaultdict
-from io import BytesIO
 
-import requests
 from pdf2image import convert_from_path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from infra.llm_client import LLMClient
 
 from infra.config import Config
 from tools.library import LibraryIndex
@@ -29,7 +25,6 @@ from tools.library import LibraryIndex
 
 def _slugify_title(title: str) -> str:
     """Convert title to URL-safe slug (inline replacement for deleted tools.names)."""
-    import re
     slug = title.lower()
     slug = re.sub(r'^(the|a|an)\s+', '', slug)
     slug = re.sub(r'[^\w\s-]', '', slug)
@@ -73,191 +68,6 @@ def group_batch_pdfs(pdf_paths: List[Path]) -> Dict[str, List[Path]]:
     return dict(groups)
 
 
-def sample_pdf_pages(pdf_path: Path, num_samples: int = 10) -> List[str]:
-    """
-    Extract images from the first N pages of a PDF.
-
-    Title pages and copyright pages are almost always in the first few pages,
-    so we sample from the start rather than randomly throughout the document.
-
-    Args:
-        pdf_path: Path to PDF
-        num_samples: Number of pages to sample from start (default 10)
-
-    Returns:
-        List of base64-encoded PNG images
-    """
-    from pdf2image import pdfinfo_from_path
-
-    # Get total page count
-    info = pdfinfo_from_path(pdf_path)
-    total_pages = info['Pages']
-
-    # Sample first N pages (where title/copyright/TOC usually are)
-    page_numbers = list(range(1, min(num_samples + 1, total_pages + 1)))
-
-    print(f"  Sampling first {len(page_numbers)} pages: {page_numbers}")
-
-    images = []
-    for page_num in page_numbers:
-        try:
-            # Convert single page
-            page_images = convert_from_path(
-                pdf_path,
-                first_page=page_num,
-                last_page=page_num,
-                dpi=150
-            )
-
-            if page_images:
-                buffer = BytesIO()
-                page_images[0].save(buffer, format='PNG')
-                img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-                images.append(img_b64)
-        except Exception as e:
-            print(f"    ⚠️  Failed to extract page {page_num}: {e}")
-
-    return images
-
-
-def identify_book_with_llm(pdf_paths: List[Path]) -> Optional[Dict]:
-    """
-    Use LLM vision model to identify book from PDF samples.
-
-    Args:
-        pdf_paths: List of PDF files for this book (batch files)
-
-    Returns:
-        Dict with title, author, and other identifiable metadata
-    """
-    print(f"  Analyzing {len(pdf_paths)} PDF(s) with LLM...")
-
-    # Sample first 10 pages from first PDF (where title/copyright pages are)
-    images = sample_pdf_pages(pdf_paths[0], num_samples=10)
-
-    if not images:
-        print("    ✗ No pages extracted")
-        return None
-
-    # Build prompt
-    prompt = """Analyze the FIRST PAGES from this scanned book and identify:
-
-1. **Title**: The complete book title
-2. **Author**: Author name(s)
-3. **Type**: Type of book (biography, history, memoir, political analysis, etc.)
-4. **Suggested ID**: A short, descriptive 2-3 word identifier (lowercase with hyphens)
-
-You are looking at the FIRST 10 pages of the book, which typically contain:
-- Title page (usually page 1-3)
-- Copyright page with publisher info
-- Table of contents
-- Dedication or introduction
-
-Look carefully for:
-- Large title text on title page
-- Author name on title page or copyright page
-- Publisher and publication year on copyright page
-- Subtitle or series information
-
-For the **suggested_id**, create a SHORT identifier that captures the book's essence:
-- Use 2-3 words maximum
-- Use lowercase with hyphens (e.g., "accidental-president", "fiery-peace", "hap-arnold")
-- Prefer memorable, distinctive words from the title
-- Examples:
-  * "The Accidental President: Harry S. Truman..." → "accidental-president"
-  * "A Fiery Peace in a Cold War: Bernard Schriever..." → "fiery-peace"
-  * "Hap Arnold: Inventing the Air Force" → "hap-arnold"
-
-Return ONLY the information you can clearly see. Do not guess based on content.
-
-Return as JSON:
-```json
-{
-  "title": "Complete Book Title: With Subtitle if Present",
-  "author": "Author Full Name",
-  "type": "biography",
-  "suggested_id": "short-book-id",
-  "confidence": 0.9,
-  "year": 2010,
-  "publisher": "Publisher Name"
-}
-```
-
-If you cannot find a clear title page, return confidence < 0.5 with null values.
-"""
-
-    # Build message with images (using OpenAI vision format for OpenRouter)
-    content = [{"type": "text", "text": prompt}]
-    for img_b64 in images:
-        content.append({
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:image/png;base64,{img_b64}"
-            }
-        })
-
-    try:
-        # Use unified LLMClient with vision support
-        client = LLMClient()
-
-        messages = [{"role": "user", "content": content}]
-
-        response, usage, cost = client.call(
-            Config.STRUCTURE_MODEL,
-            messages,
-            temperature=0.0,
-            timeout=60,
-            images=[]  # Images already in content
-        )
-
-        print(f"    💰 LLM cost: ${cost:.4f}")
-
-        # Extract JSON from response
-        assistant_message = response
-        metadata = extract_json_from_text(assistant_message)
-
-        if metadata:
-            print(f"    ✓ Identified: {metadata.get('title')} by {metadata.get('author')}")
-            print(f"      Confidence: {metadata.get('confidence', 0.0)}")
-            return metadata
-        else:
-            print("    ✗ Failed to parse LLM response")
-            print(f"    Response was: {assistant_message[:200]}...")
-            return None
-
-    except Exception as e:
-        print(f"    ✗ Error: {e}")
-        return None
-
-
-def search_book_metadata(title: str, author: str = None) -> Optional[Dict]:
-    """
-    Search online for complete book metadata using web search.
-
-    Args:
-        title: Book title
-        author: Author name (optional)
-
-    Returns:
-        Dict with ISBN, year, publisher, etc.
-    """
-    # Build search query
-    query_parts = [title]
-    if author:
-        query_parts.append(author)
-    query_parts.extend(["book", "ISBN"])
-
-    query = " ".join(query_parts)
-
-    print(f"  Searching: {query}")
-
-    # Use web search tool (would need to import WebSearch)
-    # For now, return None and let user fill in manually
-    # In production, integrate with WebSearch or Google Books API
-
-    return None
-
-
 def ingest_book_group(
     base_name: str,
     pdf_paths: List[Path],
@@ -268,7 +78,7 @@ def ingest_book_group(
     Ingest a group of PDFs as a single book.
 
     Args:
-        base_name: Base filename (e.g., "hap-arnold")
+        base_name: Base filename (e.g., "hap-arnold") - used as scan_id
         pdf_paths: List of batch PDF files
         library: LibraryIndex instance
         auto_confirm: Skip confirmation prompts
@@ -279,124 +89,86 @@ def ingest_book_group(
     print(f"\n📚 Processing: {base_name}")
     print(f"   PDFs: {len(pdf_paths)}")
 
-    # Step 1: Identify with LLM
-    llm_metadata = identify_book_with_llm(pdf_paths)
+    # Use base_name as scan_id and title
+    scan_id = base_name
+    title = base_name.replace('-', ' ').replace('_', ' ').title()
+    author = 'Unknown'
+    year = None
+    publisher = None
+    isbn = None
 
-    if not llm_metadata or llm_metadata.get('confidence', 0) < 0.5:
-        print("   ⚠️  Low confidence identification")
-        if not auto_confirm:
-            response = input("   Continue anyway? (y/n): ").strip().lower()
-            if response != 'y':
-                return None
+    print(f"   Using filename as title: {title}")
+    print(f"   Scan ID: {scan_id}")
 
-    # Step 2: Get title and author from LLM, with filename fallback
-    if llm_metadata and llm_metadata.get('confidence', 0) >= 0.5:
-        # Trust LLM if confidence is decent
-        title = llm_metadata.get('title', base_name)
-        author = llm_metadata.get('author', 'Unknown')
-        year = llm_metadata.get('year', None)
-        publisher = llm_metadata.get('publisher', None)
-    else:
-        # Fallback to cleaned-up filename
-        title = base_name.replace('-', ' ').replace('_', ' ').title()
-        author = 'Unknown'
-        year = None
-        publisher = None
-        print(f"   Using filename as title: {title}")
-
-    # Step 3: Search for additional metadata (currently disabled)
-    web_metadata = search_book_metadata(title, author)
-
-    # Step 4: Present findings and get confirmation
-    print(f"\n   📖 Identified:")
-    print(f"      Title:     {title}")
-    print(f"      Author:    {author}")
-    if year:
-        print(f"      Year:      {year}")
-    if publisher:
-        print(f"      Publisher: {publisher}")
-    if web_metadata:
-        print(f"      ISBN:      {web_metadata.get('isbn')}")
-
-    if not auto_confirm:
-        print("\n   Options:")
-        print("     1. Accept")
-        print("     2. Edit metadata")
-        print("     3. Skip")
-
-        try:
-            choice = input("   Choice (1/2/3): ").strip()
-        except EOFError:
-            # Non-interactive mode, accept defaults
-            choice = '1'
-
-        if choice == '2':
-            try:
-                title = input(f"   Title [{title}]: ").strip() or title
-                author = input(f"   Author [{author}]: ").strip() or author
-                isbn = input("   ISBN: ").strip() or None
-                year_input = input("   Year: ").strip()
-                year = int(year_input) if year_input else None
-            except EOFError:
-                isbn = None
-                year = None
-        elif choice == '3':
-            return None
-        else:
-            # Prefer LLM-extracted year over web metadata
-            isbn = web_metadata.get('isbn') if web_metadata else None
-            if not year:
-                year = web_metadata.get('year') if web_metadata else None
-    else:
-        # Prefer LLM-extracted year over web metadata
-        isbn = web_metadata.get('isbn') if web_metadata else None
-        if not year:
-            year = web_metadata.get('year') if web_metadata else None
-
-    # Step 5: Generate scan ID (use LLM suggestion or fall back to title slug)
+    # Check scan_id is unique
     existing_ids = [
         scan['scan_id']
         for book in library.data['books'].values()
         for scan in book['scans']
     ]
 
-    # Prefer LLM's suggested short ID, fall back to slugified title
-    if llm_metadata and llm_metadata.get('suggested_id'):
-        base_slug = llm_metadata['suggested_id']
-        print(f"   Using LLM-suggested ID: {base_slug}")
-    else:
-        base_slug = _slugify_title(title)
-        print(f"   Generated ID from title: {base_slug}")
-
-    try:
-        scan_id = _ensure_unique_slug(base_slug, existing_ids)
-    except ValueError as e:
-        print(f"\n   ❌ Error: {str(e)}")
+    if scan_id in existing_ids:
+        print(f"\n   ❌ Error: Scan ID '{scan_id}' already exists in library")
         return None
 
-    print(f"\n   Scan ID: {scan_id}")
+    print(f"\n   📖 Book Info:")
+    print(f"      Title:     {title}")
+    print(f"      Author:    {author}")
+    print(f"      Scan ID:   {scan_id}")
 
-    # Step 6: Create directory structure
+    # Create directory structure
     scan_dir = library.storage_root / scan_id
     scan_dir.mkdir(exist_ok=True)
 
     source_dir = scan_dir / "source"
     source_dir.mkdir(exist_ok=True)
 
-    # Step 7: Copy PDFs to source/
-    print(f"   Copying PDFs...")
-    for i, pdf_path in enumerate(pdf_paths, 1):
-        dest = source_dir / f"{base_name}-{i}.pdf"
-        shutil.copy2(pdf_path, dest)
-        print(f"     ✓ {pdf_path.name} → {dest.name}")
+    # Extract all pages as individual PNG files to source/
+    print(f"   Extracting pages from {len(pdf_paths)} PDF(s)...")
+    from pdf2image import pdfinfo_from_path
 
-    # Step 8: Create initial metadata.json
+    global_page_num = 1
+    for pdf_idx, pdf_path in enumerate(pdf_paths, 1):
+        # Copy source PDF for reference
+        dest_pdf = source_dir / f"{base_name}-{pdf_idx}.pdf"
+        shutil.copy2(pdf_path, dest_pdf)
+
+        # Get page count
+        info = pdfinfo_from_path(pdf_path)
+        page_count = info['Pages']
+
+        print(f"     {pdf_path.name}: Extracting {page_count} pages...")
+
+        # Extract each page to source/ directory
+        for local_page in range(1, page_count + 1):
+            try:
+                # Convert single page to image
+                page_images = convert_from_path(
+                    pdf_path,
+                    first_page=local_page,
+                    last_page=local_page,
+                    dpi=150  # Good balance of quality and file size
+                )
+
+                if page_images:
+                    # Save as numbered PNG in source/
+                    dest_image = source_dir / f"page_{global_page_num:04d}.png"
+                    page_images[0].save(dest_image, format='PNG')
+                    global_page_num += 1
+            except Exception as e:
+                print(f"       ⚠️  Failed to extract page {local_page}: {e}")
+
+    total_pages = global_page_num - 1
+    print(f"     ✓ Extracted {total_pages} pages total → source/")
+
+    # Create initial metadata.json
     metadata = {
         "title": title,
         "author": author,
         "isbn": isbn,
         "scan_date": datetime.now().isoformat(),
         "source_files": [f"{base_name}-{i}.pdf" for i in range(1, len(pdf_paths) + 1)],
+        "total_pages": total_pages,
         "status": "registered"
     }
 
@@ -404,7 +176,7 @@ def ingest_book_group(
     with open(metadata_file, 'w') as f:
         json.dump(metadata, f, indent=2)
 
-    # Step 9: Register in library
+    # Register in library
     library.add_book(
         title=title,
         author=author,
@@ -419,35 +191,6 @@ def ingest_book_group(
     print(f"   ✓ Created: {scan_dir}")
 
     return scan_id
-
-
-def extract_json_from_text(text: str) -> Optional[Dict]:
-    """Extract JSON object from text."""
-    import re
-
-    # Try code blocks first
-    code_block_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
-    matches = re.findall(code_block_pattern, text, re.DOTALL)
-
-    if matches:
-        try:
-            return json.loads(matches[0])
-        except json.JSONDecodeError:
-            pass
-
-    # Try raw JSON
-    json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
-    matches = re.findall(json_pattern, text, re.DOTALL)
-
-    for match in matches:
-        try:
-            data = json.loads(match)
-            if "title" in data or "author" in data:
-                return data
-        except json.JSONDecodeError:
-            continue
-
-    return None
 
 
 def ingest_from_directories(
@@ -506,13 +249,14 @@ def ingest_from_directories(
     return scan_ids
 
 
-def add_books_to_library(pdf_paths: List[Path], storage_root: Path = None) -> Dict[str, Any]:
+def add_books_to_library(pdf_paths: List[Path], storage_root: Path = None, run_ocr: bool = False) -> Dict[str, Any]:
     """
     Add books to library (CLI wrapper).
 
     Args:
         pdf_paths: List of PDF file paths
         storage_root: Storage root (defaults to Config.BOOK_STORAGE_ROOT)
+        run_ocr: If True, automatically run OCR stage after adding (default: False)
 
     Returns:
         Dict with books_added count and scan_ids list
@@ -532,6 +276,22 @@ def add_books_to_library(pdf_paths: List[Path], storage_root: Path = None) -> Di
         scan_id = ingest_book_group(base_name, pdfs, library, auto_confirm=True)
         if scan_id:
             scan_ids.append(scan_id)
+
+    # Run OCR if requested
+    if run_ocr and scan_ids:
+        print(f"\n🔍 Running OCR on {len(scan_ids)} book(s)...")
+        import importlib
+        ocr_module = importlib.import_module('pipeline.1_ocr')
+        BookOCRProcessor = getattr(ocr_module, 'BookOCRProcessor')
+
+        processor = BookOCRProcessor(
+            storage_root=str(storage_root or Config.BOOK_STORAGE_ROOT),
+            max_workers=8
+        )
+
+        for scan_id in scan_ids:
+            print(f"\n📄 OCR: {scan_id}")
+            processor.process_book(scan_id, resume=False)
 
     return {
         'books_added': len(scan_ids),
