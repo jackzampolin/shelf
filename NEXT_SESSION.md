@@ -1,217 +1,202 @@
-# Next Session: Terminal Output Improvements
+# Next Session: Run Correction Stage on All Books
 
 ## Context
 
-Just completed major performance optimizations:
-- ✅ Dual-DPI strategy (600 DPI for OCR, 300 DPI for vision)
-- ✅ Parallel PDF extraction (uses all CPU cores)
-- ✅ Parallel OCR processing (ProcessPoolExecutor, auto-detects cores)
-- ✅ Full CPU saturation achieved (~100% utilization)
+Just completed unified terminal output improvements and OCR hang fix:
+- ✅ Created `infra/progress.py` - reusable progress bar utility
+- ✅ Updated `tools/add.py` - clean progress bars for PDF extraction
+- ✅ Updated `pipeline/1_ocr/__init__.py` - clean progress bars for OCR
+- ✅ Updated `pipeline/2_correction/__init__.py` - clean progress bars for correction
+- ✅ Created `docs/standards/10_terminal_output.md` - comprehensive formatting standards
+- ✅ Fixed OCR hang issue with worker adjustment and timeout protection
 
-**Current Issue:** Terminal output is too verbose/spammy during add and OCR stages.
+## Current Status
 
-## Goal
+**OCR Stage:**
+- ✅ **FIXED**: OCR hang issue resolved
+  - Implemented worker adjustment: caps at min(max_workers, task_count, 8)
+  - Added 300s timeout to future.result()
+  - Tested on china-lobby book - successfully processed page 6
+  - Commits: 3bb9924 (OCR fix), 1762db4 (correction output)
 
-Improve terminal UX for `ar library add` and `ar process ocr`:
-- Use `\r` (carriage return) for in-place updates instead of spamming new lines
-- Add nice progress bars for both stages
-- Clean, minimal output that's easy to follow
+**Correction Stage:**
+- Ready to test with unified output formatting
+- Uses `ProgressBar` with cost tracking in suffix: `"23 ok, $1.45, 2 failed"`
+- Clean stage boundaries: `🔧 Correction Stage (book-title)` → `✅ Correction complete`
 
-## Current Behavior
+## Expected Correction Stage Output
 
-### PDF Extraction (tools/add.py)
 ```
-   Extracting pages from 2 PDF(s) at 600 DPI...
-     Processing 447 pages in parallel...
-     Progress: 10/447 pages (10 ok, 0 failed)
-     Progress: 20/447 pages (20 ok, 0 failed)
-     Progress: 30/447 pages (30 ok, 0 failed)
-     ...
-     [lots of spam]
-```
+🔧 Correction Stage (hap-arnold)
+   Pages:     340
+   Workers:   30
+   Model:     google/gemini-2.5-flash-lite-preview-09-2025
 
-**Issues:**
-- Updates every 10 pages (creates ~45 lines for 447 pages)
-- No visual progress bar
-- Hard to see at-a-glance progress
+   Correcting 340 pages...
+   [████████████████████████████████░░░░░░░░] 82% (279/340) - 3.2 pages/sec - ETA 19s - 279 ok, $2.45, 0 failed
+   ✓ 279/340 pages corrected
 
-### OCR Stage (pipeline/1_ocr/__init__.py)
-```
-📄 Processing 447 pages with Tesseract OCR...
-[progress updates via logger]
-```
-
-**Issues:**
-- OCR has progress via logger but could be nicer
-- Inconsistent with extraction output
-
-## Desired Behavior
-
-### PDF Extraction
-```
-   Extracting 447 pages at 600 DPI (using 16 cores)...
-   [████████████████████████████░░░░░░░░] 75% (335/447) - 2.1 pages/sec - ETA 53s
+✅ Correction complete: 340/340 pages
+   Total cost: $2.98
+   Avg per page: $0.009
 ```
 
-### OCR Processing
-```
-📄 OCR Processing (Tesseract)...
-   [█████████████████████████████░░░░░░] 80% (356/447) - 1.8 pages/sec - ETA 51s
-```
+## Next Steps
 
-**Features:**
-- Single line that updates in place with `\r`
-- Visual progress bar (████████░░░░)
-- Percentage, count (current/total)
-- Processing rate (pages/sec)
-- Estimated time remaining (ETA)
-- Only new line on completion or error
+### 1. Check OCR Status on All Books
 
-## Implementation Plan
+First, verify all books have completed OCR:
 
-### 1. Create Unified Progress Bar Utility
-
-**File:** `infra/progress.py`
-
-```python
-class ProgressBar:
-    """In-place terminal progress bar with \r updates."""
-
-    def __init__(self, total: int, prefix: str = "", width: int = 40):
-        self.total = total
-        self.prefix = prefix
-        self.width = width
-        self.start_time = time.time()
-
-    def update(self, current: int, suffix: str = ""):
-        """Update progress bar in place."""
-        # Calculate metrics
-        percent = (current / self.total) * 100
-        filled = int(self.width * current // self.total)
-        bar = '█' * filled + '░' * (self.width - filled)
-
-        # Calculate rate and ETA
-        elapsed = time.time() - self.start_time
-        rate = current / elapsed if elapsed > 0 else 0
-        eta = (self.total - current) / rate if rate > 0 else 0
-
-        # Format output
-        output = f"\r{self.prefix}[{bar}] {percent:.0f}% ({current}/{self.total})"
-        if rate > 0:
-            output += f" - {rate:.1f} pages/sec"
-        if eta > 0 and eta < 3600:  # Only show ETA if < 1 hour
-            output += f" - ETA {format_seconds(eta)}"
-        if suffix:
-            output += f" - {suffix}"
-
-        # Print with \r (carriage return) to overwrite
-        print(output, end='', flush=True)
-
-    def finish(self, message: str = ""):
-        """Print final newline and completion message."""
-        print()  # New line after progress bar
-        if message:
-            print(message)
+```bash
+uv run python ar.py library list
 ```
 
-### 2. Update PDF Extraction
+Look for books with `ocr_complete: false` and complete any remaining OCR runs.
 
-**File:** `tools/add.py`
+### 2. Run Correction Stage on All Books
 
-Update the progress tracking (lines 186-215):
-
-```python
-from infra.progress import ProgressBar
-
-# After task submission
-progress = ProgressBar(
-    total=total_pages,
-    prefix="   Extracting pages: ",
-    width=40
-)
-
-for future in as_completed(future_to_task):
-    # ... existing logic ...
-
-    # Update progress bar
-    current = completed + failed
-    suffix = f"{completed} ok" + (f", {failed} failed" if failed > 0 else "")
-    progress.update(current, suffix=suffix)
-
-# Finish
-progress.finish(f"   ✓ Extracted {completed}/{total_pages} pages → source/")
+**Test on one book first:**
+```bash
+# Pick a book to test correction stage
+uv run python ar.py process correction <scan-id> --resume
 ```
 
-### 3. Update OCR Stage
+**Verify output format:**
+- Clean stage entry: 🔧 Correction Stage (book-title)
+- Progress bar with cost tracking: "279 ok, $2.45, 0 failed"
+- Clean stage exit: ✅ Correction complete
 
-**File:** `pipeline/1_ocr/__init__.py`
+**Once verified, run on all books:**
+```bash
+# Option A: One at a time (manual)
+uv run python ar.py process correction hap-arnold --resume
+uv run python ar.py process correction china-lobby --resume
+# ... etc
 
-Update progress tracking (lines 373-420):
-
-```python
-from infra.progress import ProgressBar
-
-print(f"📄 OCR Processing (Tesseract, {self.max_workers} workers)...")
-
-progress = ProgressBar(
-    total=len(tasks),
-    prefix="   ",
-    width=40
-)
-
-for future in as_completed(future_to_task):
-    # ... existing logic ...
-
-    # Update progress bar
-    current = completed + errors
-    suffix = f"{completed} ok" + (f", {errors} failed" if errors > 0 else "")
-    progress.update(current, suffix=suffix)
-
-# Finish
-progress.finish(f"   ✓ {completed}/{total_pages} pages processed → {ocr_dir}")
+# Option B: Batch script (create helper)
+# for scan_id in $(cat scan_ids.txt); do
+#     uv run python ar.py process correction $scan_id --resume
+# done
 ```
 
-### 4. Suppress Logger Progress (Optional)
+## Files Modified This Session
 
-Since we're using the visual progress bar, we might want to suppress the logger progress updates during processing:
+1. **UPDATED:** `pipeline/1_ocr/__init__.py` - Fixed hang issue (lines 393-436)
+   - Worker adjustment: min(max_workers, task_count, 8)
+   - Timeout protection: 300s per page
+   - Unified output formatting
+   - Commit: 3bb9924
 
-**Option A:** Only log to file, not stdout during processing
-**Option B:** Keep logger for errors only
-**Option C:** Keep logger as-is (for debugging)
+2. **UPDATED:** `pipeline/2_correction/__init__.py` - Unified output (lines 28, 168-297)
+   - Added ProgressBar with cost tracking
+   - Clean stage entry/exit
+   - Removed logger stdout spam
+   - Commit: 1762db4
 
-**Recommendation:** Start with Option B - only log errors to stdout during processing.
+**Previously modified (earlier in session):**
+3. **NEW:** `infra/progress.py` - Progress bar utility
+4. **UPDATED:** `tools/add.py` - Clean output formatting
+5. **NEW:** `docs/standards/10_terminal_output.md` - Output standards
 
 ## Testing Checklist
 
-After implementation:
-- [ ] Test `ar library add <pdf>` - verify single-line progress bar
-- [ ] Test `ar process ocr <scan-id>` - verify single-line progress bar
-- [ ] Test with small book (10 pages) - verify no flicker/spam
-- [ ] Test with large book (400+ pages) - verify smooth updates
-- [ ] Test with failures - verify error messages don't break progress bar
-- [ ] Test terminal width handling - verify bar adjusts or truncates gracefully
-- [ ] Verify ETA accuracy (should stabilize after ~30 pages)
+After running correction stage on test book:
+- [ ] Verify single-line progress bar updates smoothly
+- [ ] Verify cost tracking shows in suffix
+- [ ] Verify stage entry/exit formatting matches standards
+- [ ] Verify errors print on new lines without breaking progress
+- [ ] Verify no logger stdout spam during processing
+- [ ] Check log files to ensure errors are still logged to file
 
-## Files to Modify
+## Architecture Notes
 
-1. **NEW:** `infra/progress.py` - Create progress bar utility
-2. **UPDATE:** `tools/add.py` - Use progress bar for PDF extraction (lines 186-215)
-3. **UPDATE:** `pipeline/1_ocr/__init__.py` - Use progress bar for OCR (lines 373-420)
-4. **OPTIONAL:** `infra/logger.py` - Suppress progress logs to stdout during processing
+**Progress Bar Pattern:**
+```python
+from infra.progress import ProgressBar
 
-## Nice-to-Haves (Future)
+# Initialize
+progress = ProgressBar(
+    total=total_items,
+    prefix="   ",  # 3-space indent
+    width=40,      # Standard width
+    unit="pages"   # or "items", "files", etc.
+)
 
-- Color support (green for success, red for errors)
-- Spinner for indeterminate operations
-- Multi-line progress for concurrent stages
-- Progress persistence (resume shows where it left off)
+# Update in loop
+for item in items:
+    # ... process item ...
+    progress.update(current, suffix=f"{completed} ok")
+
+# Finish
+progress.finish(f"   ✓ {completed}/{total} items processed")
+```
+
+**Logger Pattern:**
+```python
+# Visual progress: ProgressBar for terminal output
+progress.update(current, suffix=status)
+
+# File logging: logger for debugging (no stdout spam)
+if error:
+    logger.error("Operation failed", page=page_num, error=error_msg)
+```
+
+## Cost Tracking
+
+Correction stage costs ~$0.008-0.012 per page with `google/gemini-2.5-flash-lite-preview-09-2025`.
+
+**Estimated costs for remaining books:**
+- Assuming ~300 pages per book average
+- 9 books remaining after OCR
+- ~2700 pages × $0.01 = ~$27 total for correction stage
+
+**Budget check before running:**
+```bash
+# Check page counts
+uv run python ar.py library list
+
+# Calculate estimated cost
+# (sum of pages) × $0.01 = estimated cost
+```
+
+## OCR Hang Fix Details
+
+**Problem:**
+ProcessPoolExecutor worker spawn failures on macOS (spawn mode) caused indefinite hangs when resuming OCR with 1-2 pages remaining.
+
+**Solution Implemented:**
+1. **Worker adjustment** (line 395):
+   ```python
+   effective_workers = min(self.max_workers, len(tasks), 8)
+   ```
+   - Caps workers at task count (1 task = 1 worker)
+   - Max 8 workers for small jobs (reduces spawn overhead)
+   - Prevents wasted worker spawns that may fail
+
+2. **Timeout protection** (line 411):
+   ```python
+   success, page_number, error_msg, page_data = future.result(timeout=300)
+   ```
+   - 5 minutes per page (generous for Tesseract OCR)
+   - Converts silent hangs to TimeoutError
+   - Logged and counted as failed page (can retry)
+
+**Testing:**
+- Tested on china-lobby book (previously hung on page 6)
+- Worker adjustment: 16 → 1 worker for 1 task
+- Successfully completed in ~2 minutes
+- No hang, clean output
 
 ## References
 
-- Current commits: 04ece28, 81489fb, 8b45d15, 42d7981, b9c830e, 08a9588
-- Branch: `refactor/pipeline-redesign`
-- Related: Issue #56 (Pipeline Refactor)
+- Terminal Output Standards: `docs/standards/10_terminal_output.md`
+- Progress Bar Utility: `infra/progress.py`
+- Current branch: `refactor/pipeline-redesign`
+- Recent commits: 3bb9924 (OCR fix), 1762db4 (correction output)
 
 ---
 
-**Start here next session:** Create `infra/progress.py` with the ProgressBar class, then update add.py to use it.
+**Start here next session:**
+1. Check OCR status on all books
+2. Test correction stage on one book (verify output formatting)
+3. Run correction stage on all books once verified
