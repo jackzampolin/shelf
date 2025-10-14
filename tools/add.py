@@ -22,6 +22,7 @@ from pdf2image import convert_from_path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from infra.config import Config
+from infra.progress import ProgressBar
 from tools.library import LibraryIndex
 
 
@@ -120,9 +121,6 @@ def ingest_book_group(
     Returns:
         Scan ID if successful, None otherwise
     """
-    print(f"\n📚 Processing: {base_name}")
-    print(f"   PDFs: {len(pdf_paths)}")
-
     # Use base_name as scan_id and title
     scan_id = base_name
     title = base_name.replace('-', ' ').replace('_', ' ').title()
@@ -131,8 +129,10 @@ def ingest_book_group(
     publisher = None
     isbn = None
 
-    print(f"   Using filename as title: {title}")
-    print(f"   Scan ID: {scan_id}")
+    print(f"\n📚 Book Ingestion ({scan_id})")
+    print(f"   Title:     {title}")
+    print(f"   Author:    {author}")
+    print(f"   PDFs:      {len(pdf_paths)}")
 
     # Check scan_id is unique
     existing_ids = [
@@ -142,13 +142,8 @@ def ingest_book_group(
     ]
 
     if scan_id in existing_ids:
-        print(f"\n   ❌ Error: Scan ID '{scan_id}' already exists in library")
+        print(f"   ❌ Scan ID '{scan_id}' already exists in library")
         return None
-
-    print(f"\n   📖 Book Info:")
-    print(f"      Title:     {title}")
-    print(f"      Author:    {author}")
-    print(f"      Scan ID:   {scan_id}")
 
     # Create directory structure
     scan_dir = library.storage_root / scan_id
@@ -158,7 +153,6 @@ def ingest_book_group(
     source_dir.mkdir(exist_ok=True)
 
     # Extract all pages as individual PNG files to source/ (parallelized)
-    print(f"   Extracting pages from {len(pdf_paths)} PDF(s) at {Config.PDF_EXTRACTION_DPI_OCR} DPI...")
     from pdf2image import pdfinfo_from_path
 
     # Build list of all extraction tasks across all PDFs
@@ -181,12 +175,20 @@ def ingest_book_group(
             global_page_num += 1
 
     total_pages = len(tasks)
-    print(f"     Processing {total_pages} pages in parallel...")
+    max_workers = multiprocessing.cpu_count()
+
+    print(f"\n   Extracting {total_pages} pages at {Config.PDF_EXTRACTION_DPI_OCR} DPI...")
 
     # Extract in parallel using all CPU cores
-    max_workers = multiprocessing.cpu_count()
     completed = 0
     failed = 0
+
+    progress = ProgressBar(
+        total=total_pages,
+        prefix="   ",
+        width=40,
+        unit="pages"
+    )
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         future_to_task = {executor.submit(_extract_single_page, task): task for task in tasks}
@@ -201,18 +203,21 @@ def ingest_book_group(
                     completed += 1
                 else:
                     failed += 1
-                    print(f"       ⚠️  Failed {output_path.name}: {error_msg}")
+                    # Print error on new line (won't interfere with progress bar)
+                    print(f"\n   ⚠️  Failed {output_path.name}: {error_msg}")
             except Exception as e:
                 failed += 1
-                print(f"       ⚠️  Exception for {output_path.name}: {e}")
+                print(f"\n   ⚠️  Exception for {output_path.name}: {e}")
 
-            # Progress update every 10 pages
-            if (completed + failed) % 10 == 0:
-                print(f"     Progress: {completed + failed}/{total_pages} pages ({completed} ok, {failed} failed)")
+            # Update progress bar
+            current = completed + failed
+            suffix = f"{completed} ok" + (f", {failed} failed" if failed > 0 else "")
+            progress.update(current, suffix=suffix)
 
-    print(f"     ✓ Extracted {completed}/{total_pages} pages → source/")
+    # Finish progress bar
+    progress.finish(f"   ✓ Extracted {completed}/{total_pages} pages")
     if failed > 0:
-        print(f"     ⚠️  {failed} pages failed")
+        print(f"   ⚠️  {failed} pages failed")
 
     # Create initial metadata.json
     metadata = {
@@ -242,8 +247,7 @@ def ingest_book_group(
         notes=f"Ingested from {pdf_paths[0].parent}"
     )
 
-    print(f"   ✓ Registered in library")
-    print(f"   ✓ Created: {scan_dir}")
+    print(f"\n✅ Book registered: {scan_id}")
 
     return scan_id
 
@@ -334,7 +338,6 @@ def add_books_to_library(pdf_paths: List[Path], storage_root: Path = None, run_o
 
     # Run OCR if requested
     if run_ocr and scan_ids:
-        print(f"\n🔍 Running OCR on {len(scan_ids)} book(s)...")
         import importlib
         ocr_module = importlib.import_module('pipeline.1_ocr')
         BookOCRProcessor = getattr(ocr_module, 'BookOCRProcessor')
@@ -345,7 +348,6 @@ def add_books_to_library(pdf_paths: List[Path], storage_root: Path = None, run_o
         )
 
         for scan_id in scan_ids:
-            print(f"\n📄 OCR: {scan_id}")
             processor.process_book(scan_id, resume=False)
 
     return {
