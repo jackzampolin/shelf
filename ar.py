@@ -628,7 +628,7 @@ Note: Minimal CLI during refactor (Issue #55).
     # ar process ocr
     ocr_parser = process_subparsers.add_parser('ocr', help='Stage 1: OCR')
     ocr_parser.add_argument('scan_id', help='Book scan ID')
-    ocr_parser.add_argument('--workers', type=int, default=8, help='Parallel workers (default: 8)')
+    ocr_parser.add_argument('--workers', type=int, default=None, help='Parallel workers (default: auto-detect CPU cores)')
     ocr_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     ocr_parser.set_defaults(func=cmd_process_ocr)
 

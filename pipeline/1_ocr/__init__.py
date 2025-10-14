@@ -19,7 +19,8 @@ import cv2
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import threading
-from typing import Tuple, Dict, Any
+import multiprocessing
+from typing import Tuple, Dict, Any, Optional
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -271,9 +272,10 @@ class ImageDetector:
 class BookOCRProcessor:
     """OCR processor with hierarchical text extraction and image detection."""
 
-    def __init__(self, storage_root=None, max_workers=8, enable_checkpoints=True):
+    def __init__(self, storage_root=None, max_workers: Optional[int] = None, enable_checkpoints=True):
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
-        self.max_workers = max_workers
+        # Default to all CPU cores if not specified
+        self.max_workers = max_workers if max_workers is not None else multiprocessing.cpu_count()
         self.progress_lock = threading.Lock()
         self.logger = None  # Will be initialized per book
         self.checkpoint = None  # Will be initialized per book

@@ -341,7 +341,7 @@ def add_books_to_library(pdf_paths: List[Path], storage_root: Path = None, run_o
 
         processor = BookOCRProcessor(
             storage_root=str(storage_root or Config.BOOK_STORAGE_ROOT),
-            max_workers=8
+            max_workers=None  # Auto-detect CPU cores
         )
 
         for scan_id in scan_ids:

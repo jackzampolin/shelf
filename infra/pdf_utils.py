@@ -98,7 +98,7 @@ def get_page_from_book(
         image = get_page_from_book(
             Path("~/Documents/book_scans/my-book"),
             page_number=195,
-            dpi=150
+            dpi=600
         )
     """
     if convert_from_path is None or pdfinfo_from_path is None:
@@ -172,7 +172,7 @@ def get_pages_from_book(
         images = get_pages_from_book(
             book_dir,
             page_numbers=[100, 101, 102],
-            dpi=150
+            dpi=600
         )
     """
     images = []
