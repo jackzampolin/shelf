@@ -25,6 +25,7 @@ from infra.logger import create_logger
 from infra.checkpoint import CheckpointManager
 from infra.llm_client import LLMClient
 from infra.pdf_utils import downsample_for_vision
+from infra.progress import ProgressBar
 
 # Import schemas
 import importlib
@@ -164,6 +165,12 @@ class VisionCorrector:
                 max_workers=self.max_workers
             )
 
+            # Stage entry
+            print(f"\n🔧 Correction Stage ({book_title})")
+            print(f"   Pages:     {total_pages}")
+            print(f"   Workers:   {self.max_workers}")
+            print(f"   Model:     {self.model}")
+
             # Get source page images (extracted during 'ar library add')
             source_dir = book_dir / "source"
             if not source_dir.exists():
@@ -205,7 +212,19 @@ class VisionCorrector:
                 print("✅ All pages already corrected")
                 return
 
+            # Progress bar setup
+            print(f"\n   Correcting {len(tasks)} pages...")
+            progress = ProgressBar(
+                total=len(tasks),
+                prefix="   ",
+                width=40,
+                unit="pages"
+            )
+
             # Process in parallel with thread-safe statistics
+            completed = 0
+            errors = 0
+
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 future_to_task = {
                     executor.submit(self._process_single_page, task): task
@@ -220,30 +239,29 @@ class VisionCorrector:
                             if success:
                                 self.stats['pages_processed'] += 1
                                 self.stats['total_cost_usd'] += cost
+                                completed += 1
                             else:
                                 self.stats['failed_pages'] += 1
+                                errors += 1
                     except Exception as e:
                         with self.stats_lock:
                             self.stats['failed_pages'] += 1
-                        with self.progress_lock:
-                            self.logger.error(f"Page processing error", page=task['page_num'], error=str(e))
+                        errors += 1
+                        # Print error on new line (won't interfere with progress bar)
+                        print(f"\n   ⚠️  Page {task['page_num']} failed: {e}")
+                        self.logger.error(f"Page processing error", page=task['page_num'], error=str(e))
 
-                    # Progress update (read stats under lock)
+                    # Update progress bar
+                    current = completed + errors
                     with self.stats_lock:
-                        completed = self.stats['pages_processed']
-                        errors = self.stats['failed_pages']
                         total_cost = self.stats['total_cost_usd']
+                    suffix = f"{completed} ok, ${total_cost:.2f}" + (f", {errors} failed" if errors > 0 else "")
+                    progress.update(current, suffix=suffix)
 
-                    with self.progress_lock:
-                        progress_count = completed + errors
-                        self.logger.progress(
-                            f"Correcting pages",
-                            current=progress_count,
-                            total=len(tasks),
-                            completed=completed,
-                            errors=errors,
-                            cost=total_cost
-                        )
+            # Finish progress bar
+            progress.finish(f"   ✓ {completed}/{len(tasks)} pages corrected")
+            if errors > 0:
+                print(f"   ⚠️  {errors} pages failed")
 
             # Get final stats under lock
             with self.stats_lock:
@@ -267,6 +285,7 @@ class VisionCorrector:
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
 
+            # Log completion to file (not stdout)
             self.logger.info(
                 "Correction complete",
                 pages_corrected=completed,
@@ -275,10 +294,10 @@ class VisionCorrector:
                 corrected_dir=str(corrected_dir)
             )
 
-            print(f"\n✅ Correction complete: {completed} pages")
+            # Print stage exit
+            print(f"\n✅ Correction complete: {completed}/{total_pages} pages")
             print(f"   Total cost: ${total_cost:.2f}")
             print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
-            print(f"   Output: {corrected_dir}")
 
             # Auto-retry failed pages until complete or max retries reached
             if errors > 0:
