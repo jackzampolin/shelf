@@ -26,6 +26,7 @@ from typing import Tuple, Dict, Any, Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from infra.logger import create_logger
 from infra.checkpoint import CheckpointManager
+from infra.progress import ProgressBar
 
 # Import schemas for validation
 import importlib
@@ -340,13 +341,17 @@ class BookOCRProcessor:
 
         total_pages = len(page_files)
 
+        # Log to file only (not stdout)
         self.logger.start_stage(
             total_pages=total_pages,
             mode="source-images",
             max_workers=self.max_workers
         )
 
-        print(f"📄 Processing {total_pages} pages with Tesseract OCR...")
+        # Print stage entry
+        print(f"\n📄 OCR Processing ({book_title})")
+        print(f"   Pages:     {total_pages}")
+        print(f"   Workers:   {self.max_workers}")
 
         # Prepare tasks (filter already-completed pages if using checkpoints)
         tasks = []
@@ -369,13 +374,29 @@ class BookOCRProcessor:
         # If all pages already done, skip
         if len(tasks) == 0:
             self.logger.info(f"All {total_pages} pages already completed, skipping")
-            print(f"✅ All {total_pages} pages already processed")
+            print(f"\n✅ OCR complete: {total_pages}/{total_pages} pages")
             return
+
+        print(f"\n   Processing {len(tasks)} pages with Tesseract...")
 
         # Process pages in parallel using ProcessPoolExecutor (true parallelism for CPU-bound Tesseract)
         completed = 0
         errors = 0
-        with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+
+        progress = ProgressBar(
+            total=len(tasks),
+            prefix="   ",
+            width=40,
+            unit="pages"
+        )
+
+        # Adjust workers based on task count to reduce spawn overhead
+        # For small task counts, using fewer workers reduces risk of spawn failures
+        effective_workers = min(self.max_workers, len(tasks), 8)
+        if effective_workers < self.max_workers:
+            print(f"   (Using {effective_workers} workers for {len(tasks)} tasks)")
+
+        with ProcessPoolExecutor(max_workers=effective_workers) as executor:
             # Submit all tasks
             future_to_task = {
                 executor.submit(_process_page_worker, task): task
@@ -386,7 +407,8 @@ class BookOCRProcessor:
             for future in as_completed(future_to_task):
                 task = future_to_task[future]
                 try:
-                    success, page_number, error_msg, page_data = future.result()
+                    # Add timeout to prevent infinite hang (5 minutes per page)
+                    success, page_number, error_msg, page_data = future.result(timeout=300)
 
                     if success:
                         # Save page data
@@ -401,25 +423,33 @@ class BookOCRProcessor:
                         completed += 1
                     else:
                         errors += 1
+                        # Print error on new line (won't interfere with progress bar)
+                        print(f"\n   ⚠️  Page {page_number} failed: {error_msg}")
                         with self.progress_lock:
                             self.logger.error(f"Page processing error", page=page_number, error=error_msg)
 
+                except TimeoutError:
+                    errors += 1
+                    page_num = task['page_number']
+                    print(f"\n   ⚠️  Page {page_num} timed out after 300s")
+                    with self.progress_lock:
+                        self.logger.error(f"Page processing timeout", page=page_num)
+
                 except Exception as e:
                     errors += 1
+                    print(f"\n   ⚠️  Page {task['page_number']} exception: {str(e)}")
                     with self.progress_lock:
                         self.logger.error(f"Page processing exception", page=task['page_number'], error=str(e))
 
-                # Progress update
-                with self.progress_lock:
-                    progress_count = completed + errors
-                    self.logger.progress(
-                        f"Processing pages",
-                        current=progress_count,
-                        total=len(tasks),
-                        page=task['page_number'],
-                        completed=completed,
-                        errors=errors
-                    )
+                # Update progress bar
+                current = completed + errors
+                suffix = f"{completed} ok" + (f", {errors} failed" if errors > 0 else "")
+                progress.update(current, suffix=suffix)
+
+        # Finish progress bar
+        progress.finish(f"   ✓ {completed}/{len(tasks)} pages processed")
+        if errors > 0:
+            print(f"   ⚠️  {errors} pages failed")
 
         # Mark stage complete in checkpoint
         if self.checkpoint:
@@ -435,6 +465,7 @@ class BookOCRProcessor:
         with open(metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
 
+        # Log completion to file
         self.logger.info(
             "OCR complete",
             total_pages_processed=completed,
@@ -442,10 +473,8 @@ class BookOCRProcessor:
             ocr_dir=str(ocr_dir)
         )
 
-        print(f"\n✅ OCR complete: {completed}/{total_pages} pages processed")
-        if errors > 0:
-            print(f"   ⚠️  {errors} pages failed")
-        print(f"   Output: {ocr_dir}")
+        # Print stage exit
+        print(f"\n✅ OCR complete: {completed}/{total_pages} pages")
 
     def clean_stage(self, scan_id: str, confirm: bool = False):
         """
