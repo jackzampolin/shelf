@@ -253,9 +253,12 @@ class VisionCorrector:
                                 # Update progress bar (only on success)
                                 with self.stats_lock:
                                     total_cost = self.stats['total_cost_usd']
-                                suffix = f"{completed} ok, ${total_cost:.2f}"
-                                if len(failed_tasks) > 0:
-                                    suffix += f", {len(failed_tasks)} pending"
+
+                                # Suffix: Just cost, with attempt indicator if retrying
+                                suffix = f"${total_cost:.2f}"
+                                if retry_count > 0:
+                                    suffix += f" (attempt {retry_count + 1}/{max_retries})"
+
                                 progress.update(completed, suffix=suffix)
                             else:
                                 # Failure: accumulate for retry
