@@ -110,3 +110,81 @@ def test_stats_calculation(tmp_path):
     assert stats["total_scans"] == 2
     assert stats["total_pages"] == 300
     assert stats["total_cost_usd"] == 15.0
+
+
+def test_delete_scan_with_files(tmp_path):
+    """Test deleting a scan including its files."""
+    library = LibraryIndex(storage_root=tmp_path)
+
+    # Add a book
+    library.add_book("Test Book", "Test Author", "test-scan")
+
+    # Create scan directory with some files
+    scan_dir = tmp_path / "test-scan"
+    scan_dir.mkdir()
+    (scan_dir / "test.txt").write_text("test content")
+
+    # Delete the scan
+    result = library.delete_scan("test-scan", delete_files=True)
+
+    assert result["deleted_from_library"] is True
+    assert result["files_deleted"] is True
+    assert result["book_removed"] is True
+    assert not scan_dir.exists()
+
+    # Verify library is updated
+    assert len(library.data["books"]) == 0
+
+
+def test_delete_scan_keep_files(tmp_path):
+    """Test deleting a scan but keeping its files."""
+    library = LibraryIndex(storage_root=tmp_path)
+
+    # Add a book
+    library.add_book("Test Book", "Test Author", "test-scan")
+
+    # Create scan directory
+    scan_dir = tmp_path / "test-scan"
+    scan_dir.mkdir()
+    (scan_dir / "test.txt").write_text("test content")
+
+    # Delete the scan but keep files
+    result = library.delete_scan("test-scan", delete_files=False)
+
+    assert result["deleted_from_library"] is True
+    assert result["files_deleted"] is False
+    assert result["book_removed"] is True
+    assert scan_dir.exists()
+
+    # Verify library is updated but files remain
+    assert len(library.data["books"]) == 0
+    assert (scan_dir / "test.txt").exists()
+
+
+def test_delete_scan_keep_book(tmp_path):
+    """Test deleting one scan but keeping the book (when multiple scans exist)."""
+    library = LibraryIndex(storage_root=tmp_path)
+
+    # Add a book with two scans
+    library.add_book("Test Book", "Test Author", "test-scan-1")
+    library.register_scan("test-book", "test-scan-2")
+
+    # Delete first scan
+    result = library.delete_scan("test-scan-1", delete_files=False)
+
+    assert result["deleted_from_library"] is True
+    assert result["book_removed"] is False
+
+    # Verify book still exists with one scan
+    assert "test-book" in library.data["books"]
+    assert len(library.data["books"]["test-book"]["scans"]) == 1
+    assert library.data["books"]["test-book"]["scans"][0]["scan_id"] == "test-scan-2"
+
+
+def test_delete_nonexistent_scan(tmp_path):
+    """Test that deleting a non-existent scan raises an error."""
+    library = LibraryIndex(storage_root=tmp_path)
+
+    import pytest
+    with pytest.raises(ValueError, match="not found"):
+        library.delete_scan("nonexistent-scan")

@@ -127,11 +127,12 @@ class LLMClient:
                 # Check for retryable errors
                 should_retry = False
                 error_type = "error"
+                error_msg = ""
 
                 # Always retry 5xx server errors
                 if e.response.status_code >= 500:
                     should_retry = True
-                    error_type = "Server error"
+                    error_type = f"{e.response.status_code} server error"
 
                 # Retry specific 422 errors from provider (xAI deserialization issues)
                 elif e.response.status_code == 422:
@@ -142,28 +143,31 @@ class LLMClient:
                         # xAI provider deserialization errors are transient
                         if 'Provider returned error' in error_msg or 'Failed to deserialize' in str(error_data):
                             should_retry = True
-                            error_type = "Provider deserialization error"
+                            error_type = "422 provider error"
+                            # Truncate long error messages
+                            if len(error_msg) > 80:
+                                error_msg = error_msg[:80] + "..."
 
                 if should_retry and attempt < max_retries - 1:
                     delay = (2 ** attempt) * 4  # Exponential backoff: 4s, 8s, 16s
-                    print(f"  ⚠️  {error_type} (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
+                    # Suppress retry messages - stage-level logging will show final errors
                     time.sleep(delay)
                     continue
                 elif should_retry:
-                    print(f"  ❌ Max retries exceeded")
+                    # Final retry failed - let exception propagate to stage-level handler
                     raise
                 else:
-                    # Non-retryable client errors (4xx)
+                    # Non-retryable client errors (4xx) - let exception propagate
                     raise
 
             except requests.exceptions.Timeout:
                 if attempt < max_retries - 1:
                     delay = (2 ** attempt) * 4  # Exponential backoff: 4s, 8s, 16s
-                    print(f"  ⚠️  Timeout (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
+                    # Suppress retry messages - stage-level logging will show final errors
                     time.sleep(delay)
                     continue
                 else:
-                    print(f"  ❌ Max retries exceeded")
+                    # Let exception propagate to stage-level handler
                     raise
 
     def _call_non_streaming(self,
@@ -180,17 +184,12 @@ class LLMClient:
             timeout=timeout
         )
 
-        # Better error reporting for 4xx errors
-        # Cache error data on response object for retry logic
+        # Cache error data on response object for retry logic (no printing here)
         if not response.ok:
             try:
                 error_data = response.json()
                 response._error_data_cache = error_data  # Cache for retry logic
-                print(f"❌ API Error Response:")
-                print(json.dumps(error_data, indent=2))
-                error_msg = error_data.get('error', {}).get('message', response.text)
             except:
-                print(f"❌ API Error (raw): {response.text}")
                 response._error_data_cache = None
 
         response.raise_for_status()
@@ -422,7 +421,8 @@ class LLMClient:
                 last_error = e
                 if attempt < max_retries:
                     # JSON parsing failed, retry entire LLM call
-                    delay = 0.5 * (attempt + 1)  # 0.5s, 1.0s
+                    delay = 2 * (attempt + 1)  # 2s, 4s (increased from 0.5s, 1.0s)
+                    # Suppress retry messages - stage-level logging will show final errors
                     time.sleep(delay)
                     continue
 

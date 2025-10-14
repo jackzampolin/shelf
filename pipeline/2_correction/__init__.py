@@ -46,13 +46,13 @@ class VisionCorrector:
     Supports checkpoint-based resume and parallel processing.
     """
 
-    def __init__(self, storage_root=None, model="x-ai/grok-4-fast", max_workers=30, enable_checkpoints=True):
+    def __init__(self, storage_root=None, model="google/gemma-3-27b-it", max_workers=30, enable_checkpoints=True):
         """
         Initialize the VisionCorrector.
 
         Args:
             storage_root: Root directory for book storage (default: ~/Documents/book_scans)
-            model: LLM model to use for correction (default: x-ai/grok-4-fast)
+            model: LLM model to use for correction (default: google/gemma-3-27b-it)
             max_workers: Number of parallel workers (default: 30)
             enable_checkpoints: Enable checkpoint-based resume (default: True)
         """

@@ -656,3 +656,74 @@ class LibraryIndex:
             "fixed_issues": fixed,
             "unfixable_issues": unfixable
         }
+
+    def delete_scan(
+        self,
+        scan_id: str,
+        delete_files: bool = True,
+        remove_empty_book: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Delete a scan from the library and optionally remove its files.
+
+        Args:
+            scan_id: Scan identifier to delete
+            delete_files: If True, delete the scan directory from disk (default: True)
+            remove_empty_book: If True, remove book entry if it has no more scans (default: True)
+
+        Returns:
+            Dictionary with deletion results:
+            {
+                "scan_id": str,
+                "book_slug": str,
+                "deleted_from_library": bool,
+                "files_deleted": bool,
+                "book_removed": bool,
+                "scan_dir": str or None
+            }
+
+        Raises:
+            ValueError: If scan not found
+            RuntimeError: If deletion fails
+        """
+        import shutil
+
+        with self._lock:
+            # Find the scan
+            book_slug, scan_idx = self._find_scan(scan_id)
+            if book_slug is None:
+                raise ValueError(f"Scan {scan_id} not found in library")
+
+            # Get scan info before deletion
+            scan_dir = self.storage_root / scan_id
+
+            # Remove from library
+            book = self.data["books"][book_slug]
+            book["scans"].pop(scan_idx)
+
+            # Check if book now has no scans
+            book_removed = False
+            if remove_empty_book and len(book["scans"]) == 0:
+                del self.data["books"][book_slug]
+                book_removed = True
+
+            # Save library changes
+            self.save()
+
+            # Delete files if requested
+            files_deleted = False
+            if delete_files and scan_dir.exists():
+                try:
+                    shutil.rmtree(scan_dir)
+                    files_deleted = True
+                except Exception as e:
+                    raise RuntimeError(f"Failed to delete scan directory {scan_dir}: {e}") from e
+
+            return {
+                "scan_id": scan_id,
+                "book_slug": book_slug,
+                "deleted_from_library": True,
+                "files_deleted": files_deleted,
+                "book_removed": book_removed,
+                "scan_dir": str(scan_dir) if scan_dir.exists() or files_deleted else None
+            }

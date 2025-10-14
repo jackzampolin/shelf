@@ -37,7 +37,7 @@ def detect_and_validate_boundaries(
     page_mappings: List[PageMapping],
     scan_id: str,
     book_dir: Path,
-    model: str = "x-ai/grok-4-fast",
+    model: str = "google/gemma-3-27b-it",
 ) -> ValidatedBoundariesOutput:
     """
     Detect and validate chapter boundaries directly from ToC entries.
@@ -204,7 +204,7 @@ def _validate_boundary_with_vision(
     expected_pdf_page: int,
     pages: List[MergedPageOutput],
     book_dir: Path,
-    model: str = "x-ai/grok-4-fast",
+    model: str = "google/gemma-3-27b-it",
 ) -> Tuple[ValidatedBoundary | None, float]:
     """
     Validate a single boundary using vision model with progressive window expansion.

@@ -52,7 +52,8 @@ def cmd_library_add(args):
     try:
         result = add_books_to_library(
             pdf_paths=pdf_paths,
-            storage_root=Path.home() / "Documents" / "book_scans"
+            storage_root=Path.home() / "Documents" / "book_scans",
+            run_ocr=args.run_ocr
         )
 
         print(f"\n✅ Added {result['books_added']} book(s) to library")
@@ -367,6 +368,61 @@ def cmd_library_show(args):
     print()
 
 
+def cmd_library_delete(args):
+    """Delete a book from the library."""
+    from tools.library import LibraryIndex
+
+    library = LibraryIndex(storage_root=Path.home() / "Documents" / "book_scans")
+
+    # Check if scan exists
+    scan = library.get_scan_info(args.scan_id)
+    if not scan:
+        print(f"❌ Book not found: {args.scan_id}")
+        sys.exit(1)
+
+    # Confirm deletion unless --yes flag is used
+    if not args.yes:
+        print(f"\n⚠️  WARNING: This will delete:")
+        print(f"   Scan ID: {args.scan_id}")
+        print(f"   Title:   {scan['title']}")
+        print(f"   Author:  {scan['author']}")
+
+        if args.keep_files:
+            print(f"\n   Library entry will be removed (files will be kept)")
+        else:
+            scan_dir = Path.home() / "Documents" / "book_scans" / args.scan_id
+            print(f"\n   Library entry AND all files in: {scan_dir}")
+
+        try:
+            response = input("\nAre you sure? (yes/no): ").strip().lower()
+            if response not in ['yes', 'y']:
+                print("Cancelled.")
+                sys.exit(0)
+        except EOFError:
+            print("\n❌ Cancelled (no input)")
+            sys.exit(0)
+
+    # Delete the scan
+    try:
+        result = library.delete_scan(
+            scan_id=args.scan_id,
+            delete_files=not args.keep_files,
+            remove_empty_book=True
+        )
+
+        print(f"\n✅ Deleted: {result['scan_id']}")
+        if result['files_deleted']:
+            print(f"   Files deleted from: {result['scan_dir']}")
+        if result['book_removed']:
+            print(f"   Book '{result['book_slug']}' removed (no more scans)")
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
 def cmd_status(args):
     """Show pipeline status for a book."""
     from infra.checkpoint import CheckpointManager
@@ -579,7 +635,7 @@ Note: Minimal CLI during refactor (Issue #55).
     # ar process correct
     correct_parser = process_subparsers.add_parser('correct', help='Stage 2: Correction (Vision)')
     correct_parser.add_argument('scan_id', help='Book scan ID')
-    correct_parser.add_argument('--model', default='x-ai/grok-4-fast', help='Vision model (default: grok-4-fast)')
+    correct_parser.add_argument('--model', default='google/gemma-3-27b-it', help='Vision model (default: grok-4-fast)')
     correct_parser.add_argument('--workers', type=int, default=30, help='Parallel workers (default: 30)')
     correct_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     correct_parser.set_defaults(func=cmd_process_correct)
@@ -587,7 +643,7 @@ Note: Minimal CLI during refactor (Issue #55).
     # ar process label
     label_parser = process_subparsers.add_parser('label', help='Stage 3: Label (Vision)')
     label_parser.add_argument('scan_id', help='Book scan ID')
-    label_parser.add_argument('--model', default='x-ai/grok-4-fast', help='Vision model (default: grok-4-fast)')
+    label_parser.add_argument('--model', default='google/gemma-3-27b-it', help='Vision model (default: grok-4-fast)')
     label_parser.add_argument('--workers', type=int, default=30, help='Parallel workers (default: 30)')
     label_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     label_parser.set_defaults(func=cmd_process_label)
@@ -625,6 +681,7 @@ Note: Minimal CLI during refactor (Issue #55).
     # ar library add
     add_parser = library_subparsers.add_parser('add', help='Add book(s) to library')
     add_parser.add_argument('pdf_patterns', nargs='+', help='PDF file pattern(s) (e.g., accidental-president-*.pdf)')
+    add_parser.add_argument('--run-ocr', action='store_true', help='Automatically run OCR stage after adding')
     add_parser.set_defaults(func=cmd_library_add)
 
     # ar library list
@@ -635,6 +692,13 @@ Note: Minimal CLI during refactor (Issue #55).
     show_parser = library_subparsers.add_parser('show', help='Show book details')
     show_parser.add_argument('scan_id', help='Book scan ID')
     show_parser.set_defaults(func=cmd_library_show)
+
+    # ar library delete
+    delete_parser = library_subparsers.add_parser('delete', help='Delete book from library')
+    delete_parser.add_argument('scan_id', help='Book scan ID')
+    delete_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompt')
+    delete_parser.add_argument('--keep-files', action='store_true', help='Keep files on disk (only remove from library)')
+    delete_parser.set_defaults(func=cmd_library_delete)
 
     # Parse and execute
     args = parser.parse_args()

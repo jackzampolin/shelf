@@ -49,7 +49,11 @@ class BlockType(str, Enum):
     # Special
     ILLUSTRATION_CAPTION = "ILLUSTRATION_CAPTION"
     TABLE = "TABLE"
-    OTHER = "OTHER"  # Catch-all
+    MAP_LABEL = "MAP_LABEL"  # Geographic/map labels and annotations
+    DIAGRAM_LABEL = "DIAGRAM_LABEL"  # Timeline, chart, diagram labels
+    PHOTO_CREDIT = "PHOTO_CREDIT"  # Photo/image attribution text
+    OCR_ARTIFACT = "OCR_ARTIFACT"  # Garbled/nonsense text from OCR errors
+    OTHER = "OTHER"  # Catch-all (use sparingly)
 
 
 class ParagraphLabel(BaseModel):

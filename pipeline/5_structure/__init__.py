@@ -261,7 +261,7 @@ def _detect_and_validate_boundaries(
         page_mappings=page_mapping.mappings,
         scan_id=scan_id,
         book_dir=book_dir,
-        model="x-ai/grok-4-fast",
+        model="google/gemma-3-27b-it",
     )
 
     # Save checkpoint

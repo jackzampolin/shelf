@@ -2,6 +2,9 @@
 """
 Book OCR Processor
 Extracts hierarchical text blocks (Tesseract) and image regions (OpenCV)
+
+Reads source page images from {scan_id}/source/page_XXXX.png
+Writes extracted images to {scan_id}/images/page_XXXX_img_XXX.png
 """
 
 import json
@@ -9,7 +12,6 @@ import csv
 import io
 import sys
 from pathlib import Path
-from pdf2image import convert_from_path
 import pytesseract
 from datetime import datetime
 from PIL import Image
@@ -99,7 +101,7 @@ class BookOCRProcessor:
         self.enable_checkpoints = enable_checkpoints
 
     def process_book(self, book_title, resume=False):
-        """Process all batches for a given book."""
+        """Process all pages for a given book from pre-extracted PNG images."""
         book_dir = self.storage_root / book_title
 
         if not book_dir.exists():
@@ -133,175 +135,61 @@ class BookOCRProcessor:
         ocr_dir = book_dir / "ocr"
         ocr_dir.mkdir(exist_ok=True)
 
-        needs_review_dir = book_dir / "ocr" / "needs_review"
+        needs_review_dir = ocr_dir / "needs_review"
         needs_review_dir.mkdir(exist_ok=True)
 
         images_dir = book_dir / "images"
         images_dir.mkdir(exist_ok=True)
 
-        # Check if using old batch structure or new simple structure
-        if 'batches' in metadata and metadata['batches']:
-            # Old batch-based structure
-            self.logger.start_stage(
-                total_batches=len(metadata['batches']),
-                estimated_pages=metadata.get('total_pages', 'unknown'),
-                mode="batch-based",
-                max_workers=self.max_workers
-            )
+        # Get all page images from source/ directory (extracted during 'ar library add')
+        source_dir = book_dir / "source"
+        if not source_dir.exists():
+            self.logger.error(f"Source directory not found", source_dir=str(source_dir))
+            print(f"❌ Source directory not found: {source_dir}")
+            print(f"   Run 'ar library add' to extract pages first.")
+            return
 
-            total_pages = 0
-            for batch_info in metadata['batches']:
-                batch_num = batch_info['batch_number']
-                pdf_path = book_dir / "source" / "batches" / f"batch_{batch_num:03d}" / batch_info['filename']
+        # Find all source page images (page_XXXX.png)
+        page_files = sorted(source_dir.glob("page_*.png"))
 
-                if not pdf_path.exists():
-                    self.logger.warning(f"Batch {batch_num} PDF not found", batch=batch_num, pdf_path=str(pdf_path))
-                    continue
+        if not page_files:
+            self.logger.error(f"No page images found in {source_dir}")
+            print(f"❌ No page images found in {source_dir}")
+            return
 
-                pages_processed = self.process_batch(
-                    pdf_path,
-                    batch_num,
-                    ocr_dir,
-                    images_dir,
-                    batch_info['page_start'],
-                    batch_info['page_end']
-                )
-                total_pages += pages_processed
+        total_pages = len(page_files)
 
-                # Update batch status
-                batch_info['ocr_status'] = 'complete'
-                batch_info['ocr_timestamp'] = datetime.now().isoformat()
-
-        else:
-            # New simple structure - PDFs directly in source/
-            source_dir = book_dir / "source"
-            pdf_files = sorted(source_dir.glob("*.pdf"))
-
-            if not pdf_files:
-                self.logger.error(f"No PDFs found in source directory", source_dir=str(source_dir))
-                return
-
-            # Count total pages across all PDFs upfront
-            self.logger.info(f"Counting pages in {len(pdf_files)} PDFs...")
-            pdf_page_counts = []
-            total_book_pages = 0
-            for pdf_path in pdf_files:
-                try:
-                    # Quick page count without loading images
-                    from pdf2image.pdf2image import pdfinfo_from_path
-                    info = pdfinfo_from_path(pdf_path)
-                    page_count = info['Pages']
-                    pdf_page_counts.append(page_count)
-                    total_book_pages += page_count
-                except Exception as e:
-                    self.logger.warning(f"Could not count pages in {pdf_path.name}", error=str(e))
-                    pdf_page_counts.append(0)
-
-            self.logger.start_stage(
-                pdfs=len(pdf_files),
-                total_pages=total_book_pages,
-                mode="simple",
-                max_workers=self.max_workers
-            )
-
-            total_pages = 0
-            page_offset = 0  # Track page numbering across PDFs
-
-            for batch_num, pdf_path in enumerate(pdf_files, 1):
-                self.logger.info(f"Processing PDF: {pdf_path.name}", batch=batch_num, pdf=pdf_path.name)
-
-                # Process PDF
-                pages_processed = self.process_batch(
-                    pdf_path,
-                    batch_num,
-                    ocr_dir,
-                    images_dir,
-                    page_start=page_offset + 1,
-                    page_end=None,  # Will be determined during processing
-                    total_book_pages=total_book_pages  # For overall progress
-                )
-
-                total_pages += pages_processed
-                page_offset += pages_processed
-
-        # Mark stage complete in checkpoint (saves pending pages + sets status)
-        if self.checkpoint:
-            self.checkpoint.mark_stage_complete(metadata={
-                "total_pages_processed": total_pages
-            })
-
-        # Update metadata
-        metadata['ocr_complete'] = True
-        metadata['ocr_completion_date'] = datetime.now().isoformat()
-        metadata['total_pages_processed'] = total_pages
-
-        with open(metadata_file, 'w') as f:
-            json.dump(metadata, f, indent=2)
-
-        self.logger.info(
-            "OCR complete",
-            total_pages_processed=total_pages,
-            ocr_dir=str(ocr_dir),
-            images_dir=str(images_dir)
-        )
-
-        # Also print for compatibility
-        print(f"\n✅ OCR complete: {total_pages} pages processed")
-        print(f"   Output: {ocr_dir}")
-        print(f"   Images: {images_dir}")
-
-    def process_batch(self, pdf_path, batch_num, ocr_dir, images_dir, page_start, page_end, total_book_pages=None):
-        """Process a single PDF batch with layout analysis."""
-        self.logger.info(f"Starting batch {batch_num}: {pdf_path.name}", batch=batch_num, pdf=pdf_path.name)
-
-        # Write directly to ocr/ directory (flat structure)
-        batch_ocr_dir = ocr_dir
-
-        # Convert PDF to images
-        try:
-            images = convert_from_path(pdf_path, dpi=300)
-        except Exception as e:
-            self.logger.error(f"Error converting PDF", batch=batch_num, error=str(e))
-            print(f"❌ Error converting PDF: {e}")
-
-            # Mark stage as failed if this is a fatal error
-            if self.checkpoint:
-                self.checkpoint.mark_stage_failed(error=f"PDF conversion failed: {str(e)}")
-
-            # Raise to propagate error (don't silently continue)
-            raise RuntimeError(f"PDF conversion failed for {pdf_path}: {e}") from e
-
-        num_pages = len(images)
-        self.logger.info(
-            f"Processing {num_pages} pages with layout analysis",
-            batch=batch_num,
-            num_pages=num_pages,
+        self.logger.start_stage(
+            total_pages=total_pages,
+            mode="source-images",
             max_workers=self.max_workers
         )
 
-        # Prepare page tasks (filter already-completed pages if using checkpoints)
+        print(f"📄 Processing {total_pages} pages with Tesseract OCR...")
+
+        # Prepare tasks (filter already-completed pages if using checkpoints)
         tasks = []
-        for i, image in enumerate(images, start=1):
-            book_page = page_start + i - 1
+        for page_file in page_files:
+            # Extract page number from filename: page_0001.png -> 1
+            page_num = int(page_file.stem.split('_')[1])
 
             # Skip if checkpoint says page is already done
-            if self.checkpoint and self.checkpoint.validate_page_output(book_page):
+            if self.checkpoint and self.checkpoint.validate_page_output(page_num):
                 continue
 
             tasks.append({
-                'image': image,
-                'page_number': book_page,
-                'index': i,
-                'total': num_pages,
-                'batch_ocr_dir': batch_ocr_dir,
-                'needs_review_dir': batch_ocr_dir / "needs_review",
+                'page_file': page_file,
+                'page_number': page_num,
+                'ocr_dir': ocr_dir,
+                'needs_review_dir': needs_review_dir,
                 'images_dir': images_dir
             })
 
-        # If all pages already done, skip batch
+        # If all pages already done, skip
         if len(tasks) == 0:
-            self.logger.info(f"Batch {batch_num} already completed, skipping", batch=batch_num)
-            return num_pages
+            self.logger.info(f"All {total_pages} pages already completed, skipping")
+            print(f"✅ All {total_pages} pages already processed")
+            return
 
         # Process pages in parallel
         completed = 0
@@ -330,31 +218,40 @@ class BookOCRProcessor:
                 # Progress update
                 with self.progress_lock:
                     progress_count = completed + errors
-                    # If we know total book pages, show overall progress
-                    if total_book_pages:
-                        current_page = task['page_number']
-                        self.logger.progress(
-                            f"Processing book",
-                            current=current_page,
-                            total=total_book_pages,
-                            page=current_page,
-                            completed=completed + (page_start - 1),
-                            errors=errors
-                        )
-                    else:
-                        # Fallback to batch progress
-                        self.logger.progress(
-                            f"Batch {batch_num} progress",
-                            current=progress_count,
-                            total=num_pages,
-                            batch=batch_num,
-                            completed=completed,
-                            errors=errors
-                        )
+                    self.logger.progress(
+                        f"Processing pages",
+                        current=progress_count,
+                        total=len(tasks),
+                        page=task['page_number'],
+                        completed=completed,
+                        errors=errors
+                    )
 
-        self.logger.info(f"Batch {batch_num} complete", batch=batch_num, completed=completed, total=num_pages)
-        print(f"   ✅ Batch {batch_num} complete: {completed}/{num_pages} pages\n")
-        return completed
+        # Mark stage complete in checkpoint
+        if self.checkpoint:
+            self.checkpoint.mark_stage_complete(metadata={
+                "total_pages_processed": completed
+            })
+
+        # Update metadata
+        metadata['ocr_complete'] = True
+        metadata['ocr_completion_date'] = datetime.now().isoformat()
+        metadata['total_pages_processed'] = completed
+
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        self.logger.info(
+            "OCR complete",
+            total_pages_processed=completed,
+            errors=errors,
+            ocr_dir=str(ocr_dir)
+        )
+
+        print(f"\n✅ OCR complete: {completed}/{total_pages} pages processed")
+        if errors > 0:
+            print(f"   ⚠️  {errors} pages failed")
+        print(f"   Output: {ocr_dir}")
 
     def _process_single_page(self, task):
         """
@@ -364,8 +261,12 @@ class BookOCRProcessor:
             bool: True if successful, False otherwise
         """
         try:
+            # Load image from file
+            pil_image = Image.open(task['page_file'])
+
+            # Process page
             page_data = self.process_page(
-                task['image'],
+                pil_image,
                 task['page_number'],
                 task['images_dir']
             )
@@ -395,7 +296,7 @@ class BookOCRProcessor:
                 raise ValueError(f"OCR output failed schema validation: {validation_error}") from validation_error
 
             # Save validated JSON
-            json_file = task['batch_ocr_dir'] / f"page_{task['page_number']:04d}.json"
+            json_file = task['ocr_dir'] / f"page_{task['page_number']:04d}.json"
             with open(json_file, 'w', encoding='utf-8') as f:
                 json.dump(page_data, f, indent=2)
 
@@ -582,6 +483,9 @@ class BookOCRProcessor:
         """
         Clean/delete all OCR outputs and checkpoint for a book.
 
+        NOTE: This deletes images/ (extracted images from OCR) but preserves
+        source/ (source page images extracted during 'ar library add').
+
         Useful for testing and re-running OCR stage from scratch.
 
         Args:
@@ -604,12 +508,13 @@ class BookOCRProcessor:
 
         # Count what will be deleted
         ocr_files = list(ocr_dir.glob("*.json")) if ocr_dir.exists() else []
-        image_files = list(images_dir.glob("page_*.png")) if images_dir.exists() else []
+        image_files = list(images_dir.glob("page_*_img_*.png")) if images_dir.exists() else []
 
         print(f"\n🗑️  Clean OCR stage for: {scan_id}")
         print(f"   OCR outputs: {len(ocr_files)} files")
-        print(f"   Images: {len(image_files)} files")
+        print(f"   Extracted images: {len(image_files)} files")
         print(f"   Checkpoint: {'exists' if checkpoint_file.exists() else 'none'}")
+        print(f"   NOTE: Source page images (source/page_XXXX.png) will NOT be deleted")
 
         if not confirm:
             response = input("\n   Proceed? (yes/no): ").strip().lower()
@@ -623,11 +528,11 @@ class BookOCRProcessor:
             shutil.rmtree(ocr_dir)
             print(f"   ✓ Deleted {len(ocr_files)} OCR files")
 
-        # Delete images
+        # Delete extracted images directory (entire images/ directory)
         if images_dir.exists():
             import shutil
             shutil.rmtree(images_dir)
-            print(f"   ✓ Deleted {len(image_files)} image files")
+            print(f"   ✓ Deleted images/ directory ({len(image_files)} extracted images)")
 
         # Reset checkpoint
         if checkpoint_file.exists():
