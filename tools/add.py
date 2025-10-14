@@ -11,8 +11,10 @@ import shutil
 import sys
 from pathlib import Path
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing
 
 from pdf2image import convert_from_path
 
@@ -38,6 +40,38 @@ def _ensure_unique_slug(base_slug: str, existing_ids: list) -> str:
     if base_slug in existing_ids:
         raise ValueError(f"Scan ID '{base_slug}' already exists. Use --id to specify different name.")
     return base_slug
+
+
+def _extract_single_page(task: Tuple[Path, int, Path, int]) -> Tuple[bool, int, Optional[str]]:
+    """
+    Extract a single page from PDF (worker function for parallel extraction).
+
+    Args:
+        task: (pdf_path, local_page_num, output_path, dpi)
+
+    Returns:
+        (success: bool, global_page_num: int, error_msg: Optional[str])
+    """
+    pdf_path, local_page, output_path, dpi = task
+
+    try:
+        # Convert single page to image
+        page_images = convert_from_path(
+            pdf_path,
+            first_page=local_page,
+            last_page=local_page,
+            dpi=dpi
+        )
+
+        if page_images:
+            # Save as PNG
+            page_images[0].save(output_path, format='PNG')
+            return (True, None)
+        else:
+            return (False, f"No image returned for page {local_page}")
+
+    except Exception as e:
+        return (False, str(e))
 
 
 def group_batch_pdfs(pdf_paths: List[Path]) -> Dict[str, List[Path]]:
@@ -123,11 +157,14 @@ def ingest_book_group(
     source_dir = scan_dir / "source"
     source_dir.mkdir(exist_ok=True)
 
-    # Extract all pages as individual PNG files to source/
-    print(f"   Extracting pages from {len(pdf_paths)} PDF(s)...")
+    # Extract all pages as individual PNG files to source/ (parallelized)
+    print(f"   Extracting pages from {len(pdf_paths)} PDF(s) at {Config.PDF_EXTRACTION_DPI_OCR} DPI...")
     from pdf2image import pdfinfo_from_path
 
+    # Build list of all extraction tasks across all PDFs
+    tasks = []
     global_page_num = 1
+
     for pdf_idx, pdf_path in enumerate(pdf_paths, 1):
         # Copy source PDF for reference
         dest_pdf = source_dir / f"{base_name}-{pdf_idx}.pdf"
@@ -137,29 +174,45 @@ def ingest_book_group(
         info = pdfinfo_from_path(pdf_path)
         page_count = info['Pages']
 
-        print(f"     {pdf_path.name}: Extracting {page_count} pages...")
-
-        # Extract each page to source/ directory
+        # Create task for each page
         for local_page in range(1, page_count + 1):
+            output_path = source_dir / f"page_{global_page_num:04d}.png"
+            tasks.append((pdf_path, local_page, output_path, Config.PDF_EXTRACTION_DPI_OCR))
+            global_page_num += 1
+
+    total_pages = len(tasks)
+    print(f"     Processing {total_pages} pages in parallel...")
+
+    # Extract in parallel using all CPU cores
+    max_workers = multiprocessing.cpu_count()
+    completed = 0
+    failed = 0
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_task = {executor.submit(_extract_single_page, task): task for task in tasks}
+
+        for future in as_completed(future_to_task):
+            task = future_to_task[future]
+            pdf_path, local_page, output_path, dpi = task
+
             try:
-                # Convert single page to image at high quality for OCR
-                page_images = convert_from_path(
-                    pdf_path,
-                    first_page=local_page,
-                    last_page=local_page,
-                    dpi=Config.PDF_EXTRACTION_DPI_OCR  # 600 DPI for high-quality OCR
-                )
-
-                if page_images:
-                    # Save as numbered PNG in source/
-                    dest_image = source_dir / f"page_{global_page_num:04d}.png"
-                    page_images[0].save(dest_image, format='PNG')
-                    global_page_num += 1
+                success, error_msg = future.result()
+                if success:
+                    completed += 1
+                else:
+                    failed += 1
+                    print(f"       ⚠️  Failed {output_path.name}: {error_msg}")
             except Exception as e:
-                print(f"       ⚠️  Failed to extract page {local_page}: {e}")
+                failed += 1
+                print(f"       ⚠️  Exception for {output_path.name}: {e}")
 
-    total_pages = global_page_num - 1
-    print(f"     ✓ Extracted {total_pages} pages total → source/")
+            # Progress update every 10 pages
+            if (completed + failed) % 10 == 0:
+                print(f"     Progress: {completed + failed}/{total_pages} pages ({completed} ok, {failed} failed)")
+
+    print(f"     ✓ Extracted {completed}/{total_pages} pages → source/")
+    if failed > 0:
+        print(f"     ⚠️  {failed} pages failed")
 
     # Create initial metadata.json
     metadata = {
@@ -168,8 +221,10 @@ def ingest_book_group(
         "isbn": isbn,
         "scan_date": datetime.now().isoformat(),
         "source_files": [f"{base_name}-{i}.pdf" for i in range(1, len(pdf_paths) + 1)],
-        "total_pages": total_pages,
-        "status": "registered"
+        "total_pages": completed,
+        "status": "registered",
+        "extraction_dpi": Config.PDF_EXTRACTION_DPI_OCR,
+        "extraction_workers": max_workers
     }
 
     metadata_file = scan_dir / "metadata.json"
