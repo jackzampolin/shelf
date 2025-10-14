@@ -212,7 +212,8 @@ class VisionCorrector:
                 print("✅ All pages already corrected")
                 return
 
-            # Progress bar setup
+            # Process with single-pass retry logic
+            # Progress bar tracks total pages (not iterations)
             print(f"\n   Correcting {len(tasks)} pages...")
             progress = ProgressBar(
                 total=len(tasks),
@@ -221,181 +222,118 @@ class VisionCorrector:
                 unit="pages"
             )
 
-            # Process in parallel with thread-safe statistics
+            # Single-pass retry: Process → Accumulate failures → Retry failed batch
+            max_retries = 3  # Total attempts: initial + 2 retries
+            retry_count = 0
+            pending_tasks = tasks.copy()
             completed = 0
-            errors = 0
 
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                future_to_task = {
-                    executor.submit(self._process_single_page, task): task
-                    for task in tasks
-                }
+            while pending_tasks and retry_count < max_retries:
+                # Track failures for this pass
+                failed_tasks = []
 
-                for future in as_completed(future_to_task):
-                    task = future_to_task[future]
-                    try:
-                        success, cost = future.result()
-                        with self.stats_lock:
+                # Process current batch in parallel
+                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    future_to_task = {
+                        executor.submit(self._process_single_page, task): task
+                        for task in pending_tasks
+                    }
+
+                    for future in as_completed(future_to_task):
+                        task = future_to_task[future]
+                        try:
+                            success, cost = future.result()
                             if success:
-                                self.stats['pages_processed'] += 1
-                                self.stats['total_cost_usd'] += cost
+                                # Success: increment progress, update stats
+                                with self.stats_lock:
+                                    self.stats['pages_processed'] += 1
+                                    self.stats['total_cost_usd'] += cost
                                 completed += 1
-                            else:
-                                self.stats['failed_pages'] += 1
-                                errors += 1
-                    except Exception as e:
-                        with self.stats_lock:
-                            self.stats['failed_pages'] += 1
-                        errors += 1
-                        # Print error on new line (won't interfere with progress bar)
-                        print(f"\n   ⚠️  Page {task['page_num']} failed: {e}")
-                        self.logger.error(f"Page processing error", page=task['page_num'], error=str(e))
 
-                    # Update progress bar
-                    current = completed + errors
-                    with self.stats_lock:
-                        total_cost = self.stats['total_cost_usd']
-                    suffix = f"{completed} ok, ${total_cost:.2f}" + (f", {errors} failed" if errors > 0 else "")
-                    progress.update(current, suffix=suffix)
+                                # Update progress bar (only on success)
+                                with self.stats_lock:
+                                    total_cost = self.stats['total_cost_usd']
+                                suffix = f"{completed} ok, ${total_cost:.2f}"
+                                if len(failed_tasks) > 0:
+                                    suffix += f", {len(failed_tasks)} pending"
+                                progress.update(completed, suffix=suffix)
+                            else:
+                                # Failure: accumulate for retry
+                                failed_tasks.append(task)
+                        except Exception as e:
+                            # Exception: accumulate for retry
+                            failed_tasks.append(task)
+                            self.logger.error(f"Page processing exception", page=task['page_num'], error=str(e))
+
+                # After pass completes, check for failures
+                if failed_tasks:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        # Retry failed batch after delay
+                        import time
+                        delay = min(30, 10 * retry_count)  # 10s, 20s, 30s
+                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed, retrying after {delay}s (attempt {retry_count + 1}/{max_retries})...")
+                        time.sleep(delay)
+                        pending_tasks = failed_tasks
+                    else:
+                        # Max retries reached
+                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed after {max_retries} attempts")
+                        break
+                else:
+                    # All succeeded
+                    break
 
             # Finish progress bar
+            errors = len(pending_tasks) if retry_count >= max_retries else 0
             progress.finish(f"   ✓ {completed}/{len(tasks)} pages corrected")
             if errors > 0:
-                print(f"   ⚠️  {errors} pages failed")
+                failed_pages = sorted([t['page_num'] for t in pending_tasks])
+                print(f"   ⚠️  {errors} pages failed: {failed_pages[:10]}" + (f" and {len(failed_pages)-10} more" if len(failed_pages) > 10 else ""))
 
             # Get final stats under lock
             with self.stats_lock:
                 completed = self.stats['pages_processed']
-                errors = self.stats['failed_pages']
                 total_cost = self.stats['total_cost_usd']
 
-            # Mark stage complete with cost in metadata
-            if self.checkpoint:
-                self.checkpoint.mark_stage_complete(metadata={
-                    "model": self.model,
-                    "total_cost_usd": total_cost,
-                    "pages_processed": completed
-                })
+            # Only mark stage complete if ALL pages succeeded
+            if errors == 0:
+                # Mark stage complete with cost in metadata
+                if self.checkpoint:
+                    self.checkpoint.mark_stage_complete(metadata={
+                        "model": self.model,
+                        "total_cost_usd": total_cost,
+                        "pages_processed": completed
+                    })
 
-            # Update metadata
-            metadata['correction_complete'] = True
-            metadata['correction_completion_date'] = datetime.now().isoformat()
-            metadata['correction_total_cost'] = total_cost
+                # Update metadata
+                metadata['correction_complete'] = True
+                metadata['correction_completion_date'] = datetime.now().isoformat()
+                metadata['correction_total_cost'] = total_cost
 
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
+                with open(metadata_file, 'w') as f:
+                    json.dump(metadata, f, indent=2)
 
-            # Log completion to file (not stdout)
-            self.logger.info(
-                "Correction complete",
-                pages_corrected=completed,
-                total_cost=total_cost,
-                avg_cost_per_page=total_cost / completed if completed > 0 else 0,
-                corrected_dir=str(corrected_dir)
-            )
+                # Log completion to file (not stdout)
+                self.logger.info(
+                    "Correction complete",
+                    pages_corrected=completed,
+                    total_cost=total_cost,
+                    avg_cost_per_page=total_cost / completed if completed > 0 else 0,
+                    corrected_dir=str(corrected_dir)
+                )
 
-            # Print stage exit
-            print(f"\n✅ Correction complete: {completed}/{total_pages} pages")
-            print(f"   Total cost: ${total_cost:.2f}")
-            print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
-
-            # Auto-retry failed pages until complete or max retries reached
-            if errors > 0:
-                retry_count = 0
-                max_auto_retries = 10  # Aggressive retry (up to 10 attempts)
-
-                print(f"\n⚠️  {errors} page(s) failed. Starting auto-retry loop...")
-                print(f"   Will retry up to {max_auto_retries} times until all pages succeed")
-
-                while errors > 0 and retry_count < max_auto_retries:
-                    retry_count += 1
-
-                    # Short delay for transient errors (422s recover quickly)
-                    delay = min(30, 10 * retry_count)  # 10s, 20s, 30s, then stay at 30s
-                    print(f"\n   Retry attempt {retry_count}/{max_auto_retries} after {delay}s...")
-
-                    import time
-                    time.sleep(delay)
-
-                    # Get remaining pages directly from checkpoint
-                    if self.checkpoint:
-                        remaining_pages = self.checkpoint.get_remaining_pages(
-                            total_pages=total_pages,
-                            resume=True
-                        )
-
-                        # Rebuild tasks for failed pages only
-                        retry_tasks = []
-                        for page_num in remaining_pages:
-                            ocr_file = ocr_dir / f"page_{page_num:04d}.json"
-                            page_file = source_dir / f"page_{page_num:04d}.png"
-
-                            if not ocr_file.exists() or not page_file.exists():
-                                continue
-
-                            retry_tasks.append({
-                                'page_num': page_num,
-                                'ocr_file': ocr_file,
-                                'page_file': page_file,
-                                'corrected_dir': corrected_dir
-                            })
-
-                        if retry_tasks:
-                            print(f"   Retrying {len(retry_tasks)} failed page(s)...")
-
-                            # Process retry tasks in parallel
-                            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                                future_to_task = {
-                                    executor.submit(self._process_single_page, task): task
-                                    for task in retry_tasks
-                                }
-
-                                for future in as_completed(future_to_task):
-                                    task = future_to_task[future]
-                                    try:
-                                        success, cost = future.result()
-                                        if success:
-                                            with self.stats_lock:
-                                                self.stats['pages_processed'] += 1
-                                                self.stats['total_cost_usd'] += cost
-                                        # Note: failures are already logged in _process_single_page
-                                    except Exception as e:
-                                        with self.progress_lock:
-                                            self.logger.error(f"Page retry error", page=task['page_num'], error=str(e))
-
-                    # Check how many failures remain
-                    if self.checkpoint:
-                        status = self.checkpoint.get_status()
-                        total = status.get('total_pages', 0)
-                        completed_pages = len(status.get('completed_pages', []))
-                        errors = total - completed_pages
-
-                    if errors == 0:
-                        print(f"\n🎉 All pages succeeded after {retry_count} auto-retry(ies)!")
-                        break
-
-                if errors > 0:
-                    # Get list of failed pages for better diagnostics
-                    if self.checkpoint:
-                        status = self.checkpoint.get_status()
-                        total_pages_set = set(range(1, status.get('total_pages', 0) + 1))
-                        completed_set = set(status.get('completed_pages', []))
-                        failed_pages = sorted(total_pages_set - completed_set)
-
-                        print(f"\n⚠️  {errors} page(s) still failing after {max_auto_retries} auto-retries")
-                        print(f"   Failed pages: {failed_pages[:20]}")  # Show first 20
-                        if len(failed_pages) > 20:
-                            print(f"   ... and {len(failed_pages) - 20} more")
-                        print(f"\n   These may be:")
-                        print(f"   - Pages with oversized content (>1MB)")
-                        print(f"   - Pages with complex layouts causing xAI issues")
-                        print(f"   - Persistent model errors")
-                        print(f"\n   Try:")
-                        print(f"   1. Run again with --resume (will retry {max_auto_retries} more times)")
-                        print(f"   2. Check logs for specific error patterns")
-                        print(f"   3. Consider skipping these pages if non-critical")
-                    else:
-                        print(f"\n⚠️  {errors} page(s) still failing after {max_auto_retries} auto-retries")
+                # Print stage exit (success)
+                print(f"\n✅ Correction complete: {completed}/{total_pages} pages")
+                print(f"   Total cost: ${total_cost:.2f}")
+                print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
+            else:
+                # Stage incomplete - some pages failed
+                failed_pages = sorted([t['page_num'] for t in pending_tasks])
+                print(f"\n⚠️  Correction incomplete: {completed}/{total_pages} pages succeeded")
+                print(f"   Total cost: ${total_cost:.2f}")
+                print(f"   Failed pages: {failed_pages}")
+                print(f"\n   To retry failed pages:")
+                print(f"   uv run python ar.py process correction {book_title} --resume")
 
         except Exception as e:
             # Stage-level error handler
