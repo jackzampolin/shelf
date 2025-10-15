@@ -174,7 +174,8 @@ def cmd_process_correct(args):
         processor = VisionCorrector(
             storage_root=str(Path.home() / "Documents" / "book_scans"),
             model=args.model,
-            max_workers=args.workers
+            max_workers=args.workers,
+            max_retries=1 if getattr(args, 'no_retry', False) else 3
         )
         processor.process_book(args.scan_id, resume=args.resume)
 
@@ -638,6 +639,7 @@ Note: Minimal CLI during refactor (Issue #55).
     correct_parser.add_argument('--model', default='google/gemini-2.5-flash-lite-preview-09-2025', help='Vision model (default: google/gemini-2.5-flash-lite-preview-09-2025)')
     correct_parser.add_argument('--workers', type=int, default=30, help='Parallel workers (default: 30)')
     correct_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
+    correct_parser.add_argument('--no-retry', action='store_true', help='Disable retries (for failure analysis)')
     correct_parser.set_defaults(func=cmd_process_correct)
 
     # ar process label

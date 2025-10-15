@@ -48,7 +48,7 @@ class VisionCorrector:
     Supports checkpoint-based resume and parallel processing.
     """
 
-    def __init__(self, storage_root=None, model="google/gemini-2.5-flash-lite-preview-09-2025", max_workers=30, enable_checkpoints=True):
+    def __init__(self, storage_root=None, model="google/gemini-2.5-flash-lite-preview-09-2025", max_workers=30, enable_checkpoints=True, max_retries=3):
         """
         Initialize the VisionCorrector.
 
@@ -57,10 +57,12 @@ class VisionCorrector:
             model: LLM model to use for correction (default: google/gemini-2.5-flash-lite-preview-09-2025)
             max_workers: Number of parallel workers (default: 30)
             enable_checkpoints: Enable checkpoint-based resume (default: True)
+            max_retries: Maximum retry attempts for failed pages (default: 3, use 1 for no retries)
         """
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
         self.model = model
         self.max_workers = max_workers
+        self.max_retries = max_retries
         self.progress_lock = threading.Lock()
         self.stats_lock = threading.Lock()  # Lock for thread-safe statistics updates
         self.stats = {
@@ -223,12 +225,11 @@ class VisionCorrector:
             )
 
             # Single-pass retry: Process → Accumulate failures → Retry failed batch
-            max_retries = 3  # Total attempts: initial + 2 retries
             retry_count = 0
             pending_tasks = tasks.copy()
             completed = 0
 
-            while pending_tasks and retry_count < max_retries:
+            while pending_tasks and retry_count < self.max_retries:
                 # Track failures for this pass
                 failed_tasks = []
 
@@ -257,7 +258,7 @@ class VisionCorrector:
                                 # Suffix: Just cost, with attempt indicator if retrying
                                 suffix = f"${total_cost:.2f}"
                                 if retry_count > 0:
-                                    suffix += f" (attempt {retry_count + 1}/{max_retries})"
+                                    suffix += f" (attempt {retry_count + 1}/{self.max_retries})"
 
                                 progress.update(completed, suffix=suffix)
                             else:
@@ -271,24 +272,24 @@ class VisionCorrector:
                 # After pass completes, check for failures
                 if failed_tasks:
                     retry_count += 1
-                    if retry_count < max_retries:
+                    if retry_count < self.max_retries:
                         # Retry failed batch after delay
                         import time
                         delay = min(30, 10 * retry_count)  # 10s, 20s, 30s
-                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed, retrying after {delay}s (attempt {retry_count + 1}/{max_retries})...")
+                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed, retrying after {delay}s (attempt {retry_count + 1}/{self.max_retries})...")
                         time.sleep(delay)
                         pending_tasks = failed_tasks
                     else:
                         # Max retries reached - update pending_tasks to final failures
                         pending_tasks = failed_tasks
-                        print(f"\n   ⚠️  {len(pending_tasks)} page(s) failed after {max_retries} attempts")
+                        print(f"\n   ⚠️  {len(pending_tasks)} page(s) failed after {self.max_retries} attempts")
                         break
                 else:
                     # All succeeded
                     break
 
             # Finish progress bar
-            errors = len(pending_tasks) if retry_count >= max_retries else 0
+            errors = len(pending_tasks) if retry_count >= self.max_retries else 0
             progress.finish(f"   ✓ {completed}/{len(tasks)} pages corrected")
             if errors > 0:
                 failed_pages = sorted([t['page_num'] for t in pending_tasks])
@@ -443,13 +444,13 @@ class VisionCorrector:
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "block_num": {"type": "integer"},
+                                    "block_num": {"type": "integer", "minimum": 1},
                                     "paragraphs": {
                                         "type": "array",
                                         "items": {
                                             "type": "object",
                                             "properties": {
-                                                "par_num": {"type": "integer"},
+                                                "par_num": {"type": "integer", "minimum": 1},
                                                 "text": {"type": ["string", "null"]},
                                                 "notes": {"type": ["string", "null"]},
                                                 "confidence": {"type": "number"}
@@ -525,6 +526,7 @@ CRITICAL RULES (READ THESE FIRST)
 ═══════════════════════════════════════════════════════════════════════
 
 1. OUTPUT FORMAT:
+   - Use 1-based numbering: block_num and par_num start at 1 (not 0)
    - If NO errors: text=null, notes="No OCR errors detected"
    - If errors found: text=CORRECTED_FULL_PARAGRAPH, notes="Brief description"
 
@@ -547,8 +549,13 @@ OCR: "The president announced the policy today."
 → Output: {"text": null, "notes": "No OCR errors detected", "confidence": 1.0}
 
 Example 2: Line-Break Hyphen (Most Common - 70% of fixes)
-OCR: "The presi- dent announced the policy."
-→ Output: {"text": "The president announced the policy.", "notes": "Removed line-break hyphen in 'president'", "confidence": 0.97}
+OCR: "The cam- paign in Kan- sas"
+Image shows: "The campaign in Kansas" (no hyphens in original)
+→ Output: {"text": "The campaign in Kansas", "notes": "Removed line-break hyphens: 'cam- paign'→'campaign', 'Kan- sas'→'Kansas'", "confidence": 0.97}
+
+CRITICAL: Remove BOTH the hyphen AND the space (join word parts completely)
+❌ WRONG: "cam-paign" (kept hyphen, removed space)
+✅ CORRECT: "campaign" (removed hyphen AND space)
 
 Example 3: Character Substitution
 OCR: "The modem world"
@@ -564,7 +571,9 @@ WHAT TO FIX
 ═══════════════════════════════════════════════════════════════════════
 
 ✅ FIX THESE (Character-Level OCR Errors Only):
-• Line-break hyphens: "presi- dent" → "president" (70% of all corrections)
+• Line-break hyphens: "cam- paign" → "campaign" (remove BOTH hyphen + space)
+  Pattern: [word]- [space][word] → join into single word
+  Note: These are printing artifacts where words split across lines
 • Character swaps: rn→m, cl→d, li→h, 1→l, 0→O
 • Ligatures: fi, fl, ff, ffi, ffl misread
 • Spacing: "thebook"→"the book" or "a  book"→"a book"
@@ -573,7 +582,8 @@ WHAT TO FIX
 ❌ DO NOT FIX:
 • Grammar, writing quality, word choice
 • Historical spellings (keep "connexion", old terms)
-• Compound hyphens (keep "self-aware", "pre-WWI", "T-Force")
+• Real compound hyphens: Keep "self-aware", "Vice-President", "pre-WWI", "T-Force"
+  (No space after hyphen = real hyphen, keep it!)
 • Facts, dates, numbers (not your job to validate)
 • Capitalization style preferences
 
@@ -655,14 +665,17 @@ Remember: You are correcting OCR reading errors, not editing content. Most parag
 
         corrected_dir = book_dir / "corrected"
         checkpoint_file = book_dir / "checkpoints" / "correction.json"
+        logs_dir = book_dir / "logs"
         metadata_file = book_dir / "metadata.json"
 
         # Count what will be deleted
         corrected_files = list(corrected_dir.glob("*.json")) if corrected_dir.exists() else []
+        log_files = list(logs_dir.glob("correction_*.jsonl")) if logs_dir.exists() else []
 
         print(f"\n🗑️  Clean Correction stage for: {scan_id}")
         print(f"   Corrected outputs: {len(corrected_files)} files")
         print(f"   Checkpoint: {'exists' if checkpoint_file.exists() else 'none'}")
+        print(f"   Logs: {len(log_files)} files")
 
         if not confirm:
             response = input("\n   Proceed? (yes/no): ").strip().lower()
@@ -675,6 +688,12 @@ Remember: You are correcting OCR reading errors, not editing content. Most parag
             import shutil
             shutil.rmtree(corrected_dir)
             print(f"   ✓ Deleted {len(corrected_files)} corrected files")
+
+        # Delete log files
+        if log_files:
+            for log_file in log_files:
+                log_file.unlink()
+            print(f"   ✓ Deleted {len(log_files)} log files")
 
         # Reset checkpoint
         if checkpoint_file.exists():
