@@ -23,6 +23,7 @@ from infra.logger import create_logger
 from infra.checkpoint import CheckpointManager
 from infra.llm_client import LLMClient
 from infra.pdf_utils import downsample_for_vision
+from infra.progress import ProgressBar
 
 # Import schemas
 import importlib
@@ -97,10 +98,10 @@ class VisionLabeler:
         with open(metadata_file, 'r') as f:
             metadata = json.load(f)
 
-        # Initialize logger
+        # Initialize logger (file only, no console spam)
         logs_dir = book_dir / "logs"
         logs_dir.mkdir(exist_ok=True)
-        self.logger = create_logger(book_title, "label", log_dir=logs_dir)
+        self.logger = create_logger(book_title, "label", log_dir=logs_dir, console_output=False)
 
         # Initialize LLM client
         self.llm_client = LLMClient()
@@ -173,6 +174,12 @@ class VisionLabeler:
                 max_workers=self.max_workers
             )
 
+            # Stage entry
+            print(f"\n🏷️  Label Stage ({book_title})")
+            print(f"   Pages:     {total_pages}")
+            print(f"   Workers:   {self.max_workers}")
+            print(f"   Model:     {self.model}")
+
             # Get source page images (extracted during 'ar library add')
             source_dir = book_dir / "source"
             if not source_dir.exists():
@@ -214,157 +221,131 @@ class VisionLabeler:
                 print("✅ All pages already labeled")
                 return
 
-            # Process in parallel with thread-safe statistics
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                future_to_task = {
-                    executor.submit(self._process_single_page, task): task
-                    for task in tasks
-                }
+            # Process with single-pass retry logic
+            # Progress bar tracks total pages (not iterations)
+            print(f"\n   Labeling {len(tasks)} pages...")
+            progress = ProgressBar(
+                total=len(tasks),
+                prefix="   ",
+                width=40,
+                unit="pages"
+            )
 
-                for future in as_completed(future_to_task):
-                    task = future_to_task[future]
-                    try:
-                        success, cost = future.result()
-                        with self.stats_lock:
+            # Single-pass retry: Process → Accumulate failures → Retry failed batch
+            max_retries = 3  # Total attempts: initial + 2 retries
+            retry_count = 0
+            pending_tasks = tasks.copy()
+            completed = 0
+
+            while pending_tasks and retry_count < max_retries:
+                # Track failures for this pass
+                failed_tasks = []
+
+                # Process current batch in parallel
+                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    future_to_task = {
+                        executor.submit(self._process_single_page, task): task
+                        for task in pending_tasks
+                    }
+
+                    for future in as_completed(future_to_task):
+                        task = future_to_task[future]
+                        try:
+                            success, cost = future.result()
                             if success:
-                                self.stats['pages_processed'] += 1
-                                self.stats['total_cost_usd'] += cost
+                                # Success: increment progress, update stats
+                                with self.stats_lock:
+                                    self.stats['pages_processed'] += 1
+                                    self.stats['total_cost_usd'] += cost
+                                completed += 1
+
+                                # Update progress bar (only on success)
+                                with self.stats_lock:
+                                    total_cost = self.stats['total_cost_usd']
+
+                                # Suffix: Just cost, with attempt indicator if retrying
+                                suffix = f"${total_cost:.2f}"
+                                if retry_count > 0:
+                                    suffix += f" (attempt {retry_count + 1}/{max_retries})"
+
+                                progress.update(completed, suffix=suffix)
                             else:
-                                self.stats['failed_pages'] += 1
-                    except Exception as e:
-                        with self.stats_lock:
-                            self.stats['failed_pages'] += 1
-                        with self.progress_lock:
-                            self.logger.error(f"Page processing error", page=task['page_num'], error=str(e))
+                                # Failure: accumulate for retry
+                                failed_tasks.append(task)
+                        except Exception as e:
+                            # Exception: accumulate for retry
+                            failed_tasks.append(task)
+                            self.logger.error(f"Page processing exception", page=task['page_num'], error=str(e))
 
-                    # Progress update (read stats under lock)
-                    with self.stats_lock:
-                        completed = self.stats['pages_processed']
-                        errors = self.stats['failed_pages']
-                        total_cost = self.stats['total_cost_usd']
+                # After pass completes, check for failures
+                if failed_tasks:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        # Retry failed batch after delay
+                        import time
+                        delay = min(30, 10 * retry_count)  # 10s, 20s, 30s
+                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed, retrying after {delay}s (attempt {retry_count + 1}/{max_retries})...")
+                        time.sleep(delay)
+                        pending_tasks = failed_tasks
+                    else:
+                        # Max retries reached
+                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed after {max_retries} attempts")
+                        break
+                else:
+                    # All succeeded
+                    break
 
-                    with self.progress_lock:
-                        progress_count = completed + errors
-                        self.logger.progress(
-                            f"Labeling pages",
-                            current=progress_count,
-                            total=len(tasks),
-                            completed=completed,
-                            errors=errors,
-                            cost=total_cost
-                        )
+            # Finish progress bar
+            errors = len(pending_tasks) if retry_count >= max_retries else 0
+            progress.finish(f"   ✓ {completed}/{len(tasks)} pages labeled")
+            if errors > 0:
+                failed_pages = sorted([t['page_num'] for t in pending_tasks])
+                print(f"   ⚠️  {errors} pages failed: {failed_pages[:10]}" + (f" and {len(failed_pages)-10} more" if len(failed_pages) > 10 else ""))
 
             # Get final stats under lock
             with self.stats_lock:
                 completed = self.stats['pages_processed']
-                errors = self.stats['failed_pages']
                 total_cost = self.stats['total_cost_usd']
 
-            # Mark stage complete with cost in metadata
-            if self.checkpoint:
-                self.checkpoint.mark_stage_complete(metadata={
-                    "model": self.model,
-                    "total_cost_usd": total_cost,
-                    "pages_processed": completed
-                })
+            # Only mark stage complete if ALL pages succeeded
+            if errors == 0:
+                # Mark stage complete with cost in metadata
+                if self.checkpoint:
+                    self.checkpoint.mark_stage_complete(metadata={
+                        "model": self.model,
+                        "total_cost_usd": total_cost,
+                        "pages_processed": completed
+                    })
 
-            # Update metadata
-            metadata['labels_complete'] = True
-            metadata['labels_completion_date'] = datetime.now().isoformat()
-            metadata['labels_total_cost'] = total_cost
+                # Update metadata
+                metadata['labels_complete'] = True
+                metadata['labels_completion_date'] = datetime.now().isoformat()
+                metadata['labels_total_cost'] = total_cost
 
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
+                with open(metadata_file, 'w') as f:
+                    json.dump(metadata, f, indent=2)
 
-            self.logger.info(
-                "Labeling complete",
-                pages_labeled=completed,
-                total_cost=total_cost,
-                avg_cost_per_page=total_cost / completed if completed > 0 else 0,
-                labels_dir=str(labels_dir)
-            )
+                # Log completion to file (not stdout)
+                self.logger.info(
+                    "Labeling complete",
+                    pages_labeled=completed,
+                    total_cost=total_cost,
+                    avg_cost_per_page=total_cost / completed if completed > 0 else 0,
+                    labels_dir=str(labels_dir)
+                )
 
-            print(f"\n✅ Labeling complete: {completed} pages")
-            print(f"   Total cost: ${total_cost:.2f}")
-            print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
-            print(f"   Output: {labels_dir}")
-
-            # Auto-retry failed pages (xAI cache workaround)
-            # If there were failures and this wasn't already a resume, automatically retry
-            if errors > 0 and not resume:
-                retry_count = 0
-                max_auto_retries = 2
-
-                while errors > 0 and retry_count < max_auto_retries:
-                    retry_count += 1
-
-                    # Wait before retrying to allow xAI cache to expire
-                    # Longer delays to avoid cache hits: 90s, 180s
-                    delay = 90 * retry_count
-                    print(f"\n⚠️  {errors} page(s) failed. Waiting {delay}s for xAI cache to clear...")
-                    print(f"   Then auto-retrying (attempt {retry_count}/{max_auto_retries})")
-
-                    import time
-                    time.sleep(delay)
-
-                    # Get remaining pages directly from checkpoint
-                    if self.checkpoint:
-                        remaining_pages = self.checkpoint.get_remaining_pages(
-                            total_pages=total_pages,
-                            resume=True
-                        )
-
-                        # Rebuild tasks for failed pages only
-                        retry_tasks = []
-                        for page_num in remaining_pages:
-                            ocr_file = ocr_dir / f"page_{page_num:04d}.json"
-                            if not ocr_file.exists():
-                                continue
-
-                            retry_tasks.append({
-                                'page_num': page_num,
-                                'ocr_file': ocr_file,
-                                'pdf_files': pdf_files,
-                                'labels_dir': labels_dir
-                            })
-
-                        if retry_tasks:
-                            print(f"   Retrying {len(retry_tasks)} failed page(s)...")
-
-                            # Process retry tasks in parallel
-                            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                                future_to_task = {
-                                    executor.submit(self._process_single_page, task): task
-                                    for task in retry_tasks
-                                }
-
-                                for future in as_completed(future_to_task):
-                                    task = future_to_task[future]
-                                    try:
-                                        success, cost = future.result()
-                                        if success:
-                                            with self.stats_lock:
-                                                self.stats['pages_processed'] += 1
-                                                self.stats['total_cost_usd'] += cost
-                                        # Note: failures are already logged in _process_single_page
-                                    except Exception as e:
-                                        with self.progress_lock:
-                                            self.logger.error(f"Page retry error", page=task['page_num'], error=str(e))
-
-                    # Check how many failures remain
-                    if self.checkpoint:
-                        status = self.checkpoint.get_status()
-                        total = status.get('total_pages', 0)
-                        completed_pages = len(status.get('completed_pages', []))
-                        errors = total - completed_pages
-
-                    if errors == 0:
-                        print(f"\n🎉 All pages succeeded after {retry_count} auto-retry(ies)!")
-                        break
-
-                if errors > 0:
-                    print(f"\n⚠️  {errors} page(s) still failing after {max_auto_retries} auto-retries")
-                    print(f"   Run with --resume to try again, or these may be persistent xAI issues")
+                # Print stage exit (success)
+                print(f"\n✅ Label complete: {completed}/{total_pages} pages")
+                print(f"   Total cost: ${total_cost:.2f}")
+                print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
+            else:
+                # Stage incomplete - some pages failed
+                failed_pages = sorted([t['page_num'] for t in pending_tasks])
+                print(f"\n⚠️  Label incomplete: {completed}/{total_pages} pages succeeded")
+                print(f"   Total cost: ${total_cost:.2f}")
+                print(f"   Failed pages: {failed_pages}")
+                print(f"\n   To retry failed pages:")
+                print(f"   uv run python ar.py process label {book_title} --resume")
 
         except Exception as e:
             # Stage-level error handler

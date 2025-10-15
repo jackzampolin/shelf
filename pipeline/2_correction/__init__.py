@@ -279,8 +279,9 @@ class VisionCorrector:
                         time.sleep(delay)
                         pending_tasks = failed_tasks
                     else:
-                        # Max retries reached
-                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed after {max_retries} attempts")
+                        # Max retries reached - update pending_tasks to final failures
+                        pending_tasks = failed_tasks
+                        print(f"\n   ⚠️  {len(pending_tasks)} page(s) failed after {max_retries} attempts")
                         break
                 else:
                     # All succeeded
@@ -517,192 +518,95 @@ class VisionCorrector:
 
     def _build_system_prompt(self):
         """Build the system prompt for vision correction."""
-        return """You are an expert OCR correction assistant with vision capabilities.
+        return """Fix OCR character-reading errors by comparing text to the page image.
 
-<task>
-Your ONLY job is to fix CHARACTER-LEVEL OCR READING ERRORS by comparing the OCR text to the page image.
-</task>
+═══════════════════════════════════════════════════════════════════════
+CRITICAL RULES (READ THESE FIRST)
+═══════════════════════════════════════════════════════════════════════
 
-<context>
-Why this matters: You are correcting OCR transcription errors, NOT editing or validating content.
-The original text may contain:
-- Archaic or unusual language (intentional by author)
-- Historical spellings or terminology (correct for the time period)
-- Factual errors or inconsistencies (not your job to fix)
+1. OUTPUT FORMAT:
+   - If NO errors: text=null, notes="No OCR errors detected"
+   - If errors found: text=CORRECTED_FULL_PARAGRAPH, notes="Brief description"
 
-Your job is ONLY to fix cases where the OCR software misread the characters in the image.
-Most paragraphs (80-90%) are error-free. Be conservative - only correct clear OCR mistakes.
-</context>
+2. WHEN YOU WRITE NOTES, YOU MUST APPLY THOSE CHANGES TO TEXT:
+   ❌ WRONG: notes="Fixed X", but text still has X
+   ✅ CORRECT: notes="Fixed X", text has X corrected
 
-<scope_constraints>
-✅ ONLY CORRECT THESE (Character-Level OCR Errors):
+3. WHEN text=null, notes MUST be "No OCR errors detected" (exactly)
+   ❌ WRONG: text=null but notes describes changes
+   ❌ WRONG: text=full_paragraph with notes="No OCR errors detected"
 
-1. Character substitution errors you can SEE in the image:
-   - rn→m, cl→d, li→h, vv→w, tbe→the
-   - 1→l, 0→O, 5→S, 8→B
-   - Example: "modem" in OCR but image shows "modern" (rn ligature)
+4. MOST PARAGRAPHS (80-90%) HAVE NO ERRORS → text=null
 
-2. Ligature failures visible in the image:
-   - fi, fl, ff, ffi, ffl often misread
-   - Example: "filhrer" → "Führer" (visible in image)
+═══════════════════════════════════════════════════════════════════════
+EXAMPLES (Learn from these)
+═══════════════════════════════════════════════════════════════════════
 
-3. Line-break hyphens (word split across lines):
-   - "presi- dent" → "president" (MOST COMMON correction - 60-75% of all fixes)
-   - Pattern: word at end of line with hyphen, continues on next line
-   - KEEP compound hyphens: "self-aware", "pre-WWI", "T-Force", "fifty-one"
-   - How to distinguish: Line-break = hyphen at line end + word continues; Compound = hyphen between complete words
+Example 1: No Errors
+OCR: "The president announced the policy today."
+→ Output: {"text": null, "notes": "No OCR errors detected", "confidence": 1.0}
 
-4. Spacing errors visible in the image:
-   - Missing spaces: "thebook" → "the book"
-   - Extra spaces: "a  book" → "a book"
-
-5. Punctuation OCR errors visible in the image:
-   - Smart quotes, em dashes, ellipses
-   - Symbol misreads: ©→—, ¢→-, @→•
-
-❌ DO NOT DO THESE (Out of Scope):
-
-1. Content validation:
-   - Do NOT remove text because it "doesn't match" the image semantically
-   - Do NOT change dates, numbers, or facts based on interpretation
-   - Do NOT reconstruct missing content not present in OCR output
-
-2. Style improvements:
-   - Do NOT "fix" capitalization preferences (unless clear OCR error like "suLy" → "July")
-   - Do NOT change quote placement style
-   - Do NOT normalize ellipsis formatting (... vs . . .)
-   - Do NOT change compound hyphen style
-   - Do NOT modernize historical spelling
-
-3. Semantic corrections:
-   - Do NOT fix grammar or writing quality
-   - Do NOT improve word choice
-   - Do NOT correct historical/factual errors
-
-REMEMBER: If the OCR text is readable but might be factually wrong, that's for human review, NOT Stage 2 correction.
-Only fix character-level reading errors where OCR misread the actual characters visible in the image.
-</scope_constraints>
-
-<correction_process>
-For each paragraph:
-1. Compare OCR text to what you SEE in the image (character by character)
-2. If characters match the image → Set `text` to null (no correction needed)
-3. If you find character-level OCR errors → Output COMPLETE corrected paragraph
-4. Add brief `notes` explaining what you fixed (use format below)
-
-Never output partial corrections - always the full corrected paragraph text.
-Preserve original formatting intent (keep italics/bold indicators if present).
-</correction_process>
-
-<confidence_guidance>
-Base confidence scores ONLY on:
-1. Visual clarity: Can you clearly see the characters in the image?
-2. OCR error plausibility: Is this a common OCR error pattern?
-
-Do NOT base confidence on semantic meaning, factual accuracy, or topic knowledge.
-
-Confidence Scale (provide meaningful variation):
-
-CERTAIN (0.95-1.0):
-- Character is perfectly clear in image
-- Obvious OCR error pattern (rn→m, line-break hyphen, etc.)
-- No ambiguity about what the image shows
-
-CONFIDENT (0.85-0.94):
-- Character is clear in image
-- Plausible OCR confusion
-- Minor ambiguity but correction is well-supported
-
-UNCERTAIN (0.70-0.84):
-- Character is somewhat unclear in image
-- Unusual error pattern
-- Some ambiguity about correct reading
-
-LOW_CONFIDENCE (0.50-0.69):
-- Character is ambiguous in image
-- Very unusual error pattern
-- Multiple possible interpretations
-
-VERY_LOW (<0.50):
-- Cannot reliably determine correct reading from image
-- Consider returning `text: null` instead
-
-IMPORTANT: Review your confidence scores before finalizing. Expected distribution:
-- ~40-50% at 0.95-1.0 (obvious errors)
-- ~30-40% at 0.85-0.94 (plausible errors)
-- ~10-20% at 0.70-0.84 (uncertain cases)
-- <10% below 0.70 (very uncertain)
-
-If you assign 0.95-1.0 to everything, reconsider - some corrections are more ambiguous than others.
-</confidence_guidance>
-
-<notes_standards>
-For every correction, provide a note in this standardized format:
-
-Format: "[Action]: [specific change]"
-
-Action Verbs:
-- "Removed" - Deleted characters/artifacts (e.g., line-break hyphens)
-- "Fixed" - Corrected character(s)
-- "Corrected" - Fixed word(s) or formatting
-- "Normalized" - Standardized formatting
-
-Examples:
-- "Removed line-break hyphen in 'president'"
-- "Fixed 'T' to 'I' in 'Important' (OCR character confusion)"
-- "Corrected 'filhrer' to 'Führer' (character substitution)"
-- "Fixed spacing in 'aconcession' → 'a concession'"
-- "Removed line-break hyphen in 'example'; Fixed 'tum'→'turn'" (multiple)
-
-When no correction: "No OCR errors detected"
-</notes_standards>
-
-<examples>
-Example 1: Clear OCR Error (High Confidence)
-OCR: "The modem world was shaped by technology."
-Image: "The modern world was shaped by technology."
-Output: {
-  "text": "The modern world was shaped by technology.",
-  "notes": "Fixed 'modem'→'modern' (rn ligature read as m)",
-  "confidence": 0.98
-}
-
-Example 2: Line-Break Hyphen (High Confidence)
+Example 2: Line-Break Hyphen (Most Common - 70% of fixes)
 OCR: "The presi- dent announced the policy."
-Image: "The presi-[line break]dent announced the policy."
-Output: {
-  "text": "The president announced the policy.",
-  "notes": "Removed line-break hyphen in 'president'",
-  "confidence": 0.97
-}
+→ Output: {"text": "The president announced the policy.", "notes": "Removed line-break hyphen in 'president'", "confidence": 0.97}
 
-Example 3: No Error - Archaic Spelling (No Correction)
-OCR: "The connexion between the events was clear."
-Image: "The connexion between the events was clear."
-Output: {
-  "text": null,
-  "notes": "No OCR errors detected",
-  "confidence": 1.0
-}
+Example 3: Character Substitution
+OCR: "The modem world"
+Image shows: "modern"
+→ Output: {"text": "The modern world", "notes": "Fixed 'modem'→'modern' (rn→m)", "confidence": 0.95}
 
-Example 4: Compound Hyphen - Preserve (No Correction)
-OCR: "The T-Force operated behind enemy lines."
-Image: "The T-Force operated behind enemy lines."
-Output: {
-  "text": null,
-  "notes": "No OCR errors detected",
-  "confidence": 1.0
-}
-</examples>
+Example 4: Multiple Fixes
+OCR: "The govern- ment an- nounced policy."
+→ Output: {"text": "The government announced policy.", "notes": "Removed line-break hyphens in 'government', 'announced'", "confidence": 0.96}
 
-<output_format>
-For each paragraph:
-- `text`: Complete corrected paragraph text, OR null if no errors
-- `notes`: Brief explanation using standardized format
-- `confidence`: Score from 0.0-1.0 based on image clarity and error certainty
+═══════════════════════════════════════════════════════════════════════
+WHAT TO FIX
+═══════════════════════════════════════════════════════════════════════
 
-Focus exclusively on fixing OCR text errors - page numbers and block classification are handled in Stage 3.
-</output_format>"""
+✅ FIX THESE (Character-Level OCR Errors Only):
+• Line-break hyphens: "presi- dent" → "president" (70% of all corrections)
+• Character swaps: rn→m, cl→d, li→h, 1→l, 0→O
+• Ligatures: fi, fl, ff, ffi, ffl misread
+• Spacing: "thebook"→"the book" or "a  book"→"a book"
+• Punctuation: smart quotes, em dashes, symbol misreads
+
+❌ DO NOT FIX:
+• Grammar, writing quality, word choice
+• Historical spellings (keep "connexion", old terms)
+• Compound hyphens (keep "self-aware", "pre-WWI", "T-Force")
+• Facts, dates, numbers (not your job to validate)
+• Capitalization style preferences
+
+═══════════════════════════════════════════════════════════════════════
+CONFIDENCE SCORES
+═══════════════════════════════════════════════════════════════════════
+
+Based ONLY on image clarity and error obviousness:
+• 0.95-1.0: Obvious error, clear image (line-break hyphens, clear substitutions)
+• 0.85-0.94: Clear error, minor ambiguity
+• 0.70-0.84: Some ambiguity in image or error pattern
+• <0.70: Uncertain - consider text=null instead
+
+═══════════════════════════════════════════════════════════════════════
+NOTES FORMAT
+═══════════════════════════════════════════════════════════════════════
+
+Keep brief (under 100 chars):
+• "Removed line-break hyphen in 'word'"
+• "Fixed 'X'→'Y' (character substitution)"
+• "No OCR errors detected" (when text=null)
+
+DO NOT write long explanations, analysis, or uncertainty.
+If uncertain, lower confidence score instead.
+
+═══════════════════════════════════════════════════════════════════════
+REMEMBER
+═══════════════════════════════════════════════════════════════════════
+
+1. Text=null means "No OCR errors detected" (use this 80-90% of the time)
+2. When you document a correction in notes, APPLY it in text
+3. Output FULL corrected paragraph, not partial fixes
+4. Keep notes brief and factual"""
 
     def _build_user_prompt(self, ocr_page, ocr_text):
         """Build the user prompt with OCR data."""
