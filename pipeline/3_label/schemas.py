@@ -56,6 +56,15 @@ class BlockType(str, Enum):
     OTHER = "OTHER"  # Catch-all (use sparingly)
 
 
+class PageRegion(str, Enum):
+    """Page region classification based on position in book."""
+    FRONT_MATTER = "front_matter"  # Before main body (ToC, preface, etc.)
+    BODY = "body"                   # Main content chapters
+    BACK_MATTER = "back_matter"     # After main body (index, bibliography, etc.)
+    TOC_AREA = "toc_area"           # Table of Contents region
+    UNCERTAIN = "uncertain"          # Ambiguous or insufficient context
+
+
 class ParagraphLabel(BaseModel):
     """Label metadata for a single paragraph (no text correction)."""
 
@@ -99,6 +108,18 @@ class LabelPageOutput(BaseModel):
         ge=0.0,
         le=1.0,
         description="Confidence in page number extraction (1.0 if no number found)"
+    )
+
+    # Page region classification (from position in book)
+    page_region: Optional[PageRegion] = Field(
+        None,
+        description="Classified region of book (front/body/back matter, ToC)"
+    )
+    page_region_confidence: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in page region classification"
     )
 
     # Classified blocks (no text correction)

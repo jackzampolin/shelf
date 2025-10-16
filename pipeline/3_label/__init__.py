@@ -215,7 +215,8 @@ class VisionLabeler:
                     'page_num': page_num,
                     'ocr_file': ocr_file,
                     'page_file': page_file,
-                    'labels_dir': labels_dir
+                    'labels_dir': labels_dir,
+                    'total_pages': total_pages  # For region classification context
                 })
 
             if len(tasks) == 0:
@@ -382,7 +383,7 @@ class VisionLabeler:
             page_image = downsample_for_vision(page_image)
 
             # Call vision model for page number extraction and classification
-            label_data, cost = self._label_page_with_vision(ocr_page, page_image)
+            label_data, cost = self._label_page_with_vision(ocr_page, page_image, task['total_pages'])
 
             # Validate output against schema
             try:
@@ -419,13 +420,14 @@ class VisionLabeler:
         img_bytes = buffered.getvalue()
         return base64.b64encode(img_bytes).decode('utf-8')
 
-    def _label_page_with_vision(self, ocr_page, page_image):
+    def _label_page_with_vision(self, ocr_page, page_image, total_pages):
         """
-        Extract page numbers and classify blocks using vision model (no text correction).
+        Extract page numbers, classify page region, and classify blocks using vision model.
 
         Args:
             ocr_page: OCRPageOutput object
             page_image: PIL Image of the page
+            total_pages: Total pages in book (for region classification context)
 
         Returns:
             tuple: (label_data: dict, cost: float)
@@ -433,9 +435,14 @@ class VisionLabeler:
         # Build OCR text representation for the prompt
         ocr_text = self._format_ocr_for_prompt(ocr_page)
 
-        # Build the vision prompt
+        # Build the vision prompt with page context
         system_prompt = self._build_system_prompt()
-        user_prompt = self._build_user_prompt(ocr_page, ocr_text)
+        user_prompt = self._build_user_prompt(
+            ocr_page,
+            ocr_text,
+            current_page=ocr_page.page_number,
+            total_pages=total_pages
+        )
 
         # Generate simplified JSON Schema for structured outputs
         # OpenRouter's strict mode requires basic JSON Schema (no refs, no complex nesting)
@@ -451,6 +458,11 @@ class VisionLabeler:
                         "numbering_style": {"type": ["string", "null"]},
                         "page_number_location": {"type": ["string", "null"]},
                         "page_number_confidence": {"type": "number"},
+                        "page_region": {
+                            "type": ["string", "null"],
+                            "enum": ["front_matter", "body", "back_matter", "toc_area", "uncertain", None]
+                        },
+                        "page_region_confidence": {"type": ["number", "null"]},
                         "blocks": {
                             "type": "array",
                             "items": {
@@ -477,7 +489,7 @@ class VisionLabeler:
                             }
                         }
                     },
-                    "required": ["printed_page_number", "numbering_style", "page_number_location", "page_number_confidence", "blocks"],
+                    "required": ["printed_page_number", "numbering_style", "page_number_location", "page_number_confidence", "page_region", "page_region_confidence", "blocks"],
                     "additionalProperties": False
                 }
             }
@@ -501,7 +513,7 @@ class VisionLabeler:
             max_retries=2,  # Retry up to 2 times on JSON parse failures (3 total attempts)
             images=[page_image],
             timeout=180,
-            response_format=response_schema  # ✓ Structured outputs enabled
+            response_format=response_schema
         )
 
         # Add metadata
@@ -526,309 +538,135 @@ class VisionLabeler:
 
     def _build_system_prompt(self):
         """Build the system prompt for vision labeling."""
-        return """You are an expert page analysis assistant with vision capabilities.
+        return """You are an expert page analysis assistant.
 
-<task>
-Your task is to:
-1. **Extract the printed page number** from headers/footers
-2. **Classify content blocks** by type based on visual and textual signals
+Extract printed page numbers from headers/footers and classify content blocks by type.
+Do NOT correct OCR text - just analyze structure.
 
-IMPORTANT: Do NOT correct any OCR text - just analyze structure and classify.
-</task>
+CRITICAL RULES (Check these FIRST):
 
-<page_number_extraction>
-Look at the page image for printed page numbers:
+1. INDENTATION = QUOTE
+   - Indented both sides (0.25"-1") → QUOTE (even if content seems like body)
+   - This is THE primary signal for QUOTE detection
 
-Checklist:
-1. Check top-right corner (most common)
-2. Check top-center (chapter title pages)
-3. Check bottom-center (alternate style)
-4. Check bottom corners (less common)
+2. EXPECTED DISTRIBUTION
+   - BODY: 75-85% (majority)
+   - QUOTE: 2-8% (regular but not frequent)
+   - FOOTNOTE: 5-15% (common in academic books)
+   - OTHER: <2% (RARE - check new types first)
 
-Formats:
-- Roman numerals (i, ii, iii, iv, v...) → typically front matter
-- Arabic numerals (1, 2, 3...) → typically body content
-- Unnumbered pages → title pages, blank pages, chapter starts
-
-Output:
-- `printed_page_number`: exact text (e.g., "ix", "45", or null if unnumbered)
-- `numbering_style`: "roman", "arabic", or "none"
-- `page_number_location`: "header", "footer", or "none"
-- `page_number_confidence`: 0.9-1.0 if clearly visible, 0.7-0.8 if partially obscured, 1.0 if no number
-
-Success Rate Goal: >92% (currently 87.7%)
-</page_number_extraction>
-
-<block_classification>
-
-**Structural (Front/Back Matter):**
-- TITLE_PAGE: Large centered text, minimal content, first page
-- COPYRIGHT: Small text, "©" symbol, verso of title page, publishing info
-- DEDICATION: Short centered text, often italicized, "To..." or "For..."
-- TABLE_OF_CONTENTS: "Contents"/"Table of Contents" heading, dot leaders, page numbers
-- PREFACE/FOREWORD: Heading with these words, author introduction before main content
-- INTRODUCTION: "Introduction" heading, before Chapter 1
-
-**Content Hierarchy:**
-- CHAPTER_HEADING: Large centered/left-aligned, "Chapter N" or just number, substantial whitespace around
-- SECTION_HEADING: Bold/larger than body, left-aligned, breaks text flow, section marker
-- BODY: Standard paragraph text, consistent font size (10-12pt), majority of content
-- QUOTE: Indented on both sides, often italicized, smaller margins, attributed text
-- EPIGRAPH: Short quote at chapter start, often centered or right-aligned, sets chapter tone
-
-**Reference Material:**
-- FOOTNOTE: Small font (<8pt), bottom 20% of page, superscript numbers, references
-- ENDNOTES: "Notes" heading, numbered list at end of chapter/book
-- BIBLIOGRAPHY/REFERENCES: "Bibliography"/"References"/"Works Cited" heading, hanging indent
-- INDEX: "Index" heading, multi-column layout, alphabetical entries, page numbers
-
-**Back Matter:**
-- APPENDIX: "Appendix" heading, supplementary tables/documents
-- GLOSSARY: "Glossary" heading, definition list
-- ACKNOWLEDGMENTS: "Acknowledgments"/"Acknowledgements" heading, thank-you text
-
-**Page Metadata:**
-- HEADER: Top of page, repeating text (chapter/book title), same across multiple pages
-- FOOTER: Bottom of page, repeating text (often includes page number), same across pages
-- PAGE_NUMBER: Standalone number (not embedded in header/footer text)
-
-**Special Content:**
-- ILLUSTRATION_CAPTION: Near image, "Figure N:" or "Plate:" or "Photo:" prefix, describes image
-- TABLE: Grid structure, aligned columns, data in rows
-- MAP_LABEL: Geographic labels on maps, place names, compass directions, scales
-- DIAGRAM_LABEL: Labels on timelines, charts, diagrams, flowcharts, org charts
-- PHOTO_CREDIT: Photo attribution, "Photo by...", "Courtesy of...", small text near images
-- OCR_ARTIFACT: Garbled/nonsense text from OCR errors, random characters, unreadable fragments
-- OTHER: Truly unclassifiable content (use VERY sparingly - <2% target)
-
-</block_classification>
-
-<quote_detection_guidance>
-QUOTE is currently under-detected (0.86 confidence vs 0.97 for BODY). Pay special attention:
-
-Visual Signals (strongest indicators):
-1. **Indentation**: Indented from BOTH left and right margins (most reliable)
-2. **Smaller margins**: Text block narrower than body paragraphs
-3. **Font style**: Often italicized or different font
-4. **Whitespace**: Extra space before and after the quote
-5. **Attribution**: May have "—Author Name" or source citation after
-
-Textual Signals:
-- Opening/closing quotation marks
-- Attribution lines
-- Historical or literary content being referenced
-
-Common Patterns:
-- Block quotes in historical books
-- Extended quotations from documents
-- Testimony or interview excerpts
-- Poetry or verse quoted within prose
-
-IMPORTANT: Do NOT confuse QUOTE with:
-- BODY text that happens to have quotes within it
-- EPIGRAPH (short quote at chapter start)
-- Regular paragraphs with quoted dialogue
-
-Examples of QUOTE:
-✅ Full paragraph indented on both sides discussing policy
-✅ Extended testimony transcript with attribution
-✅ Historical document excerpt with source citation
-❌ Body paragraph containing a sentence in quotes
-❌ Short centered quote at chapter opening (that's EPIGRAPH)
-</quote_detection_guidance>
-
-<other_usage_constraints>
-OTHER is currently OVERUSED (3.9% of blocks, should be <2%).
-
-ONLY use OTHER when content is:
-1. Truly unclassifiable (doesn't fit ANY other category)
-2. Ambiguous between multiple types with no clear winner
-3. Unique special content not covered by other types
-
-BEFORE choosing OTHER, ask:
-- Is this a MAP_LABEL? (geographic text on maps)
-- Is this a DIAGRAM_LABEL? (labels on charts/timelines)
-- Is this a PHOTO_CREDIT? (image attribution)
-- Is this an OCR_ARTIFACT? (garbled nonsense from OCR errors)
-- Is this actually a HEADER/FOOTER? (repeating page elements)
-- Is this actually a BODY paragraph? (standard text)
-
-Common Mistakes (DO NOT mark as OTHER):
-❌ Map labels → MAP_LABEL
-❌ Photo credits → PHOTO_CREDIT
-❌ Chart labels → DIAGRAM_LABEL
-❌ Garbled OCR text → OCR_ARTIFACT
-❌ Unusual formatting but still body text → BODY
-
-Goal: Reduce OTHER from 3.9% to <2% by using specific types.
-</other_usage_constraints>
-
-<new_block_types>
-Four new types added to reduce OTHER overuse:
-
-OCR_ARTIFACT (addresses ~40% of current OTHER):
-- Garbled, nonsense text from OCR failures
-- Random character strings like "l1I|l" or "###@@"
-- Unreadable fragments
-- Clear OCR corruption, not real content
-
-MAP_LABEL (addresses ~25% of current OTHER):
-- Text on maps: place names, city labels
-- Geographic annotations: "PACIFIC OCEAN", "FRANCE"
-- Map legends, scales, compass labels
-- Usually all-caps or distinctive geographic style
-
-DIAGRAM_LABEL (addresses ~15% of current OTHER):
-- Labels on timelines: dates, event names
-- Chart annotations: axis labels, data points
-- Flowchart/org chart text: boxes, connections
-- Diagram callouts and annotations
-
-PHOTO_CREDIT (addresses ~15% of current OTHER):
-- Photo attribution: "Photo by John Smith"
-- Image credits: "Courtesy of National Archives"
-- Small text near photos
-- Copyright notices for images
-</new_block_types>
-
-<confidence_guidance>
-Confidence should reflect visual clarity of type signals:
-
-HIGH CONFIDENCE (0.95-1.0):
-- Very clear visual signals (size, position, whitespace, formatting)
-- Type-specific keywords present ("Chapter", "Index", "Bibliography")
-- No ambiguity about classification
-- Example: Chapter heading with large font and whitespace
-
-CONFIDENT (0.85-0.94):
-- Most signals present
-- Minor ambiguity but clear best choice
-- Example: QUOTE with indentation but no italics
-
-MODERATE (0.70-0.84):
-- Some signals present
-- Ambiguity between 2 types
-- Example: SECTION_HEADING vs BODY (bold but not much larger)
-
-LOW (<0.70):
-- Unclear signals
-- Multiple types possible
-- Consider OTHER if truly cannot classify
-- Example: Unusual formatting, no clear type match
-
-Expected Distribution:
-- BODY: 0.95-0.99 (very clear)
-- CHAPTER_HEADING: 0.95-1.0 (obvious)
-- QUOTE: 0.90-0.95 (work on improving from current 0.86)
-- FOOTNOTE: 0.90-0.95 (small font is distinctive)
-- OTHER: 0.60-0.80 (inherently ambiguous)
-</confidence_guidance>
-
-<classification_strategy>
-Follow this decision tree:
-
-1. **Position Check**:
-   - Top 10%? → Likely HEADER, CHAPTER_HEADING, or page start element
-   - Bottom 20%? → Likely FOOTNOTE, FOOTER, or PAGE_NUMBER
-   - Middle? → Likely BODY, QUOTE, SECTION_HEADING
-
-2. **Font Size Check**:
-   - Much larger (2x+)? → CHAPTER_HEADING
-   - Slightly larger/bold? → SECTION_HEADING
-   - Much smaller (<8pt)? → FOOTNOTE, PHOTO_CREDIT, FOOTER
-   - Standard size? → BODY, QUOTE
-
-3. **Indentation Check**:
-   - Indented both sides? → QUOTE (high priority check!)
-   - Centered? → CHAPTER_HEADING, EPIGRAPH, DEDICATION
-   - Hanging indent? → BIBLIOGRAPHY item
-
-4. **Content Check**:
-   - Keywords: "Chapter", "Index", "Bibliography", etc.
-   - Garbled nonsense? → OCR_ARTIFACT
-   - Geographic names on visual? → MAP_LABEL
+3. BEFORE CHOOSING OTHER, CHECK:
+   - Garbled text? → OCR_ARTIFACT
+   - Map/geographic labels? → MAP_LABEL
    - Timeline/chart labels? → DIAGRAM_LABEL
    - Photo attribution? → PHOTO_CREDIT
 
-5. **Whitespace Check**:
-   - Substantial whitespace around? → CHAPTER_HEADING, SECTION_HEADING
-   - Tight spacing? → FOOTNOTE, BODY
+4. PAGE NUMBERS
+   Valid: "23", "ix", "147" (standalone in corners/margins)
+   Invalid: "Chapter 5", "page 1 of 300", running headers with numbers
+   If ambiguous → null
 
-6. **Final Check**:
-   - Does it fit a specific type? → Use that type
-   - Truly unclassifiable? → OTHER (rarely)
-</classification_strategy>
+PAGE NUMBER EXTRACTION:
+Check corners in order: top-right → top-center → bottom-center → bottom-corners
+Roman (i, ii, iii) = front matter, Arabic (1, 2, 3) = body
+Set confidence: 0.95-1.0 (clear), 0.85-0.94 (unusual position), 0.95 (no number found)
 
-<examples>
-Example 1: Clear QUOTE (Not BODY)
-Visual: Text indented 1" from both margins, italicized
-Content: "The policy was clear: no negotiations with..."
-Output: {
-  "classification": "QUOTE",
-  "classification_confidence": 0.94
-}
-Reasoning: Double indentation is primary signal for QUOTE
+PAGE REGION CLASSIFICATION:
+Use page position (current page X of Y total) to classify region:
 
-Example 2: OCR_ARTIFACT (Not OTHER)
-Visual: Small scattered text, random characters
-Content: "l1I|l @@## tTtT"
-Output: {
-  "classification": "OCR_ARTIFACT",
-  "classification_confidence": 0.98
-}
-Reasoning: Clearly garbled OCR, not real content
+- front_matter: First ~10% of book (typically roman numerals)
+  * Title, copyright, dedication, preface, introduction
+- toc_area: Table of Contents (look for ToC content + front matter position)
+  * Multi-column layout, page numbers, hierarchical titles, dots/leaders
+- body: Middle ~70-80% (typically arabic numerals starting at 1)
+  * Main content chapters, regular BODY blocks dominate
+- back_matter: Final ~10-20% (may be arabic or unnumbered)
+  * INDEX, BIBLIOGRAPHY, ENDNOTES, APPENDIX blocks
+- uncertain: Ambiguous position or mixed signals
 
-Example 3: BODY with quotes (Not QUOTE)
-Visual: Standard margins, normal formatting
-Content: "The president said 'we shall prevail' in his speech."
-Output: {
-  "classification": "BODY",
-  "classification_confidence": 0.97
-}
-Reasoning: Regular paragraph with quoted text inside, not a block quote
+Heuristics:
+- First 10% + roman numerals → front_matter (conf 0.85-0.95)
+- First 10% + ToC-like blocks → toc_area (conf 0.90-0.98)
+- Middle 70% + arabic page 1+ → body (conf 0.90-0.98)
+- Final 10-20% + INDEX/BIBLIOGRAPHY → back_matter (conf 0.85-0.95)
+- Contradictory signals → uncertain (conf 0.50-0.70)
 
-Example 4: MAP_LABEL (Not OTHER)
-Visual: Text on map image, all-caps
-Content: "PACIFIC OCEAN" and "JAPAN"
-Output: {
-  "classification": "MAP_LABEL",
-  "classification_confidence": 0.96
-}
-Reasoning: Geographic labels on map, clear map context
-</examples>
+BLOCK TYPES:
 
-<output_format>
-For each block:
-- `classification`: BlockType enum value (use specific types, avoid OTHER)
-- `classification_confidence`: 0.0-1.0 (based on signal clarity)
-- `paragraphs`: List of paragraph labels with confidence scores
+Front/Back Matter: TITLE_PAGE, COPYRIGHT, DEDICATION, TABLE_OF_CONTENTS, PREFACE, INTRODUCTION
+Content: CHAPTER_HEADING, SECTION_HEADING, BODY, QUOTE, EPIGRAPH
+Reference: FOOTNOTE, ENDNOTES, BIBLIOGRAPHY, INDEX
+Special: HEADER, FOOTER, PAGE_NUMBER, ILLUSTRATION_CAPTION, TABLE
+New Types: OCR_ARTIFACT (garbled text), MAP_LABEL (geographic labels), DIAGRAM_LABEL (chart/timeline labels), PHOTO_CREDIT (image attribution)
+Last Resort: OTHER (use <2% of the time)
 
-Focus on structural classification using visual signals. Do NOT correct OCR text.
-</output_format>"""
+CLASSIFICATION DECISION TREE:
 
-    def _build_user_prompt(self, ocr_page, ocr_text):
-        """Build the user prompt with OCR data."""
-        return f"""Page {ocr_page.page_number} OCR output to analyze:
+1. INDENTATION (FIRST)
+   - Both sides indented? → QUOTE (conf 0.90+)
+   - Centered? → CHAPTER_HEADING, EPIGRAPH, DEDICATION
+   - Hanging indent? → BIBLIOGRAPHY
+   - Standard margins? → Continue
+
+2. POSITION
+   - Top 10%? → HEADER, CHAPTER_HEADING
+   - Bottom 20%? → FOOTNOTE, FOOTER, PAGE_NUMBER
+   - Middle? → BODY, SECTION_HEADING, QUOTE
+
+3. FONT SIZE
+   - 2x+ body → CHAPTER_HEADING
+   - Larger/bold → SECTION_HEADING
+   - <8pt → FOOTNOTE, PHOTO_CREDIT, FOOTER
+   - Standard → BODY
+
+4. CONTENT
+   - Keywords ("Chapter", "Index") → Use specific type
+   - Garbled → OCR_ARTIFACT
+   - Geographic on map → MAP_LABEL
+   - Chart labels → DIAGRAM_LABEL
+
+CONFIDENCE:
+0.95-1.0: Very clear signals
+0.85-0.94: Most signals present
+0.70-0.84: Some ambiguity
+<0.70: Multiple types possible (consider OTHER)
+
+EXAMPLES:
+
+QUOTE (not BODY):
+Indented 1" both sides, italicized text
+"The policy was clear: no negotiations..."
+→ QUOTE (conf 0.94) - Double indentation is primary signal
+
+OCR_ARTIFACT (not OTHER):
+Random characters: "l1I|l @@## tTtT"
+→ OCR_ARTIFACT (conf 0.98) - Garbled OCR, not content
+
+BODY with quotes (not QUOTE):
+Standard margins: "The president said 'we shall prevail' in his speech."
+→ BODY (conf 0.97) - Regular paragraph with embedded quote
+
+OUTPUT FORMAT:
+For each block: classification, classification_confidence (0-1.0), paragraphs with confidence
+Focus on visual signals. Do NOT correct text."""
+
+    def _build_user_prompt(self, ocr_page, ocr_text, current_page, total_pages):
+        """Build the user prompt with OCR data and page context."""
+        percent_through = (current_page / total_pages * 100) if total_pages > 0 else 0
+        return f"""Page {ocr_page.page_number} of {total_pages} total pages ({current_page}/{total_pages} = {percent_through:.1f}% through book)
 
 {ocr_text}
 
-Analyze the page image to:
-1. **Extract page number** - Look in headers/footers (set to null if unnumbered)
-2. **Classify each block** - Use visual signals (font, position, whitespace, alignment) + textual content
+Analyze the page image:
+1. Extract page number from headers/footers (null if unnumbered)
+2. Classify page region using positional context (page {current_page} of {total_pages})
+3. Classify each block using visual signals (check indentation FIRST)
 
-For each block, follow the classification strategy:
-- Check position on page
-- Compare font size/style to context
-- Look for type-specific formatting
-- Assign appropriate block type from the categories above
-- Provide confidence score (0.9-1.0 for clear, 0.7-0.8 for minor ambiguity, etc.)
-
-Remember: Analyze structure only. Do NOT correct OCR text."""
+Follow the classification decision tree. Provide confidence scores based on signal clarity."""
 
     def _format_ocr_for_prompt(self, ocr_page):
         """Format OCR page data for the vision prompt."""
         lines = []
-        # Convert to dict to access fields
         page_dict = ocr_page.model_dump()
         for block in page_dict['blocks']:
             lines.append(f"\n--- Block {block['block_num']} ---")
