@@ -540,14 +540,19 @@ class VisionLabeler:
         """Build the system prompt for vision labeling."""
         return """You are an expert page analysis assistant.
 
-Extract printed page numbers from headers/footers and classify content blocks by type.
+Extract book page numbers from headers/footers and classify content blocks by type.
 Do NOT correct OCR text - just analyze structure.
 
-CRITICAL RULES (Check these FIRST):
+TERMINOLOGY (CRITICAL - Don't mix these up!):
+- pdf-page X: Our internal file number (page_0055.json = pdf-page 55)
+- book-page X: What's PRINTED on the image (might be "42", "ix", or missing)
+These are DIFFERENT and may not match!
+
+CRITICAL RULES (Check FIRST):
 
 1. INDENTATION = QUOTE
    - Indented both sides (0.25"-1") → QUOTE (even if content seems like body)
-   - This is THE primary signal for QUOTE detection
+   - Primary signal for QUOTE detection
 
 2. EXPECTED DISTRIBUTION
    - BODY: 75-85% (majority)
@@ -561,115 +566,81 @@ CRITICAL RULES (Check these FIRST):
    - Timeline/chart labels? → DIAGRAM_LABEL
    - Photo attribution? → PHOTO_CREDIT
 
-4. PRINTED PAGE NUMBERS (from image headers/footers)
-   ⚠️  CRITICAL: PDF page number ≠ printed page number
-   - PDF page = our internal file number
-   - Printed page = what's actually printed on the page image (may be totally different)
-
-   Valid printed numbers: "23", "ix", "147" (standalone in corners/margins)
-   Invalid: "Chapter 5", "page 1 of 300", running headers with numbers
-   If no number visible on image → null
-
-PAGE NUMBER EXTRACTION:
-LOOK AT THE IMAGE (not the PDF page number) - check corners in order:
+BOOK PAGE NUMBER EXTRACTION:
+LOOK AT THE IMAGE (ignore pdf-page number) - check corners:
 - top-right → top-center → bottom-center → bottom-corners
-Roman (i, ii, iii) = front matter, Arabic (1, 2, 3) = body
-Set confidence: 0.95-1.0 (clear), 0.85-0.94 (unusual position), 0.95 (no number found)
+- Valid: "23", "ix", "147" (standalone in corners/margins)
+- Invalid: "Chapter 5", "page 1 of 300", running headers
+- If no number visible → null
+- Roman (i, ii, iii) = front matter, Arabic (1, 2, 3) = body
+Confidence: 0.95-1.0 (clear), 0.85-0.94 (unusual), 0.95 (none found)
 
 PAGE REGION CLASSIFICATION:
-Use page position (current page X of Y total) to classify region:
+START with default based on pdf-page position, then override if contradicted.
 
-- front_matter: First ~10% of book (typically roman numerals)
-  * Title, copyright, dedication, preface, introduction
-- toc_area: Table of Contents (look for ToC content + front matter position)
-  * Multi-column layout, page numbers, hierarchical titles, dots/leaders
-- body: Middle ~70-80% (typically arabic numerals starting at 1)
-  * Main content chapters, regular BODY blocks dominate
-- back_matter: Final ~10-20% (may be arabic or unnumbered)
-  * INDEX, BIBLIOGRAPHY, ENDNOTES, APPENDIX blocks
-- uncertain: Ambiguous position or mixed signals
+Defaults (apply first, based on pdf-page X of Y total):
+- First 12%: front_matter (conf 0.90)
+- Middle 76%: body (conf 0.90)
+- Final 12%: back_matter (conf 0.85)
 
-Heuristics:
-- First 10% + roman numerals → front_matter (conf 0.85-0.95)
-- First 10% + ToC-like blocks → toc_area (conf 0.90-0.98)
-- Middle 70% + arabic page 1+ → body (conf 0.90-0.98)
-- Final 10-20% + INDEX/BIBLIOGRAPHY → back_matter (conf 0.85-0.95)
-- Contradictory signals → uncertain (conf 0.50-0.70)
+Override with higher confidence if:
+- ToC content (multi-column + page numbers + dots) → toc_area (conf 0.95)
+- Contradictory signals (position vs content mismatch) → uncertain (conf 0.60)
 
-BLOCK TYPES:
+Region types:
+- front_matter: Title, copyright, dedication, preface, introduction (often roman numerals)
+- toc_area: Table of Contents (multi-column layout, hierarchical titles)
+- body: Main chapters (typically arabic numerals starting at 1)
+- back_matter: INDEX, BIBLIOGRAPHY, ENDNOTES, APPENDIX (may be unnumbered)
+- uncertain: Position contradicts content (use sparingly)
 
-Front/Back Matter: TITLE_PAGE, COPYRIGHT, DEDICATION, TABLE_OF_CONTENTS, PREFACE, INTRODUCTION
+BLOCK CLASSIFICATION:
+
+Types Available:
+Front/Back: TITLE_PAGE, COPYRIGHT, DEDICATION, TABLE_OF_CONTENTS, PREFACE, INTRODUCTION
 Content: CHAPTER_HEADING, SECTION_HEADING, BODY, QUOTE, EPIGRAPH
 Reference: FOOTNOTE, ENDNOTES, BIBLIOGRAPHY, INDEX
 Special: HEADER, FOOTER, PAGE_NUMBER, ILLUSTRATION_CAPTION, TABLE
-New Types: OCR_ARTIFACT (garbled text), MAP_LABEL (geographic labels), DIAGRAM_LABEL (chart/timeline labels), PHOTO_CREDIT (image attribution)
-Last Resort: OTHER (use <2% of the time)
+New: OCR_ARTIFACT, MAP_LABEL, DIAGRAM_LABEL, PHOTO_CREDIT
+Last Resort: OTHER (<2% use)
 
-CLASSIFICATION DECISION TREE:
-
-1. INDENTATION (FIRST)
+Decision Tree:
+1. Indentation (CHECK FIRST)
    - Both sides indented? → QUOTE (conf 0.90+)
    - Centered? → CHAPTER_HEADING, EPIGRAPH, DEDICATION
    - Hanging indent? → BIBLIOGRAPHY
-   - Standard margins? → Continue
-
-2. POSITION
+2. Position
    - Top 10%? → HEADER, CHAPTER_HEADING
    - Bottom 20%? → FOOTNOTE, FOOTER, PAGE_NUMBER
-   - Middle? → BODY, SECTION_HEADING, QUOTE
+3. Font Size
+   - 2x+ body? → CHAPTER_HEADING
+   - Larger/bold? → SECTION_HEADING
+   - <8pt? → FOOTNOTE, PHOTO_CREDIT, FOOTER
+4. Content
+   - Keywords ("Chapter", "Index")? → Use specific type
+   - Garbled? → OCR_ARTIFACT
 
-3. FONT SIZE
-   - 2x+ body → CHAPTER_HEADING
-   - Larger/bold → SECTION_HEADING
-   - <8pt → FOOTNOTE, PHOTO_CREDIT, FOOTER
-   - Standard → BODY
-
-4. CONTENT
-   - Keywords ("Chapter", "Index") → Use specific type
-   - Garbled → OCR_ARTIFACT
-   - Geographic on map → MAP_LABEL
-   - Chart labels → DIAGRAM_LABEL
-
-CONFIDENCE:
-0.95-1.0: Very clear signals
-0.85-0.94: Most signals present
-0.70-0.84: Some ambiguity
-<0.70: Multiple types possible (consider OTHER)
-
-EXAMPLES:
-
-QUOTE (not BODY):
-Indented 1" both sides, italicized text
-"The policy was clear: no negotiations..."
-→ QUOTE (conf 0.94) - Double indentation is primary signal
-
-OCR_ARTIFACT (not OTHER):
-Random characters: "l1I|l @@## tTtT"
-→ OCR_ARTIFACT (conf 0.98) - Garbled OCR, not content
-
-BODY with quotes (not QUOTE):
-Standard margins: "The president said 'we shall prevail' in his speech."
-→ BODY (conf 0.97) - Regular paragraph with embedded quote
+Confidence: 0.95-1.0 (very clear), 0.85-0.94 (most signals), 0.70-0.84 (some ambiguity)
 
 OUTPUT FORMAT:
-For each block: classification, classification_confidence (0-1.0), paragraphs with confidence
+For each block: classification, classification_confidence, paragraphs with confidence.
 Focus on visual signals. Do NOT correct text."""
 
     def _build_user_prompt(self, ocr_page, ocr_text, current_page, total_pages):
         """Build the user prompt with OCR data and page context."""
         percent_through = (current_page / total_pages * 100) if total_pages > 0 else 0
-        return f"""PDF page {ocr_page.page_number} of {total_pages} total PDF pages ({percent_through:.1f}% through document)
+        return f"""pdf-page {ocr_page.page_number} of {total_pages} total ({percent_through:.1f}% through document)
 
-IMPORTANT: PDF page {ocr_page.page_number} is our internal file number. The PRINTED page number (what appears in headers/footers on the actual page image) may be completely different. You must LOOK AT THE IMAGE to extract the printed page number.
+⚠️ REMINDER: pdf-page {ocr_page.page_number} is our file number. The book-page number (printed on the image) may be completely different or missing. LOOK AT THE IMAGE to extract book-page number.
 
 {ocr_text}
 
-Analyze the page image:
-1. Look at the image headers/footers to extract the PRINTED page number (may be different from PDF page {ocr_page.page_number})
-2. Classify page region using PDF position ({percent_through:.1f}% through document)
-3. Classify each block using visual signals (check indentation FIRST)
+Tasks:
+1. Extract book-page number from image (ignore pdf-page {ocr_page.page_number})
+2. Classify page region using defaults ({percent_through:.1f}% position)
+3. Classify each block (check indentation FIRST)
 
-Follow the classification decision tree. Provide confidence scores based on signal clarity."""
+Follow decision tree. Provide confidence scores."""
 
     def _format_ocr_for_prompt(self, ocr_page):
         """Format OCR page data for the vision prompt."""
