@@ -201,7 +201,8 @@ def cmd_process_label(args):
         processor = VisionLabeler(
             storage_root=str(Path.home() / "Documents" / "book_scans"),
             model=args.model,
-            max_workers=args.workers
+            max_workers=args.workers,
+            max_retries=1 if getattr(args, 'no_retry', False) else 3
         )
         processor.process_book(args.scan_id, resume=args.resume)
 
@@ -636,7 +637,7 @@ Note: Minimal CLI during refactor (Issue #55).
     # ar process correct
     correct_parser = process_subparsers.add_parser('correct', help='Stage 2: Correction (Vision)')
     correct_parser.add_argument('scan_id', help='Book scan ID')
-    correct_parser.add_argument('--model', default='google/gemini-2.5-flash-lite-preview-09-2025', help='Vision model (default: google/gemini-2.5-flash-lite-preview-09-2025)')
+    correct_parser.add_argument('--model', default=None, help='Vision model (default: from VISION_MODEL env var or qwen/qwen3-vl-235b-a22b-instruct)')
     correct_parser.add_argument('--workers', type=int, default=30, help='Parallel workers (default: 30)')
     correct_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     correct_parser.add_argument('--no-retry', action='store_true', help='Disable retries (for failure analysis)')
@@ -645,9 +646,10 @@ Note: Minimal CLI during refactor (Issue #55).
     # ar process label
     label_parser = process_subparsers.add_parser('label', help='Stage 3: Label (Vision)')
     label_parser.add_argument('scan_id', help='Book scan ID')
-    label_parser.add_argument('--model', default='google/gemini-2.5-flash-lite-preview-09-2025', help='Vision model (default: google/gemini-2.5-flash-lite-preview-09-2025)')
+    label_parser.add_argument('--model', default=None, help='Vision model (default: from VISION_MODEL env var or qwen/qwen3-vl-235b-a22b-instruct)')
     label_parser.add_argument('--workers', type=int, default=30, help='Parallel workers (default: 30)')
     label_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
+    label_parser.add_argument('--no-retry', action='store_true', help='Disable retries (for failure analysis)')
     label_parser.set_defaults(func=cmd_process_label)
 
     # ar process merge

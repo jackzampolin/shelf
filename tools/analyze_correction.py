@@ -150,7 +150,7 @@ def analyze_paragraph(ocr_para, corr_para):
 
     # Issue 2: Notes describe corrections but text unchanged
     correction_keywords = ['Fixed', 'Removed', 'Corrected', 'Normalized']
-    describes_correction = any(kw in notes for kw in correction_keywords)
+    describes_correction = any(kw in notes for kw in correction_keywords) if notes else False
 
     if describes_correction:
         if corr_text is None:
@@ -194,7 +194,7 @@ def analyze_paragraph(ocr_para, corr_para):
                 pass
 
     # Issue 3: Verbose/rambling notes (downgraded - not a quality issue)
-    if len(notes) > 500:  # Increased threshold, only flag extreme cases
+    if notes and len(notes) > 500:  # Increased threshold, only flag extreme cases
         issues.append({
             'type': 'verbose_notes',
             'severity': 'low',  # Downgraded from medium
@@ -204,7 +204,7 @@ def analyze_paragraph(ocr_para, corr_para):
 
     # Issue 4: Circular corrections (Fixed X to X)
     import re
-    same_fix = re.findall(r"['\"]([^'\"]+)['\"]\\s+to\\s+['\"](\1)['\"]", notes)
+    same_fix = re.findall(r"['\"]([^'\"]+)['\"]\\s+to\\s+['\"](\1)['\"]", notes) if notes else []
     if same_fix:
         issues.append({
             'type': 'circular_correction',
@@ -316,7 +316,7 @@ def analyze_book(scan_id, max_pages=None, storage_root=None, export_format=None,
                 issues, notes, confidence, text_changed, quality_metrics = analyze_paragraph(ocr_para, corr_para)
 
                 stats['confidence_scores'].append(confidence)
-                stats['note_lengths'].append(len(notes))
+                stats['note_lengths'].append(len(notes) if notes else 0)
 
                 # Track quality metrics
                 if quality_metrics:

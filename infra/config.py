@@ -31,6 +31,10 @@ class Config:
     # Downsampled for vision models (balance quality vs token cost)
     PDF_EXTRACTION_DPI_VISION = int(os.getenv('PDF_EXTRACTION_DPI_VISION', '300'))
 
+    # Vision Model
+    # Default vision model for correction and labeling stages
+    VISION_MODEL = os.getenv('VISION_MODEL', 'qwen/qwen3-vl-235b-a22b-instruct')
+
     @classmethod
     def validate(cls) -> tuple[bool, list[str]]:
         """

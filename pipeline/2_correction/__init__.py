@@ -21,6 +21,7 @@ import threading
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from infra.config import Config
 from infra.logger import create_logger
 from infra.checkpoint import CheckpointManager
 from infra.llm_client import LLMClient
@@ -48,19 +49,19 @@ class VisionCorrector:
     Supports checkpoint-based resume and parallel processing.
     """
 
-    def __init__(self, storage_root=None, model="google/gemini-2.5-flash-lite-preview-09-2025", max_workers=30, enable_checkpoints=True, max_retries=3):
+    def __init__(self, storage_root=None, model=None, max_workers=30, enable_checkpoints=True, max_retries=3):
         """
         Initialize the VisionCorrector.
 
         Args:
             storage_root: Root directory for book storage (default: ~/Documents/book_scans)
-            model: LLM model to use for correction (default: google/gemini-2.5-flash-lite-preview-09-2025)
+            model: LLM model to use for correction (default: from Config.VISION_MODEL env var)
             max_workers: Number of parallel workers (default: 30)
             enable_checkpoints: Enable checkpoint-based resume (default: True)
             max_retries: Maximum retry attempts for failed pages (default: 3, use 1 for no retries)
         """
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
-        self.model = model
+        self.model = model or Config.VISION_MODEL
         self.max_workers = max_workers
         self.max_retries = max_retries
         self.progress_lock = threading.Lock()

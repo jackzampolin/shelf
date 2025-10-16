@@ -11,7 +11,6 @@ import sys
 import base64
 import io
 from pathlib import Path
-from pdf2image import convert_from_path
 from datetime import datetime
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,6 +18,7 @@ import threading
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from infra.config import Config
 from infra.logger import create_logger
 from infra.checkpoint import CheckpointManager
 from infra.llm_client import LLMClient
@@ -48,19 +48,21 @@ class VisionLabeler:
     Supports checkpoint-based resume and parallel processing.
     """
 
-    def __init__(self, storage_root=None, model="google/gemini-2.5-flash-lite-preview-09-2025", max_workers=30, enable_checkpoints=True):
+    def __init__(self, storage_root=None, model=None, max_workers=30, enable_checkpoints=True, max_retries=3):
         """
         Initialize the VisionLabeler.
 
         Args:
             storage_root: Root directory for book storage (default: ~/Documents/book_scans)
-            model: LLM model to use for labeling (default: google/gemini-2.5-flash-lite-preview-09-2025)
+            model: LLM model to use for labeling (default: from Config.VISION_MODEL env var)
             max_workers: Number of parallel workers (default: 30)
             enable_checkpoints: Enable checkpoint-based resume (default: True)
+            max_retries: Maximum retry attempts for failed pages (default: 3, use 1 for no retries)
         """
         self.storage_root = Path(storage_root or "~/Documents/book_scans").expanduser()
-        self.model = model
+        self.model = model or Config.VISION_MODEL
         self.max_workers = max_workers
+        self.max_retries = max_retries
         self.progress_lock = threading.Lock()
         self.stats_lock = threading.Lock()  # Lock for thread-safe statistics updates
         self.stats = {
@@ -232,12 +234,11 @@ class VisionLabeler:
             )
 
             # Single-pass retry: Process → Accumulate failures → Retry failed batch
-            max_retries = 3  # Total attempts: initial + 2 retries
             retry_count = 0
             pending_tasks = tasks.copy()
             completed = 0
 
-            while pending_tasks and retry_count < max_retries:
+            while pending_tasks and retry_count < self.max_retries:
                 # Track failures for this pass
                 failed_tasks = []
 
@@ -266,7 +267,7 @@ class VisionLabeler:
                                 # Suffix: Just cost, with attempt indicator if retrying
                                 suffix = f"${total_cost:.2f}"
                                 if retry_count > 0:
-                                    suffix += f" (attempt {retry_count + 1}/{max_retries})"
+                                    suffix += f" (attempt {retry_count + 1}/{self.max_retries})"
 
                                 progress.update(completed, suffix=suffix)
                             else:
@@ -280,23 +281,23 @@ class VisionLabeler:
                 # After pass completes, check for failures
                 if failed_tasks:
                     retry_count += 1
-                    if retry_count < max_retries:
+                    if retry_count < self.max_retries:
                         # Retry failed batch after delay
                         import time
                         delay = min(30, 10 * retry_count)  # 10s, 20s, 30s
-                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed, retrying after {delay}s (attempt {retry_count + 1}/{max_retries})...")
+                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed, retrying after {delay}s (attempt {retry_count + 1}/{self.max_retries})...")
                         time.sleep(delay)
                         pending_tasks = failed_tasks
                     else:
                         # Max retries reached
-                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed after {max_retries} attempts")
+                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed after {self.max_retries} attempts")
                         break
                 else:
                     # All succeeded
                     break
 
             # Finish progress bar
-            errors = len(pending_tasks) if retry_count >= max_retries else 0
+            errors = len(pending_tasks) if retry_count >= self.max_retries else 0
             progress.finish(f"   ✓ {completed}/{len(tasks)} pages labeled")
             if errors > 0:
                 failed_pages = sorted([t['page_num'] for t in pending_tasks])
@@ -410,45 +411,6 @@ class VisionLabeler:
             if self.logger:
                 self.logger.error(f"Page labeling failed", page=task['page_num'], error=str(e))
             return False, 0.0
-
-    def _pdf_page_to_image(self, pdf_path, page_number, dpi=150):
-        """
-        Convert a specific PDF page to PIL Image.
-
-        Args:
-            pdf_path: Path to PDF file
-            page_number: Page number (1-indexed)
-            dpi: Resolution for conversion (default 150 for reasonable file size)
-
-        Returns:
-            PIL.Image: Page image (resized if too large)
-        """
-        # pdf2image uses 1-indexed page numbers
-        images = convert_from_path(
-            pdf_path,
-            dpi=dpi,
-            first_page=page_number,
-            last_page=page_number
-        )
-
-        image = images[0]
-
-        # Resize if image is too large (OpenAI has limits on image size)
-        # Max dimension should be around 2000px for reasonable processing
-        max_dimension = 2000
-        width, height = image.size
-
-        if width > max_dimension or height > max_dimension:
-            # Calculate scaling factor
-            scale = max_dimension / max(width, height)
-            new_width = int(width * scale)
-            new_height = int(height * scale)
-
-            # Resize using high-quality resampling
-            from PIL import Image as PILImage
-            image = image.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
-
-        return image
 
     def _image_to_base64(self, pil_image):
         """Convert PIL Image to base64 string for vision API."""
@@ -873,36 +835,6 @@ Remember: Analyze structure only. Do NOT correct OCR text."""
             for para in block['paragraphs']:
                 lines.append(f"  Paragraph {para['par_num']}: {para['text']}")
         return '\n'.join(lines)
-
-    def _get_page_image(self, pdf_files, page_number, dpi=150):
-        """
-        Get page image from multi-PDF book by calculating which PDF contains the page.
-
-        Args:
-            pdf_files: Sorted list of PDF file paths
-            page_number: Global page number (1-indexed, continuous across PDFs)
-            dpi: Resolution for conversion
-
-        Returns:
-            PIL.Image: Page image
-        """
-        from pdf2image.pdf2image import pdfinfo_from_path
-
-        # Find which PDF contains this page
-        page_offset = 0
-        for pdf_path in pdf_files:
-            info = pdfinfo_from_path(pdf_path)
-            page_count = info['Pages']
-
-            # Check if page is in this PDF
-            if page_number <= page_offset + page_count:
-                # Calculate local page number within this PDF
-                local_page = page_number - page_offset
-                return self._pdf_page_to_image(pdf_path, local_page, dpi=dpi)
-
-            page_offset += page_count
-
-        raise ValueError(f"Page {page_number} not found in any PDF (total pages: {page_offset})")
 
     def clean_stage(self, scan_id: str, confirm: bool = False):
         """
