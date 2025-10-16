@@ -33,7 +33,7 @@ class Config:
 
     # Vision Model
     # Default vision model for correction and labeling stages
-    VISION_MODEL = os.getenv('VISION_MODEL', 'qwen/qwen3-vl-235b-a22b-instruct')
+    VISION_MODEL = os.getenv('VISION_MODEL', 'xai/grok-4-fast')
 
     @classmethod
     def validate(cls) -> tuple[bool, list[str]]:
