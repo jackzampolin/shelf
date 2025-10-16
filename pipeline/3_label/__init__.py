@@ -561,13 +561,18 @@ CRITICAL RULES (Check these FIRST):
    - Timeline/chart labels? → DIAGRAM_LABEL
    - Photo attribution? → PHOTO_CREDIT
 
-4. PAGE NUMBERS
-   Valid: "23", "ix", "147" (standalone in corners/margins)
+4. PRINTED PAGE NUMBERS (from image headers/footers)
+   ⚠️  CRITICAL: PDF page number ≠ printed page number
+   - PDF page = our internal file number
+   - Printed page = what's actually printed on the page image (may be totally different)
+
+   Valid printed numbers: "23", "ix", "147" (standalone in corners/margins)
    Invalid: "Chapter 5", "page 1 of 300", running headers with numbers
-   If ambiguous → null
+   If no number visible on image → null
 
 PAGE NUMBER EXTRACTION:
-Check corners in order: top-right → top-center → bottom-center → bottom-corners
+LOOK AT THE IMAGE (not the PDF page number) - check corners in order:
+- top-right → top-center → bottom-center → bottom-corners
 Roman (i, ii, iii) = front matter, Arabic (1, 2, 3) = body
 Set confidence: 0.95-1.0 (clear), 0.85-0.94 (unusual position), 0.95 (no number found)
 
@@ -653,13 +658,15 @@ Focus on visual signals. Do NOT correct text."""
     def _build_user_prompt(self, ocr_page, ocr_text, current_page, total_pages):
         """Build the user prompt with OCR data and page context."""
         percent_through = (current_page / total_pages * 100) if total_pages > 0 else 0
-        return f"""Page {ocr_page.page_number} of {total_pages} total pages ({current_page}/{total_pages} = {percent_through:.1f}% through book)
+        return f"""PDF page {ocr_page.page_number} of {total_pages} total PDF pages ({percent_through:.1f}% through document)
+
+IMPORTANT: PDF page {ocr_page.page_number} is our internal file number. The PRINTED page number (what appears in headers/footers on the actual page image) may be completely different. You must LOOK AT THE IMAGE to extract the printed page number.
 
 {ocr_text}
 
 Analyze the page image:
-1. Extract page number from headers/footers (null if unnumbered)
-2. Classify page region using positional context (page {current_page} of {total_pages})
+1. Look at the image headers/footers to extract the PRINTED page number (may be different from PDF page {ocr_page.page_number})
+2. Classify page region using PDF position ({percent_through:.1f}% through document)
 3. Classify each block using visual signals (check indentation FIRST)
 
 Follow the classification decision tree. Provide confidence scores based on signal clarity."""
