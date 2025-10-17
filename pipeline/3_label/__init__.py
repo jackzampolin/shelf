@@ -20,7 +20,6 @@ import threading
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from infra.config import Config
 from infra.logger import create_logger
-from infra.checkpoint import CheckpointManager
 from infra.llm_batch_client import LLMBatchClient
 from infra.llm_models import LLMRequest, LLMResult, EventData, LLMEvent, RequestPhase
 from infra.pdf_utils import downsample_for_vision
@@ -463,65 +462,3 @@ class VisionLabeler:
                 pass
 
             return 0
-
-    def clean_stage(self, scan_id: str, confirm: bool = False):
-        """
-        Clean/delete all label outputs and checkpoint for a book.
-
-        Args:
-            scan_id: Book scan ID
-            confirm: If False, prompts for confirmation before deleting
-
-        Returns:
-            bool: True if cleaned, False if cancelled
-        """
-        book_dir = self.storage_root / scan_id
-
-        if not book_dir.exists():
-            print(f"❌ Book directory not found: {book_dir}")
-            return False
-
-        labels_dir = book_dir / "labels"
-        checkpoint_file = book_dir / "checkpoints" / "label.json"
-        metadata_file = book_dir / "metadata.json"
-
-        # Count what will be deleted
-        label_files = list(labels_dir.glob("*.json")) if labels_dir.exists() else []
-
-        print(f"\n🗑️  Clean Label stage for: {scan_id}")
-        print(f"   Label outputs: {len(label_files)} files")
-        print(f"   Checkpoint: {'exists' if checkpoint_file.exists() else 'none'}")
-
-        if not confirm:
-            response = input("\n   Proceed? (yes/no): ").strip().lower()
-            if response != 'yes':
-                print("   Cancelled.")
-                return False
-
-        # Delete label outputs
-        if labels_dir.exists():
-            import shutil
-            shutil.rmtree(labels_dir)
-            print(f"   ✓ Deleted {len(label_files)} label files")
-
-        # Reset checkpoint
-        if checkpoint_file.exists():
-            checkpoint_file.unlink()
-            print(f"   ✓ Deleted checkpoint")
-
-        # Update metadata
-        if metadata_file.exists():
-            with open(metadata_file, 'r') as f:
-                metadata = json.load(f)
-
-            metadata['labels_complete'] = False
-            metadata.pop('labels_completion_date', None)
-            metadata.pop('labels_total_cost', None)
-
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
-
-            print(f"   ✓ Reset metadata")
-
-        print(f"\n✅ Label stage cleaned for {scan_id}")
-        return True
