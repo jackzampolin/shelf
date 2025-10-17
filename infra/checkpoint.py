@@ -430,11 +430,51 @@ class CheckpointManager:
             self._state['failed_at'] = datetime.now().isoformat()
             self._save_checkpoint()
 
-    def reset(self):
-        """Reset checkpoint to initial state."""
+    def reset(self, confirm: bool = False):
+        """
+        Reset checkpoint to initial state.
+
+        Args:
+            confirm: If True, prompt for confirmation before resetting if progress exists
+
+        Returns:
+            True if reset, False if cancelled by user
+        """
+        with self._lock:
+            # Check if there's existing progress
+            if confirm and self.checkpoint_file.exists():
+                status = self._state.copy()
+                completed = len(status.get('completed_pages', []))
+                total = status.get('total_pages', 0)
+                cost = status.get('metadata', {}).get('total_cost_usd', 0.0)
+
+                if completed > 0:
+                    # Release lock before user input
+                    pass  # Will release at end of with block
+
+        # Check needs to be outside lock to avoid deadlock during input()
+        if confirm and self.checkpoint_file.exists():
+            status = self.get_status()  # Thread-safe copy
+            completed = len(status.get('completed_pages', []))
+            total = status.get('total_pages', 0)
+            cost = status.get('metadata', {}).get('total_cost_usd', 0.0)
+
+            if completed > 0:
+                print(f"\n⚠️  Checkpoint exists with progress:")
+                print(f"   Pages: {completed}/{total} complete ({completed/total*100:.1f}%)" if total > 0 else f"   Pages: {completed} complete")
+                print(f"   Cost: ${cost:.2f}")
+                print(f"   This will DELETE progress and start over.")
+
+                response = input("\n   Continue with reset? (type 'yes' to confirm): ").strip().lower()
+                if response != 'yes':
+                    print("   Cancelled.")
+                    return False
+
+        # Perform reset
         with self._lock:
             self._state = self._create_new_checkpoint()
             self._save_checkpoint()
+            return True
 
     def flush(self):
         """

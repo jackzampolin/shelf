@@ -93,10 +93,8 @@ class VisionCorrector:
         # Load metadata
         metadata = storage.load_metadata()
 
-        # Ensure directories (creates corrected/, logs/, checkpoints/)
-        storage.correction.ensure_directories()
-
         # Initialize batch LLM client with failure logging
+        # (directories auto-created when checkpoint is accessed)
         self.batch_client = LLMBatchClient(
             max_workers=self.max_workers,
             rate_limit=150,  # OpenRouter default
@@ -112,25 +110,10 @@ class VisionCorrector:
         if self.enable_checkpoints:
             checkpoint = storage.correction.checkpoint
             if not resume:
-                # Check if checkpoint exists with progress before resetting
-                if checkpoint.checkpoint_file.exists():
-                    status = checkpoint.get_status()
-                    completed = len(status.get('completed_pages', []))
-                    total = status.get('total_pages', 0)
-                    cost = status.get('metadata', {}).get('total_cost_usd', 0.0)
-
-                    if completed > 0:
-                        print(f"\n⚠️  Checkpoint exists with progress:")
-                        print(f"   Pages: {completed}/{total} complete ({completed/total*100:.1f}%)" if total > 0 else f"   Pages: {completed} complete")
-                        print(f"   Cost: ${cost:.2f}")
-                        print(f"   This will DELETE progress and start over.")
-
-                        response = input("\n   Continue with reset? (type 'yes' to confirm): ").strip().lower()
-                        if response != 'yes':
-                            print("   Cancelled. Use --resume to continue from checkpoint.")
-                            return
-
-                checkpoint.reset()
+                # Reset with confirmation prompt
+                if not checkpoint.reset(confirm=True):
+                    print("   Use --resume to continue from checkpoint.")
+                    return
 
         try:
             # Get list of OCR outputs

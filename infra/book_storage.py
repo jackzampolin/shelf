@@ -117,10 +117,15 @@ class StageView(ABC):
         - checkpoint.mark_completed() - Mark page done (or use save_page())
         - checkpoint.mark_stage_complete() - Mark stage done
 
+        Automatically ensures directories are created when checkpoint is accessed.
+
         Returns:
             CheckpointManager instance for this stage
         """
         if self._checkpoint is None:
+            # Ensure directories exist before creating checkpoint
+            self.ensure_directories()
+
             # Detect output directory name from output_dir path
             output_dir_name = self.output_dir.name if self.output_dir else self.name
 
