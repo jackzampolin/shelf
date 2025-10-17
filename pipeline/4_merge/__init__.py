@@ -99,21 +99,12 @@ class MergeProcessor:
             )
             self.logger.info("Stage 3: Merge & Enrich - Three-way merge (OCR + Correction + Label, $0 cost)")
 
-            # Initialize checkpoint
+            # Initialize checkpoint (auto-ensures directories)
             if self.enable_checkpoints:
-                self.checkpoint = CheckpointManager(
-                    scan_id=scan_id,
-                    stage="merge",
-                    storage_root=self.storage_root,
-                    output_dir="processed"
-                )
+                self.checkpoint = storage.merge.checkpoint
 
                 if not resume:
                     self.checkpoint.reset()
-
-            # Create output directory
-            output_dir = storage.merge.output_dir
-            output_dir.mkdir(exist_ok=True)
 
             # Get pages to process
             if self.checkpoint and resume:
