@@ -18,7 +18,10 @@ from queue import PriorityQueue, Empty
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional, Callable, Tuple
 
-from infra.llm_models import LLMRequest, LLMResult, EventData, LLMEvent
+from infra.llm_models import (
+    LLMRequest, LLMResult, EventData, LLMEvent,
+    RequestPhase, RequestStatus, CompletedStatus, BatchStats
+)
 from infra.rate_limiter import RateLimiter
 from infra.llm_client import LLMClient
 
@@ -84,6 +87,13 @@ class LLMBatchClient:
         self.results: Dict[str, LLMResult] = {}
         self.results_lock = threading.Lock()
 
+        # Request lifecycle tracking (thread-safe)
+        self.request_tracking_lock = threading.Lock()
+        self.active_requests: Dict[str, RequestStatus] = {}
+        self.recent_completions: Dict[str, CompletedStatus] = {}
+        self.completion_ttl_cycles = 6  # Show for ~3s at 0.5s PROGRESS interval
+        self.batch_start_time: Optional[float] = None
+
     def process_batch(
         self,
         requests: List[LLMRequest],
@@ -108,9 +118,22 @@ class LLMBatchClient:
 
         # Initialize queue
         queue = PriorityQueue()
+        self.batch_start_time = time.time()  # Track batch start
+
         for req in requests:
             req._queued_at = time.time()
             queue.put(req)
+
+            # Track request status
+            with self.request_tracking_lock:
+                self.active_requests[req.id] = RequestStatus(
+                    request_id=req.id,
+                    phase=RequestPhase.QUEUED,
+                    queued_at=req._queued_at,
+                    phase_entered_at=req._queued_at,
+                    retry_count=0
+                )
+
             self._emit_event(on_event, LLMEvent.QUEUED, request_id=req.id)
 
         # Track expected results
@@ -200,6 +223,15 @@ class LLMBatchClient:
                 if not self.rate_limiter.can_execute():
                     # Wait for token, then re-queue
                     wait_time = self.rate_limiter.time_until_token()
+
+                    # Update tracking
+                    with self.request_tracking_lock:
+                        if request.id in self.active_requests:
+                            status = self.active_requests[request.id]
+                            status.phase = RequestPhase.RATE_LIMITED
+                            status.phase_entered_at = time.time()
+                            status.rate_limit_eta = wait_time
+
                     self._emit_event(
                         on_event,
                         LLMEvent.RATE_LIMITED,
@@ -213,13 +245,31 @@ class LLMBatchClient:
                 # Consume rate limit token
                 self.rate_limiter.consume()
 
+                # Update tracking
+                with self.request_tracking_lock:
+                    if request.id in self.active_requests:
+                        status = self.active_requests[request.id]
+                        status.phase = RequestPhase.DEQUEUED
+                        status.phase_entered_at = time.time()
+
                 # Process request
                 self._emit_event(on_event, LLMEvent.DEQUEUED, request_id=request.id)
                 result = self._execute_request(request, json_parser, on_event)
 
                 # Handle result
                 if result.success:
-                    # Success - store and callback
+                    # Success - move from active to recent completions
+                    with self.request_tracking_lock:
+                        if request.id in self.active_requests:
+                            status = self.active_requests.pop(request.id)
+                            self.recent_completions[request.id] = CompletedStatus(
+                                request_id=request.id,
+                                success=True,
+                                total_time_seconds=result.total_time_seconds,
+                                cost_usd=result.cost_usd,
+                                cycles_remaining=self.completion_ttl_cycles
+                            )
+
                     self._emit_event(on_event, LLMEvent.COMPLETED, request_id=request.id)
                     self._store_result(result)
                     if on_result:
@@ -239,6 +289,14 @@ class LLMBatchClient:
                         time.sleep(jitter)
                         queue.put(request)
 
+                        # Update tracking
+                        with self.request_tracking_lock:
+                            if request.id in self.active_requests:
+                                status = self.active_requests[request.id]
+                                status.phase = RequestPhase.QUEUED
+                                status.phase_entered_at = time.time()
+                                status.retry_count = request._retry_count
+
                         self._emit_event(
                             on_event,
                             LLMEvent.RETRY_QUEUED,
@@ -250,7 +308,18 @@ class LLMBatchClient:
                         with self.stats_lock:
                             self.stats['retry_count'] += 1
                     else:
-                        # Permanent failure
+                        # Permanent failure - move from active to recent completions
+                        with self.request_tracking_lock:
+                            if request.id in self.active_requests:
+                                status = self.active_requests.pop(request.id)
+                                self.recent_completions[request.id] = CompletedStatus(
+                                    request_id=request.id,
+                                    success=False,
+                                    total_time_seconds=result.total_time_seconds,
+                                    error_message=result.error_message,
+                                    cycles_remaining=self.completion_ttl_cycles
+                                )
+
                         self._emit_event(on_event, LLMEvent.FAILED, request_id=request.id)
                         self._store_result(result)
                         if on_result:
@@ -312,6 +381,13 @@ class LLMBatchClient:
         """Execute single LLM request with telemetry."""
         start_time = time.time()
         queue_time = start_time - request._queued_at
+
+        # Update tracking
+        with self.request_tracking_lock:
+            if request.id in self.active_requests:
+                status = self.active_requests[request.id]
+                status.phase = RequestPhase.EXECUTING
+                status.phase_entered_at = start_time
 
         self._emit_event(on_event, LLMEvent.EXECUTING, request_id=request.id)
 
@@ -453,7 +529,7 @@ class LLMBatchClient:
         callback: Optional[Callable[[EventData], None]],
         total_requests: int
     ):
-        """Emit batch-level progress event."""
+        """Emit batch-level progress event with TTL expiration."""
         if not callback:
             return
 
@@ -463,17 +539,161 @@ class LLMBatchClient:
         with self.results_lock:
             completed = len(self.results)
 
+        # Calculate batch stats
+        batch_stats = self.get_batch_stats(total_requests)
+
+        # Expire old completions
+        with self.request_tracking_lock:
+            expired = []
+            for req_id, comp in self.recent_completions.items():
+                comp.cycles_remaining -= 1
+                if comp.cycles_remaining <= 0:
+                    expired.append(req_id)
+
+            for req_id in expired:
+                del self.recent_completions[req_id]
+
         event = EventData(
             event_type=LLMEvent.PROGRESS,
             timestamp=time.time(),
             completed=completed,
             failed=stats['requests_failed'],
-            in_flight=self.max_workers,  # Approximate
-            queued=total_requests - completed,
+            in_flight=batch_stats.in_progress,
+            queued=batch_stats.queued,
             total_cost_usd=stats['total_cost_usd'],
             rate_limit_status=self.rate_limiter.get_status()
         )
         callback(event)
+
+    def get_active_requests(self) -> Dict[str, RequestStatus]:
+        """
+        Get all currently active requests (non-terminal states).
+
+        Returns:
+            Dict mapping request_id to RequestStatus
+        """
+        with self.request_tracking_lock:
+            # Return copy to avoid external mutation
+            return {
+                req_id: RequestStatus(
+                    request_id=status.request_id,
+                    phase=status.phase,
+                    queued_at=status.queued_at,
+                    phase_entered_at=status.phase_entered_at,
+                    retry_count=status.retry_count,
+                    rate_limit_eta=status.rate_limit_eta
+                )
+                for req_id, status in self.active_requests.items()
+            }
+
+    def get_recent_completions(self) -> Dict[str, CompletedStatus]:
+        """
+        Get recently completed/failed requests (within TTL window).
+
+        Returns:
+            Dict mapping request_id to CompletedStatus
+        """
+        with self.request_tracking_lock:
+            return {
+                req_id: CompletedStatus(
+                    request_id=comp.request_id,
+                    success=comp.success,
+                    total_time_seconds=comp.total_time_seconds,
+                    cost_usd=comp.cost_usd,
+                    error_message=comp.error_message,
+                    cycles_remaining=comp.cycles_remaining
+                )
+                for req_id, comp in self.recent_completions.items()
+            }
+
+    def get_request_status(self, request_id: str) -> Optional[RequestStatus]:
+        """
+        Get status for a specific request (if still tracked).
+
+        Args:
+            request_id: Request ID to query
+
+        Returns:
+            RequestStatus if active, None if completed/expired
+        """
+        with self.request_tracking_lock:
+            if request_id in self.active_requests:
+                status = self.active_requests[request_id]
+                return RequestStatus(
+                    request_id=status.request_id,
+                    phase=status.phase,
+                    queued_at=status.queued_at,
+                    phase_entered_at=status.phase_entered_at,
+                    retry_count=status.retry_count,
+                    rate_limit_eta=status.rate_limit_eta
+                )
+            return None
+
+    def get_batch_stats(self, total_requests: int = None) -> BatchStats:
+        """
+        Calculate aggregate batch statistics.
+
+        Args:
+            total_requests: Total request count (optional, for queued calc)
+
+        Returns:
+            BatchStats with aggregated metrics
+        """
+        with self.stats_lock:
+            stats = self.stats.copy()
+
+        with self.results_lock:
+            completed_count = len(self.results)
+
+            # Calculate timing stats from results
+            if self.results:
+                times = [r.total_time_seconds for r in self.results.values()]
+                avg_time = sum(times) / len(times)
+                min_time = min(times)
+                max_time = max(times)
+            else:
+                avg_time = min_time = max_time = 0.0
+
+            # Calculate cost stats
+            if completed_count > 0:
+                avg_cost = stats['total_cost_usd'] / completed_count
+            else:
+                avg_cost = 0.0
+
+        with self.request_tracking_lock:
+            in_progress = len(self.active_requests)
+
+        # Calculate throughput
+        if self.batch_start_time:
+            elapsed = time.time() - self.batch_start_time
+            requests_per_second = completed_count / elapsed if elapsed > 0 else 0.0
+        else:
+            requests_per_second = 0.0
+
+        # Get rate limit status
+        rate_status = self.rate_limiter.get_status()
+
+        # Calculate queued count
+        if total_requests:
+            queued = total_requests - completed_count - in_progress
+        else:
+            queued = 0
+
+        return BatchStats(
+            total_requests=total_requests or (completed_count + in_progress),
+            completed=completed_count,
+            failed=stats['requests_failed'],
+            in_progress=in_progress,
+            queued=max(0, queued),
+            avg_time_per_request=avg_time,
+            min_time=min_time,
+            max_time=max_time,
+            total_cost_usd=stats['total_cost_usd'],
+            avg_cost_per_request=avg_cost,
+            requests_per_second=requests_per_second,
+            rate_limit_utilization=rate_status.get('utilization', 0.0),
+            rate_limit_tokens_available=rate_status.get('tokens_available', 0)
+        )
 
     def get_stats(self) -> Dict:
         """Get aggregate statistics."""

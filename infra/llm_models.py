@@ -8,6 +8,7 @@ Defines request/result containers and event types for the batch client.
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 from enum import Enum
+import time
 
 
 class LLMEvent(str, Enum):
@@ -178,3 +179,95 @@ class EventData:
     queued: int = 0
     total_cost_usd: float = 0.0
     rate_limit_status: Optional[Dict] = None
+
+
+class RequestPhase(str, Enum):
+    """Request lifecycle phases for tracking."""
+    QUEUED = "queued"
+    RATE_LIMITED = "rate_limited"
+    DEQUEUED = "dequeued"
+    EXECUTING = "executing"
+    # Terminal states (move to recent_completions)
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+@dataclass
+class RequestStatus:
+    """
+    Real-time status for an active request.
+
+    Lifecycle: QUEUED → RATE_LIMITED → DEQUEUED → EXECUTING → [COMPLETED/FAILED]
+    """
+    request_id: str
+    phase: RequestPhase
+
+    # Timestamps
+    queued_at: float          # When first queued
+    phase_entered_at: float   # When entered current phase
+
+    # Retry tracking
+    retry_count: int = 0
+
+    # Phase-specific data
+    rate_limit_eta: Optional[float] = None  # For RATE_LIMITED phase
+
+    @property
+    def total_elapsed(self) -> float:
+        """Total time since queued."""
+        return time.time() - self.queued_at
+
+    @property
+    def phase_elapsed(self) -> float:
+        """Time in current phase."""
+        return time.time() - self.phase_entered_at
+
+
+@dataclass
+class CompletedStatus:
+    """
+    Status for recently completed/failed request (kept for TTL).
+    """
+    request_id: str
+    success: bool
+
+    # Timing
+    total_time_seconds: float
+
+    # Cost (if successful)
+    cost_usd: float = 0.0
+
+    # Error (if failed)
+    error_message: Optional[str] = None
+
+    # TTL management
+    cycles_remaining: int = 6  # Decremented each PROGRESS event
+
+
+@dataclass
+class BatchStats:
+    """
+    Aggregate statistics for the entire batch.
+    """
+    # Counts
+    total_requests: int
+    completed: int
+    failed: int
+    in_progress: int
+    queued: int
+
+    # Timing
+    avg_time_per_request: float
+    min_time: float
+    max_time: float
+
+    # Cost
+    total_cost_usd: float
+    avg_cost_per_request: float
+
+    # Throughput
+    requests_per_second: float
+
+    # Rate limiting
+    rate_limit_utilization: float
+    rate_limit_tokens_available: int
