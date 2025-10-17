@@ -51,19 +51,9 @@ class MergeProcessor:
         self.max_workers = max_workers
         self.enable_checkpoints = enable_checkpoints
 
-        # Thread-safe locks
-        self.progress_lock = threading.Lock()
-        self.stats_lock = threading.Lock()
-
         # Per-book state (initialized in process_book)
         self.logger = None
         self.checkpoint = None
-        self.stats = {
-            "pages_processed": 0,
-            "failed_pages": 0,
-            "total_corrections_used": 0,
-            "pages_with_continuation": 0
-        }
 
     def process_book(self, scan_id: str, resume: bool = False) -> None:
         """Process all pages for a book.
@@ -137,6 +127,12 @@ class MergeProcessor:
                 for page_num in pages_to_process
             ]
 
+            # Track domain-specific stats (not in checkpoint)
+            stats_lock = threading.Lock()
+            total_corrections_used = 0
+            pages_with_continuation = 0
+            progress_lock = threading.Lock()
+
             # Process pages in parallel
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 futures = {executor.submit(self._process_single_page, task): task for task in tasks}
@@ -148,52 +144,63 @@ class MergeProcessor:
                     try:
                         success, corrections_used, has_continuation = future.result()
 
-                        # Update stats
-                        with self.stats_lock:
-                            if success:
-                                self.stats['pages_processed'] += 1
-                                self.stats['total_corrections_used'] += corrections_used
+                        # Accumulate domain-specific stats
+                        if success:
+                            with stats_lock:
+                                total_corrections_used += corrections_used
                                 if has_continuation:
-                                    self.stats['pages_with_continuation'] += 1
-                            else:
-                                self.stats['failed_pages'] += 1
+                                    pages_with_continuation += 1
 
-                        # Log progress
-                        with self.progress_lock:
-                            completed = self.stats['pages_processed']
-                            errors = self.stats['failed_pages']
-                            progress_count = completed + errors
+                        # Log progress (get counts from checkpoint)
+                        with progress_lock:
+                            if self.checkpoint:
+                                status = self.checkpoint.get_status()
+                                completed = len(status.get('completed_pages', []))
+                                failed = len(pages_to_process) - completed
+                            else:
+                                # No checkpoint mode - estimate from completed futures
+                                completed = sum(1 for f in futures if f.done() and f.result()[0])
+                                failed = sum(1 for f in futures if f.done() and not f.result()[0])
+
+                            progress_count = completed + failed
 
                             self.logger.progress(
                                 "Merging pages",
                                 current=progress_count,
                                 total=len(tasks),
                                 completed=completed,
-                                errors=errors
+                                errors=failed
                             )
 
                     except Exception as e:
                         self.logger.error(f"Page processing failed", page=page_num, error=str(e))
-                        with self.stats_lock:
-                            self.stats['failed_pages'] += 1
 
-            # Mark stage complete
+            # Get final stats from checkpoint (single source of truth)
             if self.checkpoint:
+                status = self.checkpoint.get_status()
+                pages_processed = len(status.get('completed_pages', []))
+                failed_pages = total_pages - pages_processed
+
+                # Mark stage complete with domain stats in metadata
                 self.checkpoint.mark_stage_complete(metadata={
-                    "total_pages_processed": self.stats['pages_processed'],
-                    "total_corrections_used": self.stats['total_corrections_used'],
-                    "pages_with_continuation": self.stats['pages_with_continuation'],
-                    "failed_pages": self.stats['failed_pages'],
+                    "total_pages_processed": pages_processed,
+                    "total_corrections_used": total_corrections_used,
+                    "pages_with_continuation": pages_with_continuation,
+                    "failed_pages": failed_pages,
                     "total_cost_usd": 0.0  # Deterministic stage
                 })
+            else:
+                # No checkpoint - count from tasks
+                pages_processed = len(tasks)
+                failed_pages = 0
 
             # Log completion
             self.logger.info(
                 "Merge stage complete",
-                pages_processed=self.stats['pages_processed'],
-                corrections_used=self.stats['total_corrections_used'],
-                continuation_pages=self.stats['pages_with_continuation'],
-                failed=self.stats['failed_pages']
+                pages_processed=pages_processed,
+                corrections_used=total_corrections_used,
+                continuation_pages=pages_with_continuation,
+                failed=failed_pages
             )
 
         except Exception as e:
