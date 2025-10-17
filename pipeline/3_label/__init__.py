@@ -21,7 +21,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from infra.config import Config
 from infra.logger import create_logger
 from infra.checkpoint import CheckpointManager
-from infra.llm_client import LLMClient
+from infra.llm_batch_client import LLMBatchClient
+from infra.llm_models import LLMRequest, LLMResult, EventData, LLMEvent, RequestPhase
 from infra.pdf_utils import downsample_for_vision
 from infra.progress import ProgressBar
 
@@ -79,7 +80,7 @@ class VisionLabeler:
         self.logger = None  # Will be initialized per book
         self.checkpoint = None  # Will be initialized per book
         self.enable_checkpoints = enable_checkpoints
-        self.llm_client = None  # Will be initialized per book
+        self.batch_client = None  # Will be initialized per book
 
     def process_book(self, book_title, resume=False):
         """
@@ -110,9 +111,6 @@ class VisionLabeler:
         logs_dir = book_dir / "logs"
         logs_dir.mkdir(exist_ok=True)
         self.logger = create_logger(book_title, "label", log_dir=logs_dir, console_output=False)
-
-        # Initialize LLM client
-        self.llm_client = LLMClient()
 
         # Initialize checkpoint manager
         if self.enable_checkpoints:
@@ -457,54 +455,13 @@ class VisionLabeler:
             book_metadata=book_metadata
         )
 
-        # Generate simplified JSON Schema for structured outputs
-        # OpenRouter's strict mode requires basic JSON Schema (no refs, no complex nesting)
+        # Build JSON schema from Pydantic model (using LabelPageOutput schema)
         response_schema = {
             "type": "json_schema",
             "json_schema": {
                 "name": "page_labeling",
                 "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "printed_page_number": {"type": ["string", "null"]},
-                        "numbering_style": {"type": ["string", "null"]},
-                        "page_number_location": {"type": ["string", "null"]},
-                        "page_number_confidence": {"type": "number"},
-                        "page_region": {
-                            "type": ["string", "null"],
-                            "enum": ["front_matter", "body", "back_matter", "toc_area", "uncertain", None]
-                        },
-                        "page_region_confidence": {"type": ["number", "null"]},
-                        "blocks": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "block_num": {"type": "integer"},
-                                    "classification": {"type": "string"},
-                                    "classification_confidence": {"type": "number"},
-                                    "paragraphs": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "par_num": {"type": "integer"},
-                                                "confidence": {"type": "number"}
-                                            },
-                                            "required": ["par_num", "confidence"],
-                                            "additionalProperties": False
-                                        }
-                                    }
-                                },
-                                "required": ["block_num", "classification", "classification_confidence", "paragraphs"],
-                                "additionalProperties": False
-                            }
-                        }
-                    },
-                    "required": ["printed_page_number", "numbering_style", "page_number_location", "page_number_confidence", "page_region", "page_region_confidence", "blocks"],
-                    "additionalProperties": False
-                }
+                "schema": LabelPageOutput.model_json_schema()
             }
         }
 
