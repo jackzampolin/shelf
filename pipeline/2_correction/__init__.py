@@ -70,12 +70,6 @@ class VisionCorrector:
         self.max_workers = max_workers
         self.max_retries = max_retries
         self.progress_lock = threading.Lock()
-        self.stats_lock = threading.Lock()  # Lock for thread-safe statistics updates
-        self.stats = {
-            "total_cost_usd": 0.0,
-            "pages_processed": 0,
-            "failed_pages": 0
-        }
         self.enable_checkpoints = enable_checkpoints
         self.batch_client = None  # Will be initialized per book
         self.verbose = False  # Can be set for detailed progress
@@ -103,7 +97,6 @@ class VisionCorrector:
         storage.correction.ensure_directories()
 
         # Initialize batch LLM client with failure logging
-        log_dir = storage.correction.output_dir / "logs"
         self.batch_client = LLMBatchClient(
             max_workers=self.max_workers,
             rate_limit=150,  # OpenRouter default
@@ -112,7 +105,7 @@ class VisionCorrector:
             json_retry_budget=2,
             verbose=True,  # Enable per-request events for progress tracking
             progress_interval=0.5,  # Update progress every 0.5s
-            log_dir=log_dir  # Log failed LLM calls to corrected/logs/llm_failures.jsonl
+            log_dir=storage.correction.get_log_dir()  # Log failed LLM calls to corrected/logs/llm_failures.jsonl
         )
 
         # Handle checkpoint (integrated into storage.correction)
@@ -138,19 +131,6 @@ class VisionCorrector:
                             return
 
                 checkpoint.reset()
-                # Reset stats on fresh start
-                with self.stats_lock:
-                    self.stats = {
-                        "total_cost_usd": 0.0,
-                        "pages_processed": 0,
-                        "failed_pages": 0
-                    }
-            else:
-                # Load existing cost from checkpoint for resume runs
-                checkpoint_state = checkpoint.get_status()
-                existing_cost = checkpoint_state.get('metadata', {}).get('total_cost_usd', 0.0)
-                with self.stats_lock:
-                    self.stats['total_cost_usd'] = existing_cost
 
         try:
             # Get list of OCR outputs
@@ -311,10 +291,9 @@ class VisionCorrector:
                         recent = self.batch_client.get_recent_completions()
 
                         # Update progress bar
-                        with self.stats_lock:
-                            total_cost = self.stats['total_cost_usd']
+                        batch_stats = self.batch_client.get_batch_stats(total_requests=len(requests))
                         rate_util = event.rate_limit_status.get('utilization', 0) if event.rate_limit_status else 0
-                        suffix = f"${total_cost:.2f} | {rate_util:.0%} rate"
+                        suffix = f"${batch_stats.total_cost_usd:.2f} | {rate_util:.0%} rate"
 
                         # Show executing requests
                         for req_id, status in active.items():
@@ -402,11 +381,6 @@ class VisionCorrector:
                                 processing_time=result.total_time_seconds
                             )
 
-                            # Update stats
-                            with self.stats_lock:
-                                self.stats['pages_processed'] += 1
-                                self.stats['total_cost_usd'] += result.cost_usd
-
                             completed_count += 1
 
                         except Exception as e:
@@ -433,16 +407,10 @@ class VisionCorrector:
                     except:
                         pass  # Give up gracefully
 
-            # JSON parser function
-            def parse_correction_json(response_text):
-                """Parse and validate correction JSON."""
-                data = json.loads(response_text)
-                return data
-
             # Process batch with new client
             results = self.batch_client.process_batch(
                 requests,
-                json_parser=parse_correction_json,
+                json_parser=json.loads,
                 on_event=on_event,
                 on_result=on_result
             )
@@ -454,10 +422,10 @@ class VisionCorrector:
             if errors > 0:
                 print(f"   ⚠️  {errors} pages failed: {sorted(failed_pages)[:10]}" + (f" and {len(failed_pages)-10} more" if len(failed_pages) > 10 else ""))
 
-            # Get final stats under lock
-            with self.stats_lock:
-                completed = self.stats['pages_processed']
-                total_cost = self.stats['total_cost_usd']
+            # Get final stats from batch client
+            batch_stats = self.batch_client.get_batch_stats(total_requests=total_pages)
+            completed = batch_stats.completed
+            total_cost = batch_stats.total_cost_usd
 
             # Only mark stage complete if ALL pages succeeded
             if errors == 0:
@@ -495,68 +463,3 @@ class VisionCorrector:
                 storage.correction.checkpoint.mark_stage_failed(error=str(e))
             print(f"\n❌ Correction stage failed: {e}")
             raise
-
-    def clean_stage(self, scan_id: str, confirm: bool = False):
-        """
-        Clean/delete all correction outputs and checkpoint for a book.
-
-        Args:
-            scan_id: Book scan ID
-            confirm: If False, prompts for confirmation before deleting
-
-        Returns:
-            bool: True if cleaned, False if cancelled
-        """
-        # Initialize storage
-        try:
-            storage = BookStorage(scan_id=scan_id, storage_root=self.storage_root)
-        except FileNotFoundError as e:
-            print(f"❌ {e}")
-            return False
-
-        # Count what will be deleted
-        corrected_files = storage.correction.list_output_pages()
-        checkpoint_file = storage.checkpoint_file('correction')
-        log_files = list(storage.logs_dir.glob("correction_*.jsonl")) if storage.logs_dir.exists() else []
-
-        print(f"\n🗑️  Clean Correction stage for: {scan_id}")
-        print(f"   Corrected outputs: {len(corrected_files)} files")
-        print(f"   Checkpoint: {'exists' if checkpoint_file.exists() else 'none'}")
-        print(f"   Logs: {len(log_files)} files")
-
-        if not confirm:
-            response = input("\n   Proceed? (yes/no): ").strip().lower()
-            if response != 'yes':
-                print("   Cancelled.")
-                return False
-
-        # Delete corrected outputs
-        if storage.correction.output_dir.exists():
-            import shutil
-            shutil.rmtree(storage.correction.output_dir)
-            print(f"   ✓ Deleted {len(corrected_files)} corrected files")
-
-        # Delete log files
-        if log_files:
-            for log_file in log_files:
-                log_file.unlink()
-            print(f"   ✓ Deleted {len(log_files)} log files")
-
-        # Reset checkpoint
-        if checkpoint_file.exists():
-            checkpoint_file.unlink()
-            print(f"   ✓ Deleted checkpoint")
-
-        # Update metadata
-        try:
-            storage.update_metadata({
-                'correction_complete': False,
-                'correction_completion_date': None,
-                'correction_total_cost': None
-            })
-            print(f"   ✓ Reset metadata")
-        except FileNotFoundError:
-            pass  # Metadata doesn't exist, skip
-
-        print(f"\n✅ Correction stage cleaned for {scan_id}")
-        return True

@@ -186,6 +186,78 @@ class StageView(ABC):
                     temp_file.unlink()
                 raise e
 
+    def get_log_dir(self) -> Path:
+        """
+        Get logs directory for this stage.
+
+        Returns:
+            Path to stage-specific logs directory: {output_dir}/logs/
+
+        Example:
+            log_dir = storage.correction.get_log_dir()
+            # Returns: ~/Documents/book_scans/{scan_id}/corrected/logs/
+        """
+        log_dir = self.output_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir
+
+    def clean_stage(self, confirm: bool = False) -> bool:
+        """
+        Clean/delete all stage outputs, checkpoint, and logs.
+
+        Args:
+            confirm: If False, prompts for confirmation before deleting
+
+        Returns:
+            True if cleaned, False if cancelled
+
+        Example:
+            if storage.correction.clean_stage(confirm=True):
+                print("Correction stage cleaned")
+        """
+        import shutil
+
+        # Count what will be deleted
+        output_files = self.list_output_pages()
+        checkpoint_file = self.storage.checkpoint_file(self.name)
+        log_dir = self.output_dir / "logs"
+        log_files = list(log_dir.glob("*.jsonl")) if log_dir.exists() else []
+
+        print(f"\n🗑️  Clean {self.name} stage for: {self.storage.scan_id}")
+        print(f"   Output files: {len(output_files)}")
+        print(f"   Checkpoint: {'exists' if checkpoint_file.exists() else 'none'}")
+        print(f"   Logs: {len(log_files)} files")
+
+        if not confirm:
+            response = input("\n   Proceed? (yes/no): ").strip().lower()
+            if response != 'yes':
+                print("   Cancelled.")
+                return False
+
+        # Delete output directory (includes all outputs and logs)
+        if self.output_dir.exists():
+            shutil.rmtree(self.output_dir)
+            print(f"   ✓ Deleted {len(output_files)} output files and {len(log_files)} log files")
+
+        # Delete checkpoint
+        if checkpoint_file.exists():
+            checkpoint_file.unlink()
+            print(f"   ✓ Deleted checkpoint")
+
+        # Update metadata (remove stage completion flags)
+        try:
+            self.storage.update_metadata({
+                f'{self.name}_complete': False,
+                f'{self.name}_completion_date': None,
+                f'{self.name}_total_cost': None
+            })
+            print(f"   ✓ Reset metadata")
+        except FileNotFoundError:
+            pass  # Metadata doesn't exist, skip
+
+        print(f"\n✅ {self.name.capitalize()} stage cleaned for {self.storage.scan_id}")
+        return True
+
 
 class SourceStageView(StageView):
     """Source material (PDFs and extracted PNGs)"""
