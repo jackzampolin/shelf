@@ -39,6 +39,11 @@ CorrectionLLMResponse = correction_schemas.CorrectionLLMResponse
 BlockCorrection = correction_schemas.BlockCorrection
 ParagraphCorrection = correction_schemas.ParagraphCorrection
 
+# Import prompts
+correction_prompts = importlib.import_module('pipeline.2_correction.prompts')
+SYSTEM_PROMPT = correction_prompts.SYSTEM_PROMPT
+build_user_prompt = correction_prompts.build_user_prompt
+
 
 class VisionCorrector:
     """
@@ -200,8 +205,8 @@ class VisionCorrector:
                 }
             }
 
-            # Build system prompt once (same for all pages)
-            system_prompt = self._build_system_prompt()
+            # System prompt is imported from prompts.py (same for all pages)
+            system_prompt = SYSTEM_PROMPT
 
             def load_page(page_num):
                 """Load and prepare a single page (called in parallel)."""
@@ -222,13 +227,11 @@ class VisionCorrector:
                     page_image = downsample_for_vision(page_image)
 
                     # Build page-specific prompt with book context
-                    ocr_text = self._format_ocr_for_prompt(ocr_page)
-                    user_prompt = self._build_user_prompt(
-                        ocr_page,
-                        ocr_text,
+                    user_prompt = build_user_prompt(
                         page_num=page_num,
                         total_pages=total_pages,
-                        book_metadata=metadata
+                        book_metadata=metadata,
+                        ocr_data=ocr_page.model_dump()
                     )
 
                     # Create LLM request (multimodal)
@@ -519,203 +522,6 @@ class VisionCorrector:
             # Always clean up logger
             if self.logger:
                 self.logger.close()
-
-
-    def _build_system_prompt(self):
-        """Build the system prompt for vision correction."""
-        return """<role>
-You are an OCR correction specialist. Compare OCR text against page images to identify and fix character-reading errors only.
-</role>
-
-<output_schema>
-Return JSON with corrected paragraphs. For each paragraph:
-- text: Full corrected paragraph (null if no errors)
-- notes: Brief correction description (max 100 characters)
-- confidence: Error certainty score (0.0-1.0)
-
-The JSON schema is enforced by the API. Focus on accuracy.
-</output_schema>
-
-<rules>
-1. Use 1-based indexing: block_num and par_num start at 1 (not 0)
-2. No errors detected: Set text=null with notes="No OCR errors detected" (exactly)
-3. Errors found: Set text=FULL_CORRECTED_PARAGRAPH (not partial)
-4. Notes must describe corrections actually applied to text field
-5. Most paragraphs (80-90%) have no errors - expect text=null frequently
-6. When text=null, notes must be "No OCR errors detected" (not correction descriptions)
-</rules>
-
-<examples>
-<example type="no_errors">
-  <ocr>The president announced the policy today.</ocr>
-  <output>{"text": null, "notes": "No OCR errors detected", "confidence": 1.0}</output>
-</example>
-
-<example type="line_break_hyphen">
-  <ocr>The cam- paign in Kan- sas</ocr>
-  <image_content>The campaign in Kansas (no hyphens visible)</image_content>
-  <correction>Remove hyphen AND space to join word parts: "cam- paign" becomes "campaign"</correction>
-  <output>{"text": "The campaign in Kansas", "notes": "Removed line-break hyphens: 'cam-paign', 'Kan-sas'", "confidence": 0.97}</output>
-  <note>Most common OCR error (70% of corrections). Line-break hyphens are printing artifacts where words split across lines.</note>
-</example>
-
-<example type="character_substitution">
-  <ocr>The modem world</ocr>
-  <image_content>modern</image_content>
-  <output>{"text": "The modern world", "notes": "Fixed 'modem'→'modern' (rn→m)", "confidence": 0.95}</output>
-</example>
-
-<example type="ligature">
-  <ocr>The first ofﬁce policy</ocr>
-  <image_content>office (standard text, not ligature)</image_content>
-  <output>{"text": "The first office policy", "notes": "Fixed ligature 'ffi' in 'office'", "confidence": 0.98}</output>
-</example>
-
-<example type="number_letter_confusion">
-  <ocr>l9l5 presidential election</ocr>
-  <image_content>1915 presidential election</image_content>
-  <output>{"text": "1915 presidential election", "notes": "Fixed '1'/'l' confusion in '1915'", "confidence": 0.93}</output>
-</example>
-
-<example type="multiple_fixes">
-  <ocr>The govern- ment an- nounced policy.</ocr>
-  <image_content>The government announced policy.</image_content>
-  <output>{"text": "The government announced policy.", "notes": "Removed line-break hyphens in 'government', 'announced'", "confidence": 0.96}</output>
-</example>
-
-<example type="historical_spelling">
-  <ocr>The connexion between nations</ocr>
-  <image_content>connexion (period-appropriate spelling)</image_content>
-  <output>{"text": null, "notes": "No OCR errors detected", "confidence": 1.0}</output>
-  <reasoning>Preserve historical spellings - not OCR errors</reasoning>
-</example>
-</examples>
-
-<fix_these>
-Character-level OCR reading errors only:
-
-- Line-break hyphens: "cam- paign" becomes "campaign"
-  Pattern: word-hyphen-space-word becomes single word
-  Remove BOTH hyphen and space (join completely)
-
-- Character substitutions: Common patterns include
-  rn mistaken for m (e.g., "modem" for "modern")
-  cl mistaken for d (e.g., "clistance" for "distance")
-  li mistaken for h (e.g., "tlie" for "the")
-  1 mistaken for l or I (e.g., "l9l5" for "1915")
-  0 mistaken for O (e.g., "0ctober" for "October")
-  5 mistaken for S (e.g., "5eptember" for "September")
-
-- Ligature misreads: fi, fl, ff, ffi, ffl rendered as special characters
-
-- Spacing errors:
-  Missing spaces: "thebook" becomes "the book"
-  Extra spaces: "a  book" becomes "a book"
-
-- Punctuation: Smart quotes, em dashes, symbol misreads
-</fix_these>
-
-<do_not_fix>
-Content and style elements (out of scope):
-
-- Grammar, sentence structure, word choice
-- Writing quality or style improvements
-- Historical spellings: "connexion", "colour", "defence", archaic terms
-- Legitimate compound hyphens: "self-aware", "Vice-President", "pre-WWI"
-  Identification: No space after hyphen indicates real compound word
-- Factual content, dates, numbers (not verifiable from image alone)
-- Capitalization style preferences
-</do_not_fix>
-
-<confidence_guidelines>
-Base confidence score on image clarity and error pattern obviousness:
-
-- 0.95-1.0: Obvious error with clear image and common pattern
-- 0.85-0.94: Clear error with minor ambiguity in image
-- 0.70-0.84: Some ambiguity in image quality or error pattern
-- Below 0.70: Too uncertain - use text=null instead
-
-Do not express uncertainty in notes. Use confidence score for uncertainty level.
-</confidence_guidelines>
-
-<notes_format>
-Keep notes brief (under 100 characters). Use standardized formats:
-
-- "Removed line-break hyphen in 'campaign'"
-- "Removed line-break hyphens: 'campaign', 'announced'"
-- "Fixed 'modem'→'modern' (character substitution)"
-- "Fixed ligature 'ffi' in 'office'"
-- "Fixed '1'/'l' confusion in '1915'"
-- "No OCR errors detected"
-
-Do not write explanations or descriptions of thought process.
-</notes_format>
-
-<historical_documents>
-This text may use period-appropriate conventions:
-- Preserve archaic spellings unless clearly OCR errors
-- Maintain historical capitalization patterns
-- Keep period-specific punctuation conventions
-</historical_documents>
-
-<output_requirements>
-Return ONLY valid JSON matching the schema.
-Do not include markdown code fences.
-Do not add explanatory text outside JSON structure.
-Do not include reasoning or analysis.
-</output_requirements>"""
-
-    def _build_user_prompt(self, ocr_page, ocr_text, page_num, total_pages, book_metadata):
-        """
-        Build the user prompt with OCR data and document context.
-
-        The page image is attached separately via the LLMRequest.images parameter
-        and sent alongside this text prompt for multimodal vision correction.
-        """
-        # Extract metadata fields with defaults
-        title = book_metadata.get('title', 'Unknown')
-        author = book_metadata.get('author', 'Unknown')
-        year = book_metadata.get('year', 'Unknown')
-        book_type = book_metadata.get('type', 'Unknown')
-
-        return f"""<document_context>
-Title: {title}
-Author: {author}
-Year: {year}
-Type: {book_type}
-</document_context>
-
-<page_context>
-Scanned page {page_num} of {total_pages} (PDF page number, not printed page number)
-</page_context>
-
-<ocr_data>
-{ocr_text}
-</ocr_data>
-
-<task>
-Compare the OCR text above against the page image.
-
-For each block and paragraph:
-1. Visually check if OCR text matches the image character-by-character
-2. If text matches image: Set text=null with notes="No OCR errors detected"
-3. If OCR reading errors found: Output full corrected paragraph text
-4. Provide brief notes using standardized format from examples
-5. Assign confidence score based on image clarity and error obviousness
-
-Remember: You are correcting character-level OCR reading errors only, not editing content. Most paragraphs (80-90%) should have text=null.
-</task>"""
-
-    def _format_ocr_for_prompt(self, ocr_page):
-        """Format OCR page data for the vision prompt."""
-        lines = []
-        # Convert to dict to access fields
-        page_dict = ocr_page.model_dump()
-        for block in page_dict['blocks']:
-            lines.append(f"\n--- Block {block['block_num']} ---")
-            for para in block['paragraphs']:
-                lines.append(f"  Paragraph {para['par_num']}: {para['text']}")
-        return '\n'.join(lines)
 
     def clean_stage(self, scan_id: str, confirm: bool = False):
         """
