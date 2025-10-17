@@ -23,6 +23,7 @@ import importlib
 
 from infra.checkpoint import CheckpointManager
 from infra.logger import create_logger
+from infra.book_storage import BookStorage
 
 # Import OCR, Correction, and Label schemas using importlib (handles numeric module names)
 ocr_schemas = importlib.import_module('pipeline.1_ocr.schemas')
@@ -71,26 +72,23 @@ class MergeProcessor:
             scan_id: Book scan ID
             resume: Resume from checkpoint if True
         """
-        book_dir = self.storage_root / scan_id
-
-        # Validate book directory exists
-        if not book_dir.exists():
-            raise FileNotFoundError(f"Book directory not found: {book_dir}")
+        # Initialize storage manager
+        try:
+            storage = BookStorage(scan_id=scan_id, storage_root=self.storage_root)
+            storage.merge.validate_inputs()  # Validates OCR, correction, and label outputs exist
+        except FileNotFoundError as e:
+            print(f"❌ {e}")
+            return
 
         # Load metadata
-        metadata_file = book_dir / "metadata.json"
-        if not metadata_file.exists():
-            raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
-
-        with open(metadata_file, 'r') as f:
-            metadata = json.load(f)
+        metadata = storage.load_metadata()
 
         total_pages = metadata.get('total_pages_processed', 0)
         if total_pages == 0:
             raise ValueError(f"No pages found in metadata for {scan_id}")
 
         # Initialize logger
-        logs_dir = book_dir / "logs"
+        logs_dir = storage.logs_dir
         logs_dir.mkdir(exist_ok=True)
         self.logger = create_logger(scan_id, "merge", log_dir=logs_dir)
 
@@ -114,7 +112,7 @@ class MergeProcessor:
                     self.checkpoint.reset()
 
             # Create output directory
-            output_dir = book_dir / "processed"
+            output_dir = storage.merge.output_dir
             output_dir.mkdir(exist_ok=True)
 
             # Get pages to process
@@ -141,8 +139,7 @@ class MergeProcessor:
             tasks = [
                 {
                     'page_num': page_num,
-                    'book_dir': book_dir,
-                    'output_dir': output_dir
+                    'storage': storage
                 }
                 for page_num in pages_to_process
             ]
@@ -220,18 +217,17 @@ class MergeProcessor:
         """Process single page (parallel worker).
 
         Args:
-            task: Task dict with page_num, book_dir, output_dir
+            task: Task dict with page_num and storage
 
         Returns:
             (success, corrections_used, has_continuation)
         """
         page_num = task['page_num']
-        book_dir = task['book_dir']
-        output_dir = task['output_dir']
+        storage = task['storage']
 
         try:
             # Load OCR data
-            ocr_file = book_dir / "ocr" / f"page_{page_num:04d}.json"
+            ocr_file = storage.merge.ocr_page(page_num)
             if not ocr_file.exists():
                 self.logger.error(f"OCR file not found", page=page_num, file=str(ocr_file))
                 return False, 0, False
@@ -241,7 +237,7 @@ class MergeProcessor:
             ocr_page = OCRPageOutput(**ocr_data)
 
             # Load correction data
-            correction_file = book_dir / "corrected" / f"page_{page_num:04d}.json"
+            correction_file = storage.merge.correction_page(page_num)
             if not correction_file.exists():
                 self.logger.error(f"Correction file not found", page=page_num, file=str(correction_file))
                 return False, 0, False
@@ -251,7 +247,7 @@ class MergeProcessor:
             correction_page = CorrectionOutput(**correction_data)
 
             # Load label data
-            label_file = book_dir / "labels" / f"page_{page_num:04d}.json"
+            label_file = storage.merge.label_page(page_num)
             if not label_file.exists():
                 self.logger.error(f"Label file not found", page=page_num, file=str(label_file))
                 return False, 0, False
@@ -264,7 +260,7 @@ class MergeProcessor:
             merged_page, corrections_used, has_continuation = self._merge_page_data(ocr_page, correction_page, label_page)
 
             # Save output
-            output_file = output_dir / f"page_{page_num:04d}.json"
+            output_file = storage.merge.output_page(page_num)
             temp_file = output_file.with_suffix('.json.tmp')
 
             with open(temp_file, 'w') as f:
@@ -468,25 +464,6 @@ class MergeProcessor:
         Returns:
             True if cleaned, False if not confirmed
         """
-        if not confirm:
-            print("⚠️  Use confirm=True to actually delete files")
-            return False
-
-        book_dir = self.storage_root / scan_id
-        if not book_dir.exists():
-            raise FileNotFoundError(f"Book directory not found: {book_dir}")
-
-        # Remove processed directory
-        processed_dir = book_dir / "processed"
-        if processed_dir.exists():
-            import shutil
-            shutil.rmtree(processed_dir)
-            print(f"✅ Removed {processed_dir}")
-
-        # Remove checkpoint
-        checkpoint_file = book_dir / "checkpoints" / "merge.json"
-        if checkpoint_file.exists():
-            checkpoint_file.unlink()
-            print(f"✅ Removed {checkpoint_file}")
-
-        return True
+        # Use BookStorage clean_stage method
+        storage = BookStorage(scan_id=scan_id, storage_root=self.storage_root)
+        return storage.merge.clean_stage(confirm=confirm)
