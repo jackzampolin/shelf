@@ -153,7 +153,7 @@ class VisionCorrector:
         try:
             # Get list of OCR outputs
             ocr_files = storage.ocr.list_output_pages()
-            total_pages = len(ocr_files)
+            total_pages = len(ocr_files)  # For logging/display only
 
             self.logger.start_stage(
                 total_pages=total_pages,
@@ -167,12 +167,9 @@ class VisionCorrector:
             print(f"   Workers:   {self.max_workers}")
             print(f"   Model:     {self.model}")
 
-            # Get pages to process (this sets checkpoint status to "in_progress")
+            # Get pages to process (auto-detects total_pages from source directory)
             if self.enable_checkpoints:
-                pages_to_process = storage.correction.checkpoint.get_remaining_pages(
-                    total_pages=total_pages,
-                    resume=resume
-                )
+                pages_to_process = storage.correction.checkpoint.get_remaining_pages(resume=resume)
             else:
                 pages_to_process = list(range(1, total_pages + 1))
 

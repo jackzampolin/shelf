@@ -231,6 +231,21 @@ class CheckpointManager:
         except Exception:
             return False
 
+    def _auto_detect_total_pages(self) -> int:
+        """
+        Auto-detect total pages by counting source page images.
+
+        Returns:
+            Number of source pages, or 0 if source directory doesn't exist
+        """
+        source_dir = self.book_dir / "source"
+        if not source_dir.exists():
+            return 0
+
+        # Count page_*.png files
+        source_pages = sorted(source_dir.glob("page_*.png"))
+        return len(source_pages)
+
     def scan_existing_outputs(self, total_pages: int) -> Set[int]:
         """
         Scan output directory for valid completed pages.
@@ -255,7 +270,7 @@ class CheckpointManager:
 
     def get_remaining_pages(
         self,
-        total_pages: int,
+        total_pages: Optional[int] = None,
         resume: bool = True,
         start_page: int = 1,
         end_page: Optional[int] = None
@@ -264,7 +279,7 @@ class CheckpointManager:
         Get list of pages that need processing.
 
         Args:
-            total_pages: Total pages in book
+            total_pages: Total pages in book (auto-detected from source/ if not provided)
             resume: If True, skip already-completed pages
             start_page: First page to consider (default: 1)
             end_page: Last page to consider (default: total_pages)
@@ -272,6 +287,16 @@ class CheckpointManager:
         Returns:
             List of page numbers to process
         """
+        # Auto-detect total_pages if not provided
+        if total_pages is None:
+            total_pages = self._auto_detect_total_pages()
+            if total_pages == 0:
+                raise ValueError(
+                    f"Could not auto-detect total_pages for {self.scan_id}. "
+                    f"Source directory not found or empty. "
+                    f"Please provide total_pages explicitly."
+                )
+
         if end_page is None:
             end_page = total_pages
 

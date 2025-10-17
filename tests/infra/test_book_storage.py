@@ -723,3 +723,293 @@ def test_concurrent_stage_operations(book_with_source, tmp_path):
     # Shared directories should be same
     assert ocr_dirs['logs'] == correction_dirs['logs'] == label_dirs['logs']
     assert ocr_dirs['checkpoints'] == correction_dirs['checkpoints'] == label_dirs['checkpoints']
+
+
+# ===== Checkpoint Integration Tests =====
+
+def test_stage_view_checkpoint_property(book_dir, tmp_path):
+    """Test stage view checkpoint property is lazily initialized"""
+    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
+
+    # Access checkpoint (lazy initialization)
+    checkpoint = storage.correction.checkpoint
+
+    # Verify checkpoint is initialized correctly
+    assert checkpoint.scan_id == "test-book"
+    assert checkpoint.stage == "correction"
+    assert checkpoint.output_dir == "corrected"
+    assert checkpoint.checkpoint_file.parent == storage.checkpoints_dir
+
+    # Accessing again returns same instance
+    checkpoint2 = storage.correction.checkpoint
+    assert checkpoint is checkpoint2
+
+
+def test_stage_view_save_page_basic(book_dir, tmp_path):
+    """Test save_page creates output file and updates checkpoint"""
+    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
+    storage.correction.ensure_directories()
+
+    # Save a single page
+    page_data = {
+        "page_number": 1,
+        "blocks": [{"block_num": 1, "paragraphs": []}],
+        "model_used": "test-model",
+        "processing_cost": 0.01,
+        "timestamp": "2024-01-01T00:00:00",
+        "total_blocks": 1,
+        "total_corrections": 0,
+        "avg_confidence": 1.0
+    }
+
+    storage.correction.save_page(
+        page_num=1,
+        data=page_data,
+        cost_usd=0.02,
+        processing_time=1.5
+    )
+
+    # Verify file was written
+    output_file = storage.correction.output_page(1)
+    assert output_file.exists()
+
+    with open(output_file, 'r') as f:
+        saved_data = json.load(f)
+    assert saved_data == page_data
+
+    # Verify checkpoint was updated
+    checkpoint = storage.correction.checkpoint
+    status = checkpoint.get_status()
+    assert 1 in status['completed_pages']
+    assert status['metadata']['total_cost_usd'] == 0.02
+
+
+def test_stage_view_save_page_atomic(book_dir, tmp_path):
+    """Test save_page is atomic (uses temp file)"""
+    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
+    storage.correction.ensure_directories()
+
+    page_data = {"test": "data"}
+
+    storage.correction.save_page(
+        page_num=1,
+        data=page_data,
+        cost_usd=0.01
+    )
+
+    # Verify no temp files left behind
+    output_dir = storage.correction.output_dir
+    temp_files = list(output_dir.glob("*.tmp"))
+    assert len(temp_files) == 0
+
+    # Verify actual file exists
+    assert storage.correction.output_page(1).exists()
+
+
+def test_stage_view_save_page_cost_accumulation(book_dir, tmp_path):
+    """Test save_page accumulates costs in checkpoint"""
+    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
+    storage.correction.ensure_directories()
+
+    # Save 3 pages with different costs
+    for i in range(1, 4):
+        storage.correction.save_page(
+            page_num=i,
+            data={"page_number": i},
+            cost_usd=0.01 * i,  # 0.01, 0.02, 0.03
+            processing_time=1.0
+        )
+
+    # Verify checkpoint accumulated costs
+    checkpoint = storage.correction.checkpoint
+    status = checkpoint.get_status()
+
+    assert len(status['completed_pages']) == 3
+    assert status['completed_pages'] == [1, 2, 3]
+    assert status['metadata']['total_cost_usd'] == 0.06  # 0.01 + 0.02 + 0.03
+
+
+def test_stage_view_save_page_thread_safety(book_dir, tmp_path):
+    """Test save_page is thread-safe for concurrent writes"""
+    import threading
+
+    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
+    storage.correction.ensure_directories()
+
+    num_threads = 10
+    pages_per_thread = 5
+
+    def save_pages(thread_id):
+        """Each thread saves multiple pages"""
+        start_page = thread_id * pages_per_thread + 1
+        for i in range(start_page, start_page + pages_per_thread):
+            storage.correction.save_page(
+                page_num=i,
+                data={"page_number": i, "thread": thread_id},
+                cost_usd=0.01,
+                processing_time=0.5
+            )
+
+    # Spawn threads
+    threads = []
+    for tid in range(num_threads):
+        t = threading.Thread(target=save_pages, args=(tid,))
+        threads.append(t)
+        t.start()
+
+    # Wait for all threads to complete
+    for t in threads:
+        t.join()
+
+    # Verify all pages were saved
+    expected_pages = num_threads * pages_per_thread
+    saved_pages = storage.correction.list_output_pages()
+    assert len(saved_pages) == expected_pages
+
+    # Verify checkpoint tracked all pages
+    checkpoint = storage.correction.checkpoint
+    status = checkpoint.get_status()
+    assert len(status['completed_pages']) == expected_pages
+    assert status['metadata']['total_cost_usd'] == expected_pages * 0.01
+
+
+def test_stage_view_save_page_large_batch(book_dir, tmp_path):
+    """Test save_page handles large batch (500 pages) correctly"""
+    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
+    storage.correction.ensure_directories()
+
+    num_pages = 500
+    cost_per_page = 0.023
+    time_per_page = 2.5
+
+    # Initialize checkpoint with total_pages (simulates what stages do)
+    checkpoint = storage.correction.checkpoint
+    checkpoint.get_remaining_pages(total_pages=num_pages, resume=False)
+
+    # Save 500 pages
+    for page_num in range(1, num_pages + 1):
+        storage.correction.save_page(
+            page_num=page_num,
+            data={
+                "page_number": page_num,
+                "blocks": [{"block_num": 1, "paragraphs": []}],
+                "model_used": "test-model",
+                "processing_cost": cost_per_page,
+                "timestamp": "2024-01-01T00:00:00",
+                "total_blocks": 1,
+                "total_corrections": 0,
+                "avg_confidence": 1.0
+            },
+            cost_usd=cost_per_page,
+            processing_time=time_per_page
+        )
+
+    # Verify all pages were saved to filesystem
+    saved_pages = storage.correction.list_output_pages()
+    assert len(saved_pages) == num_pages
+    assert saved_pages[0].name == "page_0001.json"
+    assert saved_pages[-1].name == "page_0500.json"
+
+    # Verify checkpoint tracked all pages
+    status = checkpoint.get_status()
+
+    assert len(status['completed_pages']) == num_pages
+    assert status['completed_pages'] == list(range(1, num_pages + 1))
+
+    # Verify cost accumulation
+    expected_total_cost = num_pages * cost_per_page
+    actual_total_cost = status['metadata']['total_cost_usd']
+    assert abs(actual_total_cost - expected_total_cost) < 0.01  # Allow for floating point precision
+
+    # Verify progress tracking
+    assert status['progress']['completed'] == num_pages
+    assert status['progress']['percent'] == 100.0
+    assert status['total_pages'] == num_pages
+
+    # Verify checkpoint file was written
+    assert checkpoint.checkpoint_file.exists()
+
+    # Verify checkpoint can be reloaded
+    from infra.checkpoint import CheckpointManager
+    reloaded_checkpoint = CheckpointManager(
+        scan_id="test-book",
+        stage="correction",
+        storage_root=tmp_path,
+        output_dir="corrected"
+    )
+    reloaded_status = reloaded_checkpoint.get_status()
+    assert reloaded_status['completed_pages'] == list(range(1, num_pages + 1))
+    assert abs(reloaded_status['metadata']['total_cost_usd'] - expected_total_cost) < 0.01
+
+
+def test_stage_view_checkpoint_resume_workflow(book_dir, tmp_path):
+    """Test checkpoint enables resume workflow through stage view"""
+    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
+    storage.correction.ensure_directories()
+
+    total_pages = 100
+
+    # First run: Save first 50 pages
+    for i in range(1, 51):
+        storage.correction.save_page(
+            page_num=i,
+            data={"page_number": i},
+            cost_usd=0.01
+        )
+
+    # Get remaining pages (should return pages 51-100)
+    checkpoint = storage.correction.checkpoint
+    remaining = checkpoint.get_remaining_pages(total_pages=total_pages, resume=True)
+
+    assert len(remaining) == 50
+    assert remaining[0] == 51
+    assert remaining[-1] == 100
+
+    # Second run: Save remaining pages
+    for page_num in remaining:
+        storage.correction.save_page(
+            page_num=page_num,
+            data={"page_number": page_num},
+            cost_usd=0.01
+        )
+
+    # Verify all pages complete
+    status = checkpoint.get_status()
+    assert len(status['completed_pages']) == total_pages
+    assert status['progress']['percent'] == 100.0
+
+
+def test_stage_view_checkpoint_per_stage_isolation(book_dir, tmp_path):
+    """Test each stage view has its own isolated checkpoint"""
+    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
+    storage.correction.ensure_directories()
+    storage.label.ensure_directories()
+
+    # Save pages in correction stage
+    for i in range(1, 6):
+        storage.correction.save_page(
+            page_num=i,
+            data={"page": i},
+            cost_usd=0.01
+        )
+
+    # Save pages in label stage
+    for i in range(1, 4):
+        storage.label.save_page(
+            page_num=i,
+            data={"page": i},
+            cost_usd=0.02
+        )
+
+    # Verify correction checkpoint
+    correction_status = storage.correction.checkpoint.get_status()
+    assert len(correction_status['completed_pages']) == 5
+    assert correction_status['metadata']['total_cost_usd'] == 0.05
+
+    # Verify label checkpoint (separate)
+    label_status = storage.label.checkpoint.get_status()
+    assert len(label_status['completed_pages']) == 3
+    assert label_status['metadata']['total_cost_usd'] == 0.06
+
+    # Checkpoints are independent
+    assert correction_status != label_status
