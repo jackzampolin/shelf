@@ -216,7 +216,8 @@ class VisionLabeler:
                     'ocr_file': ocr_file,
                     'page_file': page_file,
                     'labels_dir': labels_dir,
-                    'total_pages': total_pages  # For region classification context
+                    'total_pages': total_pages,  # For region classification context
+                    'book_metadata': metadata  # For document context in prompts
                 })
 
             if len(tasks) == 0:
@@ -383,7 +384,12 @@ class VisionLabeler:
             page_image = downsample_for_vision(page_image)
 
             # Call vision model for page number extraction and classification
-            label_data, cost = self._label_page_with_vision(ocr_page, page_image, task['total_pages'])
+            label_data, cost = self._label_page_with_vision(
+                ocr_page,
+                page_image,
+                task['total_pages'],
+                task['book_metadata']
+            )
 
             # Validate output against schema
             try:
@@ -420,7 +426,7 @@ class VisionLabeler:
         img_bytes = buffered.getvalue()
         return base64.b64encode(img_bytes).decode('utf-8')
 
-    def _label_page_with_vision(self, ocr_page, page_image, total_pages):
+    def _label_page_with_vision(self, ocr_page, page_image, total_pages, book_metadata):
         """
         Extract page numbers, classify page region, and classify blocks using vision model.
 
@@ -428,6 +434,7 @@ class VisionLabeler:
             ocr_page: OCRPageOutput object
             page_image: PIL Image of the page
             total_pages: Total pages in book (for region classification context)
+            book_metadata: Book metadata dict (for document context in prompts)
 
         Returns:
             tuple: (label_data: dict, cost: float)
@@ -441,7 +448,8 @@ class VisionLabeler:
             ocr_page,
             ocr_text,
             current_page=ocr_page.page_number,
-            total_pages=total_pages
+            total_pages=total_pages,
+            book_metadata=book_metadata
         )
 
         # Generate simplified JSON Schema for structured outputs
@@ -538,109 +546,207 @@ class VisionLabeler:
 
     def _build_system_prompt(self):
         """Build the system prompt for vision labeling."""
-        return """You are an expert page analysis assistant.
+        return """<role>
+You are a page structure analysis specialist. Extract printed page numbers from page images and classify content blocks by structural type.
+</role>
 
-Extract book page numbers from headers/footers and classify content blocks by type.
-Do NOT correct OCR text - just analyze structure.
+<task_scope>
+This stage performs structural analysis only:
+- Extract printed page numbers from headers/footers
+- Classify page regions (front matter, body, back matter)
+- Classify content blocks by type (body, quote, footnote, etc.)
 
-TERMINOLOGY (CRITICAL - Don't mix these up!):
-- pdf-page X: Our internal file number (page_0055.json = pdf-page 55)
-- book-page X: What's PRINTED on the image (might be "42", "ix", or missing)
-These are DIFFERENT and may not match!
+Do NOT correct OCR text. Text correction is handled separately.
+</task_scope>
 
-CRITICAL RULES (Check FIRST):
+<terminology>
+Critical distinction between two page number types:
+- pdf-page: Internal file sequence number (page_0055.json = pdf-page 55)
+- book-page: Printed page number visible on the image (may be "42", "ix", or missing)
 
-1. INDENTATION = QUOTE
-   - Indented both sides (0.25"-1") → QUOTE (even if content seems like body)
-   - Primary signal for QUOTE detection
+These numbers are independent and often differ. The pdf-page is our file organization. The book-page is what you extract from the image.
+</terminology>
 
-2. EXPECTED DISTRIBUTION
-   - BODY: 75-85% (majority)
-   - QUOTE: 2-8% (regular but not frequent)
-   - FOOTNOTE: 5-15% (common in academic books)
-   - OTHER: <2% (RARE - check new types first)
+<critical_rules>
+1. Indentation as primary signal:
+   - Text indented on both sides (0.25-1 inch margins) indicates QUOTE
+   - This signal overrides content-based classification
+   - Even narrative content becomes QUOTE when indented
 
-3. BEFORE CHOOSING OTHER, CHECK:
-   - Garbled text? → OCR_ARTIFACT
-   - Map/geographic labels? → MAP_LABEL
-   - Timeline/chart labels? → DIAGRAM_LABEL
-   - Photo attribution? → PHOTO_CREDIT
+2. Expected distribution patterns:
+   - BODY: 75-85% of blocks (vast majority)
+   - QUOTE: 2-8% of blocks (regular but not frequent)
+   - FOOTNOTE: 5-15% of blocks (common in academic works)
+   - OTHER: Less than 2% (rare, verify specific types first)
 
-BOOK PAGE NUMBER EXTRACTION:
-LOOK AT THE IMAGE (ignore pdf-page number) - check corners:
-- top-right → top-center → bottom-center → bottom-corners
-- Valid: "23", "ix", "147" (standalone in corners/margins)
-- Invalid: "Chapter 5", "page 1 of 300", running headers
-- If no number visible → null
-- Roman (i, ii, iii) = front matter, Arabic (1, 2, 3) = body
-Confidence: 0.95-1.0 (clear), 0.85-0.94 (unusual), 0.95 (none found)
+3. Before classifying as OTHER:
+   - Garbled or corrupted text indicates OCR_ARTIFACT
+   - Geographic labels indicate MAP_LABEL
+   - Timeline or chart labels indicate DIAGRAM_LABEL
+   - Photo attribution indicates PHOTO_CREDIT
+</critical_rules>
 
-PAGE REGION CLASSIFICATION:
-START with default based on pdf-page position, then override if contradicted.
+<page_number_extraction>
+Examine the page image (ignore pdf-page number). Check these locations in order:
+- Top-right corner
+- Top-center header
+- Bottom-center footer
+- Bottom corners
 
-Defaults (apply first, based on pdf-page X of Y total):
-- First 12%: front_matter (conf 0.90)
-- Middle 76%: body (conf 0.90)
-- Final 12%: back_matter (conf 0.85)
+Valid page numbers:
+- Standalone numbers in margins or corners: "23", "147"
+- Roman numerals (typically front matter): "i", "ii", "ix", "xiv"
+- Arabic numerals (typically body): "1", "2", "42"
 
-Override with higher confidence if:
-- ToC content (multi-column + page numbers + dots) → toc_area (conf 0.95)
-- Contradictory signals (position vs content mismatch) → uncertain (conf 0.60)
+Invalid (do not extract):
+- Chapter labels: "Chapter 5"
+- Pagination indicators: "page 1 of 300"
+- Running headers with text
+- Section numbers within body text
 
-Region types:
-- front_matter: Title, copyright, dedication, preface, introduction (often roman numerals)
-- toc_area: Table of Contents (multi-column layout, hierarchical titles)
-- body: Main chapters (typically arabic numerals starting at 1)
-- back_matter: INDEX, BIBLIOGRAPHY, ENDNOTES, APPENDIX (may be unnumbered)
-- uncertain: Position contradicts content (use sparingly)
+If no valid page number visible, return null.
 
-BLOCK CLASSIFICATION:
+Numbering style patterns:
+- Roman numerals (i, ii, iii): Indicates front_matter region
+- Arabic numerals (1, 2, 3): Indicates body region
 
-Types Available:
-Front/Back: TITLE_PAGE, COPYRIGHT, DEDICATION, TABLE_OF_CONTENTS, PREFACE, INTRODUCTION
-Content: CHAPTER_HEADING, SECTION_HEADING, BODY, QUOTE, EPIGRAPH
-Reference: FOOTNOTE, ENDNOTES, BIBLIOGRAPHY, INDEX
-Special: HEADER, FOOTER, PAGE_NUMBER, ILLUSTRATION_CAPTION, TABLE
-New: OCR_ARTIFACT, MAP_LABEL, DIAGRAM_LABEL, PHOTO_CREDIT
-Last Resort: OTHER (<2% use)
+Confidence scores:
+- 0.95-1.0: Clear printed number in standard location
+- 0.85-0.94: Number present but unusual placement or formatting
+- 0.95: No number found (high confidence in absence)
+</page_number_extraction>
 
-Decision Tree:
-1. Indentation (CHECK FIRST)
-   - Both sides indented? → QUOTE (conf 0.90+)
-   - Centered? → CHAPTER_HEADING, EPIGRAPH, DEDICATION
-   - Hanging indent? → BIBLIOGRAPHY
-2. Position
-   - Top 10%? → HEADER, CHAPTER_HEADING
-   - Bottom 20%? → FOOTNOTE, FOOTER, PAGE_NUMBER
-3. Font Size
-   - 2x+ body? → CHAPTER_HEADING
-   - Larger/bold? → SECTION_HEADING
-   - <8pt? → FOOTNOTE, PHOTO_CREDIT, FOOTER
-4. Content
-   - Keywords ("Chapter", "Index")? → Use specific type
-   - Garbled? → OCR_ARTIFACT
+<page_region_classification>
+Classification uses position-based defaults that can be overridden by content evidence.
 
-Confidence: 0.95-1.0 (very clear), 0.85-0.94 (most signals), 0.70-0.84 (some ambiguity)
+Default classification by position (pdf-page X of Y total):
+- First 12% of document: front_matter (confidence 0.90)
+- Middle 76% of document: body (confidence 0.90)
+- Final 12% of document: back_matter (confidence 0.85)
 
-OUTPUT FORMAT:
-For each block: classification, classification_confidence, paragraphs with confidence.
-Focus on visual signals. Do NOT correct text."""
+Override defaults with higher confidence when content contradicts position:
+- Table of Contents indicators (multi-column layout, page numbers, dot leaders): toc_area (confidence 0.95)
+- Position and content mismatch: uncertain (confidence 0.60)
 
-    def _build_user_prompt(self, ocr_page, ocr_text, current_page, total_pages):
-        """Build the user prompt with OCR data and page context."""
+Region type definitions:
+- front_matter: Title page, copyright, dedication, preface, introduction (often roman page numbers)
+- toc_area: Table of Contents (distinctive multi-column layout with hierarchical titles)
+- body: Main content chapters (typically arabic page numbers starting at 1)
+- back_matter: Index, bibliography, endnotes, appendix (may be unnumbered)
+- uncertain: Position-based default contradicted by content (use sparingly)
+</page_region_classification>
+
+<block_classification>
+Available block types by category:
+
+Front and back matter:
+- TITLE_PAGE, COPYRIGHT, DEDICATION, TABLE_OF_CONTENTS, PREFACE, INTRODUCTION
+
+Main content:
+- CHAPTER_HEADING, SECTION_HEADING, BODY, QUOTE, EPIGRAPH
+
+Reference material:
+- FOOTNOTE, ENDNOTES, BIBLIOGRAPHY, INDEX
+
+Special elements:
+- HEADER, FOOTER, PAGE_NUMBER, ILLUSTRATION_CAPTION, TABLE
+
+Additional types:
+- OCR_ARTIFACT, MAP_LABEL, DIAGRAM_LABEL, PHOTO_CREDIT
+
+Fallback (use rarely, under 2%):
+- OTHER
+
+Classification decision tree (evaluate in order):
+
+1. Check indentation first (primary structural signal):
+   - Indented both sides: QUOTE (confidence 0.90+)
+   - Centered text: CHAPTER_HEADING, EPIGRAPH, or DEDICATION
+   - Hanging indent: BIBLIOGRAPHY entry
+
+2. Check vertical position on page:
+   - Top 10% of page: HEADER or CHAPTER_HEADING
+   - Bottom 20% of page: FOOTNOTE, FOOTER, or PAGE_NUMBER
+
+3. Check font size relative to body text:
+   - 2x or larger than body: CHAPTER_HEADING
+   - Larger or bold: SECTION_HEADING
+   - Smaller than 8pt: FOOTNOTE, PHOTO_CREDIT, or FOOTER
+
+4. Check content keywords:
+   - Contains "Chapter", "Part": CHAPTER_HEADING
+   - Contains "Index", "Bibliography": Use specific type
+   - Garbled or corrupted: OCR_ARTIFACT
+
+Confidence score guidelines:
+- 0.95-1.0: Multiple clear signals agree
+- 0.85-0.94: Most signals agree with minor ambiguity
+- 0.70-0.84: Some conflicting signals or ambiguity
+</block_classification>
+
+<output_requirements>
+Return structured JSON with:
+- printed_page_number (extracted book-page number)
+- page_region classification with confidence
+- Block classifications with per-block confidence
+- Paragraph-level confidence scores
+
+Focus on visual and structural signals from the image. Do not correct or modify OCR text.
+</output_requirements>"""
+
+    def _build_user_prompt(self, ocr_page, ocr_text, current_page, total_pages, book_metadata):
+        """
+        Build the user prompt with OCR data and document context.
+
+        The page image is attached separately via the multimodal API
+        and sent alongside this text prompt for vision-based analysis.
+        """
+        # Extract metadata fields with defaults
+        title = book_metadata.get('title', 'Unknown')
+        author = book_metadata.get('author', 'Unknown')
+        year = book_metadata.get('year', 'Unknown')
+        book_type = book_metadata.get('type', 'Unknown')
+
+        # Calculate position in document
         percent_through = (current_page / total_pages * 100) if total_pages > 0 else 0
-        return f"""pdf-page {ocr_page.page_number} of {total_pages} total ({percent_through:.1f}% through document)
 
-⚠️ REMINDER: pdf-page {ocr_page.page_number} is our file number. The book-page number (printed on the image) may be completely different or missing. LOOK AT THE IMAGE to extract book-page number.
+        return f"""<document_context>
+Title: {title}
+Author: {author}
+Year: {year}
+Type: {book_type}
+</document_context>
 
+<page_context>
+PDF page {current_page} of {total_pages} ({percent_through:.1f}% through document)
+Position suggests: {self._get_default_region(percent_through)} region
+</page_context>
+
+<important_reminder>
+The PDF page number ({current_page}) is our internal file sequence. The book-page number (printed on the image) may be completely different or missing. Extract book-page from the image, not the PDF page number.
+</important_reminder>
+
+<ocr_data>
 {ocr_text}
+</ocr_data>
 
-Tasks:
-1. Extract book-page number from image (ignore pdf-page {ocr_page.page_number})
-2. Classify page region using defaults ({percent_through:.1f}% position)
-3. Classify each block (check indentation FIRST)
+<tasks>
+1. Extract printed book-page number from image (ignore PDF page {current_page})
+2. Classify page region using position-based defaults, override if content contradicts
+3. Classify each content block using decision tree (check indentation first)
+4. Provide confidence scores for all classifications
 
-Follow decision tree. Provide confidence scores."""
+Focus on visual and structural signals from the image.
+</tasks>"""
+
+    def _get_default_region(self, percent_through):
+        """Helper to determine default region based on position."""
+        if percent_through <= 12:
+            return "front_matter"
+        elif percent_through >= 88:
+            return "back_matter"
+        else:
+            return "body"
 
     def _format_ocr_for_prompt(self, ocr_page):
         """Format OCR page data for the vision prompt."""

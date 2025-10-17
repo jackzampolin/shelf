@@ -11,20 +11,19 @@ Writes corrected output to {scan_id}/corrected/page_XXXX.json
 
 import json
 import sys
-import base64
-import io
 from pathlib import Path
 from datetime import datetime
 from PIL import Image
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from infra.config import Config
 from infra.logger import create_logger
 from infra.checkpoint import CheckpointManager
-from infra.llm_client import LLMClient
+from infra.llm_batch_client import LLMBatchClient
+from infra.llm_models import LLMRequest, LLMResult, EventData, LLMEvent
 from infra.pdf_utils import downsample_for_vision
 from infra.progress import ProgressBar
 
@@ -74,7 +73,8 @@ class VisionCorrector:
         self.logger = None  # Will be initialized per book
         self.checkpoint = None  # Will be initialized per book
         self.enable_checkpoints = enable_checkpoints
-        self.llm_client = None  # Will be initialized per book
+        self.batch_client = None  # Will be initialized per book
+        self.verbose = False  # Can be set for detailed progress
 
     def process_book(self, book_title, resume=False):
         """
@@ -106,8 +106,16 @@ class VisionCorrector:
         logs_dir.mkdir(exist_ok=True)
         self.logger = create_logger(book_title, "correction", log_dir=logs_dir, console_output=False)
 
-        # Initialize LLM client
-        self.llm_client = LLMClient()
+        # Initialize batch LLM client
+        self.batch_client = LLMBatchClient(
+            max_workers=self.max_workers,
+            rate_limit=150,  # OpenRouter default
+            max_retries=self.max_retries,
+            retry_jitter=(1.0, 3.0),
+            json_retry_budget=2,
+            verbose=self.verbose,
+            progress_interval=0.5  # Update progress every 0.5s
+        )
 
         # Initialize checkpoint manager
         if self.enable_checkpoints:
@@ -194,107 +202,265 @@ class VisionCorrector:
             else:
                 pages_to_process = list(range(1, total_pages + 1))
 
-            # Build tasks for remaining pages
-            tasks = []
-            for page_num in pages_to_process:
-                ocr_file = ocr_dir / f"page_{page_num:04d}.json"
-                page_file = source_dir / f"page_{page_num:04d}.png"
-
-                if not ocr_file.exists() or not page_file.exists():
-                    continue
-
-                tasks.append({
-                    'page_num': page_num,
-                    'ocr_file': ocr_file,
-                    'page_file': page_file,
-                    'corrected_dir': corrected_dir
-                })
-
-            if len(tasks) == 0:
-                self.logger.info("All pages already corrected, skipping")
-                print("✅ All pages already corrected")
-                return
-
-            # Process with single-pass retry logic
-            # Progress bar tracks total pages (not iterations)
-            print(f"\n   Correcting {len(tasks)} pages...")
-            progress = ProgressBar(
-                total=len(tasks),
+            # Pre-load OCR data and prepare requests (parallelized)
+            print(f"\n   Loading {len(pages_to_process)} pages...")
+            load_progress = ProgressBar(
+                total=len(pages_to_process),
                 prefix="   ",
                 width=40,
                 unit="pages"
             )
+            load_progress.update(0, suffix="loading...")
 
-            # Single-pass retry: Process → Accumulate failures → Retry failed batch
-            retry_count = 0
-            pending_tasks = tasks.copy()
-            completed = 0
+            requests = []
+            page_data_map = {}  # Store loaded data for saving later
+            completed_loads = 0
+            load_lock = threading.Lock()
 
-            while pending_tasks and retry_count < self.max_retries:
-                # Track failures for this pass
-                failed_tasks = []
-
-                # Process current batch in parallel
-                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                    future_to_task = {
-                        executor.submit(self._process_single_page, task): task
-                        for task in pending_tasks
+            # Build JSON schema once (shared across all requests)
+            response_schema = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "ocr_correction",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "blocks": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "block_num": {"type": "integer", "minimum": 1},
+                                        "paragraphs": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "par_num": {"type": "integer", "minimum": 1},
+                                                    "text": {"type": ["string", "null"]},
+                                                    "notes": {"type": ["string", "null"]},
+                                                    "confidence": {"type": "number"}
+                                                },
+                                                "required": ["par_num", "text", "notes", "confidence"],
+                                                "additionalProperties": False
+                                            }
+                                        }
+                                    },
+                                    "required": ["block_num", "paragraphs"],
+                                    "additionalProperties": False
+                                }
+                            }
+                        },
+                        "required": ["blocks"],
+                        "additionalProperties": False
                     }
+                }
+            }
 
-                    for future in as_completed(future_to_task):
-                        task = future_to_task[future]
-                        try:
-                            success, cost = future.result()
-                            if success:
-                                # Success: increment progress, update stats
-                                with self.stats_lock:
-                                    self.stats['pages_processed'] += 1
-                                    self.stats['total_cost_usd'] += cost
-                                completed += 1
+            # Build system prompt once (same for all pages)
+            system_prompt = self._build_system_prompt()
 
-                                # Update progress bar (only on success)
-                                with self.stats_lock:
-                                    total_cost = self.stats['total_cost_usd']
+            def load_page(page_num):
+                """Load and prepare a single page (called in parallel)."""
+                ocr_file = ocr_dir / f"page_{page_num:04d}.json"
+                page_file = source_dir / f"page_{page_num:04d}.png"
 
-                                # Suffix: Just cost, with attempt indicator if retrying
-                                suffix = f"${total_cost:.2f}"
-                                if retry_count > 0:
-                                    suffix += f" (attempt {retry_count + 1}/{self.max_retries})"
+                if not ocr_file.exists() or not page_file.exists():
+                    return None
 
-                                progress.update(completed, suffix=suffix)
-                            else:
-                                # Failure: accumulate for retry
-                                failed_tasks.append(task)
-                        except Exception as e:
-                            # Exception: accumulate for retry
-                            failed_tasks.append(task)
-                            self.logger.error(f"Page processing exception", page=task['page_num'], error=str(e))
+                try:
+                    # Load OCR data
+                    with open(ocr_file, 'r') as f:
+                        ocr_data = json.load(f)
+                    ocr_page = OCRPageOutput(**ocr_data)
 
-                # After pass completes, check for failures
-                if failed_tasks:
-                    retry_count += 1
-                    if retry_count < self.max_retries:
-                        # Retry failed batch after delay
-                        import time
-                        delay = min(30, 10 * retry_count)  # 10s, 20s, 30s
-                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed, retrying after {delay}s (attempt {retry_count + 1}/{self.max_retries})...")
-                        time.sleep(delay)
-                        pending_tasks = failed_tasks
+                    # Load and downsample image (CPU-intensive, releases GIL in PIL)
+                    page_image = Image.open(page_file)
+                    page_image = downsample_for_vision(page_image)
+
+                    # Build page-specific prompt with book context
+                    ocr_text = self._format_ocr_for_prompt(ocr_page)
+                    user_prompt = self._build_user_prompt(
+                        ocr_page,
+                        ocr_text,
+                        page_num=page_num,
+                        total_pages=total_pages,
+                        book_metadata=metadata
+                    )
+
+                    # Create LLM request (multimodal)
+                    # The page_image is passed via images= parameter and gets sent
+                    # to the LLM alongside the text prompt for vision-based correction
+                    request = LLMRequest(
+                        id=f"page_{page_num:04d}",
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                            {"role": "assistant", "content": '{"blocks": ['}  # Response prefilling
+                        ],
+                        temperature=0.1,
+                        timeout=180,
+                        images=[page_image],
+                        response_format=response_schema,
+                        metadata={
+                            'page_num': page_num,
+                            'corrected_dir': str(corrected_dir),
+                            'ocr_page_number': ocr_page.page_number
+                        }
+                    )
+
+                    return (page_num, ocr_page, request)
+
+                except Exception as e:
+                    self.logger.error(f"Failed to load page data", page=page_num, error=str(e))
+                    return None
+
+            # Parallel loading with ThreadPoolExecutor
+            # Use CPU count for workers (good for I/O + CPU-bound downsampling)
+            import os
+            load_workers = os.cpu_count() or 4
+
+            with ThreadPoolExecutor(max_workers=load_workers) as executor:
+                # Submit all loading tasks
+                future_to_page = {
+                    executor.submit(load_page, page_num): page_num
+                    for page_num in pages_to_process
+                }
+
+                # Collect results as they complete
+                for future in as_completed(future_to_page):
+                    result = future.result()
+                    if result:
+                        page_num, ocr_page, request = result
+                        requests.append(request)
+                        page_data_map[page_num] = {
+                            'ocr_page': ocr_page,
+                            'request': request
+                        }
+
+                    with load_lock:
+                        completed_loads += 1
+                        load_progress.update(completed_loads, suffix=f"{len(requests)} loaded")
+
+            # Finish loading progress
+            load_progress.finish()
+
+            if len(requests) == 0:
+                self.logger.info("No valid pages to process")
+                print("✅ No valid pages to process")
+                return
+
+            # Setup progress tracking
+            print(f"\n   Correcting {len(requests)} pages...")
+            progress = ProgressBar(
+                total=len(requests),
+                prefix="   ",
+                width=40,
+                unit="pages"
+            )
+            progress.update(0, suffix="starting...")  # Show initial progress bar
+            completed_count = 0
+            failed_pages = []
+
+            # Define event callback for progress updates
+            def on_event(event: EventData):
+                nonlocal progress
+                if event.event_type == LLMEvent.PROGRESS:
+                    # Update progress bar with aggregate stats
+                    with self.stats_lock:
+                        total_cost = self.stats['total_cost_usd']
+                    rate_util = event.rate_limit_status.get('utilization', 0) if event.rate_limit_status else 0
+
+                    # Show different message if no completions yet
+                    if event.completed == 0:
+                        suffix = f"{event.in_flight} executing..."
                     else:
-                        # Max retries reached - update pending_tasks to final failures
-                        pending_tasks = failed_tasks
-                        print(f"\n   ⚠️  {len(pending_tasks)} page(s) failed after {self.max_retries} attempts")
-                        break
+                        suffix = f"${total_cost:.2f} | {rate_util:.0%} rate"
+
+                    progress.update(event.completed, suffix=suffix)
+                elif event.event_type == LLMEvent.RATE_LIMITED:
+                    progress.set_status(f"⏸️  Rate limited, resuming in {event.eta_seconds:.0f}s")
+
+            # Define result callback for checkpoint/stats
+            def on_result(result: LLMResult):
+                nonlocal completed_count, failed_pages
+
+                page_num = result.request.metadata['page_num']
+
+                if result.success:
+                    try:
+                        # Add metadata to correction data
+                        correction_data = result.parsed_json
+                        correction_data['page_number'] = result.request.metadata['ocr_page_number']
+                        correction_data['model_used'] = self.model
+                        correction_data['processing_cost'] = result.cost_usd
+                        correction_data['timestamp'] = datetime.now().isoformat()
+
+                        # Calculate summary stats
+                        total_corrections = sum(
+                            1 for block in correction_data['blocks']
+                            for p in block.get('paragraphs', [])
+                            if p.get('text') is not None
+                        )
+
+                        avg_conf = sum(
+                            p.get('confidence', 1.0)
+                            for b in correction_data['blocks']
+                            for p in b.get('paragraphs', [])
+                        ) / sum(len(b.get('paragraphs', [])) for b in correction_data['blocks']) if correction_data['blocks'] else 1.0
+
+                        correction_data['total_blocks'] = len(correction_data['blocks'])
+                        correction_data['total_corrections'] = total_corrections
+                        correction_data['avg_confidence'] = round(avg_conf, 3)
+
+                        # Validate output against schema
+                        validated = CorrectionPageOutput(**correction_data)
+                        correction_data = validated.model_dump()
+
+                        # Save corrected output
+                        output_file = Path(result.request.metadata['corrected_dir']) / f"page_{page_num:04d}.json"
+                        with open(output_file, 'w', encoding='utf-8') as f:
+                            json.dump(correction_data, f, indent=2)
+
+                        # Update checkpoint & stats
+                        if self.checkpoint:
+                            self.checkpoint.mark_completed(page_num, cost_usd=result.cost_usd)
+
+                        with self.stats_lock:
+                            self.stats['pages_processed'] += 1
+                            self.stats['total_cost_usd'] += result.cost_usd
+
+                        completed_count += 1
+
+                    except Exception as e:
+                        self.logger.error(f"Failed to save page result", page=page_num, error=str(e))
+                        failed_pages.append(page_num)
                 else:
-                    # All succeeded
-                    break
+                    # Permanent failure
+                    self.logger.error(f"Page correction failed permanently", page=page_num, error=result.error_message)
+                    failed_pages.append(page_num)
+
+            # JSON parser function
+            def parse_correction_json(response_text):
+                """Parse and validate correction JSON."""
+                data = json.loads(response_text)
+                return data
+
+            # Process batch with new client
+            results = self.batch_client.process_batch(
+                requests,
+                json_parser=parse_correction_json,
+                on_event=on_event,
+                on_result=on_result
+            )
 
             # Finish progress bar
-            errors = len(pending_tasks) if retry_count >= self.max_retries else 0
-            progress.finish(f"   ✓ {completed}/{len(tasks)} pages corrected")
+            progress.finish(f"   ✓ {completed_count}/{len(requests)} pages corrected")
+            errors = len(failed_pages)
             if errors > 0:
-                failed_pages = sorted([t['page_num'] for t in pending_tasks])
-                print(f"   ⚠️  {errors} pages failed: {failed_pages[:10]}" + (f" and {len(failed_pages)-10} more" if len(failed_pages) > 10 else ""))
+                print(f"   ⚠️  {errors} pages failed: {sorted(failed_pages)[:10]}" + (f" and {len(failed_pages)-10} more" if len(failed_pages) > 10 else ""))
 
             # Get final stats under lock
             with self.stats_lock:
@@ -353,288 +519,191 @@ class VisionCorrector:
             if self.logger:
                 self.logger.close()
 
-    def _process_single_page(self, task):
-        """
-        Process a single page (called by ThreadPoolExecutor).
-
-        Returns:
-            tuple: (success: bool, cost: float)
-        """
-        try:
-            # Load OCR output
-            with open(task['ocr_file'], 'r') as f:
-                ocr_data = json.load(f)
-
-            # Validate OCR input
-            ocr_page = OCRPageOutput(**ocr_data)
-
-            # Load page image from source directory (600 DPI)
-            page_image = Image.open(task['page_file'])
-
-            # Downsample to 300 DPI for vision model (reduces token cost)
-            page_image = downsample_for_vision(page_image)
-
-            # Call vision model for correction only
-            corrected_data, cost = self._correct_page_with_vision(ocr_page, page_image)
-
-            # Validate output against schema
-            try:
-                validated = CorrectionPageOutput(**corrected_data)
-                corrected_data = validated.model_dump()
-            except Exception as validation_error:
-                self.logger.error(
-                    f"Schema validation failed",
-                    page=task['page_num'],
-                    error=str(validation_error)
-                )
-                raise ValueError(f"Correction output failed schema validation: {validation_error}") from validation_error
-
-            # Save corrected output
-            output_file = task['corrected_dir'] / f"page_{task['page_num']:04d}.json"
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(corrected_data, f, indent=2)
-
-            # Mark complete in checkpoint with cost
-            if self.checkpoint:
-                self.checkpoint.mark_completed(task['page_num'], cost_usd=cost)
-
-            return True, cost
-
-        except Exception as e:
-            if self.logger:
-                self.logger.error(f"Page correction failed", page=task['page_num'], error=str(e))
-            return False, 0.0
-
-    def _image_to_base64(self, pil_image):
-        """Convert PIL Image to base64 string for vision API."""
-        buffered = io.BytesIO()
-        pil_image.save(buffered, format="PNG")
-        img_bytes = buffered.getvalue()
-        return base64.b64encode(img_bytes).decode('utf-8')
-
-    def _correct_page_with_vision(self, ocr_page, page_image):
-        """
-        Correct OCR errors using vision model (text corrections only).
-
-        Args:
-            ocr_page: OCRPageOutput object
-            page_image: PIL Image of the page
-
-        Returns:
-            tuple: (correction_data: dict, cost: float)
-        """
-        # Build OCR text representation for the prompt
-        ocr_text = self._format_ocr_for_prompt(ocr_page)
-
-        # Build the vision prompt
-        system_prompt = self._build_system_prompt()
-        user_prompt = self._build_user_prompt(ocr_page, ocr_text)
-
-        # Generate simplified JSON Schema for structured outputs
-        # OpenRouter's strict mode requires basic JSON Schema (no refs, no complex nesting)
-        response_schema = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "ocr_correction",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "blocks": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "block_num": {"type": "integer", "minimum": 1},
-                                    "paragraphs": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "par_num": {"type": "integer", "minimum": 1},
-                                                "text": {"type": ["string", "null"]},
-                                                "notes": {"type": ["string", "null"]},
-                                                "confidence": {"type": "number"}
-                                            },
-                                            "required": ["par_num", "text", "notes", "confidence"],
-                                            "additionalProperties": False
-                                        }
-                                    }
-                                },
-                                "required": ["block_num", "paragraphs"],
-                                "additionalProperties": False
-                            }
-                        }
-                    },
-                    "required": ["blocks"],
-                    "additionalProperties": False
-                }
-            }
-        }
-
-        # Call vision model with automatic JSON retry on parse failures
-        def parse_correction_json(response_text):
-            """Parse and validate correction JSON."""
-            data = json.loads(response_text)  # Will raise JSONDecodeError if invalid
-            return data
-
-        correction_data, usage, cost = self.llm_client.call_with_json_retry(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-                {"role": "assistant", "content": '{"blocks": ['}  # Response prefilling for structure enforcement
-            ],
-            json_parser=parse_correction_json,
-            temperature=0.1,
-            max_retries=2,  # Retry up to 2 times on JSON parse failures (3 total attempts)
-            images=[page_image],
-            timeout=180,
-            response_format=response_schema  # ✓ Structured outputs enabled
-        )
-
-        # Add metadata
-        correction_data['page_number'] = ocr_page.page_number
-        correction_data['model_used'] = self.model
-        correction_data['processing_cost'] = cost
-        correction_data['timestamp'] = datetime.now().isoformat()
-
-        # Calculate summary stats
-        total_corrections = sum(
-            1 for block in correction_data['blocks']
-            for p in block.get('paragraphs', [])
-            if p.get('text') is not None
-        )
-
-        avg_conf = sum(
-            p.get('confidence', 1.0)
-            for b in correction_data['blocks']
-            for p in b.get('paragraphs', [])
-        ) / sum(len(b.get('paragraphs', [])) for b in correction_data['blocks']) if correction_data['blocks'] else 1.0
-
-        correction_data['total_blocks'] = len(correction_data['blocks'])
-        correction_data['total_corrections'] = total_corrections
-        correction_data['avg_confidence'] = round(avg_conf, 3)
-
-        return correction_data, cost
 
     def _build_system_prompt(self):
         """Build the system prompt for vision correction."""
-        return """Fix OCR character-reading errors by comparing text to the page image.
+        return """<role>
+You are an OCR correction specialist. Compare OCR text against page images to identify and fix character-reading errors only.
+</role>
 
-═══════════════════════════════════════════════════════════════════════
-CRITICAL RULES (READ THESE FIRST)
-═══════════════════════════════════════════════════════════════════════
+<output_schema>
+Return JSON with corrected paragraphs. For each paragraph:
+- text: Full corrected paragraph (null if no errors)
+- notes: Brief correction description (max 100 characters)
+- confidence: Error certainty score (0.0-1.0)
 
-1. OUTPUT FORMAT:
-   - Use 1-based numbering: block_num and par_num start at 1 (not 0)
-   - If NO errors: text=null, notes="No OCR errors detected"
-   - If errors found: text=CORRECTED_FULL_PARAGRAPH, notes="Brief description"
+The JSON schema is enforced by the API. Focus on accuracy.
+</output_schema>
 
-2. WHEN YOU WRITE NOTES, YOU MUST APPLY THOSE CHANGES TO TEXT:
-   ❌ WRONG: notes="Fixed X", but text still has X
-   ✅ CORRECT: notes="Fixed X", text has X corrected
+<rules>
+1. Use 1-based indexing: block_num and par_num start at 1 (not 0)
+2. No errors detected: Set text=null with notes="No OCR errors detected" (exactly)
+3. Errors found: Set text=FULL_CORRECTED_PARAGRAPH (not partial)
+4. Notes must describe corrections actually applied to text field
+5. Most paragraphs (80-90%) have no errors - expect text=null frequently
+6. When text=null, notes must be "No OCR errors detected" (not correction descriptions)
+</rules>
 
-3. WHEN text=null, notes MUST be "No OCR errors detected" (exactly)
-   ❌ WRONG: text=null but notes describes changes
-   ❌ WRONG: text=full_paragraph with notes="No OCR errors detected"
+<examples>
+<example type="no_errors">
+  <ocr>The president announced the policy today.</ocr>
+  <output>{"text": null, "notes": "No OCR errors detected", "confidence": 1.0}</output>
+</example>
 
-4. MOST PARAGRAPHS (80-90%) HAVE NO ERRORS → text=null
+<example type="line_break_hyphen">
+  <ocr>The cam- paign in Kan- sas</ocr>
+  <image_content>The campaign in Kansas (no hyphens visible)</image_content>
+  <correction>Remove hyphen AND space to join word parts: "cam- paign" becomes "campaign"</correction>
+  <output>{"text": "The campaign in Kansas", "notes": "Removed line-break hyphens: 'cam-paign', 'Kan-sas'", "confidence": 0.97}</output>
+  <note>Most common OCR error (70% of corrections). Line-break hyphens are printing artifacts where words split across lines.</note>
+</example>
 
-═══════════════════════════════════════════════════════════════════════
-EXAMPLES (Learn from these)
-═══════════════════════════════════════════════════════════════════════
+<example type="character_substitution">
+  <ocr>The modem world</ocr>
+  <image_content>modern</image_content>
+  <output>{"text": "The modern world", "notes": "Fixed 'modem'→'modern' (rn→m)", "confidence": 0.95}</output>
+</example>
 
-Example 1: No Errors
-OCR: "The president announced the policy today."
-→ Output: {"text": null, "notes": "No OCR errors detected", "confidence": 1.0}
+<example type="ligature">
+  <ocr>The first ofﬁce policy</ocr>
+  <image_content>office (standard text, not ligature)</image_content>
+  <output>{"text": "The first office policy", "notes": "Fixed ligature 'ffi' in 'office'", "confidence": 0.98}</output>
+</example>
 
-Example 2: Line-Break Hyphen (Most Common - 70% of fixes)
-OCR: "The cam- paign in Kan- sas"
-Image shows: "The campaign in Kansas" (no hyphens in original)
-→ Output: {"text": "The campaign in Kansas", "notes": "Removed line-break hyphens: 'cam- paign'→'campaign', 'Kan- sas'→'Kansas'", "confidence": 0.97}
+<example type="number_letter_confusion">
+  <ocr>l9l5 presidential election</ocr>
+  <image_content>1915 presidential election</image_content>
+  <output>{"text": "1915 presidential election", "notes": "Fixed '1'/'l' confusion in '1915'", "confidence": 0.93}</output>
+</example>
 
-CRITICAL: Remove BOTH the hyphen AND the space (join word parts completely)
-❌ WRONG: "cam-paign" (kept hyphen, removed space)
-✅ CORRECT: "campaign" (removed hyphen AND space)
+<example type="multiple_fixes">
+  <ocr>The govern- ment an- nounced policy.</ocr>
+  <image_content>The government announced policy.</image_content>
+  <output>{"text": "The government announced policy.", "notes": "Removed line-break hyphens in 'government', 'announced'", "confidence": 0.96}</output>
+</example>
 
-Example 3: Character Substitution
-OCR: "The modem world"
-Image shows: "modern"
-→ Output: {"text": "The modern world", "notes": "Fixed 'modem'→'modern' (rn→m)", "confidence": 0.95}
+<example type="historical_spelling">
+  <ocr>The connexion between nations</ocr>
+  <image_content>connexion (period-appropriate spelling)</image_content>
+  <output>{"text": null, "notes": "No OCR errors detected", "confidence": 1.0}</output>
+  <reasoning>Preserve historical spellings - not OCR errors</reasoning>
+</example>
+</examples>
 
-Example 4: Multiple Fixes
-OCR: "The govern- ment an- nounced policy."
-→ Output: {"text": "The government announced policy.", "notes": "Removed line-break hyphens in 'government', 'announced'", "confidence": 0.96}
+<fix_these>
+Character-level OCR reading errors only:
 
-═══════════════════════════════════════════════════════════════════════
-WHAT TO FIX
-═══════════════════════════════════════════════════════════════════════
+- Line-break hyphens: "cam- paign" becomes "campaign"
+  Pattern: word-hyphen-space-word becomes single word
+  Remove BOTH hyphen and space (join completely)
 
-✅ FIX THESE (Character-Level OCR Errors Only):
-• Line-break hyphens: "cam- paign" → "campaign" (remove BOTH hyphen + space)
-  Pattern: [word]- [space][word] → join into single word
-  Note: These are printing artifacts where words split across lines
-• Character swaps: rn→m, cl→d, li→h, 1→l, 0→O
-• Ligatures: fi, fl, ff, ffi, ffl misread
-• Spacing: "thebook"→"the book" or "a  book"→"a book"
-• Punctuation: smart quotes, em dashes, symbol misreads
+- Character substitutions: Common patterns include
+  rn mistaken for m (e.g., "modem" for "modern")
+  cl mistaken for d (e.g., "clistance" for "distance")
+  li mistaken for h (e.g., "tlie" for "the")
+  1 mistaken for l or I (e.g., "l9l5" for "1915")
+  0 mistaken for O (e.g., "0ctober" for "October")
+  5 mistaken for S (e.g., "5eptember" for "September")
 
-❌ DO NOT FIX:
-• Grammar, writing quality, word choice
-• Historical spellings (keep "connexion", old terms)
-• Real compound hyphens: Keep "self-aware", "Vice-President", "pre-WWI", "T-Force"
-  (No space after hyphen = real hyphen, keep it!)
-• Facts, dates, numbers (not your job to validate)
-• Capitalization style preferences
+- Ligature misreads: fi, fl, ff, ffi, ffl rendered as special characters
 
-═══════════════════════════════════════════════════════════════════════
-CONFIDENCE SCORES
-═══════════════════════════════════════════════════════════════════════
+- Spacing errors:
+  Missing spaces: "thebook" becomes "the book"
+  Extra spaces: "a  book" becomes "a book"
 
-Based ONLY on image clarity and error obviousness:
-• 0.95-1.0: Obvious error, clear image (line-break hyphens, clear substitutions)
-• 0.85-0.94: Clear error, minor ambiguity
-• 0.70-0.84: Some ambiguity in image or error pattern
-• <0.70: Uncertain - consider text=null instead
+- Punctuation: Smart quotes, em dashes, symbol misreads
+</fix_these>
 
-═══════════════════════════════════════════════════════════════════════
-NOTES FORMAT
-═══════════════════════════════════════════════════════════════════════
+<do_not_fix>
+Content and style elements (out of scope):
 
-Keep brief (under 100 chars):
-• "Removed line-break hyphen in 'word'"
-• "Fixed 'X'→'Y' (character substitution)"
-• "No OCR errors detected" (when text=null)
+- Grammar, sentence structure, word choice
+- Writing quality or style improvements
+- Historical spellings: "connexion", "colour", "defence", archaic terms
+- Legitimate compound hyphens: "self-aware", "Vice-President", "pre-WWI"
+  Identification: No space after hyphen indicates real compound word
+- Factual content, dates, numbers (not verifiable from image alone)
+- Capitalization style preferences
+</do_not_fix>
 
-DO NOT write long explanations, analysis, or uncertainty.
-If uncertain, lower confidence score instead.
+<confidence_guidelines>
+Base confidence score on image clarity and error pattern obviousness:
 
-═══════════════════════════════════════════════════════════════════════
-REMEMBER
-═══════════════════════════════════════════════════════════════════════
+- 0.95-1.0: Obvious error with clear image and common pattern
+- 0.85-0.94: Clear error with minor ambiguity in image
+- 0.70-0.84: Some ambiguity in image quality or error pattern
+- Below 0.70: Too uncertain - use text=null instead
 
-1. Text=null means "No OCR errors detected" (use this 80-90% of the time)
-2. When you document a correction in notes, APPLY it in text
-3. Output FULL corrected paragraph, not partial fixes
-4. Keep notes brief and factual"""
+Do not express uncertainty in notes. Use confidence score for uncertainty level.
+</confidence_guidelines>
 
-    def _build_user_prompt(self, ocr_page, ocr_text):
-        """Build the user prompt with OCR data."""
-        return f"""Page {ocr_page.page_number} OCR output to verify:
+<notes_format>
+Keep notes brief (under 100 characters). Use standardized formats:
 
+- "Removed line-break hyphen in 'campaign'"
+- "Removed line-break hyphens: 'campaign', 'announced'"
+- "Fixed 'modem'→'modern' (character substitution)"
+- "Fixed ligature 'ffi' in 'office'"
+- "Fixed '1'/'l' confusion in '1915'"
+- "No OCR errors detected"
+
+Do not write explanations or descriptions of thought process.
+</notes_format>
+
+<historical_documents>
+This text may use period-appropriate conventions:
+- Preserve archaic spellings unless clearly OCR errors
+- Maintain historical capitalization patterns
+- Keep period-specific punctuation conventions
+</historical_documents>
+
+<output_requirements>
+Return ONLY valid JSON matching the schema.
+Do not include markdown code fences.
+Do not add explanatory text outside JSON structure.
+Do not include reasoning or analysis.
+</output_requirements>"""
+
+    def _build_user_prompt(self, ocr_page, ocr_text, page_num, total_pages, book_metadata):
+        """
+        Build the user prompt with OCR data and document context.
+
+        The page image is attached separately via the LLMRequest.images parameter
+        and sent alongside this text prompt for multimodal vision correction.
+        """
+        # Extract metadata fields with defaults
+        title = book_metadata.get('title', 'Unknown')
+        author = book_metadata.get('author', 'Unknown')
+        year = book_metadata.get('year', 'Unknown')
+        book_type = book_metadata.get('type', 'Unknown')
+
+        return f"""<document_context>
+Title: {title}
+Author: {author}
+Year: {year}
+Type: {book_type}
+</document_context>
+
+<page_context>
+Scanned page {page_num} of {total_pages} (PDF page number, not printed page number)
+</page_context>
+
+<ocr_data>
 {ocr_text}
+</ocr_data>
 
-Compare this OCR text to the page image you see above.
+<task>
+Compare the OCR text above against the page image.
 
-For each block/paragraph:
-1. Visually check if OCR text matches what you SEE in the image (character by character)
-2. If characters match → Set `text` to null (no correction needed)
-3. If you find character-level OCR reading errors → Output full corrected text
-4. Add brief `notes` explaining what you fixed (use standardized format)
-5. Provide `confidence` score based on image clarity and error certainty
+For each block and paragraph:
+1. Visually check if OCR text matches the image character-by-character
+2. If text matches image: Set text=null with notes="No OCR errors detected"
+3. If OCR reading errors found: Output full corrected paragraph text
+4. Provide brief notes using standardized format from examples
+5. Assign confidence score based on image clarity and error obviousness
 
-Remember: You are correcting OCR reading errors, not editing content. Most paragraphs (80-90%) should have `text: null`."""
+Remember: You are correcting character-level OCR reading errors only, not editing content. Most paragraphs (80-90%) should have text=null.
+</task>"""
 
     def _format_ocr_for_prompt(self, ocr_page):
         """Format OCR page data for the vision prompt."""

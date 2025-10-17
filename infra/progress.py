@@ -101,3 +101,14 @@ class ProgressBar:
         print()  # New line after progress bar
         if message:
             print(message)
+
+    def set_status(self, message: str):
+        """Display a temporary status message without updating progress.
+
+        Useful for showing transient states like "Rate limited, waiting..."
+        without affecting the progress bar state.
+
+        Args:
+            message: Status message to display
+        """
+        print(f"\r{self.prefix}{message}", end='', flush=True)

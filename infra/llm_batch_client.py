@@ -132,6 +132,9 @@ class LLMBatchClient:
                 )
                 futures.append(future)
 
+            # Emit initial progress immediately (shows workers starting)
+            self._emit_progress_event(on_event, total_requests)
+
             # Monitor progress
             last_progress_time = time.time()
             while any(not f.done() for f in futures):
