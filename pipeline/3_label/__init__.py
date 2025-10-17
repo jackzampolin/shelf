@@ -8,8 +8,6 @@ Text correction is handled in Stage 2 (Correct).
 
 import json
 import sys
-import base64
-import io
 import time
 import os
 from pathlib import Path
@@ -326,90 +324,42 @@ class VisionLabeler:
                 print("✅ No valid pages to process")
                 return
 
-            # Process with single-pass retry logic
-            # Progress bar tracks total pages (not iterations)
+            # Setup progress tracking
             print(f"\n   Labeling {len(requests)} pages...")
-            progress = ProgressBar(
-                total=len(requests),
-                prefix="   ",
-                width=40,
-                unit="pages"
+            label_start_time = time.time()
+            progress = ProgressBar(total=len(requests), prefix="   ", width=40, unit="pages")
+            progress.update(0, suffix="starting...")
+            failed_pages = []
+
+            # Callback wrappers (bind local state to class methods)
+            def on_event(event: EventData):
+                self._handle_progress_event(event, progress, len(requests))
+
+            def on_result(result: LLMResult):
+                self._handle_result(result, failed_pages, labels_dir)
+
+            # Process batch with callbacks
+            results = self.batch_client.process_batch(
+                requests,
+                json_parser=json.loads,
+                on_event=on_event,
+                on_result=on_result
             )
 
-            # Single-pass retry: Process → Accumulate failures → Retry failed batch
-            retry_count = 0
-            pending_tasks = tasks.copy()
-            completed = 0
-
-            while pending_tasks and retry_count < self.max_retries:
-                # Track failures for this pass
-                failed_tasks = []
-
-                # Process current batch in parallel
-                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                    future_to_task = {
-                        executor.submit(self._process_single_page, task): task
-                        for task in pending_tasks
-                    }
-
-                    for future in as_completed(future_to_task):
-                        task = future_to_task[future]
-                        try:
-                            success, cost = future.result()
-                            if success:
-                                # Success: increment progress, update stats
-                                with self.stats_lock:
-                                    self.stats['pages_processed'] += 1
-                                    self.stats['total_cost_usd'] += cost
-                                completed += 1
-
-                                # Update progress bar (only on success)
-                                with self.stats_lock:
-                                    total_cost = self.stats['total_cost_usd']
-
-                                # Suffix: Just cost, with attempt indicator if retrying
-                                suffix = f"${total_cost:.2f}"
-                                if retry_count > 0:
-                                    suffix += f" (attempt {retry_count + 1}/{self.max_retries})"
-
-                                progress.update(completed, suffix=suffix)
-                            else:
-                                # Failure: accumulate for retry
-                                failed_tasks.append(task)
-                        except Exception as e:
-                            # Exception: accumulate for retry
-                            failed_tasks.append(task)
-                            self.logger.error(f"Page processing exception", page=task['page_num'], error=str(e))
-
-                # After pass completes, check for failures
-                if failed_tasks:
-                    retry_count += 1
-                    if retry_count < self.max_retries:
-                        # Retry failed batch after delay
-                        import time
-                        delay = min(30, 10 * retry_count)  # 10s, 20s, 30s
-                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed, retrying after {delay}s (attempt {retry_count + 1}/{self.max_retries})...")
-                        time.sleep(delay)
-                        pending_tasks = failed_tasks
-                    else:
-                        # Max retries reached
-                        print(f"\n   ⚠️  {len(failed_tasks)} page(s) failed after {self.max_retries} attempts")
-                        break
-                else:
-                    # All succeeded
-                    break
-
             # Finish progress bar
-            errors = len(pending_tasks) if retry_count >= self.max_retries else 0
-            progress.finish(f"   ✓ {completed}/{len(requests)} pages labeled")
-            if errors > 0:
-                failed_pages = sorted([t['page_num'] for t in pending_tasks])
-                print(f"   ⚠️  {errors} pages failed: {failed_pages[:10]}" + (f" and {len(failed_pages)-10} more" if len(failed_pages) > 10 else ""))
+            label_elapsed = time.time() - label_start_time
+            batch_stats = self.batch_client.get_batch_stats(total_requests=len(requests))
+            progress.finish(f"   ✓ {batch_stats.completed}/{len(requests)} pages labeled in {label_elapsed:.1f}s")
 
-            # Get final stats under lock
-            with self.stats_lock:
-                completed = self.stats['pages_processed']
-                total_cost = self.stats['total_cost_usd']
+            errors = len(failed_pages)
+            if errors > 0:
+                print(f"   ⚠️  {errors} pages failed: {sorted(failed_pages)[:10]}" +
+                      (f" and {len(failed_pages)-10} more" if len(failed_pages) > 10 else ""))
+
+            # Get final stats from batch client (single source of truth)
+            final_stats = self.batch_client.get_batch_stats(total_requests=len(requests))
+            completed = final_stats.completed
+            total_cost = final_stats.total_cost_usd
 
             # Only mark stage complete if ALL pages succeeded
             if errors == 0:
@@ -463,145 +413,124 @@ class VisionLabeler:
             if self.logger:
                 self.logger.close()
 
-    def _process_single_page(self, task):
-        """
-        Process a single page (called by ThreadPoolExecutor).
-
-        Returns:
-            tuple: (success: bool, cost: float)
-        """
+    def _handle_progress_event(self, event: EventData, progress: ProgressBar, total_requests: int):
+        """Handle progress event for batch processing."""
         try:
-            # Load OCR output
-            with open(task['ocr_file'], 'r') as f:
-                ocr_data = json.load(f)
+            if event.event_type == LLMEvent.PROGRESS:
+                active = self.batch_client.get_active_requests()
+                recent = self.batch_client.get_recent_completions()
 
-            # Validate OCR input
-            ocr_page = OCRPageOutput(**ocr_data)
+                batch_stats = self.batch_client.get_batch_stats(total_requests=total_requests)
+                rate_util = event.rate_limit_status.get('utilization', 0) if event.rate_limit_status else 0
+                suffix = f"${batch_stats.total_cost_usd:.2f} | {rate_util:.0%} rate"
 
-            # Load page image from source directory (600 DPI)
-            page_image = Image.open(task['page_file'])
+                # Show executing requests
+                for req_id, status in active.items():
+                    if status.phase == RequestPhase.EXECUTING:
+                        page_id = req_id.replace('page_', 'p')
+                        elapsed = status.phase_elapsed
+                        if status.retry_count > 0:
+                            progress.add_sub_line(req_id,
+                                f"{page_id}: Executing... ({elapsed:.1f}s, retry {status.retry_count}/{self.max_retries})")
+                        else:
+                            progress.add_sub_line(req_id, f"{page_id}: Executing... ({elapsed:.1f}s)")
 
-            # Downsample to 300 DPI for vision model (reduces token cost)
-            page_image = downsample_for_vision(page_image)
+                # Show recent completions
+                for req_id, comp in recent.items():
+                    page_id = req_id.replace('page_', 'p')
+                    if comp.success:
+                        progress.add_sub_line(req_id,
+                            f"{page_id}: ✓ ({comp.total_time_seconds:.1f}s, ${comp.cost_usd:.4f})")
+                    else:
+                        error_preview = comp.error_message[:30] if comp.error_message else 'unknown'
+                        progress.add_sub_line(req_id,
+                            f"{page_id}: ✗ ({comp.total_time_seconds:.1f}s) - {error_preview}")
 
-            # Call vision model for page number extraction and classification
-            label_data, cost = self._label_page_with_vision(
-                ocr_page,
-                page_image,
-                task['total_pages'],
-                task['book_metadata']
-            )
+                progress.update(event.completed, suffix=suffix)
 
-            # Validate output against schema
-            try:
-                validated = LabelPageOutput(**label_data)
-                label_data = validated.model_dump()
-            except Exception as validation_error:
-                self.logger.error(
-                    f"Schema validation failed",
-                    page=task['page_num'],
-                    error=str(validation_error)
-                )
-                raise ValueError(f"Label output failed schema validation: {validation_error}") from validation_error
-
-            # Save label output
-            output_file = task['labels_dir'] / f"page_{task['page_num']:04d}.json"
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(label_data, f, indent=2)
-
-            # Mark complete in checkpoint with cost
-            if self.checkpoint:
-                self.checkpoint.mark_completed(task['page_num'], cost_usd=cost)
-
-            return True, cost
+            elif event.event_type == LLMEvent.RATE_LIMITED:
+                progress.set_status(f"⏸️  Rate limited, resuming in {event.eta_seconds:.0f}s")
 
         except Exception as e:
-            if self.logger:
-                self.logger.error(f"Page labeling failed", page=task['page_num'], error=str(e))
-            return False, 0.0
+            import traceback
+            error_msg = f"ERROR: Progress update failed: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+            print(error_msg, file=sys.stderr, flush=True)
+            # Don't raise - let processing continue
 
-    def _image_to_base64(self, pil_image):
-        """Convert PIL Image to base64 string for vision API."""
-        buffered = io.BytesIO()
-        pil_image.save(buffered, format="PNG")
-        img_bytes = buffered.getvalue()
-        return base64.b64encode(img_bytes).decode('utf-8')
+    def _handle_result(self, result: LLMResult, failed_pages: list, labels_dir: Path) -> int:
+        """Handle LLM result - save successful pages, track failures."""
+        try:
+            page_num = result.request.metadata['page_num']
 
-    def _label_page_with_vision(self, ocr_page, page_image, total_pages, book_metadata):
-        """
-        Extract page numbers, classify page region, and classify blocks using vision model.
+            if result.success:
+                try:
+                    # Add metadata to label data
+                    label_data = result.parsed_json
+                    if label_data is None:
+                        raise ValueError("parsed_json is None for successful result")
 
-        Args:
-            ocr_page: OCRPageOutput object
-            page_image: PIL Image of the page
-            total_pages: Total pages in book (for region classification context)
-            book_metadata: Book metadata dict (for document context in prompts)
+                    label_data['page_number'] = result.request.metadata['ocr_page_number']
+                    label_data['model_used'] = self.model
+                    label_data['processing_cost'] = result.cost_usd
+                    label_data['timestamp'] = datetime.now().isoformat()
 
-        Returns:
-            tuple: (label_data: dict, cost: float)
-        """
-        # Build OCR text representation for the prompt (using Stage 2 pattern)
-        ocr_text = json.dumps(ocr_page.model_dump(), indent=2)
+                    # Calculate summary stats
+                    avg_class_conf = sum(b.get('classification_confidence', 0) for b in label_data['blocks']) / len(label_data['blocks']) if label_data['blocks'] else 0
+                    avg_conf = sum(
+                        p.get('confidence', 1.0)
+                        for b in label_data['blocks']
+                        for p in b.get('paragraphs', [])
+                    ) / sum(len(b.get('paragraphs', [])) for b in label_data['blocks']) if label_data['blocks'] else 1.0
 
-        # Build the vision prompt with page context
-        user_prompt = build_user_prompt(
-            ocr_page=ocr_page,
-            ocr_text=ocr_text,
-            current_page=ocr_page.page_number,
-            total_pages=total_pages,
-            book_metadata=book_metadata
-        )
+                    label_data['total_blocks'] = len(label_data['blocks'])
+                    label_data['avg_classification_confidence'] = round(avg_class_conf, 3)
+                    label_data['avg_confidence'] = round(avg_conf, 3)
 
-        # Build JSON schema from Pydantic model (using LabelPageOutput schema)
-        response_schema = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "page_labeling",
-                "strict": True,
-                "schema": LabelPageOutput.model_json_schema()
-            }
-        }
+                    # Validate output against schema
+                    validated = LabelPageOutput(**label_data)
+                    label_data = validated.model_dump()
 
-        # Call vision model with automatic JSON retry on parse failures
-        def parse_label_json(response_text):
-            """Parse and validate label JSON."""
-            data = json.loads(response_text)  # Will raise JSONDecodeError if invalid
-            return data
+                    # Save label output (atomic write)
+                    output_file = labels_dir / f"page_{page_num:04d}.json"
+                    temp_file = output_file.with_suffix('.json.tmp')
 
-        label_data, usage, cost = self.llm_client.call_with_json_retry(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-                {"role": "assistant", "content": '{"printed_page_number":'}  # Response prefilling for structure enforcement
-            ],
-            json_parser=parse_label_json,
-            temperature=0.1,
-            max_retries=2,  # Retry up to 2 times on JSON parse failures (3 total attempts)
-            images=[page_image],
-            timeout=180,
-            response_format=response_schema
-        )
+                    with open(temp_file, 'w', encoding='utf-8') as f:
+                        json.dump(label_data, f, indent=2)
 
-        # Add metadata
-        label_data['page_number'] = ocr_page.page_number
-        label_data['model_used'] = self.model
-        label_data['processing_cost'] = cost
-        label_data['timestamp'] = datetime.now().isoformat()
+                    temp_file.replace(output_file)
 
-        # Calculate summary stats
-        avg_class_conf = sum(b.get('classification_confidence', 0) for b in label_data['blocks']) / len(label_data['blocks']) if label_data['blocks'] else 0
-        avg_conf = sum(
-            p.get('confidence', 1.0)
-            for b in label_data['blocks']
-            for p in b.get('paragraphs', [])
-        ) / sum(len(b.get('paragraphs', [])) for b in label_data['blocks']) if label_data['blocks'] else 1.0
+                    # Mark checkpoint complete
+                    if self.checkpoint:
+                        self.checkpoint.mark_completed(page_num, cost_usd=result.cost_usd)
 
-        label_data['total_blocks'] = len(label_data['blocks'])
-        label_data['avg_classification_confidence'] = round(avg_class_conf, 3)
-        label_data['avg_confidence'] = round(avg_conf, 3)
+                    return 1  # Success
 
-        return label_data, cost
+                except Exception as e:
+                    import traceback
+                    failed_pages.append(page_num)
+                    print(f"❌ Failed to save page {page_num} result: {traceback.format_exc()}",
+                          file=sys.stderr, flush=True)
+                    return 0
+            else:
+                # Permanent failure (already logged by LLMBatchClient)
+                failed_pages.append(page_num)
+                return 0
+
+        except Exception as e:
+            # Critical: Catch errors from metadata access
+            import traceback
+            error_msg = f"CRITICAL: on_result callback failed: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+            print(error_msg, file=sys.stderr, flush=True)
+
+            try:
+                if hasattr(result, 'request') and result.request and hasattr(result.request, 'metadata'):
+                    page_num = result.request.metadata.get('page_num', 'unknown')
+                    if page_num != 'unknown':
+                        failed_pages.append(page_num)
+            except:
+                pass
+
+            return 0
 
     def clean_stage(self, scan_id: str, confirm: bool = False):
         """
