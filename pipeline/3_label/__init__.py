@@ -71,15 +71,7 @@ class VisionLabeler:
         self.model = model or Config.VISION_MODEL
         self.max_workers = max_workers
         self.max_retries = max_retries
-        self.progress_lock = threading.Lock()
-        self.stats_lock = threading.Lock()  # Lock for thread-safe statistics updates
-        self.stats = {
-            "total_cost_usd": 0.0,
-            "pages_processed": 0,
-            "failed_pages": 0
-        }
         self.logger = None  # Will be initialized per book
-        self.checkpoint = None  # Will be initialized per book
         self.enable_checkpoints = enable_checkpoints
         self.batch_client = None  # Will be initialized per book
 
@@ -108,56 +100,13 @@ class VisionLabeler:
         logs_dir.mkdir(exist_ok=True)
         self.logger = create_logger(book_title, "label", log_dir=logs_dir, console_output=False)
 
-        # Initialize checkpoint manager
+        # Use checkpoint property from storage
         if self.enable_checkpoints:
-            # Migrate old "labels" checkpoint to "label" (temporary migration code)
-            checkpoint_dir = book_dir / "checkpoints"
-            old_checkpoint = checkpoint_dir / "labels.json"
-            new_checkpoint = checkpoint_dir / "label.json"
-            if old_checkpoint.exists() and not new_checkpoint.exists():
-                import shutil
-                shutil.move(str(old_checkpoint), str(new_checkpoint))
-                print(f"   Migrated checkpoint: labels.json → label.json")
-
-            self.checkpoint = CheckpointManager(
-                scan_id=book_title,
-                stage="label",
-                storage_root=self.storage_root,
-                output_dir="labels"
-            )
+            checkpoint = storage.label.checkpoint
             if not resume:
-                # Check if checkpoint exists with progress before resetting
-                if self.checkpoint.checkpoint_file.exists():
-                    status = self.checkpoint.get_status()
-                    completed = len(status.get('completed_pages', []))
-                    total = status.get('total_pages', 0)
-                    cost = status.get('metadata', {}).get('total_cost_usd', 0.0)
-
-                    if completed > 0:
-                        print(f"\n⚠️  Checkpoint exists with progress:")
-                        print(f"   Pages: {completed}/{total} complete ({completed/total*100:.1f}%)" if total > 0 else f"   Pages: {completed} complete")
-                        print(f"   Cost: ${cost:.2f}")
-                        print(f"   This will DELETE progress and start over.")
-
-                        response = input("\n   Continue with reset? (type 'yes' to confirm): ").strip().lower()
-                        if response != 'yes':
-                            print("   Cancelled. Use --resume to continue from checkpoint.")
-                            return
-
-                self.checkpoint.reset()
-                # Reset stats on fresh start
-                with self.stats_lock:
-                    self.stats = {
-                        "total_cost_usd": 0.0,
-                        "pages_processed": 0,
-                        "failed_pages": 0
-                    }
-            else:
-                # Load existing cost from checkpoint for resume runs
-                checkpoint_state = self.checkpoint.get_status()
-                existing_cost = checkpoint_state.get('metadata', {}).get('total_cost_usd', 0.0)
-                with self.stats_lock:
-                    self.stats['total_cost_usd'] = existing_cost
+                if not checkpoint.reset(confirm=True):
+                    print("   Use --resume to continue from checkpoint.")
+                    return
 
         # Initialize batch LLM client with failure logging
         self.batch_client = LLMBatchClient(
@@ -197,8 +146,8 @@ class VisionLabeler:
 
             # Get pages to process (this sets checkpoint status to "in_progress")
             # Note: storage.label.validate_inputs() already validated source images exist
-            if self.checkpoint:
-                pages_to_process = self.checkpoint.get_remaining_pages(
+            if self.enable_checkpoints:
+                pages_to_process = checkpoint.get_remaining_pages(
                     total_pages=total_pages,
                     resume=resume
                 )
@@ -321,7 +270,7 @@ class VisionLabeler:
                 self._handle_progress_event(event, progress, len(requests))
 
             def on_result(result: LLMResult):
-                self._handle_result(result, failed_pages, storage)
+                self._handle_result(result, failed_pages, storage, checkpoint if self.enable_checkpoints else None)
 
             # Process batch with callbacks
             results = self.batch_client.process_batch(
@@ -349,8 +298,8 @@ class VisionLabeler:
             # Only mark stage complete if ALL pages succeeded
             if errors == 0:
                 # Mark stage complete with cost in metadata
-                if self.checkpoint:
-                    self.checkpoint.mark_stage_complete(metadata={
+                if self.enable_checkpoints:
+                    checkpoint.mark_stage_complete(metadata={
                         "model": self.model,
                         "total_cost_usd": total_cost,
                         "pages_processed": completed
@@ -388,8 +337,8 @@ class VisionLabeler:
         except Exception as e:
             # Stage-level error handler
             self.logger.error(f"Labeling stage failed", error=str(e))
-            if self.checkpoint:
-                self.checkpoint.mark_stage_failed(error=str(e))
+            if self.enable_checkpoints:
+                checkpoint.mark_stage_failed(error=str(e))
             print(f"\n❌ Labeling stage failed: {e}")
             raise
         finally:
@@ -441,7 +390,7 @@ class VisionLabeler:
             print(error_msg, file=sys.stderr, flush=True)
             # Don't raise - let processing continue
 
-    def _handle_result(self, result: LLMResult, failed_pages: list, storage: BookStorage) -> int:
+    def _handle_result(self, result: LLMResult, failed_pages: list, storage: BookStorage, checkpoint) -> int:
         """Handle LLM result - save successful pages, track failures."""
         try:
             page_num = result.request.metadata['page_num']
@@ -483,8 +432,8 @@ class VisionLabeler:
                     )
 
                     # Mark checkpoint complete
-                    if self.checkpoint:
-                        self.checkpoint.mark_completed(page_num, cost_usd=result.cost_usd)
+                    if checkpoint:
+                        checkpoint.mark_completed(page_num, cost_usd=result.cost_usd)
 
                     return 1  # Success
 
