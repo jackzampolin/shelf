@@ -116,21 +116,20 @@ class VisionCorrector:
                     return
 
         try:
-            # Get list of OCR outputs
-            ocr_files = storage.ocr.list_output_pages()
-            total_pages = len(ocr_files)  # For logging/display only
+            # Get pages to process (checkpoint auto-detects total_pages from source directory)
+            if self.enable_checkpoints:
+                pages_to_process = storage.correction.checkpoint.get_remaining_pages(resume=resume)
+                total_pages = storage.correction.checkpoint._state['total_pages']
+            else:
+                # Non-checkpoint mode: count pages manually
+                total_pages = len(storage.ocr.list_output_pages())
+                pages_to_process = list(range(1, total_pages + 1))
 
             # Stage entry
             print(f"\n🔧 Correction Stage ({book_title})")
             print(f"   Pages:     {total_pages}")
             print(f"   Workers:   {self.max_workers}")
             print(f"   Model:     {self.model}")
-
-            # Get pages to process (auto-detects total_pages from source directory)
-            if self.enable_checkpoints:
-                pages_to_process = storage.correction.checkpoint.get_remaining_pages(resume=resume)
-            else:
-                pages_to_process = list(range(1, total_pages + 1))
 
             # Pre-load OCR data and prepare requests (parallelized)
             print(f"\n   Loading {len(pages_to_process)} pages...")
@@ -261,7 +260,6 @@ class VisionCorrector:
                 unit="pages"
             )
             progress.update(0, suffix="starting...")  # Show initial progress bar
-            completed_count = 0
             failed_pages = []
 
             # Callback wrappers (bind local state to class methods)
@@ -269,8 +267,7 @@ class VisionCorrector:
                 self._handle_progress_event(event, progress, len(requests))
 
             def on_result(result: LLMResult):
-                nonlocal completed_count
-                completed_count += self._handle_result(result, failed_pages)
+                self._handle_result(result, failed_pages)
 
             # Process batch with new client
             results = self.batch_client.process_batch(
@@ -282,15 +279,16 @@ class VisionCorrector:
 
             # Finish progress bar with elapsed time
             correction_elapsed = time.time() - correction_start_time
-            progress.finish(f"   ✓ {completed_count}/{len(requests)} pages corrected in {correction_elapsed:.1f}s")
+            batch_stats = self.batch_client.get_batch_stats(total_requests=len(requests))
+            progress.finish(f"   ✓ {batch_stats.completed}/{len(requests)} pages corrected in {correction_elapsed:.1f}s")
             errors = len(failed_pages)
             if errors > 0:
                 print(f"   ⚠️  {errors} pages failed: {sorted(failed_pages)[:10]}" + (f" and {len(failed_pages)-10} more" if len(failed_pages) > 10 else ""))
 
-            # Get final stats from batch client
-            batch_stats = self.batch_client.get_batch_stats(total_requests=total_pages)
-            completed = batch_stats.completed
-            total_cost = batch_stats.total_cost_usd
+            # Get final stats from batch client (single source of truth)
+            final_stats = self.batch_client.get_batch_stats(total_requests=total_pages)
+            completed = final_stats.completed
+            total_cost = final_stats.total_cost_usd
 
             # Only mark stage complete if ALL pages succeeded
             if errors == 0:
