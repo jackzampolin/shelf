@@ -104,7 +104,9 @@ class MergeProcessor:
                 self.checkpoint = storage.merge.checkpoint
 
                 if not resume:
-                    self.checkpoint.reset()
+                    if not self.checkpoint.reset(confirm=True):
+                        print("   Use --resume to continue from checkpoint.")
+                        return
 
             # Get pages to process
             if self.checkpoint and resume:
@@ -250,19 +252,12 @@ class MergeProcessor:
             # Merge page data (three-way merge)
             merged_page, corrections_used, has_continuation = self._merge_page_data(ocr_page, correction_page, label_page)
 
-            # Save output
-            output_file = storage.merge.output_page(page_num)
-            temp_file = output_file.with_suffix('.json.tmp')
-
-            with open(temp_file, 'w') as f:
-                json.dump(merged_page, f, indent=2, ensure_ascii=False)
-
-            # Atomic rename
-            temp_file.replace(output_file)
-
-            # Mark checkpoint complete
-            if self.checkpoint:
-                self.checkpoint.mark_completed(page_num, cost_usd=0.0)
+            # Save output (handles atomic write + checkpoint atomically)
+            storage.merge.save_page(
+                page_num=page_num,
+                data=merged_page,
+                cost_usd=0.0
+            )
 
             return True, corrections_used, has_continuation
 
