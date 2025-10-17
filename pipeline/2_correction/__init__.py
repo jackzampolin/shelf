@@ -11,6 +11,7 @@ Writes corrected output to {scan_id}/corrected/page_XXXX.json
 
 import json
 import sys
+import time
 from pathlib import Path
 from datetime import datetime
 from PIL import Image
@@ -107,7 +108,7 @@ class VisionCorrector:
             max_retries=self.max_retries,
             retry_jitter=(1.0, 3.0),
             json_retry_budget=2,
-            verbose=self.verbose,
+            verbose=True,  # Enable per-request events for progress tracking
             progress_interval=0.5  # Update progress every 0.5s
         )
 
@@ -183,6 +184,7 @@ class VisionCorrector:
 
             # Pre-load OCR data and prepare requests (parallelized)
             print(f"\n   Loading {len(pages_to_process)} pages...")
+            load_start_time = time.time()
             load_progress = ProgressBar(
                 total=len(pages_to_process),
                 prefix="   ",
@@ -323,8 +325,9 @@ class VisionCorrector:
                         completed_loads += 1
                         load_progress.update(completed_loads, suffix=f"{len(requests)} loaded")
 
-            # Finish loading progress
-            load_progress.finish()
+            # Finish loading progress with elapsed time
+            load_elapsed = time.time() - load_start_time
+            load_progress.finish(f"   ✓ {len(requests)} pages loaded in {load_elapsed:.1f}s")
 
             if len(requests) == 0:
                 self.logger.info("No valid pages to process")
@@ -333,6 +336,7 @@ class VisionCorrector:
 
             # Setup progress tracking
             print(f"\n   Correcting {len(requests)} pages...")
+            correction_start_time = time.time()
             progress = ProgressBar(
                 total=len(requests),
                 prefix="   ",
@@ -343,23 +347,105 @@ class VisionCorrector:
             completed_count = 0
             failed_pages = []
 
+            # Track currently executing requests (for per-request display)
+            executing_requests = {}  # {request_id: {'start_time': timestamp, 'retry_count': N}}
+            # Track recently completed requests to show for a few cycles
+            # Format: {request_id: {'status': 'completed'/'failed', 'time': elapsed_seconds, 'cost': usd, 'error': msg, 'cycles_left': N}}
+            completed_requests = {}
+            executing_lock = threading.Lock()
+
             # Define event callback for progress updates
             def on_event(event: EventData):
-                nonlocal progress
+                nonlocal progress, executing_requests, completed_requests
                 try:
-                    if event.event_type == LLMEvent.PROGRESS:
+                    if event.event_type == LLMEvent.EXECUTING:
+                        # Request just started - add to tracking and show sub-line
+                        with executing_lock:
+                            # Preserve retry count if this is a retry, otherwise start at 0
+                            retry_count = executing_requests.get(event.request_id, {}).get('retry_count', 0)
+                            executing_requests[event.request_id] = {
+                                'start_time': event.timestamp,
+                                'retry_count': retry_count
+                            }
+                            # Extract page ID from request_id (format: "page_0001" -> "p0001")
+                            page_id = event.request_id.replace('page_', 'p')
+                            # Show sub-line with status and time (and retry count if > 0)
+                            if retry_count > 0:
+                                progress.add_sub_line(event.request_id,
+                                    f"{page_id}: Executing... (0.0s, retry {retry_count}/{self.max_retries})")
+                            else:
+                                progress.add_sub_line(event.request_id, f"{page_id}: Executing... (0.0s)")
+
+                    elif event.event_type == LLMEvent.RETRY_QUEUED:
+                        # Request will be retried - update retry count
+                        with executing_lock:
+                            if event.request_id in executing_requests:
+                                executing_requests[event.request_id]['retry_count'] = event.retry_count
+                            else:
+                                # First retry - create entry
+                                executing_requests[event.request_id] = {
+                                    'start_time': event.timestamp,
+                                    'retry_count': event.retry_count
+                                }
+                            page_id = event.request_id.replace('page_', 'p')
+                            progress.add_sub_line(event.request_id,
+                                f"{page_id}: Retry queued... ({event.retry_count}/{self.max_retries})")
+
+                    elif event.event_type == LLMEvent.COMPLETED:
+                        # Request completed - just remove from executing (on_result will populate completion info)
+                        with executing_lock:
+                            executing_requests.pop(event.request_id, None)
+
+                    elif event.event_type == LLMEvent.FAILED:
+                        # Request failed - just remove from executing (on_result will populate completion info)
+                        with executing_lock:
+                            executing_requests.pop(event.request_id, None)
+
+                    elif event.event_type == LLMEvent.PROGRESS:
                         # Update progress bar with aggregate stats
                         with self.stats_lock:
                             total_cost = self.stats['total_cost_usd']
                         rate_util = event.rate_limit_status.get('utilization', 0) if event.rate_limit_status else 0
 
-                        # Show different message if no completions yet
-                        if event.completed == 0:
-                            suffix = f"{event.in_flight} executing..."
-                        else:
-                            suffix = f"${total_cost:.2f} | {rate_util:.0%} rate"
+                        # Build suffix with cost and rate
+                        suffix = f"${total_cost:.2f} | {rate_util:.0%} rate"
+
+                        # Update elapsed time for all executing requests and show completed ones
+                        current_time = time.time()
+                        with executing_lock:
+                            # Update executing requests
+                            for request_id, info in list(executing_requests.items()):
+                                elapsed = current_time - info['start_time']
+                                page_id = request_id.replace('page_', 'p')
+                                # Update sub-line with current elapsed time (and retry count if > 0)
+                                retry_count = info.get('retry_count', 0)
+                                if retry_count > 0:
+                                    progress.add_sub_line(request_id,
+                                        f"{page_id}: Executing... ({elapsed:.1f}s, retry {retry_count}/{self.max_retries})")
+                                else:
+                                    progress.add_sub_line(request_id, f"{page_id}: Executing... ({elapsed:.1f}s)")
+
+                            # Show recently completed requests
+                            for request_id in list(completed_requests.keys()):
+                                info = completed_requests[request_id]
+                                page_id = request_id.replace('page_', 'p')
+
+                                if info['status'] == 'completed':
+                                    progress.add_sub_line(request_id,
+                                        f"{page_id}: ✓ ({info['time']:.1f}s, ${info['cost']:.4f})")
+                                else:  # failed
+                                    error_preview = info.get('error', 'unknown')[:30]
+                                    progress.add_sub_line(request_id,
+                                        f"{page_id}: ✗ ({info['time']:.1f}s) - {error_preview}")
+
+                                # Decrement cycles and remove if expired
+                                info['cycles_left'] -= 1
+                                if info['cycles_left'] <= 0:
+                                    progress.remove_sub_line(request_id)
+                                    del completed_requests[request_id]
 
                         progress.update(event.completed, suffix=suffix)
+
                     elif event.event_type == LLMEvent.RATE_LIMITED:
                         progress.set_status(f"⏸️  Rate limited, resuming in {event.eta_seconds:.0f}s")
                 except Exception as e:
@@ -371,12 +457,22 @@ class VisionCorrector:
 
             # Define result callback for checkpoint/stats
             def on_result(result: LLMResult):
-                nonlocal completed_count, failed_pages
+                nonlocal completed_count, failed_pages, completed_requests
 
                 try:
                     # Extract metadata with defensive error handling
                     page_num = result.request.metadata['page_num']
                     result_storage = result.request.metadata['storage']
+
+                    # Store completion info for display (before COMPLETED/FAILED event)
+                    with executing_lock:
+                        completed_requests[result.request_id] = {
+                            'status': 'completed' if result.success else 'failed',
+                            'time': result.total_time_seconds,
+                            'cost': result.cost_usd,
+                            'error': result.error_message or 'unknown error',
+                            'cycles_left': 6  # Show for ~3 seconds (6 * 0.5s PROGRESS interval)
+                        }
 
                     if result.success:
                         try:
@@ -467,8 +563,9 @@ class VisionCorrector:
                 on_result=on_result
             )
 
-            # Finish progress bar
-            progress.finish(f"   ✓ {completed_count}/{len(requests)} pages corrected")
+            # Finish progress bar with elapsed time
+            correction_elapsed = time.time() - correction_start_time
+            progress.finish(f"   ✓ {completed_count}/{len(requests)} pages corrected in {correction_elapsed:.1f}s")
             errors = len(failed_pages)
             if errors > 0:
                 print(f"   ⚠️  {errors} pages failed: {sorted(failed_pages)[:10]}" + (f" and {len(failed_pages)-10} more" if len(failed_pages) > 10 else ""))
