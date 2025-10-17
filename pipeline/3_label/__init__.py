@@ -35,6 +35,11 @@ LabelPageOutput = label_schemas.LabelPageOutput
 BlockClassification = label_schemas.BlockClassification
 ParagraphLabel = label_schemas.ParagraphLabel
 
+# Import prompts
+label_prompts = importlib.import_module('pipeline.3_label.prompts')
+SYSTEM_PROMPT = label_prompts.SYSTEM_PROMPT
+build_user_prompt = label_prompts.build_user_prompt
+
 
 class VisionLabeler:
     """
