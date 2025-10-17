@@ -281,131 +281,13 @@ class VisionCorrector:
             completed_count = 0
             failed_pages = []
 
-            # Define event callback for progress updates
+            # Callback wrappers (bind local state to class methods)
             def on_event(event: EventData):
-                nonlocal progress
-                try:
-                    if event.event_type == LLMEvent.PROGRESS:
-                        # Query batch client for current state
-                        active = self.batch_client.get_active_requests()
-                        recent = self.batch_client.get_recent_completions()
+                self._handle_progress_event(event, progress, len(requests))
 
-                        # Update progress bar
-                        batch_stats = self.batch_client.get_batch_stats(total_requests=len(requests))
-                        rate_util = event.rate_limit_status.get('utilization', 0) if event.rate_limit_status else 0
-                        suffix = f"${batch_stats.total_cost_usd:.2f} | {rate_util:.0%} rate"
-
-                        # Show executing requests
-                        for req_id, status in active.items():
-                            if status.phase == RequestPhase.EXECUTING:
-                                page_id = req_id.replace('page_', 'p')
-                                elapsed = status.phase_elapsed
-
-                                if status.retry_count > 0:
-                                    progress.add_sub_line(req_id,
-                                        f"{page_id}: Executing... ({elapsed:.1f}s, retry {status.retry_count}/{self.max_retries})")
-                                else:
-                                    progress.add_sub_line(req_id, f"{page_id}: Executing... ({elapsed:.1f}s)")
-
-                        # Show recent completions
-                        for req_id, comp in recent.items():
-                            page_id = req_id.replace('page_', 'p')
-
-                            if comp.success:
-                                progress.add_sub_line(req_id,
-                                    f"{page_id}: ✓ ({comp.total_time_seconds:.1f}s, ${comp.cost_usd:.4f})")
-                            else:
-                                error_preview = comp.error_message[:30] if comp.error_message else 'unknown'
-                                progress.add_sub_line(req_id,
-                                    f"{page_id}: ✗ ({comp.total_time_seconds:.1f}s) - {error_preview}")
-
-                        progress.update(event.completed, suffix=suffix)
-
-                    elif event.event_type == LLMEvent.RATE_LIMITED:
-                        progress.set_status(f"⏸️  Rate limited, resuming in {event.eta_seconds:.0f}s")
-
-                except Exception as e:
-                    # Don't let progress bar issues crash the worker thread
-                    import sys, traceback
-                    error_msg = f"ERROR: Progress update failed: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
-                    print(error_msg, file=sys.stderr, flush=True)
-                    # Don't raise - let processing continue even if progress display fails
-
-            # Define result callback for checkpoint/stats
             def on_result(result: LLMResult):
-                nonlocal completed_count, failed_pages
-
-                try:
-                    # Extract metadata with defensive error handling
-                    page_num = result.request.metadata['page_num']
-                    result_storage = result.request.metadata['storage']
-
-                    if result.success:
-                        try:
-                            # Add metadata to correction data
-                            correction_data = result.parsed_json
-                            if correction_data is None:
-                                raise ValueError("parsed_json is None for successful result")
-
-                            correction_data['page_number'] = result.request.metadata['ocr_page_number']
-                            correction_data['model_used'] = self.model
-                            correction_data['processing_cost'] = result.cost_usd
-                            correction_data['timestamp'] = datetime.now().isoformat()
-
-                            # Calculate summary stats
-                            total_corrections = sum(
-                                1 for block in correction_data['blocks']
-                                for p in block.get('paragraphs', [])
-                                if p.get('text') is not None
-                            )
-
-                            avg_conf = sum(
-                                p.get('confidence', 1.0)
-                                for b in correction_data['blocks']
-                                for p in b.get('paragraphs', [])
-                            ) / sum(len(b.get('paragraphs', [])) for b in correction_data['blocks']) if correction_data['blocks'] else 1.0
-
-                            correction_data['total_blocks'] = len(correction_data['blocks'])
-                            correction_data['total_corrections'] = total_corrections
-                            correction_data['avg_confidence'] = round(avg_conf, 3)
-
-                            # Validate output against schema
-                            validated = CorrectionPageOutput(**correction_data)
-                            correction_data = validated.model_dump()
-
-                            # Save corrected output (handles file write + checkpoint atomically)
-                            result_storage.correction.save_page(
-                                page_num=page_num,
-                                data=correction_data,
-                                cost_usd=result.cost_usd,
-                                processing_time=result.total_time_seconds
-                            )
-
-                            completed_count += 1
-
-                        except Exception as e:
-                            import sys, traceback
-                            failed_pages.append(page_num)
-                            print(f"❌ Failed to save page {page_num} result: {traceback.format_exc()}",
-                                  file=sys.stderr, flush=True)
-                    else:
-                        # Permanent failure (already logged by LLMBatchClient)
-                        failed_pages.append(page_num)
-
-                except Exception as e:
-                    # Critical: Catch errors from metadata access or other outer-level failures
-                    import sys, traceback
-                    error_msg = f"CRITICAL: on_result callback failed: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
-                    print(error_msg, file=sys.stderr, flush=True)
-
-                    # Try to extract page_num if possible and mark as failed
-                    try:
-                        if hasattr(result, 'request') and result.request and hasattr(result.request, 'metadata'):
-                            page_num = result.request.metadata.get('page_num', 'unknown')
-                            if page_num != 'unknown':
-                                failed_pages.append(page_num)
-                    except:
-                        pass  # Give up gracefully
+                nonlocal completed_count
+                completed_count += self._handle_result(result, failed_pages)
 
             # Process batch with new client
             results = self.batch_client.process_batch(
@@ -463,3 +345,135 @@ class VisionCorrector:
                 storage.correction.checkpoint.mark_stage_failed(error=str(e))
             print(f"\n❌ Correction stage failed: {e}")
             raise
+
+    def _handle_progress_event(self, event: EventData, progress: ProgressBar, total_requests: int):
+        """Handle progress event for batch processing."""
+        try:
+            if event.event_type == LLMEvent.PROGRESS:
+                # Query batch client for current state
+                active = self.batch_client.get_active_requests()
+                recent = self.batch_client.get_recent_completions()
+
+                # Update progress bar
+                batch_stats = self.batch_client.get_batch_stats(total_requests=total_requests)
+                rate_util = event.rate_limit_status.get('utilization', 0) if event.rate_limit_status else 0
+                suffix = f"${batch_stats.total_cost_usd:.2f} | {rate_util:.0%} rate"
+
+                # Show executing requests
+                for req_id, status in active.items():
+                    if status.phase == RequestPhase.EXECUTING:
+                        page_id = req_id.replace('page_', 'p')
+                        elapsed = status.phase_elapsed
+
+                        if status.retry_count > 0:
+                            progress.add_sub_line(req_id,
+                                f"{page_id}: Executing... ({elapsed:.1f}s, retry {status.retry_count}/{self.max_retries})")
+                        else:
+                            progress.add_sub_line(req_id, f"{page_id}: Executing... ({elapsed:.1f}s)")
+
+                # Show recent completions
+                for req_id, comp in recent.items():
+                    page_id = req_id.replace('page_', 'p')
+
+                    if comp.success:
+                        progress.add_sub_line(req_id,
+                            f"{page_id}: ✓ ({comp.total_time_seconds:.1f}s, ${comp.cost_usd:.4f})")
+                    else:
+                        error_preview = comp.error_message[:30] if comp.error_message else 'unknown'
+                        progress.add_sub_line(req_id,
+                            f"{page_id}: ✗ ({comp.total_time_seconds:.1f}s) - {error_preview}")
+
+                progress.update(event.completed, suffix=suffix)
+
+            elif event.event_type == LLMEvent.RATE_LIMITED:
+                progress.set_status(f"⏸️  Rate limited, resuming in {event.eta_seconds:.0f}s")
+
+        except Exception as e:
+            # Don't let progress bar issues crash the worker thread
+            import sys, traceback
+            error_msg = f"ERROR: Progress update failed: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+            print(error_msg, file=sys.stderr, flush=True)
+            # Don't raise - let processing continue even if progress display fails
+
+    def _handle_result(self, result: LLMResult, failed_pages: list) -> int:
+        """
+        Handle LLM result - save successful pages, track failures.
+
+        Returns:
+            1 if page completed successfully, 0 otherwise
+        """
+        try:
+            # Extract metadata with defensive error handling
+            page_num = result.request.metadata['page_num']
+            result_storage = result.request.metadata['storage']
+
+            if result.success:
+                try:
+                    # Add metadata to correction data
+                    correction_data = result.parsed_json
+                    if correction_data is None:
+                        raise ValueError("parsed_json is None for successful result")
+
+                    correction_data['page_number'] = result.request.metadata['ocr_page_number']
+                    correction_data['model_used'] = self.model
+                    correction_data['processing_cost'] = result.cost_usd
+                    correction_data['timestamp'] = datetime.now().isoformat()
+
+                    # Calculate summary stats
+                    total_corrections = sum(
+                        1 for block in correction_data['blocks']
+                        for p in block.get('paragraphs', [])
+                        if p.get('text') is not None
+                    )
+
+                    avg_conf = sum(
+                        p.get('confidence', 1.0)
+                        for b in correction_data['blocks']
+                        for p in b.get('paragraphs', [])
+                    ) / sum(len(b.get('paragraphs', [])) for b in correction_data['blocks']) if correction_data['blocks'] else 1.0
+
+                    correction_data['total_blocks'] = len(correction_data['blocks'])
+                    correction_data['total_corrections'] = total_corrections
+                    correction_data['avg_confidence'] = round(avg_conf, 3)
+
+                    # Validate output against schema
+                    validated = CorrectionPageOutput(**correction_data)
+                    correction_data = validated.model_dump()
+
+                    # Save corrected output (handles file write + checkpoint atomically)
+                    result_storage.correction.save_page(
+                        page_num=page_num,
+                        data=correction_data,
+                        cost_usd=result.cost_usd,
+                        processing_time=result.total_time_seconds
+                    )
+
+                    return 1  # Success
+
+                except Exception as e:
+                    import sys, traceback
+                    failed_pages.append(page_num)
+                    print(f"❌ Failed to save page {page_num} result: {traceback.format_exc()}",
+                          file=sys.stderr, flush=True)
+                    return 0
+            else:
+                # Permanent failure (already logged by LLMBatchClient)
+                failed_pages.append(page_num)
+                return 0
+
+        except Exception as e:
+            # Critical: Catch errors from metadata access or other outer-level failures
+            import sys, traceback
+            error_msg = f"CRITICAL: on_result callback failed: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+            print(error_msg, file=sys.stderr, flush=True)
+
+            # Try to extract page_num if possible and mark as failed
+            try:
+                if hasattr(result, 'request') and result.request and hasattr(result.request, 'metadata'):
+                    page_num = result.request.metadata.get('page_num', 'unknown')
+                    if page_num != 'unknown':
+                        failed_pages.append(page_num)
+            except:
+                pass  # Give up gracefully
+
+            return 0
