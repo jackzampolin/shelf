@@ -10,6 +10,8 @@ import json
 import sys
 import base64
 import io
+import time
+import os
 from pathlib import Path
 from datetime import datetime
 from PIL import Image
@@ -163,6 +165,18 @@ class VisionLabeler:
                 with self.stats_lock:
                     self.stats['total_cost_usd'] = existing_cost
 
+        # Initialize batch LLM client with failure logging
+        self.batch_client = LLMBatchClient(
+            max_workers=self.max_workers,
+            rate_limit=150,
+            max_retries=self.max_retries,
+            retry_jitter=(1.0, 3.0),
+            json_retry_budget=2,
+            verbose=True,
+            progress_interval=0.5,
+            log_dir=book_dir / "labels" / "logs"
+        )
+
         self.logger.info(f"Processing book: {metadata.get('title', book_title)}", resume=resume, model=self.model)
 
         try:
@@ -206,34 +220,117 @@ class VisionLabeler:
             else:
                 pages_to_process = list(range(1, total_pages + 1))
 
-            # Build tasks for remaining pages
-            tasks = []
-            for page_num in pages_to_process:
-                ocr_file = ocr_dir / f"page_{page_num:04d}.json"
-                page_file = source_dir / f"page_{page_num:04d}.png"
-
-                if not ocr_file.exists() or not page_file.exists():
-                    continue
-
-                tasks.append({
-                    'page_num': page_num,
-                    'ocr_file': ocr_file,
-                    'page_file': page_file,
-                    'labels_dir': labels_dir,
-                    'total_pages': total_pages,  # For region classification context
-                    'book_metadata': metadata  # For document context in prompts
-                })
-
-            if len(tasks) == 0:
+            if len(pages_to_process) == 0:
                 self.logger.info("All pages already labeled, skipping")
                 print("✅ All pages already labeled")
                 return
 
+            # Pre-load OCR data and prepare requests (parallelized)
+            print(f"\n   Loading {len(pages_to_process)} pages...")
+            load_start_time = time.time()
+            load_progress = ProgressBar(total=len(pages_to_process), prefix="   ", width=40, unit="pages")
+            load_progress.update(0, suffix="loading...")
+
+            requests = []
+            page_data_map = {}
+            completed_loads = 0
+            load_lock = threading.Lock()
+
+            # Build JSON schema once (shared across all requests)
+            response_schema = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "page_labeling",
+                    "strict": True,
+                    "schema": LabelPageOutput.model_json_schema()
+                }
+            }
+
+            def load_page(page_num):
+                """Load and prepare a single page (called in parallel)."""
+                ocr_file = ocr_dir / f"page_{page_num:04d}.json"
+                page_file = source_dir / f"page_{page_num:04d}.png"
+
+                if not ocr_file.exists() or not page_file.exists():
+                    return None
+
+                try:
+                    # Load OCR data
+                    with open(ocr_file, 'r') as f:
+                        ocr_data = json.load(f)
+                    ocr_page = OCRPageOutput(**ocr_data)
+
+                    # Load and downsample image
+                    page_image = Image.open(page_file)
+                    page_image = downsample_for_vision(page_image)
+
+                    # Build page-specific prompt with book context
+                    ocr_text = json.dumps(ocr_page.model_dump(), indent=2)
+                    user_prompt = build_user_prompt(
+                        ocr_page=ocr_page,
+                        ocr_text=ocr_text,
+                        current_page=page_num,
+                        total_pages=total_pages,
+                        book_metadata=metadata
+                    )
+
+                    # Create LLM request
+                    request = LLMRequest(
+                        id=f"page_{page_num:04d}",
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": user_prompt},
+                            {"role": "assistant", "content": '{"printed_page_number":'}
+                        ],
+                        temperature=0.1,
+                        timeout=180,
+                        images=[page_image],
+                        response_format=response_schema,
+                        metadata={
+                            'page_num': page_num,
+                            'ocr_page_number': ocr_page.page_number
+                        }
+                    )
+
+                    return (page_num, ocr_page, request)
+
+                except Exception as e:
+                    print(f"❌ Failed to load page {page_num}: {e}", file=sys.stderr)
+                    return None
+
+            # Parallel loading
+            load_workers = os.cpu_count() or 4
+
+            with ThreadPoolExecutor(max_workers=load_workers) as executor:
+                future_to_page = {
+                    executor.submit(load_page, page_num): page_num
+                    for page_num in pages_to_process
+                }
+
+                for future in as_completed(future_to_page):
+                    result = future.result()
+                    if result:
+                        page_num, ocr_page, request = result
+                        requests.append(request)
+                        page_data_map[page_num] = {'ocr_page': ocr_page, 'request': request}
+
+                    with load_lock:
+                        completed_loads += 1
+                        load_progress.update(completed_loads, suffix=f"{len(requests)} loaded")
+
+            load_elapsed = time.time() - load_start_time
+            load_progress.finish(f"   ✓ {len(requests)} pages loaded in {load_elapsed:.1f}s")
+
+            if len(requests) == 0:
+                print("✅ No valid pages to process")
+                return
+
             # Process with single-pass retry logic
             # Progress bar tracks total pages (not iterations)
-            print(f"\n   Labeling {len(tasks)} pages...")
+            print(f"\n   Labeling {len(requests)} pages...")
             progress = ProgressBar(
-                total=len(tasks),
+                total=len(requests),
                 prefix="   ",
                 width=40,
                 unit="pages"
@@ -304,7 +401,7 @@ class VisionLabeler:
 
             # Finish progress bar
             errors = len(pending_tasks) if retry_count >= self.max_retries else 0
-            progress.finish(f"   ✓ {completed}/{len(tasks)} pages labeled")
+            progress.finish(f"   ✓ {completed}/{len(requests)} pages labeled")
             if errors > 0:
                 failed_pages = sorted([t['page_num'] for t in pending_tasks])
                 print(f"   ⚠️  {errors} pages failed: {failed_pages[:10]}" + (f" and {len(failed_pages)-10} more" if len(failed_pages) > 10 else ""))
