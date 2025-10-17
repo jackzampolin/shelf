@@ -25,6 +25,7 @@ from infra.llm_batch_client import LLMBatchClient
 from infra.llm_models import LLMRequest, LLMResult, EventData, LLMEvent, RequestPhase
 from infra.pdf_utils import downsample_for_vision
 from infra.progress import ProgressBar
+from infra.book_storage import BookStorage
 
 # Import schemas
 import importlib
@@ -90,25 +91,20 @@ class VisionLabeler:
             book_title: Scan ID of the book to process
             resume: If True, resume from checkpoint (default: False)
         """
-        book_dir = self.storage_root / book_title
-
-        if not book_dir.exists():
-            print(f"❌ Book directory not found: {book_dir}")
-            return
-
-        # Check for OCR outputs
-        ocr_dir = book_dir / "ocr"
-        if not ocr_dir.exists() or not list(ocr_dir.glob("page_*.json")):
-            print(f"❌ No OCR outputs found. Run OCR stage first.")
+        # Initialize storage manager
+        try:
+            storage = BookStorage(scan_id=book_title, storage_root=self.storage_root)
+            storage.label.validate_inputs()  # Validates OCR outputs exist
+        except FileNotFoundError as e:
+            print(f"❌ {e}")
             return
 
         # Load metadata
-        metadata_file = book_dir / "metadata.json"
-        with open(metadata_file, 'r') as f:
-            metadata = json.load(f)
+        metadata = storage.load_metadata()
+        book_dir = storage.book_dir
 
         # Initialize logger (file only, no console spam)
-        logs_dir = book_dir / "logs"
+        logs_dir = storage.logs_dir
         logs_dir.mkdir(exist_ok=True)
         self.logger = create_logger(book_title, "label", log_dir=logs_dir, console_output=False)
 
@@ -172,17 +168,18 @@ class VisionLabeler:
             json_retry_budget=2,
             verbose=True,
             progress_interval=0.5,
-            log_dir=book_dir / "labels" / "logs"
+            log_dir=storage.label.get_log_dir()
         )
 
         self.logger.info(f"Processing book: {metadata.get('title', book_title)}", resume=resume, model=self.model)
 
         try:
             # Create output directory
-            labels_dir = book_dir / "labels"
+            labels_dir = storage.label.output_dir
             labels_dir.mkdir(exist_ok=True)
 
-            # Get list of OCR outputs
+            # Get total pages from OCR
+            ocr_dir = storage.ocr.output_dir
             ocr_files = sorted(ocr_dir.glob("page_*.json"))
             total_pages = len(ocr_files)
 
@@ -199,7 +196,7 @@ class VisionLabeler:
             print(f"   Model:     {self.model}")
 
             # Get source page images (extracted during 'ar library add')
-            source_dir = book_dir / "source"
+            source_dir = storage.source.output_dir
             if not source_dir.exists():
                 self.logger.error("Source directory not found", source_dir=str(source_dir))
                 raise FileNotFoundError(f"Source directory not found: {source_dir}")
@@ -336,7 +333,7 @@ class VisionLabeler:
                 self._handle_progress_event(event, progress, len(requests))
 
             def on_result(result: LLMResult):
-                self._handle_result(result, failed_pages, labels_dir)
+                self._handle_result(result, failed_pages, storage)
 
             # Process batch with callbacks
             results = self.batch_client.process_batch(
@@ -372,12 +369,11 @@ class VisionLabeler:
                     })
 
                 # Update metadata
-                metadata['labels_complete'] = True
-                metadata['labels_completion_date'] = datetime.now().isoformat()
-                metadata['labels_total_cost'] = total_cost
-
-                with open(metadata_file, 'w') as f:
-                    json.dump(metadata, f, indent=2)
+                storage.update_metadata({
+                    'labels_complete': True,
+                    'labels_completion_date': datetime.now().isoformat(),
+                    'labels_total_cost': total_cost
+                })
 
                 # Log completion to file (not stdout)
                 self.logger.info(
@@ -385,7 +381,7 @@ class VisionLabeler:
                     pages_labeled=completed,
                     total_cost=total_cost,
                     avg_cost_per_page=total_cost / completed if completed > 0 else 0,
-                    labels_dir=str(labels_dir)
+                    labels_dir=str(storage.label.output_dir)
                 )
 
                 # Print stage exit (success)
@@ -457,7 +453,7 @@ class VisionLabeler:
             print(error_msg, file=sys.stderr, flush=True)
             # Don't raise - let processing continue
 
-    def _handle_result(self, result: LLMResult, failed_pages: list, labels_dir: Path) -> int:
+    def _handle_result(self, result: LLMResult, failed_pages: list, storage: BookStorage) -> int:
         """Handle LLM result - save successful pages, track failures."""
         try:
             page_num = result.request.metadata['page_num']
@@ -490,14 +486,13 @@ class VisionLabeler:
                     validated = LabelPageOutput(**label_data)
                     label_data = validated.model_dump()
 
-                    # Save label output (atomic write)
-                    output_file = labels_dir / f"page_{page_num:04d}.json"
-                    temp_file = output_file.with_suffix('.json.tmp')
-
-                    with open(temp_file, 'w', encoding='utf-8') as f:
-                        json.dump(label_data, f, indent=2)
-
-                    temp_file.replace(output_file)
+                    # Save using storage API (atomic write handled internally)
+                    storage.label.save_page(
+                        page_num=page_num,
+                        data=label_data,
+                        cost_usd=result.cost_usd,
+                        processing_time=result.total_time_seconds
+                    )
 
                     # Mark checkpoint complete
                     if self.checkpoint:
