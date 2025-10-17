@@ -33,7 +33,8 @@ class Config:
 
     # Vision Model
     # Default vision model for correction and labeling stages
-    VISION_MODEL = os.getenv('VISION_MODEL', 'openai/gpt-oss-120b')
+    # Note: Must support vision (image) input via OpenRouter
+    VISION_MODEL = os.getenv('VISION_MODEL', 'x-ai/grok-4-fast')
 
     @classmethod
     def validate(cls) -> tuple[bool, list[str]]:

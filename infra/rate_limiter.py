@@ -31,7 +31,7 @@ class RateLimiter:
         """
         self.requests_per_minute = requests_per_minute
         self.window_seconds = 60.0
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()  # Use RLock (reentrant) instead of Lock to avoid deadlock
 
         # Token bucket state
         self.tokens = float(requests_per_minute)  # Start with full bucket
@@ -55,7 +55,7 @@ class RateLimiter:
 
     def consume(self, count: int = 1) -> float:
         """
-        Consume tokens, waiting if necessary.
+        Consume tokens, waiting if necessary WITHOUT holding lock during sleep.
 
         Args:
             count: Number of tokens to consume (default: 1)
@@ -63,23 +63,34 @@ class RateLimiter:
         Returns:
             Seconds waited (0 if no wait needed)
         """
+        # Step 1: Check if we need to wait (WITH lock)
         with self.lock:
             self._refill_tokens()
-
-            # If insufficient tokens, wait until we have enough
             if self.tokens < count:
                 wait_time = self._calculate_wait_time(count)
-                time.sleep(wait_time)
-                self._refill_tokens()
-                self.total_waited += wait_time
             else:
                 wait_time = 0.0
 
-            # Consume tokens
-            self.tokens -= count
-            self.total_consumed += count
+        # Step 2: Wait OUTSIDE the lock (critical for avoiding deadlock)
+        if wait_time > 0:
+            time.sleep(wait_time)
+            with self.lock:
+                self.total_waited += wait_time
 
-            return wait_time
+        # Step 3: Consume tokens (WITH lock, re-check availability after sleep)
+        with self.lock:
+            self._refill_tokens()  # Re-check after sleep
+            if self.tokens >= count:
+                self.tokens -= count
+                self.total_consumed += count
+            else:
+                # Race condition: another thread consumed tokens while we waited
+                # Consume anyway (may go negative) - better than deadlock
+                # This is rare and will self-correct as tokens refill
+                self.tokens -= count
+                self.total_consumed += count
+
+        return wait_time
 
     def try_consume(self, count: int = 1) -> bool:
         """

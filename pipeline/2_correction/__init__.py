@@ -26,6 +26,7 @@ from infra.llm_batch_client import LLMBatchClient
 from infra.llm_models import LLMRequest, LLMResult, EventData, LLMEvent
 from infra.pdf_utils import downsample_for_vision
 from infra.progress import ProgressBar
+from infra.book_storage import BookStorage
 
 # Import schemas
 import importlib
@@ -84,27 +85,20 @@ class VisionCorrector:
             book_title: Scan ID of the book to process
             resume: If True, resume from checkpoint (default: False)
         """
-        book_dir = self.storage_root / book_title
-
-        if not book_dir.exists():
-            print(f"❌ Book directory not found: {book_dir}")
-            return
-
-        # Check for OCR outputs
-        ocr_dir = book_dir / "ocr"
-        if not ocr_dir.exists() or not list(ocr_dir.glob("page_*.json")):
-            print(f"❌ No OCR outputs found. Run OCR stage first.")
+        # Initialize storage manager
+        try:
+            storage = BookStorage(scan_id=book_title, storage_root=self.storage_root)
+            storage.correction.validate_inputs()  # Validates book exists, OCR complete, metadata exists
+        except FileNotFoundError as e:
+            print(f"❌ {e}")
             return
 
         # Load metadata
-        metadata_file = book_dir / "metadata.json"
-        with open(metadata_file, 'r') as f:
-            metadata = json.load(f)
+        metadata = storage.load_metadata()
 
         # Initialize logger (file only, no console spam)
-        logs_dir = book_dir / "logs"
-        logs_dir.mkdir(exist_ok=True)
-        self.logger = create_logger(book_title, "correction", log_dir=logs_dir, console_output=False)
+        storage.correction.ensure_directories()  # Creates corrected/, logs/, checkpoints/
+        self.logger = create_logger(book_title, "correction", log_dir=storage.logs_dir, console_output=False)
 
         # Initialize batch LLM client
         self.batch_client = LLMBatchClient(
@@ -162,12 +156,8 @@ class VisionCorrector:
         self.logger.info(f"Processing book: {metadata.get('title', book_title)}", resume=resume, model=self.model)
 
         try:
-            # Create output directory
-            corrected_dir = book_dir / "corrected"
-            corrected_dir.mkdir(exist_ok=True)
-
             # Get list of OCR outputs
-            ocr_files = sorted(ocr_dir.glob("page_*.json"))
+            ocr_files = storage.ocr.list_output_pages()
             total_pages = len(ocr_files)
 
             self.logger.start_stage(
@@ -181,17 +171,6 @@ class VisionCorrector:
             print(f"   Pages:     {total_pages}")
             print(f"   Workers:   {self.max_workers}")
             print(f"   Model:     {self.model}")
-
-            # Get source page images (extracted during 'ar library add')
-            source_dir = book_dir / "source"
-            if not source_dir.exists():
-                self.logger.error("Source directory not found", source_dir=str(source_dir))
-                raise FileNotFoundError(f"Source directory not found: {source_dir}")
-
-            page_files = sorted(source_dir.glob("page_*.png"))
-            if not page_files:
-                self.logger.error("No page images found", source_dir=str(source_dir))
-                raise FileNotFoundError(f"No page images found in {source_dir}. Run 'ar library add' to extract pages first.")
 
             # Get pages to process (this sets checkpoint status to "in_progress")
             if self.checkpoint:
@@ -263,8 +242,8 @@ class VisionCorrector:
 
             def load_page(page_num):
                 """Load and prepare a single page (called in parallel)."""
-                ocr_file = ocr_dir / f"page_{page_num:04d}.json"
-                page_file = source_dir / f"page_{page_num:04d}.png"
+                ocr_file = storage.correction.input_page(page_num)
+                page_file = storage.correction.source_image(page_num)
 
                 if not ocr_file.exists() or not page_file.exists():
                     return None
@@ -306,7 +285,7 @@ class VisionCorrector:
                         response_format=response_schema,
                         metadata={
                             'page_num': page_num,
-                            'corrected_dir': str(corrected_dir),
+                            'storage': storage,  # Pass storage for output path
                             'ocr_page_number': ocr_page.page_number
                         }
                     )
@@ -367,80 +346,112 @@ class VisionCorrector:
             # Define event callback for progress updates
             def on_event(event: EventData):
                 nonlocal progress
-                if event.event_type == LLMEvent.PROGRESS:
-                    # Update progress bar with aggregate stats
-                    with self.stats_lock:
-                        total_cost = self.stats['total_cost_usd']
-                    rate_util = event.rate_limit_status.get('utilization', 0) if event.rate_limit_status else 0
+                try:
+                    if event.event_type == LLMEvent.PROGRESS:
+                        # Update progress bar with aggregate stats
+                        with self.stats_lock:
+                            total_cost = self.stats['total_cost_usd']
+                        rate_util = event.rate_limit_status.get('utilization', 0) if event.rate_limit_status else 0
 
-                    # Show different message if no completions yet
-                    if event.completed == 0:
-                        suffix = f"{event.in_flight} executing..."
-                    else:
-                        suffix = f"${total_cost:.2f} | {rate_util:.0%} rate"
+                        # Show different message if no completions yet
+                        if event.completed == 0:
+                            suffix = f"{event.in_flight} executing..."
+                        else:
+                            suffix = f"${total_cost:.2f} | {rate_util:.0%} rate"
 
-                    progress.update(event.completed, suffix=suffix)
-                elif event.event_type == LLMEvent.RATE_LIMITED:
-                    progress.set_status(f"⏸️  Rate limited, resuming in {event.eta_seconds:.0f}s")
+                        progress.update(event.completed, suffix=suffix)
+                    elif event.event_type == LLMEvent.RATE_LIMITED:
+                        progress.set_status(f"⏸️  Rate limited, resuming in {event.eta_seconds:.0f}s")
+                except Exception as e:
+                    # Don't let progress bar issues crash the worker thread
+                    import sys, traceback
+                    error_msg = f"ERROR: Progress update failed: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+                    print(error_msg, file=sys.stderr, flush=True)
+                    # Don't raise - let processing continue even if progress display fails
 
             # Define result callback for checkpoint/stats
             def on_result(result: LLMResult):
                 nonlocal completed_count, failed_pages
 
-                page_num = result.request.metadata['page_num']
+                try:
+                    # Extract metadata with defensive error handling
+                    page_num = result.request.metadata['page_num']
+                    result_storage = result.request.metadata['storage']
 
-                if result.success:
-                    try:
-                        # Add metadata to correction data
-                        correction_data = result.parsed_json
-                        correction_data['page_number'] = result.request.metadata['ocr_page_number']
-                        correction_data['model_used'] = self.model
-                        correction_data['processing_cost'] = result.cost_usd
-                        correction_data['timestamp'] = datetime.now().isoformat()
+                    if result.success:
+                        try:
+                            # Add metadata to correction data
+                            correction_data = result.parsed_json
+                            if correction_data is None:
+                                raise ValueError("parsed_json is None for successful result")
 
-                        # Calculate summary stats
-                        total_corrections = sum(
-                            1 for block in correction_data['blocks']
-                            for p in block.get('paragraphs', [])
-                            if p.get('text') is not None
-                        )
+                            correction_data['page_number'] = result.request.metadata['ocr_page_number']
+                            correction_data['model_used'] = self.model
+                            correction_data['processing_cost'] = result.cost_usd
+                            correction_data['timestamp'] = datetime.now().isoformat()
 
-                        avg_conf = sum(
-                            p.get('confidence', 1.0)
-                            for b in correction_data['blocks']
-                            for p in b.get('paragraphs', [])
-                        ) / sum(len(b.get('paragraphs', [])) for b in correction_data['blocks']) if correction_data['blocks'] else 1.0
+                            # Calculate summary stats
+                            total_corrections = sum(
+                                1 for block in correction_data['blocks']
+                                for p in block.get('paragraphs', [])
+                                if p.get('text') is not None
+                            )
 
-                        correction_data['total_blocks'] = len(correction_data['blocks'])
-                        correction_data['total_corrections'] = total_corrections
-                        correction_data['avg_confidence'] = round(avg_conf, 3)
+                            avg_conf = sum(
+                                p.get('confidence', 1.0)
+                                for b in correction_data['blocks']
+                                for p in b.get('paragraphs', [])
+                            ) / sum(len(b.get('paragraphs', [])) for b in correction_data['blocks']) if correction_data['blocks'] else 1.0
 
-                        # Validate output against schema
-                        validated = CorrectionPageOutput(**correction_data)
-                        correction_data = validated.model_dump()
+                            correction_data['total_blocks'] = len(correction_data['blocks'])
+                            correction_data['total_corrections'] = total_corrections
+                            correction_data['avg_confidence'] = round(avg_conf, 3)
 
-                        # Save corrected output
-                        output_file = Path(result.request.metadata['corrected_dir']) / f"page_{page_num:04d}.json"
-                        with open(output_file, 'w', encoding='utf-8') as f:
-                            json.dump(correction_data, f, indent=2)
+                            # Validate output against schema
+                            validated = CorrectionPageOutput(**correction_data)
+                            correction_data = validated.model_dump()
 
-                        # Update checkpoint & stats
-                        if self.checkpoint:
-                            self.checkpoint.mark_completed(page_num, cost_usd=result.cost_usd)
+                            # Save corrected output
+                            output_file = result_storage.correction.output_page(page_num)
+                            with open(output_file, 'w', encoding='utf-8') as f:
+                                json.dump(correction_data, f, indent=2)
 
-                        with self.stats_lock:
-                            self.stats['pages_processed'] += 1
-                            self.stats['total_cost_usd'] += result.cost_usd
+                            # Update checkpoint & stats
+                            if self.checkpoint:
+                                self.checkpoint.mark_completed(page_num, cost_usd=result.cost_usd)
 
-                        completed_count += 1
+                            with self.stats_lock:
+                                self.stats['pages_processed'] += 1
+                                self.stats['total_cost_usd'] += result.cost_usd
 
-                    except Exception as e:
-                        self.logger.error(f"Failed to save page result", page=page_num, error=str(e))
+                            completed_count += 1
+
+                        except Exception as e:
+                            import sys, traceback
+                            self.logger.error(f"Failed to save page result", page=page_num, error=str(e))
+                            failed_pages.append(page_num)
+                            # Print to stderr so it's visible even with console_output=False
+                            print(f"ERROR: Failed to process result for page {page_num}: {traceback.format_exc()}",
+                                  file=sys.stderr, flush=True)
+                    else:
+                        # Permanent failure
+                        self.logger.error(f"Page correction failed permanently", page=page_num, error=result.error_message)
                         failed_pages.append(page_num)
-                else:
-                    # Permanent failure
-                    self.logger.error(f"Page correction failed permanently", page=page_num, error=result.error_message)
-                    failed_pages.append(page_num)
+
+                except Exception as e:
+                    # Critical: Catch errors from metadata access or other outer-level failures
+                    import sys, traceback
+                    error_msg = f"CRITICAL: on_result callback failed: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+                    print(error_msg, file=sys.stderr, flush=True)
+
+                    # Try to extract page_num if possible and mark as failed
+                    try:
+                        if hasattr(result, 'request') and result.request and hasattr(result.request, 'metadata'):
+                            page_num = result.request.metadata.get('page_num', 'unknown')
+                            if page_num != 'unknown':
+                                failed_pages.append(page_num)
+                    except:
+                        pass  # Give up gracefully
 
             # JSON parser function
             def parse_correction_json(response_text):
@@ -478,12 +489,11 @@ class VisionCorrector:
                     })
 
                 # Update metadata
-                metadata['correction_complete'] = True
-                metadata['correction_completion_date'] = datetime.now().isoformat()
-                metadata['correction_total_cost'] = total_cost
-
-                with open(metadata_file, 'w') as f:
-                    json.dump(metadata, f, indent=2)
+                storage.update_metadata({
+                    'correction_complete': True,
+                    'correction_completion_date': datetime.now().isoformat(),
+                    'correction_total_cost': total_cost
+                })
 
                 # Log completion to file (not stdout)
                 self.logger.info(
@@ -491,7 +501,7 @@ class VisionCorrector:
                     pages_corrected=completed,
                     total_cost=total_cost,
                     avg_cost_per_page=total_cost / completed if completed > 0 else 0,
-                    corrected_dir=str(corrected_dir)
+                    corrected_dir=str(storage.correction.output_dir)
                 )
 
                 # Print stage exit (success)
@@ -500,10 +510,10 @@ class VisionCorrector:
                 print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
             else:
                 # Stage incomplete - some pages failed
-                failed_pages = sorted([t['page_num'] for t in pending_tasks])
+                failed_page_nums = sorted(failed_pages)
                 print(f"\n⚠️  Correction incomplete: {completed}/{total_pages} pages succeeded")
                 print(f"   Total cost: ${total_cost:.2f}")
-                print(f"   Failed pages: {failed_pages}")
+                print(f"   Failed pages: {failed_page_nums}")
                 print(f"\n   To retry failed pages:")
                 print(f"   uv run python ar.py process correction {book_title} --resume")
 
@@ -727,20 +737,17 @@ Remember: You are correcting character-level OCR reading errors only, not editin
         Returns:
             bool: True if cleaned, False if cancelled
         """
-        book_dir = self.storage_root / scan_id
-
-        if not book_dir.exists():
-            print(f"❌ Book directory not found: {book_dir}")
+        # Initialize storage
+        try:
+            storage = BookStorage(scan_id=scan_id, storage_root=self.storage_root)
+        except FileNotFoundError as e:
+            print(f"❌ {e}")
             return False
 
-        corrected_dir = book_dir / "corrected"
-        checkpoint_file = book_dir / "checkpoints" / "correction.json"
-        logs_dir = book_dir / "logs"
-        metadata_file = book_dir / "metadata.json"
-
         # Count what will be deleted
-        corrected_files = list(corrected_dir.glob("*.json")) if corrected_dir.exists() else []
-        log_files = list(logs_dir.glob("correction_*.jsonl")) if logs_dir.exists() else []
+        corrected_files = storage.correction.list_output_pages()
+        checkpoint_file = storage.checkpoint_file('correction')
+        log_files = list(storage.logs_dir.glob("correction_*.jsonl")) if storage.logs_dir.exists() else []
 
         print(f"\n🗑️  Clean Correction stage for: {scan_id}")
         print(f"   Corrected outputs: {len(corrected_files)} files")
@@ -754,9 +761,9 @@ Remember: You are correcting character-level OCR reading errors only, not editin
                 return False
 
         # Delete corrected outputs
-        if corrected_dir.exists():
+        if storage.correction.output_dir.exists():
             import shutil
-            shutil.rmtree(corrected_dir)
+            shutil.rmtree(storage.correction.output_dir)
             print(f"   ✓ Deleted {len(corrected_files)} corrected files")
 
         # Delete log files
@@ -771,18 +778,15 @@ Remember: You are correcting character-level OCR reading errors only, not editin
             print(f"   ✓ Deleted checkpoint")
 
         # Update metadata
-        if metadata_file.exists():
-            with open(metadata_file, 'r') as f:
-                metadata = json.load(f)
-
-            metadata['correction_complete'] = False
-            metadata.pop('correction_completion_date', None)
-            metadata.pop('correction_total_cost', None)
-
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
-
+        try:
+            storage.update_metadata({
+                'correction_complete': False,
+                'correction_completion_date': None,
+                'correction_total_cost': None
+            })
             print(f"   ✓ Reset metadata")
+        except FileNotFoundError:
+            pass  # Metadata doesn't exist, skip
 
         print(f"\n✅ Correction stage cleaned for {scan_id}")
         return True

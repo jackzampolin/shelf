@@ -1,0 +1,33 @@
+{
+  "page_number": 1,
+  "page_dimensions": {
+    "width": 3017,
+    "height": 4817
+  },
+  "ocr_timestamp": "2025-10-14T12:43:47.367386",
+  "blocks": [
+    {
+      "block_num": 1,
+      "bbox": {
+        "x": 815,
+        "y": 1214,
+        "width": 1343,
+        "height": 709
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 815,
+            "y": 1214,
+            "width": 1343,
+            "height": 709
+          },
+          "text": "For Judge David S. Baime, my father, | who has kept a portrait of Harry S. Truman on his office wall | for more than forty years",
+          "avg_confidence": 0.909
+        }
+      ]
+    }
+  ],
+  "images": []
+}

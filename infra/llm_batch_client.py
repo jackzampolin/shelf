@@ -181,7 +181,9 @@ class LLMBatchClient:
             try:
                 # Check if all expected results are done
                 with self.results_lock:
-                    if len(self.results) >= len(expected_ids):
+                    results_count = len(self.results)
+                    expected_count = len(expected_ids)
+                    if results_count >= expected_count:
                         break
 
                 # Get next request (non-blocking with timeout)
@@ -258,8 +260,47 @@ class LLMBatchClient:
                             self.stats['requests_failed'] += 1
 
             except Exception as e:
-                # Worker thread error - log and continue
-                print(f"⚠️  Worker error: {e}")
+                # CRITICAL: Worker thread error - this should almost never happen
+                import traceback
+                import sys
+                error_detail = traceback.format_exc()
+
+                # Create a failure result for the request so batch doesn't hang forever
+                if 'request' in locals() and hasattr(request, 'id'):
+                    failure_result = LLMResult(
+                        request_id=request.id,
+                        success=False,
+                        error_type="worker_exception",
+                        error_message=f"Worker thread exception: {type(e).__name__}: {str(e)}",
+                        request=request
+                    )
+
+                    # Store the failure result so batch doesn't wait forever
+                    self._store_result(failure_result)
+
+                    # Try to emit FAILED event
+                    try:
+                        self._emit_event(on_event, LLMEvent.FAILED, request_id=request.id)
+                    except Exception as emit_error:
+                        # Log emit failure but don't propagate - we've already stored the result
+                        pass
+
+                    with self.stats_lock:
+                        self.stats['requests_failed'] += 1
+
+                # Log error to stderr so it's visible even with console_output=False
+                error_msg = (
+                    f"❌ CRITICAL: Worker thread crashed with unexpected error:\n"
+                    f"   Error: {e}\n"
+                    f"   Type: {type(e).__name__}\n"
+                )
+                if 'request' in locals() and hasattr(request, 'id'):
+                    error_msg += f"   Request ID: {request.id}\n"
+                error_msg += f"   Full traceback:\n{error_detail}"
+
+                print(error_msg, file=sys.stderr, flush=True)
+
+                # Continue to keep worker alive, but this indicates a serious bug
                 continue
 
     def _execute_request(
