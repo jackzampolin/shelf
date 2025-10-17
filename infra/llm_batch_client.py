@@ -48,6 +48,7 @@ class LLMBatchClient:
         json_retry_budget: int = 2,
         verbose: bool = False,
         progress_interval: float = 1.0,
+        log_dir: Optional['Path'] = None,
     ):
         """
         Initialize batch client.
@@ -60,6 +61,7 @@ class LLMBatchClient:
             json_retry_budget: Separate retry budget for JSON parse errors
             verbose: Enable per-request progress events
             progress_interval: How often to emit PROGRESS events (seconds)
+            log_dir: Optional directory to log failed LLM calls to {log_dir}/llm_failures.jsonl
         """
         self.max_workers = max_workers
         self.rate_limit = rate_limit
@@ -68,6 +70,14 @@ class LLMBatchClient:
         self.json_retry_budget = json_retry_budget
         self.verbose = verbose
         self.progress_interval = progress_interval
+        self.log_dir = log_dir
+
+        # Set up failure logging if log_dir provided
+        if self.log_dir:
+            from pathlib import Path
+            self.log_dir = Path(self.log_dir)
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+            self.failure_log_path = self.log_dir / "llm_failures.jsonl"
 
         # Core components
         self.rate_limiter = RateLimiter(requests_per_minute=rate_limit)
@@ -319,6 +329,9 @@ class LLMBatchClient:
                                     error_message=result.error_message,
                                     cycles_remaining=self.completion_ttl_cycles
                                 )
+
+                        # Log failure to disk if configured
+                        self._log_failure(result)
 
                         self._emit_event(on_event, LLMEvent.FAILED, request_id=request.id)
                         self._store_result(result)
@@ -710,6 +723,37 @@ class LLMBatchClient:
     def get_rate_limit_status(self) -> Dict:
         """Get current rate limit consumption."""
         return self.rate_limiter.get_status()
+
+    def _log_failure(self, result: LLMResult):
+        """
+        Log failed LLM request to {log_dir}/llm_failures.jsonl.
+
+        Args:
+            result: Failed LLMResult to log
+        """
+        if not self.log_dir:
+            return
+
+        try:
+            import datetime
+            log_entry = {
+                'timestamp': datetime.datetime.now().isoformat(),
+                'request_id': result.request_id,
+                'error_type': result.error_type,
+                'error_message': result.error_message,
+                'attempts': result.attempts,
+                'model': result.request.model if result.request else None,
+                'metadata': result.request.metadata if result.request else None
+            }
+
+            # Append to JSONL file (thread-safe with 'a' mode)
+            with open(self.failure_log_path, 'a') as f:
+                f.write(json.dumps(log_entry) + '\n')
+
+        except Exception as e:
+            # Don't let logging errors crash the pipeline
+            import sys
+            print(f"Warning: Failed to log LLM failure: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":

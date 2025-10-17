@@ -21,7 +21,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from infra.config import Config
-from infra.logger import create_logger
 from infra.llm_batch_client import LLMBatchClient
 from infra.llm_models import LLMRequest, LLMResult, EventData, LLMEvent, RequestPhase
 from infra.pdf_utils import downsample_for_vision
@@ -77,7 +76,6 @@ class VisionCorrector:
             "pages_processed": 0,
             "failed_pages": 0
         }
-        self.logger = None  # Will be initialized per book
         self.enable_checkpoints = enable_checkpoints
         self.batch_client = None  # Will be initialized per book
         self.verbose = False  # Can be set for detailed progress
@@ -101,11 +99,11 @@ class VisionCorrector:
         # Load metadata
         metadata = storage.load_metadata()
 
-        # Initialize logger (file only, no console spam)
-        storage.correction.ensure_directories()  # Creates corrected/, logs/, checkpoints/
-        self.logger = create_logger(book_title, "correction", log_dir=storage.logs_dir, console_output=False)
+        # Ensure directories (creates corrected/, logs/, checkpoints/)
+        storage.correction.ensure_directories()
 
-        # Initialize batch LLM client
+        # Initialize batch LLM client with failure logging
+        log_dir = storage.correction.output_dir / "logs"
         self.batch_client = LLMBatchClient(
             max_workers=self.max_workers,
             rate_limit=150,  # OpenRouter default
@@ -113,7 +111,8 @@ class VisionCorrector:
             retry_jitter=(1.0, 3.0),
             json_retry_budget=2,
             verbose=True,  # Enable per-request events for progress tracking
-            progress_interval=0.5  # Update progress every 0.5s
+            progress_interval=0.5,  # Update progress every 0.5s
+            log_dir=log_dir  # Log failed LLM calls to corrected/logs/llm_failures.jsonl
         )
 
         # Handle checkpoint (integrated into storage.correction)
@@ -153,18 +152,10 @@ class VisionCorrector:
                 with self.stats_lock:
                     self.stats['total_cost_usd'] = existing_cost
 
-        self.logger.info(f"Processing book: {metadata.get('title', book_title)}", resume=resume, model=self.model)
-
         try:
             # Get list of OCR outputs
             ocr_files = storage.ocr.list_output_pages()
             total_pages = len(ocr_files)  # For logging/display only
-
-            self.logger.start_stage(
-                total_pages=total_pages,
-                model=self.model,
-                max_workers=self.max_workers
-            )
 
             # Stage entry
             print(f"\n🔧 Correction Stage ({book_title})")
@@ -259,7 +250,7 @@ class VisionCorrector:
                     return (page_num, ocr_page, request)
 
                 except Exception as e:
-                    self.logger.error(f"Failed to load page data", page=page_num, error=str(e))
+                    print(f"❌ Failed to load page {page_num}: {e}", file=sys.stderr)
                     return None
 
             # Parallel loading with ThreadPoolExecutor
@@ -294,7 +285,6 @@ class VisionCorrector:
             load_progress.finish(f"   ✓ {len(requests)} pages loaded in {load_elapsed:.1f}s")
 
             if len(requests) == 0:
-                self.logger.info("No valid pages to process")
                 print("✅ No valid pages to process")
                 return
 
@@ -421,14 +411,11 @@ class VisionCorrector:
 
                         except Exception as e:
                             import sys, traceback
-                            self.logger.error(f"Failed to save page result", page=page_num, error=str(e))
                             failed_pages.append(page_num)
-                            # Print to stderr so it's visible even with console_output=False
-                            print(f"ERROR: Failed to process result for page {page_num}: {traceback.format_exc()}",
+                            print(f"❌ Failed to save page {page_num} result: {traceback.format_exc()}",
                                   file=sys.stderr, flush=True)
                     else:
-                        # Permanent failure
-                        self.logger.error(f"Page correction failed permanently", page=page_num, error=result.error_message)
+                        # Permanent failure (already logged by LLMBatchClient)
                         failed_pages.append(page_num)
 
                 except Exception as e:
@@ -489,15 +476,6 @@ class VisionCorrector:
                     'correction_total_cost': total_cost
                 })
 
-                # Log completion to file (not stdout)
-                self.logger.info(
-                    "Correction complete",
-                    pages_corrected=completed,
-                    total_cost=total_cost,
-                    avg_cost_per_page=total_cost / completed if completed > 0 else 0,
-                    corrected_dir=str(storage.correction.output_dir)
-                )
-
                 # Print stage exit (success)
                 print(f"\n✅ Correction complete: {completed}/{total_pages} pages")
                 print(f"   Total cost: ${total_cost:.2f}")
@@ -513,15 +491,10 @@ class VisionCorrector:
 
         except Exception as e:
             # Stage-level error handler
-            self.logger.error(f"Correction stage failed", error=str(e))
             if self.enable_checkpoints:
                 storage.correction.checkpoint.mark_stage_failed(error=str(e))
             print(f"\n❌ Correction stage failed: {e}")
             raise
-        finally:
-            # Always clean up logger
-            if self.logger:
-                self.logger.close()
 
     def clean_stage(self, scan_id: str, confirm: bool = False):
         """
