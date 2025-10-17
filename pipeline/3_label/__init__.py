@@ -195,18 +195,8 @@ class VisionLabeler:
             print(f"   Workers:   {self.max_workers}")
             print(f"   Model:     {self.model}")
 
-            # Get source page images (extracted during 'ar library add')
-            source_dir = storage.source.output_dir
-            if not source_dir.exists():
-                self.logger.error("Source directory not found", source_dir=str(source_dir))
-                raise FileNotFoundError(f"Source directory not found: {source_dir}")
-
-            page_files = sorted(source_dir.glob("page_*.png"))
-            if not page_files:
-                self.logger.error("No page images found", source_dir=str(source_dir))
-                raise FileNotFoundError(f"No page images found in {source_dir}. Run 'ar library add' to extract pages first.")
-
             # Get pages to process (this sets checkpoint status to "in_progress")
+            # Note: storage.label.validate_inputs() already validated source images exist
             if self.checkpoint:
                 pages_to_process = self.checkpoint.get_remaining_pages(
                     total_pages=total_pages,
@@ -243,11 +233,9 @@ class VisionLabeler:
 
             def load_page(page_num):
                 """Load and prepare a single page (called in parallel)."""
-                ocr_file = ocr_dir / f"page_{page_num:04d}.json"
-                page_file = source_dir / f"page_{page_num:04d}.png"
-
-                if not ocr_file.exists() or not page_file.exists():
-                    return None
+                # Note: storage.label.validate_inputs() already validated all files exist
+                ocr_file = storage.ocr.output_dir / f"page_{page_num:04d}.json"
+                page_file = storage.source.output_dir / f"page_{page_num:04d}.png"
 
                 try:
                     # Load OCR data
