@@ -122,14 +122,14 @@ class VisionLabeler:
         self.logger.info(f"Processing book: {metadata.get('title', book_title)}", resume=resume, model=self.model)
 
         try:
-            # Create output directory
-            labels_dir = storage.label.output_dir
-            labels_dir.mkdir(exist_ok=True)
-
-            # Get total pages from OCR
-            ocr_dir = storage.ocr.output_dir
-            ocr_files = sorted(ocr_dir.glob("page_*.json"))
-            total_pages = len(ocr_files)
+            # Get pages to process (checkpoint auto-detects total_pages from source directory)
+            if self.enable_checkpoints:
+                pages_to_process = storage.label.checkpoint.get_remaining_pages(resume=resume)
+                total_pages = storage.label.checkpoint._state['total_pages']
+            else:
+                # Non-checkpoint mode: count pages manually
+                total_pages = len(storage.ocr.list_output_pages())
+                pages_to_process = list(range(1, total_pages + 1))
 
             self.logger.start_stage(
                 total_pages=total_pages,
@@ -142,16 +142,6 @@ class VisionLabeler:
             print(f"   Pages:     {total_pages}")
             print(f"   Workers:   {self.max_workers}")
             print(f"   Model:     {self.model}")
-
-            # Get pages to process (this sets checkpoint status to "in_progress")
-            # Note: storage.label.validate_inputs() already validated source images exist
-            if self.enable_checkpoints:
-                pages_to_process = checkpoint.get_remaining_pages(
-                    total_pages=total_pages,
-                    resume=resume
-                )
-            else:
-                pages_to_process = list(range(1, total_pages + 1))
 
             if len(pages_to_process) == 0:
                 self.logger.info("All pages already labeled, skipping")
@@ -181,7 +171,6 @@ class VisionLabeler:
 
             def load_page(page_num):
                 """Load and prepare a single page (called in parallel)."""
-                # Note: storage.label.validate_inputs() already validated all files exist
                 ocr_file = storage.ocr.output_dir / f"page_{page_num:04d}.json"
                 page_file = storage.source.output_dir / f"page_{page_num:04d}.png"
 
@@ -269,7 +258,7 @@ class VisionLabeler:
                 self._handle_progress_event(event, progress, len(requests))
 
             def on_result(result: LLMResult):
-                self._handle_result(result, failed_pages, storage, checkpoint if self.enable_checkpoints else None)
+                self._handle_result(result, failed_pages, storage)
 
             # Process batch with callbacks
             results = self.batch_client.process_batch(
@@ -326,16 +315,17 @@ class VisionLabeler:
                 print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
             else:
                 # Stage incomplete - some pages failed
-                failed_pages = sorted([t['page_num'] for t in pending_tasks])
+                failed_page_nums = sorted(failed_pages)
                 print(f"\n⚠️  Label incomplete: {completed}/{total_pages} pages succeeded")
                 print(f"   Total cost: ${total_cost:.2f}")
-                print(f"   Failed pages: {failed_pages}")
+                print(f"   Failed pages: {failed_page_nums}")
                 print(f"\n   To retry failed pages:")
                 print(f"   uv run python ar.py process label {book_title} --resume")
 
         except Exception as e:
             # Stage-level error handler
-            self.logger.error(f"Labeling stage failed", error=str(e))
+            if self.logger:
+                self.logger.error(f"Labeling stage failed", error=str(e))
             if self.enable_checkpoints:
                 checkpoint.mark_stage_failed(error=str(e))
             print(f"\n❌ Labeling stage failed: {e}")
@@ -389,7 +379,7 @@ class VisionLabeler:
             print(error_msg, file=sys.stderr, flush=True)
             # Don't raise - let processing continue
 
-    def _handle_result(self, result: LLMResult, failed_pages: list, storage: BookStorage, checkpoint) -> int:
+    def _handle_result(self, result: LLMResult, failed_pages: list, storage: BookStorage) -> int:
         """Handle LLM result - save successful pages, track failures."""
         try:
             page_num = result.request.metadata['page_num']
@@ -422,17 +412,13 @@ class VisionLabeler:
                     validated = LabelPageOutput(**label_data)
                     label_data = validated.model_dump()
 
-                    # Save using storage API (atomic write handled internally)
+                    # Save using storage API (atomic write and checkpoint handled internally)
                     storage.label.save_page(
                         page_num=page_num,
                         data=label_data,
                         cost_usd=result.cost_usd,
                         processing_time=result.total_time_seconds
                     )
-
-                    # Mark checkpoint complete
-                    if checkpoint:
-                        checkpoint.mark_completed(page_num, cost_usd=result.cost_usd)
 
                     return 1  # Success
 
