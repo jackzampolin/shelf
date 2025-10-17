@@ -8,6 +8,7 @@ Architecture:
 - Core BookStorage class manages book-level paths and metadata
 - Stage-specific view classes handle stage I/O operations
 - Each stage view knows its dependencies and can validate inputs
+- Each stage view integrates CheckpointManager for automatic progress tracking
 """
 
 import json
@@ -15,6 +16,7 @@ import threading
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from abc import ABC, abstractmethod
+from infra.checkpoint import CheckpointManager
 
 
 class StageView(ABC):
@@ -26,11 +28,13 @@ class StageView(ABC):
     - Page file naming
     - Directory creation
     - Input validation
+    - Integrated checkpoint management
     """
 
     def __init__(self, storage: 'BookStorage'):
         self.storage = storage
         self._lock = threading.Lock()
+        self._checkpoint: Optional[CheckpointManager] = None
 
     @property
     @abstractmethod
@@ -101,6 +105,86 @@ class StageView(ABC):
             pass
 
         return True
+
+    @property
+    def checkpoint(self) -> CheckpointManager:
+        """
+        Get checkpoint manager for this stage (lazy initialization).
+
+        The checkpoint is always available. Stages control how it's used:
+        - checkpoint.reset() - Start fresh
+        - checkpoint.get_remaining_pages() - Get pages to process
+        - checkpoint.mark_completed() - Mark page done (or use save_page())
+        - checkpoint.mark_stage_complete() - Mark stage done
+
+        Returns:
+            CheckpointManager instance for this stage
+        """
+        if self._checkpoint is None:
+            # Detect output directory name from output_dir path
+            output_dir_name = self.output_dir.name if self.output_dir else self.name
+
+            self._checkpoint = CheckpointManager(
+                scan_id=self.storage.scan_id,
+                stage=self.name,
+                storage_root=self.storage.storage_root,
+                output_dir=output_dir_name
+            )
+        return self._checkpoint
+
+    def save_page(
+        self,
+        page_num: int,
+        data: Dict[str, Any],
+        cost_usd: float = 0.0,
+        processing_time: float = 0.0,
+        extension: str = "json"
+    ):
+        """
+        Save page output and update checkpoint atomically.
+
+        This is the recommended way to write stage outputs. It handles:
+        - Atomic file writing
+        - Checkpoint update
+        - Cost tracking
+        - Thread safety
+
+        Args:
+            page_num: Page number to save
+            data: Page data (will be JSON-serialized)
+            cost_usd: Processing cost for this page in USD (tracked in checkpoint)
+            processing_time: Processing time in seconds (for stats, optional)
+            extension: File extension (default: "json")
+
+        Example:
+            storage.correction.save_page(
+                page_num=42,
+                data=correction_output,
+                cost_usd=0.023,
+                processing_time=4.2
+            )
+        """
+        with self._lock:
+            # Write output file atomically
+            output_file = self.output_page(page_num, extension=extension)
+            temp_file = output_file.with_suffix(f'.{extension}.tmp')
+
+            try:
+                # Write to temp file
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2)
+
+                # Atomic rename
+                temp_file.replace(output_file)
+
+                # Update checkpoint (now that file is safely written)
+                self.checkpoint.mark_completed(page_num, cost_usd=cost_usd)
+
+            except Exception as e:
+                # Clean up temp file on failure
+                if temp_file.exists():
+                    temp_file.unlink()
+                raise e
 
 
 class SourceStageView(StageView):

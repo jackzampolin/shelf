@@ -22,7 +22,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from infra.config import Config
 from infra.logger import create_logger
-from infra.checkpoint import CheckpointManager
 from infra.llm_batch_client import LLMBatchClient
 from infra.llm_models import LLMRequest, LLMResult, EventData, LLMEvent, RequestPhase
 from infra.pdf_utils import downsample_for_vision
@@ -74,7 +73,6 @@ class VisionCorrector:
             "failed_pages": 0
         }
         self.logger = None  # Will be initialized per book
-        self.checkpoint = None  # Will be initialized per book
         self.enable_checkpoints = enable_checkpoints
         self.batch_client = None  # Will be initialized per book
         self.verbose = False  # Can be set for detailed progress
@@ -113,18 +111,13 @@ class VisionCorrector:
             progress_interval=0.5  # Update progress every 0.5s
         )
 
-        # Initialize checkpoint manager
+        # Handle checkpoint (integrated into storage.correction)
         if self.enable_checkpoints:
-            self.checkpoint = CheckpointManager(
-                scan_id=book_title,
-                stage="correction",
-                storage_root=self.storage_root,
-                output_dir="corrected"
-            )
+            checkpoint = storage.correction.checkpoint
             if not resume:
                 # Check if checkpoint exists with progress before resetting
-                if self.checkpoint.checkpoint_file.exists():
-                    status = self.checkpoint.get_status()
+                if checkpoint.checkpoint_file.exists():
+                    status = checkpoint.get_status()
                     completed = len(status.get('completed_pages', []))
                     total = status.get('total_pages', 0)
                     cost = status.get('metadata', {}).get('total_cost_usd', 0.0)
@@ -140,7 +133,7 @@ class VisionCorrector:
                             print("   Cancelled. Use --resume to continue from checkpoint.")
                             return
 
-                self.checkpoint.reset()
+                checkpoint.reset()
                 # Reset stats on fresh start
                 with self.stats_lock:
                     self.stats = {
@@ -150,7 +143,7 @@ class VisionCorrector:
                     }
             else:
                 # Load existing cost from checkpoint for resume runs
-                checkpoint_state = self.checkpoint.get_status()
+                checkpoint_state = checkpoint.get_status()
                 existing_cost = checkpoint_state.get('metadata', {}).get('total_cost_usd', 0.0)
                 with self.stats_lock:
                     self.stats['total_cost_usd'] = existing_cost
@@ -175,8 +168,8 @@ class VisionCorrector:
             print(f"   Model:     {self.model}")
 
             # Get pages to process (this sets checkpoint status to "in_progress")
-            if self.checkpoint:
-                pages_to_process = self.checkpoint.get_remaining_pages(
+            if self.enable_checkpoints:
+                pages_to_process = storage.correction.checkpoint.get_remaining_pages(
                     total_pages=total_pages,
                     resume=resume
                 )
@@ -411,15 +404,15 @@ class VisionCorrector:
                             validated = CorrectionPageOutput(**correction_data)
                             correction_data = validated.model_dump()
 
-                            # Save corrected output
-                            output_file = result_storage.correction.output_page(page_num)
-                            with open(output_file, 'w', encoding='utf-8') as f:
-                                json.dump(correction_data, f, indent=2)
+                            # Save corrected output (handles file write + checkpoint atomically)
+                            result_storage.correction.save_page(
+                                page_num=page_num,
+                                data=correction_data,
+                                cost_usd=result.cost_usd,
+                                processing_time=result.total_time_seconds
+                            )
 
-                            # Update checkpoint & stats
-                            if self.checkpoint:
-                                self.checkpoint.mark_completed(page_num, cost_usd=result.cost_usd)
-
+                            # Update stats
                             with self.stats_lock:
                                 self.stats['pages_processed'] += 1
                                 self.stats['total_cost_usd'] += result.cost_usd
@@ -482,8 +475,8 @@ class VisionCorrector:
             # Only mark stage complete if ALL pages succeeded
             if errors == 0:
                 # Mark stage complete with cost in metadata
-                if self.checkpoint:
-                    self.checkpoint.mark_stage_complete(metadata={
+                if self.enable_checkpoints:
+                    storage.correction.checkpoint.mark_stage_complete(metadata={
                         "model": self.model,
                         "total_cost_usd": total_cost,
                         "pages_processed": completed
@@ -521,8 +514,8 @@ class VisionCorrector:
         except Exception as e:
             # Stage-level error handler
             self.logger.error(f"Correction stage failed", error=str(e))
-            if self.checkpoint:
-                self.checkpoint.mark_stage_failed(error=str(e))
+            if self.enable_checkpoints:
+                storage.correction.checkpoint.mark_stage_failed(error=str(e))
             print(f"\n❌ Correction stage failed: {e}")
             raise
         finally:
