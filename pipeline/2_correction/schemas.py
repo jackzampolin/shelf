@@ -72,6 +72,16 @@ class BlockCorrection(BaseModel):
     paragraphs: List[ParagraphCorrection] = Field(..., description="Paragraph-level corrections")
 
 
+class CorrectionLLMResponse(BaseModel):
+    """
+    LLM response structure for correction stage.
+
+    This is what the LLM returns. The stage adds metadata to create CorrectionPageOutput.
+    Use this model to generate the JSON schema for response_format.
+    """
+    blocks: List[BlockCorrection] = Field(..., description="Block corrections")
+
+
 class CorrectionPageOutput(BaseModel):
     """Output from vision-based correction of a single page."""
 

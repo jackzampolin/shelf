@@ -36,6 +36,7 @@ OCRPageOutput = ocr_schemas.OCRPageOutput
 
 correction_schemas = importlib.import_module('pipeline.2_correction.schemas')
 CorrectionPageOutput = correction_schemas.CorrectionPageOutput
+CorrectionLLMResponse = correction_schemas.CorrectionLLMResponse
 BlockCorrection = correction_schemas.BlockCorrection
 ParagraphCorrection = correction_schemas.ParagraphCorrection
 
@@ -199,43 +200,13 @@ class VisionCorrector:
             load_lock = threading.Lock()
 
             # Build JSON schema once (shared across all requests)
+            # Generate schema from Pydantic model (single source of truth)
             response_schema = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "ocr_correction",
                     "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "blocks": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "block_num": {"type": "integer", "minimum": 1},
-                                        "paragraphs": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "par_num": {"type": "integer", "minimum": 1},
-                                                    "text": {"type": ["string", "null"]},
-                                                    "notes": {"type": ["string", "null"]},
-                                                    "confidence": {"type": "number"}
-                                                },
-                                                "required": ["par_num", "text", "notes", "confidence"],
-                                                "additionalProperties": False
-                                            }
-                                        }
-                                    },
-                                    "required": ["block_num", "paragraphs"],
-                                    "additionalProperties": False
-                                }
-                            }
-                        },
-                        "required": ["blocks"],
-                        "additionalProperties": False
-                    }
+                    "schema": CorrectionLLMResponse.model_json_schema()
                 }
             }
 
