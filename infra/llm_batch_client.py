@@ -736,6 +736,21 @@ class LLMBatchClient:
 
         try:
             import datetime
+
+            # Extract JSON-serializable metadata only
+            # (metadata may contain objects like BookStorage that aren't serializable)
+            metadata = result.request.metadata if result.request else None
+            serializable_metadata = {}
+            if metadata:
+                for key, value in metadata.items():
+                    try:
+                        # Test if value is JSON serializable
+                        json.dumps(value)
+                        serializable_metadata[key] = value
+                    except (TypeError, ValueError):
+                        # Skip non-serializable values (e.g., BookStorage objects)
+                        serializable_metadata[key] = f"<non-serializable: {type(value).__name__}>"
+
             log_entry = {
                 'timestamp': datetime.datetime.now().isoformat(),
                 'request_id': result.request_id,
@@ -743,17 +758,17 @@ class LLMBatchClient:
                 'error_message': result.error_message,
                 'attempts': result.attempts,
                 'model': result.request.model if result.request else None,
-                'metadata': result.request.metadata if result.request else None
+                'metadata': serializable_metadata
             }
 
             # Append to JSONL file (thread-safe with 'a' mode)
             with open(self.failure_log_path, 'a') as f:
                 f.write(json.dumps(log_entry) + '\n')
 
-        except Exception as e:
+        except Exception:
             # Don't let logging errors crash the pipeline
-            import sys
-            print(f"Warning: Failed to log LLM failure: {e}", file=sys.stderr)
+            # Silently fail - logging is nice-to-have, not critical
+            pass
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Terminal progress bar with in-place updates."""
 
 import time
+import threading
 from dataclasses import dataclass
 from typing import List, Dict
 
@@ -78,6 +79,9 @@ class ProgressBar:
         self._sections: Dict[str, Section] = {}  # section_id → Section
         self._section_order: List[str] = []  # Ordered section IDs
 
+        # Thread safety for concurrent updates
+        self._lock = threading.Lock()
+
     def update(self, current: int, suffix: str = ""):
         """Update progress bar in place.
 
@@ -85,34 +89,35 @@ class ProgressBar:
             current: Current number of items processed
             suffix: Optional suffix text to append (e.g., "3 failed")
         """
-        self._last_current = current
-        self._last_suffix = suffix
+        with self._lock:
+            self._last_current = current
+            self._last_suffix = suffix
 
-        # Calculate metrics
-        percent = (current / self.total) * 100 if self.total > 0 else 0
-        filled = int(self.width * current // self.total) if self.total > 0 else 0
-        bar = '█' * filled + '░' * (self.width - filled)
+            # Calculate metrics
+            percent = (current / self.total) * 100 if self.total > 0 else 0
+            filled = int(self.width * current // self.total) if self.total > 0 else 0
+            bar = '█' * filled + '░' * (self.width - filled)
 
-        # Calculate rate and ETA
-        elapsed = time.time() - self.start_time
-        rate = current / elapsed if elapsed > 0 else 0
-        remaining = self.total - current
-        eta = remaining / rate if rate > 0 else 0
+            # Calculate rate and ETA
+            elapsed = time.time() - self.start_time
+            rate = current / elapsed if elapsed > 0 else 0
+            remaining = self.total - current
+            eta = remaining / rate if rate > 0 else 0
 
-        # Format output
-        output = f"{self.prefix}[{bar}] {percent:.0f}% ({current}/{self.total})"
+            # Format output
+            output = f"{self.prefix}[{bar}] {percent:.0f}% ({current}/{self.total})"
 
-        if rate > 0:
-            output += f" - {rate:.1f} {self.unit}/sec"
+            if rate > 0:
+                output += f" - {rate:.1f} {self.unit}/sec"
 
-        if eta > 0 and eta < 3600:  # Only show ETA if < 1 hour
-            output += f" - ETA {format_seconds(eta)}"
+            if eta > 0 and eta < 3600:  # Only show ETA if < 1 hour
+                output += f" - ETA {format_seconds(eta)}"
 
-        if suffix:
-            output += f" - {suffix}"
+            if suffix:
+                output += f" - {suffix}"
 
-        self._render_all(output)
-        self.last_update = current
+            self._render_all(output)
+            self.last_update = current
 
     def finish(self, message: str = ""):
         """Print final newline and completion message.
@@ -193,10 +198,13 @@ class ProgressBar:
         Args:
             main_line: The formatted main progress bar line
         """
-        # Clear previous output if we had multiple lines
-        if self._total_lines > 1:
+        # Clear previous output by moving cursor back to first line
+        # After printing N lines, cursor is at end of line N
+        # To return to line 1, move up (N-1) lines
+        # Special case: if N==1, we're already on the right line, no movement needed
+        if self._total_lines >= 2:
             # Move cursor up to start of our output block
-            print(f"\033[{self._total_lines}A", end='', flush=True)
+            print(f"\033[{self._total_lines - 1}A", end='', flush=True)
 
         # Print main line (with carriage return to overwrite)
         print(f"\r{main_line}\033[K", end='', flush=True)  # Clear to end of line

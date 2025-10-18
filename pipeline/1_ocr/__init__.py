@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from infra.logger import create_logger
 from infra.book_storage import BookStorage
 from infra.progress import ProgressBar
+from infra.stage_report import OCRStageReport, save_report
 
 # Import schemas for validation
 import importlib
@@ -439,6 +440,31 @@ class BookOCRProcessor:
             if errors > 0:
                 print(f"   ⚠️  {errors} pages failed")
 
+            # Generate stage report
+            print("\n   Generating stage report...")
+            report = OCRStageReport()
+
+            # Collect stats from all OCR output files
+            for page_num in range(1, total_pages + 1):
+                ocr_file = storage.ocr.output_page(page_num)
+                if ocr_file.exists():
+                    try:
+                        with open(ocr_file, 'r') as f:
+                            page_data = json.load(f)
+                        report.add_page_data(page_data)
+                    except Exception as e:
+                        self.logger.error(f"Failed to read page for report", page=page_num, error=str(e))
+
+            report.finalize()
+
+            # Save report to file
+            report_file = storage.book_dir / "reports" / "ocr_report.json"
+            report_file.parent.mkdir(exist_ok=True)
+            save_report(report, report_file)
+
+            # Display report
+            report.print_summary()
+
             # Mark stage complete if no errors
             if errors == 0:
                 if self.enable_checkpoints:
@@ -457,11 +483,13 @@ class BookOCRProcessor:
             self.logger.info(
                 "OCR complete",
                 total_pages_processed=completed,
-                errors=errors
+                errors=errors,
+                report_file=str(report_file)
             )
 
             # Print stage exit
             print(f"\n✅ OCR complete: {completed}/{total_pages} pages")
+            print(f"   Report saved: {report_file}")
 
         except Exception as e:
             # Stage-level error handler
