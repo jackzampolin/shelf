@@ -316,10 +316,18 @@ class LLMClient:
                 # Convert PIL Image to bytes then base64
                 # Use JPEG for efficiency (quality=75 balances size vs readability for text)
                 import io
+                import logging
+                logger = logging.getLogger(__name__)
+
                 buffered = io.BytesIO()
                 img.save(buffered, format="JPEG", quality=75)
                 img_bytes = buffered.getvalue()
                 img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+
+                # Log payload size for debugging
+                jpeg_kb = len(img_bytes) / 1024
+                payload_kb = len(img_b64) / 1024
+                logger.debug(f"Encoding image: {img.size[0]}×{img.size[1]} → {jpeg_kb:.0f}KB JPEG, {payload_kb:.0f}KB base64")
             else:
                 # Assume it's already base64
                 img_b64 = img

@@ -513,3 +513,19 @@ class VisionCorrector:
                 pass  # Give up gracefully
 
             return 0
+
+    def clean_stage(self, scan_id: str, confirm: bool = False) -> bool:
+        """
+        Clean/delete all correction stage outputs, checkpoint, and logs.
+
+        Args:
+            scan_id: Scan identifier
+            confirm: If False, prompts for confirmation before deleting
+
+        Returns:
+            True if cleaned, False if cancelled
+        """
+        from infra.storage.book_storage import BookStorage
+
+        storage = BookStorage(scan_id=scan_id, storage_root=self.storage_root)
+        return storage.correction.clean_stage(confirm=confirm)

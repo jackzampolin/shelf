@@ -29,15 +29,15 @@ except ImportError:
     pdfinfo_from_path = None
 
 
-def downsample_for_vision(image: Image.Image, target_dpi: int = None, max_payload_kb: int = 1500) -> Image.Image:
+def downsample_for_vision(image: Image.Image, target_dpi: int = None, max_payload_kb: int = 1200) -> Image.Image:
     """
     Downsample high-resolution OCR images to vision-appropriate resolution.
 
     Converts 600 DPI images (extracted for OCR) to 300 DPI equivalent for vision models.
     This reduces token costs while maintaining sufficient quality for visual analysis.
 
-    Also validates that the resulting JPEG will fit within payload limits (default 1500KB
-    base64-encoded ~= 1.1MB JPEG), to avoid 413 errors from OpenRouter's 5MB limit.
+    Also validates that the resulting JPEG will fit within payload limits (default 1200KB
+    base64-encoded ~= 900KB JPEG), to avoid 413 errors from model-specific limits.
 
     Args:
         image: PIL Image (typically 600 DPI from source/ directory)
