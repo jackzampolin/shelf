@@ -37,12 +37,12 @@ def test_mark_completed_and_resume(tmp_path):
     ocr_dir = book_dir / "ocr"
     ocr_dir.mkdir(parents=True)
 
-    # Create some valid OCR outputs
+    # Create some valid OCR outputs (must have "blocks" field for validation)
     for page_num in [1, 2, 3]:
         page_file = ocr_dir / f"page_{page_num:04d}.json"
         page_file.write_text(json.dumps({
             "page_number": page_num,
-            "regions": [{"text": "Test"}]
+            "blocks": [{"text": "Test"}]  # Fixed: was "regions", should be "blocks"
         }))
 
     checkpoint = CheckpointManager("test-scan", "ocr", storage_root=tmp_path)

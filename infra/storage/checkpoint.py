@@ -355,12 +355,17 @@ class CheckpointManager:
         with self._lock:
             # Add to completed list if not already there
             is_new_page = page_num not in self._state['completed_pages']
+
+            # Early return if page already completed and no cost to add (avoid redundant saves)
+            if not is_new_page and cost_usd == 0:
+                return
+
             if is_new_page:
                 self._state['completed_pages'].append(page_num)
                 self._state['completed_pages'].sort()
 
-            # Accumulate cost in metadata
-            if cost_usd > 0:
+            # Accumulate cost in metadata (ONLY for new pages to avoid double-counting)
+            if cost_usd > 0 and is_new_page:
                 current_cost = self._state['metadata'].get('total_cost_usd', 0.0)
                 self._state['metadata']['total_cost_usd'] = current_cost + cost_usd
 

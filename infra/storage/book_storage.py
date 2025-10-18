@@ -182,7 +182,11 @@ class StageView(ABC):
                 # Atomic rename
                 temp_file.replace(output_file)
 
-                # Update checkpoint (now that file is safely written)
+                # Validate output before marking complete (catch corruption/invalid data)
+                if not self.checkpoint.validate_page_output(page_num):
+                    raise IOError(f"Page {page_num} output validation failed after write")
+
+                # Update checkpoint (now that file is safely written and validated)
                 self.checkpoint.mark_completed(page_num, cost_usd=cost_usd)
 
             except Exception as e:
