@@ -85,7 +85,7 @@ def test_correction_stage_real_data(real_book_data):
     correction_module = importlib.import_module('pipeline.2_correction')
     VisionCorrector = correction_module.VisionCorrector
 
-    from infra.book_storage import BookStorage
+    from infra.storage.book_storage import BookStorage
 
     # Initialize corrector with minimal workers for testing
     corrector = VisionCorrector(
@@ -177,7 +177,7 @@ def test_correction_stage_resume(real_book_data):
     correction_module = importlib.import_module('pipeline.2_correction')
     VisionCorrector = correction_module.VisionCorrector
 
-    from infra.book_storage import BookStorage
+    from infra.storage.book_storage import BookStorage
 
     storage = BookStorage(
         scan_id=real_book_data['scan_id'],

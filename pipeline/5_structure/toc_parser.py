@@ -13,7 +13,7 @@ from pathlib import Path
 
 import logging
 
-from infra.llm_client import LLMClient
+from infra.llm.client import LLMClient
 
 # Import from numeric module names using importlib
 merge_schemas = importlib.import_module('pipeline.4_merge.schemas')

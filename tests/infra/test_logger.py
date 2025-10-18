@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from infra.logger import create_logger
+from infra.pipeline.logger import create_logger
 
 
 def test_logger_creates_log_file(tmp_path):

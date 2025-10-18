@@ -25,8 +25,8 @@ ValidatedBoundary = getattr(structure_schemas, 'ValidatedBoundary')
 ValidatedBoundariesOutput = getattr(structure_schemas, 'ValidatedBoundariesOutput')
 
 # Import LLM client and PDF utilities
-from infra.llm_client import LLMClient
-from infra.pdf_utils import get_pages_from_book, image_to_base64
+from infra.llm.client import LLMClient
+from infra.utils.pdf import get_pages_from_book, image_to_base64
 
 logger = logging.getLogger(__name__)
 

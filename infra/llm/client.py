@@ -19,7 +19,7 @@ import requests
 from typing import List, Dict, Tuple, Optional, Union
 from pathlib import Path
 from dotenv import load_dotenv
-from infra.pricing import CostCalculator
+from infra.llm.pricing import CostCalculator
 
 
 class LLMClient:

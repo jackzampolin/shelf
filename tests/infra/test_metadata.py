@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from infra.metadata import (
+from infra.storage.metadata import (
     update_book_metadata,
     get_latest_processing_record,
     get_scan_total_cost,

@@ -18,12 +18,12 @@ from queue import PriorityQueue, Empty
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional, Callable, Tuple
 
-from infra.llm_models import (
+from infra.llm.models import (
     LLMRequest, LLMResult, EventData, LLMEvent,
     RequestPhase, RequestStatus, CompletedStatus, BatchStats
 )
-from infra.rate_limiter import RateLimiter
-from infra.llm_client import LLMClient
+from infra.llm.rate_limiter import RateLimiter
+from infra.llm.client import LLMClient
 
 
 class LLMBatchClient:

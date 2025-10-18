@@ -16,7 +16,7 @@ import threading
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from abc import ABC, abstractmethod
-from infra.checkpoint import CheckpointManager
+from infra.storage.checkpoint import CheckpointManager
 
 
 class StageView(ABC):

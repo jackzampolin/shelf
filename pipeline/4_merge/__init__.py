@@ -21,9 +21,9 @@ from typing import Dict, List, Optional, Tuple, Any
 
 import importlib
 
-from infra.checkpoint import CheckpointManager
-from infra.logger import create_logger
-from infra.book_storage import BookStorage
+from infra.storage.checkpoint import CheckpointManager
+from infra.pipeline.logger import create_logger
+from infra.storage.book_storage import BookStorage
 
 # Import OCR, Correction, and Label schemas using importlib (handles numeric module names)
 ocr_schemas = importlib.import_module('pipeline.1_ocr.schemas')

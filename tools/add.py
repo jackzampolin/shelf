@@ -22,7 +22,7 @@ from pdf2image import convert_from_path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from infra.config import Config
-from infra.progress import ProgressBar
+from infra.pipeline.progress import ProgressBar
 from tools.library import LibraryIndex
 
 

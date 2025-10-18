@@ -21,11 +21,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from infra.config import Config
-from infra.llm_batch_client import LLMBatchClient
-from infra.llm_models import LLMRequest, LLMResult, EventData, LLMEvent, RequestPhase
-from infra.pdf_utils import downsample_for_vision
-from infra.progress import ProgressBar
-from infra.book_storage import BookStorage
+from infra.llm.batch_client import LLMBatchClient
+from infra.llm.models import LLMRequest, LLMResult, EventData, LLMEvent, RequestPhase
+from infra.utils.pdf import downsample_for_vision
+from infra.pipeline.progress import ProgressBar
+from infra.storage.book_storage import BookStorage
 
 # Import schemas
 import importlib

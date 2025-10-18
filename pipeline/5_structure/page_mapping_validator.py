@@ -19,7 +19,7 @@ from pathlib import Path
 
 import logging
 
-from infra.llm_client import LLMClient
+from infra.llm.client import LLMClient
 
 import importlib
 

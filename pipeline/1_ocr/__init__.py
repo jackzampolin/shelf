@@ -28,9 +28,9 @@ from typing import Tuple, Dict, Any, Optional
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from infra.logger import create_logger
-from infra.book_storage import BookStorage
-from infra.progress import ProgressBar
+from infra.pipeline.logger import create_logger
+from infra.storage.book_storage import BookStorage
+from infra.pipeline.progress import ProgressBar
 
 # Import schemas and reports using importlib (module name starts with number)
 import importlib

@@ -20,7 +20,7 @@ from typing import Optional, Dict
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from infra.config import Config
-from infra.llm_client import LLMClient
+from infra.llm.client import LLMClient
 
 
 def extract_book_metadata(scan_id: str, storage_root: Optional[Path] = None, num_pages: int = 15) -> Optional[Dict]:

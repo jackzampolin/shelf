@@ -20,7 +20,7 @@ import importlib
 
 import logging
 
-from infra.checkpoint import CheckpointManager
+from infra.storage.checkpoint import CheckpointManager
 
 # Import schemas from numeric module names using importlib
 merge_schemas = importlib.import_module('pipeline.4_merge.schemas')

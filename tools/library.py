@@ -253,7 +253,7 @@ class LibraryIndex:
         Args:
             scan_id: Scan identifier
         """
-        from infra.metadata import get_scan_total_cost, get_scan_models
+        from infra.storage.metadata import get_scan_total_cost, get_scan_models
 
         scan_dir = self.storage_root / scan_id
         if not scan_dir.exists():
@@ -457,7 +457,7 @@ class LibraryIndex:
                 }
             }
         """
-        from infra.metadata import get_scan_total_cost, get_scan_models
+        from infra.storage.metadata import get_scan_total_cost, get_scan_models
 
         issues = []
         stats = {
