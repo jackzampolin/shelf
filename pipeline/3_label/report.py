@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
+Label Stage Reporting
+
 View label stage outputs as a clean table.
 
 Usage:
-    python tools/analyze_label.py <scan-id> [--json]
+    python pipeline/3_label/report.py <scan-id> [--json]
 
 Displays:
 - PDF page number (file number)
