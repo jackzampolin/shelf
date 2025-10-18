@@ -307,6 +307,17 @@ class LLMBatchClient:
                                 status.phase_entered_at = time.time()
                                 status.retry_count = request._retry_count
 
+                                # Add to recent completions temporarily (so progress shows the failure)
+                                # This will be removed when request succeeds or becomes permanent failure
+                                self.recent_completions[request.id] = CompletedStatus(
+                                    request_id=request.id,
+                                    success=False,
+                                    total_time_seconds=result.total_time_seconds,
+                                    error_message=result.error_message,
+                                    cost_usd=result.cost_usd,
+                                    cycles_remaining=self.completion_ttl_cycles
+                                )
+
                         self._emit_event(
                             on_event,
                             LLMEvent.RETRY_QUEUED,

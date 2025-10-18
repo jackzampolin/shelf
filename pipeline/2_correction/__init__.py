@@ -357,14 +357,14 @@ class VisionCorrector:
                     progress.add_sub_line(req_id, msg)
                     running_ids.append(req_id)
 
-                # Section 2: Last 5 completed (sorted by most recent first)
+                # Section 2: Last 5 events (successes, failures, retries - sorted by most recent first)
                 recent_sorted = sorted(
                     recent.items(),
                     key=lambda x: x[1].cycles_remaining,
                     reverse=True
                 )[:5]
 
-                completed_ids = []
+                recent_ids = []
                 for req_id, comp in recent_sorted:
                     page_id = req_id.replace('page_', 'p')
 
@@ -375,11 +375,11 @@ class VisionCorrector:
                         msg = f"{page_id}: ✗ ({comp.total_time_seconds:.1f}s) - {error_code}"
 
                     progress.add_sub_line(req_id, msg)
-                    completed_ids.append(req_id)
+                    recent_ids.append(req_id)
 
                 # Clean up old sub-lines that are no longer in any section
                 # Batch removal to avoid multiple re-renders
-                all_section_ids = set(running_ids + completed_ids)
+                all_section_ids = set(running_ids + recent_ids)
                 to_remove = [line_id for line_id in progress._sub_lines.keys()
                             if line_id not in all_section_ids]
 
@@ -390,7 +390,7 @@ class VisionCorrector:
 
                 # Set sections (creates hierarchical display)
                 progress.set_section("running", f"Running ({len(running_ids)}):", running_ids)
-                progress.set_section("completed", f"Last {len(completed_ids)} Completed:", completed_ids)
+                progress.set_section("recent", f"Recent ({len(recent_ids)}):", recent_ids)
 
                 # Update main bar (triggers re-render with sections)
                 progress.update(event.completed, suffix=suffix)

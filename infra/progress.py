@@ -244,11 +244,17 @@ class ProgressBar:
         # Print all lines at once
         for i, line in enumerate(lines):
             if i == 0:
-                # First line: use \r to overwrite from start of line
-                print(f"\r{line}\033[K", flush=True)
+                # First line: use \r to overwrite from start of line, no newline yet
+                print(f"\r{line}\033[K", end='', flush=True)
             else:
-                # Subsequent lines: print normally
-                print(f"{line}\033[K", flush=True)
+                # Subsequent lines: need newline from previous line first
+                print(f"\n{line}\033[K", end='', flush=True)
+
+        # Clear any extra lines from previous render
+        # (if we printed fewer lines this time than last time)
+        if len(lines) < self._total_lines:
+            for _ in range(self._total_lines - len(lines)):
+                print("\033[K", flush=True)  # Print blank line (clears old content)
 
         # Track total lines for next clear
         self._total_lines = len(lines)

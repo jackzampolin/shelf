@@ -62,9 +62,25 @@ def analyze_correction_quality(ocr_text, corr_text):
 
     metrics = {}
 
-    # Sequence similarity
+    # Raw sequence similarity (original algorithm - sensitive to hyphen removal)
     sm = difflib.SequenceMatcher(None, ocr_text, corr_text)
-    metrics['similarity_ratio'] = sm.ratio()
+    metrics['raw_similarity'] = sm.ratio()
+
+    # Normalized similarity (robust to hyphen/whitespace changes)
+    def normalize_text(text):
+        """Normalize text by removing line-break hyphens and normalizing whitespace."""
+        # Remove line-break hyphens (hyphen followed by space or newline)
+        text = text.replace('- ', '').replace('-\n', '')
+        # Normalize whitespace
+        text = ' '.join(text.split())
+        return text
+
+    normalized_ocr = normalize_text(ocr_text)
+    normalized_corr = normalize_text(corr_text)
+
+    # Calculate similarity on normalized text
+    sm_normalized = difflib.SequenceMatcher(None, normalized_ocr, normalized_corr)
+    metrics['similarity_ratio'] = sm_normalized.ratio()
 
     # Character-level changes
     metrics['chars_changed'] = abs(len(corr_text) - len(ocr_text))
@@ -77,6 +93,7 @@ def analyze_correction_quality(ocr_text, corr_text):
 
     # Hyphenation fixes (common OCR issue)
     metrics['hyphen_fixes'] = ocr_text.count('-\n') - corr_text.count('-\n')
+    metrics['hyphen_fixes'] += ocr_text.count('- ') - corr_text.count('- ')
 
     return metrics
 
