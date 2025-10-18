@@ -1,4 +1,4 @@
-# Next Session: Stage 1 OCR Refactor COMPLETE ✅
+# Next Session: Stage 1 OCR Refactor + Reporting COMPLETE ✅
 
 ## What Was Done
 
@@ -39,13 +39,49 @@ Ran three agents in parallel to analyze the codebase:
 - ✅ Maintain all current functionality
 - ✅ Pass all tests on test book (447/447 pages processed)
 
-### Commit
+### Commits
+
+1. **b877cba** - refactor(ocr): integrate BookStorage APIs and modern patterns
+2. **1c746cd** - feat(reporting): add OCR stage report generation
+3. **020818d** - refactor(ocr): move report.py into OCR stage directory
+
+---
+
+## OCR Stage Reporting Feature ✨
+
+Added comprehensive reporting system that generates aggregate statistics after OCR completion.
+
+### Report Metrics
+
+**Content:**
+- Pages processed, blocks, paragraphs, words, images
+
+**Averages:**
+- Blocks/page, paragraphs/page, words/page
+
+**Quality:**
+- OCR confidence (avg, min, max)
+- Low-confidence page detection (<80%)
+
+**Distribution:**
+- Page count by content density (1-2 blocks, 3-5, 6-10, 11+)
+- Image coverage percentage
+
+### Output
+
+- **Console:** Beautiful formatted table summary
+- **JSON:** `{scan_id}/reports/ocr_report.json` for programmatic access
+
+### Example Output
 
 ```
-refactor(ocr): integrate BookStorage APIs and modern patterns
-Addresses Issue #57 (OCR refactor)
-Part of Issue #56 (Pipeline Refactor)
-Commit: b877cba
+📊 CONTENT METRICS
+   Pages Processed:        447
+   Total Words:            167,666
+
+✨ OCR CONFIDENCE
+   Average:                92.6%
+   Low Confidence Pages:   1 pages < 80%
 ```
 
 ---
@@ -65,18 +101,27 @@ Commit: b877cba
 
 ## Next Steps
 
-### Option 1: Continue Pipeline Refactor
-Move to Stage 4 (Merge) or Stage 5 (Structure) refactoring following the same pattern:
+### Option 1: Add Reporting to Other Stages
+Create similar reports for Correction and Label stages:
+- Correction: Track fix counts, confidence changes, LLM costs
+- Label: Track label distribution, confidence, rejected pages
+- Unified report viewer showing all stages
+
+### Option 2: Improve Label Stage Prompts
+User mentioned labeling still needs work. Could:
+- Review current label prompts and outputs
+- Iterate on label detection accuracy
+- Add label-specific metrics to report
+
+### Option 3: Continue Pipeline Refactor
+Move to Stage 4 (Merge - already done per user) or Stage 5 (Structure):
 1. Run code-reviewer agents
 2. Run code-architect
 3. Refactor to match gold standard
 4. Test on test book
 
-### Option 2: Test Full Pipeline
+### Option 4: Test Full Pipeline
 Run full pipeline (OCR → Correction → Label) on test book to validate all refactored stages work together end-to-end.
-
-### Option 3: Address Other Issues
-Pick another issue from the refactor checklist or work on different features.
 
 ---
 
