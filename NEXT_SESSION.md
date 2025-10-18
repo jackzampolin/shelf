@@ -1,4 +1,4 @@
-# Next Session: Stage 1 OCR Refactor + Reporting COMPLETE ✅
+# Next Session: OCR Refactor + Stage Reporting Complete ✅
 
 ## What Was Done
 
@@ -44,45 +44,41 @@ Ran three agents in parallel to analyze the codebase:
 1. **b877cba** - refactor(ocr): integrate BookStorage APIs and modern patterns
 2. **1c746cd** - feat(reporting): add OCR stage report generation
 3. **020818d** - refactor(ocr): move report.py into OCR stage directory
+4. **195ef1e** - docs: update NEXT_SESSION.md with reporting feature details
+5. **c91e121** - refactor(correction): move analysis tool to stage directory as report.py
+6. **137acea** - refactor(label): move analysis tool to stage directory as report.py
 
 ---
 
-## OCR Stage Reporting Feature ✨
+## Stage Reporting System ✨
 
-Added comprehensive reporting system that generates aggregate statistics after OCR completion.
+Organized all stage-specific reporting into each stage's directory. Each stage now has a `report.py` module:
 
-### Report Metrics
+### OCR Stage Report (`pipeline/1_ocr/report.py`)
 
-**Content:**
-- Pages processed, blocks, paragraphs, words, images
+Aggregate statistics after OCR completion:
+- **Content:** 447 pages, 167,666 words, 59 images
+- **Quality:** 92.6% avg confidence, 1 low-confidence page
+- **Distribution:** Page density analysis (1-2 blocks, 3-5, 6-10, 11+)
+- **Output:** Console table + JSON file
 
-**Averages:**
-- Blocks/page, paragraphs/page, words/page
+### Correction Stage Report (`pipeline/2_correction/report.py`)
 
-**Quality:**
-- OCR confidence (avg, min, max)
-- Low-confidence page detection (<80%)
+Comprehensive correction quality analysis:
+- **Application Rate:** 92.8% of documented corrections actually applied
+- **Cost Efficiency:** $0.0014/page (441 pages = $0.62 total)
+- **Confidence:** 95.9% high confidence (may be over-confident)
+- **Quality:** 66 over-corrections detected (<70% similarity)
+- **Actionable:** 15 priority pages flagged for manual review
+- **Export:** CSV/JSON support for programmatic analysis
 
-**Distribution:**
-- Page count by content density (1-2 blocks, 3-5, 6-10, 11+)
-- Image coverage percentage
+### Label Stage Report (`pipeline/3_label/report.py`)
 
-### Output
-
-- **Console:** Beautiful formatted table summary
-- **JSON:** `{scan_id}/reports/ocr_report.json` for programmatic access
-
-### Example Output
-
-```
-📊 CONTENT METRICS
-   Pages Processed:        447
-   Total Words:            167,666
-
-✨ OCR CONFIDENCE
-   Average:                92.6%
-   Low Confidence Pages:   1 pages < 80%
-```
+Label classification overview:
+- **Regions:** front_matter, body, back_matter classification
+- **Page Numbers:** Extracted printed page numbers (roman/arabic)
+- **Images:** Detection of illustration/table/diagram blocks
+- **Output:** Clean table view of all labeled pages
 
 ---
 
@@ -99,22 +95,38 @@ Added comprehensive reporting system that generates aggregate statistics after O
 
 ---
 
+## Key Insights from Reports
+
+### Correction Quality (from report analysis)
+- **95.9% high confidence** - Model may be over-confident, worth investigating
+- **92.8% application rate** - Good! Most documented corrections are actually applied
+- **66 over-corrections** - Pages with <70% similarity to original (4% of corrections)
+- **Cost:** Very efficient at $0.0014/page
+
+### Label Quality (from report analysis)
+- Only 52 pages labeled (out of 447 total) - labeling incomplete or selective?
+- Consistent 0.90 confidence across all labels
+- Good front_matter vs body detection
+- Page number extraction working
+
+---
+
 ## Next Steps
 
-### Option 1: Add Reporting to Other Stages
-Create similar reports for Correction and Label stages:
-- Correction: Track fix counts, confidence changes, LLM costs
-- Label: Track label distribution, confidence, rejected pages
-- Unified report viewer showing all stages
-
-### Option 2: Improve Label Stage Prompts
+### Option 1: Improve Label Stage Prompts
 User mentioned labeling still needs work. Could:
 - Review current label prompts and outputs
 - Iterate on label detection accuracy
 - Add label-specific metrics to report
 
+### Option 2: Investigate Correction Over-Confidence
+The report shows 95.9% high confidence which seems suspicious:
+- Review pages flagged for over-correction
+- Adjust confidence scoring in prompts
+- Consider multi-model validation for low-similarity corrections
+
 ### Option 3: Continue Pipeline Refactor
-Move to Stage 4 (Merge - already done per user) or Stage 5 (Structure):
+Move to Stage 5 (Structure - Stage 4 Merge already done):
 1. Run code-reviewer agents
 2. Run code-architect
 3. Refactor to match gold standard
