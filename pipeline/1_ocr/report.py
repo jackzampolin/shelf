@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Stage Reporting System
+OCR Stage Reporting
 
-Generates aggregate statistics and reports for pipeline stages.
-Each stage can generate a report showing useful metrics for quick review.
+Generates aggregate statistics and reports for OCR stage execution.
+Provides useful metrics for quick quality assessment.
 """
 
 import json

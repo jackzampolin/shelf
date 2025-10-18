@@ -31,12 +31,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from infra.logger import create_logger
 from infra.book_storage import BookStorage
 from infra.progress import ProgressBar
-from infra.stage_report import OCRStageReport, save_report
 
-# Import schemas for validation
+# Import schemas and reports using importlib (module name starts with number)
 import importlib
 schemas_module = importlib.import_module('pipeline.1_ocr.schemas')
 OCRPageOutput = schemas_module.OCRPageOutput
+
+report_module = importlib.import_module('pipeline.1_ocr.report')
+OCRStageReport = report_module.OCRStageReport
+save_report = report_module.save_report
 
 
 def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str, Any]]:
