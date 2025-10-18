@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-Analyze correction stage outputs for quality and common issues.
+Correction Stage Reporting
+
+Analyzes correction stage outputs for quality and common issues.
 
 Usage:
-    python tools/analyze_correction.py <scan-id> [--pages N] [--export csv|json] [--output PATH]
-    python tools/analyze_correction.py --compare <scan-id1> <scan-id2> ... [--export csv]
+    python pipeline/2_correction/report.py <scan-id> [--pages N] [--export csv|json] [--output PATH]
+    python pipeline/2_correction/report.py --compare <scan-id1> <scan-id2> ... [--export csv]
 
 Analyzes:
 - Correction application rate (notes say fixed, text actually changed)
@@ -744,19 +746,19 @@ if __name__ == "__main__":
         epilog="""
 Examples:
   # Analyze a single book
-  python tools/analyze_correction.py accidental-president
+  python pipeline/2_correction/report.py accidental-president
 
   # Analyze with page limit
-  python tools/analyze_correction.py accidental-president --pages 50
+  python pipeline/2_correction/report.py accidental-president --pages 50
 
   # Export to CSV
-  python tools/analyze_correction.py accidental-president --export csv --output results.csv
+  python pipeline/2_correction/report.py accidental-president --export csv --output results.csv
 
   # Export to JSON
-  python tools/analyze_correction.py accidental-president --export json --output results.json
+  python pipeline/2_correction/report.py accidental-president --export json --output results.json
 
   # Compare multiple books
-  python tools/analyze_correction.py --compare book1 book2 book3
+  python pipeline/2_correction/report.py --compare book1 book2 book3
         """
     )
 

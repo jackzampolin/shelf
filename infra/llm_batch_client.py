@@ -499,14 +499,28 @@ class LLMBatchClient:
             return '5xx'
         elif '429' in error_str:
             return '429_rate_limit'
+        elif '422' in error_str:
+            return '422_unprocessable'
         elif '4' in error_str and ('client' in error_str or 'error' in error_str):
             return '4xx'
         else:
             return 'unknown'
 
     def _is_retryable(self, error_type: Optional[str]) -> bool:
-        """Check if error type is retryable."""
-        retryable = ['timeout', '5xx', '429_rate_limit', 'unknown']
+        """Check if error type is retryable.
+
+        Retryable errors:
+        - timeout: Network timeouts
+        - 5xx: Server errors (transient)
+        - 429_rate_limit: Rate limiting (will retry after wait)
+        - 422_unprocessable: Provider deserialization issues (transient)
+        - unknown: Unclassified errors (retry to be safe)
+
+        Non-retryable errors:
+        - 4xx: Client errors (bad request, auth, etc.)
+        - json_parse: JSON parsing failures (after retries in LLM client)
+        """
+        retryable = ['timeout', '5xx', '429_rate_limit', '422_unprocessable', 'unknown']
         return error_type in retryable
 
     def _store_result(self, result: LLMResult):

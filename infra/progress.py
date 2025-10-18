@@ -195,27 +195,18 @@ class ProgressBar:
     def _render_all(self, main_line: str):
         """Render main progress bar and all sub-status lines.
 
+        Strategy: Build complete output as a list of lines, then print all at once.
+        This is simpler and more robust than trying to track cursor positions.
+
         Args:
             main_line: The formatted main progress bar line
         """
-        # Clear previous output by moving cursor back to first line
-        # After printing N lines, cursor is at end of line N
-        # To return to line 1, move up (N-1) lines
-        # Special case: if N==1, we're already on the right line, no movement needed
-        if self._total_lines >= 2:
-            # Move cursor up to start of our output block
-            print(f"\033[{self._total_lines - 1}A", end='', flush=True)
+        # Build complete output
+        lines = [main_line]
 
-        # Print main line (with carriage return to overwrite)
-        print(f"\r{main_line}\033[K", end='', flush=True)  # Clear to end of line
-
-        # Hierarchical rendering with sections
+        # Add hierarchical sections if present
         if self._sections:
-            print()  # Newline after main bar
-            print("   │")  # Connector pipe
-
-            # Count all lines: main bar (line 202) + newline + connector pipe
-            lines_printed = 3
+            lines.append("   │")  # Connector pipe
 
             for i, section_id in enumerate(self._section_order):
                 section = self._sections[section_id]
@@ -223,47 +214,41 @@ class ProgressBar:
 
                 # Section header
                 branch = "└─" if is_last_section else "├─"
-                print(f"   {branch} {section.title}\033[K", flush=True)
-                lines_printed += 1
+                lines.append(f"   {branch} {section.title}")
 
                 # Section items - filter to only valid items with messages
                 valid_items = [lid for lid in section.items if lid in self._sub_lines]
 
                 if not valid_items:
                     # Empty section
-                    if is_last_section:
-                        print(f"      (none)\033[K", flush=True)
-                    else:
-                        print(f"   │  (none)\033[K", flush=True)
-                    lines_printed += 1
+                    prefix = "      " if is_last_section else "   │  "
+                    lines.append(f"{prefix}(none)")
                 else:
                     for j, line_id in enumerate(valid_items):
                         is_last_item = (j == len(valid_items) - 1)
-
-                        # Prefix depends on whether this is the last section
-                        if is_last_section:
-                            prefix = "      "  # No vertical bar
-                        else:
-                            prefix = "   │  "  # Continue vertical bar
-
+                        prefix = "      " if is_last_section else "   │  "
                         item_branch = "└─" if is_last_item else "├─"
-                        message = self._sub_lines[line_id]  # Safe - already validated
-                        print(f"{prefix}{item_branch} {message}\033[K", flush=True)
-                        lines_printed += 1
+                        message = self._sub_lines[line_id]
+                        lines.append(f"{prefix}{item_branch} {message}")
 
-            # Track total lines for next clear
-            self._total_lines = lines_printed
-
-        # Flat rendering (backward compatible)
+        # Add flat sub-lines (backward compatible)
         elif self._sub_lines:
-            # Print newline after main bar if we have sub-lines
-            print()
-
-            # Print sub-lines (sorted by ID for stable order)
             for line_id in sorted(self._sub_lines.keys()):
-                print(f"  {self._sub_lines[line_id]}\033[K", flush=True)  # Clear to end of line
+                lines.append(f"  {self._sub_lines[line_id]}")
 
-            # Track how many lines we printed (for next clear)
-            self._total_lines = 1 + len(self._sub_lines)
-        else:
-            self._total_lines = 1
+        # Clear previous output if needed
+        if self._total_lines > 0:
+            # Move cursor up to first line of previous output
+            print(f"\033[{self._total_lines}A", end='', flush=True)
+
+        # Print all lines at once
+        for i, line in enumerate(lines):
+            if i == 0:
+                # First line: use \r to overwrite from start of line
+                print(f"\r{line}\033[K", flush=True)
+            else:
+                # Subsequent lines: print normally
+                print(f"{line}\033[K", flush=True)
+
+        # Track total lines for next clear
+        self._total_lines = len(lines)
