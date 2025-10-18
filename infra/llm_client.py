@@ -134,19 +134,17 @@ class LLMClient:
                     should_retry = True
                     error_type = f"{e.response.status_code} server error"
 
-                # Retry specific 422 errors from provider (xAI deserialization issues)
+                # Retry all 422 errors (xAI provider deserialization issues are transient)
                 elif e.response.status_code == 422:
-                    # Use cached error data (response body already consumed)
+                    should_retry = True
+                    error_type = "422 unprocessable entity"
+                    # Use cached error data for logging (response body already consumed)
                     error_data = getattr(e.response, '_error_data_cache', None)
                     if error_data:
                         error_msg = error_data.get('error', {}).get('message', '')
-                        # xAI provider deserialization errors are transient
-                        if 'Provider returned error' in error_msg or 'Failed to deserialize' in str(error_data):
-                            should_retry = True
-                            error_type = "422 provider error"
-                            # Truncate long error messages
-                            if len(error_msg) > 80:
-                                error_msg = error_msg[:80] + "..."
+                        # Truncate long error messages
+                        if len(error_msg) > 80:
+                            error_msg = error_msg[:80] + "..."
 
                 if should_retry and attempt < max_retries - 1:
                     delay = (2 ** attempt) * 2  # Exponential backoff: 2s, 4s, 8s
@@ -316,19 +314,23 @@ class LLMClient:
                     img_b64 = base64.b64encode(f.read()).decode('utf-8')
             elif hasattr(img, 'save'):  # PIL Image object
                 # Convert PIL Image to bytes then base64
+                # Use JPEG for efficiency (quality=75 balances size vs readability for text)
                 import io
                 buffered = io.BytesIO()
-                img.save(buffered, format="PNG")
+                img.save(buffered, format="JPEG", quality=75)
                 img_bytes = buffered.getvalue()
                 img_b64 = base64.b64encode(img_bytes).decode('utf-8')
             else:
                 # Assume it's already base64
                 img_b64 = img
 
+            # Use JPEG MIME type for PIL Image objects, PNG for others
+            mime_type = "image/jpeg" if hasattr(img, 'save') else "image/png"
+
             content.append({
                 "type": "image_url",
                 "image_url": {
-                    "url": f"data:image/png;base64,{img_b64}"
+                    "url": f"data:{mime_type};base64,{img_b64}"
                 }
             })
 

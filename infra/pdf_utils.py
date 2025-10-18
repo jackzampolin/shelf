@@ -31,41 +31,75 @@ except ImportError:
     pdfinfo_from_path = None
 
 
-def downsample_for_vision(image: Image.Image) -> Image.Image:
+def downsample_for_vision(image: Image.Image, target_dpi: int = None, max_payload_kb: int = 1500) -> Image.Image:
     """
     Downsample high-resolution OCR images to vision-appropriate resolution.
 
     Converts 600 DPI images (extracted for OCR) to 300 DPI equivalent for vision models.
     This reduces token costs while maintaining sufficient quality for visual analysis.
 
+    Also validates that the resulting JPEG will fit within payload limits (default 1500KB
+    base64-encoded ~= 1.1MB JPEG), to avoid 413 errors from OpenRouter's 5MB limit.
+
     Args:
         image: PIL Image (typically 600 DPI from source/ directory)
+        target_dpi: Override target DPI (default: from Config.PDF_EXTRACTION_DPI_VISION)
+        max_payload_kb: Maximum base64-encoded size in KB (default: 1500)
 
     Returns:
-        PIL Image downsampled to 300 DPI equivalent (50% of original dimensions)
+        PIL Image downsampled to fit payload constraints
 
     Example:
         Original: 1800×2700 pixels (600 DPI, 6"×9" page)
         Result:   900×1350 pixels (300 DPI equivalent)
     """
     # Calculate downsampling ratio based on configured DPIs
-    ratio = Config.PDF_EXTRACTION_DPI_VISION / Config.PDF_EXTRACTION_DPI_OCR
+    if target_dpi is None:
+        target_dpi = Config.PDF_EXTRACTION_DPI_VISION
 
-    # If already at target resolution or lower, return as-is
-    if ratio >= 1.0:
+    ratio = target_dpi / Config.PDF_EXTRACTION_DPI_OCR
+
+    # If already at target resolution or lower, use as starting point
+    if ratio < 1.0:
+        width, height = image.size
+        new_width = int(width * ratio)
+        new_height = int(height * ratio)
+
+        logger.debug(
+            f"Downsampling image: {width}×{height} → {new_width}×{new_height} "
+            f"(ratio: {ratio:.2f})"
+        )
+
+        image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+    # Check if we need further downsampling to fit payload limit
+    # Estimate JPEG size by encoding to buffer (quality=75 for better compression)
+    buffer = io.BytesIO()
+    image.save(buffer, format='JPEG', quality=75)
+    jpeg_size_kb = buffer.tell() / 1024
+
+    # Base64 encoding adds ~33% overhead
+    estimated_payload_kb = jpeg_size_kb * 1.33
+
+    # If within limits, we're done
+    if estimated_payload_kb <= max_payload_kb:
+        logger.debug(f"Image payload: {estimated_payload_kb:.0f} KB (within {max_payload_kb} KB limit)")
         return image
 
-    # Calculate new dimensions
-    width, height = image.size
-    new_width = int(width * ratio)
-    new_height = int(height * ratio)
+    # Need to downsample further - calculate required reduction
+    # payload ∝ pixels (roughly), so we can estimate reduction ratio
+    reduction_needed = max_payload_kb / estimated_payload_kb
+    scale_factor = reduction_needed ** 0.5  # Square root because area ∝ pixels
 
-    logger.debug(
-        f"Downsampling image: {width}×{height} → {new_width}×{new_height} "
-        f"(ratio: {ratio:.2f})"
+    width, height = image.size
+    new_width = int(width * scale_factor)
+    new_height = int(height * scale_factor)
+
+    logger.info(
+        f"Further downsampling for payload limit: {width}×{height} → {new_width}×{new_height} "
+        f"({estimated_payload_kb:.0f} KB → ~{max_payload_kb:.0f} KB target)"
     )
 
-    # Use high-quality Lanczos resampling
     return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
 

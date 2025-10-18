@@ -101,7 +101,7 @@ class LLMBatchClient:
         self.request_tracking_lock = threading.Lock()
         self.active_requests: Dict[str, RequestStatus] = {}
         self.recent_completions: Dict[str, CompletedStatus] = {}
-        self.completion_ttl_cycles = 6  # Show for ~3s at 0.5s PROGRESS interval
+        self.completion_ttl_cycles = 2  # Show for ~1s at 0.5s PROGRESS interval
         self.batch_start_time: Optional[float] = None
 
     def process_batch(

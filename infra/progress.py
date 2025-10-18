@@ -1,6 +1,8 @@
 """Terminal progress bar with in-place updates."""
 
 import time
+from dataclasses import dataclass
+from typing import List, Dict
 
 
 def format_seconds(seconds: float) -> str:
@@ -18,6 +20,13 @@ def format_seconds(seconds: float) -> str:
     minutes = int(seconds // 60)
     secs = int(seconds % 60)
     return f"{minutes}m {secs}s"
+
+
+@dataclass
+class Section:
+    """A hierarchical section of sub-items."""
+    title: str              # "Running (3):"
+    items: List[str]        # List of line_ids in this section
 
 
 class ProgressBar:
@@ -64,6 +73,10 @@ class ProgressBar:
         self._total_lines = 0  # Track total lines printed
         self._last_current = 0  # Last progress value
         self._last_suffix = ""  # Last suffix value
+
+        # Section support for hierarchical display
+        self._sections: Dict[str, Section] = {}  # section_id → Section
+        self._section_order: List[str] = []  # Ordered section IDs
 
     def update(self, current: int, suffix: str = ""):
         """Update progress bar in place.
@@ -150,6 +163,30 @@ class ProgressBar:
             # Re-render with current progress
             self.update(self._last_current, self._last_suffix)
 
+    def set_section(self, section_id: str, title: str, line_ids: List[str]):
+        """Create or update a hierarchical section.
+
+        Args:
+            section_id: Unique identifier for this section
+            title: Section header (e.g., "Running (3):")
+            line_ids: List of line_ids to include in this section
+        """
+        # Create or update section
+        self._sections[section_id] = Section(title=title, items=line_ids)
+
+        # Track section order (add if new)
+        if section_id not in self._section_order:
+            self._section_order.append(section_id)
+
+        # Don't re-render here - let update() handle it
+
+    def clear_sections(self):
+        """Remove all sections and return to flat display."""
+        self._sections.clear()
+        self._section_order.clear()
+        # Re-render with current progress
+        self.update(self._last_current, self._last_suffix)
+
     def _render_all(self, main_line: str):
         """Render main progress bar and all sub-status lines.
 
@@ -164,7 +201,53 @@ class ProgressBar:
         # Print main line (with carriage return to overwrite)
         print(f"\r{main_line}\033[K", end='', flush=True)  # Clear to end of line
 
-        if self._sub_lines:
+        # Hierarchical rendering with sections
+        if self._sections:
+            print()  # Newline after main bar
+            print("   │")  # Connector pipe
+
+            # Count all lines: main bar (line 202) + newline + connector pipe
+            lines_printed = 3
+
+            for i, section_id in enumerate(self._section_order):
+                section = self._sections[section_id]
+                is_last_section = (i == len(self._section_order) - 1)
+
+                # Section header
+                branch = "└─" if is_last_section else "├─"
+                print(f"   {branch} {section.title}\033[K", flush=True)
+                lines_printed += 1
+
+                # Section items - filter to only valid items with messages
+                valid_items = [lid for lid in section.items if lid in self._sub_lines]
+
+                if not valid_items:
+                    # Empty section
+                    if is_last_section:
+                        print(f"      (none)\033[K", flush=True)
+                    else:
+                        print(f"   │  (none)\033[K", flush=True)
+                    lines_printed += 1
+                else:
+                    for j, line_id in enumerate(valid_items):
+                        is_last_item = (j == len(valid_items) - 1)
+
+                        # Prefix depends on whether this is the last section
+                        if is_last_section:
+                            prefix = "      "  # No vertical bar
+                        else:
+                            prefix = "   │  "  # Continue vertical bar
+
+                        item_branch = "└─" if is_last_item else "├─"
+                        message = self._sub_lines[line_id]  # Safe - already validated
+                        print(f"{prefix}{item_branch} {message}\033[K", flush=True)
+                        lines_printed += 1
+
+            # Track total lines for next clear
+            self._total_lines = lines_printed
+
+        # Flat rendering (backward compatible)
+        elif self._sub_lines:
             # Print newline after main bar if we have sub-lines
             print()
 
@@ -172,5 +255,7 @@ class ProgressBar:
             for line_id in sorted(self._sub_lines.keys()):
                 print(f"  {self._sub_lines[line_id]}\033[K", flush=True)  # Clear to end of line
 
-        # Track how many lines we printed (for next clear)
-        self._total_lines = 1 + len(self._sub_lines)
+            # Track how many lines we printed (for next clear)
+            self._total_lines = 1 + len(self._sub_lines)
+        else:
+            self._total_lines = 1
