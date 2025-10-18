@@ -206,8 +206,6 @@ class ProgressBar:
 
         # Add hierarchical sections if present
         if self._sections:
-            lines.append("   │")  # Connector pipe
-
             for i, section_id in enumerate(self._section_order):
                 section = self._sections[section_id]
                 is_last_section = (i == len(self._section_order) - 1)
@@ -239,7 +237,9 @@ class ProgressBar:
         # Clear previous output if needed
         if self._total_lines > 0:
             # Move cursor up to first line of previous output
-            print(f"\033[{self._total_lines}A", end='', flush=True)
+            # After printing N lines, cursor is at end of line N
+            # To get to line 1, we move up N-1 lines
+            print(f"\033[{self._total_lines - 1}A", end='', flush=True)
 
         # Print all lines at once
         for i, line in enumerate(lines):
@@ -253,8 +253,12 @@ class ProgressBar:
         # Clear any extra lines from previous render
         # (if we printed fewer lines this time than last time)
         if len(lines) < self._total_lines:
-            for _ in range(self._total_lines - len(lines)):
-                print("\033[K", flush=True)  # Print blank line (clears old content)
+            extra_lines = self._total_lines - len(lines)
+            for _ in range(extra_lines):
+                print("\n\033[K", end='', flush=True)  # Newline + clear line
+            # Move cursor back up to end of last actual line
+            # (we moved down by extra_lines, so move back up)
+            print(f"\033[{extra_lines}A", end='', flush=True)
 
         # Track total lines for next clear
         self._total_lines = len(lines)
