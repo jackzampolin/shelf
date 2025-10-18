@@ -24,7 +24,7 @@ from infra.config import Config
 from infra.llm.batch_client import LLMBatchClient
 from infra.llm.models import LLMRequest, LLMResult, EventData, LLMEvent, RequestPhase
 from infra.utils.pdf import downsample_for_vision
-from infra.pipeline.progress import ProgressBar
+from infra.pipeline.rich_progress import RichProgressBar, RichProgressBarHierarchical
 from infra.storage.book_storage import BookStorage
 
 # Import schemas
@@ -134,7 +134,7 @@ class VisionCorrector:
             # Pre-load OCR data and prepare requests (parallelized)
             print(f"\n   Loading {len(pages_to_process)} pages...")
             load_start_time = time.time()
-            load_progress = ProgressBar(
+            load_progress = RichProgressBar(
                 total=len(pages_to_process),
                 prefix="   ",
                 width=40,
@@ -253,7 +253,7 @@ class VisionCorrector:
             # Setup progress tracking
             print(f"\n   Correcting {len(requests)} pages...")
             correction_start_time = time.time()
-            progress = ProgressBar(
+            progress = RichProgressBarHierarchical(
                 total=len(requests),
                 prefix="   ",
                 width=40,
@@ -327,7 +327,7 @@ class VisionCorrector:
             print(f"\n❌ Correction stage failed: {e}")
             raise
 
-    def _handle_progress_event(self, event: EventData, progress: ProgressBar, total_requests: int):
+    def _handle_progress_event(self, event: EventData, progress: RichProgressBarHierarchical, total_requests: int):
         """Handle progress event for batch processing."""
         try:
             if event.event_type == LLMEvent.PROGRESS:
@@ -350,7 +350,7 @@ class VisionCorrector:
                     elapsed = status.phase_elapsed
 
                     if status.retry_count > 0:
-                        msg = f"{page_id}: Executing... ({elapsed:.1f}s, retry {status.retry_count}/{self.max_retries})"
+                        msg = f"{page_id}: Executing... ({elapsed:.1f}s, retry {status.retry_count})"
                     else:
                         msg = f"{page_id}: Executing... ({elapsed:.1f}s)"
 

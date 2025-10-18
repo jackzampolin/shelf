@@ -37,6 +37,7 @@ class BlockType(str, Enum):
     INDEX = "INDEX"
 
     # Back matter
+    EPILOGUE = "EPILOGUE"
     APPENDIX = "APPENDIX"
     GLOSSARY = "GLOSSARY"
     ACKNOWLEDGMENTS = "ACKNOWLEDGMENTS"
@@ -48,6 +49,7 @@ class BlockType(str, Enum):
 
     # Special
     ILLUSTRATION_CAPTION = "ILLUSTRATION_CAPTION"
+    CAPTION = "CAPTION"  # Generic caption (maps to ILLUSTRATION_CAPTION)
     TABLE = "TABLE"
     MAP_LABEL = "MAP_LABEL"  # Geographic/map labels and annotations
     DIAGRAM_LABEL = "DIAGRAM_LABEL"  # Timeline, chart, diagram labels

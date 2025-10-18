@@ -17,6 +17,7 @@ dependencies = [
     "pytest>=7.4.0",
     "lxml>=5.0.0",
     "jiwer>=3.0.0",
+    "rich>=13.0.0",
 ]
 
 [project.scripts]

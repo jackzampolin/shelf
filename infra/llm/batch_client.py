@@ -291,8 +291,8 @@ class LLMBatchClient:
                         self.stats['total_tokens'] += result.usage.get('completion_tokens', 0)
 
                 else:
-                    # Failure - check if retryable
-                    if request._retry_count < self.max_retries and self._is_retryable(result.error_type):
+                    # Failure - retry indefinitely with jitter
+                    if self._is_retryable(result.error_type):
                         # Re-queue with jitter
                         request._retry_count += 1
                         jitter = random.uniform(*self.retry_jitter)
@@ -510,6 +510,8 @@ class LLMBatchClient:
             return '5xx'
         elif '429' in error_str:
             return '429_rate_limit'
+        elif '413' in error_str:
+            return '413_payload_too_large'
         elif '422' in error_str:
             return '422_unprocessable'
         elif '4' in error_str and ('client' in error_str or 'error' in error_str):
@@ -520,18 +522,19 @@ class LLMBatchClient:
     def _is_retryable(self, error_type: Optional[str]) -> bool:
         """Check if error type is retryable.
 
-        Retryable errors:
+        Retryable errors (retry indefinitely):
         - timeout: Network timeouts
         - 5xx: Server errors (transient)
         - 429_rate_limit: Rate limiting (will retry after wait)
+        - 413_payload_too_large: Payload too large (retry - may succeed on different attempt)
         - 422_unprocessable: Provider deserialization issues (transient)
         - unknown: Unclassified errors (retry to be safe)
 
         Non-retryable errors:
-        - 4xx: Client errors (bad request, auth, etc.)
+        - 4xx: Client errors (bad request, auth, forbidden, etc.)
         - json_parse: JSON parsing failures (after retries in LLM client)
         """
-        retryable = ['timeout', '5xx', '429_rate_limit', '422_unprocessable', 'unknown']
+        retryable = ['timeout', '5xx', '429_rate_limit', '413_payload_too_large', '422_unprocessable', 'unknown']
         return error_type in retryable
 
     def _store_result(self, result: LLMResult):

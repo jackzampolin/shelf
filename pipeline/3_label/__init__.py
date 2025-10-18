@@ -23,7 +23,7 @@ from infra.pipeline.logger import create_logger
 from infra.llm.batch_client import LLMBatchClient
 from infra.llm.models import LLMRequest, LLMResult, EventData, LLMEvent, RequestPhase
 from infra.utils.pdf import downsample_for_vision
-from infra.pipeline.progress import ProgressBar
+from infra.pipeline.rich_progress import RichProgressBar, RichProgressBarHierarchical
 from infra.storage.book_storage import BookStorage
 
 # Import schemas
@@ -151,7 +151,7 @@ class VisionLabeler:
             # Pre-load OCR data and prepare requests (parallelized)
             print(f"\n   Loading {len(pages_to_process)} pages...")
             load_start_time = time.time()
-            load_progress = ProgressBar(total=len(pages_to_process), prefix="   ", width=40, unit="pages")
+            load_progress = RichProgressBar(total=len(pages_to_process), prefix="   ", width=40, unit="pages")
             load_progress.update(0, suffix="loading...")
 
             requests = []
@@ -249,7 +249,7 @@ class VisionLabeler:
             # Setup progress tracking
             print(f"\n   Labeling {len(requests)} pages...")
             label_start_time = time.time()
-            progress = ProgressBar(total=len(requests), prefix="   ", width=40, unit="pages")
+            progress = RichProgressBarHierarchical(total=len(requests), prefix="   ", width=40, unit="pages")
             progress.update(0, suffix="starting...")
             failed_pages = []
 
@@ -335,49 +335,109 @@ class VisionLabeler:
             if self.logger:
                 self.logger.close()
 
-    def _handle_progress_event(self, event: EventData, progress: ProgressBar, total_requests: int):
+    def _handle_progress_event(self, event: EventData, progress: RichProgressBarHierarchical, total_requests: int):
         """Handle progress event for batch processing."""
         try:
             if event.event_type == LLMEvent.PROGRESS:
+                # Query batch client for current state
                 active = self.batch_client.get_active_requests()
                 recent = self.batch_client.get_recent_completions()
 
+                # Update progress bar suffix
                 batch_stats = self.batch_client.get_batch_stats(total_requests=total_requests)
                 rate_util = event.rate_limit_status.get('utilization', 0) if event.rate_limit_status else 0
                 suffix = f"${batch_stats.total_cost_usd:.2f} | {rate_util:.0%} rate"
 
-                # Show executing requests
-                for req_id, status in active.items():
-                    if status.phase == RequestPhase.EXECUTING:
-                        page_id = req_id.replace('page_', 'p')
-                        elapsed = status.phase_elapsed
-                        if status.retry_count > 0:
-                            progress.add_sub_line(req_id,
-                                f"{page_id}: Executing... ({elapsed:.1f}s, retry {status.retry_count}/{self.max_retries})")
-                        else:
-                            progress.add_sub_line(req_id, f"{page_id}: Executing... ({elapsed:.1f}s)")
+                # Section 1: Running tasks (all executing requests)
+                executing = {req_id: status for req_id, status in active.items()
+                            if status.phase == RequestPhase.EXECUTING}
 
-                # Show recent completions
-                for req_id, comp in recent.items():
+                running_ids = []
+                for req_id, status in sorted(executing.items()):
                     page_id = req_id.replace('page_', 'p')
-                    if comp.success:
-                        progress.add_sub_line(req_id,
-                            f"{page_id}: ✓ ({comp.total_time_seconds:.1f}s, ${comp.cost_usd:.4f})")
-                    else:
-                        error_preview = comp.error_message[:30] if comp.error_message else 'unknown'
-                        progress.add_sub_line(req_id,
-                            f"{page_id}: ✗ ({comp.total_time_seconds:.1f}s) - {error_preview}")
+                    elapsed = status.phase_elapsed
 
+                    if status.retry_count > 0:
+                        msg = f"{page_id}: Executing... ({elapsed:.1f}s, retry {status.retry_count})"
+                    else:
+                        msg = f"{page_id}: Executing... ({elapsed:.1f}s)"
+
+                    progress.add_sub_line(req_id, msg)
+                    running_ids.append(req_id)
+
+                # Section 2: Last 5 events (successes, failures, retries - sorted by most recent first)
+                recent_sorted = sorted(
+                    recent.items(),
+                    key=lambda x: x[1].cycles_remaining,
+                    reverse=True
+                )[:5]
+
+                recent_ids = []
+                for req_id, comp in recent_sorted:
+                    page_id = req_id.replace('page_', 'p')
+
+                    if comp.success:
+                        msg = f"{page_id}: ✓ ({comp.total_time_seconds:.1f}s, ${comp.cost_usd:.4f})"
+                    else:
+                        error_code = self._extract_error_code(comp.error_message)
+                        msg = f"{page_id}: ✗ ({comp.total_time_seconds:.1f}s) - {error_code}"
+
+                    progress.add_sub_line(req_id, msg)
+                    recent_ids.append(req_id)
+
+                # Clean up old sub-lines that are no longer in any section
+                # Batch removal to avoid multiple re-renders
+                all_section_ids = set(running_ids + recent_ids)
+                to_remove = [line_id for line_id in progress._sub_lines.keys()
+                            if line_id not in all_section_ids]
+
+                for line_id in to_remove:
+                    if line_id in progress._sub_lines:
+                        del progress._sub_lines[line_id]
+                # Re-render happens in update() call below
+
+                # Set sections (creates hierarchical display)
+                progress.set_section("running", f"Running ({len(running_ids)}):", running_ids)
+                progress.set_section("recent", f"Recent ({len(recent_ids)}):", recent_ids)
+
+                # Update main bar (triggers re-render with sections)
                 progress.update(event.completed, suffix=suffix)
 
             elif event.event_type == LLMEvent.RATE_LIMITED:
+                # Clear sections during rate limit pause
+                progress.clear_sections()
                 progress.set_status(f"⏸️  Rate limited, resuming in {event.eta_seconds:.0f}s")
 
         except Exception as e:
+            # Don't let progress bar issues crash the worker thread
             import traceback
             error_msg = f"ERROR: Progress update failed: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
             print(error_msg, file=sys.stderr, flush=True)
-            # Don't raise - let processing continue
+            # Don't raise - let processing continue even if progress display fails
+
+    def _extract_error_code(self, error_message: str) -> str:
+        """Extract short error code from error message."""
+        if not error_message:
+            return "unknown"
+
+        error_lower = error_message.lower()
+
+        # Check for specific HTTP status codes
+        if '413' in error_message:
+            return "413"
+        elif '422' in error_message:
+            return "422"
+        elif '429' in error_message:
+            return "429"
+        elif '5' in error_message and 'server' in error_lower:
+            return "5xx"
+        elif '4' in error_message and ('client' in error_lower or 'error' in error_lower):
+            return "4xx"
+        elif 'timeout' in error_lower:
+            return "timeout"
+        else:
+            # Return first 20 chars of error message
+            return error_message[:20]
 
     def _handle_result(self, result: LLMResult, failed_pages: list, storage: BookStorage) -> int:
         """Handle LLM result - save successful pages, track failures."""

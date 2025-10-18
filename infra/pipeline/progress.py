@@ -120,14 +120,51 @@ class ProgressBar:
             self.last_update = current
 
     def finish(self, message: str = ""):
-        """Print final newline and completion message.
+        """Clear progress bar and print completion message.
+
+        Clears the progress bar in place (without moving cursor up) and prints
+        a completion message. This prevents accidentally clearing lines that were
+        printed BEFORE the progress bar started.
 
         Args:
             message: Optional completion message to display
         """
-        print()  # New line after progress bar
-        if message:
-            print(message)
+        with self._lock:
+            # Key insight: The progress bar cursor is ALREADY at the end of the last line
+            # After rendering N lines, cursor is at end of line N
+            # We need to move up N-1 lines to get to line 1, clear all N lines,
+            # then leave cursor at the beginning of line 1
+
+            if self._total_lines > 0:
+                # Move cursor to start of first progress bar line
+                # (cursor is currently at end of last line)
+                if self._total_lines > 1:
+                    print(f"\r\033[{self._total_lines - 1}A", end='', flush=True)
+                else:
+                    print("\r", end='', flush=True)  # Just return to start of single line
+
+                # Clear all progress bar lines
+                for i in range(self._total_lines):
+                    print("\033[K", end='', flush=True)  # Clear current line
+                    if i < self._total_lines - 1:
+                        print("\n", end='', flush=True)  # Move down to next line
+
+                # Cursor is now at start of line after last cleared line
+                # Move back up to where first line was
+                if self._total_lines > 1:
+                    print(f"\033[{self._total_lines - 1}A", end='', flush=True)
+
+            # Clear internal state
+            self._sub_lines.clear()
+            self._sections.clear()
+            self._section_order.clear()
+            self._total_lines = 0
+
+            # Print completion message on clean line (or just newline)
+            if message:
+                print(message, flush=True)
+            else:
+                print(flush=True)  # Move cursor past cleared area
 
     def set_status(self, message: str):
         """Display a temporary status message without updating progress.
@@ -234,31 +271,34 @@ class ProgressBar:
             for line_id in sorted(self._sub_lines.keys()):
                 lines.append(f"  {self._sub_lines[line_id]}")
 
-        # Clear previous output if needed
+        # Strategy: On first render, use newlines to create lines.
+        # On subsequent renders, move cursor up and overwrite in place.
+
         if self._total_lines > 0:
-            # Move cursor up to first line of previous output
-            # After printing N lines, cursor is at end of line N
-            # To get to line 1, we move up N-1 lines
+            # Subsequent render: move cursor back to first line and overwrite
             print(f"\033[{self._total_lines - 1}A", end='', flush=True)
 
-        # Print all lines at once
-        for i, line in enumerate(lines):
-            if i == 0:
-                # First line: use \r to overwrite from start of line, no newline yet
+            # Overwrite existing lines
+            for i, line in enumerate(lines):
                 print(f"\r{line}\033[K", end='', flush=True)
-            else:
-                # Subsequent lines: need newline from previous line first
-                print(f"\n{line}\033[K", end='', flush=True)
+                if i < len(lines) - 1:
+                    # Move down to next line (which already exists from previous render)
+                    print("\033[1B", end='', flush=True)
 
-        # Clear any extra lines from previous render
-        # (if we printed fewer lines this time than last time)
-        if len(lines) < self._total_lines:
-            extra_lines = self._total_lines - len(lines)
-            for _ in range(extra_lines):
-                print("\n\033[K", end='', flush=True)  # Newline + clear line
-            # Move cursor back up to end of last actual line
-            # (we moved down by extra_lines, so move back up)
-            print(f"\033[{extra_lines}A", end='', flush=True)
+            # Clear any extra lines from previous render
+            if len(lines) < self._total_lines:
+                extra_lines = self._total_lines - len(lines)
+                for _ in range(extra_lines):
+                    print("\033[1B\r\033[K", end='', flush=True)
+                # Move back up to last actual line
+                print(f"\033[{extra_lines}A", end='', flush=True)
+        else:
+            # First render: create new lines with newlines
+            for i, line in enumerate(lines):
+                print(f"\r{line}\033[K", end='', flush=True)
+                if i < len(lines) - 1:
+                    # Create new line below
+                    print("\n", end='', flush=True)
 
-        # Track total lines for next clear
+        # Track total lines for next render
         self._total_lines = len(lines)
