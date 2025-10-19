@@ -360,8 +360,8 @@ class VisionCorrector:
                 batch_stats = self.batch_client.get_batch_stats(total_requests=total_requests)
                 elapsed = time.time() - start_time
 
-                # Format: pages/sec • elapsed time • cost
-                suffix = f"{batch_stats.requests_per_second:.1f} pages/sec • {elapsed:.0f}s • ${batch_stats.total_cost_usd:.2f}"
+                # Format: completed/total • pages/sec • elapsed time • cost
+                suffix = f"{batch_stats.completed}/{total_requests} • {batch_stats.requests_per_second:.1f} pages/sec • {elapsed:.0f}s • ${batch_stats.total_cost_usd:.2f}"
 
                 # Section 1: Running tasks (all executing requests)
                 executing = {req_id: status for req_id, status in active.items()
