@@ -250,14 +250,17 @@ class VisionLabeler:
             # Setup progress tracking
             print(f"\n   Labeling {len(requests)} pages...")
             label_start_time = time.time()
-            self._label_start_time = label_start_time  # Store for suffix calculation
             progress = RichProgressBarHierarchical(total=len(requests), prefix="   ", width=40, unit="pages")
             progress.update(0, suffix="starting...")
             failed_pages = []
 
-            # Callback wrappers (bind local state to class methods)
-            def on_event(event: EventData):
-                self._handle_progress_event(event, progress, len(requests))
+            # Create event handler using progress bar's built-in factory
+            on_event = progress.create_llm_event_handler(
+                batch_client=self.batch_client,
+                start_time=label_start_time,
+                model=self.model,
+                total_requests=len(requests)
+            )
 
             def on_result(result: LLMResult):
                 self._handle_result(result, failed_pages, storage)
@@ -337,140 +340,6 @@ class VisionLabeler:
             # Always clean up logger
             if self.logger:
                 self.logger.close()
-
-    def _handle_progress_event(self, event: EventData, progress: RichProgressBarHierarchical, total_requests: int):
-        """Handle progress event for batch processing."""
-        try:
-            if event.event_type == LLMEvent.FIRST_TOKEN:
-                # First token received - show time-to-first-token
-                if event.message is not None:
-                    progress.add_sub_line(event.request_id, event.message)
-                    # Trigger re-render
-                    if hasattr(progress, '_live') and progress._live:
-                        progress._live.update(progress._render())
-
-            elif event.event_type == LLMEvent.STREAMING:
-                # Real-time streaming update for a single request
-                # Use pre-formatted message from event
-                if event.message is not None:
-                    progress.add_sub_line(event.request_id, event.message)
-                    # Trigger re-render (without updating main progress)
-                    if hasattr(progress, '_live') and progress._live:
-                        progress._live.update(progress._render())
-
-            elif event.event_type == LLMEvent.PROGRESS:
-                # Query batch client for current state
-                active = self.batch_client.get_active_requests()
-                recent = self.batch_client.get_recent_completions()
-
-                # Update progress bar suffix
-                batch_stats = self.batch_client.get_batch_stats(total_requests=total_requests)
-                elapsed = time.time() - self._label_start_time if hasattr(self, '_label_start_time') else 0
-                # Format: completed/total • pages/sec • elapsed time • cost
-                suffix = f"{batch_stats.completed}/{total_requests} • {batch_stats.requests_per_second:.1f} pages/sec • {elapsed:.0f}s • ${batch_stats.total_cost_usd:.2f}"
-
-                # Section 1: Running tasks (all executing requests)
-                executing = {req_id: status for req_id, status in active.items()
-                            if status.phase == RequestPhase.EXECUTING}
-
-                running_ids = []
-                for req_id, status in sorted(executing.items()):
-                    page_id = req_id.replace('page_', 'p')
-                    elapsed = status.phase_elapsed
-
-                    # Check if we have streaming data for this request
-                    # If yes, keep the streaming message (don't overwrite)
-                    # If no, update "Waiting for response..." message with current elapsed time
-                    current_msg = progress._sub_lines.get(req_id, "")
-
-                    # Only update if no message yet OR message is "Waiting for response" (not streaming)
-                    if not current_msg or "Waiting for response" in current_msg:
-                        if status.retry_count > 0:
-                            msg = f"{page_id}: Waiting for response... ({elapsed:.1f}s, retry {status.retry_count})"
-                        else:
-                            msg = f"{page_id}: Waiting for response... ({elapsed:.1f}s)"
-                        progress.add_sub_line(req_id, msg)
-
-                    running_ids.append(req_id)
-
-                # Section 2: Last 5 events (successes, failures, retries - sorted by most recent first)
-                recent_sorted = sorted(
-                    recent.items(),
-                    key=lambda x: x[1].cycles_remaining,
-                    reverse=True
-                )[:5]
-
-                recent_ids = []
-                for req_id, comp in recent_sorted:
-                    page_id = req_id.replace('page_', 'p')
-
-                    if comp.success:
-                        # Show execution time (not total with queue time) and TTFT if available
-                        ttft_str = f", TTFT {comp.ttft_seconds:.2f}s" if comp.ttft_seconds else ""
-                        model_suffix = f" [{comp.model_used.split('/')[-1]}]" if comp.model_used and comp.model_used != self.model else ""
-                        # Display cost in cents for better readability (0.0022 USD = 0.22¢)
-                        cost_cents = comp.cost_usd * 100
-                        msg = f"{page_id}: ✓ ({comp.execution_time_seconds:.1f}s{ttft_str}, {cost_cents:.2f}¢){model_suffix}"
-                    else:
-                        error_code = self._extract_error_code(comp.error_message)
-                        msg = f"{page_id}: ✗ ({comp.execution_time_seconds:.1f}s) - {error_code}"
-
-                    progress.add_sub_line(req_id, msg)
-                    recent_ids.append(req_id)
-
-                # Clean up old sub-lines that are no longer in any section
-                # Batch removal to avoid multiple re-renders
-                all_section_ids = set(running_ids + recent_ids)
-                to_remove = [line_id for line_id in progress._sub_lines.keys()
-                            if line_id not in all_section_ids]
-
-                for line_id in to_remove:
-                    if line_id in progress._sub_lines:
-                        del progress._sub_lines[line_id]
-                # Re-render happens in update() call below
-
-                # Set sections (creates hierarchical display)
-                progress.set_section("running", f"Running ({len(running_ids)}):", running_ids)
-                progress.set_section("recent", f"Recent ({len(recent_ids)}):", recent_ids)
-
-                # Update main bar (triggers re-render with sections)
-                progress.update(event.completed, suffix=suffix)
-
-            elif event.event_type == LLMEvent.RATE_LIMITED:
-                # Clear sections during rate limit pause
-                progress.clear_sections()
-                progress.set_status(f"⏸️  Rate limited, resuming in {event.eta_seconds:.0f}s")
-
-        except Exception as e:
-            # Don't let progress bar issues crash the worker thread
-            import traceback
-            error_msg = f"ERROR: Progress update failed: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
-            print(error_msg, file=sys.stderr, flush=True)
-            # Don't raise - let processing continue even if progress display fails
-
-    def _extract_error_code(self, error_message: str) -> str:
-        """Extract short error code from error message."""
-        if not error_message:
-            return "unknown"
-
-        error_lower = error_message.lower()
-
-        # Check for specific HTTP status codes
-        if '413' in error_message:
-            return "413"
-        elif '422' in error_message:
-            return "422"
-        elif '429' in error_message:
-            return "429"
-        elif '5' in error_message and 'server' in error_lower:
-            return "5xx"
-        elif '4' in error_message and ('client' in error_lower or 'error' in error_lower):
-            return "4xx"
-        elif 'timeout' in error_lower:
-            return "timeout"
-        else:
-            # Return first 20 chars of error message
-            return error_message[:20]
 
     def _handle_result(self, result: LLMResult, failed_pages: list, storage: BookStorage) -> int:
         """Handle LLM result - save successful pages, track failures."""

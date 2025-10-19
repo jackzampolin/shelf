@@ -302,3 +302,174 @@ class RichProgressBarHierarchical:
 
         if message:
             print(message)
+
+    def create_llm_event_handler(self, batch_client, start_time: float, model: str,
+                                  total_requests: int, extract_error_code=None):
+        """Create a standard LLM event handler for batch processing.
+
+        Returns a configured event handler that displays:
+        - FIRST_TOKEN events (time-to-first-token)
+        - STREAMING events (real-time token updates)
+        - PROGRESS events (running tasks + recent completions)
+        - RATE_LIMITED events (pause notifications)
+
+        Args:
+            batch_client: LLMBatchClient instance for querying state
+            start_time: Start time of the batch process (for elapsed calculation)
+            model: Primary model name (for showing model suffix when different)
+            total_requests: Total number of requests in batch
+            extract_error_code: Optional function to format error messages (defaults to simple formatter)
+
+        Returns:
+            Event handler function that can be passed to batch_client.process_batch()
+
+        Example:
+            >>> progress = RichProgressBarHierarchical(total=100, prefix="   ", unit="pages")
+            >>> on_event = progress.create_llm_event_handler(
+            ...     batch_client=client,
+            ...     start_time=time.time(),
+            ...     model="anthropic/claude-sonnet-4",
+            ...     total_requests=100
+            ... )
+            >>> results = client.process_batch(requests, on_event=on_event)
+        """
+        import time
+        import sys
+        # Import here to avoid circular dependencies
+        from infra.llm.models import LLMEvent, RequestPhase
+
+        # Default error code extractor
+        if extract_error_code is None:
+            def extract_error_code(error_message: str) -> str:
+                if not error_message:
+                    return "unknown"
+                error_lower = error_message.lower()
+                if '413' in error_message:
+                    return "413"
+                elif '422' in error_message:
+                    return "422"
+                elif '429' in error_message:
+                    return "429"
+                elif '5' in error_message and 'server' in error_lower:
+                    return "5xx"
+                elif '4' in error_message and ('client' in error_lower or 'error' in error_lower):
+                    return "4xx"
+                elif 'timeout' in error_lower:
+                    return "timeout"
+                else:
+                    return error_message[:20]
+
+        def handle_event(event):
+            """Handle LLM lifecycle events."""
+            try:
+                if event.event_type == LLMEvent.FIRST_TOKEN:
+                    # First token received - show time-to-first-token
+                    if event.message is not None:
+                        self.add_sub_line(event.request_id, event.message)
+                        # Trigger re-render
+                        if hasattr(self, '_live') and self._live:
+                            self._live.update(self._render())
+
+                elif event.event_type == LLMEvent.STREAMING:
+                    # Real-time streaming update for a single request
+                    if event.message is not None:
+                        self.add_sub_line(event.request_id, event.message)
+                        # Trigger re-render
+                        if hasattr(self, '_live') and self._live:
+                            self._live.update(self._render())
+
+                elif event.event_type == LLMEvent.PROGRESS:
+                    # Query batch client for current state
+                    active = batch_client.get_active_requests()
+                    recent = batch_client.get_recent_completions()
+
+                    # Update progress bar suffix
+                    batch_stats = batch_client.get_batch_stats(total_requests=total_requests)
+                    elapsed = time.time() - start_time
+
+                    # Format: completed/total • pages/sec • elapsed time • cost
+                    suffix = f"{batch_stats.completed}/{total_requests} • {batch_stats.requests_per_second:.1f} pages/sec • {elapsed:.0f}s • ${batch_stats.total_cost_usd:.2f}"
+
+                    # Section 1: Running tasks (all executing requests)
+                    executing = {req_id: status for req_id, status in active.items()
+                                if status.phase == RequestPhase.EXECUTING}
+
+                    running_ids = []
+                    for req_id, status in sorted(executing.items()):
+                        page_id = req_id.replace('page_', 'p')
+                        elapsed_phase = status.phase_elapsed
+
+                        # Check if we have streaming data for this request
+                        # If yes, keep the streaming message (don't overwrite)
+                        # If no, update "Waiting for response..." message with current elapsed time
+                        current_msg = self._sub_lines.get(req_id, "")
+
+                        # Only update if no message yet OR message is "Waiting for response" (not streaming)
+                        if not current_msg or "Waiting for response" in current_msg:
+                            if status.retry_count > 0:
+                                msg = f"{page_id}: Waiting for response... ({elapsed_phase:.1f}s, retry {status.retry_count})"
+                            else:
+                                msg = f"{page_id}: Waiting for response... ({elapsed_phase:.1f}s)"
+                            self.add_sub_line(req_id, msg)
+
+                        running_ids.append(req_id)
+
+                    # Section 2: Last 5 events (successes, failures, retries - sorted by most recent first)
+                    recent_sorted = sorted(
+                        recent.items(),
+                        key=lambda x: x[1].cycles_remaining,
+                        reverse=True
+                    )[:5]
+
+                    recent_ids = []
+                    for req_id, comp in recent_sorted:
+                        page_id = req_id.replace('page_', 'p')
+
+                        if comp.success:
+                            # Show execution time (not total with queue time) and TTFT if available
+                            ttft_str = f", TTFT {comp.ttft_seconds:.2f}s" if comp.ttft_seconds else ""
+                            model_suffix = f" [{comp.model_used.split('/')[-1]}]" if comp.model_used and comp.model_used != model else ""
+                            # Display cost in cents for better readability (0.0022 USD = 0.22¢)
+                            cost_cents = comp.cost_usd * 100
+                            msg = f"{page_id}: ✓ ({comp.execution_time_seconds:.1f}s{ttft_str}, {cost_cents:.2f}¢){model_suffix}"
+                        else:
+                            error_code = extract_error_code(comp.error_message)
+                            # Show execution time, retry count and model if available
+                            retry_suffix = f", retry {comp.retry_count}" if comp.retry_count > 0 else ""
+                            model_suffix = f" [{comp.model_used.split('/')[-1]}]" if comp.model_used else ""
+                            msg = f"{page_id}: ✗ ({comp.execution_time_seconds:.1f}s{retry_suffix}) - {error_code}{model_suffix}"
+
+                        self.add_sub_line(req_id, msg)
+                        recent_ids.append(req_id)
+
+                    # Clean up old sub-lines that are no longer in any section
+                    # Batch removal to avoid multiple re-renders
+                    all_section_ids = set(running_ids + recent_ids)
+                    to_remove = [line_id for line_id in self._sub_lines.keys()
+                                if line_id not in all_section_ids]
+
+                    for line_id in to_remove:
+                        if line_id in self._sub_lines:
+                            del self._sub_lines[line_id]
+                    # Re-render happens in update() call below
+
+                    # Set sections (creates hierarchical display)
+                    self.set_section("running", f"Running ({len(running_ids)}):", running_ids)
+                    self.set_section("recent", f"Recent ({len(recent_ids)}):", recent_ids)
+
+                    # Update main bar (triggers re-render with sections)
+                    self.update(event.completed, suffix=suffix)
+
+                elif event.event_type == LLMEvent.RATE_LIMITED:
+                    # Clear sections during rate limit pause
+                    self.clear_sections()
+                    self.set_status(f"⏸️  Rate limited, resuming in {event.eta_seconds:.0f}s")
+
+            except Exception as e:
+                # Don't let progress bar issues crash the worker thread
+                import traceback
+                error_msg = f"ERROR: Progress update failed: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+                print(error_msg, file=sys.stderr, flush=True)
+                # Don't raise - let processing continue even if progress display fails
+
+        return handle_event
