@@ -438,7 +438,7 @@ class RichProgressBarHierarchical:
                                 except:
                                     pass  # Fall back to basic display if metrics unavailable
 
-                            # Display format: FT (first token), SS (streaming seconds), TT (total tokens), cost
+                            # Display format: FT (first token), SS (streaming seconds), tok (total tokens), cost
                             if metrics:
                                 # Build compact metrics display
                                 parts = []
@@ -447,7 +447,7 @@ class RichProgressBarHierarchical:
                                 if metrics.get('streaming_duration'):
                                     parts.append(f"SS {metrics['streaming_duration']:.1f}s")
                                 if metrics.get('tokens_total'):
-                                    parts.append(f"{metrics['tokens_total']} TT")
+                                    parts.append(f"{metrics['tokens_total']} tok")
                                 cost_cents = metrics.get('cost_usd', 0) * 100
                                 parts.append(f"{cost_cents:.2f}¢")
 
