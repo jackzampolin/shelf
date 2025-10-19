@@ -102,7 +102,7 @@ class VisionCorrector:
             retry_jitter=(1.0, 3.0),
             json_retry_budget=2,
             verbose=True,  # Enable per-request events for progress tracking
-            progress_interval=0.5,  # Update progress every 0.5s
+            # progress_interval defaults to 1.0s (reduced PROGRESS events, more room for STREAMING)
             log_dir=storage.correction.get_log_dir()  # Log failed LLM calls to corrected/logs/llm_failures.jsonl
         )
 
@@ -205,7 +205,8 @@ class VisionCorrector:
                         metadata={
                             'page_num': page_num,
                             'storage': storage,  # Pass storage for output path
-                            'ocr_page_number': ocr_page.page_number
+                            'ocr_page_number': ocr_page.page_number,
+                            'ocr_tokens': len(json.dumps(ocr_data)) // 3  # Estimate for ETA
                         }
                     )
 
@@ -264,7 +265,7 @@ class VisionCorrector:
 
             # Callback wrappers (bind local state to class methods)
             def on_event(event: EventData):
-                self._handle_progress_event(event, progress, len(requests))
+                self._handle_progress_event(event, progress, len(requests), correction_start_time)
 
             def on_result(result: LLMResult):
                 self._handle_result(result, failed_pages)
@@ -328,10 +329,19 @@ class VisionCorrector:
             print(f"\n❌ Correction stage failed: {e}")
             raise
 
-    def _handle_progress_event(self, event: EventData, progress: RichProgressBarHierarchical, total_requests: int):
+    def _handle_progress_event(self, event: EventData, progress: RichProgressBarHierarchical, total_requests: int, start_time: float):
         """Handle progress event for batch processing."""
         try:
-            if event.event_type == LLMEvent.STREAMING:
+
+            if event.event_type == LLMEvent.FIRST_TOKEN:
+                # First token received - show time-to-first-token
+                if event.message is not None:
+                    progress.add_sub_line(event.request_id, event.message)
+                    # Trigger re-render
+                    if hasattr(progress, '_live') and progress._live:
+                        progress._live.update(progress._render())
+
+            elif event.event_type == LLMEvent.STREAMING:
                 # Real-time streaming update for a single request
                 # Use pre-formatted message from event
                 if event.message is not None:
@@ -340,15 +350,18 @@ class VisionCorrector:
                     if hasattr(progress, '_live') and progress._live:
                         progress._live.update(progress._render())
 
+
             elif event.event_type == LLMEvent.PROGRESS:
                 # Query batch client for current state
                 active = self.batch_client.get_active_requests()
                 recent = self.batch_client.get_recent_completions()
 
-                # Update progress bar suffix
+                # Update progress bar suffix with informative metrics
                 batch_stats = self.batch_client.get_batch_stats(total_requests=total_requests)
-                rate_util = event.rate_limit_status.get('utilization', 0) if event.rate_limit_status else 0
-                suffix = f"${batch_stats.total_cost_usd:.2f} | {rate_util:.0%} rate"
+                elapsed = time.time() - start_time
+
+                # Format: pages/sec • elapsed time • cost
+                suffix = f"{batch_stats.requests_per_second:.1f} pages/sec • {elapsed:.0f}s • ${batch_stats.total_cost_usd:.2f}"
 
                 # Section 1: Running tasks (all executing requests)
                 executing = {req_id: status for req_id, status in active.items()
@@ -361,12 +374,15 @@ class VisionCorrector:
 
                     # Check if we have streaming data for this request
                     # If yes, keep the streaming message (don't overwrite)
-                    # If no, show basic "Executing..." message
-                    if req_id not in progress._sub_lines:
+                    # If no, update "Waiting for response..." message with current elapsed time
+                    current_msg = progress._sub_lines.get(req_id, "")
+
+                    # Only update if no message yet OR message is "Waiting for response" (not streaming)
+                    if not current_msg or "Waiting for response" in current_msg:
                         if status.retry_count > 0:
-                            msg = f"{page_id}: Executing... ({elapsed:.1f}s, retry {status.retry_count})"
+                            msg = f"{page_id}: Waiting for response... ({elapsed:.1f}s, retry {status.retry_count})"
                         else:
-                            msg = f"{page_id}: Executing... ({elapsed:.1f}s)"
+                            msg = f"{page_id}: Waiting for response... ({elapsed:.1f}s)"
                         progress.add_sub_line(req_id, msg)
 
                     running_ids.append(req_id)
@@ -383,15 +399,18 @@ class VisionCorrector:
                     page_id = req_id.replace('page_', 'p')
 
                     if comp.success:
-                        # Show model if it's different from primary
+                        # Show execution time (not total with queue time) and TTFT if available
+                        ttft_str = f", TTFT {comp.ttft_seconds:.2f}s" if comp.ttft_seconds else ""
                         model_suffix = f" [{comp.model_used.split('/')[-1]}]" if comp.model_used and comp.model_used != self.model else ""
-                        msg = f"{page_id}: ✓ ({comp.total_time_seconds:.1f}s, ${comp.cost_usd:.4f}){model_suffix}"
+                        # Display cost in cents for better readability (0.0022 USD = 0.22¢)
+                        cost_cents = comp.cost_usd * 100
+                        msg = f"{page_id}: ✓ ({comp.execution_time_seconds:.1f}s{ttft_str}, {cost_cents:.2f}¢){model_suffix}"
                     else:
                         error_code = self._extract_error_code(comp.error_message)
-                        # Show retry count and model if available
+                        # Show execution time, retry count and model if available
                         retry_suffix = f", retry {comp.retry_count}" if comp.retry_count > 0 else ""
                         model_suffix = f" [{comp.model_used.split('/')[-1]}]" if comp.model_used else ""
-                        msg = f"{page_id}: ✗ ({comp.total_time_seconds:.1f}s{retry_suffix}) - {error_code}{model_suffix}"
+                        msg = f"{page_id}: ✗ ({comp.execution_time_seconds:.1f}s{retry_suffix}) - {error_code}{model_suffix}"
 
                     progress.add_sub_line(req_id, msg)
                     recent_ids.append(req_id)

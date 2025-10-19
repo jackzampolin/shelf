@@ -47,7 +47,7 @@ class LLMBatchClient:
         retry_jitter: Tuple[float, float] = (1.0, 3.0),
         json_retry_budget: int = 2,
         verbose: bool = False,
-        progress_interval: float = 0.5,
+        progress_interval: float = 1.0,  # Increased to reduce PROGRESS event frequency
         log_dir: Optional['Path'] = None,
     ):
         """
@@ -101,7 +101,7 @@ class LLMBatchClient:
         self.request_tracking_lock = threading.Lock()
         self.active_requests: Dict[str, RequestStatus] = {}
         self.recent_completions: Dict[str, CompletedStatus] = {}
-        self.completion_ttl_cycles = 2  # Show for ~1s at 0.5s PROGRESS interval
+        self.completion_ttl_cycles = 10  # Show for ~10s at 1.0s PROGRESS interval
         self.batch_start_time: Optional[float] = None
 
     def process_batch(
@@ -276,6 +276,8 @@ class LLMBatchClient:
                                 request_id=request.id,
                                 success=True,
                                 total_time_seconds=result.total_time_seconds,
+                                execution_time_seconds=result.execution_time_seconds,
+                                ttft_seconds=result.ttft_seconds,
                                 cost_usd=result.cost_usd,
                                 retry_count=request._retry_count,
                                 model_used=result.model_used,
@@ -341,6 +343,7 @@ class LLMBatchClient:
                                     request_id=request.id,
                                     success=False,
                                     total_time_seconds=result.total_time_seconds,
+                                    execution_time_seconds=result.execution_time_seconds,
                                     error_message=result.error_message,
                                     cost_usd=result.cost_usd,
                                     retry_count=request._retry_count,
@@ -367,6 +370,7 @@ class LLMBatchClient:
                                     request_id=request.id,
                                     success=False,
                                     total_time_seconds=result.total_time_seconds,
+                                    execution_time_seconds=result.execution_time_seconds,
                                     error_message=result.error_message,
                                     retry_count=request._retry_count,
                                     model_used=result.model_used,
@@ -472,10 +476,13 @@ class LLMBatchClient:
             # Now enabled for JSON responses too - we parse after streaming completes
             use_streaming = request.timeout and request.timeout > 60
 
+            # Initialize TTFT (only populated for streaming requests)
+            ttft = None
+
             # Use existing LLMClient
             if use_streaming:
                 # Streaming path with event emission
-                response_text, usage, cost = self._execute_with_streaming_events(
+                response_text, usage, cost, ttft = self._execute_with_streaming_events(
                     request, current_model, on_event, start_time
                 )
                 # Parse JSON after streaming completes (if parser provided)
@@ -539,6 +546,7 @@ class LLMBatchClient:
                 total_time_seconds=execution_time + queue_time,
                 queue_time_seconds=queue_time,
                 execution_time_seconds=execution_time,
+                ttft_seconds=ttft,  # Time to first token (streaming only)
                 tokens_received=usage.get('completion_tokens', 0),
                 usage=usage,
                 cost_usd=cost,
@@ -718,8 +726,14 @@ class LLMBatchClient:
         else:
             tokens_per_second = tokens / elapsed
 
-        # Estimate total tokens (assume similar length to prompt)
-        estimated_total = request.max_tokens or 2000  # Default estimate
+        # Estimate total output tokens based on OCR input size
+        # Data analysis: corrected output is 73% of OCR input (±11% stdev)
+        ocr_tokens = request.metadata.get('ocr_tokens') if request.metadata else None
+        if ocr_tokens and ocr_tokens > 0:
+            estimated_total = int(ocr_tokens * 0.73)
+        else:
+            # Fallback if OCR tokens not available (median from analysis)
+            estimated_total = request.max_tokens or 1200
         remaining_tokens = max(0, estimated_total - tokens)
 
         if tokens_per_second > 0:
@@ -775,7 +789,7 @@ class LLMBatchClient:
             start_time: Request start timestamp (for elapsed calculation)
 
         Returns:
-            Tuple of (response_text, usage_dict, cost_usd)
+            Tuple of (response_text, usage_dict, cost_usd, ttft_seconds)
         """
         import requests as req_lib
 
@@ -818,17 +832,25 @@ class LLMBatchClient:
             response.raise_for_status()
 
             # Streaming state (thread-local - no locks needed)
+            # Estimate input tokens for ETA calculation (chars / 3 ≈ tokens)
+            input_chars = sum(len(str(m.get('content', ''))) for m in request.messages)
+            input_tokens = input_chars // 3
+
             streaming_state = {
                 'start_time': start_time,
                 'last_emit': start_time,
                 'tokens_so_far': 0,
                 'full_content': [],
                 'actual_usage': None,  # Will be populated from final chunk
-                'parse_errors': 0  # Track malformed SSE chunks
+                'parse_errors': 0,  # Track malformed SSE chunks
+                'input_tokens': input_tokens,  # For ETA calculation
+                'first_token_time': None,  # Track time to first token
+                'first_token_emitted': False  # Ensure we emit FIRST_TOKEN event only once
             }
 
             # Throttle interval (seconds between events)
-            throttle_interval = 0.5
+            # Reduced to 0.2s for more frequent updates during streaming
+            throttle_interval = 0.2
 
             # Parse SSE stream
             for line in response.iter_lines():
@@ -873,13 +895,30 @@ class LLMBatchClient:
                             content = delta.get('content', '')
 
                             if content:
+                                # Track time to first token
+                                if streaming_state['first_token_time'] is None:
+                                    streaming_state['first_token_time'] = time.time()
+                                    ttft = streaming_state['first_token_time'] - start_time
+
+                                    # Emit FIRST_TOKEN event (once)
+                                    if not streaming_state['first_token_emitted']:
+                                        page_id = request.id.replace('page_', 'p')
+                                        self._emit_event(
+                                            on_event,
+                                            LLMEvent.FIRST_TOKEN,
+                                            request_id=request.id,
+                                            eta_seconds=ttft,  # Reuse field for TTFT
+                                            message=f"{page_id}: Streaming started (TTFT: {ttft:.2f}s)"
+                                        )
+                                        streaming_state['first_token_emitted'] = True
+
                                 streaming_state['full_content'].append(content)
 
                                 # Estimate tokens from character count (~4 chars per token)
                                 total_chars = len(''.join(streaming_state['full_content']))
                                 streaming_state['tokens_so_far'] = total_chars // 4
 
-                                # Emit throttled event
+                                # Emit throttled STREAMING event
                                 now = time.time()
                                 if now - streaming_state['last_emit'] >= throttle_interval:
                                     self._emit_streaming_event(
@@ -957,7 +996,12 @@ class LLMBatchClient:
                 num_images=len(request.images) if request.images else 0
             )
 
-            return complete_response, usage, cost
+            # Calculate TTFT if first token was received
+            ttft = None
+            if streaming_state['first_token_time'] is not None:
+                ttft = streaming_state['first_token_time'] - start_time
+
+            return complete_response, usage, cost, ttft
 
         finally:
             # Ensure HTTP response is always closed to prevent resource leaks
@@ -998,6 +1042,8 @@ class LLMBatchClient:
                     request_id=comp.request_id,
                     success=comp.success,
                     total_time_seconds=comp.total_time_seconds,
+                    execution_time_seconds=comp.execution_time_seconds,
+                    ttft_seconds=comp.ttft_seconds,
                     cost_usd=comp.cost_usd,
                     error_message=comp.error_message,
                     retry_count=comp.retry_count,

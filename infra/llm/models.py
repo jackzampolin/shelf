@@ -16,7 +16,8 @@ class LLMEvent(str, Enum):
     QUEUED = "queued"              # Request added to queue
     RATE_LIMITED = "rate_limited"  # Waiting for rate limit
     DEQUEUED = "dequeued"          # Picked up by worker
-    EXECUTING = "executing"        # LLM call started
+    EXECUTING = "executing"        # LLM call started (waiting for first token)
+    FIRST_TOKEN = "first_token"    # First token received (time-to-first-token)
     STREAMING = "streaming"        # Tokens arriving (periodic)
     RETRY_QUEUED = "retry_queued"  # Failed, re-enqueued
     COMPLETED = "completed"        # Success
@@ -123,6 +124,7 @@ class LLMResult:
     total_time_seconds: float = 0.0
     queue_time_seconds: float = 0.0
     execution_time_seconds: float = 0.0
+    ttft_seconds: Optional[float] = None  # Time to first token (streaming only)
     tokens_received: int = 0
     tokens_per_second: float = 0.0
 
@@ -243,7 +245,9 @@ class CompletedStatus:
     success: bool
 
     # Timing
-    total_time_seconds: float
+    total_time_seconds: float  # Full time from queue to completion
+    execution_time_seconds: float = 0.0  # Time spent executing (excluding queue)
+    ttft_seconds: Optional[float] = None  # Time to first token (if streaming)
 
     # Cost (if successful)
     cost_usd: float = 0.0
