@@ -224,6 +224,7 @@ class LLMClient:
 
         full_content = []
         tokens_received = 0
+        actual_usage = None  # Will be populated from final chunk
 
         print("📊 Streaming response:")
 
@@ -240,6 +241,29 @@ class LLMClient:
 
                 try:
                     chunk = json.loads(data_str)
+
+                    # Check for usage data in final chunk (before [DONE])
+                    if 'usage' in chunk:
+                        usage_data = chunk['usage']
+
+                        # Validate usage structure
+                        if (isinstance(usage_data, dict) and
+                            'prompt_tokens' in usage_data and
+                            'completion_tokens' in usage_data):
+                            actual_usage = usage_data
+                        else:
+                            # Malformed - log and skip
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning(
+                                f"Malformed usage data in SSE chunk",
+                                extra={
+                                    'model': model,
+                                    'usage_data': usage_data,
+                                    'expected_keys': ['prompt_tokens', 'completion_tokens']
+                                }
+                            )
+
                     if 'choices' in chunk and len(chunk['choices']) > 0:
                         delta = chunk['choices'][0].get('delta', {})
                         content = delta.get('content', '')
@@ -258,13 +282,28 @@ class LLMClient:
 
         complete_response = ''.join(full_content)
 
-        # Estimate usage (streaming doesn't provide exact prompt tokens)
-        # This is a rough estimate - actual values may differ slightly
-        prompt_tokens = sum(len(m.get('content', '').split()) for m in payload['messages'])
-        usage = {
-            'prompt_tokens': prompt_tokens,
-            'completion_tokens': tokens_received
-        }
+        # Use actual usage if available, otherwise fall back to estimate
+        if actual_usage:
+            usage = actual_usage
+        else:
+            # Fallback to char-based estimate (~4 chars per token)
+            prompt_chars = sum(len(m.get('content', '')) for m in payload['messages'])
+            completion_chars = len(complete_response)
+
+            usage = {
+                'prompt_tokens': prompt_chars // 4,
+                'completion_tokens': completion_chars // 4,
+                '_estimated': True
+            }
+
+            # Log warning
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"No usage data in SSE stream, using char-based estimate. "
+                f"Cost tracking may be inaccurate.",
+                extra={'model': model, 'estimated_tokens': usage}
+            )
 
         # Calculate cost
         cost = self.cost_calculator.calculate_cost(

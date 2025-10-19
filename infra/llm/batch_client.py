@@ -47,7 +47,7 @@ class LLMBatchClient:
         retry_jitter: Tuple[float, float] = (1.0, 3.0),
         json_retry_budget: int = 2,
         verbose: bool = False,
-        progress_interval: float = 1.0,
+        progress_interval: float = 0.5,
         log_dir: Optional['Path'] = None,
     ):
         """
@@ -277,6 +277,8 @@ class LLMBatchClient:
                                 success=True,
                                 total_time_seconds=result.total_time_seconds,
                                 cost_usd=result.cost_usd,
+                                retry_count=request._retry_count,
+                                model_used=result.model_used,
                                 cycles_remaining=self.completion_ttl_cycles
                             )
 
@@ -291,13 +293,39 @@ class LLMBatchClient:
                         self.stats['total_tokens'] += result.usage.get('completion_tokens', 0)
 
                 else:
-                    # Failure - retry indefinitely with jitter
+                    # Failure - check for fallback or retry
                     if self._is_retryable(result.error_type):
-                        # Re-queue with jitter
-                        request._retry_count += 1
-                        jitter = random.uniform(*self.retry_jitter)
-                        time.sleep(jitter)
-                        queue.put(request)
+                        # Check if we have fallback models available
+                        router = getattr(request, '_router', None)
+                        has_fallback = router and router.has_fallback()
+
+                        if has_fallback:
+                            # Try next fallback model
+                            next_model = router.next_model()
+                            request._retry_count += 1
+                            jitter = random.uniform(*self.retry_jitter)
+                            time.sleep(jitter)
+                            queue.put(request)
+
+                            # Log fallback attempt
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.info(
+                                f"Falling back to {next_model} for {request.id}",
+                                extra={
+                                    'request_id': request.id,
+                                    'previous_model': router.models[router.current_index - 1],
+                                    'fallback_model': next_model,
+                                    'retry_count': request._retry_count,
+                                    'error': result.error_message
+                                }
+                            )
+                        else:
+                            # Re-queue with same model (standard retry)
+                            request._retry_count += 1
+                            jitter = random.uniform(*self.retry_jitter)
+                            time.sleep(jitter)
+                            queue.put(request)
 
                         # Update tracking
                         with self.request_tracking_lock:
@@ -315,6 +343,8 @@ class LLMBatchClient:
                                     total_time_seconds=result.total_time_seconds,
                                     error_message=result.error_message,
                                     cost_usd=result.cost_usd,
+                                    retry_count=request._retry_count,
+                                    model_used=result.model_used,
                                     cycles_remaining=self.completion_ttl_cycles
                                 )
 
@@ -338,6 +368,8 @@ class LLMBatchClient:
                                     success=False,
                                     total_time_seconds=result.total_time_seconds,
                                     error_message=result.error_message,
+                                    retry_count=request._retry_count,
+                                    model_used=result.model_used,
                                     cycles_remaining=self.completion_ttl_cycles
                                 )
 
@@ -416,6 +448,18 @@ class LLMBatchClient:
         self._emit_event(on_event, LLMEvent.EXECUTING, request_id=request.id)
 
         try:
+            # Initialize router if fallback models configured
+            if not hasattr(request, '_router') or request._router is None:
+                if request.fallback_models:
+                    from infra.llm.router import ModelRouter
+                    request._router = ModelRouter(
+                        primary_model=request.model,
+                        fallback_models=request.fallback_models
+                    )
+
+            # Get current model from router (or use request.model if no router)
+            current_model = request._router.get_current() if request._router else request.model
+
             # Build provider config if specified
             if request.provider_order or request.provider_sort:
                 # OpenRouter provider routing via response_format isn't standard
@@ -423,26 +467,54 @@ class LLMBatchClient:
                 # TODO: Add provider routing support
                 pass
 
+            # Determine if this should use streaming with event emission
+            # Use streaming for long-running calls (timeout > 60s)
+            # Now enabled for JSON responses too - we parse after streaming completes
+            use_streaming = request.timeout and request.timeout > 60
+
             # Use existing LLMClient
-            if json_parser:
-                # Use JSON retry wrapper
-                response, usage, cost = self.llm_client.call_with_json_retry(
-                    model=request.model,
-                    messages=request.messages,
-                    json_parser=json_parser,
-                    temperature=request.temperature,
-                    max_retries=self.json_retry_budget,
-                    max_tokens=request.max_tokens,
-                    timeout=request.timeout,
-                    images=request.images,
-                    response_format=request.response_format
+            if use_streaming:
+                # Streaming path with event emission
+                response_text, usage, cost = self._execute_with_streaming_events(
+                    request, current_model, on_event, start_time
                 )
-                parsed_json = response  # call_with_json_retry returns parsed JSON
-                response_text = json.dumps(response)
+                # Parse JSON after streaming completes (if parser provided)
+                parsed_json = json_parser(response_text) if json_parser else None
+
+            elif json_parser:
+                # For structured outputs, call directly (no retry needed - API guarantees valid JSON)
+                # For non-structured outputs, use retry wrapper
+                if request.response_format:
+                    # Structured output: guaranteed valid JSON
+                    response_text, usage, cost = self.llm_client.call(
+                        model=current_model,
+                        messages=request.messages,
+                        temperature=request.temperature,
+                        max_tokens=request.max_tokens,
+                        timeout=request.timeout,
+                        images=request.images,
+                        response_format=request.response_format
+                    )
+                    parsed_json = json_parser(response_text)
+                else:
+                    # Non-structured output: may need retries for malformed JSON
+                    response, usage, cost = self.llm_client.call_with_json_retry(
+                        model=current_model,
+                        messages=request.messages,
+                        json_parser=json_parser,
+                        temperature=request.temperature,
+                        max_retries=self.json_retry_budget,
+                        max_tokens=request.max_tokens,
+                        timeout=request.timeout,
+                        images=request.images,
+                        response_format=request.response_format
+                    )
+                    parsed_json = response  # call_with_json_retry returns parsed JSON
+                response_text = json.dumps(parsed_json) if parsed_json else response_text
             else:
-                # Standard call
+                # Standard call (non-streaming)
                 response_text, usage, cost = self.llm_client.call(
-                    model=request.model,
+                    model=current_model,
                     messages=request.messages,
                     temperature=request.temperature,
                     max_tokens=request.max_tokens,
@@ -451,6 +523,10 @@ class LLMBatchClient:
                     response_format=request.response_format
                 )
                 parsed_json = None
+
+            # Mark success in router if present
+            if request._router:
+                request._router.mark_success()
 
             # Build success result
             execution_time = time.time() - start_time
@@ -466,6 +542,8 @@ class LLMBatchClient:
                 tokens_received=usage.get('completion_tokens', 0),
                 usage=usage,
                 cost_usd=cost,
+                model_used=current_model,
+                models_attempted=request._router.get_models_attempted() if request._router else [request.model],
                 request=request
             )
 
@@ -528,13 +606,13 @@ class LLMBatchClient:
         - 429_rate_limit: Rate limiting (will retry after wait)
         - 413_payload_too_large: Payload too large (retry - may succeed on different attempt)
         - 422_unprocessable: Provider deserialization issues (transient)
+        - json_parse: JSON parsing failures (fallback models may generate valid JSON)
         - unknown: Unclassified errors (retry to be safe)
 
         Non-retryable errors:
         - 4xx: Client errors (bad request, auth, forbidden, etc.)
-        - json_parse: JSON parsing failures (after retries in LLM client)
         """
-        retryable = ['timeout', '5xx', '429_rate_limit', '413_payload_too_large', '422_unprocessable', 'unknown']
+        retryable = ['timeout', '5xx', '429_rate_limit', '413_payload_too_large', '422_unprocessable', 'json_parse', 'unknown']
         return error_type in retryable
 
     def _store_result(self, result: LLMResult):
@@ -606,6 +684,286 @@ class LLMBatchClient:
         )
         callback(event)
 
+    def _emit_streaming_event(
+        self,
+        on_event: Optional[Callable[[EventData], None]],
+        request: 'LLMRequest',
+        streaming_state: Dict,
+        start_time: float,
+        is_final: bool = False
+    ):
+        """
+        Emit a single streaming progress event.
+
+        Args:
+            on_event: Event callback
+            request: Current request
+            streaming_state: Streaming state dict
+            start_time: Request start time
+            is_final: True if this is the final event (ETA = 0)
+        """
+        if not on_event:
+            return
+
+        # Only emit if verbose mode OR final event
+        if not self.verbose and not is_final:
+            return
+
+        tokens = streaming_state['tokens_so_far']
+        elapsed = time.time() - start_time
+
+        # Calculate rate and ETA (defensive against division by zero)
+        if elapsed < 0.01:
+            tokens_per_second = 0.0
+        else:
+            tokens_per_second = tokens / elapsed
+
+        # Estimate total tokens (assume similar length to prompt)
+        estimated_total = request.max_tokens or 2000  # Default estimate
+        remaining_tokens = max(0, estimated_total - tokens)
+
+        if tokens_per_second > 0:
+            eta_seconds = remaining_tokens / tokens_per_second
+        else:
+            eta_seconds = None
+
+        # Final event should show ETA = 0
+        if is_final:
+            eta_seconds = 0.0
+
+        # Build display message (pre-formatted for progress bar)
+        page_id = request.id.replace('page_', 'p')
+        if eta_seconds is not None:
+            message = f"{page_id}: {tokens} tokens, {tokens_per_second:.0f} tok/s, ETA {eta_seconds:.1f}s"
+        else:
+            message = f"{page_id}: {tokens} tokens, {tokens_per_second:.0f} tok/s"
+
+        # Extract stage from request metadata (if present)
+        stage = request.metadata.get('stage') if request.metadata else None
+
+        self._emit_event(
+            on_event,
+            LLMEvent.STREAMING,
+            request_id=request.id,
+            tokens_received=tokens,
+            tokens_per_second=tokens_per_second,
+            eta_seconds=eta_seconds,
+            retry_count=request._retry_count,
+            stage=stage,
+            message=message
+        )
+
+    def _execute_with_streaming_events(
+        self,
+        request: 'LLMRequest',
+        model: str,
+        on_event: Optional[Callable[[EventData], None]],
+        start_time: float
+    ) -> Tuple[str, Dict, float]:
+        """
+        Execute streaming LLM call with throttled event emission.
+
+        Emits STREAMING events during token generation, showing:
+        - tokens_received (estimated count during streaming)
+        - tokens_per_second (generation rate)
+        - eta_seconds (estimated time to completion)
+
+        Args:
+            request: LLM request to execute
+            model: Model to use (from router if fallback active)
+            on_event: Event callback (if None, no events emitted)
+            start_time: Request start timestamp (for elapsed calculation)
+
+        Returns:
+            Tuple of (response_text, usage_dict, cost_usd)
+        """
+        import requests as req_lib
+
+        # Build API request (similar to LLMClient.call)
+        headers = {
+            "Authorization": f"Bearer {self.llm_client.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": model,
+            "messages": request.messages,
+            "temperature": request.temperature,
+            "stream": True  # Enable streaming
+        }
+
+        if request.max_tokens:
+            payload["max_tokens"] = request.max_tokens
+
+        if request.response_format:
+            payload["response_format"] = request.response_format
+
+        # Add images if present (multimodal)
+        if request.images:
+            messages_with_images = self.llm_client._add_images_to_messages(
+                request.messages, request.images
+            )
+            payload["messages"] = messages_with_images
+
+        # Make streaming request
+        response = None
+        try:
+            response = req_lib.post(
+                self.llm_client.base_url,
+                headers=headers,
+                json=payload,
+                stream=True,
+                timeout=request.timeout
+            )
+            response.raise_for_status()
+
+            # Streaming state (thread-local - no locks needed)
+            streaming_state = {
+                'start_time': start_time,
+                'last_emit': start_time,
+                'tokens_so_far': 0,
+                'full_content': [],
+                'actual_usage': None,  # Will be populated from final chunk
+                'parse_errors': 0  # Track malformed SSE chunks
+            }
+
+            # Throttle interval (seconds between events)
+            throttle_interval = 0.5
+
+            # Parse SSE stream
+            for line in response.iter_lines():
+                if not line:
+                    continue
+
+                line = line.decode('utf-8')
+                if line.startswith('data: '):
+                    data_str = line[6:]
+
+                    if data_str == '[DONE]':
+                        break
+
+                    try:
+                        chunk = json.loads(data_str)
+
+                        # Check for usage data in final chunk
+                        if 'usage' in chunk:
+                            usage_data = chunk['usage']
+
+                            # Validate usage structure before using
+                            if (isinstance(usage_data, dict) and
+                                'prompt_tokens' in usage_data and
+                                'completion_tokens' in usage_data):
+                                streaming_state['actual_usage'] = usage_data
+                            else:
+                                # Malformed usage data - log warning
+                                import logging
+                                logger = logging.getLogger(__name__)
+                                logger.warning(
+                                    f"Malformed usage data in SSE chunk for {request.id}",
+                                    extra={
+                                        'request_id': request.id,
+                                        'usage_data': usage_data,
+                                        'expected_keys': ['prompt_tokens', 'completion_tokens']
+                                    }
+                                )
+
+                        # Extract content delta
+                        if 'choices' in chunk and len(chunk['choices']) > 0:
+                            delta = chunk['choices'][0].get('delta', {})
+                            content = delta.get('content', '')
+
+                            if content:
+                                streaming_state['full_content'].append(content)
+
+                                # Estimate tokens from character count (~4 chars per token)
+                                total_chars = len(''.join(streaming_state['full_content']))
+                                streaming_state['tokens_so_far'] = total_chars // 4
+
+                                # Emit throttled event
+                                now = time.time()
+                                if now - streaming_state['last_emit'] >= throttle_interval:
+                                    self._emit_streaming_event(
+                                        on_event, request, streaming_state, start_time
+                                    )
+                                    streaming_state['last_emit'] = now
+
+                    except json.JSONDecodeError as e:
+                        # Track parse errors - a few dropped chunks are acceptable
+                        streaming_state['parse_errors'] += 1
+
+                        # Log first error for debugging
+                        if streaming_state['parse_errors'] == 1:
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning(
+                                f"SSE chunk parse error for {request.id}",
+                                extra={
+                                    'request_id': request.id,
+                                    'chunk_preview': data_str[:200],
+                                    'error': str(e)
+                                }
+                            )
+
+                        # If too many parse errors, stream may be corrupted
+                        if streaming_state['parse_errors'] > 10:
+                            raise ValueError(
+                                f"Too many SSE parse errors ({streaming_state['parse_errors']}) "
+                                f"for request {request.id} - stream may be corrupted"
+                            )
+
+                        continue
+
+            # Emit final streaming event (show complete state)
+            if on_event and streaming_state['tokens_so_far'] > 0:
+                self._emit_streaming_event(
+                    on_event, request, streaming_state, start_time, is_final=True
+                )
+
+            # Build final response
+            complete_response = ''.join(streaming_state['full_content'])
+
+            # Use actual usage if available, otherwise estimate
+            if streaming_state['actual_usage']:
+                usage = streaming_state['actual_usage']
+            else:
+                # Fallback to char-based estimate (~4 chars per token)
+                prompt_chars = sum(len(m.get('content', '')) for m in request.messages)
+                completion_chars = len(complete_response)
+
+                usage = {
+                    'prompt_tokens': prompt_chars // 4,
+                    'completion_tokens': completion_chars // 4,
+                    '_estimated': True  # Flag that this is an estimate
+                }
+
+                # Log warning that we're using estimates (affects cost accuracy)
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    f"No usage data in SSE stream for request {request.id}, using estimate. "
+                    f"Cost tracking may be inaccurate.",
+                    extra={
+                        'request_id': request.id,
+                        'model': model,
+                        'estimated_tokens': usage
+                    }
+                )
+
+            # Calculate cost (use model parameter, not request.model)
+            cost = self.llm_client.cost_calculator.calculate_cost(
+                model,
+                usage['prompt_tokens'],
+                usage['completion_tokens'],
+                num_images=len(request.images) if request.images else 0
+            )
+
+            return complete_response, usage, cost
+
+        finally:
+            # Ensure HTTP response is always closed to prevent resource leaks
+            if response is not None:
+                response.close()
+
     def get_active_requests(self) -> Dict[str, RequestStatus]:
         """
         Get all currently active requests (non-terminal states).
@@ -642,6 +1000,8 @@ class LLMBatchClient:
                     total_time_seconds=comp.total_time_seconds,
                     cost_usd=comp.cost_usd,
                     error_message=comp.error_message,
+                    retry_count=comp.retry_count,
+                    model_used=comp.model_used,
                     cycles_remaining=comp.cycles_remaining
                 )
                 for req_id, comp in self.recent_completions.items()

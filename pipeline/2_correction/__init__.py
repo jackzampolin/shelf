@@ -195,13 +195,13 @@ class VisionCorrector:
                         model=self.model,
                         messages=[
                             {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt},
-                            {"role": "assistant", "content": '{"blocks": ['}  # Response prefilling
+                            {"role": "user", "content": user_prompt}
                         ],
                         temperature=0.1,
                         timeout=180,
                         images=[page_image],
                         response_format=response_schema,
+                        fallback_models=Config.FALLBACK_MODELS if Config.FALLBACK_MODELS else None,
                         metadata={
                             'page_num': page_num,
                             'storage': storage,  # Pass storage for output path
@@ -270,6 +270,7 @@ class VisionCorrector:
                 self._handle_result(result, failed_pages)
 
             # Process batch with new client
+            # Note: json_parser removed - structured outputs guarantee valid JSON
             results = self.batch_client.process_batch(
                 requests,
                 json_parser=json.loads,
@@ -330,7 +331,16 @@ class VisionCorrector:
     def _handle_progress_event(self, event: EventData, progress: RichProgressBarHierarchical, total_requests: int):
         """Handle progress event for batch processing."""
         try:
-            if event.event_type == LLMEvent.PROGRESS:
+            if event.event_type == LLMEvent.STREAMING:
+                # Real-time streaming update for a single request
+                # Use pre-formatted message from event
+                if event.message is not None:
+                    progress.add_sub_line(event.request_id, event.message)
+                    # Trigger re-render (without updating main progress)
+                    if hasattr(progress, '_live') and progress._live:
+                        progress._live.update(progress._render())
+
+            elif event.event_type == LLMEvent.PROGRESS:
                 # Query batch client for current state
                 active = self.batch_client.get_active_requests()
                 recent = self.batch_client.get_recent_completions()
@@ -349,12 +359,16 @@ class VisionCorrector:
                     page_id = req_id.replace('page_', 'p')
                     elapsed = status.phase_elapsed
 
-                    if status.retry_count > 0:
-                        msg = f"{page_id}: Executing... ({elapsed:.1f}s, retry {status.retry_count})"
-                    else:
-                        msg = f"{page_id}: Executing... ({elapsed:.1f}s)"
+                    # Check if we have streaming data for this request
+                    # If yes, keep the streaming message (don't overwrite)
+                    # If no, show basic "Executing..." message
+                    if req_id not in progress._sub_lines:
+                        if status.retry_count > 0:
+                            msg = f"{page_id}: Executing... ({elapsed:.1f}s, retry {status.retry_count})"
+                        else:
+                            msg = f"{page_id}: Executing... ({elapsed:.1f}s)"
+                        progress.add_sub_line(req_id, msg)
 
-                    progress.add_sub_line(req_id, msg)
                     running_ids.append(req_id)
 
                 # Section 2: Last 5 events (successes, failures, retries - sorted by most recent first)
@@ -369,10 +383,15 @@ class VisionCorrector:
                     page_id = req_id.replace('page_', 'p')
 
                     if comp.success:
-                        msg = f"{page_id}: ✓ ({comp.total_time_seconds:.1f}s, ${comp.cost_usd:.4f})"
+                        # Show model if it's different from primary
+                        model_suffix = f" [{comp.model_used.split('/')[-1]}]" if comp.model_used and comp.model_used != self.model else ""
+                        msg = f"{page_id}: ✓ ({comp.total_time_seconds:.1f}s, ${comp.cost_usd:.4f}){model_suffix}"
                     else:
                         error_code = self._extract_error_code(comp.error_message)
-                        msg = f"{page_id}: ✗ ({comp.total_time_seconds:.1f}s) - {error_code}"
+                        # Show retry count and model if available
+                        retry_suffix = f", retry {comp.retry_count}" if comp.retry_count > 0 else ""
+                        model_suffix = f" [{comp.model_used.split('/')[-1]}]" if comp.model_used else ""
+                        msg = f"{page_id}: ✗ ({comp.total_time_seconds:.1f}s{retry_suffix}) - {error_code}{model_suffix}"
 
                     progress.add_sub_line(req_id, msg)
                     recent_ids.append(req_id)

@@ -36,6 +36,13 @@ class Config:
     # Note: Must support vision (image) input via OpenRouter
     VISION_MODEL = os.getenv('VISION_MODEL', 'x-ai/grok-4-fast')
 
+    # Model Fallback Chain
+    # Comma-separated list of fallback models to try if primary fails
+    # Example: FALLBACK_MODELS="anthropic/claude-3.5-sonnet,openai/gpt-4o"
+    # Empty by default (no fallback)
+    _fallback_models_str = os.getenv('FALLBACK_MODELS', '')
+    FALLBACK_MODELS = [m.strip() for m in _fallback_models_str.split(',') if m.strip()]
+
     @classmethod
     def validate(cls) -> tuple[bool, list[str]]:
         """

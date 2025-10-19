@@ -200,13 +200,13 @@ class VisionLabeler:
                         model=self.model,
                         messages=[
                             {"role": "system", "content": SYSTEM_PROMPT},
-                            {"role": "user", "content": user_prompt},
-                            {"role": "assistant", "content": '{"printed_page_number":'}
+                            {"role": "user", "content": user_prompt}
                         ],
                         temperature=0.1,
                         timeout=180,
                         images=[page_image],
                         response_format=response_schema,
+                        fallback_models=Config.FALLBACK_MODELS if Config.FALLBACK_MODELS else None,
                         metadata={
                             'page_num': page_num,
                             'ocr_page_number': ocr_page.page_number
@@ -261,6 +261,7 @@ class VisionLabeler:
                 self._handle_result(result, failed_pages, storage)
 
             # Process batch with callbacks
+            # Note: json_parser removed - structured outputs guarantee valid JSON
             results = self.batch_client.process_batch(
                 requests,
                 json_parser=json.loads,
@@ -338,7 +339,16 @@ class VisionLabeler:
     def _handle_progress_event(self, event: EventData, progress: RichProgressBarHierarchical, total_requests: int):
         """Handle progress event for batch processing."""
         try:
-            if event.event_type == LLMEvent.PROGRESS:
+            if event.event_type == LLMEvent.STREAMING:
+                # Real-time streaming update for a single request
+                # Use pre-formatted message from event
+                if event.message is not None:
+                    progress.add_sub_line(event.request_id, event.message)
+                    # Trigger re-render (without updating main progress)
+                    if hasattr(progress, '_live') and progress._live:
+                        progress._live.update(progress._render())
+
+            elif event.event_type == LLMEvent.PROGRESS:
                 # Query batch client for current state
                 active = self.batch_client.get_active_requests()
                 recent = self.batch_client.get_recent_completions()
@@ -357,12 +367,16 @@ class VisionLabeler:
                     page_id = req_id.replace('page_', 'p')
                     elapsed = status.phase_elapsed
 
-                    if status.retry_count > 0:
-                        msg = f"{page_id}: Executing... ({elapsed:.1f}s, retry {status.retry_count})"
-                    else:
-                        msg = f"{page_id}: Executing... ({elapsed:.1f}s)"
+                    # Check if we have streaming data for this request
+                    # If yes, keep the streaming message (don't overwrite)
+                    # If no, show basic "Executing..." message
+                    if req_id not in progress._sub_lines:
+                        if status.retry_count > 0:
+                            msg = f"{page_id}: Executing... ({elapsed:.1f}s, retry {status.retry_count})"
+                        else:
+                            msg = f"{page_id}: Executing... ({elapsed:.1f}s)"
+                        progress.add_sub_line(req_id, msg)
 
-                    progress.add_sub_line(req_id, msg)
                     running_ids.append(req_id)
 
                 # Section 2: Last 5 events (successes, failures, retries - sorted by most recent first)

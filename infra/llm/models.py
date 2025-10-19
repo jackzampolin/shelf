@@ -42,6 +42,7 @@ class LLMRequest:
         provider_order: Optional list of provider names to try in order
         provider_sort: Optional sort strategy ("price", "throughput", "latency")
         allow_fallbacks: Whether to allow provider fallbacks
+        fallback_models: Optional list of fallback models to try if primary fails
         priority: Queue priority (higher = processed first, default: 0)
     """
     id: str
@@ -59,12 +60,16 @@ class LLMRequest:
     provider_sort: Optional[str] = None
     allow_fallbacks: bool = True
 
+    # Model fallback routing
+    fallback_models: Optional[List[str]] = None
+
     # Queue management
     priority: int = 0
 
     # Internal tracking (managed by client)
     _retry_count: int = field(default=0, repr=False)
     _queued_at: float = field(default=0.0, repr=False)
+    _router: Optional[Any] = field(default=None, repr=False)  # ModelRouter instance
 
     def __lt__(self, other):
         """Support priority queue ordering (higher priority first, then FIFO)."""
@@ -103,6 +108,7 @@ class LLMResult:
         # Provider info
         provider: Provider that handled request (if available)
         model_used: Actual model used (may differ from requested)
+        models_attempted: All models tried during fallback attempts
 
         # Original request
         request: Reference to original LLMRequest
@@ -131,6 +137,7 @@ class LLMResult:
     # Provider info
     provider: Optional[str] = None
     model_used: Optional[str] = None
+    models_attempted: Optional[List[str]] = None  # All models tried (for fallback tracking)
 
     # Original request (for metadata access)
     request: Optional['LLMRequest'] = field(default=None, repr=False)
@@ -152,6 +159,8 @@ class EventData:
         tokens_received: Tokens received so far (for STREAMING events)
         tokens_per_second: Token generation rate
         eta_seconds: Estimated time to completion
+        stage: Pipeline stage name (e.g., "correction", "label")
+        message: Pre-formatted display message for progress bar
 
         # Batch-level details (for PROGRESS events)
         completed: Number of completed requests
@@ -171,6 +180,8 @@ class EventData:
     tokens_received: int = 0
     tokens_per_second: float = 0.0
     eta_seconds: Optional[float] = None
+    stage: Optional[str] = None
+    message: Optional[str] = None
 
     # Batch-level details
     completed: int = 0
@@ -239,6 +250,10 @@ class CompletedStatus:
 
     # Error (if failed)
     error_message: Optional[str] = None
+
+    # Retry tracking
+    retry_count: int = 0
+    model_used: Optional[str] = None
 
     # TTL management
     cycles_remaining: int = 6  # Decremented each PROGRESS event
