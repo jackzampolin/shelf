@@ -143,30 +143,37 @@ class StageView(ABC):
         data: Dict[str, Any],
         cost_usd: float = 0.0,
         processing_time: float = 0.0,
-        extension: str = "json"
+        extension: str = "json",
+        metrics: Optional[Dict[str, Any]] = None
     ):
         """
-        Save page output and update checkpoint atomically.
+        Save page output and update checkpoint atomically with detailed metrics.
 
         This is the recommended way to write stage outputs. It handles:
         - Atomic file writing
         - Checkpoint update
         - Cost tracking
+        - Detailed metrics storage
         - Thread safety
 
         Args:
             page_num: Page number to save
             data: Page data (will be JSON-serialized)
             cost_usd: Processing cost for this page in USD (tracked in checkpoint)
-            processing_time: Processing time in seconds (for stats, optional)
+            processing_time: Processing time in seconds (deprecated - use metrics)
             extension: File extension (default: "json")
+            metrics: Optional detailed metrics dict (from LLMResult) containing:
+                - ttft_seconds, execution_time_seconds, total_time_seconds
+                - tokens_input, tokens_output, tokens_total
+                - cost_usd, model_used, attempts, timestamp
 
         Example:
             storage.correction.save_page(
                 page_num=42,
                 data=correction_output,
                 cost_usd=0.023,
-                processing_time=4.2
+                processing_time=4.2,
+                metrics=extract_metrics_from_result(result)
             )
         """
         with self._lock:
@@ -186,8 +193,8 @@ class StageView(ABC):
                 if not self.checkpoint.validate_page_output(page_num):
                     raise IOError(f"Page {page_num} output validation failed after write")
 
-                # Update checkpoint (now that file is safely written and validated)
-                self.checkpoint.mark_completed(page_num, cost_usd=cost_usd)
+                # Update checkpoint with metrics (now that file is safely written and validated)
+                self.checkpoint.mark_completed(page_num, cost_usd=cost_usd, metrics=metrics)
 
             except Exception as e:
                 # Clean up temp file on failure

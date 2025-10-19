@@ -104,6 +104,10 @@ class CheckpointManager:
                     # Version mismatch - start fresh
                     return self._create_new_checkpoint()
 
+                # Backward compatibility: add page_metrics if missing
+                if 'page_metrics' not in state:
+                    state['page_metrics'] = {}
+
                 return state
             except Exception:
                 # Corrupted checkpoint - start fresh
@@ -128,6 +132,7 @@ class CheckpointManager:
                 "percent": 0.0
             },
             "metadata": {},
+            "page_metrics": {},  # Per-request metrics indexed by page number
             "validation": {
                 "output_dir": self.output_dir,
                 "file_pattern": self.file_pattern
@@ -344,20 +349,21 @@ class CheckpointManager:
 
             return remaining_pages
 
-    def mark_completed(self, page_num: int, cost_usd: float = 0.0):
+    def mark_completed(self, page_num: int, cost_usd: float = 0.0, metrics: Optional[Dict[str, Any]] = None):
         """
-        Mark a page as completed (thread-safe).
+        Mark a page as completed (thread-safe) with optional detailed metrics.
 
         Args:
             page_num: Page number that was completed
             cost_usd: Cost for this page in USD (accumulated in metadata)
+            metrics: Optional detailed metrics dict (TTFT, execution time, tokens, etc.)
         """
         with self._lock:
             # Add to completed list if not already there
             is_new_page = page_num not in self._state['completed_pages']
 
-            # Early return if page already completed and no cost to add (avoid redundant saves)
-            if not is_new_page and cost_usd == 0:
+            # Early return if page already completed and no cost/metrics to add (avoid redundant saves)
+            if not is_new_page and cost_usd == 0 and not metrics:
                 return
 
             if is_new_page:
@@ -368,6 +374,12 @@ class CheckpointManager:
             if cost_usd > 0 and is_new_page:
                 current_cost = self._state['metadata'].get('total_cost_usd', 0.0)
                 self._state['metadata']['total_cost_usd'] = current_cost + cost_usd
+
+            # Store detailed metrics (ONLY for new pages to avoid double-counting)
+            if metrics and is_new_page:
+                if 'page_metrics' not in self._state:
+                    self._state['page_metrics'] = {}
+                self._state['page_metrics'][str(page_num)] = metrics
 
             # Update progress
             total = self._state.get('total_pages', 0)
@@ -552,3 +564,110 @@ class CheckpointManager:
                 return f"❌ Failed - {progress['completed']} pages completed before failure"
             else:
                 return "○ Not started"
+
+    def get_page_metrics(self, page_num: int) -> Optional[Dict[str, Any]]:
+        """
+        Get detailed metrics for a specific page.
+
+        Args:
+            page_num: Page number to query
+
+        Returns:
+            Metrics dict or None if not found
+        """
+        with self._lock:
+            page_metrics = self._state.get('page_metrics', {})
+            return page_metrics.get(str(page_num))
+
+    def get_all_metrics(self) -> Dict[int, Dict[str, Any]]:
+        """
+        Get all page metrics as {page_num: metrics_dict}.
+
+        Returns:
+            Dictionary mapping page numbers to metrics dicts
+        """
+        with self._lock:
+            page_metrics = self._state.get('page_metrics', {})
+            # Convert string keys back to int
+            return {int(k): v for k, v in page_metrics.items()}
+
+    def get_metrics_summary(self) -> Dict[str, Any]:
+        """
+        Calculate aggregate statistics across all completed pages.
+
+        Returns:
+            Dictionary with aggregate statistics:
+            {
+                'count': 10,
+                'ttft': {'min': 1.2, 'max': 5.4, 'avg': 2.3, 'p50': 2.1, 'p95': 4.8},
+                'execution_time': {'min': ..., 'max': ..., 'avg': ..., 'p50': ..., 'p95': ...},
+                'total_time': {...},
+                'tokens_total': {'min': ..., 'max': ..., 'avg': ..., 'sum': 12345},
+                'cost_usd': {'min': ..., 'max': ..., 'avg': ..., 'sum': 12.34},
+                'models': {'anthropic/claude-sonnet-4': 8, 'google/gemini-flash-1.5': 2},
+                'retry_distribution': {1: 8, 2: 1, 3: 1}
+            }
+        """
+        import statistics
+
+        with self._lock:
+            page_metrics = self._state.get('page_metrics', {})
+
+            if not page_metrics:
+                return {'count': 0}
+
+            metrics_list = list(page_metrics.values())
+            count = len(metrics_list)
+
+            def calc_stats(values, percentiles=True):
+                """Calculate min/max/avg/p50/p95 for a list of values."""
+                if not values:
+                    return {}
+                stats_dict = {
+                    'min': min(values),
+                    'max': max(values),
+                    'avg': statistics.mean(values)
+                }
+                if percentiles and len(values) >= 2:
+                    sorted_vals = sorted(values)
+                    stats_dict['p50'] = statistics.median(sorted_vals)
+                    if len(sorted_vals) >= 20:  # Only calculate p95 if enough samples
+                        p95_idx = int(len(sorted_vals) * 0.95)
+                        stats_dict['p95'] = sorted_vals[p95_idx]
+                return stats_dict
+
+            # TTFT stats (only for streaming requests that have TTFT)
+            ttft_values = [m['ttft_seconds'] for m in metrics_list if m.get('ttft_seconds') is not None]
+
+            # Timing stats
+            exec_times = [m['execution_time_seconds'] for m in metrics_list]
+            total_times = [m['total_time_seconds'] for m in metrics_list]
+
+            # Token stats
+            tokens_total = [m['tokens_total'] for m in metrics_list]
+
+            # Cost stats
+            costs = [m['cost_usd'] for m in metrics_list]
+
+            # Model distribution
+            models = {}
+            for m in metrics_list:
+                model = m['model_used']
+                models[model] = models.get(model, 0) + 1
+
+            # Retry distribution
+            retries = {}
+            for m in metrics_list:
+                attempts = m['attempts']
+                retries[attempts] = retries.get(attempts, 0) + 1
+
+            return {
+                'count': count,
+                'ttft': calc_stats(ttft_values) if ttft_values else {'note': 'No streaming requests'},
+                'execution_time': calc_stats(exec_times),
+                'total_time': calc_stats(total_times),
+                'tokens_total': {**calc_stats(tokens_total), 'sum': sum(tokens_total)},
+                'cost_usd': {**calc_stats(costs), 'sum': sum(costs)},
+                'models': models,
+                'retry_distribution': retries
+            }

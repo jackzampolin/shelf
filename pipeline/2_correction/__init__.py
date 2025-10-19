@@ -44,6 +44,67 @@ SYSTEM_PROMPT = correction_prompts.SYSTEM_PROMPT
 build_user_prompt = correction_prompts.build_user_prompt
 
 
+def extract_metrics_from_result(result: LLMResult) -> dict:
+    """
+    Extract detailed metrics from LLMResult for checkpoint storage.
+
+    Converts LLMResult telemetry into checkpoint-compatible metrics format.
+    Handles both streaming and non-streaming requests.
+
+    Args:
+        result: LLMResult from LLM batch client
+
+    Returns:
+        Metrics dict with fields:
+        - ttft_seconds (float or None): Time to first token
+        - execution_time_seconds (float): LLM execution time
+        - total_time_seconds (float): Total time including queue
+        - tokens_input (int): Prompt tokens
+        - tokens_output (int): Completion tokens
+        - tokens_total (int): Total tokens
+        - cost_usd (float): Request cost
+        - model_used (str): Actual model used
+        - attempts (int): Retry attempts
+        - timestamp (str): ISO timestamp
+        - streaming_duration (float, optional): Execution time - TTFT
+        - tokens_per_second (float, optional): Token generation rate
+    """
+    # Extract token counts from usage dict
+    usage = result.usage or {}
+    tokens_input = usage.get('prompt_tokens', 0)
+    tokens_output = usage.get('completion_tokens', 0)
+
+    # Build base metrics
+    metrics = {
+        # Timing (all requests)
+        'ttft_seconds': result.ttft_seconds,  # None for non-streaming
+        'execution_time_seconds': result.execution_time_seconds,
+        'total_time_seconds': result.total_time_seconds,
+
+        # Tokens
+        'tokens_input': tokens_input,
+        'tokens_output': tokens_output,
+        'tokens_total': tokens_input + tokens_output,
+
+        # Cost & Model
+        'cost_usd': result.cost_usd,
+        'model_used': result.model_used or result.request.model,
+        'attempts': result.attempts,
+
+        # Timestamp
+        'timestamp': datetime.now().isoformat(),
+    }
+
+    # Add streaming-specific metrics if available
+    if result.ttft_seconds is not None and result.execution_time_seconds > 0:
+        metrics['streaming_duration'] = result.execution_time_seconds - result.ttft_seconds
+
+    if result.tokens_per_second and result.tokens_per_second > 0:
+        metrics['tokens_per_second'] = round(result.tokens_per_second, 2)
+
+    return metrics
+
+
 class VisionCorrector:
     """
     Vision-based OCR correction (text only).
@@ -378,12 +439,16 @@ class VisionCorrector:
                     validated = CorrectionPageOutput(**correction_data)
                     correction_data = validated.model_dump()
 
+                    # Extract detailed metrics from LLM result
+                    metrics = extract_metrics_from_result(result)
+
                     # Save corrected output (handles file write + checkpoint atomically)
                     result_storage.correction.save_page(
                         page_num=page_num,
                         data=correction_data,
                         cost_usd=result.cost_usd,
-                        processing_time=result.total_time_seconds
+                        processing_time=result.total_time_seconds,
+                        metrics=metrics
                     )
 
                     return 1  # Success
