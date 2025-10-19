@@ -320,7 +320,8 @@ class VisionLabeler:
                 batch_client=self.batch_client,
                 start_time=label_start_time,
                 model=self.model,
-                total_requests=len(requests)
+                total_requests=len(requests),
+                checkpoint=storage.label.checkpoint if self.enable_checkpoints else None
             )
 
             def on_result(result: LLMResult):
@@ -376,10 +377,36 @@ class VisionLabeler:
                     labels_dir=str(storage.label.output_dir)
                 )
 
-                # Print stage exit (success)
+                # Get detailed metrics summary from checkpoint
+                metrics_summary = storage.label.checkpoint.get_metrics_summary() if self.enable_checkpoints else None
+
+                # Print stage exit (success) with enhanced metrics
                 print(f"\n✅ Label complete: {completed}/{total_pages} pages")
                 print(f"   Total cost: ${total_cost:.2f}")
                 print(f"   Avg per page: ${total_cost/completed:.3f}" if completed > 0 else "")
+
+                # Show detailed metrics if available
+                if metrics_summary and metrics_summary.get('count', 0) > 0:
+                    # Timing metrics
+                    if metrics_summary.get('ttft') and 'avg' in metrics_summary['ttft']:
+                        ttft_avg = metrics_summary['ttft']['avg']
+                        ttft_p95 = metrics_summary['ttft'].get('p95', 0)
+                        print(f"   TTFT: avg {ttft_avg:.1f}s" + (f", p95 {ttft_p95:.1f}s" if ttft_p95 else ""))
+
+                    exec_time = metrics_summary.get('execution_time', {})
+                    if exec_time.get('avg'):
+                        print(f"   Execution: avg {exec_time['avg']:.1f}s, min {exec_time.get('min', 0):.1f}s, max {exec_time.get('max', 0):.1f}s")
+
+                    # Token stats
+                    tokens = metrics_summary.get('tokens_total', {})
+                    if tokens.get('sum'):
+                        print(f"   Tokens: {tokens['sum']:,} total, {int(tokens.get('avg', 0)):,} avg/page")
+
+                    # Retry stats (only if retries occurred)
+                    retries = metrics_summary.get('retry_distribution', {})
+                    if len(retries) > 1:  # More than just attempts=1
+                        retry_pages = sum(count for attempts, count in retries.items() if attempts > 1)
+                        print(f"   Retries: {retry_pages} pages required retries")
             else:
                 # Stage incomplete - some pages failed
                 failed_page_nums = sorted(failed_pages)

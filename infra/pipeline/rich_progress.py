@@ -304,7 +304,7 @@ class RichProgressBarHierarchical:
             print(message)
 
     def create_llm_event_handler(self, batch_client, start_time: float, model: str,
-                                  total_requests: int, extract_error_code=None):
+                                  total_requests: int, checkpoint=None, extract_error_code=None):
         """Create a standard LLM event handler for batch processing.
 
         Returns a configured event handler that displays:
@@ -318,6 +318,7 @@ class RichProgressBarHierarchical:
             start_time: Start time of the batch process (for elapsed calculation)
             model: Primary model name (for showing model suffix when different)
             total_requests: Total number of requests in batch
+            checkpoint: Optional CheckpointManager for querying detailed metrics
             extract_error_code: Optional function to format error messages (defaults to simple formatter)
 
         Returns:
@@ -329,7 +330,8 @@ class RichProgressBarHierarchical:
             ...     batch_client=client,
             ...     start_time=time.time(),
             ...     model="anthropic/claude-sonnet-4",
-            ...     total_requests=100
+            ...     total_requests=100,
+            ...     checkpoint=checkpoint
             ... )
             >>> results = client.process_batch(requests, on_event=on_event)
         """
@@ -426,12 +428,41 @@ class RichProgressBarHierarchical:
                         page_id = req_id.replace('page_', 'p')
 
                         if comp.success:
-                            # Show execution time (not total with queue time) and TTFT if available
-                            ttft_str = f", TTFT {comp.ttft_seconds:.2f}s" if comp.ttft_seconds else ""
-                            model_suffix = f" [{comp.model_used.split('/')[-1]}]" if comp.model_used and comp.model_used != model else ""
-                            # Display cost in cents for better readability (0.0022 USD = 0.22¢)
-                            cost_cents = comp.cost_usd * 100
-                            msg = f"{page_id}: ✓ ({comp.execution_time_seconds:.1f}s{ttft_str}, {cost_cents:.2f}¢){model_suffix}"
+                            # Query checkpoint for detailed metrics if available
+                            metrics = None
+                            if checkpoint:
+                                try:
+                                    # Extract page number from request ID (e.g., "page_0042" -> 42)
+                                    page_num = int(req_id.split('_')[1])
+                                    metrics = checkpoint.get_page_metrics(page_num)
+                                except:
+                                    pass  # Fall back to basic display if metrics unavailable
+
+                            # Display format: FT (first token), SS (streaming seconds), TT (total tokens), cost
+                            if metrics:
+                                # Build compact metrics display
+                                parts = []
+                                if metrics.get('ttft_seconds'):
+                                    parts.append(f"FT {metrics['ttft_seconds']:.1f}s")
+                                if metrics.get('streaming_duration'):
+                                    parts.append(f"SS {metrics['streaming_duration']:.1f}s")
+                                if metrics.get('tokens_total'):
+                                    parts.append(f"{metrics['tokens_total']} TT")
+                                cost_cents = metrics.get('cost_usd', 0) * 100
+                                parts.append(f"{cost_cents:.2f}¢")
+
+                                # Model suffix if different
+                                model_suffix = ""
+                                if metrics.get('model_used') and metrics['model_used'] != model:
+                                    model_suffix = f" [{metrics['model_used'].split('/')[-1]}]"
+
+                                msg = f"{page_id}: ✓ ({', '.join(parts)}){model_suffix}"
+                            else:
+                                # Fallback to basic display without checkpoint metrics
+                                ttft_str = f", TTFT {comp.ttft_seconds:.2f}s" if comp.ttft_seconds else ""
+                                model_suffix = f" [{comp.model_used.split('/')[-1]}]" if comp.model_used and comp.model_used != model else ""
+                                cost_cents = comp.cost_usd * 100
+                                msg = f"{page_id}: ✓ ({comp.execution_time_seconds:.1f}s{ttft_str}, {cost_cents:.2f}¢){model_suffix}"
                         else:
                             error_code = extract_error_code(comp.error_message)
                             # Show execution time, retry count and model if available
