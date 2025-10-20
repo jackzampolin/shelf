@@ -408,10 +408,27 @@ class RichProgressBarHierarchical:
 
                         # Only update if no message yet OR message is "Waiting for response" (not streaming)
                         if not current_msg or "Waiting for response" in current_msg:
-                            if status.retry_count > 0:
-                                msg = f"{page_id}: Waiting for response... ({elapsed_phase:.1f}s, retry {status.retry_count})"
+                            # Try to get input tokens from batch_client's active requests
+                            input_tokens = None
+                            try:
+                                # Get the request from batch_client if available
+                                if hasattr(batch_client, '_active_requests'):
+                                    request = batch_client._active_requests.get(req_id)
+                                    if request and hasattr(request, 'metadata'):
+                                        input_tokens = request.metadata.get('ocr_tokens')
+                            except:
+                                pass  # Fall back to basic message if we can't get tokens
+
+                            # Build message with optional token count
+                            if input_tokens:
+                                token_str = f", {input_tokens} tok in"
                             else:
-                                msg = f"{page_id}: Waiting for response... ({elapsed_phase:.1f}s)"
+                                token_str = ""
+
+                            if status.retry_count > 0:
+                                msg = f"{page_id}: Waiting for response... ({elapsed_phase:.1f}s{token_str}, retry {status.retry_count})"
+                            else:
+                                msg = f"{page_id}: Waiting for response... ({elapsed_phase:.1f}s{token_str})"
                             self.add_sub_line(req_id, msg)
 
                         running_ids.append(req_id)
@@ -438,7 +455,7 @@ class RichProgressBarHierarchical:
                                 except:
                                     pass  # Fall back to basic display if metrics unavailable
 
-                            # Display format: FT (first token), SS (streaming seconds), tok (total tokens), cost
+                            # Display format: FT (first token), SS (streaming seconds), input→output tok, cost
                             if metrics:
                                 # Build compact metrics display
                                 parts = []
@@ -446,7 +463,10 @@ class RichProgressBarHierarchical:
                                     parts.append(f"FT {metrics['ttft_seconds']:.1f}s")
                                 if metrics.get('streaming_duration'):
                                     parts.append(f"SS {metrics['streaming_duration']:.1f}s")
-                                if metrics.get('tokens_total'):
+                                # Show input→output token format
+                                if metrics.get('tokens_input') is not None and metrics.get('tokens_output') is not None:
+                                    parts.append(f"{metrics['tokens_input']}→{metrics['tokens_output']} tok")
+                                elif metrics.get('tokens_total'):
                                     parts.append(f"{metrics['tokens_total']} tok")
                                 cost_cents = metrics.get('cost_usd', 0) * 100
                                 parts.append(f"{cost_cents:.2f}¢")
