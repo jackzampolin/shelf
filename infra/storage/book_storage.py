@@ -119,6 +119,9 @@ class StageView(ABC):
 
         Automatically ensures directories are created when checkpoint is accessed.
 
+        NOTE: save_page() initializes checkpoint BEFORE acquiring its lock to avoid
+        deadlock (since this property calls ensure_directories() which needs the lock).
+
         Returns:
             CheckpointManager instance for this stage
         """
@@ -176,6 +179,10 @@ class StageView(ABC):
                 metrics=extract_metrics_from_result(result)
             )
         """
+        # Initialize checkpoint BEFORE acquiring lock to avoid deadlock
+        # (checkpoint property may call ensure_directories() which needs the lock)
+        checkpoint = self.checkpoint
+
         with self._lock:
             # Write output file atomically
             output_file = self.output_page(page_num, extension=extension)
@@ -190,11 +197,11 @@ class StageView(ABC):
                 temp_file.replace(output_file)
 
                 # Validate output before marking complete (catch corruption/invalid data)
-                if not self.checkpoint.validate_page_output(page_num):
+                if not checkpoint.validate_page_output(page_num):
                     raise IOError(f"Page {page_num} output validation failed after write")
 
                 # Update checkpoint with metrics (now that file is safely written and validated)
-                self.checkpoint.mark_completed(page_num, cost_usd=cost_usd, metrics=metrics)
+                checkpoint.mark_completed(page_num, cost_usd=cost_usd, metrics=metrics)
 
             except Exception as e:
                 # Clean up temp file on failure
