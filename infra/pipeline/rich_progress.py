@@ -463,9 +463,13 @@ class RichProgressBarHierarchical:
                                     parts.append(f"FT {metrics['ttft_seconds']:.1f}s")
                                 if metrics.get('streaming_duration'):
                                     parts.append(f"SS {metrics['streaming_duration']:.1f}s")
-                                # Show input→output token format
+                                # Show input→output token format with reasoning tokens if available
                                 if metrics.get('tokens_input') is not None and metrics.get('tokens_output') is not None:
-                                    parts.append(f"{metrics['tokens_input']}→{metrics['tokens_output']} tok")
+                                    tok_str = f"{metrics['tokens_input']}→{metrics['tokens_output']}"
+                                    # Add reasoning tokens if present
+                                    if metrics.get('tokens_reasoning', 0) > 0:
+                                        tok_str += f"+{metrics['tokens_reasoning']}r"
+                                    parts.append(f"{tok_str} tok")
                                 elif metrics.get('tokens_total'):
                                     parts.append(f"{metrics['tokens_total']} tok")
                                 cost_cents = metrics.get('cost_usd', 0) * 100

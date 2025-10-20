@@ -72,7 +72,14 @@ def extract_metrics_from_result(result: LLMResult) -> dict:
     # Extract token counts from usage dict
     usage = result.usage or {}
     tokens_input = usage.get('prompt_tokens', 0)
-    tokens_output = usage.get('completion_tokens', 0)
+    tokens_output_total = usage.get('completion_tokens', 0)
+
+    # Extract reasoning tokens if available (OpenRouter models with chain-of-thought)
+    completion_details = usage.get('completion_tokens_details', {})
+    tokens_reasoning = completion_details.get('reasoning_tokens', 0)
+
+    # Visible output = total output - reasoning tokens
+    tokens_output_visible = tokens_output_total - tokens_reasoning
 
     # Build base metrics
     metrics = {
@@ -83,8 +90,10 @@ def extract_metrics_from_result(result: LLMResult) -> dict:
 
         # Tokens
         'tokens_input': tokens_input,
-        'tokens_output': tokens_output,
-        'tokens_total': tokens_input + tokens_output,
+        'tokens_output': tokens_output_visible,  # Visible output only (what streams)
+        'tokens_reasoning': tokens_reasoning,    # Reasoning tokens (internal)
+        'tokens_output_total': tokens_output_total,  # Total output (visible + reasoning)
+        'tokens_total': tokens_input + tokens_output_total,
 
         # Cost & Model
         'cost_usd': result.cost_usd,
