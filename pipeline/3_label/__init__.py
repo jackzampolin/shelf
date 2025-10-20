@@ -178,12 +178,12 @@ class VisionLabeler:
                     return
 
         # Initialize batch LLM client with failure logging
+        # All requests use structured responses (response_format) and stream for full telemetry
         self.batch_client = LLMBatchClient(
             max_workers=self.max_workers,
             rate_limit=150,
             max_retries=self.max_retries,
             retry_jitter=(1.0, 3.0),
-            json_retry_budget=2,
             verbose=True,
             progress_interval=1.0,  # Increased to reduce PROGRESS event frequency
             log_dir=storage.label.get_log_dir()
@@ -336,11 +336,10 @@ class VisionLabeler:
             def on_result(result: LLMResult):
                 self._handle_result(result, failed_pages, storage)
 
-            # Process batch with callbacks
-            # Note: json_parser removed - structured outputs guarantee valid JSON
+            # Process batch with streaming and structured responses
+            # All requests have response_format, so we get guaranteed valid JSON
             results = self.batch_client.process_batch(
                 requests,
-                json_parser=json.loads,
                 on_event=on_event,
                 on_result=on_result
             )

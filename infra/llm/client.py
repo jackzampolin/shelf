@@ -15,11 +15,17 @@ import os
 import time
 import json
 import base64
+import logging
 import requests
 from typing import List, Dict, Tuple, Optional, Union
 from pathlib import Path
 from dotenv import load_dotenv
 from infra.llm.pricing import CostCalculator
+
+
+# Token estimation constant
+# Empirically derived average for character-to-token conversion when actual usage unavailable
+CHARS_PER_TOKEN_ESTIMATE = 4
 
 
 class LLMClient:
@@ -253,7 +259,6 @@ class LLMClient:
                             actual_usage = usage_data
                         else:
                             # Malformed - log and skip
-                            import logging
                             logger = logging.getLogger(__name__)
                             logger.warning(
                                 f"Malformed usage data in SSE chunk",
@@ -286,18 +291,17 @@ class LLMClient:
         if actual_usage:
             usage = actual_usage
         else:
-            # Fallback to char-based estimate (~4 chars per token)
+            # Fallback to char-based estimate
             prompt_chars = sum(len(m.get('content', '')) for m in payload['messages'])
             completion_chars = len(complete_response)
 
             usage = {
-                'prompt_tokens': prompt_chars // 4,
-                'completion_tokens': completion_chars // 4,
+                'prompt_tokens': prompt_chars // CHARS_PER_TOKEN_ESTIMATE,
+                'completion_tokens': completion_chars // CHARS_PER_TOKEN_ESTIMATE,
                 '_estimated': True
             }
 
             # Log warning
-            import logging
             logger = logging.getLogger(__name__)
             logger.warning(
                 f"No usage data in SSE stream, using char-based estimate. "
@@ -355,7 +359,6 @@ class LLMClient:
                 # Convert PIL Image to bytes then base64
                 # Use JPEG for efficiency (quality=75 balances size vs readability for text)
                 import io
-                import logging
                 logger = logging.getLogger(__name__)
 
                 buffered = io.BytesIO()
@@ -412,74 +415,11 @@ class LLMClient:
 
         return self.call(model, messages, temperature=temperature, **kwargs)
 
-    def call_with_json_retry(self,
-                            model: str,
-                            messages: List[Dict[str, str]],
-                            json_parser,
-                            temperature: float = 0.0,
-                            max_retries: int = 2,
-                            **kwargs) -> Tuple[Dict, Dict, float]:
-        """
-        Make LLM call with automatic retry on JSON parsing failures.
-
-        This method wraps the standard call() with JSON parsing retry logic.
-        If the LLM response fails to parse as JSON, it automatically retries
-        the entire LLM call (not just the parsing).
-
-        Args:
-            model: OpenRouter model name
-            messages: List of message dicts
-            json_parser: Callable that takes response text and returns parsed JSON
-                        Should raise json.JSONDecodeError or ValueError on parse failure
-            temperature: Sampling temperature
-            max_retries: Number of retries on JSON parse failure (default: 2)
-            **kwargs: Additional arguments passed to call()
-
-        Returns:
-            Tuple of (parsed_json_dict, usage_dict, total_cost_usd)
-
-        Raises:
-            json.JSONDecodeError: If parsing fails after all retries
-            ValueError: If json_parser raises ValueError
-        """
-        total_cost = 0.0
-        last_error = None
-
-        for attempt in range(max_retries + 1):
-            try:
-                # Make LLM call
-                response, usage, cost = self.call(
-                    model,
-                    messages,
-                    temperature=temperature,
-                    **kwargs
-                )
-                total_cost += cost
-
-                # Parse JSON
-                parsed = json_parser(response)
-
-                # Success! Return parsed result
-                if attempt > 0:
-                    # Log that retry succeeded (if caller wants to track this)
-                    pass  # Could add logging here
-
-                return parsed, usage, total_cost
-
-            except (json.JSONDecodeError, ValueError) as e:
-                last_error = e
-                if attempt < max_retries:
-                    # JSON parsing failed, retry entire LLM call
-                    delay = 2 * (attempt + 1)  # 2s, 4s (increased from 0.5s, 1.0s)
-                    # Suppress retry messages - stage-level logging will show final errors
-                    time.sleep(delay)
-                    continue
-
-        # All retries exhausted
-        raise last_error
-
 
 # Convenience function for quick one-off calls
+# NOTE: Currently unused in codebase (not exported in __all__).
+# Kept for potential use in scripts, notebooks, or future convenience.
+# Consider: Instantiate LLMClient() and use simple_call() instead for better performance.
 def call_llm(model: str,
             system_prompt: str,
             user_prompt: str,
@@ -487,6 +427,10 @@ def call_llm(model: str,
             **kwargs) -> Tuple[str, Dict, float]:
     """
     Quick convenience function for simple LLM calls.
+
+    NOTE: This function creates a new LLMClient instance for each call.
+    For better performance with multiple calls, instantiate LLMClient once
+    and call simple_call() directly.
 
     Args:
         model: OpenRouter model name

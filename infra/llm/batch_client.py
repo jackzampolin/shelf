@@ -23,7 +23,7 @@ from infra.llm.models import (
     RequestPhase, RequestStatus, CompletedStatus, BatchStats
 )
 from infra.llm.rate_limiter import RateLimiter
-from infra.llm.client import LLMClient
+from infra.llm.client import LLMClient, CHARS_PER_TOKEN_ESTIMATE
 
 
 class LLMBatchClient:
@@ -45,7 +45,6 @@ class LLMBatchClient:
         rate_limit: int = 150,  # requests per minute
         max_retries: int = 5,
         retry_jitter: Tuple[float, float] = (1.0, 3.0),
-        json_retry_budget: int = 2,
         verbose: bool = False,
         progress_interval: float = 1.0,  # Increased to reduce PROGRESS event frequency
         log_dir: Optional['Path'] = None,
@@ -58,7 +57,6 @@ class LLMBatchClient:
             rate_limit: Max requests per minute
             max_retries: Max attempts per request (failed requests re-queue)
             retry_jitter: (min, max) seconds to wait before re-queue
-            json_retry_budget: Separate retry budget for JSON parse errors
             verbose: Enable per-request progress events
             progress_interval: How often to emit PROGRESS events (seconds)
             log_dir: Optional directory to log failed LLM calls to {log_dir}/llm_failures.jsonl
@@ -67,7 +65,6 @@ class LLMBatchClient:
         self.rate_limit = rate_limit
         self.max_retries = max_retries
         self.retry_jitter = retry_jitter
-        self.json_retry_budget = json_retry_budget
         self.verbose = verbose
         self.progress_interval = progress_interval
         self.log_dir = log_dir
@@ -88,6 +85,7 @@ class LLMBatchClient:
         self.stats = {
             'total_cost_usd': 0.0,
             'total_tokens': 0,
+            'total_reasoning_tokens': 0,  # Track reasoning tokens separately (for supported models)
             'requests_completed': 0,
             'requests_failed': 0,
             'retry_count': 0,
@@ -101,30 +99,43 @@ class LLMBatchClient:
         self.request_tracking_lock = threading.Lock()
         self.active_requests: Dict[str, RequestStatus] = {}
         self.recent_completions: Dict[str, CompletedStatus] = {}
-        self.completion_ttl_cycles = 10  # Show for ~10s at 1.0s PROGRESS interval
+        # Calculate TTL cycles from desired TTL (10s) and progress interval
+        self.completion_ttl_cycles = int(10.0 / self.progress_interval)
         self.batch_start_time: Optional[float] = None
 
     def process_batch(
         self,
         requests: List[LLMRequest],
-        json_parser: Optional[Callable] = None,
         on_event: Optional[Callable[[EventData], None]] = None,
         on_result: Optional[Callable[[LLMResult], None]] = None,
     ) -> List[LLMResult]:
         """
         Process batch of requests with queue-based retry.
 
+        All requests must have response_format set for structured JSON output.
+        All requests are streamed for full telemetry (TTFT, tokens/sec, progress).
+
         Args:
-            requests: List of LLMRequest objects
-            json_parser: Optional parser for structured outputs
+            requests: List of LLMRequest objects (must have response_format)
             on_event: Callback for lifecycle events
             on_result: Callback for each completed request
 
         Returns:
             List of LLMResult in same order as input requests
+
+        Raises:
+            ValueError: If any request is missing response_format
         """
         if not requests:
             return []
+
+        # Validate all requests have response_format
+        for req in requests:
+            if not req.response_format:
+                raise ValueError(
+                    f"Request {req.id} missing response_format. "
+                    "All requests must use structured JSON output."
+                )
 
         # Initialize queue
         queue = PriorityQueue()
@@ -158,7 +169,6 @@ class LLMBatchClient:
                 future = executor.submit(
                     self._worker_loop,
                     queue,
-                    json_parser,
                     on_event,
                     on_result,
                     expected_ids
@@ -204,7 +214,6 @@ class LLMBatchClient:
     def _worker_loop(
         self,
         queue: PriorityQueue,
-        json_parser: Optional[Callable],
         on_event: Optional[Callable[[EventData], None]],
         on_result: Optional[Callable[[LLMResult], None]],
         expected_ids: set
@@ -264,7 +273,7 @@ class LLMBatchClient:
 
                 # Process request
                 self._emit_event(on_event, LLMEvent.DEQUEUED, request_id=request.id)
-                result = self._execute_request(request, json_parser, on_event)
+                result = self._execute_request(request, on_event)
 
                 # Handle result
                 if result.success:
@@ -293,6 +302,7 @@ class LLMBatchClient:
                         self.stats['requests_completed'] += 1
                         self.stats['total_cost_usd'] += result.cost_usd
                         self.stats['total_tokens'] += result.usage.get('completion_tokens', 0)
+                        self.stats['total_reasoning_tokens'] += result.usage.get('reasoning_tokens', 0)
 
                 else:
                     # Failure - check for fallback or retry
@@ -435,10 +445,20 @@ class LLMBatchClient:
     def _execute_request(
         self,
         request: LLMRequest,
-        json_parser: Optional[Callable],
         on_event: Optional[Callable[[EventData], None]]
     ) -> LLMResult:
-        """Execute single LLM request with telemetry."""
+        """
+        Execute single LLM request with telemetry.
+
+        All requests are streamed for full telemetry (TTFT, tokens/sec, progress).
+        All requests must have response_format for structured JSON output.
+
+        Manages:
+        - Model fallback routing via ModelRouter
+        - Error classification and retry logic
+        - Comprehensive telemetry (queue time, execution time, TTFT, cost)
+        - Request phase tracking for observability
+        """
         start_time = time.time()
         queue_time = start_time - request._queued_at
 
@@ -464,72 +484,13 @@ class LLMBatchClient:
             # Get current model from router (or use request.model if no router)
             current_model = request._router.get_current() if request._router else request.model
 
-            # Build provider config if specified
-            if request.provider_order or request.provider_sort:
-                # OpenRouter provider routing via response_format isn't standard
-                # For now, we'll skip provider routing in minimal version
-                # TODO: Add provider routing support
-                pass
+            # Stream the request (always)
+            response_text, usage, cost, ttft = self._execute_with_streaming_events(
+                request, current_model, on_event, start_time
+            )
 
-            # Determine if this should use streaming with event emission
-            # Use streaming for long-running calls (timeout > 60s)
-            # Now enabled for JSON responses too - we parse after streaming completes
-            use_streaming = request.timeout and request.timeout > 60
-
-            # Initialize TTFT (only populated for streaming requests)
-            ttft = None
-
-            # Use existing LLMClient
-            if use_streaming:
-                # Streaming path with event emission
-                response_text, usage, cost, ttft = self._execute_with_streaming_events(
-                    request, current_model, on_event, start_time
-                )
-                # Parse JSON after streaming completes (if parser provided)
-                parsed_json = json_parser(response_text) if json_parser else None
-
-            elif json_parser:
-                # For structured outputs, call directly (no retry needed - API guarantees valid JSON)
-                # For non-structured outputs, use retry wrapper
-                if request.response_format:
-                    # Structured output: guaranteed valid JSON
-                    response_text, usage, cost = self.llm_client.call(
-                        model=current_model,
-                        messages=request.messages,
-                        temperature=request.temperature,
-                        max_tokens=request.max_tokens,
-                        timeout=request.timeout,
-                        images=request.images,
-                        response_format=request.response_format
-                    )
-                    parsed_json = json_parser(response_text)
-                else:
-                    # Non-structured output: may need retries for malformed JSON
-                    response, usage, cost = self.llm_client.call_with_json_retry(
-                        model=current_model,
-                        messages=request.messages,
-                        json_parser=json_parser,
-                        temperature=request.temperature,
-                        max_retries=self.json_retry_budget,
-                        max_tokens=request.max_tokens,
-                        timeout=request.timeout,
-                        images=request.images,
-                        response_format=request.response_format
-                    )
-                    parsed_json = response  # call_with_json_retry returns parsed JSON
-                response_text = json.dumps(parsed_json) if parsed_json else response_text
-            else:
-                # Standard call (non-streaming)
-                response_text, usage, cost = self.llm_client.call(
-                    model=current_model,
-                    messages=request.messages,
-                    temperature=request.temperature,
-                    max_tokens=request.max_tokens,
-                    timeout=request.timeout,
-                    images=request.images,
-                    response_format=request.response_format
-                )
-                parsed_json = None
+            # Parse structured JSON response (OpenRouter guarantees valid JSON)
+            parsed_json = json.loads(response_text)
 
             # Mark success in router if present
             if request._router:
@@ -546,7 +507,7 @@ class LLMBatchClient:
                 total_time_seconds=execution_time + queue_time,
                 queue_time_seconds=queue_time,
                 execution_time_seconds=execution_time,
-                ttft_seconds=ttft,  # Time to first token (streaming only)
+                ttft_seconds=ttft,
                 tokens_received=usage.get('completion_tokens', 0),
                 usage=usage,
                 cost_usd=cost,
@@ -556,13 +517,34 @@ class LLMBatchClient:
             )
 
         except json.JSONDecodeError as e:
-            # JSON parsing failed after retries
+            # JSON parsing failed - this should never happen with structured responses
+            # Log the malformed response for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+
+            # Truncate response for logging (first/last 500 chars)
+            response_preview = response_text
+            if len(response_text) > 1000:
+                response_preview = f"{response_text[:500]}...{response_text[-500:]}"
+
+            logger.warning(
+                f"Structured JSON parsing failed for {request.id}",
+                extra={
+                    'request_id': request.id,
+                    'model': current_model,
+                    'error': str(e),
+                    'response_length': len(response_text),
+                    'response_preview': response_preview,
+                    'response_format': request.response_format
+                }
+            )
+
             execution_time = time.time() - start_time
             return LLMResult(
                 request_id=request.id,
                 success=False,
                 error_type="json_parse",
-                error_message=f"JSON parsing failed: {str(e)}",
+                error_message=f"Structured JSON parsing failed: {str(e)}",
                 attempts=request._retry_count + 1,
                 total_time_seconds=execution_time + queue_time,
                 queue_time_seconds=queue_time,
@@ -588,7 +570,24 @@ class LLMBatchClient:
             )
 
     def _classify_error(self, error: Exception) -> str:
-        """Classify error type for retry logic."""
+        """
+        Classify error type for retry logic and error handling.
+
+        Error types (in priority order):
+        - 'timeout': Network timeouts (retryable)
+        - '5xx': Server errors 500-599 (retryable)
+        - '429_rate_limit': Rate limiting (retryable with backoff)
+        - '413_payload_too_large': Payload too large (retryable - may succeed on retry)
+        - '422_unprocessable': Unprocessable entity (retryable - often transient deserialization issues)
+        - '4xx': Other client errors 400-499 (non-retryable)
+        - 'unknown': Unclassified errors (retryable to be safe)
+
+        Args:
+            error: Exception raised during LLM request
+
+        Returns:
+            String error type for use in retry logic
+        """
         error_str = str(error).lower()
         if 'timeout' in error_str:
             return 'timeout'
@@ -914,9 +913,9 @@ class LLMBatchClient:
 
                                 streaming_state['full_content'].append(content)
 
-                                # Estimate tokens from character count (~4 chars per token)
+                                # Estimate tokens from character count
                                 total_chars = len(''.join(streaming_state['full_content']))
-                                streaming_state['tokens_so_far'] = total_chars // 4
+                                streaming_state['tokens_so_far'] = total_chars // CHARS_PER_TOKEN_ESTIMATE
 
                                 # Emit throttled STREAMING event
                                 now = time.time()
@@ -965,13 +964,13 @@ class LLMBatchClient:
             if streaming_state['actual_usage']:
                 usage = streaming_state['actual_usage']
             else:
-                # Fallback to char-based estimate (~4 chars per token)
+                # Fallback to char-based estimate
                 prompt_chars = sum(len(m.get('content', '')) for m in request.messages)
                 completion_chars = len(complete_response)
 
                 usage = {
-                    'prompt_tokens': prompt_chars // 4,
-                    'completion_tokens': completion_chars // 4,
+                    'prompt_tokens': prompt_chars // CHARS_PER_TOKEN_ESTIMATE,
+                    'completion_tokens': completion_chars // CHARS_PER_TOKEN_ESTIMATE,
                     '_estimated': True  # Flag that this is an estimate
                 }
 

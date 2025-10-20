@@ -165,12 +165,12 @@ class VisionCorrector:
 
         # Initialize batch LLM client with failure logging
         # (directories auto-created when checkpoint is accessed)
+        # All requests use structured responses (response_format) and stream for full telemetry
         self.batch_client = LLMBatchClient(
             max_workers=self.max_workers,
             rate_limit=150,  # OpenRouter default
             max_retries=self.max_retries,
             retry_jitter=(1.0, 3.0),
-            json_retry_budget=2,
             verbose=True,  # Enable per-request events for progress tracking
             # progress_interval defaults to 1.0s (reduced PROGRESS events, more room for STREAMING)
             log_dir=storage.correction.get_log_dir()  # Log failed LLM calls to corrected/logs/llm_failures.jsonl
@@ -345,11 +345,10 @@ class VisionCorrector:
             def on_result(result: LLMResult):
                 self._handle_result(result, failed_pages)
 
-            # Process batch with new client
-            # Note: json_parser removed - structured outputs guarantee valid JSON
+            # Process batch with streaming and structured responses
+            # All requests have response_format, so we get guaranteed valid JSON
             results = self.batch_client.process_batch(
                 requests,
-                json_parser=json.loads,
                 on_event=on_event,
                 on_result=on_result
             )

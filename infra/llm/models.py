@@ -56,18 +56,21 @@ class LLMRequest:
     response_format: Optional[Dict] = None
     metadata: Dict = field(default_factory=dict)
 
-    # Provider routing
+    # Provider routing (PLANNED FEATURE - not yet implemented)
+    # See batch_client.py:471 for implementation TODO
     provider_order: Optional[List[str]] = None
     provider_sort: Optional[str] = None
     allow_fallbacks: bool = True
 
-    # Model fallback routing
+    # Model fallback routing (IMPLEMENTED - see router.py)
     fallback_models: Optional[List[str]] = None
 
     # Queue management
     priority: int = 0
 
-    # Internal tracking (managed by client)
+    # Internal tracking (managed by LLMBatchClient - not for user modification)
+    # Note: Underscore prefix indicates internal use, but batch_client accesses directly
+    # This is intentional - these fields are managed by the batch processing infrastructure
     _retry_count: int = field(default=0, repr=False)
     _queued_at: float = field(default=0.0, repr=False)
     _router: Optional[Any] = field(default=None, repr=False)  # ModelRouter instance
