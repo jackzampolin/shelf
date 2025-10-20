@@ -241,7 +241,7 @@ def cmd_process_merge(args):
 
 
 def cmd_process_structure(args):
-    """Run Structure Detection stage (Stage 4)."""
+    """Run Structure Detection stage (Stage 5)."""
     import importlib
 
     try:
@@ -653,14 +653,14 @@ Note: Minimal CLI during refactor (Issue #55).
     label_parser.set_defaults(func=cmd_process_label)
 
     # ar process merge
-    merge_parser = process_subparsers.add_parser('merge', help='Stage 3: Merge & Enrich')
+    merge_parser = process_subparsers.add_parser('merge', help='Stage 4: Merge & Enrich')
     merge_parser.add_argument('scan_id', help='Book scan ID')
     merge_parser.add_argument('--workers', type=int, default=8, help='Parallel workers (default: 8)')
     merge_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     merge_parser.set_defaults(func=cmd_process_merge)
 
     # ar process structure
-    structure_parser = process_subparsers.add_parser('structure', help='Stage 4: Structure Detection')
+    structure_parser = process_subparsers.add_parser('structure', help='Stage 5: Structure Detection')
     structure_parser.add_argument('scan_id', help='Book scan ID')
     structure_parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     structure_parser.set_defaults(func=cmd_process_structure)

@@ -1,43 +1,5 @@
 # AI Assistant Workflow Guide
 
-## ⚠️ REFACTOR IN PROGRESS
-
-**Branch:** `refactor/pipeline-redesign`
-**Meta Issue:** [#56 - Pipeline Refactor](https://github.com/jackzampolin/scanshelf/issues/56)
-**Architecture & Principles:** See Issue #56 for full context
-**Production Patterns:** `docs/standards/` (checkpointing, logging, LLM integration, etc.)
-
-### Multi-Session Refactor Workflow
-
-**Starting a refactor session:**
-1. Check [Issue #56](https://github.com/jackzampolin/scanshelf/issues/56) for:
-   - Architecture principles (leverage labels, page mapping, etc.)
-   - Current progress (which issues complete/pending)
-   - Stage flow and cost expectations
-2. Pick the next unchecked issue (#57-61)
-3. Read the issue for specific implementation guidance
-4. Review relevant patterns from `docs/standards/` (see [README](docs/standards/README.md))
-
-**During implementation:**
-- Build schemas **iteratively** from observed data (no upfront design)
-- Test on actual book data (`accidental-president`) at each stage
-- Reference `docs/standards/` for mandatory patterns
-- Follow [Production Checklist](docs/standards/09_production_checklist.md)
-
-**Completing a refactor task:**
-1. Validate on test book end-to-end
-2. Update checklist in Issue #56
-3. Commit with reference to issue number
-4. Move to next issue
-
-**Key Refactor Principles:**
-- **Test-book-driven:** Run on real data, observe, then formalize
-- **No speculative design:** Schemas emerge from implementation, not docs
-- **Preserve patterns:** Use existing checkpoint, logging, cost tracking patterns
-- **Incremental:** Each issue is independently testable
-
----
-
 ## Core Workflow Principles
 
 ### Git as Source of Truth
@@ -122,8 +84,8 @@ uv run python -m pytest tests/tools/ -v
 **Documentation hierarchy:**
 - `README.md` - Quick start, basic usage, current status
 - `CLAUDE.md` (this file) - Timeless workflow principles
-- `docs/standards/` - Production patterns and standards (refactor source of truth)
-- `NEXT_SESSION.md` - Session-specific notes (temporary)
+- `docs/` - Additional documentation and planning notes
+- Code itself - The ultimate source of truth
 
 ---
 
@@ -206,9 +168,23 @@ Core labels:
 ## Project-Specific Notes
 
 ### Architecture
-Book processing pipeline: `PDF → OCR → LLM Correction → Merge & Enrich → Structure Detection → Chunk Assembly`
+Book processing pipeline:
+```
+PDF → Split Pages → OCR (Stage 1) → Metadata Extraction →
+Correction (Stage 2) → Label (Stage 3) → Merge (Stage 4) →
+Structure (Stage 5, in development)
+```
 
-**Current architecture (stages 3-5):** See [Issue #56](https://github.com/jackzampolin/scanshelf/issues/56) for principles and stage flow
+**Metadata Extraction** (after OCR, before Correction):
+- Analyzes first 10-20 pages of OCR output
+- Extracts: title, author, year, publisher, ISBN, book type
+- Uses LLM with structured output
+- Metadata used by Correction and Label stages
+- Tool: `tools/extract_metadata.py` (needs CLI integration)
+
+Each stage produces reports for quality analysis:
+- **Correction Report:** `pipeline/2_correction/report.py` - Statistical analysis of OCR corrections
+- **Label Report:** `pipeline/3_label/report.py` - Page number extraction and block classification analysis
 
 ### Key Concepts
 - **Library:** `~/Documents/book_scans/library.json` - catalog of all books
@@ -222,20 +198,29 @@ All commands use `uv run python ar.py <command>`. See `README.md` for current co
 ### Cost Awareness
 This pipeline costs money (OpenRouter API). Be mindful:
 - Don't re-run stages unnecessarily
-- Use `--start` and `--end` flags to limit page ranges for testing
 - Test prompts on small samples first
-- Check `docs/standards/` for current cost estimates
+- Use checkpoints to resume interrupted runs
+- Check `ar status <scan-id>` for cost tracking
 
 ### Current State
 - ✅ Infrastructure (`infra/`) - Complete and tested
-- ✅ Stages 0-2 (Ingest, OCR, Correction) - Complete
-- 🚧 Stages 3-5 (Merge, Structure, Chunks) - Implementation in progress
+- ✅ Stage 1: OCR - Complete
+- 🚧 Metadata Extraction - Tool exists, needs CLI integration
+- ✅ Stage 2: Correction - Complete with vision-based error fixing
+- ✅ Stage 3: Label - Complete with page number extraction and block classification
+- 🚧 Stage 4: Merge - Implemented, needs testing
+- ❌ Stage 5: Structure - In development
+
+**Next Steps:**
+1. Integrate metadata extraction into CLI (`ar process metadata`)
+2. Run correction and label reports on all 10 books in library
+3. Use report data to inform structure stage design
+4. Test merge stage on production books
+5. Design and implement structure stage based on label analysis
 
 **For current implementation details, see:**
-- [Issue #56](https://github.com/jackzampolin/scanshelf/issues/56) - Architecture & principles
-- Issues #57-61 - Individual stage implementations
 - `README.md` - Usage and commands
-- `docs/standards/` - Production patterns
+- `pipeline/` - Stage implementations
 - Code itself - The source of truth
 
 ---

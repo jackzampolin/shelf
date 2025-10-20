@@ -1,5 +1,5 @@
 """
-Stage 3: Merge & Enrich
+Stage 4: Merge & Enrich
 
 Merges OCR, correction, and label data into unified page records with:
 - Full text (corrected where available, OCR otherwise)
@@ -87,7 +87,7 @@ class MergeProcessor:
                 total_pages=total_pages,
                 max_workers=self.max_workers
             )
-            self.logger.info("Stage 3: Merge & Enrich - Three-way merge (OCR + Correction + Label, $0 cost)")
+            self.logger.info("Stage 4: Merge & Enrich - Three-way merge (OCR + Correction + Label, $0 cost)")
 
             # Initialize checkpoint (auto-ensures directories)
             if self.enable_checkpoints:
