@@ -65,7 +65,7 @@ class MergeProcessor:
         # Initialize storage manager
         try:
             storage = BookStorage(scan_id=scan_id, storage_root=self.storage_root)
-            storage.merge.validate_inputs()  # Validates OCR, correction, and label outputs exist
+            storage.stage('processed').validate_inputs()  # Validates OCR, correction, and label outputs exist
         except FileNotFoundError as e:
             print(f"❌ {e}")
             return
@@ -91,7 +91,7 @@ class MergeProcessor:
 
             # Initialize checkpoint (auto-ensures directories)
             if self.enable_checkpoints:
-                self.checkpoint = storage.merge.checkpoint
+                self.checkpoint = storage.stage('processed').checkpoint
 
                 if not resume:
                     if not self.checkpoint.reset(confirm=True):
@@ -227,7 +227,7 @@ class MergeProcessor:
 
         try:
             # Load OCR data
-            ocr_file = storage.merge.ocr_page(page_num)
+            ocr_file = storage.stage('ocr').output_page(page_num)
             if not ocr_file.exists():
                 self.logger.error(f"OCR file not found", page=page_num, file=str(ocr_file))
                 return False, 0, False
@@ -237,7 +237,7 @@ class MergeProcessor:
             ocr_page = OCRPageOutput(**ocr_data)
 
             # Load correction data
-            correction_file = storage.merge.correction_page(page_num)
+            correction_file = storage.stage('corrected').output_page(page_num)
             if not correction_file.exists():
                 self.logger.error(f"Correction file not found", page=page_num, file=str(correction_file))
                 return False, 0, False
@@ -247,7 +247,7 @@ class MergeProcessor:
             correction_page = CorrectionOutput(**correction_data)
 
             # Load label data
-            label_file = storage.merge.label_page(page_num)
+            label_file = storage.stage('labels').output_page(page_num)
             if not label_file.exists():
                 self.logger.error(f"Label file not found", page=page_num, file=str(label_file))
                 return False, 0, False
@@ -260,7 +260,7 @@ class MergeProcessor:
             merged_page, corrections_used, has_continuation = self._merge_page_data(ocr_page, correction_page, label_page)
 
             # Save output (handles atomic write + checkpoint atomically)
-            storage.merge.save_page(
+            storage.stage('processed').save_page(
                 page_num=page_num,
                 data=merged_page,
                 cost_usd=0.0
@@ -459,4 +459,4 @@ class MergeProcessor:
         """
         # Use BookStorage clean_stage method
         storage = BookStorage(scan_id=scan_id, storage_root=self.storage_root)
-        return storage.merge.clean_stage(confirm=confirm)
+        return storage.stage('processed').clean_stage(confirm=confirm)

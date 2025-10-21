@@ -30,6 +30,16 @@ class LibraryStorage:
     - Statistics aggregation
     - Validation and auto-fix
     - BookStorage instance coordination
+
+    Thread Safety & Lock Ordering:
+    - Uses self._lock (threading.Lock) for all operations modifying self.data
+    - LOCK ORDERING POLICY: Always acquire locks in this order to prevent deadlocks:
+        1. LibraryStorage._lock (this class)
+        2. BookStorage._metadata_lock
+        3. StageStorage._lock
+    - Never hold multiple locks unless absolutely necessary
+    - All public methods that modify self.data acquire self._lock
+    - _find_scan() must be called with self._lock held
     """
 
     def __init__(self, storage_root: Path = None):
@@ -163,43 +173,44 @@ class LibraryStorage:
         Returns:
             Book slug (key in library.json)
         """
-        # Generate book slug from title
-        book_slug = self._generate_book_slug(title)
+        with self._lock:
+            # Generate book slug from title
+            book_slug = self._generate_book_slug(title)
 
-        # Check scan_id is unique across all books
-        for book in self.data["books"].values():
-            for scan in book["scans"]:
-                if scan["scan_id"] == scan_id:
-                    raise ValueError(f"Scan ID '{scan_id}' already exists in library")
+            # Check scan_id is unique across all books
+            for book in self.data["books"].values():
+                for scan in book["scans"]:
+                    if scan["scan_id"] == scan_id:
+                        raise ValueError(f"Scan ID '{scan_id}' already exists in library")
 
-        # If book doesn't exist, create it
-        if book_slug not in self.data["books"]:
-            self.data["books"][book_slug] = {
-                "title": title,
-                "author": author,
-                "isbn": isbn,
-                "year": year,
-                "publisher": publisher,
-                "tags": tags or [],
-                "scans": []
+            # If book doesn't exist, create it
+            if book_slug not in self.data["books"]:
+                self.data["books"][book_slug] = {
+                    "title": title,
+                    "author": author,
+                    "isbn": isbn,
+                    "year": year,
+                    "publisher": publisher,
+                    "tags": tags or [],
+                    "scans": []
+                }
+
+            # Add scan entry
+            scan_entry = {
+                "scan_id": scan_id,
+                "date_added": datetime.now().isoformat(),
+                "source_file": source_file,
+                "models": {},
+                "pages": 0,
+                "cost_usd": 0.0,
+                "status": "registered",
+                "notes": notes
             }
 
-        # Add scan entry
-        scan_entry = {
-            "scan_id": scan_id,
-            "date_added": datetime.now().isoformat(),
-            "source_file": source_file,
-            "models": {},
-            "pages": 0,
-            "cost_usd": 0.0,
-            "status": "registered",
-            "notes": notes
-        }
+            self.data["books"][book_slug]["scans"].append(scan_entry)
+            self.save()
 
-        self.data["books"][book_slug]["scans"].append(scan_entry)
-        self.save()
-
-        return book_slug
+            return book_slug
 
     def register_scan(
         self,
@@ -217,22 +228,23 @@ class LibraryStorage:
             source_file: Original PDF filename
             notes: Optional notes
         """
-        if book_slug not in self.data["books"]:
-            raise ValueError(f"Book {book_slug} not found in library")
+        with self._lock:
+            if book_slug not in self.data["books"]:
+                raise ValueError(f"Book {book_slug} not found in library")
 
-        scan_entry = {
-            "scan_id": scan_id,
-            "date_added": datetime.now().isoformat(),
-            "source_file": source_file,
-            "models": {},
-            "pages": 0,
-            "cost_usd": 0.0,
-            "status": "registered",
-            "notes": notes
-        }
+            scan_entry = {
+                "scan_id": scan_id,
+                "date_added": datetime.now().isoformat(),
+                "source_file": source_file,
+                "models": {},
+                "pages": 0,
+                "cost_usd": 0.0,
+                "status": "registered",
+                "notes": notes
+            }
 
-        self.data["books"][book_slug]["scans"].append(scan_entry)
-        self.save()
+            self.data["books"][book_slug]["scans"].append(scan_entry)
+            self.save()
 
     def update_scan_metadata(
         self,
@@ -246,17 +258,18 @@ class LibraryStorage:
             scan_id: Scan identifier
             metadata: Dictionary with updates (pages, cost_usd, models, status, etc.)
         """
-        # Find the scan
-        book_slug, scan_idx = self._find_scan(scan_id)
-        if book_slug is None:
-            raise ValueError(f"Scan {scan_id} not found in library")
+        with self._lock:
+            # Find the scan (must be called with lock held)
+            book_slug, scan_idx = self._find_scan(scan_id)
+            if book_slug is None:
+                raise ValueError(f"Scan {scan_id} not found in library")
 
-        # Update fields
-        scan = self.data["books"][book_slug]["scans"][scan_idx]
-        for key, value in metadata.items():
-            scan[key] = value
+            # Update fields
+            scan = self.data["books"][book_slug]["scans"][scan_idx]
+            for key, value in metadata.items():
+                scan[key] = value
 
-        self.save()
+            self.save()
 
     def sync_scan_from_metadata(self, scan_id: str):
         """
@@ -274,7 +287,7 @@ class LibraryStorage:
         if not scan_dir.exists():
             raise ValueError(f"Scan directory not found: {scan_dir}")
 
-        # Get cost and models from scan metadata
+        # Get cost and models from scan metadata (reads from disk, no lock needed)
         total_cost = get_scan_total_cost(scan_dir)
         models = get_scan_models(scan_dir)
 
@@ -286,7 +299,7 @@ class LibraryStorage:
                 structured_meta = json.load(f)
                 pages = structured_meta.get('book_info', {}).get('total_pages', 0)
 
-        # Update library
+        # Update library (acquires lock internally)
         self.update_scan_metadata(scan_id, {
             'cost_usd': total_cost,
             'models': models,
@@ -304,20 +317,21 @@ class LibraryStorage:
         Returns:
             Dict with book info + scan info, or None if not found
         """
-        book_slug, scan_idx = self._find_scan(scan_id)
-        if book_slug is None:
-            return None
+        with self._lock:
+            book_slug, scan_idx = self._find_scan(scan_id)
+            if book_slug is None:
+                return None
 
-        book = self.data["books"][book_slug]
-        scan = book["scans"][scan_idx]
+            book = self.data["books"][book_slug]
+            scan = book["scans"][scan_idx]
 
-        return {
-            "book_slug": book_slug,
-            "title": book["title"],
-            "author": book["author"],
-            "isbn": book.get("isbn"),
-            "scan": scan
-        }
+            return {
+                "book_slug": book_slug,
+                "title": book["title"],
+                "author": book["author"],
+                "isbn": book.get("isbn"),
+                "scan": scan
+            }
 
     def get_book_scans(self, book_slug: str) -> List[Dict[str, Any]]:
         """Get all scans for a book."""
@@ -380,20 +394,21 @@ class LibraryStorage:
         # Import here to avoid circular dependency
         from infra.storage.book_storage import BookStorage
 
-        # Check if scan exists
-        book_slug, scan_idx = self._find_scan(scan_id)
-        if book_slug is None:
-            raise ValueError(f"Scan {scan_id} not found in library")
+        with self._lock:
+            # Check if scan exists
+            book_slug, scan_idx = self._find_scan(scan_id)
+            if book_slug is None:
+                raise ValueError(f"Scan {scan_id} not found in library")
 
-        # Return cached instance if available
-        if scan_id in self._book_storage_cache:
-            return self._book_storage_cache[scan_id]
+            # Return cached instance if available
+            if scan_id in self._book_storage_cache:
+                return self._book_storage_cache[scan_id]
 
-        # Create new instance and cache it
-        storage = BookStorage(scan_id, storage_root=self.storage_root)
-        self._book_storage_cache[scan_id] = storage
+            # Create new instance and cache it
+            storage = BookStorage(scan_id, storage_root=self.storage_root)
+            self._book_storage_cache[scan_id] = storage
 
-        return storage
+            return storage
 
     def _generate_book_slug(self, title: str) -> str:
         """
@@ -415,6 +430,9 @@ class LibraryStorage:
     def _find_scan(self, scan_id: str) -> tuple[Optional[str], Optional[int]]:
         """
         Find book_slug and scan index for a given scan_id.
+
+        IMPORTANT: Must be called with self._lock held to prevent
+        race conditions when iterating over self.data["books"].
 
         Returns:
             (book_slug, scan_index) or (None, None) if not found

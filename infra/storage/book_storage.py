@@ -6,55 +6,77 @@ with built-in safety checks and consistent file naming conventions.
 
 Architecture:
 - Core BookStorage class manages book-level paths and metadata
-- Stage-specific view classes handle stage I/O operations
-- Each stage view knows its dependencies and can validate inputs
-- Each stage view integrates CheckpointManager for automatic progress tracking
+- Generic StageStorage class handles stage I/O operations for any stage
+- Each stage defines its dependencies and logic within its own module
+- StageStorage integrates CheckpointManager for automatic progress tracking
 """
 
 import json
 import threading
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Type
 from abc import ABC, abstractmethod
+from pydantic import BaseModel
 from infra.storage.checkpoint import CheckpointManager
 
 
-class StageView(ABC):
+class StageStorage:
     """
-    Base class for stage-specific storage views.
+    Generic stage-specific storage manager.
 
-    Each stage view provides:
+    Provides storage operations for any pipeline stage:
     - Input/output directory access
-    - Page file naming
+    - Page file save/load with optional schema validation
+    - Arbitrary file save/load
     - Directory creation
-    - Input validation
     - Integrated checkpoint management
+
+    All stage-specific logic lives in the stage module itself.
+    This class is purely for storage operations.
+
+    Thread Safety & Lock Ordering:
+    - Uses self._lock (threading.RLock - reentrant) for all I/O operations
+    - RLock allows same thread to acquire lock multiple times (needed for ensure_directories)
+    - LOCK ORDERING POLICY: Always acquire locks in this order to prevent deadlocks:
+        1. LibraryStorage._lock
+        2. BookStorage._metadata_lock
+        3. StageStorage._lock (this class)
+    - checkpoint property uses double-checked locking for thread-safe lazy initialization
     """
 
-    def __init__(self, storage: 'BookStorage'):
+    def __init__(self, storage: 'BookStorage', name: str, dependencies: Optional[List[str]] = None):
+        """
+        Initialize stage storage.
+
+        Args:
+            storage: Parent BookStorage instance
+            name: Stage name (e.g., 'ocr', 'corrected', 'detect-chapters')
+            dependencies: Optional list of stage names this stage depends on
+        """
         self.storage = storage
-        self._lock = threading.Lock()
+        self._name = name
+        self._dependencies = dependencies or []
+        # Use RLock (reentrant lock) to allow same thread to acquire multiple times
+        # This is needed because checkpoint property calls ensure_directories() which also acquires lock
+        self._lock = threading.RLock()
         self._checkpoint: Optional[CheckpointManager] = None
 
     @property
-    @abstractmethod
     def name(self) -> str:
         """Stage name (e.g., 'ocr', 'correction')"""
-        pass
+        return self._name
 
     @property
-    @abstractmethod
     def output_dir(self) -> Path:
         """Primary output directory for this stage"""
-        pass
+        return self.storage.book_dir / self._name
 
     @property
     def dependencies(self) -> List[str]:
         """
         List of stage names this stage depends on.
-        Override in subclasses to declare dependencies.
         """
-        return []
+        return self._dependencies
 
     def output_page(self, page_num: int, extension: str = "json") -> Path:
         """Get output page file path: {output_dir}/page_{num:04d}.{ext}"""
@@ -74,9 +96,7 @@ class StageView(ABC):
         """
         with self._lock:
             dirs = {
-                'output': self.output_dir,
-                'logs': self.storage.logs_dir,
-                'checkpoints': self.storage.checkpoints_dir
+                'output': self.output_dir
             }
 
             for dir_path in dirs.values():
@@ -119,25 +139,30 @@ class StageView(ABC):
 
         Automatically ensures directories are created when checkpoint is accessed.
 
-        NOTE: save_page() initializes checkpoint BEFORE acquiring its lock to avoid
-        deadlock (since this property calls ensure_directories() which needs the lock).
+        Uses double-checked locking for thread-safe lazy initialization.
+        RLock allows same thread to acquire lock multiple times (needed because
+        ensure_directories() also acquires the lock).
 
         Returns:
             CheckpointManager instance for this stage
         """
         if self._checkpoint is None:
-            # Ensure directories exist before creating checkpoint
-            self.ensure_directories()
+            with self._lock:
+                # Double-check after acquiring lock
+                if self._checkpoint is None:
+                    # Ensure directories exist before creating checkpoint
+                    # Safe because we're using RLock (reentrant lock)
+                    self.ensure_directories()
 
-            # Detect output directory name from output_dir path
-            output_dir_name = self.output_dir.name if self.output_dir else self.name
+                    # Detect output directory name from output_dir path
+                    output_dir_name = self.output_dir.name if self.output_dir else self.name
 
-            self._checkpoint = CheckpointManager(
-                scan_id=self.storage.scan_id,
-                stage=self.name,
-                storage_root=self.storage.storage_root,
-                output_dir=output_dir_name
-            )
+                    self._checkpoint = CheckpointManager(
+                        scan_id=self.storage.scan_id,
+                        stage=self.name,
+                        storage_root=self.storage.storage_root,
+                        output_dir=output_dir_name
+                    )
         return self._checkpoint
 
     def save_page(
@@ -147,13 +172,15 @@ class StageView(ABC):
         cost_usd: float = 0.0,
         processing_time: float = 0.0,
         extension: str = "json",
-        metrics: Optional[Dict[str, Any]] = None
+        metrics: Optional[Dict[str, Any]] = None,
+        schema: Optional[Type[BaseModel]] = None
     ):
         """
         Save page output and update checkpoint atomically with detailed metrics.
 
         This is the recommended way to write stage outputs. It handles:
         - Atomic file writing
+        - Optional schema validation (validates before write)
         - Checkpoint update
         - Cost tracking
         - Detailed metrics storage
@@ -169,18 +196,26 @@ class StageView(ABC):
                 - ttft_seconds, execution_time_seconds, total_time_seconds
                 - tokens_input, tokens_output, tokens_total
                 - cost_usd, model_used, attempts, timestamp
+            schema: Optional Pydantic model for validation
 
         Example:
+            from pipeline.2_correction.schemas import CorrectedPageOutput
+
             storage.correction.save_page(
                 page_num=42,
                 data=correction_output,
                 cost_usd=0.023,
                 processing_time=4.2,
-                metrics=extract_metrics_from_result(result)
+                metrics=extract_metrics_from_result(result),
+                schema=CorrectedPageOutput
             )
         """
-        # Initialize checkpoint BEFORE acquiring lock to avoid deadlock
-        # (checkpoint property may call ensure_directories() which needs the lock)
+        # Validate with schema if provided
+        if schema:
+            validated = schema(**data)
+            data = validated.model_dump()
+
+        # Get checkpoint reference (thread-safe lazy initialization with double-checked locking)
         checkpoint = self.checkpoint
 
         with self._lock:
@@ -209,6 +244,139 @@ class StageView(ABC):
                     temp_file.unlink()
                 raise e
 
+    def load_page(
+        self,
+        page_num: int,
+        extension: str = "json",
+        schema: Optional[Type[BaseModel]] = None
+    ) -> Dict[str, Any]:
+        """
+        Load page output with optional schema validation.
+
+        Args:
+            page_num: Page number to load
+            extension: File extension (default: "json")
+            schema: Optional Pydantic model for validation
+
+        Returns:
+            Page data as dictionary
+
+        Raises:
+            FileNotFoundError: If page file doesn't exist
+            ValidationError: If schema validation fails
+
+        Example:
+            from pipeline.2_correction.schemas import CorrectedPageOutput
+
+            page_data = storage.correction.load_page(
+                page_num=42,
+                schema=CorrectedPageOutput
+            )
+        """
+        output_file = self.output_page(page_num, extension=extension)
+
+        if not output_file.exists():
+            raise FileNotFoundError(f"Page {page_num} not found: {output_file}")
+
+        with open(output_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        # Validate with schema if provided
+        if schema:
+            validated = schema(**data)
+            return validated.model_dump()
+
+        return data
+
+    def save_file(
+        self,
+        filename: str,
+        data: Dict[str, Any],
+        schema: Optional[Type[BaseModel]] = None
+    ):
+        """
+        Save arbitrary file to stage output directory with optional schema validation.
+
+        Args:
+            filename: Name of file to save
+            data: Data to save (will be JSON-serialized)
+            schema: Optional Pydantic model for validation
+
+        Example:
+            from pipeline.5_structure.schemas import ChaptersOutput
+
+            storage.structure.save_file(
+                'chapters.json',
+                chapters_data,
+                schema=ChaptersOutput
+            )
+        """
+        # Validate with schema if provided
+        if schema:
+            validated = schema(**data)
+            data = validated.model_dump()
+
+        with self._lock:
+            # Write file atomically
+            output_file = self.output_dir / filename
+            temp_file = output_file.with_suffix('.tmp')
+
+            try:
+                # Write to temp file
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2)
+
+                # Atomic rename
+                temp_file.replace(output_file)
+
+            except Exception as e:
+                # Clean up temp file on failure
+                if temp_file.exists():
+                    temp_file.unlink()
+                raise e
+
+    def load_file(
+        self,
+        filename: str,
+        schema: Optional[Type[BaseModel]] = None
+    ) -> Dict[str, Any]:
+        """
+        Load arbitrary file from stage output directory with optional schema validation.
+
+        Args:
+            filename: Name of file to load
+            schema: Optional Pydantic model for validation
+
+        Returns:
+            File data as dictionary
+
+        Raises:
+            FileNotFoundError: If file doesn't exist
+            ValidationError: If schema validation fails
+
+        Example:
+            from pipeline.5_structure.schemas import ChaptersOutput
+
+            chapters = storage.structure.load_file(
+                'chapters.json',
+                schema=ChaptersOutput
+            )
+        """
+        file_path = self.output_dir / filename
+
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        # Validate with schema if provided
+        if schema:
+            validated = schema(**data)
+            return validated.model_dump()
+
+        return data
+
     def get_log_dir(self) -> Path:
         """
         Get logs directory for this stage.
@@ -235,14 +403,14 @@ class StageView(ABC):
             True if cleaned, False if cancelled
 
         Example:
-            if storage.correction.clean_stage(confirm=True):
+            if storage.stage('correction').clean_stage(confirm=True):
                 print("Correction stage cleaned")
         """
         import shutil
 
         # Count what will be deleted
         output_files = self.list_output_pages()
-        checkpoint_file = self.storage.checkpoint_file(self.name)
+        checkpoint_file = self.output_dir / ".checkpoint"
         log_dir = self.output_dir / "logs"
         log_files = list(log_dir.glob("*.jsonl")) if log_dir.exists() else []
 
@@ -257,15 +425,10 @@ class StageView(ABC):
                 print("   Cancelled.")
                 return False
 
-        # Delete output directory (includes all outputs and logs)
+        # Delete output directory (includes all outputs, checkpoint, and logs)
         if self.output_dir.exists():
             shutil.rmtree(self.output_dir)
-            print(f"   ✓ Deleted {len(output_files)} output files and {len(log_files)} log files")
-
-        # Delete checkpoint
-        if checkpoint_file.exists():
-            checkpoint_file.unlink()
-            print(f"   ✓ Deleted checkpoint")
+            print(f"   ✓ Deleted {len(output_files)} output files, checkpoint, and {len(log_files)} log files")
 
         # Update metadata (remove stage completion flags)
         try:
@@ -282,279 +445,6 @@ class StageView(ABC):
         return True
 
 
-class SourceStageView(StageView):
-    """Source material (PDFs and extracted PNGs)"""
-
-    @property
-    def name(self) -> str:
-        return "source"
-
-    @property
-    def output_dir(self) -> Path:
-        return self.storage.book_dir / "source"
-
-    def source_page(self, page_num: int) -> Path:
-        """Get source page image: source/page_{num:04d}.png"""
-        return self.output_page(page_num, extension="png")
-
-    def list_source_pages(self) -> List[Path]:
-        """List all source page images"""
-        return self.list_output_pages(extension="png")
-
-
-class OCRStageView(StageView):
-    """OCR stage (text extraction from source images)"""
-
-    @property
-    def name(self) -> str:
-        return "ocr"
-
-    @property
-    def output_dir(self) -> Path:
-        return self.storage.book_dir / "ocr"
-
-    @property
-    def images_dir(self) -> Path:
-        """Directory for extracted images from pages"""
-        return self.storage.book_dir / "images"
-
-    @property
-    def dependencies(self) -> List[str]:
-        return ["source"]
-
-    def input_page(self, page_num: int) -> Path:
-        """Get input source image: source/page_{num:04d}.png"""
-        return self.storage.source.source_page(page_num)
-
-    def extracted_image(self, page_num: int, img_id: int) -> Path:
-        """Get extracted image path: images/page_{num:04d}_img_{id:03d}.png"""
-        return self.images_dir / f"page_{page_num:04d}_img_{img_id:03d}.png"
-
-    def ensure_directories(self) -> Dict[str, Path]:
-        """Create OCR output directory and images directory"""
-        dirs = super().ensure_directories()
-        with self._lock:
-            self.images_dir.mkdir(parents=True, exist_ok=True)
-            dirs['images'] = self.images_dir
-        return dirs
-
-    def validate_inputs(self) -> bool:
-        """Check that source pages exist"""
-        super().validate_inputs()
-
-        source_pages = self.storage.source.list_source_pages()
-        if not source_pages:
-            raise FileNotFoundError(
-                f"No source page images found in {self.storage.source.output_dir}. "
-                f"Run 'ar library add' to extract pages first."
-            )
-
-        return True
-
-
-class MetadataStageView(StageView):
-    """
-    Book metadata extraction (analyzes first 20 OCR pages).
-
-    Note: Metadata is stored at book level (metadata.json), not per-page.
-    This view provides validation and metadata operations.
-    """
-
-    @property
-    def name(self) -> str:
-        return "metadata"
-
-    @property
-    def output_dir(self) -> Path:
-        """Metadata doesn't have a per-page output dir, returns book dir"""
-        return self.storage.book_dir
-
-    @property
-    def dependencies(self) -> List[str]:
-        return ["ocr"]
-
-    def validate_inputs(self) -> bool:
-        """Check that OCR outputs exist (need first ~20 pages)"""
-        super().validate_inputs()
-
-        ocr_pages = self.storage.ocr.list_output_pages()
-        if len(ocr_pages) < 10:
-            raise FileNotFoundError(
-                f"Insufficient OCR pages for metadata extraction. "
-                f"Found {len(ocr_pages)} pages, need at least 10. "
-                f"Run OCR stage first."
-            )
-
-        return True
-
-
-class CorrectionStageView(StageView):
-    """Vision-based OCR correction"""
-
-    @property
-    def name(self) -> str:
-        return "correction"
-
-    @property
-    def output_dir(self) -> Path:
-        return self.storage.book_dir / "corrected"
-
-    @property
-    def dependencies(self) -> List[str]:
-        return ["ocr", "metadata"]
-
-    def input_page(self, page_num: int) -> Path:
-        """Get OCR input page: ocr/page_{num:04d}.json"""
-        return self.storage.ocr.output_page(page_num)
-
-    def source_image(self, page_num: int) -> Path:
-        """Get source image for vision correction: source/page_{num:04d}.png"""
-        return self.storage.source.source_page(page_num)
-
-    def validate_inputs(self) -> bool:
-        """Check that OCR outputs and metadata exist"""
-        super().validate_inputs()
-
-        # Check OCR outputs exist
-        ocr_pages = self.storage.ocr.list_output_pages()
-        if not ocr_pages:
-            raise FileNotFoundError(
-                f"No OCR outputs found. Run OCR stage first."
-            )
-
-        # Check metadata exists
-        if not self.storage.metadata_file.exists():
-            raise FileNotFoundError(
-                f"Book metadata not found. Run metadata extraction first."
-            )
-
-        return True
-
-
-class LabelStageView(StageView):
-    """Page labeling (block classification and page number extraction)"""
-
-    @property
-    def name(self) -> str:
-        return "label"
-
-    @property
-    def output_dir(self) -> Path:
-        return self.storage.book_dir / "labels"
-
-    @property
-    def dependencies(self) -> List[str]:
-        return ["correction"]
-
-    def input_page(self, page_num: int) -> Path:
-        """Get OCR input page (labels work from OCR, not correction): ocr/page_{num:04d}.json"""
-        return self.storage.ocr.output_page(page_num)
-
-    def source_image(self, page_num: int) -> Path:
-        """Get source image for vision labeling: source/page_{num:04d}.png"""
-        return self.storage.source.source_page(page_num)
-
-    def validate_inputs(self) -> bool:
-        """Check that correction is complete"""
-        super().validate_inputs()
-
-        # Check correction outputs exist
-        corrected_pages = self.storage.correction.list_output_pages()
-        if not corrected_pages:
-            raise FileNotFoundError(
-                f"No correction outputs found. Run correction stage first."
-            )
-
-        return True
-
-
-class MergeStageView(StageView):
-    """Merge OCR, correction, and label data into final processed pages"""
-
-    @property
-    def name(self) -> str:
-        return "merge"
-
-    @property
-    def output_dir(self) -> Path:
-        return self.storage.book_dir / "processed"
-
-    @property
-    def dependencies(self) -> List[str]:
-        return ["ocr", "correction", "label"]
-
-    def ocr_page(self, page_num: int) -> Path:
-        """Get OCR input: ocr/page_{num:04d}.json"""
-        return self.storage.ocr.output_page(page_num)
-
-    def correction_page(self, page_num: int) -> Path:
-        """Get correction input: corrected/page_{num:04d}.json"""
-        return self.storage.correction.output_page(page_num)
-
-    def label_page(self, page_num: int) -> Path:
-        """Get label input: labels/page_{num:04d}.json"""
-        return self.storage.label.output_page(page_num)
-
-    def validate_inputs(self) -> bool:
-        """Check that OCR, correction, and label outputs exist"""
-        super().validate_inputs()
-
-        ocr_pages = self.storage.ocr.list_output_pages()
-        corrected_pages = self.storage.correction.list_output_pages()
-        label_pages = self.storage.label.list_output_pages()
-
-        if not ocr_pages:
-            raise FileNotFoundError("No OCR outputs found. Run OCR stage first.")
-
-        if not corrected_pages:
-            raise FileNotFoundError("No correction outputs found. Run correction stage first.")
-
-        if not label_pages:
-            raise FileNotFoundError("No label outputs found. Run label stage first.")
-
-        # Check page counts match
-        if len(ocr_pages) != len(corrected_pages) or len(ocr_pages) != len(label_pages):
-            raise ValueError(
-                f"Page count mismatch: OCR={len(ocr_pages)}, "
-                f"Correction={len(corrected_pages)}, Label={len(label_pages)}. "
-                f"All stages must process same pages."
-            )
-
-        return True
-
-
-class StructureStageView(StageView):
-    """
-    Structure detection (chapters, sections, etc.)
-
-    STUB: To be implemented later. Current structure stage is being refactored.
-    """
-
-    @property
-    def name(self) -> str:
-        return "structure"
-
-    @property
-    def output_dir(self) -> Path:
-        return self.storage.book_dir / "chapters"
-
-    @property
-    def dependencies(self) -> List[str]:
-        return ["merge"]
-
-    def validate_inputs(self) -> bool:
-        """Check that merge outputs exist"""
-        super().validate_inputs()
-
-        merged_pages = self.storage.merge.list_output_pages()
-        if not merged_pages:
-            raise FileNotFoundError(
-                f"No merged outputs found. Run merge stage first."
-            )
-
-        return True
-
-
 class BookStorage:
     """
     Unified storage manager for book processing pipeline.
@@ -566,14 +456,20 @@ class BookStorage:
         storage = BookStorage(scan_id="modest-lovelace")
 
         # Access stage-specific operations
-        storage.correction.validate_inputs()
-        storage.correction.ensure_directories()
-        input_file = storage.correction.input_page(5)
-        output_file = storage.correction.output_page(5)
+        storage.stage('corrected').ensure_directories()
+        storage.stage('corrected').save_page(5, data, schema=CorrectedPageOutput)
+        data = storage.stage('corrected').load_page(5, schema=CorrectedPageOutput)
 
         # Access book-level resources
         metadata = storage.load_metadata()
-        checkpoint = storage.checkpoint_file('correction')
+
+    Thread Safety & Lock Ordering:
+    - Uses self._metadata_lock (threading.Lock) for metadata operations
+    - LOCK ORDERING POLICY: Always acquire locks in this order to prevent deadlocks:
+        1. LibraryStorage._lock
+        2. BookStorage._metadata_lock (this class)
+        3. StageStorage._lock
+    - Stage instances created via stage() method are cached and thread-safe
     """
 
     def __init__(self, scan_id: str, storage_root: Optional[Path] = None):
@@ -591,14 +487,8 @@ class BookStorage:
         self._storage_root = Path(storage_root or Path.home() / "Documents" / "book_scans").expanduser()
         self._book_dir = self._storage_root / scan_id
 
-        # Stage views (created lazily)
-        self._source_view: Optional[SourceStageView] = None
-        self._ocr_view: Optional[OCRStageView] = None
-        self._metadata_view: Optional[MetadataStageView] = None
-        self._correction_view: Optional[CorrectionStageView] = None
-        self._label_view: Optional[LabelStageView] = None
-        self._merge_view: Optional[MergeStageView] = None
-        self._structure_view: Optional[StructureStageView] = None
+        # Cache for dynamically created stage storage instances
+        self._stage_cache: Dict[str, StageStorage] = {}
 
         # Thread safety for metadata operations
         self._metadata_lock = threading.Lock()
@@ -625,68 +515,89 @@ class BookStorage:
         """Check if book directory exists"""
         return self._book_dir.exists()
 
-    # ===== Stage Views (lazily created) =====
+    # ===== Generic Stage Access =====
 
-    @property
-    def source(self) -> SourceStageView:
-        """Source stage view"""
-        if self._source_view is None:
-            self._source_view = SourceStageView(self)
-        return self._source_view
+    def stage(self, name: str) -> StageStorage:
+        """
+        Get storage for any stage dynamically.
 
-    @property
-    def ocr(self) -> OCRStageView:
-        """OCR stage view"""
-        if self._ocr_view is None:
-            self._ocr_view = OCRStageView(self)
-        return self._ocr_view
+        Args:
+            name: Stage name (e.g., 'ocr', 'corrected', 'detect-chapters')
 
-    @property
-    def metadata_stage(self) -> MetadataStageView:
-        """Metadata extraction stage view"""
-        if self._metadata_view is None:
-            self._metadata_view = MetadataStageView(self)
-        return self._metadata_view
+        Returns:
+            StageStorage for the given stage
 
-    @property
-    def correction(self) -> CorrectionStageView:
-        """Correction stage view"""
-        if self._correction_view is None:
-            self._correction_view = CorrectionStageView(self)
-        return self._correction_view
+        Example:
+            ocr_stage = storage.stage('ocr')
+            chapters_stage = storage.stage('detect-chapters')
+            ocr_stage.save_page(1, data, schema=OCRPageOutput)
+        """
+        if name not in self._stage_cache:
+            self._stage_cache[name] = StageStorage(self, name)
+        return self._stage_cache[name]
 
-    @property
-    def label(self) -> LabelStageView:
-        """Label stage view"""
-        if self._label_view is None:
-            self._label_view = LabelStageView(self)
-        return self._label_view
+    def list_stages(self) -> List[str]:
+        """
+        List all existing stage folders.
 
-    @property
-    def merge(self) -> MergeStageView:
-        """Merge stage view"""
-        if self._merge_view is None:
-            self._merge_view = MergeStageView(self)
-        return self._merge_view
+        Returns:
+            List of stage names (folder names)
 
-    @property
-    def structure(self) -> StructureStageView:
-        """Structure stage view (STUB)"""
-        if self._structure_view is None:
-            self._structure_view = StructureStageView(self)
-        return self._structure_view
+        Example:
+            >>> storage.list_stages()
+            ['source', 'ocr', 'corrected', 'labels', 'processed']
+        """
+        if not self.book_dir.exists():
+            return []
 
-    # ===== Book-Level Directories =====
+        stages = []
+        for item in self.book_dir.iterdir():
+            # Stage folders contain .checkpoint or page_*.json files
+            if item.is_dir() and not item.name.startswith('.'):
+                if (item / ".checkpoint").exists() or list(item.glob("page_*.json")):
+                    stages.append(item.name)
+        return sorted(stages)
 
-    @property
-    def logs_dir(self) -> Path:
-        """Log files directory: logs/"""
-        return self._book_dir / "logs"
+    def has_stage(self, name: str) -> bool:
+        """
+        Check if stage folder exists.
 
-    @property
-    def checkpoints_dir(self) -> Path:
-        """Checkpoint files directory: checkpoints/"""
-        return self._book_dir / "checkpoints"
+        Args:
+            name: Stage name
+
+        Returns:
+            True if stage folder exists
+
+        Example:
+            if storage.has_stage('ocr'):
+                print("OCR complete")
+        """
+        return (self.book_dir / name).exists()
+
+    def stage_status(self, name: str) -> Dict[str, Any]:
+        """
+        Get stage completion status from checkpoint.
+
+        Args:
+            name: Stage name
+
+        Returns:
+            Status dict with keys: status, completed_pages, total_pages, etc.
+            Returns {'status': 'not_started'} if checkpoint doesn't exist
+
+        Example:
+            >>> storage.stage_status('ocr')
+            {'status': 'completed', 'completed_pages': [1, 2, ..., 447], ...}
+        """
+        checkpoint_path = self.book_dir / name / '.checkpoint'
+        if not checkpoint_path.exists():
+            return {'status': 'not_started'}
+
+        try:
+            with open(checkpoint_path, 'r') as f:
+                return json.load(f)
+        except Exception:
+            return {'status': 'unknown', 'error': 'Failed to read checkpoint'}
 
     # ===== Book-Level Files =====
 
@@ -694,18 +605,6 @@ class BookStorage:
     def metadata_file(self) -> Path:
         """Book metadata file: metadata.json"""
         return self._book_dir / "metadata.json"
-
-    def checkpoint_file(self, stage: str) -> Path:
-        """
-        Get checkpoint file for a stage.
-
-        Args:
-            stage: Stage name (e.g., 'ocr', 'correction', 'label')
-
-        Returns:
-            Path to checkpoint file: checkpoints/{stage}.json
-        """
-        return self.checkpoints_dir / f"{stage}.json"
 
     # ===== Metadata Operations =====
 
@@ -787,9 +686,10 @@ class BookStorage:
                 'has_source_pages': bool
             }
         """
+        source_stage = self.stage('source')
         return {
             'book_dir_exists': self.book_dir.exists(),
             'metadata_exists': self.metadata_file.exists(),
-            'source_dir_exists': self.source.output_dir.exists(),
-            'has_source_pages': len(self.source.list_source_pages()) > 0
+            'source_dir_exists': source_stage.output_dir.exists(),
+            'has_source_pages': len(source_stage.list_output_pages(extension='png')) > 0
         }

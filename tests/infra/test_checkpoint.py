@@ -12,7 +12,7 @@ def test_checkpoint_creation(tmp_path):
     # Trigger a save by calling flush
     checkpoint.flush()
 
-    checkpoint_file = tmp_path / "test-scan" / "checkpoints" / "ocr.json"
+    checkpoint_file = tmp_path / "test-scan" / "ocr" / ".checkpoint"
     assert checkpoint_file.exists()
 
     with open(checkpoint_file) as f:
@@ -121,7 +121,7 @@ def test_cost_accumulation_on_retry(tmp_path):
     corrected_dir = book_dir / "corrected"
     corrected_dir.mkdir(parents=True)
 
-    checkpoint = CheckpointManager("test-scan", "correction", storage_root=tmp_path)
+    checkpoint = CheckpointManager("test-scan", "correction", storage_root=tmp_path, output_dir="corrected")
     checkpoint.get_remaining_pages(total_pages=5, resume=False)
 
     # Process pages 1, 2, 3 successfully
@@ -138,7 +138,7 @@ def test_cost_accumulation_on_retry(tmp_path):
     assert status["metadata"]["total_cost_usd"] == 0.03
 
     # Simulate a retry scenario: new checkpoint manager (restart)
-    checkpoint2 = CheckpointManager("test-scan", "correction", storage_root=tmp_path)
+    checkpoint2 = CheckpointManager("test-scan", "correction", storage_root=tmp_path, output_dir="corrected")
     remaining = checkpoint2.get_remaining_pages(total_pages=5, resume=True)
 
     # Should only get pages 4, 5 (1, 2, 3 already done)

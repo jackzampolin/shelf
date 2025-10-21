@@ -164,82 +164,51 @@ def test_book_storage_core_paths(book_dir, tmp_path):
     """Test core path properties"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
-    assert storage.logs_dir == book_dir / "logs"
-    assert storage.checkpoints_dir == book_dir / "checkpoints"
     assert storage.metadata_file == book_dir / "metadata.json"
-    assert storage.checkpoint_file("ocr") == book_dir / "checkpoints" / "ocr.json"
-    assert storage.checkpoint_file("correction") == book_dir / "checkpoints" / "correction.json"
+    # Generic stage access
+    assert storage.stage('ocr').output_dir == book_dir / "ocr"
+    assert storage.stage('corrected').output_dir == book_dir / "corrected"
+    assert storage.stage('detect-chapters').output_dir == book_dir / "detect-chapters"
 
 
-# ===== Stage Views =====
+# ===== Generic Stage Storage =====
 
-def test_source_stage_view(book_dir, tmp_path):
-    """Test source stage view"""
+def test_generic_stage_storage(book_dir, tmp_path):
+    """Test generic stage storage works for any stage name"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
-    assert storage.source.name == "source"
-    assert storage.source.output_dir == book_dir / "source"
-    assert storage.source.source_page(5) == book_dir / "source" / "page_0005.png"
-    assert storage.source.dependencies == []
+    # Test various stage names
+    ocr = storage.stage('ocr')
+    assert ocr.name == "ocr"
+    assert ocr.output_dir == book_dir / "ocr"
+    assert ocr.output_page(5) == book_dir / "ocr" / "page_0005.json"
+
+    corrected = storage.stage('corrected')
+    assert corrected.name == "corrected"
+    assert corrected.output_dir == book_dir / "corrected"
+    assert corrected.output_page(5) == book_dir / "corrected" / "page_0005.json"
+
+    # Test arbitrary stage names (new stages)
+    detect_chapters = storage.stage('detect-chapters')
+    assert detect_chapters.name == "detect-chapters"
+    assert detect_chapters.output_dir == book_dir / "detect-chapters"
+    assert detect_chapters.output_page(1) == book_dir / "detect-chapters" / "page_0001.json"
+
+    extract_quotes = storage.stage('extract-quotes')
+    assert extract_quotes.name == "extract-quotes"
+    assert extract_quotes.output_dir == book_dir / "extract-quotes"
 
 
-def test_ocr_stage_view(book_dir, tmp_path):
-    """Test OCR stage view"""
+def test_stage_storage_caching(book_dir, tmp_path):
+    """Test that stage storage instances are cached"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
-    assert storage.ocr.name == "ocr"
-    assert storage.ocr.output_dir == book_dir / "ocr"
-    assert storage.ocr.images_dir == book_dir / "images"
-    assert storage.ocr.output_page(5) == book_dir / "ocr" / "page_0005.json"
-    assert storage.ocr.input_page(5) == book_dir / "source" / "page_0005.png"
-    assert storage.ocr.extracted_image(5, 3) == book_dir / "images" / "page_0005_img_003.png"
-    assert storage.ocr.dependencies == ["source"]
+    # Get same stage twice
+    ocr1 = storage.stage('ocr')
+    ocr2 = storage.stage('ocr')
 
-
-def test_correction_stage_view(book_dir, tmp_path):
-    """Test correction stage view"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    assert storage.correction.name == "correction"
-    assert storage.correction.output_dir == book_dir / "corrected"
-    assert storage.correction.output_page(5) == book_dir / "corrected" / "page_0005.json"
-    assert storage.correction.input_page(5) == book_dir / "ocr" / "page_0005.json"
-    assert storage.correction.source_image(5) == book_dir / "source" / "page_0005.png"
-    assert storage.correction.dependencies == ["ocr", "metadata"]
-
-
-def test_label_stage_view(book_dir, tmp_path):
-    """Test label stage view"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    assert storage.label.name == "label"
-    assert storage.label.output_dir == book_dir / "labels"
-    assert storage.label.output_page(5) == book_dir / "labels" / "page_0005.json"
-    assert storage.label.input_page(5) == book_dir / "ocr" / "page_0005.json"
-    assert storage.label.source_image(5) == book_dir / "source" / "page_0005.png"
-    assert storage.label.dependencies == ["correction"]
-
-
-def test_merge_stage_view(book_dir, tmp_path):
-    """Test merge stage view"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    assert storage.merge.name == "merge"
-    assert storage.merge.output_dir == book_dir / "processed"
-    assert storage.merge.output_page(5) == book_dir / "processed" / "page_0005.json"
-    assert storage.merge.ocr_page(5) == book_dir / "ocr" / "page_0005.json"
-    assert storage.merge.correction_page(5) == book_dir / "corrected" / "page_0005.json"
-    assert storage.merge.label_page(5) == book_dir / "labels" / "page_0005.json"
-    assert storage.merge.dependencies == ["ocr", "correction", "label"]
-
-
-def test_structure_stage_view(book_dir, tmp_path):
-    """Test structure stage view (stub)"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    assert storage.structure.name == "structure"
-    assert storage.structure.output_dir == book_dir / "chapters"
-    assert storage.structure.dependencies == ["merge"]
+    # Should be same instance
+    assert ocr1 is ocr2
 
 
 # ===== Directory Management =====
@@ -249,22 +218,16 @@ def test_ensure_directories_basic(book_dir, tmp_path):
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
     # Initially don't exist
-    assert not storage.correction.output_dir.exists()
-    assert not storage.logs_dir.exists()
-    assert not storage.checkpoints_dir.exists()
+    assert not storage.stage('corrected').output_dir.exists()
 
     # Ensure directories
-    dirs = storage.correction.ensure_directories()
+    dirs = storage.stage('corrected').ensure_directories()
 
     # Now they exist
-    assert storage.correction.output_dir.exists()
-    assert storage.logs_dir.exists()
-    assert storage.checkpoints_dir.exists()
+    assert storage.stage('corrected').output_dir.exists()
 
     # Returns correct paths
-    assert dirs['output'] == storage.correction.output_dir
-    assert dirs['logs'] == storage.logs_dir
-    assert dirs['checkpoints'] == storage.checkpoints_dir
+    assert dirs['output'] == storage.stage('corrected').output_dir
 
 
 def test_ensure_directories_idempotent(book_dir, tmp_path):
@@ -272,23 +235,25 @@ def test_ensure_directories_idempotent(book_dir, tmp_path):
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
     # Call twice
-    dirs1 = storage.correction.ensure_directories()
-    dirs2 = storage.correction.ensure_directories()
+    dirs1 = storage.stage('corrected').ensure_directories()
+    dirs2 = storage.stage('corrected').ensure_directories()
 
     # Both succeed and return same paths
     assert dirs1 == dirs2
-    assert storage.correction.output_dir.exists()
+    assert storage.stage('corrected').output_dir.exists()
 
 
 def test_ensure_directories_ocr_creates_images_dir(book_dir, tmp_path):
     """Test OCR stage ensure_directories creates images/ directory"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
-    dirs = storage.ocr.ensure_directories()
+    # OCR stage creates its output dir (generic behavior)
+    dirs = storage.stage('ocr').ensure_directories()
+    assert storage.stage('ocr').output_dir.exists()
+    assert dirs['output'] == storage.stage('ocr').output_dir
 
-    assert storage.ocr.output_dir.exists()
-    assert storage.ocr.images_dir.exists()
-    assert dirs['images'] == storage.ocr.images_dir
+    # Images directory is book-level, not managed by StageStorage
+    # (Pipeline code creates it as needed)
 
 
 # ===== Metadata Operations =====
@@ -437,7 +402,7 @@ def test_list_output_pages_empty(book_dir, tmp_path):
     """Test list_output_pages with no pages"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
-    pages = storage.ocr.list_output_pages()
+    pages = storage.stage('ocr').list_output_pages()
 
     assert pages == []
 
@@ -446,7 +411,7 @@ def test_list_output_pages_with_pages(book_with_ocr, tmp_path):
     """Test list_output_pages returns sorted pages"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
-    pages = storage.ocr.list_output_pages()
+    pages = storage.stage('ocr').list_output_pages()
 
     assert len(pages) == 10
     assert pages[0].name == "page_0001.json"
@@ -455,10 +420,10 @@ def test_list_output_pages_with_pages(book_with_ocr, tmp_path):
 
 
 def test_list_source_pages(book_with_source, tmp_path):
-    """Test list_source_pages with PNG files"""
+    """Test list_output_pages for source PNG files"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
-    pages = storage.source.list_source_pages()
+    pages = storage.stage('source').list_output_pages(extension='png')
 
     assert len(pages) == 3
     assert pages[0].name == "page_0001.png"
@@ -470,18 +435,18 @@ def test_list_output_pages_different_extensions(book_dir, tmp_path):
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
     # Create output directory with mixed files
-    output_dir = storage.ocr.output_dir
+    output_dir = storage.stage('ocr').output_dir
     output_dir.mkdir()
     (output_dir / "page_0001.json").write_text("{}")
     (output_dir / "page_0002.json").write_text("{}")
     (output_dir / "page_0001.txt").write_text("text")
 
     # List only JSON files
-    json_pages = storage.ocr.list_output_pages(extension="json")
+    json_pages = storage.stage('ocr').list_output_pages(extension="json")
     assert len(json_pages) == 2
 
     # List only TXT files
-    txt_pages = storage.ocr.list_output_pages(extension="txt")
+    txt_pages = storage.stage('ocr').list_output_pages(extension="txt")
     assert len(txt_pages) == 1
 
 
@@ -516,127 +481,11 @@ def test_source_validate_inputs(book_dir, tmp_path):
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
     # Should succeed - book exists
-    assert storage.source.validate_inputs() is True
+    assert storage.stage('source').validate_inputs() is True
 
 
-def test_ocr_validate_inputs_success(book_with_source, tmp_path):
-    """Test OCR stage validation succeeds with source pages"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    assert storage.ocr.validate_inputs() is True
-
-
-def test_ocr_validate_inputs_no_source_pages(book_dir, tmp_path):
-    """Test OCR stage validation fails without source pages"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    with pytest.raises(FileNotFoundError, match="No source page images found"):
-        storage.ocr.validate_inputs()
-
-
-def test_metadata_stage_validate_inputs_success(book_with_ocr, tmp_path):
-    """Test metadata stage validation succeeds with OCR outputs"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    assert storage.metadata_stage.validate_inputs() is True
-
-
-def test_metadata_stage_validate_inputs_insufficient_pages(book_with_source, tmp_path):
-    """Test metadata stage validation fails with insufficient OCR pages"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    # Create OCR dir but with only 5 pages (need 10)
-    ocr_dir = storage.ocr.output_dir
-    ocr_dir.mkdir()
-    for i in range(1, 6):
-        (ocr_dir / f"page_{i:04d}.json").write_text("{}")
-
-    with pytest.raises(FileNotFoundError, match="Insufficient OCR pages"):
-        storage.metadata_stage.validate_inputs()
-
-
-def test_correction_validate_inputs_success(book_with_ocr, tmp_path):
-    """Test correction stage validation succeeds with OCR and metadata"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    assert storage.correction.validate_inputs() is True
-
-
-def test_correction_validate_inputs_no_ocr(book_with_source, tmp_path):
-    """Test correction stage validation fails without OCR"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    with pytest.raises(FileNotFoundError, match="No OCR outputs found"):
-        storage.correction.validate_inputs()
-
-
-def test_correction_validate_inputs_no_metadata(book_with_ocr, tmp_path):
-    """Test correction stage validation fails without metadata"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    # Remove metadata
-    storage.metadata_file.unlink()
-
-    with pytest.raises(FileNotFoundError, match="Book metadata not found"):
-        storage.correction.validate_inputs()
-
-
-def test_label_validate_inputs_success(book_with_correction, tmp_path):
-    """Test label stage validation succeeds with correction outputs"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    assert storage.label.validate_inputs() is True
-
-
-def test_label_validate_inputs_no_correction(book_with_ocr, tmp_path):
-    """Test label stage validation fails without correction"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    with pytest.raises(FileNotFoundError, match="No correction outputs found"):
-        storage.label.validate_inputs()
-
-
-def test_merge_validate_inputs_success(book_with_labels, tmp_path):
-    """Test merge stage validation succeeds with all inputs"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    assert storage.merge.validate_inputs() is True
-
-
-def test_merge_validate_inputs_page_count_mismatch(book_with_correction, tmp_path):
-    """Test merge stage validation fails with page count mismatch"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    # Create labels dir but with only 2 pages (OCR and correction have 3)
-    labels_dir = storage.label.output_dir
-    labels_dir.mkdir()
-    for i in range(1, 3):  # Only 2 pages
-        (labels_dir / f"page_{i:04d}.json").write_text("{}")
-
-    with pytest.raises(ValueError, match="Page count mismatch"):
-        storage.merge.validate_inputs()
-
-
-def test_structure_validate_inputs_success(book_with_labels, tmp_path):
-    """Test structure stage validation succeeds with merge outputs"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    # Create merge outputs
-    merge_dir = storage.merge.output_dir
-    merge_dir.mkdir()
-    for i in range(1, 4):
-        (merge_dir / f"page_{i:04d}.json").write_text("{}")
-
-    assert storage.structure.validate_inputs() is True
-
-
-def test_structure_validate_inputs_no_merge(book_with_labels, tmp_path):
-    """Test structure stage validation fails without merge"""
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-
-    with pytest.raises(FileNotFoundError, match="No merged outputs found"):
-        storage.structure.validate_inputs()
-
+# Stage-specific validation tests removed - this logic now lives in pipeline code
+# Generic StageStorage only provides basic book directory validation
 
 # ===== Integration Tests =====
 
@@ -655,51 +504,51 @@ def test_full_pipeline_flow(tmp_path):
     })
 
     # Stage 1: Source
-    storage.source.ensure_directories()
+    storage.stage('source').ensure_directories()
     for i in range(1, 11):
-        storage.source.source_page(i).write_text(f"page {i}")
+        storage.stage('source').output_page(i, extension='png').write_text(f"page {i}")
 
-    assert len(storage.source.list_source_pages()) == 10
+    assert len(storage.stage('source').list_output_pages(extension='png')) == 10
 
     # Stage 2: OCR
-    storage.ocr.validate_inputs()
-    storage.ocr.ensure_directories()
+    storage.stage('ocr').validate_inputs()
+    storage.stage('ocr').ensure_directories()
     for i in range(1, 11):
-        storage.ocr.output_page(i).write_text('{"page_number": ' + str(i) + '}')
+        storage.stage('ocr').output_page(i).write_text('{"page_number": ' + str(i) + '}')
 
-    assert len(storage.ocr.list_output_pages()) == 10
+    assert len(storage.stage('ocr').list_output_pages()) == 10
 
     # Stage 3: Metadata extraction
-    storage.metadata_stage.validate_inputs()
+    storage.stage('metadata').validate_inputs()
     # (metadata already exists)
 
     # Stage 4: Correction
-    storage.correction.validate_inputs()
-    storage.correction.ensure_directories()
+    storage.stage('corrected').validate_inputs()
+    storage.stage('corrected').ensure_directories()
     for i in range(1, 11):
-        storage.correction.output_page(i).write_text('{"corrected": true}')
+        storage.stage('corrected').output_page(i).write_text('{"corrected": true}')
 
-    assert len(storage.correction.list_output_pages()) == 10
+    assert len(storage.stage('corrected').list_output_pages()) == 10
 
     # Stage 5: Label
-    storage.label.validate_inputs()
-    storage.label.ensure_directories()
+    storage.stage('labels').validate_inputs()
+    storage.stage('labels').ensure_directories()
     for i in range(1, 11):
-        storage.label.output_page(i).write_text('{"labeled": true}')
+        storage.stage('labels').output_page(i).write_text('{"labeled": true}')
 
-    assert len(storage.label.list_output_pages()) == 10
+    assert len(storage.stage('labels').list_output_pages()) == 10
 
     # Stage 6: Merge
-    storage.merge.validate_inputs()
-    storage.merge.ensure_directories()
+    storage.stage('processed').validate_inputs()
+    storage.stage('processed').ensure_directories()
     for i in range(1, 11):
-        storage.merge.output_page(i).write_text('{"merged": true}')
+        storage.stage('processed').output_page(i).write_text('{"merged": true}')
 
-    assert len(storage.merge.list_output_pages()) == 10
+    assert len(storage.stage('processed').list_output_pages()) == 10
 
     # Stage 7: Structure
-    storage.structure.validate_inputs()
-    storage.structure.ensure_directories()
+    storage.stage('chapters').validate_inputs()
+    storage.stage('chapters').ensure_directories()
 
     # Final validation
     validation = storage.validate_book()
@@ -707,48 +556,49 @@ def test_full_pipeline_flow(tmp_path):
 
 
 def test_concurrent_stage_operations(book_with_source, tmp_path):
-    """Test multiple stage views can operate concurrently"""
+    """Test multiple stage storages can operate concurrently"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
     # Ensure directories for multiple stages concurrently
-    ocr_dirs = storage.ocr.ensure_directories()
-    correction_dirs = storage.correction.ensure_directories()
-    label_dirs = storage.label.ensure_directories()
+    ocr_dirs = storage.stage('ocr').ensure_directories()
+    correction_dirs = storage.stage('corrected').ensure_directories()
+    label_dirs = storage.stage('labels').ensure_directories()
 
     # All should succeed
     assert ocr_dirs['output'].exists()
     assert correction_dirs['output'].exists()
     assert label_dirs['output'].exists()
 
-    # Shared directories should be same
-    assert ocr_dirs['logs'] == correction_dirs['logs'] == label_dirs['logs']
-    assert ocr_dirs['checkpoints'] == correction_dirs['checkpoints'] == label_dirs['checkpoints']
+    # Each stage has its own output directory
+    assert ocr_dirs['output'] != correction_dirs['output']
+    assert correction_dirs['output'] != label_dirs['output']
 
 
 # ===== Checkpoint Integration Tests =====
 
-def test_stage_view_checkpoint_property(book_dir, tmp_path):
-    """Test stage view checkpoint property is lazily initialized"""
+def test_stage_storage_checkpoint_property(book_dir, tmp_path):
+    """Test stage storage checkpoint property is lazily initialized"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
 
     # Access checkpoint (lazy initialization)
-    checkpoint = storage.correction.checkpoint
+    checkpoint = storage.stage('corrected').checkpoint
 
     # Verify checkpoint is initialized correctly
     assert checkpoint.scan_id == "test-book"
-    assert checkpoint.stage == "correction"
+    assert checkpoint.stage == "corrected"  # Stage name matches what we passed
     assert checkpoint.output_dir == "corrected"
-    assert checkpoint.checkpoint_file.parent == storage.checkpoints_dir
+    # Checkpoint is in stage directory now
+    assert checkpoint.checkpoint_file == storage.stage('corrected').output_dir / ".checkpoint"
 
     # Accessing again returns same instance
-    checkpoint2 = storage.correction.checkpoint
+    checkpoint2 = storage.stage('corrected').checkpoint
     assert checkpoint is checkpoint2
 
 
 def test_stage_view_save_page_basic(book_dir, tmp_path):
     """Test save_page creates output file and updates checkpoint"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-    storage.correction.ensure_directories()
+    storage.stage('corrected').ensure_directories()
 
     # Save a single page
     page_data = {
@@ -762,7 +612,7 @@ def test_stage_view_save_page_basic(book_dir, tmp_path):
         "avg_confidence": 1.0
     }
 
-    storage.correction.save_page(
+    storage.stage('corrected').save_page(
         page_num=1,
         data=page_data,
         cost_usd=0.02,
@@ -770,7 +620,7 @@ def test_stage_view_save_page_basic(book_dir, tmp_path):
     )
 
     # Verify file was written
-    output_file = storage.correction.output_page(1)
+    output_file = storage.stage('corrected').output_page(1)
     assert output_file.exists()
 
     with open(output_file, 'r') as f:
@@ -778,7 +628,7 @@ def test_stage_view_save_page_basic(book_dir, tmp_path):
     assert saved_data == page_data
 
     # Verify checkpoint was updated
-    checkpoint = storage.correction.checkpoint
+    checkpoint = storage.stage('corrected').checkpoint
     status = checkpoint.get_status()
     assert 1 in status['completed_pages']
     assert status['metadata']['total_cost_usd'] == 0.02
@@ -787,36 +637,36 @@ def test_stage_view_save_page_basic(book_dir, tmp_path):
 def test_stage_view_save_page_atomic(book_dir, tmp_path):
     """Test save_page is atomic (uses temp file)"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-    storage.correction.ensure_directories()
+    storage.stage('corrected').ensure_directories()
 
     page_data = {
         "page_number": 1,
         "blocks": []
     }
 
-    storage.correction.save_page(
+    storage.stage('corrected').save_page(
         page_num=1,
         data=page_data,
         cost_usd=0.01
     )
 
     # Verify no temp files left behind
-    output_dir = storage.correction.output_dir
+    output_dir = storage.stage('corrected').output_dir
     temp_files = list(output_dir.glob("*.tmp"))
     assert len(temp_files) == 0
 
     # Verify actual file exists
-    assert storage.correction.output_page(1).exists()
+    assert storage.stage('corrected').output_page(1).exists()
 
 
 def test_stage_view_save_page_cost_accumulation(book_dir, tmp_path):
     """Test save_page accumulates costs in checkpoint"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-    storage.correction.ensure_directories()
+    storage.stage('corrected').ensure_directories()
 
     # Save 3 pages with different costs
     for i in range(1, 4):
-        storage.correction.save_page(
+        storage.stage('corrected').save_page(
             page_num=i,
             data={"page_number": i, "blocks": []},
             cost_usd=0.01 * i,  # 0.01, 0.02, 0.03
@@ -824,7 +674,7 @@ def test_stage_view_save_page_cost_accumulation(book_dir, tmp_path):
         )
 
     # Verify checkpoint accumulated costs
-    checkpoint = storage.correction.checkpoint
+    checkpoint = storage.stage('corrected').checkpoint
     status = checkpoint.get_status()
 
     assert len(status['completed_pages']) == 3
@@ -837,11 +687,11 @@ def test_stage_view_save_page_thread_safety(book_dir, tmp_path):
     import threading
 
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-    storage.correction.ensure_directories()
+    storage.stage('corrected').ensure_directories()
 
     # Initialize checkpoint before spawning threads to avoid race conditions
     # during lazy initialization (multiple threads trying to create checkpoint)
-    _ = storage.correction.checkpoint
+    _ = storage.stage('corrected').checkpoint
 
     num_threads = 10
     pages_per_thread = 5
@@ -850,7 +700,7 @@ def test_stage_view_save_page_thread_safety(book_dir, tmp_path):
         """Each thread saves multiple pages"""
         start_page = thread_id * pages_per_thread + 1
         for i in range(start_page, start_page + pages_per_thread):
-            storage.correction.save_page(
+            storage.stage('corrected').save_page(
                 page_num=i,
                 data={"page_number": i, "blocks": [], "thread": thread_id},
                 cost_usd=0.01,
@@ -870,11 +720,11 @@ def test_stage_view_save_page_thread_safety(book_dir, tmp_path):
 
     # Verify all pages were saved
     expected_pages = num_threads * pages_per_thread
-    saved_pages = storage.correction.list_output_pages()
+    saved_pages = storage.stage('corrected').list_output_pages()
     assert len(saved_pages) == expected_pages
 
     # Verify checkpoint tracked all pages
-    checkpoint = storage.correction.checkpoint
+    checkpoint = storage.stage('corrected').checkpoint
     status = checkpoint.get_status()
     assert len(status['completed_pages']) == expected_pages
     # Use approximate comparison for floating point cost
@@ -884,19 +734,19 @@ def test_stage_view_save_page_thread_safety(book_dir, tmp_path):
 def test_stage_view_save_page_large_batch(book_dir, tmp_path):
     """Test save_page handles large batch (500 pages) correctly"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-    storage.correction.ensure_directories()
+    storage.stage('corrected').ensure_directories()
 
     num_pages = 500
     cost_per_page = 0.023
     time_per_page = 2.5
 
     # Initialize checkpoint with total_pages (simulates what stages do)
-    checkpoint = storage.correction.checkpoint
+    checkpoint = storage.stage('corrected').checkpoint
     checkpoint.get_remaining_pages(total_pages=num_pages, resume=False)
 
     # Save 500 pages
     for page_num in range(1, num_pages + 1):
-        storage.correction.save_page(
+        storage.stage('corrected').save_page(
             page_num=page_num,
             data={
                 "page_number": page_num,
@@ -913,7 +763,7 @@ def test_stage_view_save_page_large_batch(book_dir, tmp_path):
         )
 
     # Verify all pages were saved to filesystem
-    saved_pages = storage.correction.list_output_pages()
+    saved_pages = storage.stage('corrected').list_output_pages()
     assert len(saved_pages) == num_pages
     assert saved_pages[0].name == "page_0001.json"
     assert saved_pages[-1].name == "page_0500.json"
@@ -953,20 +803,20 @@ def test_stage_view_save_page_large_batch(book_dir, tmp_path):
 def test_stage_view_checkpoint_resume_workflow(book_dir, tmp_path):
     """Test checkpoint enables resume workflow through stage view"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-    storage.correction.ensure_directories()
+    storage.stage('corrected').ensure_directories()
 
     total_pages = 100
 
     # First run: Save first 50 pages
     for i in range(1, 51):
-        storage.correction.save_page(
+        storage.stage('corrected').save_page(
             page_num=i,
             data={"page_number": i, "blocks": []},
             cost_usd=0.01
         )
 
     # Get remaining pages (should return pages 51-100)
-    checkpoint = storage.correction.checkpoint
+    checkpoint = storage.stage('corrected').checkpoint
     remaining = checkpoint.get_remaining_pages(total_pages=total_pages, resume=True)
 
     assert len(remaining) == 50
@@ -975,7 +825,7 @@ def test_stage_view_checkpoint_resume_workflow(book_dir, tmp_path):
 
     # Second run: Save remaining pages
     for page_num in remaining:
-        storage.correction.save_page(
+        storage.stage('corrected').save_page(
             page_num=page_num,
             data={"page_number": page_num, "blocks": []},
             cost_usd=0.01
@@ -990,12 +840,12 @@ def test_stage_view_checkpoint_resume_workflow(book_dir, tmp_path):
 def test_stage_view_checkpoint_per_stage_isolation(book_dir, tmp_path):
     """Test each stage view has its own isolated checkpoint"""
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-    storage.correction.ensure_directories()
-    storage.label.ensure_directories()
+    storage.stage('corrected').ensure_directories()
+    storage.stage('labels').ensure_directories()
 
     # Save pages in correction stage
     for i in range(1, 6):
-        storage.correction.save_page(
+        storage.stage('corrected').save_page(
             page_num=i,
             data={"page_number": i, "blocks": []},
             cost_usd=0.01
@@ -1003,19 +853,19 @@ def test_stage_view_checkpoint_per_stage_isolation(book_dir, tmp_path):
 
     # Save pages in label stage (labels have different schema)
     for i in range(1, 4):
-        storage.label.save_page(
+        storage.stage('labels').save_page(
             page_num=i,
             data={"page_number": i, "regions": {}},
             cost_usd=0.02
         )
 
     # Verify correction checkpoint
-    correction_status = storage.correction.checkpoint.get_status()
+    correction_status = storage.stage('corrected').checkpoint.get_status()
     assert len(correction_status['completed_pages']) == 5
     assert correction_status['metadata']['total_cost_usd'] == 0.05
 
     # Verify label checkpoint (separate)
-    label_status = storage.label.checkpoint.get_status()
+    label_status = storage.stage('labels').checkpoint.get_status()
     assert len(label_status['completed_pages']) == 3
     assert label_status['metadata']['total_cost_usd'] == 0.06
 

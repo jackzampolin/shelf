@@ -155,7 +155,7 @@ class VisionLabeler:
         # Initialize storage manager
         try:
             storage = BookStorage(scan_id=book_title, storage_root=self.storage_root)
-            storage.label.validate_inputs()  # Validates OCR outputs exist
+            storage.stage('labels').validate_inputs()  # Validates OCR outputs exist
         except FileNotFoundError as e:
             print(f"❌ {e}")
             return
@@ -171,7 +171,7 @@ class VisionLabeler:
 
         # Use checkpoint property from storage
         if self.enable_checkpoints:
-            checkpoint = storage.label.checkpoint
+            checkpoint = storage.stage('labels').checkpoint
             if not resume:
                 if not checkpoint.reset(confirm=True):
                     print("   Use --resume to continue from checkpoint.")
@@ -186,7 +186,7 @@ class VisionLabeler:
             retry_jitter=(1.0, 3.0),
             verbose=True,
             progress_interval=1.0,  # Increased to reduce PROGRESS event frequency
-            log_dir=storage.label.get_log_dir()
+            log_dir=storage.stage('labels').get_log_dir()
         )
 
         self.logger.info(f"Processing book: {metadata.get('title', book_title)}", resume=resume, model=self.model)
@@ -194,8 +194,8 @@ class VisionLabeler:
         try:
             # Get pages to process (checkpoint auto-detects total_pages from source directory)
             if self.enable_checkpoints:
-                pages_to_process = storage.label.checkpoint.get_remaining_pages(resume=resume)
-                total_pages = storage.label.checkpoint._state['total_pages']
+                pages_to_process = storage.stage('labels').checkpoint.get_remaining_pages(resume=resume)
+                total_pages = storage.stage('labels').checkpoint._state['total_pages']
             else:
                 # Non-checkpoint mode: count pages manually
                 total_pages = len(storage.ocr.list_output_pages())
@@ -330,7 +330,7 @@ class VisionLabeler:
                 start_time=label_start_time,
                 model=self.model,
                 total_requests=len(requests),
-                checkpoint=storage.label.checkpoint if self.enable_checkpoints else None
+                checkpoint=storage.stage('labels').checkpoint if self.enable_checkpoints else None
             )
 
             def on_result(result: LLMResult):
@@ -382,11 +382,11 @@ class VisionLabeler:
                     pages_labeled=completed,
                     total_cost=total_cost,
                     avg_cost_per_page=total_cost / completed if completed > 0 else 0,
-                    labels_dir=str(storage.label.output_dir)
+                    labels_dir=str(storage.stage('labels').output_dir)
                 )
 
                 # Get detailed metrics summary from checkpoint
-                metrics_summary = storage.label.checkpoint.get_metrics_summary() if self.enable_checkpoints else None
+                metrics_summary = storage.stage('labels').checkpoint.get_metrics_summary() if self.enable_checkpoints else None
 
                 # Print stage exit (success) with enhanced metrics
                 print(f"\n✅ Label complete: {completed}/{total_pages} pages")
@@ -474,7 +474,7 @@ class VisionLabeler:
                     metrics = extract_metrics_from_result(result)
 
                     # Save using storage API (atomic write and checkpoint handled internally)
-                    storage.label.save_page(
+                    storage.stage('labels').save_page(
                         page_num=page_num,
                         data=label_data,
                         cost_usd=result.cost_usd,
@@ -525,4 +525,4 @@ class VisionLabeler:
         from infra.storage.book_storage import BookStorage
 
         storage = BookStorage(scan_id=scan_id, storage_root=self.storage_root)
-        return storage.label.clean_stage(confirm=confirm)
+        return storage.stage('labels').clean_stage(confirm=confirm)

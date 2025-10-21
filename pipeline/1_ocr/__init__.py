@@ -6,9 +6,9 @@ Extracts hierarchical text blocks (Tesseract) and image regions (OpenCV)
 Uses BookStorage APIs for all file operations.
 Supports checkpoint-based resume and parallel processing.
 
-Reads source page images via storage.source.source_page()
-Writes OCR outputs via storage.ocr.save_page()
-Writes extracted images to storage.ocr.images_dir
+Reads source page images via storage.stage('source').source_page()
+Writes OCR outputs via storage.stage('ocr').save_page()
+Writes extracted images to storage.stage('ocr').images_dir
 """
 
 import json
@@ -62,9 +62,9 @@ def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str
         page_number = task['page_number']
 
         # Load image from source
-        page_file = storage.source.source_page(page_number)
+        page_file = storage.stage('source').output_page(page_number, extension='png')
         pil_image = Image.open(page_file)
-        images_dir = storage.ocr.images_dir
+        images_dir = storage.book_dir / "images"
 
         # Extract dimensions
         width, height = pil_image.size
@@ -90,7 +90,7 @@ def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str
             cropped = pil_image.crop((x, y, x + w, y + h))
 
             # Save to images directory using storage API
-            img_path = storage.ocr.extracted_image(page_number, img_id)
+            img_path = images_dir / f"page_{page_number:04d}_img_{img_id:03d}.png"
             cropped.save(img_path)
 
             images.append({
@@ -306,7 +306,13 @@ class BookOCRProcessor:
 
             # Validate inputs (checks book exists, source pages exist)
             try:
-                storage.ocr.validate_inputs()
+                source_stage = storage.stage('source')
+                source_pages = source_stage.list_output_pages(extension='png')
+                if not source_pages:
+                    raise FileNotFoundError(
+                        f"No source page images found in {source_stage.output_dir}. "
+                        f"Run 'ar library add' to extract pages first."
+                    )
             except FileNotFoundError as e:
                 print(f"❌ {e}")
                 return
@@ -315,19 +321,26 @@ class BookOCRProcessor:
             metadata = storage.load_metadata()
 
             # Initialize logger
+            log_dir = storage.book_dir / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
             self.logger = create_logger(
                 book_title,
                 "ocr",
-                log_dir=storage.logs_dir,
+                log_dir=log_dir,
                 console_output=False
             )
 
             # Ensure output directories exist
-            storage.ocr.ensure_directories()
+            ocr_stage = storage.stage('ocr')
+            ocr_stage.ensure_directories()
+
+            # Ensure images directory exists
+            images_dir = storage.book_dir / "images"
+            images_dir.mkdir(parents=True, exist_ok=True)
 
             # Get checkpoint (if enabled)
             if self.enable_checkpoints:
-                checkpoint = storage.ocr.checkpoint
+                checkpoint = ocr_stage.checkpoint
                 if not resume:
                     if not checkpoint.reset(confirm=True):
                         print("   Use --resume to continue from checkpoint.")
@@ -341,7 +354,7 @@ class BookOCRProcessor:
                 total_pages = checkpoint._state['total_pages']
             else:
                 # Non-checkpoint mode: get all source pages
-                total_pages = len(storage.source.list_source_pages())
+                total_pages = len(storage.stage('source').list_output_pages(extension='png'))
                 pages_to_process = list(range(1, total_pages + 1))
 
             # Log to file only (not stdout)
@@ -406,7 +419,7 @@ class BookOCRProcessor:
 
                         if success:
                             # Save page data (atomic save + checkpoint update)
-                            storage.ocr.save_page(
+                            storage.stage('ocr').save_page(
                                 page_num=page_number,
                                 data=page_data,
                                 cost_usd=0.0  # OCR has no LLM cost
@@ -449,7 +462,7 @@ class BookOCRProcessor:
 
             # Collect stats from all OCR output files
             for page_num in range(1, total_pages + 1):
-                ocr_file = storage.ocr.output_page(page_num)
+                ocr_file = storage.stage('ocr').output_page(page_num)
                 if ocr_file.exists():
                     try:
                         with open(ocr_file, 'r') as f:
@@ -497,7 +510,7 @@ class BookOCRProcessor:
         except Exception as e:
             # Stage-level error handler
             if self.enable_checkpoints:
-                storage.ocr.checkpoint.mark_stage_failed(error=str(e))
+                storage.stage('ocr').checkpoint.mark_stage_failed(error=str(e))
             print(f"\n❌ OCR stage failed: {e}")
             raise
         finally:
@@ -524,12 +537,12 @@ class BookOCRProcessor:
         storage = BookStorage(scan_id=scan_id, storage_root=self.storage_root)
 
         # Count images separately (OCR-specific)
-        images_dir = storage.ocr.images_dir
+        images_dir = storage.book_dir / "images"
         image_files = list(images_dir.glob("page_*_img_*.png")) if images_dir.exists() else []
 
         # Show what will be deleted
         print(f"\n🗑️  Clean OCR stage for: {scan_id}")
-        print(f"   OCR outputs: {len(storage.ocr.list_output_pages())} files")
+        print(f"   OCR outputs: {len(storage.stage('ocr').list_output_pages())} files")
         print(f"   Extracted images: {len(image_files)} files")
         print(f"   Checkpoint: {'exists' if storage.checkpoint_file('ocr').exists() else 'none'}")
         print(f"   NOTE: Source page images (source/page_XXXX.png) will NOT be deleted")
@@ -541,7 +554,7 @@ class BookOCRProcessor:
                 return False
 
         # Call inherited clean_stage for OCR outputs and checkpoint
-        storage.ocr.clean_stage(confirm=True)  # Already confirmed above
+        storage.stage('ocr').clean_stage(confirm=True)  # Already confirmed above
 
         # Clean images directory (OCR-specific)
         if images_dir.exists():

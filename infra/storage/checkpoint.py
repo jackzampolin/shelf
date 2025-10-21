@@ -67,10 +67,10 @@ class CheckpointManager:
         self.storage_root = storage_root or Path.home() / "Documents" / "book_scans"
         self.book_dir = self.storage_root / scan_id
 
-        # Checkpoint directory and file
-        self.checkpoint_dir = self.book_dir / "checkpoints"
-        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        self.checkpoint_file = self.checkpoint_dir / f"{stage}.json"
+        # Checkpoint lives in stage folder: {stage}/.checkpoint
+        self.stage_dir = self.book_dir / (output_dir or stage)
+        self.stage_dir.mkdir(parents=True, exist_ok=True)
+        self.checkpoint_file = self.stage_dir / ".checkpoint"
 
         # Clean up any orphaned temporary checkpoint files from previous crashes
         self._cleanup_temp_files()
@@ -142,9 +142,9 @@ class CheckpointManager:
     def _cleanup_temp_files(self):
         """Clean up orphaned temporary checkpoint files from previous crashes."""
         try:
-            # Look for temp files matching this stage
-            temp_pattern = f"{self.stage}.json.tmp*"
-            for temp_file in self.checkpoint_dir.glob(temp_pattern):
+            # Look for temp files in stage directory
+            temp_pattern = ".checkpoint.tmp*"
+            for temp_file in self.stage_dir.glob(temp_pattern):
                 try:
                     temp_file.unlink()
                 except Exception:
@@ -155,13 +155,19 @@ class CheckpointManager:
             pass
 
     def _save_checkpoint(self):
-        """Save checkpoint with atomic write (must be called with lock held)."""
+        """
+        Save checkpoint with atomic write (must be called with lock held).
+
+        Raises:
+            RuntimeError: If checkpoint save fails (disk full, permissions, etc.)
+        """
         import os
+        import logging
 
         # Update timestamp
         self._state['updated_at'] = datetime.now().isoformat()
 
-        temp_file = self.checkpoint_file.with_suffix('.json.tmp')
+        temp_file = self.checkpoint_file.with_suffix('.tmp')
 
         try:
             # Write to temp file
@@ -180,10 +186,14 @@ class CheckpointManager:
         except Exception as e:
             # Clean up temp file on failure
             if temp_file.exists():
-                temp_file.unlink()
-            # Log but don't crash - checkpoint save is best-effort
-            import logging
+                try:
+                    temp_file.unlink()
+                except Exception:
+                    pass  # Best effort cleanup
+
+            # Log and raise - checkpoint failures are critical
             logging.error(f"Failed to save checkpoint for {self.scan_id}/{self.stage}: {e}")
+            raise RuntimeError(f"Checkpoint save failed for {self.scan_id}/{self.stage}: {e}") from e
 
     def validate_page_output(self, page_num: int) -> bool:
         """
@@ -195,7 +205,7 @@ class CheckpointManager:
         Returns:
             True if page output is valid, False otherwise
         """
-        output_path = self.book_dir / self.output_dir / self.file_pattern.format(page_num)
+        output_path = self.stage_dir / self.file_pattern.format(page_num)
 
         if not output_path.exists():
             return False
@@ -263,8 +273,7 @@ class CheckpointManager:
         """
         valid_pages = set()
 
-        output_dir_path = self.book_dir / self.output_dir
-        if not output_dir_path.exists():
+        if not self.stage_dir.exists():
             return valid_pages
 
         for page_num in range(1, total_pages + 1):
