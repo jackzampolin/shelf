@@ -41,9 +41,9 @@ class LibraryStorage:
         Initialize library storage.
 
         Args:
-            storage_root: Path to book storage root (defaults to Config.BOOK_STORAGE_ROOT)
+            storage_root: Path to book storage root (defaults to Config.book_storage_root)
         """
-        self.storage_root = storage_root or Config.BOOK_STORAGE_ROOT
+        self.storage_root = storage_root or Config.book_storage_root
 
         # Cache for BookStorage instances (lazy loading)
         self._book_storage_cache: Dict[str, Any] = {}

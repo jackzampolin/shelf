@@ -41,7 +41,7 @@ def downsample_for_vision(image: Image.Image, target_dpi: int = None, max_payloa
 
     Args:
         image: PIL Image (typically 600 DPI from source/ directory)
-        target_dpi: Override target DPI (default: from Config.PDF_EXTRACTION_DPI_VISION)
+        target_dpi: Override target DPI (default: from Config.pdf_extraction_dpi_vision)
         max_payload_kb: Maximum base64-encoded size in KB (default: 1500)
 
     Returns:
@@ -53,9 +53,9 @@ def downsample_for_vision(image: Image.Image, target_dpi: int = None, max_payloa
     """
     # Calculate downsampling ratio based on configured DPIs
     if target_dpi is None:
-        target_dpi = Config.PDF_EXTRACTION_DPI_VISION
+        target_dpi = Config.pdf_extraction_dpi_vision
 
-    ratio = target_dpi / Config.PDF_EXTRACTION_DPI_OCR
+    ratio = target_dpi / Config.pdf_extraction_dpi_ocr
 
     # If already at target resolution or lower, use as starting point
     if ratio < 1.0:

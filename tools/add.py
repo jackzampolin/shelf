@@ -165,13 +165,13 @@ def ingest_book_group(
         # Create task for each page
         for local_page in range(1, page_count + 1):
             output_path = source_dir / f"page_{global_page_num:04d}.png"
-            tasks.append((pdf_path, local_page, output_path, Config.PDF_EXTRACTION_DPI_OCR))
+            tasks.append((pdf_path, local_page, output_path, Config.pdf_extraction_dpi_ocr))
             global_page_num += 1
 
     total_pages = len(tasks)
     max_workers = multiprocessing.cpu_count()
 
-    print(f"\n   Extracting {total_pages} pages at {Config.PDF_EXTRACTION_DPI_OCR} DPI...")
+    print(f"\n   Extracting {total_pages} pages at {Config.pdf_extraction_dpi_ocr} DPI...")
 
     # Extract in parallel using all CPU cores
     completed = 0
@@ -222,7 +222,7 @@ def ingest_book_group(
         "source_files": [f"{base_name}-{i}.pdf" for i in range(1, len(pdf_paths) + 1)],
         "total_pages": completed,
         "status": "registered",
-        "extraction_dpi": Config.PDF_EXTRACTION_DPI_OCR,
+        "extraction_dpi": Config.pdf_extraction_dpi_ocr,
         "extraction_workers": max_workers
     }
 
@@ -279,7 +279,7 @@ def ingest_from_directories(
 
     # Process each group
     scan_ids = []
-    storage_root = Config.BOOK_STORAGE_ROOT
+    storage_root = Config.book_storage_root
     for base_name, pdfs in groups.items():
         scan_id = ingest_book_group(base_name, pdfs, storage_root, auto_confirm)
         if scan_id:
@@ -301,13 +301,13 @@ def add_books_to_library(pdf_paths: List[Path], storage_root: Path = None, run_o
 
     Args:
         pdf_paths: List of PDF file paths
-        storage_root: Storage root (defaults to Config.BOOK_STORAGE_ROOT)
+        storage_root: Storage root (defaults to Config.book_storage_root)
         run_ocr: If True, automatically run OCR stage after adding (default: False)
 
     Returns:
         Dict with books_added count and scan_ids list
     """
-    storage_root = storage_root or Config.BOOK_STORAGE_ROOT
+    storage_root = storage_root or Config.book_storage_root
 
     # Group PDFs by book
     groups = group_batch_pdfs(pdf_paths)
@@ -330,7 +330,7 @@ def add_books_to_library(pdf_paths: List[Path], storage_root: Path = None, run_o
         BookOCRProcessor = getattr(ocr_module, 'BookOCRProcessor')
 
         processor = BookOCRProcessor(
-            storage_root=str(storage_root or Config.BOOK_STORAGE_ROOT),
+            storage_root=str(storage_root or Config.book_storage_root),
             max_workers=None  # Auto-detect CPU cores
         )
 

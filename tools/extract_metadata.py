@@ -156,7 +156,7 @@ Return JSON only. No explanations.
 
         # call_with_json_retry returns already-parsed JSON
         metadata, usage, cost = client.call_with_json_retry(
-            model=Config.VISION_MODEL,
+            model=Config.vision_model_primary,
             messages=messages,
             json_parser=parse_metadata_json,
             temperature=0.0,

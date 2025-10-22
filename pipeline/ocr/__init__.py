@@ -308,7 +308,7 @@ Return JSON only. No explanations.
             # Create single request for metadata extraction
             request = LLMRequest(
                 id="metadata_extraction",
-                model=Config.VISION_MODEL,
+                model=Config.vision_model_primary,
                 messages=[
                     {"role": "user", "content": prompt}
                 ],
@@ -318,7 +318,7 @@ Return JSON only. No explanations.
 
             logger.info(
                 "Calling LLM for metadata extraction",
-                model=Config.VISION_MODEL,
+                model=Config.vision_model_primary,
                 num_pages=len(pages_text),
                 text_length=len(combined_text)
             )

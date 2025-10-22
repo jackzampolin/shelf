@@ -170,7 +170,7 @@ def _load_config() -> ScanshelfConfig:
         ),
         vision_model_expensive=os.getenv(
             'VISION_MODEL_EXPENSIVE',
-            'anthropic/claude-3.5-sonnet'
+            'anthropic/claude-sonnet-4.5'
         ),
         text_model_primary=os.getenv(
             'TEXT_MODEL_PRIMARY',
@@ -215,51 +215,5 @@ def _load_config() -> ScanshelfConfig:
     )
 
 
-class _ConfigWrapper:
-    """
-    Wrapper providing backward compatibility for old uppercase names.
-
-    Delegates to the underlying Pydantic config instance while providing
-    uppercase aliases for existing code that hasn't been updated yet.
-    """
-
-    def __init__(self, config: ScanshelfConfig):
-        # Store Pydantic instance in private attribute
-        object.__setattr__(self, '_config', config)
-
-    def __getattr__(self, name: str):
-        """Provide backward compatibility for old uppercase names."""
-        # New lowercase names (direct access)
-        if hasattr(self._config, name):
-            return getattr(self._config, name)
-
-        # Backward compatibility: uppercase names map to lowercase
-        uppercase_to_lowercase = {
-            'VISION_MODEL': 'vision_model_primary',
-            'OPENROUTER_API_KEY': 'openrouter_api_key',
-            'BOOK_STORAGE_ROOT': 'book_storage_root',
-            'PDF_EXTRACTION_DPI_OCR': 'pdf_extraction_dpi_ocr',
-            'PDF_EXTRACTION_DPI_VISION': 'pdf_extraction_dpi_vision',
-            'FALLBACK_MODELS': 'fallback_models',
-            'OPENROUTER_SITE_URL': 'openrouter_site_url',
-            'OPENROUTER_SITE_NAME': 'openrouter_site_name',
-        }
-
-        if name in uppercase_to_lowercase:
-            return getattr(self._config, uppercase_to_lowercase[name])
-
-        raise AttributeError(f"Config has no attribute '{name}'")
-
-    def __setattr__(self, name: str, value):
-        """Prevent modification (config is frozen)."""
-        if name == '_config':
-            object.__setattr__(self, name, value)
-        else:
-            raise AttributeError(f"Config is frozen, cannot set '{name}'")
-
-    def __repr__(self):
-        return f"Config({self._config})"
-
-
 # Singleton instance - validates on import (fail fast)
-Config = _ConfigWrapper(_load_config())
+Config = _load_config()

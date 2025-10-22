@@ -72,7 +72,7 @@ def cmd_library_add(args):
     try:
         result = add_books_to_library(
             pdf_paths=pdf_paths,
-            storage_root=Config.BOOK_STORAGE_ROOT,
+            storage_root=Config.book_storage_root,
             run_ocr=args.run_ocr
         )
 
@@ -89,7 +89,7 @@ def cmd_library_add(args):
 
 def cmd_library_list(args):
     """List all books in library."""
-    library = LibraryStorage(storage_root=Config.BOOK_STORAGE_ROOT)
+    library = LibraryStorage(storage_root=Config.book_storage_root)
     scans = library.list_all_scans()
 
     if not scans:
@@ -139,7 +139,7 @@ def cmd_library_list(args):
 
 def cmd_library_show(args):
     """Show detailed information about a book."""
-    library = LibraryStorage(storage_root=Config.BOOK_STORAGE_ROOT)
+    library = LibraryStorage(storage_root=Config.book_storage_root)
     scan = library.get_scan_info(args.scan_id)
 
     if not scan:
@@ -163,7 +163,7 @@ def cmd_library_show(args):
 
 def cmd_library_status(args):
     """Show detailed pipeline status for a book."""
-    library = LibraryStorage(storage_root=Config.BOOK_STORAGE_ROOT)
+    library = LibraryStorage(storage_root=Config.book_storage_root)
 
     # Verify book exists
     scan = library.get_scan_info(args.scan_id)
@@ -221,7 +221,7 @@ def cmd_library_status(args):
 
 def cmd_library_stats(args):
     """Show library-wide statistics."""
-    library = LibraryStorage(storage_root=Config.BOOK_STORAGE_ROOT)
+    library = LibraryStorage(storage_root=Config.book_storage_root)
     stats = library.get_stats()
 
     print(f"\n📊 Library Statistics")
@@ -235,7 +235,7 @@ def cmd_library_stats(args):
 
 def cmd_library_delete(args):
     """Delete a book from the library."""
-    library = LibraryStorage(storage_root=Config.BOOK_STORAGE_ROOT)
+    library = LibraryStorage(storage_root=Config.book_storage_root)
 
     # Check if scan exists
     scan = library.get_scan_info(args.scan_id)
@@ -253,7 +253,7 @@ def cmd_library_delete(args):
         if args.keep_files:
             print(f"\n   Library entry will be removed (files will be kept)")
         else:
-            scan_dir = Config.BOOK_STORAGE_ROOT / args.scan_id
+            scan_dir = Config.book_storage_root / args.scan_id
             print(f"\n   Library entry AND all files in: {scan_dir}")
 
         try:
@@ -288,7 +288,7 @@ def cmd_library_delete(args):
 
 def cmd_process(args):
     """Run pipeline stage(s) using runner.py."""
-    library = LibraryStorage(storage_root=Config.BOOK_STORAGE_ROOT)
+    library = LibraryStorage(storage_root=Config.book_storage_root)
 
     # Verify book exists
     scan = library.get_scan_info(args.scan_id)
@@ -355,7 +355,7 @@ def cmd_process(args):
 
 def cmd_clean(args):
     """Clean stage outputs for a book."""
-    library = LibraryStorage(storage_root=Config.BOOK_STORAGE_ROOT)
+    library = LibraryStorage(storage_root=Config.book_storage_root)
 
     # Verify book exists
     scan = library.get_scan_info(args.scan_id)
