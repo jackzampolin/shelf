@@ -8,6 +8,7 @@ Commands:
     shelf list                   List all books
     shelf show <scan-id>         Show book details
     shelf status <scan-id>       Show pipeline status
+    shelf report <scan-id> --stage <s>    Display stage report (CSV as table)
     shelf stats                  Library statistics
     shelf delete <scan-id>       Delete book from library
 
@@ -219,6 +220,91 @@ def cmd_library_status(args):
     print()
 
 
+def cmd_library_report(args):
+    """Display stage report as a formatted table."""
+    library = LibraryStorage(storage_root=Config.book_storage_root)
+
+    # Verify book exists
+    scan = library.get_scan_info(args.scan_id)
+    if not scan:
+        print(f"❌ Book not found: {args.scan_id}")
+        sys.exit(1)
+
+    # Get storage
+    storage = library.get_book_storage(args.scan_id)
+    stage_storage = storage.stage(args.stage)
+
+    # Check if report exists
+    report_file = stage_storage.output_dir / "report.csv"
+    if not report_file.exists():
+        print(f"❌ No report found for stage '{args.stage}'")
+        print(f"   Expected: {report_file}")
+        print(f"\n   Run the stage first to generate a report.")
+        sys.exit(1)
+
+    # Read CSV and display as table
+    import csv
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+
+    with open(report_file, 'r') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    if not rows:
+        print(f"⚠️  Report is empty")
+        return
+
+    # Get limit (default: 20, show all if -a/--all flag)
+    limit = None if args.all else (args.limit or 20)
+
+    # Apply filters
+    filtered_rows = rows
+    if args.filter:
+        # Parse filter: column=value or column>value or column<value
+        filter_parts = args.filter.split('=')
+        if len(filter_parts) == 2:
+            col, val = filter_parts
+            filtered_rows = [r for r in rows if r.get(col) == val]
+        else:
+            # Try numeric comparisons
+            for op in ['>', '<', '>=', '<=']:
+                if op in args.filter:
+                    col, val = args.filter.split(op)
+                    val = float(val)
+                    if op == '>':
+                        filtered_rows = [r for r in rows if float(r.get(col, 0)) > val]
+                    elif op == '<':
+                        filtered_rows = [r for r in rows if float(r.get(col, 0)) < val]
+                    elif op == '>=':
+                        filtered_rows = [r for r in rows if float(r.get(col, 0)) >= val]
+                    elif op == '<=':
+                        filtered_rows = [r for r in rows if float(r.get(col, 0)) <= val]
+                    break
+
+    # Create table
+    table = Table(title=f"{args.scan_id} - {args.stage} report ({len(filtered_rows)} rows)")
+
+    # Add columns
+    columns = list(rows[0].keys())
+    for col in columns:
+        table.add_column(col, style="cyan" if col == "page_num" else None)
+
+    # Add rows (with limit)
+    display_rows = filtered_rows[:limit] if limit else filtered_rows
+    for row in display_rows:
+        table.add_row(*[row[col] for col in columns])
+
+    # Show table
+    console.print(table)
+
+    # Show summary if limited
+    if limit and len(filtered_rows) > limit:
+        print(f"\nShowing {limit} of {len(filtered_rows)} rows. Use --all to show all rows.")
+
+
 def cmd_library_stats(args):
     """Show library-wide statistics."""
     library = LibraryStorage(storage_root=Config.book_storage_root)
@@ -421,6 +507,8 @@ Examples:
   shelf list
   shelf show modest-lovelace
   shelf status modest-lovelace
+  shelf report modest-lovelace --stage corrected
+  shelf report modest-lovelace --stage labels --filter "printed_page_number="
   shelf process modest-lovelace
   shelf process modest-lovelace --stage ocr
   shelf process modest-lovelace --stages ocr,corrected
@@ -452,6 +540,15 @@ Examples:
     status_parser = subparsers.add_parser('status', help='Show pipeline status')
     status_parser.add_argument('scan_id', help='Book scan ID')
     status_parser.set_defaults(func=cmd_library_status)
+
+    # shelf report
+    report_parser = subparsers.add_parser('report', help='Display stage report as table')
+    report_parser.add_argument('scan_id', help='Book scan ID')
+    report_parser.add_argument('--stage', required=True, choices=['ocr', 'corrected', 'labels'], help='Stage to show report for')
+    report_parser.add_argument('--limit', type=int, help='Number of rows to show (default: 20)')
+    report_parser.add_argument('--all', '-a', action='store_true', help='Show all rows')
+    report_parser.add_argument('--filter', help='Filter rows (e.g., "total_corrections>0")')
+    report_parser.set_defaults(func=cmd_library_report)
 
     # shelf stats
     stats_parser = subparsers.add_parser('stats', help='Library statistics')

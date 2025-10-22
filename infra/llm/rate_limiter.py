@@ -36,7 +36,7 @@ class RateLimiter:
         self.lock = threading.RLock()  # Use RLock (reentrant) instead of Lock to avoid deadlock
 
         # Token bucket state
-        self.tokens = float(requests_per_minute)  # Start with full bucket
+        self.tokens = float(self.requests_per_minute)  # Start with full bucket
         self.last_update = time.time()
 
         # Tracking

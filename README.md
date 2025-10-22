@@ -116,12 +116,48 @@ uv run python -m pytest tests/tools/ -v
 
 ## Documentation
 
+### For Users
 - [CLAUDE.md](CLAUDE.md) - AI workflow guide for contributors
 - [docs/MCP_SETUP.md](docs/MCP_SETUP.md) - Claude Desktop integration
+
+### Architecture Documentation
+- [Stage Abstraction](docs/architecture/stage-abstraction.md) - Core pipeline design pattern
+- [Storage System](docs/architecture/storage-system.md) - Three-tier storage architecture
+- [Checkpoint & Resume](docs/architecture/checkpoint-resume.md) - Resumable processing design
+- [Logging & Metrics](docs/architecture/logging-metrics.md) - Observability system
+
+### Developer Guides
+- [Implementing a Stage](docs/guides/implementing-a-stage.md) - Step-by-step guide for new stages
+- [Troubleshooting](docs/guides/troubleshooting.md) - Common issues and recovery
+
+### Stage Documentation
+- [OCR Stage](pipeline/ocr/README.md) - Tesseract-based text extraction
+- [Correction Stage](pipeline/correction/README.md) - Vision-based error correction
+- [Label Stage](pipeline/label/README.md) - Page numbers and block classification
+- [Merge Stage](pipeline/merged/README.md) - Three-way data merge
 
 ---
 
 ## Architecture
+
+### High-Level Design
+
+Scanshelf uses a **Stage abstraction pattern** for composable, resumable, testable pipeline processing:
+
+**Core Components:**
+1. **BaseStage** - Three-hook lifecycle (before/run/after) with schema-driven validation
+2. **Storage System** - Three-tier hierarchy (Library → Book → Stage)
+3. **CheckpointManager** - Atomic progress tracking with filesystem synchronization
+4. **PipelineLogger** - Dual-output logging (JSON + human-readable)
+
+**Key Properties:**
+- **Resumable** - Checkpoint-based resume from exact point of interruption
+- **Type-safe** - Pydantic schemas validate data at boundaries
+- **Cost-aware** - Track every LLM API call financially
+- **Independent** - Stages evolve separately, communicate via files
+- **Testable** - Test stages in isolation with mock data
+
+See [Stage Abstraction](docs/architecture/stage-abstraction.md) for detailed design philosophy.
 
 ### Pipeline Flow
 
@@ -129,36 +165,57 @@ uv run python -m pytest tests/tools/ -v
 PDF → Split Pages → OCR → Correction → Label → Merge → Structure (TBD)
 ```
 
+**Stages:**
+- **OCR** - Tesseract extraction (CPU-parallel) → `ocr/page_*.json`
+- **Correction** - Vision LLM error fixing (I/O-parallel) → `corrected/page_*.json`
+- **Label** - Page numbers + block classification → `labels/page_*.json`
+- **Merge** - Three-way deterministic merge → `merged/page_*.json`
+- **Structure** (planned) - Chapter/section extraction
+
 Each stage:
-- Inherits from BaseStage (before/run/after lifecycle)
-- Automatically resumes from checkpoints if interrupted
-- Tracks costs and token usage
-- Generates quality reports in after() hook
-- Uses BookStorage and StageStorage APIs for consistent file operations
+- Validates inputs in `before()` hook
+- Processes pages in `run()` hook (controls own parallelization)
+- Generates quality reports in `after()` hook
+- Tracks costs, timing, and metrics per page
+- Resumes automatically from checkpoint if interrupted
 
 ### Storage Structure
 
 ```
 ~/Documents/book_scans/
-├── library.json              # Book catalog (LibraryStorage)
 ├── {scan-id}/                # Per-book directory (BookStorage)
+│   ├── metadata.json         # Book metadata (title, author, year, etc.)
 │   ├── source/               # Original page images
-│   ├── ocr/                  # OCR outputs (stage: "ocr")
-│   │   ├── page_NNNN.json    # OCR text blocks
-│   │   └── checkpoint.json   # Resume state
-│   ├── corrected/            # Corrected pages (stage: "corrected")
-│   │   ├── page_NNNN.json    # Corrected text
-│   │   └── checkpoint.json
-│   ├── labels/               # Page classifications (stage: "labels")
-│   │   ├── page_NNNN.json    # Block classifications + page numbers
-│   │   └── checkpoint.json
-│   ├── merged/               # Merged pages (stage: "merged")
-│   │   ├── page_NNNN.json    # Three-way merged data
-│   │   └── checkpoint.json
-│   ├── images/               # Extracted image regions
-│   ├── logs/                 # Per-stage logs
-│   └── metadata.json         # Book metadata
+│   ├── ocr/                  # OCR stage outputs
+│   │   ├── page_NNNN.json    # OCRPageOutput schema
+│   │   ├── report.csv        # Quality metrics (confidence, blocks)
+│   │   ├── .checkpoint       # Progress state (page_metrics source of truth)
+│   │   └── logs/
+│   │       └── ocr_{timestamp}.jsonl
+│   ├── corrected/            # Correction stage outputs
+│   │   ├── page_NNNN.json    # CorrectionPageOutput schema
+│   │   ├── report.csv        # Quality metrics (corrections, similarity)
+│   │   ├── .checkpoint
+│   │   └── logs/
+│   ├── labels/               # Label stage outputs
+│   │   ├── page_NNNN.json    # LabelPageOutput schema
+│   │   ├── report.csv        # Quality metrics (classifications)
+│   │   ├── .checkpoint
+│   │   └── logs/
+│   ├── merged/               # Merge stage outputs
+│   │   ├── page_NNNN.json    # MergedPageOutput schema
+│   │   ├── .checkpoint
+│   │   └── logs/
+│   └── images/               # Extracted image regions (from OCR)
 ```
+
+**Key points:**
+- No `library.json` - filesystem is source of truth (LibraryStorage scans directories)
+- Each stage has independent checkpoint (`.checkpoint`) and logs
+- Quality reports (CSV) generated automatically in `after()` hook
+- Schemas enforce type safety at boundaries (input/output/checkpoint/report)
+
+See [Storage System](docs/architecture/storage-system.md) for three-tier design details.
 
 ---
 

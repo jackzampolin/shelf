@@ -518,6 +518,46 @@ class CheckpointManager:
 
             return status
 
+    def validate_completed_status(self, total_pages: int) -> bool:
+        """
+        Validate that a 'completed' checkpoint actually has all expected outputs.
+
+        This prevents the pipeline from skipping stages when the checkpoint
+        says 'completed' but some output files are missing.
+
+        Args:
+            total_pages: Total number of pages expected
+
+        Returns:
+            True if checkpoint is valid (all outputs exist), False otherwise
+        """
+        with self._lock:
+            # Only validate if status is 'completed'
+            if self._state.get('status') != 'completed':
+                return True  # Not claiming to be complete, no validation needed
+
+            # Scan actual outputs
+            valid_outputs = self.scan_existing_outputs(total_pages)
+
+            # Check if we have all expected pages
+            expected_pages = set(range(1, total_pages + 1))
+            missing_pages = expected_pages - valid_outputs
+
+            if missing_pages:
+                # Checkpoint claims complete but outputs are missing!
+                # Invalidate the checkpoint status
+                self._state['status'] = 'in_progress'
+                self._state['validation'] = {
+                    'validated_at': datetime.now().isoformat(),
+                    'missing_outputs': sorted(list(missing_pages))[:20],  # First 20
+                    'total_missing': len(missing_pages),
+                    'action': 'invalidated_completed_status'
+                }
+                self._save_checkpoint()
+                return False
+
+            return True
+
     def estimate_cost_saved(self) -> float:
         """
         Estimate cost saved by resuming based on actual costs if available.

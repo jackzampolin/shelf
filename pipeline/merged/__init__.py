@@ -21,7 +21,7 @@ from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
 from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
-from infra.pipeline.progress import ProgressBar
+from infra.pipeline.rich_progress import RichProgressBar
 
 # Import from local modules
 from pipeline.merged.schemas import MergedPageOutput
@@ -135,7 +135,7 @@ class MergeStage(BaseStage):
         pages_with_continuation = 0
 
         # Progress bar
-        progress = ProgressBar(
+        progress = RichProgressBar(
             total=len(pages),
             prefix="   ",
             width=40,

@@ -80,8 +80,27 @@ def run_stage(
         # Check if already complete
         status = checkpoint.get_status()
         if status.get('status') == 'completed':
-            logger.info("Stage already complete, skipping")
-            return status.get('metadata', {})
+            # Validate that outputs actually exist before trusting checkpoint
+            metadata = storage.load_metadata()
+            total_pages = metadata.get('total_pages', 0)
+
+            if total_pages > 0:
+                is_valid = checkpoint.validate_completed_status(total_pages)
+                if not is_valid:
+                    # Checkpoint was invalidated, log and continue processing
+                    validation_info = checkpoint.get_status().get('validation', {})
+                    missing_count = validation_info.get('total_missing', 0)
+                    logger.warning(
+                        f"Checkpoint validation failed: {missing_count} outputs missing",
+                        missing_pages=validation_info.get('missing_outputs', [])
+                    )
+                    logger.info("Re-running stage to process missing pages")
+                else:
+                    logger.info("Stage already complete (validated), skipping")
+                    return status.get('metadata', {})
+            else:
+                logger.info("Stage already complete, skipping")
+                return status.get('metadata', {})
 
         # Run lifecycle hooks
         logger.info("Running before() hook")

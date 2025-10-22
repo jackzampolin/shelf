@@ -89,7 +89,7 @@ class LLMBatchClient:
             self.retry_log_path = self.log_dir / f"llm_retries_{self.log_timestamp}.jsonl"
 
         # Core components
-        self.rate_limiter = RateLimiter(requests_per_minute=rate_limit)
+        self.rate_limiter = RateLimiter(requests_per_minute=self.rate_limit)
         self.llm_client = LLMClient()
 
         # State tracking

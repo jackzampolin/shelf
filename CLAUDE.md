@@ -165,62 +165,226 @@ Core labels:
 
 ---
 
+## Stage Abstraction Principles
+
+When implementing or modifying pipeline stages, follow these core principles:
+
+### Always Use BaseStage for New Stages
+
+Every stage MUST extend `BaseStage` (`infra/pipeline/base_stage.py`):
+
+```python
+class MyStage(BaseStage):
+    name = "my_stage"           # Output directory name
+    dependencies = ["prev_stage"]  # Required upstream stages
+
+    output_schema = MyPageOutput        # What you write
+    checkpoint_schema = MyPageMetrics   # What you track
+    report_schema = MyPageReport        # What you report (optional)
+```
+
+**Never:** Create stages that don't inherit from BaseStage or bypass the lifecycle hooks.
+
+### Schema Validation is Mandatory
+
+**Three schemas, three purposes:**
+
+1. **output_schema** - Validates data BEFORE writing to disk
+2. **checkpoint_schema** - Validates metrics BEFORE marking complete
+3. **report_schema** - Filters quality metrics for CSV reports (optional but recommended for LLM stages)
+
+Always pass schemas to storage operations:
+
+```python
+# Validate on save
+storage.stage(self.name).save_page(page_num, data, schema=self.output_schema)
+
+# Validate on load
+data = storage.stage('prev').load_page(page_num, schema=PrevPageOutput)
+```
+
+**Never:** Skip schema validation or write raw JSON without Pydantic models.
+
+### Use Provided Storage/Logger/Checkpoint APIs
+
+**Storage API** (`BookStorage`, `StageStorage`):
+
+```python
+# Access any stage's data
+storage.stage('ocr').load_page(5, schema=OCRPageOutput)
+storage.stage(self.name).save_page(5, data, metrics=metrics)
+```
+
+**Checkpoint API** (`CheckpointManager`):
+
+```python
+# Get pages to process (resume-aware)
+remaining = checkpoint.get_remaining_pages(total_pages, resume=True)
+
+# Mark complete atomically
+checkpoint.mark_completed(page_num, cost_usd=0.032, metrics={...})
+```
+
+**Logger API** (`PipelineLogger`):
+
+```python
+logger.info("Processing", page=42)
+logger.progress("Correcting pages", current=42, total=447, cost_usd=1.23)
+logger.page_error("Failed", page=42, error=str(e))
+```
+
+**Never:**
+- Construct file paths manually (`f"{book_dir}/{stage}/page_{num}.json"`)
+- Write checkpoint files directly
+- Use print() instead of logger
+
+### Implement Resume Support via get_remaining_pages
+
+**Always** use `checkpoint.get_remaining_pages(resume=True)` in `run()`:
+
+```python
+def run(self, storage, checkpoint, logger):
+    total_pages = len(storage.stage('source').list_output_pages(extension='png'))
+    remaining = checkpoint.get_remaining_pages(total_pages, resume=True)
+
+    for page_num in remaining:
+        # Process only incomplete pages
+        pass
+```
+
+**Why:** Enables cost-saving resume from exact interruption point. Never reprocess completed pages.
+
+**Never:** Iterate over all pages without checking checkpoint.
+
+### Report Quality Metrics in after() Hook
+
+**Default behavior** (usually sufficient):
+
+```python
+def after(self, storage, checkpoint, logger, stats):
+    super().after(storage, checkpoint, logger, stats)  # Generates report.csv
+```
+
+**Override for custom post-processing:**
+
+```python
+def after(self, storage, checkpoint, logger, stats):
+    # ALWAYS call parent first to generate report.csv
+    super().after(storage, checkpoint, logger, stats)
+
+    # Then add custom logic
+    metadata = self._extract_metadata(storage)
+    storage.update_metadata(metadata)
+```
+
+**Never:** Skip calling `super().after()` if you override - reports won't generate.
+
+### Choose Appropriate Parallelization
+
+| Work Type | Executor | Workers | Example |
+|-----------|----------|---------|---------|
+| CPU-bound | `ProcessPoolExecutor` | `cpu_count()` | OCR (Tesseract) |
+| I/O-bound (LLM) | `ThreadPoolExecutor` | `Config.max_workers` | Correction, Label |
+| Deterministic | `ThreadPoolExecutor` | Fixed (8) | Merge |
+
+**Never:** Use ProcessPoolExecutor for LLM calls (pickling overhead) or ThreadPoolExecutor for CPU-heavy work (GIL contention).
+
+### Stage Independence
+
+Stages communicate exclusively through files, never direct imports:
+
+```python
+# ✅ Correct: File-based dependency
+ocr_data = storage.stage('ocr').load_page(page_num, schema=OCRPageOutput)
+
+# ✗ Wrong: Direct import creates coupling
+from pipeline.ocr import OCRStage
+ocr_stage = OCRStage()
+ocr_data = ocr_stage.process(...)
+```
+
+**Why:** Enables testing stages in isolation, modifying stages independently, and running stages in different processes.
+
+### Testing Stages
+
+**Always test stages in isolation with mock data:**
+
+```python
+def test_my_stage(tmp_path):
+    # Setup: Create fake dependency outputs
+    book_dir = tmp_path / "test-book"
+    (book_dir / "prev_stage").mkdir(parents=True)
+
+    fake_data = PrevPageOutput(page_number=1, ...)
+    (book_dir / "prev_stage" / "page_0001.json").write_text(
+        fake_data.model_dump_json()
+    )
+
+    # Run: Execute stage
+    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
+    stage = MyStage(max_workers=1)
+    stats = run_stage(stage, storage)
+
+    # Assert: Verify outputs
+    output = storage.stage("my_stage").load_page(1, schema=MyPageOutput)
+    assert output.page_number == 1
+```
+
+---
+
 ## Project-Specific Notes
 
 ### Architecture
-Book processing pipeline:
+Book processing pipeline using BaseStage abstraction:
+
 ```
-PDF → Split Pages → OCR (Stage 1) → Metadata Extraction →
-Correction (Stage 2) → Label (Stage 3) → Merge (Stage 4) →
-Structure (Stage 5, in development)
+PDF → Split Pages → OCR → Correction → Label → Merge → Structure (TBD)
 ```
 
-**Metadata Extraction** (after OCR, before Correction):
-- Analyzes first 10-20 pages of OCR output
-- Extracts: title, author, year, publisher, ISBN, book type
-- Uses LLM with structured output
-- Metadata used by Correction and Label stages
-- Tool: `tools/extract_metadata.py` (needs CLI integration)
-
-Each stage produces reports for quality analysis:
-- **Correction Report:** `pipeline/2_correction/report.py` - Statistical analysis of OCR corrections
-- **Label Report:** `pipeline/3_label/report.py` - Page number extraction and block classification analysis
+**Pipeline properties:**
+- Each stage inherits from `BaseStage` (`infra/pipeline/base_stage.py`)
+- Three-hook lifecycle: `before()` → `run()` → `after()`
+- Schema-driven validation at all boundaries
+- Automatic resume from checkpoints (no manual state management)
+- Cost tracking for every LLM API call
+- Quality reports generated in `after()` hook
 
 ### Key Concepts
-- **Library:** `~/Documents/book_scans/library.json` - catalog of all books
+- **Library:** `~/Documents/book_scans/` - no library.json, filesystem is source of truth
 - **Scan ID:** Random Docker-style name (e.g., "modest-lovelace")
-- **Checkpointing:** All stages support resume from interruption
-- **Cost tracking:** All LLM calls tracked and logged
+- **Checkpointing:** `.checkpoint` file per stage, `page_metrics` is source of truth
+- **Schemas:** Input/output/checkpoint/report enforce type safety
+- **Storage tiers:** LibraryStorage → BookStorage → StageStorage → CheckpointManager
 
 ### CLI Usage
-All commands use `uv run python ar.py <command>`. See `README.md` for current command reference.
+All commands use `uv run python shelf.py <command>`. See `README.md` for reference.
+
+**Key commands:**
+- `shelf.py process <scan-id>` - Run full pipeline (auto-resumes)
+- `shelf.py process <scan-id> --stage ocr` - Run single stage
+- `shelf.py status <scan-id>` - Check progress and costs
+- `shelf.py clean <scan-id> --stage ocr` - Reset stage to start fresh
 
 ### Cost Awareness
 This pipeline costs money (OpenRouter API). Be mindful:
-- Don't re-run stages unnecessarily
-- Test prompts on small samples first
-- Use checkpoints to resume interrupted runs
-- Check `ar status <scan-id>` for cost tracking
+- Don't re-run stages unnecessarily (check status first)
+- Test prompts on small samples before full runs
+- Use checkpoints to resume interrupted runs (saves money)
+- Check `shelf.py status <scan-id>` for cost tracking
+- Reports show cost per page in checkpoint metrics
 
 ### Current State
-- ✅ Infrastructure (`infra/`) - Complete and tested
-- ✅ Stage 1: OCR - Complete
-- 🚧 Metadata Extraction - Tool exists, needs CLI integration
-- ✅ Stage 2: Correction - Complete with vision-based error fixing
-- ✅ Stage 3: Label - Complete with page number extraction and block classification
-- 🚧 Stage 4: Merge - Implemented, needs testing
-- ❌ Stage 5: Structure - In development
+- ✅ Infrastructure (`infra/`) - BaseStage, storage, checkpoint, logging complete
+- ✅ OCR Stage - Tesseract extraction with metadata
+- ✅ Correction Stage - Vision-based error correction
+- ✅ Label Stage - Page numbers and block classification
+- ✅ Merge Stage - Three-way deterministic merge
+- ❌ Structure Stage - Not yet implemented
 
-**Next Steps:**
-1. Integrate metadata extraction into CLI (`ar process metadata`)
-2. Run correction and label reports on all 10 books in library
-3. Use report data to inform structure stage design
-4. Test merge stage on production books
-5. Design and implement structure stage based on label analysis
-
-**For current implementation details, see:**
-- `README.md` - Usage and commands
-- `pipeline/` - Stage implementations
+**For implementation details, see:**
+- `README.md` - Usage and current status
+- `docs/architecture/` - Stage abstraction, storage, checkpoint, logging design
+- `docs/guides/implementing-a-stage.md` - Step-by-step guide for new stages
 - Code itself - The source of truth
 
 ---
