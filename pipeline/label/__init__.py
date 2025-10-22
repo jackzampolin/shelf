@@ -114,14 +114,16 @@ class LabelStage(BaseStage):
         logger.start_stage(total_pages=total_pages, max_workers=self.max_workers)
         logger.info(f"Label Stage - Page number extraction and block classification with {self.model}")
 
-        # Initialize batch LLM client
+        # Initialize batch LLM client with stage-specific log directory
+        stage_log_dir = storage.stage(self.name).output_dir / "logs"
         self.batch_client = LLMBatchClient(
             max_workers=self.max_workers,
             rate_limit=150,  # OpenRouter default
             max_retries=self.max_retries,
             retry_jitter=(1.0, 3.0),
             verbose=True,  # Enable per-request events
-            log_dir=storage.book_dir / "logs"
+            log_dir=stage_log_dir,
+            log_timestamp=logger.log_file.stem.split('_', 1)[1] if hasattr(logger, 'log_file') else None
         )
 
         # Get pages to process
@@ -133,15 +135,8 @@ class LabelStage(BaseStage):
 
         logger.info(f"Processing {len(pages)} pages with {self.max_workers} workers")
 
-        # Build JSON schema once (shared across all requests)
-        response_schema = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "page_labeling",
-                "strict": True,
-                "schema": LabelPageOutput.model_json_schema()
-            }
-        }
+        # Note: Response schema is now generated PER-PAGE based on OCR structure
+        # See build_page_specific_schema() below
 
         # Pre-load OCR data and prepare requests (parallelized)
         logger.info(f"Loading {len(pages)} pages...")
@@ -158,6 +153,33 @@ class LabelStage(BaseStage):
         page_data_map = {}  # Store loaded data for saving later
         completed_loads = 0
         load_lock = threading.Lock()
+
+        def build_page_specific_schema(ocr_page: OCRPageOutput) -> dict:
+            """
+            Generate JSON schema tailored to THIS page's OCR structure.
+
+            Constrains block count to match OCR exactly.
+            No paragraph-level data needed - we only classify blocks.
+            """
+            import copy
+
+            base_schema = LabelPageOutput.model_json_schema()
+            schema = copy.deepcopy(base_schema)
+
+            # Constrain top-level blocks array to exact count from OCR
+            num_blocks = len(ocr_page.blocks)
+            schema['properties']['blocks']['minItems'] = num_blocks
+            schema['properties']['blocks']['maxItems'] = num_blocks
+
+            # Return constrained schema
+            return {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "page_labeling",
+                    "strict": True,
+                    "schema": schema
+                }
+            }
 
         def load_page(page_num):
             """Load and prepare a single page (called in parallel)."""
@@ -178,6 +200,9 @@ class LabelStage(BaseStage):
                     ocr_data = json.load(f)
                 ocr_page = OCRPageOutput(**ocr_data)
 
+                # Generate page-specific schema
+                response_schema = build_page_specific_schema(ocr_page)
+
                 # Extract text from OCR for prompt
                 ocr_text = ocr_page.get_all_text()
 
@@ -194,7 +219,7 @@ class LabelStage(BaseStage):
                     book_metadata=metadata
                 )
 
-                # Create LLM request (multimodal)
+                # Create LLM request (multimodal) with page-specific schema
                 request = LLMRequest(
                     id=f"page_{page_num:04d}",
                     model=self.model,
@@ -203,7 +228,7 @@ class LabelStage(BaseStage):
                         {"role": "user", "content": user_prompt}
                     ],
                     images=[page_image],  # Vision input
-                    response_format=response_schema,
+                    response_format=response_schema,  # Now page-specific!
                     metadata={
                         'page_num': page_num,
                         'ocr_page': ocr_page
@@ -293,31 +318,33 @@ class LabelStage(BaseStage):
                             for b in label_data.get('blocks', [])
                         ) / len(label_data.get('blocks', [])) if label_data.get('blocks') else 0
 
-                        avg_conf = sum(
-                            p.get('confidence', 1.0)
-                            for b in label_data.get('blocks', [])
-                            for p in b.get('paragraphs', [])
-                        ) / sum(
-                            len(b.get('paragraphs', []))
-                            for b in label_data.get('blocks', [])
-                        ) if label_data.get('blocks') else 1.0
-
                         label_data['total_blocks'] = len(label_data.get('blocks', []))
                         label_data['avg_classification_confidence'] = round(avg_class_conf, 3)
-                        label_data['avg_confidence'] = round(avg_conf, 3)
 
                         # Validate with schema
                         validated = LabelPageOutput(**label_data)
 
-                        # Save page output
+                        # Save page output with rich metrics (save_page will call checkpoint.mark_completed)
                         storage.stage(self.name).save_page(
                             page_num=page_num,
                             data=validated.model_dump(),
-                            schema=LabelPageOutput
+                            schema=LabelPageOutput,
+                            cost_usd=result.cost_usd,
+                            metrics={
+                                "page_num": page_num,
+                                "cost_usd": result.cost_usd,
+                                "attempts": result.attempts,
+                                "total_time_seconds": result.total_time_seconds,
+                                "queue_time_seconds": result.queue_time_seconds,
+                                "execution_time_seconds": result.execution_time_seconds,
+                                "ttft_seconds": result.ttft_seconds,
+                                "tokens_total": result.tokens_received,
+                                "tokens_per_second": result.tokens_per_second,
+                                "model_used": result.model_used,
+                                "provider": result.provider,
+                                "usage": result.usage
+                            }
                         )
-
-                        # Mark page complete in checkpoint
-                        checkpoint.mark_completed(page_num, cost_usd=result.cost_usd)
 
                     except Exception as e:
                         logger.error(f"Failed to save page {page_num}", error=str(e))
@@ -359,14 +386,17 @@ class LabelStage(BaseStage):
         }
 
     def after(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger, stats: Dict[str, Any]):
-        """Generate label quality report."""
+        """Generate label quality report and save as CSV."""
         logger.info("Generating label report...")
 
-        # Run label report (prints to stdout)
-        analyze_book(
+        # Write label report to labels/report.txt and labels/label_report.csv
+        csv_path = analyze_book(
             scan_id=storage.scan_id,
             storage_root=storage.storage_root,
-            output_json=False
+            output_json=False,
+            save_csv=True,
+            silent=True,  # No terminal output
+            write_report=True  # Write report.txt file
         )
 
         logger.info("Label report complete")

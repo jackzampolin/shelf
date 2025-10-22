@@ -7,6 +7,7 @@ Provides useful metrics for quick quality assessment.
 """
 
 import json
+import csv
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
@@ -139,49 +140,57 @@ class OCRStageReport:
             'processing_date': self.processing_date
         }
 
-    def print_summary(self):
-        """Print a formatted summary table to console."""
-        print("\n" + "=" * 60)
-        print("OCR STAGE REPORT")
-        print("=" * 60)
+    def format_summary(self) -> str:
+        """Format summary as string."""
+        lines = []
 
-        print("\n📊 CONTENT METRICS")
-        print(f"   Pages Processed:        {self.total_pages:,}")
-        print(f"   Total Blocks:           {self.total_blocks:,}")
-        print(f"   Total Paragraphs:       {self.total_paragraphs:,}")
-        print(f"   Total Words:            {self.total_words:,}")
-        print(f"   Extracted Images:       {self.total_images}")
+        lines.append("\n" + "=" * 60)
+        lines.append("OCR STAGE REPORT")
+        lines.append("=" * 60)
 
-        print("\n📈 AVERAGES")
-        print(f"   Blocks/Page:            {self.avg_blocks_per_page:.1f}")
-        print(f"   Paragraphs/Page:        {self.avg_paragraphs_per_page:.1f}")
-        print(f"   Words/Page:             {self.avg_words_per_page:.1f}")
+        lines.append("\n📊 CONTENT METRICS")
+        lines.append(f"   Pages Processed:        {self.total_pages:,}")
+        lines.append(f"   Total Blocks:           {self.total_blocks:,}")
+        lines.append(f"   Total Paragraphs:       {self.total_paragraphs:,}")
+        lines.append(f"   Total Words:            {self.total_words:,}")
+        lines.append(f"   Extracted Images:       {self.total_images}")
 
-        print("\n✨ OCR CONFIDENCE")
-        print(f"   Average:                {self.avg_confidence:.1%}")
-        print(f"   Range:                  {self.min_confidence:.1%} - {self.max_confidence:.1%}")
+        lines.append("\n📈 AVERAGES")
+        lines.append(f"   Blocks/Page:            {self.avg_blocks_per_page:.1f}")
+        lines.append(f"   Paragraphs/Page:        {self.avg_paragraphs_per_page:.1f}")
+        lines.append(f"   Words/Page:             {self.avg_words_per_page:.1f}")
+
+        lines.append("\n✨ OCR CONFIDENCE")
+        lines.append(f"   Average:                {self.avg_confidence:.1%}")
+        lines.append(f"   Range:                  {self.min_confidence:.1%} - {self.max_confidence:.1%}")
         if self.low_confidence_pages:
-            print(f"   Low Confidence Pages:   {len(self.low_confidence_pages)} pages < 80%")
+            lines.append(f"   Low Confidence Pages:   {len(self.low_confidence_pages)} pages < 80%")
             if len(self.low_confidence_pages) <= 10:
-                print(f"                           {self.low_confidence_pages}")
+                lines.append(f"                           {self.low_confidence_pages}")
             else:
-                print(f"                           {self.low_confidence_pages[:10]}... (showing first 10)")
+                lines.append(f"                           {self.low_confidence_pages[:10]}... (showing first 10)")
         else:
-            print(f"   Low Confidence Pages:   None (all pages ≥ 80%)")
+            lines.append(f"   Low Confidence Pages:   None (all pages ≥ 80%)")
 
-        print("\n📄 PAGE DISTRIBUTION (by block count)")
-        print(f"   1-2 blocks:             {self.pages_by_block_count['1-2']:,} pages (title pages, chapter starts)")
-        print(f"   3-5 blocks:             {self.pages_by_block_count['3-5']:,} pages (light content)")
-        print(f"   6-10 blocks:            {self.pages_by_block_count['6-10']:,} pages (normal content)")
-        print(f"   11+ blocks:             {self.pages_by_block_count['11+']:,} pages (dense content)")
+        lines.append("\n📄 PAGE DISTRIBUTION (by block count)")
+        lines.append(f"   1-2 blocks:             {self.pages_by_block_count['1-2']:,} pages (title pages, chapter starts)")
+        lines.append(f"   3-5 blocks:             {self.pages_by_block_count['3-5']:,} pages (light content)")
+        lines.append(f"   6-10 blocks:            {self.pages_by_block_count['6-10']:,} pages (normal content)")
+        lines.append(f"   11+ blocks:             {self.pages_by_block_count['11+']:,} pages (dense content)")
 
-        print("\n🖼️  IMAGES")
-        print(f"   Pages with Images:      {self.pages_with_images}")
+        lines.append("\n🖼️  IMAGES")
+        lines.append(f"   Pages with Images:      {self.pages_with_images}")
         if self.pages_with_images > 0:
             pct = (self.pages_with_images / self.total_pages * 100) if self.total_pages > 0 else 0
-            print(f"   Image Coverage:         {pct:.1f}% of pages")
+            lines.append(f"   Image Coverage:         {pct:.1f}% of pages")
 
-        print("\n" + "=" * 60)
+        lines.append("\n" + "=" * 60)
+
+        return "\n".join(lines)
+
+    def print_summary(self):
+        """Print a formatted summary table to console."""
+        print(self.format_summary())
 
 
 def generate_ocr_report(ocr_dir: Path) -> OCRStageReport:
@@ -212,7 +221,34 @@ def generate_ocr_report(ocr_dir: Path) -> OCRStageReport:
     return report
 
 
-def save_report(report: OCRStageReport, output_file: Path):
-    """Save report to JSON file."""
-    with open(output_file, 'w') as f:
-        json.dump(report.to_dict(), f, indent=2)
+def save_report(report: OCRStageReport, output_dir: Path):
+    """Save report to CSV file.
+
+    Args:
+        report: OCRStageReport to save
+        output_dir: Directory to save report.csv in
+    """
+    csv_path = output_dir / "report.csv"
+
+    # Write summary statistics as CSV
+    with open(csv_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['metric', 'value'])
+        writer.writerow(['total_pages', report.total_pages])
+        writer.writerow(['total_blocks', report.total_blocks])
+        writer.writerow(['total_paragraphs', report.total_paragraphs])
+        writer.writerow(['total_images', report.total_images])
+        writer.writerow(['total_words', report.total_words])
+        writer.writerow(['avg_blocks_per_page', f"{report.avg_blocks_per_page:.1f}"])
+        writer.writerow(['avg_paragraphs_per_page', f"{report.avg_paragraphs_per_page:.1f}"])
+        writer.writerow(['avg_words_per_page', f"{report.avg_words_per_page:.1f}"])
+        writer.writerow(['avg_confidence', f"{report.avg_confidence:.3f}"])
+        writer.writerow(['min_confidence', f"{report.min_confidence:.3f}"])
+        writer.writerow(['max_confidence', f"{report.max_confidence:.3f}"])
+        writer.writerow(['low_confidence_page_count', len(report.low_confidence_pages)])
+        writer.writerow(['pages_with_images', report.pages_with_images])
+        writer.writerow(['pages_1_2_blocks', report.pages_by_block_count['1-2']])
+        writer.writerow(['pages_3_5_blocks', report.pages_by_block_count['3-5']])
+        writer.writerow(['pages_6_10_blocks', report.pages_by_block_count['6-10']])
+        writer.writerow(['pages_11plus_blocks', report.pages_by_block_count['11+']])
+        writer.writerow(['processing_date', report.processing_date or ''])

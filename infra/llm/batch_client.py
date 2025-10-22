@@ -48,6 +48,7 @@ class LLMBatchClient:
         verbose: bool = False,
         progress_interval: float = 1.0,  # Increased to reduce PROGRESS event frequency
         log_dir: Optional['Path'] = None,
+        log_timestamp: Optional[str] = None,
     ):
         """
         Initialize batch client.
@@ -59,7 +60,8 @@ class LLMBatchClient:
             retry_jitter: (min, max) seconds to wait before re-queue
             verbose: Enable per-request progress events
             progress_interval: How often to emit PROGRESS events (seconds)
-            log_dir: Optional directory to log failed LLM calls to {log_dir}/llm_failures.jsonl
+            log_dir: Optional directory to log failed LLM calls
+            log_timestamp: Optional timestamp string for log filenames (e.g., "20250101_120530")
         """
         self.max_workers = max_workers
         self.rate_limit = rate_limit
@@ -68,13 +70,21 @@ class LLMBatchClient:
         self.verbose = verbose
         self.progress_interval = progress_interval
         self.log_dir = log_dir
+        self.log_timestamp = log_timestamp
 
         # Set up failure logging if log_dir provided
         if self.log_dir:
             from pathlib import Path
+            from datetime import datetime
             self.log_dir = Path(self.log_dir)
             self.log_dir.mkdir(parents=True, exist_ok=True)
-            self.failure_log_path = self.log_dir / "llm_failures.jsonl"
+
+            # Generate timestamp if not provided
+            if not self.log_timestamp:
+                self.log_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+            self.failure_log_path = self.log_dir / f"llm_failures_{self.log_timestamp}.jsonl"
+            self.retry_log_path = self.log_dir / f"llm_retries_{self.log_timestamp}.jsonl"
 
         # Core components
         self.rate_limiter = RateLimiter(requests_per_minute=rate_limit)
@@ -361,6 +371,9 @@ class LLMBatchClient:
                                     cycles_remaining=self.completion_ttl_cycles
                                 )
 
+                        # Log retry attempt for debugging transient failures
+                        self._log_retry(result, request._retry_count)
+
                         self._emit_event(
                             on_event,
                             LLMEvent.RETRY_QUEUED,
@@ -498,6 +511,18 @@ class LLMBatchClient:
 
             # Build success result
             execution_time = time.time() - start_time
+
+            # Calculate tokens per second
+            tokens_per_second = 0.0
+            completion_tokens = usage.get('completion_tokens', 0)
+            if execution_time > 0 and completion_tokens > 0:
+                tokens_per_second = completion_tokens / execution_time
+
+            # Extract provider from model name (e.g., "anthropic/claude-sonnet-4" → "anthropic")
+            provider = None
+            if '/' in current_model:
+                provider = current_model.split('/')[0]
+
             return LLMResult(
                 request_id=request.id,
                 success=True,
@@ -508,9 +533,11 @@ class LLMBatchClient:
                 queue_time_seconds=queue_time,
                 execution_time_seconds=execution_time,
                 ttft_seconds=ttft,
-                tokens_received=usage.get('completion_tokens', 0),
+                tokens_received=completion_tokens,
+                tokens_per_second=tokens_per_second,
                 usage=usage,
                 cost_usd=cost,
+                provider=provider,
                 model_used=current_model,
                 models_attempted=request._router.get_models_attempted() if request._router else [request.model],
                 request=request
@@ -1157,12 +1184,59 @@ class LLMBatchClient:
         """Get current rate limit consumption."""
         return self.rate_limiter.get_status()
 
-    def _log_failure(self, result: LLMResult):
+    def _log_retry(self, result: LLMResult, retry_count: int):
         """
-        Log failed LLM request to {log_dir}/llm_failures.jsonl.
+        Log retryable LLM failure to {log_dir}/llm_retries.jsonl.
+
+        This logs transient failures (413, 422, 5xx) that will be retried.
+        Helps debug issues like rate limits, payload size, etc.
 
         Args:
-            result: Failed LLMResult to log
+            result: Failed LLMResult being retried
+            retry_count: Current retry attempt number
+        """
+        if not self.log_dir:
+            return
+
+        try:
+            import datetime
+
+            # Extract JSON-serializable metadata only
+            metadata = result.request.metadata if result.request else None
+            serializable_metadata = {}
+            if metadata:
+                for key, value in metadata.items():
+                    try:
+                        json.dumps(value)
+                        serializable_metadata[key] = value
+                    except (TypeError, ValueError):
+                        serializable_metadata[key] = f"<non-serializable: {type(value).__name__}>"
+
+            log_entry = {
+                'timestamp': datetime.datetime.now().isoformat(),
+                'request_id': result.request_id,
+                'retry_count': retry_count,
+                'error_type': result.error_type,
+                'error_message': result.error_message,
+                'execution_time_seconds': result.execution_time_seconds,
+                'model': result.request.model if result.request else None,
+                'metadata': serializable_metadata
+            }
+
+            # Append to JSONL file (separate from permanent failures)
+            with open(self.retry_log_path, 'a') as f:
+                f.write(json.dumps(log_entry) + '\n')
+
+        except Exception:
+            # Don't let logging errors crash the pipeline
+            pass
+
+    def _log_failure(self, result: LLMResult):
+        """
+        Log permanently failed LLM request to {log_dir}/llm_failures.jsonl.
+
+        Args:
+            result: Failed LLMResult to log (after all retries exhausted)
         """
         if not self.log_dir:
             return

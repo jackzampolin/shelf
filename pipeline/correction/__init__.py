@@ -114,14 +114,16 @@ class CorrectionStage(BaseStage):
         logger.start_stage(total_pages=total_pages, max_workers=self.max_workers)
         logger.info(f"Correction Stage - Vision-based error correction with {self.model}")
 
-        # Initialize batch LLM client
+        # Initialize batch LLM client with stage-specific log directory
+        stage_log_dir = storage.stage(self.name).output_dir / "logs"
         self.batch_client = LLMBatchClient(
             max_workers=self.max_workers,
             rate_limit=150,  # OpenRouter default
             max_retries=self.max_retries,
             retry_jitter=(1.0, 3.0),
             verbose=True,  # Enable per-request events
-            log_dir=storage.book_dir / "logs"
+            log_dir=stage_log_dir,
+            log_timestamp=logger.log_file.stem.split('_', 1)[1] if hasattr(logger, 'log_file') else None
         )
 
         # Get pages to process
@@ -133,15 +135,8 @@ class CorrectionStage(BaseStage):
 
         logger.info(f"Processing {len(pages)} pages with {self.max_workers} workers")
 
-        # Build JSON schema once (shared across all requests)
-        response_schema = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "ocr_correction",
-                "strict": True,
-                "schema": CorrectionLLMResponse.model_json_schema()
-            }
-        }
+        # Note: Response schema is now generated PER-PAGE based on OCR structure
+        # See build_page_specific_schema() below
 
         # Pre-load OCR data and prepare requests (parallelized)
         logger.info(f"Loading {len(pages)} pages...")
@@ -158,6 +153,51 @@ class CorrectionStage(BaseStage):
         page_data_map = {}  # Store loaded data for saving later
         completed_loads = 0
         load_lock = threading.Lock()
+
+        def build_page_specific_schema(ocr_page: OCRPageOutput) -> dict:
+            """
+            Generate JSON schema tailored to THIS page's OCR structure.
+
+            Constrains block count and paragraph count per block to match OCR exactly.
+            This prevents the LLM from adding/removing blocks or paragraphs.
+            """
+            import copy
+
+            base_schema = CorrectionLLMResponse.model_json_schema()
+            schema = copy.deepcopy(base_schema)
+
+            # Constrain top-level blocks array to exact count from OCR
+            num_blocks = len(ocr_page.blocks)
+            schema['properties']['blocks']['minItems'] = num_blocks
+            schema['properties']['blocks']['maxItems'] = num_blocks
+
+            # Use prefixItems to constrain paragraph count for each block
+            block_items = []
+            for block in ocr_page.blocks:
+                para_count = len(block.paragraphs)
+
+                # Get the BlockCorrection schema from $defs
+                block_schema = copy.deepcopy(schema['$defs']['BlockCorrection'])
+
+                # Constrain this specific block's paragraph array
+                block_schema['properties']['paragraphs']['minItems'] = para_count
+                block_schema['properties']['paragraphs']['maxItems'] = para_count
+
+                block_items.append(block_schema)
+
+            # Replace items with prefixItems for tuple validation
+            schema['properties']['blocks']['prefixItems'] = block_items
+            # items: false means no additional items beyond prefixItems
+            schema['properties']['blocks']['items'] = False
+
+            return {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "ocr_correction",
+                    "strict": True,
+                    "schema": schema
+                }
+            }
 
         def load_page(page_num):
             """Load and prepare a single page (called in parallel)."""
@@ -178,6 +218,9 @@ class CorrectionStage(BaseStage):
                     ocr_data = json.load(f)
                 ocr_page = OCRPageOutput(**ocr_data)
 
+                # Generate page-specific schema
+                response_schema = build_page_specific_schema(ocr_page)
+
                 # Load and downsample image
                 page_image = Image.open(page_file)
                 page_image = downsample_for_vision(page_image)
@@ -190,7 +233,7 @@ class CorrectionStage(BaseStage):
                     ocr_data=ocr_page.model_dump()
                 )
 
-                # Create LLM request (multimodal)
+                # Create LLM request (multimodal) with page-specific schema
                 request = LLMRequest(
                     id=f"page_{page_num:04d}",
                     model=self.model,
@@ -199,7 +242,7 @@ class CorrectionStage(BaseStage):
                         {"role": "user", "content": user_prompt}
                     ],
                     images=[page_image],  # Vision input
-                    response_format=response_schema,
+                    response_format=response_schema,  # Now page-specific!
                     metadata={
                         'page_num': page_num,
                         'storage': storage,
@@ -304,15 +347,27 @@ class CorrectionStage(BaseStage):
                         # Validate with schema
                         validated = CorrectionPageOutput(**page_output)
 
-                        # Save page output
+                        # Save page output with rich metrics (save_page will call checkpoint.mark_completed)
                         storage.stage(self.name).save_page(
                             page_num=page_num,
                             data=validated.model_dump(),
-                            schema=CorrectionPageOutput
+                            schema=CorrectionPageOutput,
+                            cost_usd=result.cost_usd,
+                            metrics={
+                                "page_num": page_num,
+                                "cost_usd": result.cost_usd,
+                                "attempts": result.attempts,
+                                "total_time_seconds": result.total_time_seconds,
+                                "queue_time_seconds": result.queue_time_seconds,
+                                "execution_time_seconds": result.execution_time_seconds,
+                                "ttft_seconds": result.ttft_seconds,
+                                "tokens_total": result.tokens_received,
+                                "tokens_per_second": result.tokens_per_second,
+                                "model_used": result.model_used,
+                                "provider": result.provider,
+                                "usage": result.usage
+                            }
                         )
-
-                        # Mark page complete in checkpoint
-                        checkpoint.mark_completed(page_num, cost_usd=result.cost_usd)
 
                     except Exception as e:
                         logger.error(f"Failed to save page {page_num}", error=str(e))
@@ -357,11 +412,12 @@ class CorrectionStage(BaseStage):
         """Generate correction quality report."""
         logger.info("Generating correction quality report...")
 
-        # Run correction report (prints to stdout and exports if requested)
+        # Write correction report to corrected/report.txt
         analyze_book(
             scan_id=storage.scan_id,
             storage_root=storage.storage_root,
-            silent=True  # Don't print detailed output, just generate the analysis
+            silent=True,  # No terminal output
+            write_report=True  # Write report.txt file
         )
 
         logger.info("Correction report complete")

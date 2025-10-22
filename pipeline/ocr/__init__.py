@@ -23,7 +23,7 @@ from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
 from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
-from infra.pipeline.progress import ProgressBar
+from infra.pipeline.rich_progress import RichProgressBar
 
 # Import from local modules
 from pipeline.ocr.schemas import OCRPageOutput
@@ -105,7 +105,7 @@ class OCRStage(BaseStage):
         failed = 0
 
         # Progress bar
-        progress = ProgressBar(
+        progress = RichProgressBar(
             total=len(pages),
             prefix="   ",
             width=40,
@@ -161,18 +161,225 @@ class OCRStage(BaseStage):
         }
 
     def after(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger, stats: Dict[str, Any]):
-        """Generate OCR quality report."""
+        """Generate OCR quality report and extract book metadata."""
+        # Generate OCR quality report
         logger.info("Generating OCR quality report...")
-
-        # Generate report from OCR outputs
         ocr_stage = storage.stage('ocr')
         report = generate_ocr_report(ocr_stage.output_dir)
+        save_report(report, ocr_stage.output_dir)
+        logger.info("OCR report complete")
 
-        # Save report
-        report_file = ocr_stage.output_dir / "ocr_report.json"
-        save_report(report, report_file)
+        # Extract book metadata from first 15 pages
+        logger.info("Extracting book metadata from OCR text...")
+        metadata_extracted = self._extract_metadata(storage, logger)
 
-        logger.info(f"OCR report saved to {report_file}")
+        if metadata_extracted:
+            logger.info("Metadata extraction complete")
+        else:
+            logger.warning("Metadata extraction failed or low confidence")
+
+    def _extract_metadata(self, storage: BookStorage, logger: PipelineLogger, num_pages: int = 15) -> bool:
+        """
+        Extract book metadata from first N pages of OCR output.
+
+        Args:
+            storage: BookStorage instance
+            logger: Logger instance
+            num_pages: Number of pages to analyze (default: 15)
+
+        Returns:
+            True if metadata extracted and updated, False otherwise
+        """
+        from infra.llm.client import LLMClient
+        from infra.config import Config
+
+        ocr_stage = storage.stage('ocr')
+        ocr_files = sorted(ocr_stage.output_dir.glob("page_*.json"))
+
+        if not ocr_files:
+            logger.warning("No OCR files found for metadata extraction")
+            return False
+
+        # Collect text from first N pages
+        pages_text = []
+        for i, ocr_file in enumerate(ocr_files[:num_pages], 1):
+            try:
+                with open(ocr_file, 'r') as f:
+                    ocr_data = json.load(f)
+
+                # Extract all text from blocks/paragraphs
+                page_text = []
+                for block in ocr_data.get('blocks', []):
+                    for para in block.get('paragraphs', []):
+                        text = para.get('text', '').strip()
+                        if text:
+                            page_text.append(text)
+
+                if page_text:
+                    pages_text.append(f"--- Page {i} ---\n" + "\n".join(page_text))
+
+            except Exception as e:
+                logger.warning(f"Failed to read OCR page {i}", error=str(e))
+                continue
+
+        if not pages_text:
+            logger.error("No text extracted from OCR files")
+            return False
+
+        combined_text = "\n\n".join(pages_text)
+        logger.info(f"Extracted {len(combined_text)} characters from {len(pages_text)} pages")
+
+        # Build prompt for metadata extraction
+        prompt = f"""<task>
+Analyze the text from the FIRST PAGES of this scanned book and extract bibliographic metadata.
+
+These pages typically contain:
+- Title page (large title text)
+- Copyright page (publisher, year, ISBN)
+- Table of contents
+- Dedication or foreword
+
+Extract the following information:
+- title: Complete book title including subtitle
+- author: Author name(s) - format as "First Last" or "First Last and First Last"
+- year: Publication year (integer)
+- publisher: Publisher name
+- type: Book genre/type (biography, history, memoir, political_analysis, military_history, etc.)
+- isbn: ISBN if visible (can be null)
+
+Return ONLY information you can clearly identify from the text. Do not guess.
+Set confidence to 0.9+ if information is on a clear title/copyright page.
+Set confidence to 0.5-0.8 if inferred from content.
+Set confidence below 0.5 if uncertain.
+</task>
+
+<text>
+{combined_text[:15000]}
+</text>
+
+<output_format>
+Return JSON only. No explanations.
+</output_format>"""
+
+        # Define JSON schema for structured output
+        response_schema = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "book_metadata",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": ["string", "null"]},
+                        "author": {"type": ["string", "null"]},
+                        "year": {"type": ["integer", "null"]},
+                        "publisher": {"type": ["string", "null"]},
+                        "type": {"type": ["string", "null"]},
+                        "isbn": {"type": ["string", "null"]},
+                        "confidence": {"type": "number"}
+                    },
+                    "required": ["title", "author", "year", "publisher", "type", "isbn", "confidence"],
+                    "additionalProperties": False
+                }
+            }
+        }
+
+        try:
+            # Use batch client for consistent logging and telemetry
+            from infra.llm.batch_client import LLMBatchClient, LLMRequest
+
+            # Use stage-specific log directory
+            stage_log_dir = storage.stage('ocr').output_dir / "logs"
+            batch_client = LLMBatchClient(
+                max_workers=1,
+                rate_limit=150,
+                max_retries=3,
+                verbose=True,  # Enable detailed progress
+                log_dir=stage_log_dir,
+                log_timestamp=logger.log_file.stem.split('_', 1)[1] if hasattr(logger, 'log_file') else None
+            )
+
+            # Create single request for metadata extraction
+            request = LLMRequest(
+                id="metadata_extraction",
+                model=Config.VISION_MODEL,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                response_format=response_schema,
+                metadata={}
+            )
+
+            logger.info(
+                "Calling LLM for metadata extraction",
+                model=Config.VISION_MODEL,
+                num_pages=len(pages_text),
+                text_length=len(combined_text)
+            )
+
+            # Process batch with single request (gets full telemetry)
+            results = batch_client.process_batch([request])
+
+            if not results or len(results) == 0:
+                logger.error("No result returned from metadata extraction")
+                return False
+
+            result = results[0]
+
+            if not result.success:
+                logger.error("Metadata extraction failed", error=result.error_message)
+                return False
+
+            # Parse JSON response
+            metadata = json.loads(result.response)
+            confidence = metadata.get('confidence', 0)
+
+            # Log detailed extraction results with full telemetry
+            logger.info(
+                "Metadata extracted successfully",
+                confidence=confidence,
+                title=metadata.get('title', 'Unknown'),
+                author=metadata.get('author', 'Unknown'),
+                year=metadata.get('year', 'Unknown'),
+                publisher=metadata.get('publisher', 'Unknown'),
+                book_type=metadata.get('type', 'Unknown'),
+                cost_usd=result.cost_usd,
+                input_tokens=result.usage.get('prompt_tokens', 0),
+                output_tokens=result.usage.get('completion_tokens', 0),
+                reasoning_tokens=result.usage.get('reasoning_tokens', 0),
+                total_tokens=result.usage.get('total_tokens', 0),
+                ttft_seconds=result.ttft_seconds,
+                tokens_per_second=result.tokens_per_second,
+                execution_time=result.execution_time_seconds
+            )
+
+            # Only update if confidence >= 0.5
+            if confidence < 0.5:
+                logger.warning(f"Low confidence ({confidence:.2f}) - metadata not updated")
+                return False
+
+            # Update metadata.json
+            current_metadata = storage.load_metadata()
+
+            # Update fields (preserve existing non-None values if extraction is None)
+            for field in ['title', 'author', 'year', 'publisher', 'type', 'isbn']:
+                extracted_value = metadata.get(field)
+                if extracted_value is not None:
+                    current_metadata[field] = extracted_value
+
+            current_metadata['metadata_extraction_confidence'] = confidence
+
+            # Save updated metadata
+            storage.save_metadata(current_metadata)
+
+            logger.info("Metadata saved to metadata.json")
+            return True
+
+        except Exception as e:
+            logger.error("Metadata extraction failed", error=str(e))
+            import traceback
+            logger.error("Traceback", error=traceback.format_exc())
+            return False
 
 
 def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str, Any]]:

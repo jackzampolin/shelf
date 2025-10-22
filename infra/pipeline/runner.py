@@ -57,9 +57,9 @@ def run_stage(
     stage_storage = storage.stage(stage.name)
     checkpoint = stage_storage.checkpoint
 
-    # Create logger
-    logs_dir = storage.book_dir / "logs"
-    logs_dir.mkdir(exist_ok=True)
+    # Create logger in stage-specific logs directory
+    logs_dir = stage_storage.output_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
     logger = create_logger(storage.scan_id, stage.name, log_dir=logs_dir)
 
     try:

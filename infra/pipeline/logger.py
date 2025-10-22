@@ -134,7 +134,7 @@ class PipelineLogger:
         scan_id: str,
         stage: str,
         log_dir: Optional[Path] = None,
-        console_output: bool = True,
+        console_output: bool = False,
         json_output: bool = True,
         level: str = "INFO"
     ):

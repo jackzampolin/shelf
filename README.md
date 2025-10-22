@@ -20,7 +20,7 @@ cp .env.example .env
 # Add your OPENROUTER_API_KEY
 
 # Verify
-uv run python ar.py --help
+uv run python shelf.py --help
 ```
 
 ---
@@ -31,85 +31,73 @@ uv run python ar.py --help
 
 ```bash
 # Add a book to the library
-uv run python ar.py library add ~/Documents/Scans/book-*.pdf
+uv run python shelf.py add ~/Documents/Scans/book-*.pdf
 
 # View all books
-uv run python ar.py library list
+uv run python shelf.py list
 
 # Show detailed book information
-uv run python ar.py library show <scan-id>
+uv run python shelf.py show <scan-id>
 
 # Check processing status
-uv run python ar.py status <scan-id>
+uv run python shelf.py status <scan-id>
+
+# View library statistics
+uv run python shelf.py stats
 
 # Delete a book
-uv run python ar.py library delete <scan-id>
+uv run python shelf.py delete <scan-id>
 ```
 
 ### Processing Pipeline
 
-The pipeline processes books through these stages:
+The pipeline processes books through these stages (auto-resumes from checkpoints):
 
 ```bash
-# Stage 1: OCR - Extract text and images via Tesseract
-uv run python ar.py process ocr <scan-id>
+# Run full pipeline (OCR → Correction → Label → Merge)
+uv run python shelf.py process <scan-id>
 
-# Metadata Extraction - Extract title, author, ISBN, etc. from first pages
-# (Currently standalone tool - needs CLI integration)
-uv run python tools/extract_metadata.py <scan-id>
+# Run single stage
+uv run python shelf.py process <scan-id> --stage ocr
+uv run python shelf.py process <scan-id> --stage corrected
+uv run python shelf.py process <scan-id> --stage labels
+uv run python shelf.py process <scan-id> --stage merged
 
-# Stage 2: Correction - Vision-based OCR error correction
-uv run python ar.py process correct <scan-id> --workers 30
+# Run multiple stages
+uv run python shelf.py process <scan-id> --stages ocr,corrected
 
-# Stage 3: Label - Extract page numbers and classify content blocks
-uv run python ar.py process label <scan-id> --workers 30
-
-# Stage 4: Merge - Combine OCR, corrections, and labels
-uv run python ar.py process merge <scan-id>
-
-# Stage 5: Structure - Detect chapters (in development)
-uv run python ar.py process structure <scan-id>
+# Customize workers and model
+uv run python shelf.py process <scan-id> --workers 30 --model gpt-4o
 ```
 
-**Note:** Metadata extraction happens after OCR and before Correction. The extracted metadata (title, author, etc.) is used by the Correction and Label stages for improved accuracy.
+**Stages:**
+- **ocr** - Extract text and images via Tesseract
+- **corrected** - Vision-based OCR error correction
+- **labels** - Extract page numbers and classify content blocks
+- **merged** - Combine OCR, corrections, and labels
 
-### Common Options
+**Note:** Pipeline automatically resumes from checkpoints if interrupted. Quality reports are generated automatically in each stage's `after()` hook.
 
-```bash
-# Resume from checkpoint after interruption
-uv run python ar.py process correct <scan-id> --resume
-
-# Override default vision model
-uv run python ar.py process correct <scan-id> --model gpt-4o
-
-# Clean a stage to restart
-uv run python ar.py process clean correct <scan-id>
-```
-
-### Quality Reports
-
-Each stage includes analysis tools:
+### Stage Cleanup
 
 ```bash
-# Run correction quality report
-uv run python pipeline/2_correction/report.py <scan-id>
-
-# Run label classification report
-uv run python pipeline/3_label/report.py <scan-id>
+# Clean a stage to restart from scratch
+uv run python shelf.py clean <scan-id> --stage ocr
+uv run python shelf.py clean <scan-id> --stage corrected -y  # Skip confirmation
 ```
 
 ---
 
 ## Current Status
 
-- ✅ **Stage 1 (OCR):** Complete - Tesseract extraction
-- 🚧 **Metadata Extraction:** Tool exists (`tools/extract_metadata.py`), needs CLI integration
-- ✅ **Stage 2 (Correction):** Complete - Vision-based error fixing
-- ✅ **Stage 3 (Label):** Complete - Page numbers & block classification
-- 🚧 **Stage 4 (Merge):** Implemented, needs testing
-- ❌ **Stage 5 (Structure):** In development
+- ✅ **OCR Stage:** Complete - Tesseract extraction with image detection
+- ✅ **Correction Stage:** Complete - Vision-based OCR error correction
+- ✅ **Label Stage:** Complete - Page numbers & block classification
+- ✅ **Merge Stage:** Complete - Three-way merge (OCR + Corrections + Labels)
+- 🚧 **CLI Refactor:** New `shelf.py` using BaseStage abstraction and runner.py
+- ❌ **Structure Stage:** Not yet implemented - will use merged outputs
 
-**Current Focus:** Running quality reports on library books to inform structure stage design
+**Current Focus:** Testing new CLI and preparing for structure stage design
 
 ---
 
@@ -138,28 +126,36 @@ uv run python -m pytest tests/tools/ -v
 ### Pipeline Flow
 
 ```
-PDF → Split Pages → OCR → Metadata Extraction → Correction → Label → Merge → Structure
+PDF → Split Pages → OCR → Correction → Label → Merge → Structure (TBD)
 ```
 
 Each stage:
-- Supports checkpoint-based resume after interruption
+- Inherits from BaseStage (before/run/after lifecycle)
+- Automatically resumes from checkpoints if interrupted
 - Tracks costs and token usage
-- Produces quality reports for analysis
-- Uses BookStorage API for consistent file operations
+- Generates quality reports in after() hook
+- Uses BookStorage and StageStorage APIs for consistent file operations
 
 ### Storage Structure
 
 ```
 ~/Documents/book_scans/
-├── library.json              # Book catalog
-├── {scan-id}/                # Per-book directory
+├── library.json              # Book catalog (LibraryStorage)
+├── {scan-id}/                # Per-book directory (BookStorage)
 │   ├── source/               # Original page images
-│   ├── ocr/                  # OCR outputs + extracted images
-│   ├── corrected/            # Corrected pages
-│   ├── labels/               # Page classifications
-│   ├── processed/            # Merged pages
-│   ├── chapters/             # Chapter structure (future)
-│   ├── checkpoints/          # Resume checkpoints
+│   ├── ocr/                  # OCR outputs (stage: "ocr")
+│   │   ├── page_NNNN.json    # OCR text blocks
+│   │   └── checkpoint.json   # Resume state
+│   ├── corrected/            # Corrected pages (stage: "corrected")
+│   │   ├── page_NNNN.json    # Corrected text
+│   │   └── checkpoint.json
+│   ├── labels/               # Page classifications (stage: "labels")
+│   │   ├── page_NNNN.json    # Block classifications + page numbers
+│   │   └── checkpoint.json
+│   ├── merged/               # Merged pages (stage: "merged")
+│   │   ├── page_NNNN.json    # Three-way merged data
+│   │   └── checkpoint.json
+│   ├── images/               # Extracted image regions
 │   ├── logs/                 # Per-stage logs
 │   └── metadata.json         # Book metadata
 ```

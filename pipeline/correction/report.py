@@ -98,16 +98,18 @@ def analyze_correction_quality(ocr_text, corr_text):
     return metrics
 
 
-def print_histogram(values, title, bins=10, max_width=40):
-    """Print ASCII histogram."""
+def format_histogram(values, title, bins=10, max_width=40):
+    """Format ASCII histogram as string."""
     if not values:
-        return
+        return ""
+
+    lines = []
 
     # Create bins
     min_val = min(values)
     max_val = max(values)
     if min_val == max_val:
-        return
+        return ""
 
     bin_width = (max_val - min_val) / bins
     bin_counts = [0] * bins
@@ -118,8 +120,8 @@ def print_histogram(values, title, bins=10, max_width=40):
 
     max_count = max(bin_counts) if bin_counts else 1
 
-    print(f"\n{title}")
-    print("─" * 70)
+    lines.append(f"\n{title}")
+    lines.append("─" * 70)
 
     for i in range(bins):
         bin_start = min_val + i * bin_width
@@ -127,7 +129,9 @@ def print_histogram(values, title, bins=10, max_width=40):
         count = bin_counts[i]
         bar_width = int((count / max_count) * max_width) if max_count > 0 else 0
         bar = "█" * bar_width
-        print(f"{bin_start:6.2f}-{bin_end:6.2f} │{bar} {count}")
+        lines.append(f"{bin_start:6.2f}-{bin_end:6.2f} │{bar} {count}")
+
+    return "\n".join(lines)
 
 
 def analyze_paragraph(ocr_para, corr_para):
@@ -235,8 +239,21 @@ def analyze_paragraph(ocr_para, corr_para):
     return issues, notes, confidence, (corr_text != ocr_text if corr_text else False), quality_metrics
 
 
-def analyze_book(scan_id, max_pages=None, storage_root=None, export_format=None, export_path=None, silent=False):
-    """Analyze correction outputs for a book."""
+def analyze_book(scan_id, max_pages=None, storage_root=None, export_format=None, export_path=None, silent=False, write_report=True):
+    """Analyze correction outputs for a book.
+
+    Args:
+        scan_id: Book scan identifier
+        max_pages: Optional limit on pages to analyze
+        storage_root: Root directory for book storage
+        export_format: Optional export format ('csv' or 'json')
+        export_path: Optional export file path
+        silent: If True, suppress terminal output
+        write_report: If True, write report.txt to stage folder (default: True)
+
+    Returns:
+        Tuple of (stats dict, issues list)
+    """
     if storage_root is None:
         storage_root = Path("~/Documents/book_scans").expanduser()
     else:
@@ -257,11 +274,6 @@ def analyze_book(scan_id, max_pages=None, storage_root=None, export_format=None,
     corrected_files = sorted(corrected_dir.glob("page_*.json"))
     if max_pages:
         corrected_files = corrected_files[:max_pages]
-
-    if not silent:
-        print(f"\n📊 Analyzing Correction Stage: {scan_id}")
-        print(f"   Pages to analyze: {len(corrected_files)}")
-        print()
 
     # Statistics
     stats = {
@@ -374,185 +386,255 @@ def analyze_book(scan_id, max_pages=None, storage_root=None, export_format=None,
                         'para': corr_para['par_num']
                     })
 
-    # Print summary
-    if not silent:
-        print("=" * 70)
-        print("SUMMARY STATISTICS")
-        print("=" * 70)
-        print()
+    # Write report to CSV file if requested
+    if write_report and stats:
+        csv_path = corrected_dir / "report.csv"
+        export_to_csv(scan_id, stats, all_issues, csv_path)
 
-        print(f"📄 Total Pages:      {stats['total_pages']}")
-        print(f"📝 Total Paragraphs: {stats['total_paragraphs']}")
-        print(f"💰 Total Cost:       ${stats['total_cost']:.4f}")
-        if stats['total_pages'] > 0:
-            print(f"   Cost per page:    ${stats['total_cost'] / stats['total_pages']:.4f}")
-        print()
+    # Print to terminal if not silent
+    if not silent and stats:
+        report_text = format_report(scan_id, stats, all_issues)
+        print(report_text)
+
+    # Export to custom path if requested (for CLI usage)
+    if export_format == 'csv' and export_path:
+        export_to_csv(scan_id, stats, all_issues, export_path)
+    elif export_format == 'json' and export_path:
+        export_to_json(scan_id, stats, all_issues, export_path)
+
+    return stats, all_issues
+
+
+def format_report(scan_id, stats, all_issues):
+    """Format complete analysis report as string."""
+    lines = []
+
+    # Header
+    lines.append(f"\n📊 Correction Stage Analysis: {scan_id}")
+    lines.append(f"   Pages analyzed: {stats['total_pages']}")
+    lines.append("")
+
+    # Summary statistics
+    lines.append("=" * 70)
+    lines.append("SUMMARY STATISTICS")
+    lines.append("=" * 70)
+    lines.append("")
+    lines.append(f"📄 Total Pages:      {stats['total_pages']}")
+    lines.append(f"📝 Total Paragraphs: {stats['total_paragraphs']}")
+    lines.append(f"💰 Total Cost:       ${stats['total_cost']:.4f}")
+    if stats['total_pages'] > 0:
+        lines.append(f"   Cost per page:    ${stats['total_cost'] / stats['total_pages']:.4f}")
+    lines.append("")
 
     # No errors analysis
-    if not silent:
-        print("━" * 70)
-        print("NO ERRORS ANALYSIS")
-        print("━" * 70)
-        no_error_total = stats['paragraphs_with_no_errors']
-        if no_error_total > 0:
-            correct_pct = (stats['null_text_correct'] / no_error_total) * 100
-            schema_mismatch_pct = (stats['schema_preference_mismatch'] / no_error_total) * 100
+    lines.append("━" * 70)
+    lines.append("NO ERRORS ANALYSIS")
+    lines.append("━" * 70)
+    no_error_total = stats['paragraphs_with_no_errors']
+    if no_error_total > 0:
+        correct_pct = (stats['null_text_correct'] / no_error_total) * 100
+        schema_mismatch_pct = (stats['schema_preference_mismatch'] / no_error_total) * 100
 
-            print(f"Paragraphs with 'No OCR errors detected': {no_error_total}")
-            print(f"  ✅ text=null (schema compliant): {stats['null_text_correct']:4d} ({correct_pct:5.1f}%)")
-            print(f"  ℹ️  text=full (schema preference): {stats['schema_preference_mismatch']:4d} ({schema_mismatch_pct:5.1f}%)")
+        lines.append(f"Paragraphs with 'No OCR errors detected': {no_error_total}")
+        lines.append(f"  ✅ text=null (schema compliant): {stats['null_text_correct']:4d} ({correct_pct:5.1f}%)")
+        lines.append(f"  ℹ️  text=full (schema preference): {stats['schema_preference_mismatch']:4d} ({schema_mismatch_pct:5.1f}%)")
 
-            if schema_mismatch_pct > 50:
-                print(f"\n  Note: {schema_mismatch_pct:.1f}% return full text instead of null")
-                print(f"  This is a schema preference issue, not a quality problem.")
-        print()
+        if schema_mismatch_pct > 50:
+            lines.append(f"\n  Note: {schema_mismatch_pct:.1f}% return full text instead of null")
+            lines.append(f"  This is a schema preference issue, not a quality problem.")
+    lines.append("")
 
-        # Corrections analysis
-        print("━" * 70)
-        print("CORRECTIONS ANALYSIS")
-        print("━" * 70)
-        corr_total = stats['paragraphs_with_corrections']
-        if corr_total > 0:
-            applied_pct = (stats['corrections_applied'] / corr_total) * 100
-            not_applied_pct = (stats['corrections_not_applied'] / corr_total) * 100
+    # Corrections analysis
+    lines.append("━" * 70)
+    lines.append("CORRECTIONS ANALYSIS")
+    lines.append("━" * 70)
+    corr_total = stats['paragraphs_with_corrections']
+    if corr_total > 0:
+        applied_pct = (stats['corrections_applied'] / corr_total) * 100
+        not_applied_pct = (stats['corrections_not_applied'] / corr_total) * 100
 
-            print(f"Paragraphs with corrections documented: {corr_total}")
-            print(f"  ✅ text changed (applied):    {stats['corrections_applied']:4d} ({applied_pct:5.1f}%)")
-            print(f"  ❌ text unchanged (not applied): {stats['corrections_not_applied']:4d} ({not_applied_pct:5.1f}%)")
+        lines.append(f"Paragraphs with corrections documented: {corr_total}")
+        lines.append(f"  ✅ text changed (applied):    {stats['corrections_applied']:4d} ({applied_pct:5.1f}%)")
+        lines.append(f"  ❌ text unchanged (not applied): {stats['corrections_not_applied']:4d} ({not_applied_pct:5.1f}%)")
 
-            if not_applied_pct > 10:
-                print(f"\n⚠️  WARNING: {not_applied_pct:.1f}% of corrections not applied!")
-        print()
+        if not_applied_pct > 10:
+            lines.append(f"\n⚠️  WARNING: {not_applied_pct:.1f}% of corrections not applied!")
+    lines.append("")
 
-        # Confidence scores
-        print("━" * 70)
-        print("CONFIDENCE SCORES")
-        print("━" * 70)
-        if stats['confidence_scores']:
-            scores = stats['confidence_scores']
-            avg_conf = sum(scores) / len(scores)
-            high_conf = sum(1 for s in scores if s >= 0.95) / len(scores) * 100
-            med_conf = sum(1 for s in scores if 0.85 <= s < 0.95) / len(scores) * 100
-            low_conf = sum(1 for s in scores if s < 0.85) / len(scores) * 100
+    # Confidence scores
+    lines.append("━" * 70)
+    lines.append("CONFIDENCE SCORES")
+    lines.append("━" * 70)
+    if stats['confidence_scores']:
+        scores = stats['confidence_scores']
+        avg_conf = sum(scores) / len(scores)
+        high_conf = sum(1 for s in scores if s >= 0.95) / len(scores) * 100
+        med_conf = sum(1 for s in scores if 0.85 <= s < 0.95) / len(scores) * 100
+        low_conf = sum(1 for s in scores if s < 0.85) / len(scores) * 100
 
-            print(f"Average confidence: {avg_conf:.3f}")
-            print(f"  0.95-1.0 (high):    {high_conf:5.1f}%")
-            print(f"  0.85-0.94 (medium): {med_conf:5.1f}%")
-            print(f"  <0.85 (low):        {low_conf:5.1f}%")
+        lines.append(f"Average confidence: {avg_conf:.3f}")
+        lines.append(f"  0.95-1.0 (high):    {high_conf:5.1f}%")
+        lines.append(f"  0.85-0.94 (medium): {med_conf:5.1f}%")
+        lines.append(f"  <0.85 (low):        {low_conf:5.1f}%")
 
-            if high_conf > 85:
-                print(f"\n⚠️  WARNING: {high_conf:.1f}% of paragraphs have 0.95+ confidence (over-confident)")
-        print()
+        if high_conf > 85:
+            lines.append(f"\n⚠️  WARNING: {high_conf:.1f}% of paragraphs have 0.95+ confidence (over-confident)")
+    lines.append("")
 
-        # Note lengths
-        print("━" * 70)
-        print("NOTE LENGTHS")
-        print("━" * 70)
-        if stats['note_lengths']:
-            lengths = stats['note_lengths']
-            avg_len = sum(lengths) / len(lengths)
-            verbose = sum(1 for l in lengths if l > 300) / len(lengths) * 100
+    # Note lengths
+    lines.append("━" * 70)
+    lines.append("NOTE LENGTHS")
+    lines.append("━" * 70)
+    if stats['note_lengths']:
+        lengths = stats['note_lengths']
+        avg_len = sum(lengths) / len(lengths)
+        verbose = sum(1 for l in lengths if l > 300) / len(lengths) * 100
 
-            print(f"Average note length: {avg_len:.0f} chars")
-            print(f"Notes > 300 chars (verbose): {verbose:.1f}%")
+        lines.append(f"Average note length: {avg_len:.0f} chars")
+        lines.append(f"Notes > 300 chars (verbose): {verbose:.1f}%")
 
-            if verbose > 5:
-                print(f"\n⚠️  WARNING: {verbose:.1f}% of notes are excessively verbose")
-        print()
+        if verbose > 5:
+            lines.append(f"\n⚠️  WARNING: {verbose:.1f}% of notes are excessively verbose")
+    lines.append("")
 
-        # Issues summary
-        print("━" * 70)
-        print("ISSUES FOUND")
-        print("━" * 70)
-        if stats['issues_by_type']:
-            for issue_type, count in stats['issues_by_type'].most_common():
-                print(f"  {issue_type:30s}: {count:4d}")
-        else:
-            print("  ✅ No issues found!")
-        print()
+    # Issues summary
+    lines.append("━" * 70)
+    lines.append("ISSUES FOUND")
+    lines.append("━" * 70)
+    if stats['issues_by_type']:
+        for issue_type, count in stats['issues_by_type'].most_common():
+            lines.append(f"  {issue_type:30s}: {count:4d}")
+    else:
+        lines.append("  ✅ No issues found!")
+    lines.append("")
 
-        # Show examples of top issues
-        if all_issues:
-            print("=" * 70)
-            print("EXAMPLE ISSUES (First 5)")
-            print("=" * 70)
-            print()
+    # Example issues
+    if all_issues:
+        lines.append("=" * 70)
+        lines.append("EXAMPLE ISSUES (First 5)")
+        lines.append("=" * 70)
+        lines.append("")
 
-            for i, issue in enumerate(all_issues[:5], 1):
-                print(f"Issue {i}: {issue['type']}")
-                print(f"  Page {issue['page']}, Block {issue['block']}, Para {issue['para']}")
-                print(f"  Severity: {issue['severity']}")
-                print(f"  {issue['description']}")
-                if 'notes' in issue:
-                    print(f"  Notes: {issue['notes'][:150]}...")
-                print()
+        for i, issue in enumerate(all_issues[:5], 1):
+            lines.append(f"Issue {i}: {issue['type']}")
+            lines.append(f"  Page {issue['page']}, Block {issue['block']}, Para {issue['para']}")
+            lines.append(f"  Severity: {issue['severity']}")
+            lines.append(f"  {issue['description']}")
+            if 'notes' in issue:
+                lines.append(f"  Notes: {issue['notes'][:150]}...")
+            lines.append("")
 
-    # Quality Metrics section
-    if not silent and stats['quality_metrics']['similarity_ratios']:
-        print("=" * 70)
-        print("QUALITY METRICS (Text Changes)")
-        print("=" * 70)
-        print()
+    # Quality metrics
+    if stats['quality_metrics']['similarity_ratios']:
+        lines.append("=" * 70)
+        lines.append("QUALITY METRICS (Text Changes)")
+        lines.append("=" * 70)
+        lines.append("")
 
         sim_ratios = stats['quality_metrics']['similarity_ratios']
         avg_sim = sum(sim_ratios) / len(sim_ratios)
-        print(f"Corrections made: {len(sim_ratios)}")
-        print(f"Average similarity to original: {avg_sim:.3f}")
+        lines.append(f"Corrections made: {len(sim_ratios)}")
+        lines.append(f"Average similarity to original: {avg_sim:.3f}")
 
         # Check for over-corrections
         over_corrections = sum(1 for s in sim_ratios if s < 0.70)
         if over_corrections > 0:
             pct = (over_corrections / len(sim_ratios)) * 100
-            print(f"⚠️  {over_corrections} corrections with <70% similarity ({pct:.1f}%)")
+            lines.append(f"⚠️  {over_corrections} corrections with <70% similarity ({pct:.1f}%)")
 
         # Character changes
         if stats['quality_metrics']['chars_changed']:
             avg_chars = sum(stats['quality_metrics']['chars_changed']) / len(stats['quality_metrics']['chars_changed'])
-            print(f"\nAverage characters changed: {avg_chars:.1f}")
+            lines.append(f"\nAverage characters changed: {avg_chars:.1f}")
 
-        # Histograms
-        print_histogram(sim_ratios, "SIMILARITY DISTRIBUTION", bins=15)
-        print()
+        # Histogram
+        histogram = format_histogram(sim_ratios, "SIMILARITY DISTRIBUTION", bins=15)
+        if histogram:
+            lines.append(histogram)
+        lines.append("")
 
-    # Model Performance section
-    if not silent and len(stats['by_model']) > 0:
-        print("=" * 70)
-        print("MODEL PERFORMANCE")
-        print("=" * 70)
-        print()
+    # Model performance
+    if len(stats['by_model']) > 0:
+        lines.append("=" * 70)
+        lines.append("MODEL PERFORMANCE")
+        lines.append("=" * 70)
+        lines.append("")
 
         for model, model_stats in stats['by_model'].items():
-            print(f"Model: {model}")
-            print(f"  Pages processed: {model_stats['pages']}")
-            print(f"  Total cost:      ${model_stats['total_cost']:.4f}")
+            lines.append(f"Model: {model}")
+            lines.append(f"  Pages processed: {model_stats['pages']}")
+            lines.append(f"  Total cost:      ${model_stats['total_cost']:.4f}")
             if model_stats['pages'] > 0:
-                print(f"  Cost per page:   ${model_stats['total_cost'] / model_stats['pages']:.4f}")
+                lines.append(f"  Cost per page:   ${model_stats['total_cost'] / model_stats['pages']:.4f}")
             if model_stats['avg_confidence']:
                 avg_conf = sum(model_stats['avg_confidence']) / len(model_stats['avg_confidence'])
-                print(f"  Avg confidence:  {avg_conf:.3f}")
-            print(f"  Corrections:     {model_stats['corrections_applied']}")
-            print()
+                lines.append(f"  Avg confidence:  {avg_conf:.3f}")
+            lines.append(f"  Corrections:     {model_stats['corrections_applied']}")
+            lines.append("")
 
-    # Generate review list
-    if not silent and all_issues:
-        generate_review_list(scan_id, all_issues, max_items=15)
+    # Review list
+    if all_issues:
+        review_list = format_review_list(scan_id, all_issues, max_items=15)
+        lines.append(review_list)
 
-    # Export if requested
-    if export_format == 'csv' and export_path:
-        export_to_csv(scan_id, stats, all_issues, export_path)
-        if not silent:
-            print(f"\n✅ Exported to {export_path}")
-    elif export_format == 'json' and export_path:
-        export_to_json(scan_id, stats, all_issues, export_path)
-        if not silent:
-            print(f"\n✅ Exported to {export_path}")
+    lines.append("=" * 70)
+    lines.append("ANALYSIS COMPLETE")
+    lines.append("=" * 70)
 
-    if not silent:
-        print("=" * 70)
-        print("ANALYSIS COMPLETE")
-        print("=" * 70)
+    return "\n".join(lines)
 
-    return stats, all_issues
+
+def format_review_list(scan_id, all_issues, max_items=15):
+    """Format prioritized list of pages to review as string."""
+    priority_order = {
+        'correction_not_applied': 1,
+        'over_correction': 2,
+        'circular_correction': 3,
+        'correction_documented_but_null': 4,
+        'null_text_violation': 5,
+        'low_confidence': 6
+    }
+
+    # Sort by priority and severity
+    sorted_issues = sorted(all_issues,
+                          key=lambda i: (priority_order.get(i['type'], 99),
+                                        {'critical': 1, 'high': 2, 'medium': 3, 'low': 4}.get(i.get('severity', 'low'), 4)))
+
+    lines = []
+    lines.append("=" * 70)
+    lines.append(f"🔍 TOP {max_items} PAGES TO REVIEW (Priority Order)")
+    lines.append("=" * 70)
+    lines.append(f"{'#':<4} {'Page':<7} {'Location':<15} {'Issue':<25} {'Severity':<10}")
+    lines.append("─" * 70)
+
+    seen_combinations = set()
+    displayed = 0
+
+    for issue in sorted_issues:
+        if displayed >= max_items:
+            break
+
+        page = issue['page']
+        block = issue.get('block', '?')
+        para = issue.get('para', '?')
+
+        # Create unique key for this issue location
+        key = (page, block, para, issue['type'])
+        if key in seen_combinations:
+            continue
+        seen_combinations.add(key)
+
+        location = f"b{block}/p{para}"
+        issue_type = issue['type'][:24]
+
+        displayed += 1
+        lines.append(f"{displayed:<4} p{page:<6} {location:<15} {issue_type:<25} {issue.get('severity', 'N/A'):<10}")
+
+    lines.append("")
+    lines.append(f"💡 Review these pages in the correction output to verify quality")
+    lines.append("")
+
+    return "\n".join(lines)
 
 
 def generate_review_list(scan_id, all_issues, max_items=15):
