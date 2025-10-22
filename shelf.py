@@ -158,11 +158,6 @@ def cmd_library_show(args):
     if scan['scan'].get('cost_usd'):
         print(f"Cost:        ${scan['scan']['cost_usd']:.2f}")
 
-    if scan['scan'].get('models'):
-        print(f"\nModels used:")
-        for stage, model in scan['scan']['models'].items():
-            print(f"  {stage}: {model}")
-
     print()
 
 
@@ -252,8 +247,8 @@ def cmd_library_delete(args):
     if not args.yes:
         print(f"\n⚠️  WARNING: This will delete:")
         print(f"   Scan ID: {args.scan_id}")
-        print(f"   Title:   {scan['title']}")
-        print(f"   Author:  {scan['author']}")
+        print(f"   Title:   {scan.get('title', args.scan_id)}")
+        print(f"   Author:  {scan.get('author', 'Unknown')}")
 
         if args.keep_files:
             print(f"\n   Library entry will be removed (files will be kept)")
@@ -281,8 +276,6 @@ def cmd_library_delete(args):
         print(f"\n✅ Deleted: {result['scan_id']}")
         if result['files_deleted']:
             print(f"   Files deleted from: {result['scan_dir']}")
-        if result['book_removed']:
-            print(f"   Book '{result['book_slug']}' removed (no more scans)")
 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -319,16 +312,16 @@ def cmd_process(args):
 
     # Map stage names to Stage instances
     stage_map = {
-        'ocr': OCRStage(max_workers=args.workers),
+        'ocr': OCRStage(max_workers=args.workers if args.workers else None),
         'corrected': CorrectionStage(
             model=args.model,
-            max_workers=args.workers
+            max_workers=args.workers if args.workers else 30
         ),
         'labels': LabelStage(
             model=args.model,
-            max_workers=args.workers
+            max_workers=args.workers if args.workers else 30
         ),
-        'merged': MergeStage(max_workers=args.workers)
+        'merged': MergeStage(max_workers=args.workers if args.workers else 8)
     }
 
     # Validate stage names
@@ -392,9 +385,24 @@ def cmd_clean(args):
 
     # Clean stage
     try:
+        import shutil
+
+        # Delete all files in output directory except keep .gitkeep if present
+        if stage_storage.output_dir.exists():
+            for item in stage_storage.output_dir.iterdir():
+                if item.name == '.gitkeep':
+                    continue
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+
+        # Reset checkpoint
         checkpoint = stage_storage.checkpoint
-        checkpoint.reset(confirm=False)  # Already confirmed above
+        checkpoint.reset(confirm=False)
+
         print(f"\n✅ Cleaned stage: {args.stage}")
+        print(f"   Deleted all outputs from: {stage_storage.output_dir}")
     except Exception as e:
         print(f"❌ Error: {e}")
         sys.exit(1)

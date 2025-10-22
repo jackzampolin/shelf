@@ -29,7 +29,7 @@ except ImportError:
     pdfinfo_from_path = None
 
 
-def downsample_for_vision(image: Image.Image, target_dpi: int = None, max_payload_kb: int = 1200) -> Image.Image:
+def downsample_for_vision(image: Image.Image, target_dpi: int = None, max_payload_kb: int = 800) -> Image.Image:
     """
     Downsample high-resolution OCR images to vision-appropriate resolution.
 

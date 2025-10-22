@@ -22,8 +22,8 @@ from pdf2image import convert_from_path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from infra.config import Config
-from infra.pipeline.progress import ProgressBar
-from tools.library import LibraryIndex
+from infra.pipeline.rich_progress import RichProgressBar
+# LibraryStorage is now filesystem-based - no library.json!
 
 
 def _slugify_title(title: str) -> str:
@@ -106,7 +106,7 @@ def group_batch_pdfs(pdf_paths: List[Path]) -> Dict[str, List[Path]]:
 def ingest_book_group(
     base_name: str,
     pdf_paths: List[Path],
-    library: LibraryIndex,
+    storage_root: Path,
     auto_confirm: bool = False
 ) -> Optional[str]:
     """
@@ -115,7 +115,7 @@ def ingest_book_group(
     Args:
         base_name: Base filename (e.g., "hap-arnold") - used as scan_id
         pdf_paths: List of batch PDF files
-        library: LibraryIndex instance
+        storage_root: Root directory for book storage
         auto_confirm: Skip confirmation prompts
 
     Returns:
@@ -134,19 +134,13 @@ def ingest_book_group(
     print(f"   Author:    {author}")
     print(f"   PDFs:      {len(pdf_paths)}")
 
-    # Check scan_id is unique
-    existing_ids = [
-        scan['scan_id']
-        for book in library.data['books'].values()
-        for scan in book['scans']
-    ]
-
-    if scan_id in existing_ids:
-        print(f"   ❌ Scan ID '{scan_id}' already exists in library")
+    # Check scan_id is unique (check if directory exists)
+    scan_dir = storage_root / scan_id
+    if scan_dir.exists():
+        print(f"   ❌ Scan ID '{scan_id}' already exists (directory found)")
         return None
 
     # Create directory structure
-    scan_dir = library.storage_root / scan_id
     scan_dir.mkdir(exist_ok=True)
 
     source_dir = scan_dir / "source"
@@ -183,7 +177,7 @@ def ingest_book_group(
     completed = 0
     failed = 0
 
-    progress = ProgressBar(
+    progress = RichProgressBar(
         total=total_pages,
         prefix="   ",
         width=40,
@@ -236,18 +230,10 @@ def ingest_book_group(
     with open(metadata_file, 'w') as f:
         json.dump(metadata, f, indent=2)
 
-    # Register in library
-    library.add_book(
-        title=title,
-        author=author,
-        scan_id=scan_id,
-        isbn=isbn,
-        year=year,
-        source_file=", ".join([p.name for p in pdf_paths]),
-        notes=f"Ingested from {pdf_paths[0].parent}"
-    )
+    # No need to register in library.json - filesystem-based now!
+    # The book is automatically discovered by LibraryStorage scanning directories
 
-    print(f"\n✅ Book registered: {scan_id}")
+    print(f"\n✅ Book added: {scan_id}")
 
     return scan_id
 
@@ -293,8 +279,9 @@ def ingest_from_directories(
 
     # Process each group
     scan_ids = []
+    storage_root = Config.BOOK_STORAGE_ROOT
     for base_name, pdfs in groups.items():
-        scan_id = ingest_book_group(base_name, pdfs, library, auto_confirm)
+        scan_id = ingest_book_group(base_name, pdfs, storage_root, auto_confirm)
         if scan_id:
             scan_ids.append(scan_id)
 
@@ -320,7 +307,7 @@ def add_books_to_library(pdf_paths: List[Path], storage_root: Path = None, run_o
     Returns:
         Dict with books_added count and scan_ids list
     """
-    library = LibraryIndex(storage_root=storage_root)
+    storage_root = storage_root or Config.BOOK_STORAGE_ROOT
 
     # Group PDFs by book
     groups = group_batch_pdfs(pdf_paths)
@@ -332,7 +319,7 @@ def add_books_to_library(pdf_paths: List[Path], storage_root: Path = None, run_o
     # Process each group
     scan_ids = []
     for base_name, pdfs in groups.items():
-        scan_id = ingest_book_group(base_name, pdfs, library, auto_confirm=True)
+        scan_id = ingest_book_group(base_name, pdfs, storage_root, auto_confirm=True)
         if scan_id:
             scan_ids.append(scan_id)
 
