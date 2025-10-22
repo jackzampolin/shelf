@@ -26,8 +26,7 @@ from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.rich_progress import RichProgressBar
 
 # Import from local modules
-from pipeline.ocr.schemas import OCRPageOutput
-from pipeline.ocr.report import generate_ocr_report, save_report
+from pipeline.ocr.schemas import OCRPageOutput, OCRPageMetrics, OCRPageReport
 
 
 class OCRStage(BaseStage):
@@ -41,6 +40,12 @@ class OCRStage(BaseStage):
 
     name = "ocr"
     dependencies = []  # First stage, no dependencies
+
+    # Schema definitions
+    input_schema = None  # No input (reads raw images)
+    output_schema = OCRPageOutput
+    checkpoint_schema = OCRPageMetrics
+    report_schema = OCRPageReport  # Quality-focused report
 
     def __init__(self, max_workers: int = None):
         """
@@ -123,14 +128,19 @@ class OCRStage(BaseStage):
                 page_num = future_to_page[future]
 
                 try:
-                    success, returned_page_num, error_msg, page_data = future.result()
+                    success, returned_page_num, error_msg, page_data, metrics = future.result()
 
                     if success:
-                        # Save page output using storage API
+                        # Validate metrics against schema
+                        from pipeline.ocr.schemas import OCRPageMetrics
+                        validated_metrics = OCRPageMetrics(**metrics)
+
+                        # Save page output using storage API (with metrics)
                         storage.stage(self.name).save_page(
                             page_num=returned_page_num,
                             data=page_data,
-                            schema=OCRPageOutput
+                            schema=OCRPageOutput,
+                            metrics=validated_metrics.model_dump()
                         )
                         completed += 1
                     else:
@@ -162,14 +172,10 @@ class OCRStage(BaseStage):
 
     def after(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger, stats: Dict[str, Any]):
         """Generate OCR quality report and extract book metadata."""
-        # Generate OCR quality report
-        logger.info("Generating OCR quality report...")
-        ocr_stage = storage.stage('ocr')
-        report = generate_ocr_report(ocr_stage.output_dir)
-        save_report(report, ocr_stage.output_dir)
-        logger.info("OCR report complete")
+        # Generate quality report from checkpoint metrics (parent implementation)
+        super().after(storage, checkpoint, logger, stats)
 
-        # Extract book metadata from first 15 pages
+        # Extract book metadata from first 15 pages (stage-specific)
         logger.info("Extracting book metadata from OCR text...")
         metadata_extracted = self._extract_metadata(storage, logger)
 
@@ -292,7 +298,7 @@ Return JSON only. No explanations.
             stage_log_dir = storage.stage('ocr').output_dir / "logs"
             batch_client = LLMBatchClient(
                 max_workers=1,
-                rate_limit=150,
+                # rate_limit uses Config.rate_limit_requests_per_minute by default
                 max_retries=3,
                 verbose=True,  # Enable detailed progress
                 log_dir=stage_log_dir,
@@ -382,7 +388,7 @@ Return JSON only. No explanations.
             return False
 
 
-def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str, Any]]:
+def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str, Any], Dict[str, Any]]:
     """
     Standalone worker function for parallel OCR processing.
 
@@ -392,9 +398,13 @@ def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str
         task: Dict with storage_root, scan_id, page_number
 
     Returns:
-        (success, page_number, error_msg, page_data)
+        (success, page_number, error_msg, page_data, metrics)
     """
+    import time
+
     try:
+        start_time = time.time()
+
         # Reconstruct storage in worker process
         storage = BookStorage(
             scan_id=task['scan_id'],
@@ -414,8 +424,8 @@ def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str
         # Run Tesseract OCR
         tsv_output = pytesseract.image_to_data(pil_image, lang='eng', output_type=pytesseract.Output.STRING)
 
-        # Parse TSV into hierarchical blocks
-        blocks_data = _parse_tesseract_hierarchy(tsv_output)
+        # Parse TSV into hierarchical blocks (returns blocks_data and confidence stats)
+        blocks_data, confidence_stats = _parse_tesseract_hierarchy(tsv_output)
 
         # Detect image regions
         text_boxes = []
@@ -454,10 +464,23 @@ def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str
         validated_page = OCRPageOutput(**page_data)
         page_data = validated_page.model_dump()
 
-        return (True, page_number, None, page_data)
+        # Build metrics
+        processing_time = time.time() - start_time
+        tesseract_version = pytesseract.get_tesseract_version()
+
+        metrics = {
+            'page_num': page_number,
+            'processing_time_seconds': processing_time,
+            'cost_usd': 0.0,  # No cost for Tesseract
+            'tesseract_version': str(tesseract_version),
+            'confidence_mean': confidence_stats['mean_confidence'],
+            'blocks_detected': len(blocks_data)
+        }
+
+        return (True, page_number, None, page_data, metrics)
 
     except Exception as e:
-        return (False, task['page_number'], str(e), None)
+        return (False, task['page_number'], str(e), None, None)
 
 
 def _parse_tesseract_hierarchy(tsv_string):
@@ -465,9 +488,14 @@ def _parse_tesseract_hierarchy(tsv_string):
     Parse Tesseract TSV into hierarchical blocks->paragraphs structure.
 
     Standalone version for use in worker processes.
+
+    Returns:
+        (blocks_list, confidence_stats) where confidence_stats contains
+        'mean_confidence' and other aggregate metrics
     """
     reader = csv.DictReader(io.StringIO(tsv_string), delimiter='\t', quoting=csv.QUOTE_NONE)
     blocks = {}
+    all_confidences = []  # Track all word-level confidences for stats
 
     for row in reader:
         try:
@@ -512,6 +540,9 @@ def _parse_tesseract_hierarchy(tsv_string):
             para['ys'].append(top)
             para['x2s'].append(left + width)
             para['y2s'].append(top + height)
+
+            # Track for page-level stats
+            all_confidences.append(conf)
 
         except (ValueError, KeyError):
             continue
@@ -568,7 +599,19 @@ def _parse_tesseract_hierarchy(tsv_string):
                 'paragraphs': paragraphs_list
             })
 
-    return blocks_list
+    # Calculate confidence statistics
+    if all_confidences:
+        mean_conf = sum(all_confidences) / len(all_confidences)
+        # Tesseract confidence is 0-100, normalize to 0-1
+        confidence_stats = {
+            'mean_confidence': round(mean_conf / 100, 3)
+        }
+    else:
+        confidence_stats = {
+            'mean_confidence': 0.0
+        }
+
+    return blocks_list, confidence_stats
 
 
 class ImageDetector:

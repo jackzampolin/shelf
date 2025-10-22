@@ -8,6 +8,7 @@ Processes pages in parallel using ThreadPoolExecutor (I/O-bound LLM calls).
 import json
 import time
 import threading
+import difflib
 from pathlib import Path
 from datetime import datetime
 from PIL import Image
@@ -25,8 +26,7 @@ from infra.config import Config
 
 # Import from local modules
 from pipeline.correction.prompts import SYSTEM_PROMPT, build_user_prompt
-from pipeline.correction.schemas import CorrectionLLMResponse, CorrectionPageOutput
-from pipeline.correction.report import analyze_book
+from pipeline.correction.schemas import CorrectionLLMResponse, CorrectionPageOutput, CorrectionPageMetrics, CorrectionPageReport
 from pipeline.ocr.schemas import OCRPageOutput
 
 
@@ -41,17 +41,23 @@ class CorrectionStage(BaseStage):
     name = "corrected"  # Output directory name
     dependencies = ["ocr"]  # Requires OCR stage complete
 
-    def __init__(self, model: str = None, max_workers: int = 30, max_retries: int = 3):
+    # Schema definitions
+    input_schema = OCRPageOutput
+    output_schema = CorrectionPageOutput
+    checkpoint_schema = CorrectionPageMetrics
+    report_schema = CorrectionPageReport  # Quality-focused report
+
+    def __init__(self, model: str = None, max_workers: int = None, max_retries: int = 3):
         """
         Initialize Correction stage.
 
         Args:
-            model: LLM model to use (default: from Config.VISION_MODEL)
-            max_workers: Number of parallel workers (default: 30)
+            model: LLM model to use (default: from Config.vision_model_primary)
+            max_workers: Number of parallel workers (default: Config.max_workers)
             max_retries: Maximum retry attempts for failed pages (default: 3)
         """
-        self.model = model or Config.VISION_MODEL
-        self.max_workers = max_workers
+        self.model = model or Config.vision_model_primary
+        self.max_workers = max_workers if max_workers is not None else Config.max_workers
         self.max_retries = max_retries
         self.progress_lock = threading.Lock()
         self.batch_client = None  # Will be initialized in run()
@@ -118,7 +124,7 @@ class CorrectionStage(BaseStage):
         stage_log_dir = storage.stage(self.name).output_dir / "logs"
         self.batch_client = LLMBatchClient(
             max_workers=self.max_workers,
-            rate_limit=150,  # OpenRouter default
+            # rate_limit uses Config.rate_limit_requests_per_minute by default
             max_retries=self.max_retries,
             retry_jitter=(1.0, 3.0),
             verbose=True,  # Enable per-request events
@@ -308,6 +314,43 @@ class CorrectionStage(BaseStage):
             checkpoint=checkpoint
         )
 
+        def calculate_similarity_metrics(ocr_page, correction_data):
+            """Calculate text similarity between OCR and corrected text."""
+            try:
+                # Build full OCR text
+                ocr_texts = []
+                for block in ocr_page.blocks:
+                    for para in block.paragraphs:
+                        ocr_texts.append(para.text)
+                ocr_full_text = '\n'.join(ocr_texts)
+
+                # Build full corrected text (merge OCR + corrections)
+                corrected_texts = []
+                for block_idx, block in enumerate(ocr_page.blocks):
+                    for para_idx, para in enumerate(block.paragraphs):
+                        # Find if this paragraph was corrected
+                        correction_block = correction_data['blocks'][block_idx]
+                        correction_para = correction_block['paragraphs'][para_idx]
+
+                        # Use corrected text if available, otherwise use original OCR
+                        if correction_para.get('text') is not None:
+                            corrected_texts.append(correction_para['text'])
+                        else:
+                            corrected_texts.append(para.text)
+                corrected_full_text = '\n'.join(corrected_texts)
+            except (IndexError, KeyError) as e:
+                # Structure mismatch - fall back to safe defaults
+                return 1.0, 0  # Assume no changes if can't compare
+
+            # Calculate similarity ratio using difflib
+            similarity = difflib.SequenceMatcher(None, ocr_full_text, corrected_full_text).ratio()
+
+            # Calculate characters changed using difflib opcodes
+            matcher = difflib.SequenceMatcher(None, ocr_full_text, corrected_full_text)
+            chars_changed = sum(abs(j2 - j1 - (i2 - i1)) for tag, i1, i2, j1, j2 in matcher.get_opcodes())
+
+            return round(similarity, 4), chars_changed
+
         def on_result(result: LLMResult):
             """Handle LLM result - save successful pages, track failures."""
             try:
@@ -347,26 +390,40 @@ class CorrectionStage(BaseStage):
                         # Validate with schema
                         validated = CorrectionPageOutput(**page_output)
 
-                        # Save page output with rich metrics (save_page will call checkpoint.mark_completed)
+                        # Calculate similarity metrics
+                        similarity_ratio, chars_changed = calculate_similarity_metrics(ocr_page, correction_data)
+
+                        # Validate metrics against schema
+                        from pipeline.correction.schemas import CorrectionPageMetrics
+                        metrics = CorrectionPageMetrics(
+                            page_num=page_num,
+                            processing_time_seconds=result.total_time_seconds,
+                            cost_usd=result.cost_usd,
+                            attempts=result.attempts,
+                            tokens_total=result.tokens_received,
+                            tokens_per_second=result.tokens_per_second,
+                            model_used=result.model_used,
+                            provider=result.provider,
+                            queue_time_seconds=result.queue_time_seconds,
+                            execution_time_seconds=result.execution_time_seconds,
+                            total_time_seconds=result.total_time_seconds,
+                            ttft_seconds=result.ttft_seconds,
+                            usage=result.usage,
+                            # Correction-specific metrics
+                            total_corrections=page_output['total_corrections'],
+                            avg_confidence=page_output['avg_confidence'],
+                            # Similarity metrics
+                            text_similarity_ratio=similarity_ratio,
+                            characters_changed=chars_changed
+                        )
+
+                        # Save page output with validated metrics (save_page will call checkpoint.mark_completed)
                         storage.stage(self.name).save_page(
                             page_num=page_num,
                             data=validated.model_dump(),
                             schema=CorrectionPageOutput,
                             cost_usd=result.cost_usd,
-                            metrics={
-                                "page_num": page_num,
-                                "cost_usd": result.cost_usd,
-                                "attempts": result.attempts,
-                                "total_time_seconds": result.total_time_seconds,
-                                "queue_time_seconds": result.queue_time_seconds,
-                                "execution_time_seconds": result.execution_time_seconds,
-                                "ttft_seconds": result.ttft_seconds,
-                                "tokens_total": result.tokens_received,
-                                "tokens_per_second": result.tokens_per_second,
-                                "model_used": result.model_used,
-                                "provider": result.provider,
-                                "usage": result.usage
-                            }
+                            metrics=metrics.model_dump()
                         )
 
                     except Exception as e:
@@ -409,15 +466,6 @@ class CorrectionStage(BaseStage):
         }
 
     def after(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger, stats: Dict[str, Any]):
-        """Generate correction quality report."""
-        logger.info("Generating correction quality report...")
-
-        # Write correction report to corrected/report.txt
-        analyze_book(
-            scan_id=storage.scan_id,
-            storage_root=storage.storage_root,
-            silent=True,  # No terminal output
-            write_report=True  # Write report.txt file
-        )
-
-        logger.info("Correction report complete")
+        """Generate correction quality report from checkpoint metrics."""
+        # Generate quality-focused CSV report from checkpoint metrics
+        super().after(storage, checkpoint, logger, stats)

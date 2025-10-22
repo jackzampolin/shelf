@@ -24,6 +24,7 @@ from infra.llm.models import (
 )
 from infra.llm.rate_limiter import RateLimiter
 from infra.llm.client import LLMClient, CHARS_PER_TOKEN_ESTIMATE
+from infra.config import Config
 
 
 class LLMBatchClient:
@@ -41,12 +42,12 @@ class LLMBatchClient:
 
     def __init__(
         self,
-        max_workers: int = 30,
-        rate_limit: int = 150,  # requests per minute
+        max_workers: Optional[int] = None,
+        rate_limit: Optional[int] = None,
         max_retries: int = 5,
         retry_jitter: Tuple[float, float] = (1.0, 3.0),
         verbose: bool = False,
-        progress_interval: float = 1.0,  # Increased to reduce PROGRESS event frequency
+        progress_interval: float = 1.0,
         log_dir: Optional['Path'] = None,
         log_timestamp: Optional[str] = None,
     ):
@@ -54,8 +55,8 @@ class LLMBatchClient:
         Initialize batch client.
 
         Args:
-            max_workers: Thread pool size
-            rate_limit: Max requests per minute
+            max_workers: Thread pool size (default: Config.max_workers)
+            rate_limit: Max requests per minute (default: Config.rate_limit_requests_per_minute)
             max_retries: Max attempts per request (failed requests re-queue)
             retry_jitter: (min, max) seconds to wait before re-queue
             verbose: Enable per-request progress events
@@ -63,8 +64,9 @@ class LLMBatchClient:
             log_dir: Optional directory to log failed LLM calls
             log_timestamp: Optional timestamp string for log filenames (e.g., "20250101_120530")
         """
-        self.max_workers = max_workers
-        self.rate_limit = rate_limit
+        # Use Config defaults if not specified
+        self.max_workers = max_workers if max_workers is not None else Config.max_workers
+        self.rate_limit = rate_limit if rate_limit is not None else Config.rate_limit_requests_per_minute
         self.max_retries = max_retries
         self.retry_jitter = retry_jitter
         self.verbose = verbose

@@ -21,6 +21,7 @@ from typing import List, Dict, Tuple, Optional, Union
 from pathlib import Path
 from dotenv import load_dotenv
 from infra.llm.pricing import CostCalculator
+from infra.config import Config
 
 
 # Token estimation constant
@@ -41,24 +42,19 @@ class LLMClient:
     """
 
     def __init__(self,
-                 site_url: str = "https://github.com/jackzampolin/scanshelf",
-                 site_name: str = "Scanshelf"):
+                 site_url: Optional[str] = None,
+                 site_name: Optional[str] = None):
         """
         Initialize LLM client.
 
         Args:
-            site_url: Site URL for OpenRouter tracking
-            site_name: Site name for OpenRouter tracking
+            site_url: Site URL for OpenRouter tracking (default: Config.openrouter_site_url)
+            site_name: Site name for OpenRouter tracking (default: Config.openrouter_site_name)
         """
-        # Load API key
-        load_dotenv()
-        self.api_key = os.getenv('OPEN_ROUTER_API_KEY') or os.getenv('OPENROUTER_API_KEY')
-        if not self.api_key:
-            raise ValueError("No OpenRouter API key found in environment")
-
-        # OpenRouter config
-        self.site_url = site_url
-        self.site_name = site_name
+        # Use Config for all settings (API key, site URL, site name)
+        self.api_key = Config.openrouter_api_key  # Already validated by Pydantic
+        self.site_url = site_url if site_url is not None else Config.openrouter_site_url
+        self.site_name = site_name if site_name is not None else Config.openrouter_site_name
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
 
         # Cost calculator (supports dynamic pricing from OpenRouter)

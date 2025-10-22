@@ -25,8 +25,7 @@ from infra.config import Config
 
 # Import from local modules
 from pipeline.label.prompts import SYSTEM_PROMPT, build_user_prompt
-from pipeline.label.schemas import LabelPageOutput
-from pipeline.label.report import analyze_book
+from pipeline.label.schemas import LabelPageOutput, LabelPageMetrics, LabelPageReport
 from pipeline.ocr.schemas import OCRPageOutput
 
 
@@ -41,17 +40,23 @@ class LabelStage(BaseStage):
     name = "labels"  # Output directory name
     dependencies = ["ocr"]  # Requires OCR stage complete
 
-    def __init__(self, model: str = None, max_workers: int = 30, max_retries: int = 3):
+    # Schema definitions
+    input_schema = OCRPageOutput
+    output_schema = LabelPageOutput
+    checkpoint_schema = LabelPageMetrics
+    report_schema = LabelPageReport  # Quality-focused report
+
+    def __init__(self, model: str = None, max_workers: int = None, max_retries: int = 3):
         """
         Initialize Label stage.
 
         Args:
-            model: LLM model to use (default: from Config.VISION_MODEL)
-            max_workers: Number of parallel workers (default: 30)
+            model: LLM model to use (default: from Config.vision_model_primary)
+            max_workers: Number of parallel workers (default: Config.max_workers)
             max_retries: Maximum retry attempts for failed pages (default: 3)
         """
-        self.model = model or Config.VISION_MODEL
-        self.max_workers = max_workers
+        self.model = model or Config.vision_model_primary
+        self.max_workers = max_workers if max_workers is not None else Config.max_workers
         self.max_retries = max_retries
         self.progress_lock = threading.Lock()
         self.batch_client = None  # Will be initialized in run()
@@ -118,7 +123,7 @@ class LabelStage(BaseStage):
         stage_log_dir = storage.stage(self.name).output_dir / "logs"
         self.batch_client = LLMBatchClient(
             max_workers=self.max_workers,
-            rate_limit=150,  # OpenRouter default
+            # rate_limit uses Config.rate_limit_requests_per_minute by default
             max_retries=self.max_retries,
             retry_jitter=(1.0, 3.0),
             verbose=True,  # Enable per-request events
@@ -324,26 +329,40 @@ class LabelStage(BaseStage):
                         # Validate with schema
                         validated = LabelPageOutput(**label_data)
 
-                        # Save page output with rich metrics (save_page will call checkpoint.mark_completed)
+                        # Validate metrics against schema
+                        from pipeline.label.schemas import LabelPageMetrics
+                        metrics = LabelPageMetrics(
+                            page_num=page_num,
+                            processing_time_seconds=result.total_time_seconds,
+                            cost_usd=result.cost_usd,
+                            attempts=result.attempts,
+                            tokens_total=result.tokens_received,
+                            tokens_per_second=result.tokens_per_second,
+                            model_used=result.model_used,
+                            provider=result.provider,
+                            queue_time_seconds=result.queue_time_seconds,
+                            execution_time_seconds=result.execution_time_seconds,
+                            total_time_seconds=result.total_time_seconds,
+                            ttft_seconds=result.ttft_seconds,
+                            usage=result.usage,
+                            # Label-specific metrics
+                            total_blocks_classified=label_data['total_blocks'],
+                            avg_classification_confidence=label_data['avg_classification_confidence'],
+                            page_number_extracted=label_data.get('printed_page_number') is not None,
+                            page_region_classified=label_data.get('page_region') is not None,
+                            # Book structure fields (for report)
+                            printed_page_number=label_data.get('printed_page_number'),
+                            numbering_style=label_data.get('numbering_style'),
+                            page_region=label_data.get('page_region')
+                        )
+
+                        # Save page output with validated metrics (save_page will call checkpoint.mark_completed)
                         storage.stage(self.name).save_page(
                             page_num=page_num,
                             data=validated.model_dump(),
                             schema=LabelPageOutput,
                             cost_usd=result.cost_usd,
-                            metrics={
-                                "page_num": page_num,
-                                "cost_usd": result.cost_usd,
-                                "attempts": result.attempts,
-                                "total_time_seconds": result.total_time_seconds,
-                                "queue_time_seconds": result.queue_time_seconds,
-                                "execution_time_seconds": result.execution_time_seconds,
-                                "ttft_seconds": result.ttft_seconds,
-                                "tokens_total": result.tokens_received,
-                                "tokens_per_second": result.tokens_per_second,
-                                "model_used": result.model_used,
-                                "provider": result.provider,
-                                "usage": result.usage
-                            }
+                            metrics=metrics.model_dump()
                         )
 
                     except Exception as e:
@@ -386,17 +405,6 @@ class LabelStage(BaseStage):
         }
 
     def after(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger, stats: Dict[str, Any]):
-        """Generate label quality report and save as CSV."""
-        logger.info("Generating label report...")
-
-        # Write label report to labels/report.txt and labels/label_report.csv
-        csv_path = analyze_book(
-            scan_id=storage.scan_id,
-            storage_root=storage.storage_root,
-            output_json=False,
-            save_csv=True,
-            silent=True,  # No terminal output
-            write_report=True  # Write report.txt file
-        )
-
-        logger.info("Label report complete")
+        """Generate label quality report from checkpoint metrics."""
+        # Generate quality-focused CSV report from checkpoint metrics
+        super().after(storage, checkpoint, logger, stats)

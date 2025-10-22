@@ -10,6 +10,8 @@ import time
 import threading
 from typing import Dict, Optional
 
+from infra.config import Config
+
 
 class RateLimiter:
     """
@@ -22,14 +24,14 @@ class RateLimiter:
     - Status monitoring (current consumption, time until reset)
     """
 
-    def __init__(self, requests_per_minute: int = 150):
+    def __init__(self, requests_per_minute: Optional[int] = None):
         """
         Initialize rate limiter.
 
         Args:
-            requests_per_minute: Maximum requests allowed per minute
+            requests_per_minute: Maximum requests allowed per minute (default: Config.rate_limit_requests_per_minute)
         """
-        self.requests_per_minute = requests_per_minute
+        self.requests_per_minute = requests_per_minute if requests_per_minute is not None else Config.rate_limit_requests_per_minute
         self.window_seconds = 60.0
         self.lock = threading.RLock()  # Use RLock (reentrant) instead of Lock to avoid deadlock
 
