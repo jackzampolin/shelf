@@ -13,9 +13,10 @@ Commands:
     shelf delete <scan-id>       Delete book from library
 
   Pipeline:
-    shelf process <scan-id>               Run full pipeline (auto-resume)
-    shelf process <scan-id> --stage <s>   Run single stage
-    shelf process <scan-id> --stages <s>  Run multiple stages
+    shelf process <scan-id>                 Run full pipeline (auto-resume)
+    shelf process <scan-id> --stage <s>     Run single stage
+    shelf process <scan-id> --stages <s>    Run multiple stages
+    shelf process <scan-id> --clean         Clean and re-run (start fresh)
 
   Cleanup:
     shelf clean <scan-id> --stage <s>     Clean stage outputs
@@ -372,6 +373,33 @@ def cmd_library_delete(args):
 
 # ===== Process Commands =====
 
+def _clean_stage_helper(storage, stage_name):
+    """
+    Helper function to clean a stage's outputs.
+
+    Args:
+        storage: BookStorage instance
+        stage_name: Name of the stage to clean
+    """
+    import shutil
+
+    stage_storage = storage.stage(stage_name)
+
+    # Delete all files in output directory except .gitkeep
+    if stage_storage.output_dir.exists():
+        for item in stage_storage.output_dir.iterdir():
+            if item.name == '.gitkeep':
+                continue
+            if item.is_file():
+                item.unlink()
+            elif item.is_dir():
+                shutil.rmtree(item)
+
+    # Reset checkpoint
+    checkpoint = stage_storage.checkpoint
+    checkpoint.reset(confirm=False)
+
+
 def cmd_process(args):
     """Run pipeline stage(s) using runner.py."""
     library = LibraryStorage(storage_root=Config.book_storage_root)
@@ -416,6 +444,14 @@ def cmd_process(args):
             print(f"❌ Unknown stage: {stage_name}")
             print(f"   Valid stages: {', '.join(stage_map.keys())}")
             sys.exit(1)
+
+    # Clean stages if --clean flag is set
+    if args.clean:
+        print(f"\n🧹 Cleaning stages before processing: {', '.join(stages_to_run)}")
+        for stage_name in stages_to_run:
+            _clean_stage_helper(storage, stage_name)
+            print(f"   ✓ Cleaned {stage_name}")
+        print()
 
     # Create stage instances
     stages = [stage_map[name] for name in stages_to_run]
@@ -512,6 +548,7 @@ Examples:
   shelf process modest-lovelace
   shelf process modest-lovelace --stage ocr
   shelf process modest-lovelace --stages ocr,corrected
+  shelf process modest-lovelace --stage labels --clean
   shelf clean modest-lovelace --stage ocr
 """
     )
@@ -570,6 +607,7 @@ Examples:
     process_parser.add_argument('--stages', help='Multiple stages (comma-separated)')
     process_parser.add_argument('--model', help='Vision model (for correction/label stages)')
     process_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
+    process_parser.add_argument('--clean', action='store_true', help='Clean stages before processing (start fresh)')
     process_parser.set_defaults(func=cmd_process)
 
     # ===== Clean Command =====
