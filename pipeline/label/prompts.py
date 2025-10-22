@@ -52,16 +52,51 @@ Examine the page image (ignore pdf-page number). Check these locations in order:
 - Bottom-center footer
 - Bottom corners
 
-Valid page numbers:
-- Standalone numbers in margins or corners: "23", "147"
+Valid page numbers (visual characteristics):
+- SMALL numbers relative to body text (typically 0.8-1.0x body size) in margins or corners: "23", "147"
+- SUBTLE styling (plain font, not decorative)
+- CONSISTENT position across pages (same corner/edge location)
 - Roman numerals (typically front matter): "i", "ii", "ix", "xiv"
 - Arabic numerals (typically body): "1", "2", "42"
+
+Visual hierarchy (prefer in order):
+1. Small numbers in footer/header edges (highest priority)
+2. Small numbers in page corners
+3. Medium numbers in margins (verify not chapter numbers)
+4. Large centered numbers (likely chapter numbers - use caution)
 
 Invalid (do not extract):
 - Chapter labels: "Chapter 5"
 - Pagination indicators: "page 1 of 300"
 - Running headers with text
 - Section numbers within body text
+
+CRITICAL DISTINCTION - Chapter Numbers vs Page Numbers:
+
+Chapter numbers (DO NOT EXTRACT as page numbers):
+- Large decorative numbers (2x+ body text size) near chapter headings
+- Centered or prominent numbers at top of page
+- Numbers that appear alongside "CHAPTER", "PART", or section titles
+- Numbers on pages with minimal content (chapter start pages typically have 1-3 blocks)
+
+Page numbers (DO EXTRACT):
+- Small numbers (similar to body text size) in consistent header/footer position
+- Edge or corner placement (not centered)
+- Plain, undecorated styling
+- Present on most pages in consistent location
+
+Decision rule when BOTH numbers present:
+1. Check for CHAPTER_HEADING block in OCR data → Indicates chapter start page
+2. If chapter heading present AND two numbers visible:
+   - Large centered/prominent number = Chapter number (ignore)
+   - Small footer/header number = Page number (extract)
+3. If only one number present:
+   - Check size and position relative to body text
+   - Large + centered = Likely chapter number (extract as null)
+   - Small + edge/corner = Likely page number (extract)
+
+Example: Page shows "CHAPTER 17" heading with decorative "17" in large font,
+plus small "104" in footer → Extract printed_page_number: "104"
 
 If no valid page number visible, return null.
 
@@ -73,19 +108,52 @@ Confidence scores:
 - 0.95-1.0: Clear printed number in standard location
 - 0.85-0.94: Number present but unusual placement or formatting
 - 1.0: No number found (high confidence in absence)
+
+OCR Validation:
+When extracting page numbers, VERIFY the OCR text matches the image:
+
+Common OCR errors to watch for:
+- "5" misread as "9" (or vice versa)
+- "7" misread as "1" (or vice versa)
+- "3" misread as "5" (or vice versa)
+- "8" misread as "0" (or vice versa)
+- Dropped digits: "157" becomes "15" or "57"
+- Duplicated digits: "45" becomes "445"
+
+Validation process:
+1. Look at the page image directly (don't just trust OCR text)
+2. If OCR text shows unlikely number (large jump from expected), verify image
+3. If image unclear or ambiguous, use confidence 0.85 instead of 0.95
+4. If OCR clearly wrong, extract correct number from image
+
+Example: OCR says "99" but image shows "59" → Extract "59" with confidence 0.90
 </page_number_extraction>
 
 <page_region_classification>
 Classification uses position-based defaults that can be overridden by content evidence.
 
 Default classification by position (pdf-page X of Y total):
-- First 12% of document: front_matter (confidence 0.90)
-- Middle 76% of document: body (confidence 0.90)
-- Final 12% of document: back_matter (confidence 0.85)
+- Early pages of document: front_matter (confidence 0.90)
+- Middle portion of document: body (confidence 0.90)
+- Final pages of document: back_matter (confidence 0.85)
 
-Override defaults with higher confidence when content contradicts position:
-- Table of Contents indicators (multi-column layout, page numbers, dot leaders): toc_area (confidence 0.95)
-- Position and content mismatch: uncertain (confidence 0.60)
+Override defaults with HIGHER confidence (0.95) using these content signals:
+
+Strong override signals (prefer these over position):
+1. Roman numeral page numbers → front_matter (confidence 0.95)
+   - Overrides position even if beyond early pages
+2. Arabic numerals starting at "1" → likely body (confidence 0.95)
+   - Overrides position even if in early pages
+   - Body content typically starts with page 1
+3. Table of Contents layout → toc_area (confidence 0.95)
+   - Multi-column, dot leaders, hierarchical titles
+4. Index/Bibliography content → back_matter (confidence 0.95)
+   - Alphabetical entries, references, citations
+
+Decision hierarchy:
+1. Content evidence (0.95 confidence) generally beats position (0.90 confidence)
+2. Numbering style (roman/arabic) is the strongest content signal
+3. Use "uncertain" only if conflicting content signals present (rare)
 
 Region type definitions:
 - front_matter: Title page, copyright, dedication, preface, introduction (often roman page numbers)
@@ -93,6 +161,8 @@ Region type definitions:
 - body: Main content chapters (typically arabic page numbers starting at 1)
 - back_matter: Index, bibliography, endnotes, appendix (may be unnumbered)
 - uncertain: Position-based default contradicted by content (use sparingly)
+
+Example: Page in early portion with printed "1" → Likely "body" not "front_matter" (confidence 0.95)
 </page_region_classification>
 
 <block_classification>
@@ -224,15 +294,17 @@ def get_default_region(percent_through):
     """
     Helper to determine default region based on position in document.
 
+    Uses qualitative position descriptions rather than hard thresholds.
+
     Args:
         percent_through: Percentage through the document (0-100)
 
     Returns:
-        str: Default region name
+        str: Default region name with qualitative description
     """
-    if percent_through <= 12:
-        return "front_matter"
-    elif percent_through >= 88:
-        return "back_matter"
+    if percent_through <= 15:
+        return "front_matter (early pages)"
+    elif percent_through >= 85:
+        return "back_matter (final pages)"
     else:
-        return "body"
+        return "body (middle portion)"
