@@ -1,0 +1,241 @@
+{
+  "page_number": 20,
+  "page_dimensions": {
+    "width": 1505,
+    "height": 2400
+  },
+  "blocks": [
+    {
+      "block_num": 1,
+      "classification": "HEADER",
+      "classification_confidence": 0.95,
+      "bbox": [
+        536,
+        112,
+        461,
+        30
+      ],
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "text": "6 / The Accidental President",
+          "bbox": [
+            536,
+            112,
+            461,
+            30
+          ],
+          "original_confidence": 0.932,
+          "correction_applied": false,
+          "correction_confidence": 1.0,
+          "correction_notes": null
+        }
+      ]
+    },
+    {
+      "block_num": 2,
+      "classification": "BODY",
+      "classification_confidence": 1.0,
+      "bbox": [
+        149,
+        226,
+        1231,
+        1601
+      ],
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "text": "the Capitol; his most important job on most days was to crack his gavel to signal the recess. In the rare case that senators voted to a tie on an issue, the VP would cast the deciding vote. For Truman, this had happened only once, two days earlier. He had voted against a bill amendment “with all the brisk eagerness of someone who is bored to death,” recalled one reporter present. It was custom for a senator to sit in the VP’s place on the dais in the chamber, so there was no urgency for Truman to get there at any particular hour.",
+          "bbox": [
+            151,
+            226,
+            1229,
+            415
+          ],
+          "original_confidence": 0.963,
+          "correction_applied": true,
+          "correction_confidence": 1.0,
+          "correction_notes": "Removed hyphenation from line breaks: 'hap- pened' → 'happened', 'amend- ment' → 'amendment', 'Tru- man' → 'Truman'"
+        },
+        {
+          "par_num": 2,
+          "text": "An old army buddy of Truman’s — Eddie McKim, an Omaha insurance salesman — showed up at the VP’s office on this morning. McKim was in town on business, staying at the Statler Hotel. Truman took him to lunch around noon in the office of the secretary of the Senate, Leslie Biffle of tiny Piggott, Arkansas. Biffle’s office was affectionately called “Biffle’s Tavern,” where the bar was stocked and congressional chatter was always on the menu. Afterward Truman and McKim drummed up an evening plan.",
+          "bbox": [
+            150,
+            654,
+            1230,
+            416
+          ],
+          "original_confidence": 0.958,
+          "correction_applied": true,
+          "correction_confidence": 1.0,
+          "correction_notes": "Removed hyphenation from line breaks: 'insur- ance' → 'insurance', 'Les- lie' → 'Leslie'"
+        },
+        {
+          "par_num": 3,
+          "text": "“Don’t you think we ought to have a little game tonight?” Truman said, referring to his favorite pastime, poker.",
+          "bbox": [
+            151,
+            1079,
+            1228,
+            99
+          ],
+          "original_confidence": 0.966,
+          "correction_applied": false,
+          "correction_confidence": 1.0,
+          "correction_notes": null
+        },
+        {
+          "par_num": 4,
+          "text": "“Yes, I think so. Where do you want to play?”",
+          "bbox": [
+            198,
+            1192,
+            765,
+            41
+          ],
+          "original_confidence": 0.963,
+          "correction_applied": false,
+          "correction_confidence": 1.0,
+          "correction_notes": null
+        },
+        {
+          "par_num": 5,
+          "text": "Truman suggested McKim’s hotel. The Statler was one of the first chain hotels, and the first to advertise a bathroom in every room. Truman jotted down a list of players he wanted McKim to gather. The conversation, as McKim remembered it:",
+          "bbox": [
+            149,
+            1245,
+            1230,
+            198
+          ],
+          "original_confidence": 0.958,
+          "correction_applied": true,
+          "correction_confidence": 1.0,
+          "correction_notes": "Removed hyphenation from line breaks: 'Tru- man' → 'Truman', 'con- versation' → 'conversation'"
+        },
+        {
+          "par_num": 6,
+          "text": "“How’s your whiskey supply?” the VP asked.",
+          "bbox": [
+            198,
+            1461,
+            751,
+            41
+          ],
+          "original_confidence": 0.955,
+          "correction_applied": false,
+          "correction_confidence": 1.0,
+          "correction_notes": null
+        },
+        {
+          "par_num": 7,
+          "text": "“Well, it’s nonexistent,” McKim said.",
+          "bbox": [
+            198,
+            1515,
+            619,
+            37
+          ],
+          "original_confidence": 0.958,
+          "correction_applied": false,
+          "correction_confidence": 1.0,
+          "correction_notes": null
+        },
+        {
+          "par_num": 8,
+          "text": "“I’ve got some new whiskey over in the Senate Office Building office,” Truman said. “You go over there and get what you think we’ll need.”",
+          "bbox": [
+            151,
+            1569,
+            1228,
+            96
+          ],
+          "original_confidence": 0.94,
+          "correction_applied": false,
+          "correction_confidence": 1.0,
+          "correction_notes": null
+        },
+        {
+          "par_num": 9,
+          "text": "The VP turned and headed for the Senate Chamber, where he would make an afternoon appearance. McKim headed off to stock the liquor and ready the game — a game that would never be played.",
+          "bbox": [
+            150,
+            1673,
+            1229,
+            154
+          ],
+          "original_confidence": 0.961,
+          "correction_applied": false,
+          "correction_confidence": 1.0,
+          "correction_notes": null
+        }
+      ]
+    },
+    {
+      "block_num": 3,
+      "classification": "OTHER",
+      "classification_confidence": 0.8,
+      "bbox": [
+        748,
+        1868,
+        31,
+        28
+      ],
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "text": "If",
+          "bbox": [
+            748,
+            1868,
+            31,
+            28
+          ],
+          "original_confidence": 0.526,
+          "correction_applied": false,
+          "correction_confidence": 1.0,
+          "correction_notes": null
+        }
+      ]
+    },
+    {
+      "block_num": 4,
+      "classification": "BODY",
+      "classification_confidence": 1.0,
+      "bbox": [
+        149,
+        1947,
+        1228,
+        314
+      ],
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "text": "Around the globe, extraordinary developments were unfolding on April 12. The U.S. Ninth Army reached the Elbe River on the western front, fifty-seven miles from Berlin. As the Allies were soon to find out, the Elbe was to play a strange and important role in shaping the future of Europe. Soviet forces had surrounded the Nazis at Vienna and were closing in on Berlin from the east. A simple read of the newspaper gave",
+          "bbox": [
+            149,
+            1947,
+            1228,
+            314
+          ],
+          "original_confidence": 0.964,
+          "correction_applied": true,
+          "correction_confidence": 0.95,
+          "correction_notes": "Fixed punctuation error: 'Allies.' → 'Allies' (removed extraneous period)"
+        }
+      ]
+    }
+  ],
+  "continuation": {
+    "continues_from_previous": true,
+    "continues_to_next": true
+  },
+  "metadata": {
+    "ocr_timestamp": "2025-10-08T20:09:10.751274",
+    "correction_timestamp": "2025-10-09T09:50:16.960247",
+    "correction_model": "x-ai/grok-4-fast",
+    "merge_timestamp": "2025-10-09T12:00:00.000000",
+    "total_blocks": 4,
+    "total_corrections_applied": 4
+  }
+}

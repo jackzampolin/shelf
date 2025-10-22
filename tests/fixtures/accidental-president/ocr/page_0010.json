@@ -1,0 +1,198 @@
+{
+  "page_number": 10,
+  "page_dimensions": {
+    "width": 3017,
+    "height": 4809
+  },
+  "ocr_timestamp": "2025-10-14T12:43:48.678733",
+  "blocks": [
+    {
+      "block_num": 1,
+      "bbox": {
+        "x": 1258,
+        "y": 217,
+        "width": 443,
+        "height": 60
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 1258,
+            "y": 217,
+            "width": 443,
+            "height": 60
+          },
+          "text": "Timeline / xv",
+          "avg_confidence": 0.923
+        }
+      ]
+    },
+    {
+      "block_num": 2,
+      "bbox": {
+        "x": 254,
+        "y": 442,
+        "width": 2452,
+        "height": 4078
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 254,
+            "y": 442,
+            "width": 2190,
+            "height": 88
+          },
+          "text": "MAY 5: American troops liberate the Mauthausen death camp.",
+          "avg_confidence": 0.876
+        },
+        {
+          "par_num": 2,
+          "bbox": {
+            "x": 254,
+            "y": 553,
+            "width": 1766,
+            "height": 91
+          },
+          "text": "MAY 7: The Trumans move into the White House.",
+          "avg_confidence": 0.955
+        },
+        {
+          "par_num": 3,
+          "bbox": {
+            "x": 255,
+            "y": 637,
+            "width": 2333,
+            "height": 325
+          },
+          "text": "MAY 8: VE-day. Following the surrender of Nazi forces to General Eisenhower in Reims, France, World War II in Europe ends. Harry Truman celebrates his sixty-first birthday.",
+          "avg_confidence": 0.917
+        },
+        {
+          "par_num": 4,
+          "bbox": {
+            "x": 256,
+            "y": 978,
+            "width": 2341,
+            "height": 284
+          },
+          "text": "MAY 11: As the battle for Okinawa rages, a Japanese suicide plane crashes into the USS Bunker Hill, killing nearly four hundred American sailors.",
+          "avg_confidence": 0.94
+        },
+        {
+          "par_num": 5,
+          "bbox": {
+            "x": 257,
+            "y": 1298,
+            "width": 2339,
+            "height": 427
+          },
+          "text": "MAY 24-26: Under orders from Major General Curtis LeMay, the Twenty-First Bomber Command firebombs Tokyo again, this time striking the emperor\u2019s palace. Scores of civilians are killed. | |",
+          "avg_confidence": 0.909
+        },
+        {
+          "par_num": 6,
+          "bbox": {
+            "x": 259,
+            "y": 1722,
+            "width": 2428,
+            "height": 204
+          },
+          "text": "MAY 28: Truman hosts his first White House state dinner, for the re- gent of Iraq, Prince Abd al-Ilah.",
+          "avg_confidence": 0.923
+        },
+        {
+          "par_num": 7,
+          "bbox": {
+            "x": 258,
+            "y": 1894,
+            "width": 2339,
+            "height": 360
+          },
+          "text": "JUNE I: The top advisory committee on the Manhattan Project ad- vises Truman to employ the bomb against Japan\u201d as soon as possible . . . without prior warning.\u201d",
+          "avg_confidence": 0.909
+        },
+        {
+          "par_num": 8,
+          "bbox": {
+            "x": 260,
+            "y": 2204,
+            "width": 2395,
+            "height": 458
+          },
+          "text": "JUNE 5: Military leaders from the United States, the USSR, Britain, and France meet in Berlin to begin the process of occupying Germany, which is to be sliced into occupation zones, one for each of those four nations.",
+          "avg_confidence": 0.962
+        },
+        {
+          "par_num": 9,
+          "bbox": {
+            "x": 261,
+            "y": 2643,
+            "width": 2366,
+            "height": 472
+          },
+          "text": "JUNE 18: Truman meets with his top military advisors to strategize the end of the war with Japan. The leaders agree on plans to invade Japan with nearly 800,000 ground troops. General George C. Marshall sets D-day at November 1.",
+          "avg_confidence": 0.961
+        },
+        {
+          "par_num": 10,
+          "bbox": {
+            "x": 481,
+            "y": 3128,
+            "width": 2155,
+            "height": 203
+          },
+          "text": "\u2014 General Eisenhower makes his triumphant return to Wash- ington. Truman fetes him at a White House \u201cstag party.\u201d",
+          "avg_confidence": 0.956
+        },
+        {
+          "par_num": 11,
+          "bbox": {
+            "x": 265,
+            "y": 3342,
+            "width": 2416,
+            "height": 308
+          },
+          "text": "JUNE 22: Allied victory is declared in Okinawa. Before the final bul- lets are fired, Japanese soldiers hand out grenades to civilians on the island, ordering them to kill themselves. Many do.",
+          "avg_confidence": 0.964
+        },
+        {
+          "par_num": 12,
+          "bbox": {
+            "x": 267,
+            "y": 3669,
+            "width": 2345,
+            "height": 304
+          },
+          "text": "JUNE 26: Fifty delegations sign the UN Charter in San Francisco. President Truman addresses the delegations at the city\u2019s War Memorial Veterans Building.",
+          "avg_confidence": 0.964
+        },
+        {
+          "par_num": 13,
+          "bbox": {
+            "x": 269,
+            "y": 3993,
+            "width": 2381,
+            "height": 311
+          },
+          "text": "JUNE 27: Truman returns to his hometown of Independence, Mis- souri, as president for the first time. The biggest crowds in the history of Jackson County turn out to welcome him.",
+          "avg_confidence": 0.962
+        },
+        {
+          "par_num": 14,
+          "bbox": {
+            "x": 272,
+            "y": 4315,
+            "width": 2434,
+            "height": 205
+          },
+          "text": "suLy 3: James F. Byrnes is sworn in as the new secretary of state, be- coming Truman\u2019s most important advisor.",
+          "avg_confidence": 0.936
+        }
+      ]
+    }
+  ],
+  "images": []
+}

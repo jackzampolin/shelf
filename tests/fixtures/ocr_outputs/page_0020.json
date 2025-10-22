@@ -1,0 +1,187 @@
+{
+  "page_number": 20,
+  "page_dimensions": {
+    "width": 1505,
+    "height": 2400
+  },
+  "ocr_timestamp": "2025-10-08T20:09:10.751274",
+  "blocks": [
+    {
+      "block_num": 1,
+      "bbox": {
+        "x": 536,
+        "y": 112,
+        "width": 461,
+        "height": 30
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 536,
+            "y": 112,
+            "width": 461,
+            "height": 30
+          },
+          "text": "6 / The Accidental President",
+          "avg_confidence": 0.932
+        }
+      ]
+    },
+    {
+      "block_num": 2,
+      "bbox": {
+        "x": 149,
+        "y": 226,
+        "width": 1231,
+        "height": 1601
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 151,
+            "y": 226,
+            "width": 1229,
+            "height": 415
+          },
+          "text": "the Capitol; his most important job on most days was to crack his gavel to signal the recess. In the rare case that senators voted to a tie on an issue, the VP would cast the deciding vote. For Truman, this had hap- pened only once, two days earlier. He had voted against a bill amend- ment \u201cwith all the brisk eagerness of someone who is bored to death,\u201d recalled one reporter present. It was custom for a senator to sit in the VP\u2019s place on the dais in the chamber, so there was no urgency for Tru- man to get there at any particular hour.",
+          "avg_confidence": 0.963
+        },
+        {
+          "par_num": 2,
+          "bbox": {
+            "x": 150,
+            "y": 654,
+            "width": 1230,
+            "height": 416
+          },
+          "text": "An old army buddy of Truman\u2019s \u2014 Eddie McKim, an Omaha insur- ance salesman \u2014 showed up at the VP\u2019s office on this morning. McKim was in town on business, staying at the Statler Hotel. Truman took him to lunch around noon in the office of the secretary of the Senate, Les- lie Biffle of tiny Piggott, Arkansas. Biffle\u2019s office was affectionately called \u201cBiffle\u2019s Tavern,\u201d where the bar was stocked and congressional chatter was always on the menu. Afterward Truman and McKim drummed up an evening plan.",
+          "avg_confidence": 0.958
+        },
+        {
+          "par_num": 3,
+          "bbox": {
+            "x": 151,
+            "y": 1079,
+            "width": 1228,
+            "height": 99
+          },
+          "text": "\u201cDon\u2019t you think we ought to have a little game tonight?\u201d Truman said, referring to his favorite pastime, poker.",
+          "avg_confidence": 0.966
+        },
+        {
+          "par_num": 4,
+          "bbox": {
+            "x": 198,
+            "y": 1192,
+            "width": 765,
+            "height": 41
+          },
+          "text": "\u201cYes, I think so. Where do you want to play?\u201d",
+          "avg_confidence": 0.963
+        },
+        {
+          "par_num": 5,
+          "bbox": {
+            "x": 149,
+            "y": 1245,
+            "width": 1230,
+            "height": 198
+          },
+          "text": "Truman suggested McKim\u2019s hotel. The Statler was one of the first chain hotels, and the first to advertise a bathroom in every room. Tru- man jotted down a list of players he wanted McKim to gather. The con- versation, as McKim remembered it:",
+          "avg_confidence": 0.958
+        },
+        {
+          "par_num": 6,
+          "bbox": {
+            "x": 198,
+            "y": 1461,
+            "width": 751,
+            "height": 41
+          },
+          "text": "\u201cHow\u2019s your whiskey supply?\u201d the VP asked.",
+          "avg_confidence": 0.955
+        },
+        {
+          "par_num": 7,
+          "bbox": {
+            "x": 198,
+            "y": 1515,
+            "width": 619,
+            "height": 37
+          },
+          "text": "\u201cWell, it\u2019s nonexistent,\u201d McKim said.",
+          "avg_confidence": 0.958
+        },
+        {
+          "par_num": 8,
+          "bbox": {
+            "x": 151,
+            "y": 1569,
+            "width": 1228,
+            "height": 96
+          },
+          "text": "\u201cI\u2019ve got some new whiskey over in the Senate Office Building office,\u201d Truman said. \u201cYou go over there and get what you think we\u2019ll need.\u201d",
+          "avg_confidence": 0.94
+        },
+        {
+          "par_num": 9,
+          "bbox": {
+            "x": 150,
+            "y": 1673,
+            "width": 1229,
+            "height": 154
+          },
+          "text": "The VP turned and headed for the Senate Chamber, where he would make an afternoon appearance. McKim headed off to stock the liquor and ready the game \u2014 a game that would never be played.",
+          "avg_confidence": 0.961
+        }
+      ]
+    },
+    {
+      "block_num": 3,
+      "bbox": {
+        "x": 748,
+        "y": 1868,
+        "width": 31,
+        "height": 28
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 748,
+            "y": 1868,
+            "width": 31,
+            "height": 28
+          },
+          "text": "If",
+          "avg_confidence": 0.526
+        }
+      ]
+    },
+    {
+      "block_num": 4,
+      "bbox": {
+        "x": 149,
+        "y": 1947,
+        "width": 1228,
+        "height": 314
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 149,
+            "y": 1947,
+            "width": 1228,
+            "height": 314
+          },
+          "text": "Around the globe, extraordinary developments were unfolding on April 12. The U.S. Ninth Army reached the Elbe River on the western front, fifty-seven miles from Berlin. As the Allies. were soon to find out, the Elbe was to play a strange and important role in shaping the future of Europe. Soviet forces had surrounded the Nazis at Vienna and were closing in on Berlin from the east. A simple read of the newspaper gave",
+          "avg_confidence": 0.964
+        }
+      ]
+    }
+  ],
+  "images": []
+}

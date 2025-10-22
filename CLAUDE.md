@@ -1,20 +1,12 @@
 # AI Assistant Workflow Guide
 
-## First Things First
-
-When starting any session:
-1. Run `tree -L 2 --gitignore` to see current repo structure
-2. Check `git status` for current state
-3. Review open issues on GitHub
-4. Check the project board for priorities
-
 ## Core Workflow Principles
 
 ### Git as Source of Truth
-- **Current state**: Lives on main branch only
-- **History**: Lives in git commits
-- **Planning**: Lives in GitHub issues/projects
-- **Never**: Keep old versions, drafts, or outdated docs
+- **Current state:** Lives on main branch only
+- **History:** Lives in git commits
+- **Planning:** Lives in GitHub issues/projects
+- **Never:** Keep old versions, drafts, or outdated docs
 
 ### Work Progression
 ```
@@ -29,35 +21,28 @@ Every piece of work should:
 5. Use atomic commits (logical chunks)
 6. Go through PR review
 
-## Git Operations
-
-### Branching
+### Branching Strategy
 ```bash
 # Always from main
 git checkout main
 git pull
 git checkout -b <type>/<description>
 
-# Types:
-# - feature/ (new functionality)
-# - fix/ (bug fixes)
-# - docs/ (documentation only)
-# - refactor/ (code improvements)
+# Types: feature/, fix/, docs/, refactor/
 ```
 
-### Committing
+### Commit Conventions
 ```bash
-# Atomic commits after logical sections
-git add <files>
 git commit -m "<type>: <present-tense-description>"
 
 # Types: feat, fix, docs, refactor, test, chore
 ```
 
-Examples:
+**Examples:**
 - `feat: add quote extraction for biographies`
 - `fix: handle empty source documents`
 - `docs: update setup instructions`
+- `test: add tests for metadata tracking`
 
 ### Pull Requests
 When creating PRs:
@@ -66,13 +51,82 @@ When creating PRs:
 3. Confirm tests pass
 4. Confirm docs updated
 
+---
+
+## Testing Discipline
+
+**Before any commit:**
+```bash
+# Run all tests
+uv run python -m pytest tests/ -v
+
+# Run specific modules
+uv run python -m pytest tests/infra/ -v
+uv run python -m pytest tests/tools/ -v
+```
+
+**Test philosophy:**
+- Minimal but functional - test behavior, not implementation
+- Use `tmp_path` fixtures for isolation
+- No external dependencies required
+- Fast tests (< 1s for full suite)
+
+---
+
+## Documentation Hygiene
+
+**When code changes:**
+1. Update relevant docs immediately
+2. Never create "v2" docs - update in place
+3. Remove outdated sections
+4. Keep examples current
+
+**Documentation hierarchy:**
+- `README.md` - Quick start, basic usage, current status
+- `CLAUDE.md` (this file) - Timeless workflow principles
+- `docs/` - Additional documentation and planning notes
+- Code itself - The ultimate source of truth
+
+---
+
+## Environment Setup
+
+### Python Virtual Environment
+
+This project uses `uv` for Python package management:
+
+```bash
+# First-time setup
+uv venv
+source .venv/bin/activate
+uv pip install -e .
+
+# Running commands
+uv run python ar.py <command>
+uv run python -m pytest tests/
+```
+
+### Secrets Management
+
+Never commit secrets:
+```bash
+cp .env.example .env
+# Edit .env with actual values
+# .env is in .gitignore
+```
+
+**Required environment variables:**
+- `OPENROUTER_API_KEY` - For LLM API calls
+- `BOOK_STORAGE_ROOT` (optional) - Defaults to `~/Documents/book_scans`
+
+---
+
 ## GitHub Organization
 
 ### Issue Creation
 Every issue should have:
 - Clear title
-- Labels (at minimum one of: `development`, `documentation`, `bug`, `enhancement`)
-- For research items add: `person:<name>` or `topic:<topic>`
+- Labels (minimum: `development`, `documentation`, `bug`, or `enhancement`)
 - Assignment to project board
 - Milestone if applicable
 
@@ -84,85 +138,14 @@ Core labels:
 - `enhancement` - Improvements
 - `research` - Research tasks
 
-Entity labels:
-- `person:<lastname>` - For biographical work
-- `topic:<keyword>` - For thematic research
-
-## Testing Discipline
-
-Before any commit:
-```bash
-# Run tests if they exist
-pytest tests/  # or appropriate test command
-
-# Check for syntax errors
-python -m py_compile src/**/*.py
-
-# Verify documentation is current
-# (Manually check if automated check doesn't exist)
-```
-
-## Documentation Updates
-
-When code changes:
-1. Update relevant docs immediately
-2. Never create "v2" docs - update in place
-3. Remove outdated sections
-4. Keep examples current
-
-## Working with Existing Files
-
-Before modifying:
-1. Understand current patterns
-2. Follow existing conventions
-3. Don't introduce new patterns without discussion
-4. Check git history if unclear: `git log -p <file>`
-
-## Environment Setup
-
-### Python Virtual Environment
-
-This project uses `uv` for Python package management:
-
-```bash
-# First-time setup
-uv venv                               # Create virtual environment
-source .venv/bin/activate             # Activate it
-uv pip install -r pyproject.toml      # Install dependencies
-
-# Running scripts
-python scan_intake.py                 # Always use python, not python3
-```
-
-The `pyproject.toml` file tracks all dependencies. When adding new packages:
-```bash
-# Add to pyproject.toml dependencies array, then:
-uv pip install -r pyproject.toml
-```
-
-### Secrets Management
-
-Never commit secrets:
-```bash
-# Check .env.example for required variables
-cp .env.example .env
-# Edit .env with actual values
-# Ensure .env is in .gitignore
-```
-
-## Automation Triggers
-
-GitHub Actions will run on:
-- Push to any branch (tests)
-- PR creation/update (full checks)
-- Merge to main (deployment/updates)
+---
 
 ## Quick Decision Guide
 
 **Starting work?**
 - Check issues first
 - Create branch from main
-- Run tree to see structure
+- Run `tree -L 2 --gitignore` to see structure
 
 **Making changes?**
 - Test locally first
@@ -180,209 +163,231 @@ GitHub Actions will run on:
 - PR approved
 - Linked issue closed
 
-## Scanshelf Specific Patterns
+---
 
-### Project Architecture
+## Stage Abstraction Principles
 
-This is a **book processing pipeline** for historical research:
+When implementing or modifying pipeline stages, follow these core principles:
 
-```
-Scan (PDF) → OCR → LLM Correction → Structure → Query API
-```
+### Always Use BaseStage for New Stages
 
-**Key Concepts:**
-- **Library**: `~/Documents/book_scans/library.json` - catalog of all books
-- **Scan ID**: Random Docker-style name (e.g., "modest-lovelace")
-- **Pipeline Stages**: OCR → Correct → Fix → Structure
-- **Data Products**: Pages (provenance) → Chapters (reading) → Chunks (RAG)
+Every stage MUST extend `BaseStage` (`infra/pipeline/base_stage.py`):
 
-### Using the CLI (`ar.py`)
+```python
+class MyStage(BaseStage):
+    name = "my_stage"           # Output directory name
+    dependencies = ["prev_stage"]  # Required upstream stages
 
-The unified CLI is the main interface. **CRITICAL: `ar` is shorthand - you MUST actually run `uv run python ar.py <command>`**
-
-Example:
-```bash
-# WRONG (will fail with "ar: illegal option"):
-ar library list
-
-# CORRECT:
-uv run python ar.py library list
+    output_schema = MyPageOutput        # What you write
+    checkpoint_schema = MyPageMetrics   # What you track
+    report_schema = MyPageReport        # What you report (optional)
 ```
 
-For brevity in these docs, we show `ar <command>`, but **always expand it to `uv run python ar.py <command>` in actual commands**.
+**Never:** Create stages that don't inherit from BaseStage or bypass the lifecycle hooks.
 
-**Library Management:**
-```bash
-ar library list                    # See what books exist (run as: uv run python ar.py library list)
-ar library show <scan-id>          # Get book details
-ar library stats                   # Collection statistics
-ar library add <directory>      # Smart add with LLM metadata
+### Schema Validation is Mandatory
+
+**Three schemas, three purposes:**
+
+1. **output_schema** - Validates data BEFORE writing to disk
+2. **checkpoint_schema** - Validates metrics BEFORE marking complete
+3. **report_schema** - Filters quality metrics for CSV reports (optional but recommended for LLM stages)
+
+Always pass schemas to storage operations:
+
+```python
+# Validate on save
+storage.stage(self.name).save_page(page_num, data, schema=self.output_schema)
+
+# Validate on load
+data = storage.stage('prev').load_page(page_num, schema=PrevPageOutput)
 ```
 
-**Processing Pipeline:**
-```bash
-ar process <scan-id>               # Run full pipeline (all stages)
-ar ocr <scan-id>                   # Stage 1: OCR only
-ar correct <scan-id>               # Stage 2: LLM corrections only
-ar fix <scan-id>                   # Stage 3: Agent 4 targeted fixes
-ar structure <scan-id>             # Stage 4: Chapter/chunk structure
+**Never:** Skip schema validation or write raw JSON without Pydantic models.
+
+### Use Provided Storage/Logger/Checkpoint APIs
+
+**Storage API** (`BookStorage`, `StageStorage`):
+
+```python
+# Access any stage's data
+storage.stage('ocr').load_page(5, schema=OCRPageOutput)
+storage.stage(self.name).save_page(5, data, metrics=metrics)
 ```
 
-**Monitoring:**
-```bash
-ar status <scan-id>                # Quick status check
-ar monitor <scan-id>               # Real-time progress with ETA
+**Checkpoint API** (`CheckpointManager`):
+
+```python
+# Get pages to process (resume-aware)
+remaining = checkpoint.get_remaining_pages(total_pages, resume=True)
+
+# Mark complete atomically
+checkpoint.mark_completed(page_num, cost_usd=0.032, metrics={...})
 ```
 
-**Common Patterns:**
-```bash
-# Discover available books to add
-ar library discover ~/Documents/Scans
+**Logger API** (`PipelineLogger`):
 
-# Compare available vs. added books
-ar library list                    # See what's already in library
-ar library discover ~/Documents/Scans  # See what PDFs are available
-# Compare the two lists to find books not yet added
-
-# Add a new book (run added on specific directory)
-ar library add ~/Documents/Scans/fiery-peace-1.pdf ~/Documents/Scans/fiery-peace-2.pdf ...
-
-# Process it completely
-ar process modest-lovelace
-
-# Check progress
-ar status modest-lovelace --watch
-
-# View results
-ar library show modest-lovelace
+```python
+logger.info("Processing", page=42)
+logger.progress("Correcting pages", current=42, total=447, cost_usd=1.23)
+logger.page_error("Failed", page=42, error=str(e))
 ```
 
-### Data Structure Understanding
+**Never:**
+- Construct file paths manually (`f"{book_dir}/{stage}/page_{num}.json"`)
+- Write checkpoint files directly
+- Use print() instead of logger
 
-**Storage Layout:**
-```
-~/Documents/book_scans/
-├── library.json              # Catalog (single source of truth)
-└── <scan-id>/                # One per scan
-    ├── source/               # Original PDF
-    ├── ocr/                  # Raw OCR (page_*.json)
-    ├── corrected/            # LLM corrected (page_*.json)
-    ├── structured/           # Semantic structure
-    │   ├── chapters/         # Chapter JSON + markdown
-    │   ├── chunks/           # ~5-page RAG chunks
-    │   ├── full_book.md      # Complete markdown
-    │   └── metadata.json     # Structure metadata
-    └── logs/                 # Processing logs
-```
+### Implement Resume Support via get_remaining_pages
 
-**Important Files:**
-- `library.json`: Maps scan IDs to books, tracks metadata
-- `structured/metadata.json`: Chapter breakdown, chunk count, costs
-- `structured/chunks/chunk_*.json`: Semantic chunks with provenance
-- `metadata.json` (in scan root): Per-scan processing history
+**Always** use `checkpoint.get_remaining_pages(resume=True)` in `run()`:
 
-**Data Flow:**
-1. PDF → OCR → `ocr/page_*.json` (raw text)
-2. OCR → Correction → `corrected/page_*.json` (cleaned text)
-3. Corrected → Agent 4 → `corrected/page_*.json` (overwrites in place)
-4. Corrected → Structure → `structured/` (chapters + chunks)
+```python
+def run(self, storage, checkpoint, logger):
+    total_pages = len(storage.stage('source').list_output_pages(extension='png'))
+    remaining = checkpoint.get_remaining_pages(total_pages, resume=True)
 
-### Working with Books
-
-**When asked to query books:**
-1. First run: `ar library list` to see available books
-2. Get scan_id for the book you want
-3. Check if structured: `ar library show <scan-id>`
-4. If using MCP: Use MCP tools (list_books, search_book, etc.)
-5. If direct access: Read from `~/Documents/book_scans/<scan-id>/structured/`
-
-**Example:**
-```bash
-# User asks: "Find mentions of Truman in The Accidental President"
-
-# Step 1: Find the scan ID
-ar library list
-# Output shows: modest-lovelace is The Accidental President
-
-# Step 2: Search (if using structured data directly)
-grep -i "truman" ~/Documents/book_scans/modest-lovelace/structured/chunks/*.json
-
-# Or use MCP if configured:
-# MCP tool: search_book(scan_id="modest-lovelace", query="truman")
+    for page_num in remaining:
+        # Process only incomplete pages
+        pass
 ```
 
-### MCP Server Integration
+**Why:** Enables cost-saving resume from exact interruption point. Never reprocess completed pages.
 
-The MCP server (`mcp_server.py`) provides Claude Desktop direct access to books.
+**Never:** Iterate over all pages without checking checkpoint.
 
-**Available Tools:**
-- `list_books`: See all books in library
-- `get_book_info(scan_id)`: Book details + chapters
-- `search_book(scan_id, query)`: Full-text search
-- `get_chapter(scan_id, chapter_number)`: Full chapter text
-- `get_chunk(scan_id, chunk_id)`: Specific chunk
-- `get_chunk_context(scan_id, chunk_id, before, after)`: Chunk with context
-- `list_chapters(scan_id)`: Chapter metadata
-- `list_chunks(scan_id, chapter)`: Chunk summaries
+### Report Quality Metrics in after() Hook
 
-**Setup:** See `docs/MCP_SETUP.md`
+**Default behavior** (usually sufficient):
+
+```python
+def after(self, storage, checkpoint, logger, stats):
+    super().after(storage, checkpoint, logger, stats)  # Generates report.csv
+```
+
+**Override for custom post-processing:**
+
+```python
+def after(self, storage, checkpoint, logger, stats):
+    # ALWAYS call parent first to generate report.csv
+    super().after(storage, checkpoint, logger, stats)
+
+    # Then add custom logic
+    metadata = self._extract_metadata(storage)
+    storage.update_metadata(metadata)
+```
+
+**Never:** Skip calling `super().after()` if you override - reports won't generate.
+
+### Choose Appropriate Parallelization
+
+| Work Type | Executor | Workers | Example |
+|-----------|----------|---------|---------|
+| CPU-bound | `ProcessPoolExecutor` | `cpu_count()` | OCR (Tesseract) |
+| I/O-bound (LLM) | `ThreadPoolExecutor` | `Config.max_workers` | Correction, Label |
+| Deterministic | `ThreadPoolExecutor` | Fixed (8) | Merge |
+
+**Never:** Use ProcessPoolExecutor for LLM calls (pickling overhead) or ThreadPoolExecutor for CPU-heavy work (GIL contention).
+
+### Stage Independence
+
+Stages communicate exclusively through files, never direct imports:
+
+```python
+# ✅ Correct: File-based dependency
+ocr_data = storage.stage('ocr').load_page(page_num, schema=OCRPageOutput)
+
+# ✗ Wrong: Direct import creates coupling
+from pipeline.ocr import OCRStage
+ocr_stage = OCRStage()
+ocr_data = ocr_stage.process(...)
+```
+
+**Why:** Enables testing stages in isolation, modifying stages independently, and running stages in different processes.
+
+### Testing Stages
+
+**Always test stages in isolation with mock data:**
+
+```python
+def test_my_stage(tmp_path):
+    # Setup: Create fake dependency outputs
+    book_dir = tmp_path / "test-book"
+    (book_dir / "prev_stage").mkdir(parents=True)
+
+    fake_data = PrevPageOutput(page_number=1, ...)
+    (book_dir / "prev_stage" / "page_0001.json").write_text(
+        fake_data.model_dump_json()
+    )
+
+    # Run: Execute stage
+    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
+    stage = MyStage(max_workers=1)
+    stats = run_stage(stage, storage)
+
+    # Assert: Verify outputs
+    output = storage.stage("my_stage").load_page(1, schema=MyPageOutput)
+    assert output.page_number == 1
+```
+
+---
+
+## Project-Specific Notes
+
+### Architecture
+Book processing pipeline using BaseStage abstraction:
+
+```
+PDF → Split Pages → OCR → Correction → Label → Merge → Structure (TBD)
+```
+
+**Pipeline properties:**
+- Each stage inherits from `BaseStage` (`infra/pipeline/base_stage.py`)
+- Three-hook lifecycle: `before()` → `run()` → `after()`
+- Schema-driven validation at all boundaries
+- Automatic resume from checkpoints (no manual state management)
+- Cost tracking for every LLM API call
+- Quality reports generated in `after()` hook
+
+### Key Concepts
+- **Library:** `~/Documents/book_scans/` - no library.json, filesystem is source of truth
+- **Scan ID:** Random Docker-style name (e.g., "modest-lovelace")
+- **Checkpointing:** `.checkpoint` file per stage, `page_metrics` is source of truth
+- **Schemas:** Input/output/checkpoint/report enforce type safety
+- **Storage tiers:** LibraryStorage → BookStorage → StageStorage → CheckpointManager
+
+### CLI Usage
+All commands use `uv run python shelf.py <command>`. See `README.md` for reference.
+
+**Key commands:**
+- `shelf.py process <scan-id>` - Run full pipeline (auto-resumes)
+- `shelf.py process <scan-id> --stage ocr` - Run single stage
+- `shelf.py status <scan-id>` - Check progress and costs
+- `shelf.py clean <scan-id> --stage ocr` - Reset stage to start fresh
 
 ### Cost Awareness
-
 This pipeline costs money (OpenRouter API). Be mindful:
+- Don't re-run stages unnecessarily (check status first)
+- Test prompts on small samples before full runs
+- Use checkpoints to resume interrupted runs (saves money)
+- Check `shelf.py status <scan-id>` for cost tracking
+- Reports show cost per page in checkpoint metrics
 
-**Per-Book Costs (447-page example):**
-- OCR: Free (Tesseract)
-- Correct: ~$10 (gpt-4o-mini, 30 workers)
-- Fix: ~$1 (Claude, targeted fixes only)
-- Structure: ~$0.50 (Claude Sonnet 4.5, one pass)
-- **Total: ~$12/book**
+### Current State
+- ✅ Infrastructure (`infra/`) - BaseStage, storage, checkpoint, logging complete
+- ✅ OCR Stage - Tesseract extraction with metadata
+- ✅ Correction Stage - Vision-based error correction
+- ✅ Label Stage - Page numbers and block classification
+- ✅ Merge Stage - Three-way deterministic merge
+- ❌ Structure Stage - Not yet implemented
 
-**When suggesting changes:**
-- Don't re-run stages unnecessarily
-- Use `--start` and `--end` flags to limit page ranges for testing
-- Test prompts on small samples first
-- Consider model choice (gpt-4o-mini vs Claude)
+**For implementation details, see:**
+- `README.md` - Usage and current status
+- `docs/architecture/` - Stage abstraction, storage, checkpoint, logging design
+- `docs/guides/implementing-a-stage.md` - Step-by-step guide for new stages
+- Code itself - The source of truth
 
-### Adding New Features
-
-**Before adding code:**
-1. Check if it belongs in: `pipeline/`, `tools/`, or root
-2. `pipeline/`: Sequential processing stages (OCR → Correct → Fix → Structure)
-3. `tools/`: Supporting utilities (library, monitor, review, scan)
-4. Root: Infrastructure (CLI, config, MCP server)
-
-**Common Changes:**
-- New pipeline stage → Add to `pipeline/`, update `pipeline/run.py`
-- New CLI command → Add to `ar.py` subcommands
-- New query capability → Add to `mcp_server.py` tools
-- New library feature → Update `tools/library.py`
-
-### File Naming Conventions
-
-- Pages: `page_001.json`, `page_002.json` (zero-padded, 3 digits)
-- Chunks: `chunk_001.json`, `chunk_002.json` (zero-padded, 3 digits)
-- Chapters: `chapter_01.json`, `chapter_01.md` (zero-padded, 2 digits)
-- Scan IDs: `<adjective>-<scientist>` (e.g., "modest-lovelace", "wonderful-dirac")
-
-### Dependencies Management
-
-When adding dependencies:
-```bash
-# 1. Add to pyproject.toml
-# 2. Install
-uv pip install -e .
-# 3. Test import
-python -c "import <package>"
-```
-
-**Current key dependencies:**
-- `pytesseract`: OCR
-- `requests`: API calls (OpenRouter)
-- `python-dotenv`: Config management
-- `mcp`: MCP server protocol
-- `pdf2image`: PDF processing
-- `pillow`, `opencv-python`: Image handling
+---
 
 ## Remember
 
@@ -391,9 +396,8 @@ python -c "import <package>"
 3. **Test everything** - No untested code
 4. **Commit often** - Logical, atomic chunks
 5. **Docs stay current** - Update or delete
-6. **Use `ar` CLI** - Don't run scripts directly
-7. **Check costs** - LLM calls add up
-8. **Scan IDs not slugs** - Use random IDs for scans
+6. **Check costs** - LLM calls add up
+7. **Read the code** - When docs are unclear, code is truth
 
 ---
 

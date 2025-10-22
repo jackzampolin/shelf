@@ -192,8 +192,9 @@ List all chunks in a book with summary info, optionally filtered by chapter.
 
 The MCP server uses your local `~/Documents/book_scans/library.json` catalog. Ensure:
 - Books have been added to the library (`ar library list`)
-- Books have completed the structure stage (`ar status <scan-id>`)
-- The `structured/` directory exists with `metadata.json`, `chapters/`, and `chunks/`
+- **Note**: Structure extraction (chapters/chunks) is currently under redesign (Issue #56)
+  - MCP features requiring `structured/` directory are temporarily unavailable
+  - Check `ar status <scan-id>` for current pipeline state
 
 ### View Server Logs
 

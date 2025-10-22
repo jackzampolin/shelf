@@ -1,0 +1,99 @@
+{
+  "page_number": 6,
+  "page_dimensions": {
+    "width": 3025,
+    "height": 4809
+  },
+  "ocr_timestamp": "2025-10-14T12:43:48.036171",
+  "blocks": [
+    {
+      "block_num": 1,
+      "bbox": {
+        "x": 1210,
+        "y": 228,
+        "width": 555,
+        "height": 60
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 1210,
+            "y": 228,
+            "width": 555,
+            "height": 60
+          },
+          "text": "Introduction / xi",
+          "avg_confidence": 0.939
+        }
+      ]
+    },
+    {
+      "block_num": 2,
+      "bbox": {
+        "x": 262,
+        "y": 452,
+        "width": 2469,
+        "height": 1794
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 262,
+            "y": 452,
+            "width": 2461,
+            "height": 307
+          },
+          "text": "velt on April 12 have been one of the most momentous periods in man\u2019s history,\u201d wrote a Vew York Times columnist at the time. \u201cThey have hardly any parallel throughout the ages.\u201d",
+          "avg_confidence": 0.959
+        },
+        {
+          "par_num": 2,
+          "bbox": {
+            "x": 265,
+            "y": 773,
+            "width": 2466,
+            "height": 1269
+          },
+          "text": "This book is not a full-length biography of Truman, nor is it a study of the decision to drop the atomic bomb, for those books have been written. It is rather an intimate biographical portrait of Truman during the first four months of his administration \u2014 the climactic months of World War II. It was a time when Americans achieved a sense of unity that seems unimaginable today. It was also a time of massacre, when the U.S. military committed acts it still struggles to justify more than seventy years later. New documents have appeared for research since the wave of Truman biographies was published nearly a quarter century ago. Also, the early days of the Truman administration seem particularly relevant given the global political picture today and all the debate about what the American presidency has or should become.",
+          "avg_confidence": 0.964
+        },
+        {
+          "par_num": 3,
+          "bbox": {
+            "x": 273,
+            "y": 2024,
+            "width": 2453,
+            "height": 222
+          },
+          "text": "Whether or not the reader accepts my thesis is obviously subjective. Each can decide at the end. But first, there must be a beginning: April",
+          "avg_confidence": 0.965
+        }
+      ]
+    },
+    {
+      "block_num": 3,
+      "bbox": {
+        "x": 274,
+        "y": 2286,
+        "width": 254,
+        "height": 81
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 274,
+            "y": 2286,
+            "width": 254,
+            "height": 81
+          },
+          "text": "12, 1949.",
+          "avg_confidence": 0.805
+        }
+      ]
+    }
+  ],
+  "images": []
+}

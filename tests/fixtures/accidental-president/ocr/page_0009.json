@@ -1,0 +1,242 @@
+{
+  "page_number": 9,
+  "page_dimensions": {
+    "width": 3000,
+    "height": 4817
+  },
+  "ocr_timestamp": "2025-10-14T12:43:48.492115",
+  "blocks": [
+    {
+      "block_num": 1,
+      "bbox": {
+        "x": 1274,
+        "y": 217,
+        "width": 476,
+        "height": 59
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 1274,
+            "y": 217,
+            "width": 476,
+            "height": 59
+          },
+          "text": "xiv / Timeline",
+          "avg_confidence": 0.935
+        }
+      ]
+    },
+    {
+      "block_num": 2,
+      "bbox": {
+        "x": 580,
+        "y": 433,
+        "width": 1863,
+        "height": 256
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 580,
+            "y": 433,
+            "width": 1863,
+            "height": 256
+          },
+          "text": "The Accidental Presidency and World War II 1945: Truman's First Four Months",
+          "avg_confidence": 0.902
+        }
+      ]
+    },
+    {
+      "block_num": 3,
+      "bbox": {
+        "x": 271,
+        "y": 759,
+        "width": 2454,
+        "height": 3726
+      },
+      "paragraphs": [
+        {
+          "par_num": 1,
+          "bbox": {
+            "x": 281,
+            "y": 759,
+            "width": 2436,
+            "height": 174
+          },
+          "text": "APRIL 13: Truman\u2019s first full day in office. He meets with his cabinet for the first time.",
+          "avg_confidence": 0.962
+        },
+        {
+          "par_num": 2,
+          "bbox": {
+            "x": 498,
+            "y": 979,
+            "width": 2103,
+            "height": 188
+          },
+          "text": "\u2014 Major General Curtis LeMay\u2019s Twenty-First Bomber Com- mand firebombs Japan. Thousands of civilians are killed.",
+          "avg_confidence": 0.948
+        },
+        {
+          "par_num": 3,
+          "bbox": {
+            "x": 280,
+            "y": 1180,
+            "width": 2345,
+            "height": 190
+          },
+          "text": "APRIL 14: Roosevelt\u2019s funeral procession winds through Washing- ton, DC. A service is held in the White House East Room.",
+          "avg_confidence": 0.952
+        },
+        {
+          "par_num": 4,
+          "bbox": {
+            "x": 280,
+            "y": 1400,
+            "width": 2270,
+            "height": 186
+          },
+          "text": "APRIL 19: Truman attends Roosevelt\u2019s burial in Hyde Park, New York. | .",
+          "avg_confidence": 0.862
+        },
+        {
+          "par_num": 5,
+          "bbox": {
+            "x": 504,
+            "y": 1618,
+            "width": 2178,
+            "height": 88
+          },
+          "text": "\u2014 Allied troops liberate the Nazi death camp at Bergen-Belsen.",
+          "avg_confidence": 0.955
+        },
+        {
+          "par_num": 6,
+          "bbox": {
+            "x": 279,
+            "y": 1720,
+            "width": 2446,
+            "height": 201
+          },
+          "text": "APRIL 16: Truman addresses Congress for the first time as president, vowing to force Japan to surrender unconditionally.",
+          "avg_confidence": 0.966
+        },
+        {
+          "par_num": 7,
+          "bbox": {
+            "x": 278,
+            "y": 1936,
+            "width": 2361,
+            "height": 285
+          },
+          "text": "APRIL 23: Truman meets with Vyacheslav Molotov, Joseph Stalin\u2019s number two, to discuss deteriorating relations between the United States and the Soviet Union.",
+          "avg_confidence": 0.962
+        },
+        {
+          "par_num": 8,
+          "bbox": {
+            "x": 276,
+            "y": 2260,
+            "width": 2402,
+            "height": 304
+          },
+          "text": "APRIL 20: The United Nations Conference begins in San Francisco. Delegates from nearly fifty nations begin to map out the new peace organization.",
+          "avg_confidence": 0.955
+        },
+        {
+          "par_num": 9,
+          "bbox": {
+            "x": 490,
+            "y": 2590,
+            "width": 2175,
+            "height": 287
+          },
+          "text": "\u2014 Truman meets with General Leslie Groves and Secretary of War Henry Stimson. The president learns in-depth details of the atomic bomb for the first time. |",
+          "avg_confidence": 0.945
+        },
+        {
+          "par_num": 10,
+          "bbox": {
+            "x": 485,
+            "y": 2915,
+            "width": 2204,
+            "height": 295
+          },
+          "text": "\u2014 \u201cElbe Day.\u201d American and Soviet forces meet at the Elbe River, joining the eastern and western fronts and severing Nazi Germany in half. |",
+          "avg_confidence": 0.939
+        },
+        {
+          "par_num": 11,
+          "bbox": {
+            "x": 273,
+            "y": 3231,
+            "width": 2399,
+            "height": 305
+          },
+          "text": "APRIL 28: Partisans execute Italian Fascist leader Benito Mussolini, along with his mistress, by gunfire. Mussolini\u2019s last words are reportedly, \u201cNo! No!\u201d",
+          "avg_confidence": 0.962
+        },
+        {
+          "par_num": 12,
+          "bbox": {
+            "x": 272,
+            "y": 3559,
+            "width": 2415,
+            "height": 197
+          },
+          "text": "APRIL 29: American forces liberate more than thirty thousand pris- oners at the Dachau concentration camp.",
+          "avg_confidence": 0.955
+        },
+        {
+          "par_num": 13,
+          "bbox": {
+            "x": 495,
+            "y": 3778,
+            "width": 1098,
+            "height": 82
+          },
+          "text": "\u2014 Nazi forces in Italy surrender.",
+          "avg_confidence": 0.956
+        },
+        {
+          "par_num": 14,
+          "bbox": {
+            "x": 271,
+            "y": 3879,
+            "width": 2423,
+            "height": 197
+          },
+          "text": "APRIL 30: As Russia\u2019s Red Army closes in on Hitler\u2019s Berlin bunker, Hitler and his newlywed bride, Eva Braun, commit suicide.",
+          "avg_confidence": 0.926
+        },
+        {
+          "par_num": 15,
+          "bbox": {
+            "x": 273,
+            "y": 4101,
+            "width": 2284,
+            "height": 188
+          },
+          "text": "MAY 2: The Soviet Union announces the fall of Berlin to the Red Army.",
+          "avg_confidence": 0.965
+        },
+        {
+          "par_num": 16,
+          "bbox": {
+            "x": 273,
+            "y": 4316,
+            "width": 2441,
+            "height": 169
+          },
+          "text": "MAY 4: German forces in the Netherlands and Denmark agree to sur- render.",
+          "avg_confidence": 0.958
+        }
+      ]
+    }
+  ],
+  "images": []
+}

@@ -1,198 +1,222 @@
 # Scanshelf - Turn Physical Books into Digital Libraries
 
-Automated pipeline for processing scanned books into structured, searchable digital libraries. Built for researchers, audiobook creators, and anyone who wants AI-powered access to physical book collections.
+A vision-powered OCR pipeline that transforms scanned books into structured, high-quality digital text using Tesseract and multimodal LLMs.
 
-**Use Cases:**
-- 📚 **Research Libraries** - Convert book scans into queryable knowledge bases
-- 🎧 **Audiobook Creation** - Generate TTS-ready markdown from scans (future: direct TTS integration)
-- 🤖 **AI Chat** - Query books with Claude via MCP integration
-- 🔍 **Full-Text Search** - Semantic chunking for RAG applications
+---
 
 ## Quick Start
 
 ```bash
-# Clone repo
+# Setup
 git clone https://github.com/jackzampolin/scanshelf
 cd scanshelf
 
-# Setup Python environment
 uv venv
 source .venv/bin/activate
 uv pip install -e .
 
-# Configure API keys
+# Configure
 cp .env.example .env
-# Edit .env with your OpenRouter API key
+# Add your OPENROUTER_API_KEY
 
-# Verify installation
-ar --help
-```
-
-## Happy Path Workflow
-
-### 1. Place PDFs in ~/Documents/Scans
-
-```bash
-# Put your scanned book PDFs here
-ls ~/Documents/Scans/
-# fiery-peace-1.pdf
-# fiery-peace-2.pdf
-# ...
-```
-
-### 2. Add Books to Library
-
-```bash
-# Add book(s) with automatic metadata extraction
-ar add ~/Documents/Scans/accidental-president-*.pdf
-
-# This will:
-# - Analyze first 10 pages with vision LLM
-# - Extract title, author, metadata
-# - Create scan folder with slugified ID (e.g., "accidental-president")
-# - Combine multi-part PDFs automatically
-# - Register in library.json
-
-# Or specify custom ID:
-ar add ~/Documents/Scans/*.pdf --id my-custom-name
-```
-
-### 3. Process Books
-
-```bash
-# Process entire book through all 4 stages
-ar process <scan-id>
-
-# Stages:
-# 1. OCR - Tesseract extraction
-# 2. Correct - 3-agent LLM error correction
-# 3. Fix - Agent 4 targeted fixes
-# 4. Structure - Semantic chapter/chunk extraction
-```
-
-### 4. Query Results
-
-```bash
-# View library
-ar library list
-ar library show <scan-id>
-
-# Read structured output
-cat ~/Documents/book_scans/<scan-id>/structured/archive/full_book.md
-
-# Search chapters
-grep -r "keyword" ~/Documents/book_scans/<scan-id>/structured/data/body/
-```
-
-## Other Operations
-
-### Library Management
-
-```bash
-# List all books
-ar library list
-
-# Show collection stats
-ar library stats
-
-# Show scan details
-ar library show <scan-id>
-
-# Discover available PDFs
-ar library discover ~/Documents/Scans
-```
-
-### Run Individual Pipeline Stages
-
-```bash
-# Run stages separately
-ar ocr <scan-id>           # Stage 1: OCR extraction
-ar correct <scan-id>       # Stage 2: 3-agent correction
-ar fix <scan-id>           # Stage 3: Agent 4 fixes
-ar structure <scan-id>     # Stage 4: Semantic structuring
-```
-
-### Monitor Progress
-
-```bash
-# Quick status check
-ar status <scan-id>
-
-# Live monitoring with real-time updates
-ar status <scan-id> --watch
-```
-
-### Review Flagged Pages
-
-```bash
-# Generate review report
-ar review <scan-id> report
-
-# Create markdown checklist
-ar review <scan-id> checklist
-```
-
-## What You Get
-
-After processing, each book has structured outputs:
-
-```
-~/Documents/book_scans/<scan-id>/
-├── source/                # Original PDFs
-├── ocr/                   # Raw OCR output (page_*.json)
-├── corrected/             # LLM-corrected pages (page_*.json)
-└── structured/            # Semantic outputs
-    ├── extraction/        # Phase 1: Batch extraction results
-    ├── data/              # Phase 2: RAG-ready JSON
-    │   ├── body/          # Per-chapter JSON files
-    │   ├── front_matter/  # Preface, introduction, etc.
-    │   └── back_matter/   # Notes, bibliography, index
-    ├── reading/           # TTS-optimized clean text
-    └── archive/           # Complete markdown (full_book.md)
-```
-
-See **[docs/STRUCTURE.md](docs/STRUCTURE.md)** for detailed architecture and output formats.
-
-## Pipeline Details
-
-**4-Stage Processing:**
-1. **OCR** - Tesseract with layout detection (free)
-2. **Correct** - 3-agent LLM system with XML-structured prompts (~$10/book)
-   - Agent 1: Detect OCR errors
-   - Agent 2: Apply corrections
-   - Agent 3: Verify + flag issues
-3. **Fix** - Agent 4 targeted fixes for flagged pages (~$1/book)
-4. **Structure** - Semantic chapter/chunk extraction with Claude (~$0.50/book)
-
-**Total cost:** ~$11-12 per 450-page book
-
-**Key Features:**
-- Checkpoint system for resumable processing
-- Parallel processing with rate limiting
-- Atomic library updates for consistency
-- XML-structured prompts for better LLM adherence
-
-## Claude Desktop Integration
-
-Query books directly from Claude Desktop using the MCP server.
-
-See **[docs/MCP_SETUP.md](docs/MCP_SETUP.md)** for setup instructions.
-
-## Configuration
-
-All configuration via `.env` file:
-
-```bash
-# Required
-OPENROUTER_API_KEY=sk-...
-
-# Optional
-BOOK_STORAGE_ROOT=~/Documents/book_scans  # Default storage location
-CORRECTION_MODEL=openai/gpt-4o-mini       # Correction model
-FIX_MODEL=anthropic/claude-3.5-sonnet     # Fix model
-STRUCTURE_MODEL=anthropic/claude-sonnet-4.5  # Structure model
+# Verify
+uv run python shelf.py --help
 ```
 
 ---
 
-**Powered by Claude Sonnet 4.5** for intelligent document understanding and structure extraction.
+## Usage
+
+### Library Management
+
+```bash
+# Add a book to the library
+uv run python shelf.py add ~/Documents/Scans/book-*.pdf
+
+# View all books
+uv run python shelf.py list
+
+# Show detailed book information
+uv run python shelf.py show <scan-id>
+
+# Check processing status
+uv run python shelf.py status <scan-id>
+
+# View library statistics
+uv run python shelf.py stats
+
+# Delete a book
+uv run python shelf.py delete <scan-id>
+```
+
+### Processing Pipeline
+
+The pipeline processes books through these stages (auto-resumes from checkpoints):
+
+```bash
+# Run full pipeline (OCR → Correction → Label → Merge)
+uv run python shelf.py process <scan-id>
+
+# Run single stage
+uv run python shelf.py process <scan-id> --stage ocr
+uv run python shelf.py process <scan-id> --stage corrected
+uv run python shelf.py process <scan-id> --stage labels
+uv run python shelf.py process <scan-id> --stage merged
+
+# Run multiple stages
+uv run python shelf.py process <scan-id> --stages ocr,corrected
+
+# Customize workers and model
+uv run python shelf.py process <scan-id> --workers 30 --model gpt-4o
+```
+
+**Stages:**
+- **ocr** - Extract text and images via Tesseract
+- **corrected** - Vision-based OCR error correction
+- **labels** - Extract page numbers and classify content blocks
+- **merged** - Combine OCR, corrections, and labels
+
+**Note:** Pipeline automatically resumes from checkpoints if interrupted. Quality reports are generated automatically in each stage's `after()` hook.
+
+### Stage Cleanup
+
+```bash
+# Clean a stage to restart from scratch
+uv run python shelf.py clean <scan-id> --stage ocr
+uv run python shelf.py clean <scan-id> --stage corrected -y  # Skip confirmation
+```
+
+---
+
+## Current Status
+
+- ✅ **OCR Stage:** Complete - Tesseract extraction with image detection
+- ✅ **Correction Stage:** Complete - Vision-based OCR error correction
+- ✅ **Label Stage:** Complete - Page numbers & block classification
+- ✅ **Merge Stage:** Complete - Three-way merge (OCR + Corrections + Labels)
+- 🚧 **CLI Refactor:** New `shelf.py` using BaseStage abstraction and runner.py
+- ❌ **Structure Stage:** Not yet implemented - will use merged outputs
+
+**Current Focus:** Testing new CLI and preparing for structure stage design
+
+---
+
+## Testing
+
+```bash
+# Run all tests
+uv run python -m pytest tests/ -v
+
+# Run specific modules
+uv run python -m pytest tests/infra/ -v
+uv run python -m pytest tests/tools/ -v
+```
+
+---
+
+## Documentation
+
+### For Users
+- [CLAUDE.md](CLAUDE.md) - AI workflow guide for contributors
+- [docs/MCP_SETUP.md](docs/MCP_SETUP.md) - Claude Desktop integration
+
+### Architecture Documentation
+- [Stage Abstraction](docs/architecture/stage-abstraction.md) - Core pipeline design pattern
+- [Storage System](docs/architecture/storage-system.md) - Three-tier storage architecture
+- [Checkpoint & Resume](docs/architecture/checkpoint-resume.md) - Resumable processing design
+- [Logging & Metrics](docs/architecture/logging-metrics.md) - Observability system
+
+### Developer Guides
+- [Implementing a Stage](docs/guides/implementing-a-stage.md) - Step-by-step guide for new stages
+- [Troubleshooting](docs/guides/troubleshooting.md) - Common issues and recovery
+
+### Stage Documentation
+- [OCR Stage](pipeline/ocr/README.md) - Tesseract-based text extraction
+- [Correction Stage](pipeline/correction/README.md) - Vision-based error correction
+- [Label Stage](pipeline/label/README.md) - Page numbers and block classification
+- [Merge Stage](pipeline/merged/README.md) - Three-way data merge
+
+---
+
+## Architecture
+
+### High-Level Design
+
+Scanshelf uses a **Stage abstraction pattern** for composable, resumable, testable pipeline processing:
+
+**Core Components:**
+1. **BaseStage** - Three-hook lifecycle (before/run/after) with schema-driven validation
+2. **Storage System** - Three-tier hierarchy (Library → Book → Stage)
+3. **CheckpointManager** - Atomic progress tracking with filesystem synchronization
+4. **PipelineLogger** - Dual-output logging (JSON + human-readable)
+
+**Key Properties:**
+- **Resumable** - Checkpoint-based resume from exact point of interruption
+- **Type-safe** - Pydantic schemas validate data at boundaries
+- **Cost-aware** - Track every LLM API call financially
+- **Independent** - Stages evolve separately, communicate via files
+- **Testable** - Test stages in isolation with mock data
+
+See [Stage Abstraction](docs/architecture/stage-abstraction.md) for detailed design philosophy.
+
+### Pipeline Flow
+
+```
+PDF → Split Pages → OCR → Correction → Label → Merge → Structure (TBD)
+```
+
+**Stages:**
+- **OCR** - Tesseract extraction (CPU-parallel) → `ocr/page_*.json`
+- **Correction** - Vision LLM error fixing (I/O-parallel) → `corrected/page_*.json`
+- **Label** - Page numbers + block classification → `labels/page_*.json`
+- **Merge** - Three-way deterministic merge → `merged/page_*.json`
+- **Structure** (planned) - Chapter/section extraction
+
+Each stage:
+- Validates inputs in `before()` hook
+- Processes pages in `run()` hook (controls own parallelization)
+- Generates quality reports in `after()` hook
+- Tracks costs, timing, and metrics per page
+- Resumes automatically from checkpoint if interrupted
+
+### Storage Structure
+
+```
+~/Documents/book_scans/
+├── {scan-id}/                # Per-book directory (BookStorage)
+│   ├── metadata.json         # Book metadata (title, author, year, etc.)
+│   ├── source/               # Original page images
+│   ├── ocr/                  # OCR stage outputs
+│   │   ├── page_NNNN.json    # OCRPageOutput schema
+│   │   ├── report.csv        # Quality metrics (confidence, blocks)
+│   │   ├── .checkpoint       # Progress state (page_metrics source of truth)
+│   │   └── logs/
+│   │       └── ocr_{timestamp}.jsonl
+│   ├── corrected/            # Correction stage outputs
+│   │   ├── page_NNNN.json    # CorrectionPageOutput schema
+│   │   ├── report.csv        # Quality metrics (corrections, similarity)
+│   │   ├── .checkpoint
+│   │   └── logs/
+│   ├── labels/               # Label stage outputs
+│   │   ├── page_NNNN.json    # LabelPageOutput schema
+│   │   ├── report.csv        # Quality metrics (classifications)
+│   │   ├── .checkpoint
+│   │   └── logs/
+│   ├── merged/               # Merge stage outputs
+│   │   ├── page_NNNN.json    # MergedPageOutput schema
+│   │   ├── .checkpoint
+│   │   └── logs/
+│   └── images/               # Extracted image regions (from OCR)
+```
+
+**Key points:**
+- No `library.json` - filesystem is source of truth (LibraryStorage scans directories)
+- Each stage has independent checkpoint (`.checkpoint`) and logs
+- Quality reports (CSV) generated automatically in `after()` hook
+- Schemas enforce type safety at boundaries (input/output/checkpoint/report)
+
+See [Storage System](docs/architecture/storage-system.md) for three-tier design details.
+
+---
+
+**Powered by Claude Sonnet 4.5 and Tesseract OCR**

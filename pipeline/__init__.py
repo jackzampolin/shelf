@@ -1,9 +1,11 @@
 """
 Book digitization pipeline stages.
 
-Sequential processing:
-1. ocr.py - Extract text from PDFs using Tesseract
-2. correct.py - 3-agent LLM correction pipeline
-3. fix.py - Agent 4 targeted fixes for flagged pages
-4. merge.py - Merge corrected pages into final dual-structure text
+Current stages (refactored design):
+0. ingest - Extract metadata and prepare PDF for processing
+1. ocr - Extract text and structure from PDFs using vision models
+2. correction - LLM-based text correction and quality assessment
+
+Future stages (design in progress - see Issue #56):
+- Structure extraction and assembly (TBD)
 """

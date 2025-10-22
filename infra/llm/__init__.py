@@ -1,0 +1,42 @@
+"""
+LLM subsystem for OpenRouter API integration.
+
+Provides:
+- LLMClient: Single LLM calls with retry logic and vision support
+- LLMBatchClient: Batch processing with queue-based retries
+- Data models: Request/result structures for batch processing
+- Pricing: Dynamic cost calculation from OpenRouter API
+- RateLimiter: Token bucket rate limiting
+"""
+
+from infra.llm.client import LLMClient
+from infra.llm.batch_client import LLMBatchClient
+from infra.llm.models import (
+    LLMRequest,
+    LLMResult,
+    LLMEvent,
+    EventData,
+    RequestPhase,
+    RequestStatus,
+    CompletedStatus,
+    BatchStats
+)
+from infra.llm.pricing import PricingCache, CostCalculator, calculate_cost
+from infra.llm.rate_limiter import RateLimiter
+
+__all__ = [
+    "LLMClient",
+    "LLMBatchClient",
+    "LLMRequest",
+    "LLMResult",
+    "LLMEvent",
+    "EventData",
+    "RequestPhase",
+    "RequestStatus",
+    "CompletedStatus",
+    "BatchStats",
+    "PricingCache",
+    "CostCalculator",
+    "calculate_cost",
+    "RateLimiter",
+]
