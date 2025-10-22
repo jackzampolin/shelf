@@ -44,7 +44,7 @@ from pipeline.merged import MergeStage
 
 def cmd_library_add(args):
     """Add book(s) to library with LLM metadata extraction."""
-    from tools.add import add_books_to_library
+    from infra.utils.ingest import add_books_to_library
     import glob
 
     # Expand glob patterns
