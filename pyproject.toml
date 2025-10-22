@@ -20,8 +20,5 @@ dependencies = [
     "rich>=13.0.0",
 ]
 
-[project.scripts]
-ar = "ar:main"
-
 [tool.setuptools.packages.find]
-include = ["infra*", "pipeline*", "tools*"]
+include = ["infra*", "pipeline*"]

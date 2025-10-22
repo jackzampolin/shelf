@@ -33,7 +33,7 @@ class OCRStage(BaseStage):
     """
     OCR Stage - First pipeline stage.
 
-    Reads: source/*.png (page images from tools/add.py)
+    Reads: source/*.png (page images from ingest process)
     Writes: ocr/page_NNNN.json (hierarchical text blocks)
     Also creates: images/ (extracted image regions)
     """

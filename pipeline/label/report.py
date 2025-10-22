@@ -151,7 +151,7 @@ def analyze_book(scan_id, output_json=False, storage_root=None, save_csv=True, s
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python tools/analyze_label.py <scan-id> [--json]")
+        print("Usage: python pipeline/label/report.py <scan-id> [--json]")
         sys.exit(1)
 
     scan_id = sys.argv[1]
