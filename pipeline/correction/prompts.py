@@ -150,6 +150,12 @@ Return ONLY valid JSON matching the schema.
 Do not include markdown code fences.
 Do not add explanatory text outside JSON structure.
 Do not include reasoning or analysis.
+
+CRITICAL: Your output must match the OCR structure exactly:
+- Output the same number of blocks as in the OCR data
+- Each block must have the same number of paragraphs as in the OCR data
+- Preserve block_num and par_num from OCR exactly
+- Do not merge, split, add, or remove blocks or paragraphs
 </output_requirements>"""
 
 
@@ -177,6 +183,9 @@ def build_user_prompt(page_num: int, total_pages: int, book_metadata: dict, ocr_
     year = book_metadata.get('year', 'Unknown')
     book_type = book_metadata.get('type', 'Unknown')
 
+    # Count blocks for explicit instruction
+    num_blocks = len(ocr_data.get('blocks', []))
+
     # Pretty-print OCR JSON
     ocr_json = json.dumps(ocr_data, indent=2)
 
@@ -192,18 +201,24 @@ Scanned page {page_num} of {total_pages} (PDF page number, not printed page numb
 </page_context>
 
 <ocr_data>
+Below is the OCR data in JSON format. It contains {num_blocks} blocks detected by the OCR engine.
+Each block has a block_num, bounding box (bbox), and paragraphs with text content.
+
 {ocr_json}
 </ocr_data>
 
 <task>
 Compare the OCR text above against the page image.
 
-For each block and paragraph:
+For each of the {num_blocks} OCR blocks and their paragraphs:
 1. Visually check if OCR text matches the image character-by-character
 2. If text matches image: Set text=null with notes="No OCR errors detected"
 3. If OCR reading errors found: Output full corrected paragraph text
 4. Provide brief notes using standardized format from examples
 5. Assign confidence score based on image clarity and error obviousness
+
+IMPORTANT: Your output must contain exactly {num_blocks} blocks, with each block having the same number of paragraphs as in the OCR data.
+Preserve block_num and par_num exactly. Do not merge, split, add, or remove blocks or paragraphs.
 
 Remember: You are correcting character-level OCR reading errors only, not editing content. Most paragraphs (80-90%) should have text=null.
 </task>"""

@@ -72,7 +72,7 @@ Numbering style patterns:
 Confidence scores:
 - 0.95-1.0: Clear printed number in standard location
 - 0.85-0.94: Number present but unusual placement or formatting
-- 0.95: No number found (high confidence in absence)
+- 1.0: No number found (high confidence in absence)
 </page_number_extraction>
 
 <page_region_classification>
@@ -148,7 +148,8 @@ Return structured JSON with:
 - printed_page_number (extracted book-page number)
 - page_region classification with confidence
 - Block classifications with per-block confidence
-- Paragraph-level confidence scores
+- Must output exactly the same number of blocks as in the OCR data
+- Each block must preserve the block_num from OCR data
 
 Focus on visual and structural signals from the image. Do not correct or modify OCR text.
 </output_requirements>"""
@@ -180,6 +181,9 @@ def build_user_prompt(ocr_page, ocr_text, current_page, total_pages, book_metada
     # Calculate position in document
     percent_through = (current_page / total_pages * 100) if total_pages > 0 else 0
 
+    # Count blocks for explicit instruction
+    num_blocks = len(ocr_page.get('blocks', []))
+
     return f"""<document_context>
 Title: {title}
 Author: {author}
@@ -197,14 +201,20 @@ The PDF page number ({current_page}) is our internal file sequence. The book-pag
 </important_reminder>
 
 <ocr_data>
+Below is the OCR data in JSON format. It contains {num_blocks} blocks detected by the OCR engine.
+Each block has a block_num, bounding box (bbox), and paragraphs with text content.
+
 {ocr_text}
 </ocr_data>
 
 <tasks>
 1. Extract printed book-page number from image (ignore PDF page {current_page})
 2. Classify page region using position-based defaults, override if content contradicts
-3. Classify each content block using decision tree (check indentation first)
+3. Classify each of the {num_blocks} OCR blocks using decision tree (check indentation first)
 4. Provide confidence scores for all classifications
+
+IMPORTANT: Your output must contain exactly {num_blocks} blocks, preserving the block_num from each OCR block.
+Do not merge, split, or skip any blocks. Each OCR block gets one classification.
 
 Focus on visual and structural signals from the image.
 </tasks>"""

@@ -202,3 +202,43 @@ class OCRPageOutput(BaseModel):
                 nearby.append(block)
 
         return nearby
+
+
+# ============================================================================
+# Checkpoint Metrics Schema
+# ============================================================================
+
+
+class OCRPageMetrics(BaseModel):
+    """
+    Checkpoint metrics for OCR stage.
+
+    Tracks Tesseract OCR performance per page.
+    OCR stage is unique - no LLM costs for pages, but tracks
+    OCR quality metrics (confidence, blocks detected).
+    """
+    page_num: int = Field(..., ge=1, description="Page number processed")
+    processing_time_seconds: float = Field(..., ge=0.0, description="Tesseract processing time")
+    cost_usd: float = Field(0.0, ge=0.0, description="Cost (always 0 for Tesseract)")
+
+    # OCR-specific metrics
+    tesseract_version: str = Field(..., description="Tesseract version used")
+    confidence_mean: float = Field(..., ge=0.0, le=1.0, description="Mean OCR confidence across page")
+    blocks_detected: int = Field(..., ge=0, description="Number of text blocks detected")
+
+
+# ============================================================================
+# Report Schema (Quality metrics only)
+# ============================================================================
+
+
+class OCRPageReport(BaseModel):
+    """
+    Quality-focused report for OCR stage.
+
+    Minimal report to spot low-quality OCR pages.
+    LLMs consume OCR directly, so just flag potential issues.
+    """
+    page_num: int = Field(..., ge=1, description="Page number")
+    confidence_mean: float = Field(..., ge=0.0, le=1.0, description="Mean OCR confidence (low = poor quality)")
+    blocks_detected: int = Field(..., ge=0, description="Text blocks detected (abnormal values = layout issues)")

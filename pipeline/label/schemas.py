@@ -8,6 +8,7 @@ Text correction is handled in Stage 2.
 from typing import List, Optional, Literal
 from enum import Enum
 from pydantic import BaseModel, Field
+from infra.pipeline.schemas import LLMPageMetrics
 
 
 class BlockType(str, Enum):
@@ -67,23 +68,12 @@ class PageRegion(str, Enum):
     UNCERTAIN = "uncertain"          # Ambiguous or insufficient context
 
 
-class ParagraphLabel(BaseModel):
-    """Label metadata for a single paragraph (no text correction)."""
-
-    par_num: int = Field(..., ge=1, description="Paragraph number within block (matches OCR)")
-
-    # Confidence that this paragraph belongs to the classified block type
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in paragraph classification")
-
-
 class BlockClassification(BaseModel):
     """Classification labels for a single block (no text correction)."""
 
     block_num: int = Field(..., ge=1, description="Block number (matches OCR)")
     classification: BlockType = Field(..., description="Classified content type")
     classification_confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in classification")
-
-    paragraphs: List[ParagraphLabel] = Field(..., description="Paragraph-level labels")
 
 
 class LabelPageOutput(BaseModel):
@@ -135,5 +125,55 @@ class LabelPageOutput(BaseModel):
 
     # Summary statistics
     total_blocks: int = Field(..., ge=0, description="Total number of blocks classified")
-    avg_classification_confidence: float = Field(..., ge=0.0, le=1.0, description="Average classification confidence")
-    avg_confidence: float = Field(..., ge=0.0, le=1.0, description="Average paragraph label confidence")
+    avg_classification_confidence: float = Field(..., ge=0.0, le=1.0, description="Average block classification confidence")
+
+
+# ============================================================================
+# Checkpoint Metrics Schema
+# ============================================================================
+
+
+class LabelPageMetrics(LLMPageMetrics):
+    """
+    Checkpoint metrics for Label stage.
+
+    Extends LLMPageMetrics with label-specific quality metrics.
+    Tracks both LLM performance (tokens, timing, cost) and labeling
+    quality (classification confidence, page number extraction success).
+
+    Includes book structure fields for report generation.
+    """
+    # Label-specific metrics
+    total_blocks_classified: int = Field(..., ge=0, description="Number of blocks classified")
+    avg_classification_confidence: float = Field(..., ge=0.0, le=1.0, description="Average block classification confidence")
+    page_number_extracted: bool = Field(..., description="Whether a printed page number was found")
+    page_region_classified: bool = Field(..., description="Whether page region was classified (front/body/back matter)")
+
+    # Book structure fields (for report generation)
+    printed_page_number: Optional[str] = Field(None, description="Printed page number on page")
+    numbering_style: Optional[Literal["roman", "arabic", "none"]] = Field(None, description="Page numbering style")
+    page_region: Optional[PageRegion] = Field(None, description="Book region classification")
+
+
+# ============================================================================
+# Report Schema (Quality metrics only)
+# ============================================================================
+
+
+class LabelPageReport(BaseModel):
+    """
+    Quality-focused report for Label stage.
+
+    Shows book structure and identifies classification issues:
+    - Page numbering progression (gaps, style changes)
+    - Region transitions (front → body → back matter)
+    - Classification quality (low confidence, missing extractions)
+    """
+    page_num: int = Field(..., ge=1, description="PDF page number")
+    printed_page_number: Optional[str] = Field(None, description="Printed page number on page (e.g., 'ix', '45', None)")
+    numbering_style: Optional[Literal["roman", "arabic", "none"]] = Field(None, description="Page numbering style")
+    page_region: Optional[PageRegion] = Field(None, description="Book region (front/body/back matter)")
+    page_number_extracted: bool = Field(..., description="Was a printed page number found?")
+    page_region_classified: bool = Field(..., description="Was page region identified?")
+    total_blocks_classified: int = Field(..., ge=0, description="Blocks classified on this page")
+    avg_classification_confidence: float = Field(..., ge=0.0, le=1.0, description="Classification quality (low = needs review)")

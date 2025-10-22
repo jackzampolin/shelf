@@ -7,6 +7,7 @@ Vision-based OCR correction with block classification.
 from typing import List, Optional, Literal
 from enum import Enum
 from pydantic import BaseModel, Field
+from infra.pipeline.schemas import LLMPageMetrics
 
 
 class BlockType(str, Enum):
@@ -100,3 +101,46 @@ class CorrectionPageOutput(BaseModel):
     total_blocks: int = Field(..., ge=0, description="Total number of blocks corrected")
     total_corrections: int = Field(..., ge=0, description="Total number of paragraphs corrected")
     avg_confidence: float = Field(..., ge=0.0, le=1.0, description="Average text confidence")
+
+
+# ============================================================================
+# Checkpoint Metrics Schema
+# ============================================================================
+
+
+class CorrectionPageMetrics(LLMPageMetrics):
+    """
+    Checkpoint metrics for Correction stage.
+
+    Extends LLMPageMetrics with correction-specific quality metrics.
+    Tracks both LLM performance (tokens, timing, cost) and correction
+    quality (how many corrections made, confidence).
+    """
+    # Correction-specific metrics
+    total_corrections: int = Field(..., ge=0, description="Number of paragraphs with corrections")
+    avg_confidence: float = Field(..., ge=0.0, le=1.0, description="Average text confidence after correction")
+
+    # Similarity metrics (OCR vs corrected text)
+    text_similarity_ratio: float = Field(..., ge=0.0, le=1.0, description="Text similarity between OCR and corrected (1.0 = identical)")
+    characters_changed: int = Field(..., ge=0, description="Number of characters modified from OCR")
+
+
+# ============================================================================
+# Report Schema (Quality metrics only)
+# ============================================================================
+
+
+class CorrectionPageReport(BaseModel):
+    """
+    Quality-focused report for Correction stage.
+
+    Helps identify pages with correction issues:
+    - Over-correction (low similarity, many changes)
+    - Quality problems (low confidence after correction)
+    - Pages needing review (high edit distance)
+    """
+    page_num: int = Field(..., ge=1, description="Page number")
+    total_corrections: int = Field(..., ge=0, description="Paragraphs corrected")
+    avg_confidence: float = Field(..., ge=0.0, le=1.0, description="Quality after correction (low = needs review)")
+    text_similarity_ratio: float = Field(..., ge=0.0, le=1.0, description="Similarity to OCR (low = major changes)")
+    characters_changed: int = Field(..., ge=0, description="Edit magnitude (high = significant rewrites)")

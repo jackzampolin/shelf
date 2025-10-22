@@ -104,7 +104,7 @@ class CheckpointManager:
                     # Version mismatch - start fresh
                     return self._create_new_checkpoint()
 
-                # Backward compatibility: add page_metrics if missing
+                # Ensure page_metrics exists
                 if 'page_metrics' not in state:
                     state['page_metrics'] = {}
 
@@ -116,7 +116,7 @@ class CheckpointManager:
             return self._create_new_checkpoint()
 
     def _create_new_checkpoint(self) -> Dict[str, Any]:
-        """Create a new checkpoint state."""
+        """Create a new checkpoint state with page_metrics as source of truth."""
         return {
             "version": self.CHECKPOINT_VERSION,
             "scan_id": self.scan_id,
@@ -124,15 +124,12 @@ class CheckpointManager:
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat(),
             "status": "not_started",
-            "completed_pages": [],
             "total_pages": 0,
-            "progress": {
-                "completed": 0,
-                "remaining": 0,
-                "percent": 0.0
+            "metadata": {
+                "pages_failed": 0,
+                "accumulated_duration_seconds": 0.0
             },
-            "metadata": {},
-            "page_metrics": {},  # Per-request metrics indexed by page number
+            "page_metrics": {},  # Source of truth: completed_pages, progress, total_cost derived from this
             "validation": {
                 "output_dir": self.output_dir,
                 "file_pattern": self.file_pattern
@@ -328,22 +325,21 @@ class CheckpointManager:
             # First, sync checkpoint with actual output files
             valid_outputs = self.scan_existing_outputs(total_pages)
 
-            # Update checkpoint with validated pages
-            self._state['completed_pages'] = sorted(list(valid_outputs))
+            # Sync page_metrics with valid outputs
+            # Remove metrics for pages without valid outputs, keep metrics for valid pages
+            page_metrics = self._state.get('page_metrics', {})
+            synced_metrics = {
+                str(p): page_metrics.get(str(p), {"page_num": p, "cost_usd": 0.0})
+                for p in valid_outputs
+            }
+            self._state['page_metrics'] = synced_metrics
 
             # Calculate remaining pages in requested range
-            completed_set = set(self._state['completed_pages'])
+            completed_set = set(valid_outputs)
             remaining_pages = [
                 p for p in range(start_page, end_page + 1)
                 if p not in completed_set
             ]
-
-            # Update progress
-            self._state['progress'] = {
-                "completed": len(completed_set),
-                "remaining": len(remaining_pages),
-                "percent": (len(completed_set) / total_pages * 100) if total_pages > 0 else 0
-            }
 
             # Only set status to "in_progress" if there's work to do
             # Preserve "completed" status if already marked complete
@@ -360,44 +356,33 @@ class CheckpointManager:
 
     def mark_completed(self, page_num: int, cost_usd: float = 0.0, metrics: Optional[Dict[str, Any]] = None):
         """
-        Mark a page as completed (thread-safe) with optional detailed metrics.
+        Mark a page as completed (thread-safe) with detailed metrics.
 
         Args:
             page_num: Page number that was completed
-            cost_usd: Cost for this page in USD (accumulated in metadata)
-            metrics: Optional detailed metrics dict (TTFT, execution time, tokens, etc.)
+            cost_usd: Cost for this page in USD (stored in metrics)
+            metrics: Detailed metrics dict (TTFT, execution time, tokens, etc.)
+                    If None, creates minimal metrics with just cost and page_num
         """
         with self._lock:
-            # Add to completed list if not already there
-            is_new_page = page_num not in self._state['completed_pages']
+            # Check if already completed
+            page_key = str(page_num)
+            if page_key in self._state.get('page_metrics', {}):
+                return  # Already completed, skip
 
-            # Early return if page already completed and no cost/metrics to add (avoid redundant saves)
-            if not is_new_page and cost_usd == 0 and not metrics:
-                return
+            # Ensure page_metrics exists
+            if 'page_metrics' not in self._state:
+                self._state['page_metrics'] = {}
 
-            if is_new_page:
-                self._state['completed_pages'].append(page_num)
-                self._state['completed_pages'].sort()
-
-            # Accumulate cost in metadata (ONLY for new pages to avoid double-counting)
-            if cost_usd > 0 and is_new_page:
-                current_cost = self._state['metadata'].get('total_cost_usd', 0.0)
-                self._state['metadata']['total_cost_usd'] = current_cost + cost_usd
-
-            # Store detailed metrics (ONLY for new pages to avoid double-counting)
-            if metrics and is_new_page:
-                if 'page_metrics' not in self._state:
-                    self._state['page_metrics'] = {}
-                self._state['page_metrics'][str(page_num)] = metrics
-
-            # Update progress
-            total = self._state.get('total_pages', 0)
-            completed = len(self._state['completed_pages'])
-            self._state['progress'] = {
-                "completed": completed,
-                "remaining": max(0, total - completed),
-                "percent": (completed / total * 100) if total > 0 else 0
-            }
+            # Store metrics (create minimal if not provided)
+            if metrics:
+                self._state['page_metrics'][page_key] = metrics
+            else:
+                # Minimal metrics for non-LLM stages (e.g., merge)
+                self._state['page_metrics'][page_key] = {
+                    "page_num": page_num,
+                    "cost_usd": cost_usd
+                }
 
             # Save checkpoint on every page (disk I/O is negligible vs LLM latency)
             self._save_checkpoint()
@@ -466,21 +451,9 @@ class CheckpointManager:
         Returns:
             True if reset, False if cancelled by user
         """
-        with self._lock:
-            # Check if there's existing progress
-            if confirm and self.checkpoint_file.exists():
-                status = self._state.copy()
-                completed = len(status.get('completed_pages', []))
-                total = status.get('total_pages', 0)
-                cost = status.get('metadata', {}).get('total_cost_usd', 0.0)
-
-                if completed > 0:
-                    # Release lock before user input
-                    pass  # Will release at end of with block
-
         # Check needs to be outside lock to avoid deadlock during input()
         if confirm and self.checkpoint_file.exists():
-            status = self.get_status()  # Thread-safe copy
+            status = self.get_status()  # Thread-safe copy with derived fields
             completed = len(status.get('completed_pages', []))
             total = status.get('total_pages', 0)
             cost = status.get('metadata', {}).get('total_cost_usd', 0.0)
@@ -514,13 +487,36 @@ class CheckpointManager:
 
     def get_status(self) -> Dict[str, Any]:
         """
-        Get current checkpoint status (thread-safe copy).
+        Get current checkpoint status (thread-safe copy) with derived fields.
 
         Returns:
-            Dict containing checkpoint state
+            Dict containing checkpoint state with completed_pages, progress, and total_cost derived from page_metrics
         """
         with self._lock:
-            return self._state.copy()
+            status = self._state.copy()
+
+            # Derive completed_pages from page_metrics
+            page_metrics = status.get('page_metrics', {})
+            completed_pages = sorted([int(k) for k in page_metrics.keys()])
+            status['completed_pages'] = completed_pages
+
+            # Derive progress
+            total = status.get('total_pages', 0)
+            completed = len(completed_pages)
+            status['progress'] = {
+                "completed": completed,
+                "remaining": max(0, total - completed),
+                "percent": (completed / total * 100) if total > 0 else 0
+            }
+
+            # Derive total_cost_usd from page_metrics
+            total_cost = sum(m.get('cost_usd', 0.0) for m in page_metrics.values())
+            if 'metadata' not in status:
+                status['metadata'] = {}
+            status['metadata']['total_cost_usd'] = total_cost
+            status['metadata']['pages_processed'] = completed
+
+            return status
 
     def estimate_cost_saved(self) -> float:
         """

@@ -455,20 +455,21 @@ class RichProgressBarHierarchical:
                                 except:
                                     pass  # Fall back to basic display if metrics unavailable
 
-                            # Display format: FT (first token), SS (streaming seconds), input→output tok, cost
+                            # Display format: FT (first token), Exec (execution time), input→output tok, cost
                             if metrics:
                                 # Build compact metrics display
                                 parts = []
                                 if metrics.get('ttft_seconds'):
                                     parts.append(f"FT {metrics['ttft_seconds']:.1f}s")
-                                if metrics.get('streaming_duration'):
-                                    parts.append(f"SS {metrics['streaming_duration']:.1f}s")
+                                if metrics.get('execution_time_seconds'):
+                                    parts.append(f"Exec {metrics['execution_time_seconds']:.1f}s")
                                 # Show input→output token format with reasoning tokens if available
-                                if metrics.get('tokens_input') is not None and metrics.get('tokens_output') is not None:
-                                    tok_str = f"{metrics['tokens_input']}→{metrics['tokens_output']}"
+                                usage = metrics.get('usage', {})
+                                if usage.get('prompt_tokens') is not None and usage.get('completion_tokens') is not None:
+                                    tok_str = f"{usage['prompt_tokens']}→{usage['completion_tokens']}"
                                     # Add reasoning tokens if present
-                                    if metrics.get('tokens_reasoning', 0) > 0:
-                                        tok_str += f"+{metrics['tokens_reasoning']}r"
+                                    if usage.get('reasoning_tokens', 0) > 0:
+                                        tok_str += f"+{usage['reasoning_tokens']}r"
                                     parts.append(f"{tok_str} tok")
                                 elif metrics.get('tokens_total'):
                                     parts.append(f"{metrics['tokens_total']} tok")
