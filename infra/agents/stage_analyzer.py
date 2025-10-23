@@ -163,19 +163,27 @@ class StageAnalyzer:
             return """**Correction Stage Focus:**
 Analyze OCR correction quality. Key metrics in report.csv:
 - total_corrections: Number of paragraphs corrected per page
-- avg_confidence: Post-correction text quality (target: >0.90)
+- avg_confidence: Correction certainty (target: >0.90)
 - text_similarity_ratio: How much text changed (1.0=no changes, <0.80=major rewrites)
 - characters_changed: Edit magnitude
 
-Critical Issues to Identify:
-- Over-correction: Low similarity (<0.80) with many changes (suggests model rewrote instead of corrected)
-- Under-correction: High similarity (>0.95) but low confidence (suggests errors missed)
+IMPORTANT: Low similarity does NOT indicate problems. It often represents CORRECT large-scale fixes.
+
+Critical Issues to Identify (use confidence as PRIMARY signal):
+- Low confidence pages (avg_confidence <0.85): These genuinely need review
+- Combined red flags (avg_confidence <0.92 AND text_similarity_ratio <0.70): Worth checking
 - Inconsistent confidence: High variance across pages (suggests prompt/model issues)
 
-Expected Patterns:
-- Most pages should have text_similarity_ratio >0.90 (minor corrections only)
-- Pages with <0.80 similarity need review (major rewrites)
-- Avg confidence should increase from OCR baseline
+Expected Patterns (THESE ARE CORRECT, NOT PROBLEMS):
+- "Short block pattern": Few corrections + large character changes + low similarity (<0.80) + high confidence (>0.95)
+  → This is CORRECT behavior - agent fixed heavily corrupted blocks (titles, headers, line-break hyphens)
+- High confidence (>0.95) + Low similarity (<0.80): Often legitimate structural fixes, NOT over-correction
+- Most pages should have avg_confidence >0.95
+
+Pages to Flag:
+- Primary: avg_confidence < 0.85 (genuine uncertainty, ~1-2% of pages)
+- Secondary: avg_confidence < 0.92 AND text_similarity_ratio < 0.70 (double-check only)
+- DO NOT flag pages solely on low similarity - this creates 70-95% false positives
 
 NOTE: Cost tracking is handled separately by the pipeline - do NOT calculate costs from JSON files."""
 
