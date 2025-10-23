@@ -38,7 +38,7 @@ class StageAnalyzer:
         storage: BookStorage,
         stage_name: str,
         model: str = None,
-        max_iterations: int = 15
+        max_iterations: int = 25
     ):
         """
         Initialize analyzer for a specific stage.
@@ -171,12 +171,13 @@ Critical Issues to Identify:
 - Over-correction: Low similarity (<0.80) with many changes (suggests model rewrote instead of corrected)
 - Under-correction: High similarity (>0.95) but low confidence (suggests errors missed)
 - Inconsistent confidence: High variance across pages (suggests prompt/model issues)
-- Cost efficiency: High cost per correction ($/total_corrections)
 
 Expected Patterns:
 - Most pages should have text_similarity_ratio >0.90 (minor corrections only)
 - Pages with <0.80 similarity need review (major rewrites)
-- Avg confidence should increase from OCR baseline"""
+- Avg confidence should increase from OCR baseline
+
+NOTE: Cost tracking is handled separately by the pipeline - do NOT calculate costs from JSON files."""
 
         elif self.stage_name == 'labels':
             return """**Label Stage Focus:**
