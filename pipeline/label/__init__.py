@@ -413,6 +413,19 @@ class LabelStage(BaseStage):
 
         # Auto-run analysis if enabled
         if self.auto_analyze:
+            # Check if analysis already exists
+            existing_analysis = checkpoint._state.get('metadata', {}).get('analysis')
+            if existing_analysis and existing_analysis.get('report_path'):
+                from pathlib import Path
+                report_path = Path(existing_analysis['report_path'])
+                if report_path.exists():
+                    logger.info(
+                        f"Analysis already exists",
+                        report=str(report_path),
+                        cost_usd=existing_analysis.get('cost_usd', 0)
+                    )
+                    return
+
             logger.info("Running automatic stage analysis...")
             try:
                 result = self.analyze(storage=storage)

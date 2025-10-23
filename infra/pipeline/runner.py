@@ -96,10 +96,16 @@ def run_stage(
                     )
                     logger.info("Re-running stage to process missing pages")
                 else:
+                    print(f"   Stage already complete, running after() hook")
                     logger.info("Stage already complete (validated), skipping")
+                    # Call after() hook for post-processing (e.g., analysis)
+                    stage.after(storage, checkpoint, logger, status.get('metadata', {}))
                     return status.get('metadata', {})
             else:
+                print(f"   Stage already complete (no total_pages), running after() hook")
                 logger.info("Stage already complete, skipping")
+                # Call after() hook for post-processing (e.g., analysis)
+                stage.after(storage, checkpoint, logger, status.get('metadata', {}))
                 return status.get('metadata', {})
 
         # Run lifecycle hooks
