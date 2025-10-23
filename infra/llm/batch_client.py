@@ -561,15 +561,28 @@ class LLMBatchClient:
             if len(response_text) > 1000:
                 response_preview = f"{response_text[:500]}...{response_text[-500:]}"
 
-            logger.warning(
-                f"Structured JSON parsing failed for {request.id}",
+            # Only log as warning if this is the final attempt (will not retry)
+            # Otherwise log at debug level to avoid noise from transient failures
+            will_retry = request._retry_count < self.max_retries
+            log_level = logging.DEBUG if will_retry else logging.WARNING
+            log_message = f"Structured JSON parsing failed for {request.id}"
+            if will_retry:
+                log_message += f" (will retry, attempt {request._retry_count + 1}/{self.max_retries})"
+            else:
+                log_message += f" (final attempt, giving up)"
+
+            logger.log(
+                log_level,
+                log_message,
                 extra={
                     'request_id': request.id,
                     'model': current_model,
                     'error': str(e),
                     'response_length': len(response_text),
                     'response_preview': response_preview,
-                    'response_format': request.response_format
+                    'response_format': request.response_format,
+                    'attempt': request._retry_count + 1,
+                    'max_retries': self.max_retries
                 }
             )
 
