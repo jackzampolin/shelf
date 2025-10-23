@@ -47,7 +47,7 @@ class CorrectionStage(BaseStage):
     checkpoint_schema = CorrectionPageMetrics
     report_schema = CorrectionPageReport  # Quality-focused report
 
-    def __init__(self, model: str = None, max_workers: int = None, max_retries: int = 3):
+    def __init__(self, model: str = None, max_workers: int = None, max_retries: int = 3, auto_analyze: bool = False):
         """
         Initialize Correction stage.
 
@@ -55,10 +55,12 @@ class CorrectionStage(BaseStage):
             model: LLM model to use (default: from Config.vision_model_primary)
             max_workers: Number of parallel workers (default: Config.max_workers)
             max_retries: Maximum retry attempts for failed pages (default: 3)
+            auto_analyze: Automatically run analysis agent after stage completion (default: False)
         """
         self.model = model or Config.vision_model_primary
         self.max_workers = max_workers if max_workers is not None else Config.max_workers
         self.max_retries = max_retries
+        self.auto_analyze = auto_analyze
         self.progress_lock = threading.Lock()
         self.batch_client = None  # Will be initialized in run()
 
@@ -469,3 +471,67 @@ class CorrectionStage(BaseStage):
         """Generate correction quality report from checkpoint metrics."""
         # Generate quality-focused CSV report from checkpoint metrics
         super().after(storage, checkpoint, logger, stats)
+
+        # Auto-run analysis if enabled
+        if self.auto_analyze:
+            logger.info("Running automatic stage analysis...")
+            try:
+                result = self.analyze(storage=storage)
+
+                # Add analysis cost to checkpoint metadata
+                with checkpoint._lock:
+                    if 'analysis' not in checkpoint._state['metadata']:
+                        checkpoint._state['metadata']['analysis'] = {}
+
+                    checkpoint._state['metadata']['analysis'] = {
+                        'cost_usd': result['cost_usd'],
+                        'iterations': result['iterations'],
+                        'model': result['model'],
+                        'run_hash': result['run_hash'],
+                        'report_path': str(result['analysis_path'])
+                    }
+                    checkpoint._save_checkpoint()
+
+                logger.info(
+                    f"Analysis complete",
+                    report=str(result['analysis_path']),
+                    cost_usd=result['cost_usd'],
+                    iterations=result['iterations']
+                )
+            except Exception as e:
+                logger.error(f"Analysis failed", error=str(e))
+
+    @staticmethod
+    def analyze(storage: BookStorage, model: str = None, focus_areas: list = None) -> Dict[str, Any]:
+        """
+        Launch analysis agent for Correction stage.
+
+        Analyzes the correction stage report and outputs to identify:
+        - Correction application quality (changes vs. notes accuracy)
+        - Confidence score distribution
+        - Common error patterns
+        - Cost efficiency issues
+        - Pages needing review
+
+        Args:
+            storage: BookStorage instance for the book
+            model: OpenRouter model to use (default: Config.text_model_primary)
+            focus_areas: Optional list of specific areas to focus on
+
+        Returns:
+            Dict with analysis_path, cost_usd, iterations, model
+
+        Example:
+            storage = BookStorage('modest-lovelace')
+            result = CorrectionStage.analyze(storage)
+            print(f"Analysis: {result['analysis_path']}")
+        """
+        from infra.agents.stage_analyzer import StageAnalyzer
+
+        analyzer = StageAnalyzer(
+            storage=storage,
+            stage_name='corrected',
+            model=model
+        )
+
+        return analyzer.analyze(focus_areas=focus_areas)

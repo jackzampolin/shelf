@@ -8,7 +8,8 @@ Commands:
     shelf list                   List all books
     shelf show <scan-id>         Show book details
     shelf status <scan-id>       Show pipeline status
-    shelf report <scan-id> --stage <s>    Display stage report (CSV as table)
+    shelf report <scan-id> --stage <s>     Display stage report (CSV as table)
+    shelf analyze <scan-id> --stage <s>    Analyze stage with AI agent
     shelf stats                  Library statistics
     shelf delete <scan-id>       Delete book from library
 
@@ -400,6 +401,67 @@ def _clean_stage_helper(storage, stage_name):
     checkpoint.reset(confirm=False)
 
 
+def cmd_analyze(args):
+    """Analyze stage outputs with AI agent."""
+    library = LibraryStorage(storage_root=Config.book_storage_root)
+
+    # Verify book exists
+    scan = library.get_scan_info(args.scan_id)
+    if not scan:
+        print(f"❌ Book not found: {args.scan_id}")
+        sys.exit(1)
+
+    # Get storage
+    storage = library.get_book_storage(args.scan_id)
+
+    # Check if stage has been run
+    stage_storage = storage.stage(args.stage)
+    report_path = stage_storage.output_dir / "report.csv"
+
+    if not report_path.exists():
+        print(f"❌ No report found for {args.stage} stage")
+        print(f"   Run: shelf process {args.scan_id} --stage {args.stage}")
+        sys.exit(1)
+
+    # Map stage names to stage classes
+    stage_classes = {
+        'labels': LabelStage,
+        'corrected': CorrectionStage,
+    }
+
+    stage_class = stage_classes[args.stage]
+
+    print(f"\n🔍 Analyzing {args.stage} stage for {args.scan_id}...")
+    if args.model:
+        print(f"   Model: {args.model}")
+    else:
+        print(f"   Model: {Config.text_model_primary} (default)")
+
+    if args.focus:
+        print(f"   Focus areas: {', '.join(args.focus)}")
+
+    try:
+        # Launch analysis agent
+        result = stage_class.analyze(
+            storage=storage,
+            model=args.model,
+            focus_areas=args.focus
+        )
+
+        print(f"\n✅ Analysis complete!")
+        print(f"   Report: {result['analysis_path']}")
+        print(f"   Tool calls: {result['tool_calls_path']}")
+        print(f"   Cost: ${result['cost_usd']:.4f}")
+        print(f"   Iterations: {result['iterations']}")
+        print(f"   Run hash: {result['run_hash']}")
+
+    except Exception as e:
+        print(f"\n❌ Analysis failed: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
 def cmd_process(args):
     """Run pipeline stage(s) using runner.py."""
     library = LibraryStorage(storage_root=Config.book_storage_root)
@@ -425,15 +487,20 @@ def cmd_process(args):
         stages_to_run = ['ocr', 'corrected', 'labels', 'merged']
 
     # Map stage names to Stage instances
+    # Auto-analyze enabled by default for correction and label stages
+    auto_analyze = getattr(args, 'auto_analyze', True)
+
     stage_map = {
         'ocr': OCRStage(max_workers=args.workers if args.workers else None),
         'corrected': CorrectionStage(
             model=args.model,
-            max_workers=args.workers if args.workers else 30
+            max_workers=args.workers if args.workers else 30,
+            auto_analyze=auto_analyze
         ),
         'labels': LabelStage(
             model=args.model,
-            max_workers=args.workers if args.workers else 30
+            max_workers=args.workers if args.workers else 30,
+            auto_analyze=auto_analyze
         ),
         'merged': MergeStage(max_workers=args.workers if args.workers else 8)
     }
@@ -545,6 +612,8 @@ Examples:
   shelf status modest-lovelace
   shelf report modest-lovelace --stage corrected
   shelf report modest-lovelace --stage labels --filter "printed_page_number="
+  shelf analyze modest-lovelace --stage labels
+  shelf analyze modest-lovelace --stage corrected --focus corrections accuracy
   shelf process modest-lovelace
   shelf process modest-lovelace --stage ocr
   shelf process modest-lovelace --stages ocr,corrected
@@ -587,6 +656,14 @@ Examples:
     report_parser.add_argument('--filter', help='Filter rows (e.g., "total_corrections>0")')
     report_parser.set_defaults(func=cmd_library_report)
 
+    # shelf analyze
+    analyze_parser = subparsers.add_parser('analyze', help='Analyze stage outputs with AI agent')
+    analyze_parser.add_argument('scan_id', help='Book scan ID')
+    analyze_parser.add_argument('--stage', required=True, choices=['labels', 'corrected'], help='Stage to analyze')
+    analyze_parser.add_argument('--model', help='OpenRouter model (default: Config.text_model_primary)')
+    analyze_parser.add_argument('--focus', nargs='+', help='Focus areas (e.g., page_numbers regions)')
+    analyze_parser.set_defaults(func=cmd_analyze)
+
     # shelf stats
     stats_parser = subparsers.add_parser('stats', help='Library statistics')
     stats_parser.set_defaults(func=cmd_library_stats)
@@ -608,7 +685,8 @@ Examples:
     process_parser.add_argument('--model', help='Vision model (for correction/label stages)')
     process_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
     process_parser.add_argument('--clean', action='store_true', help='Clean stages before processing (start fresh)')
-    process_parser.set_defaults(func=cmd_process)
+    process_parser.add_argument('--no-auto-analyze', action='store_false', dest='auto_analyze', help='Disable automatic stage analysis (enabled by default)')
+    process_parser.set_defaults(func=cmd_process, auto_analyze=True)
 
     # ===== Clean Command =====
 

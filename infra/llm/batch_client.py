@@ -92,6 +92,9 @@ class LLMBatchClient:
         self.rate_limiter = RateLimiter(requests_per_minute=self.rate_limit)
         self.llm_client = LLMClient()
 
+        # Per-thread HTTP sessions (prevents connection pooling issues)
+        self._thread_local = threading.local()
+
         # State tracking
         self.stats_lock = threading.Lock()
         self.stats = {
@@ -387,7 +390,8 @@ class LLMBatchClient:
                         with self.stats_lock:
                             self.stats['retry_count'] += 1
                     else:
-                        # Permanent failure - move from active to recent completions
+                        # Permanent failure (non-retryable error type)
+                        # Move from active to recent completions
                         with self.request_tracking_lock:
                             if request.id in self.active_requests:
                                 status = self.active_requests.pop(request.id)
@@ -720,6 +724,38 @@ class LLMBatchClient:
         )
         callback(event)
 
+    def _get_thread_session(self):
+        """
+        Get or create HTTP session for current thread.
+
+        Creates isolated session per thread to prevent connection pooling issues
+        across concurrent workers. Each session has minimal pooling to avoid
+        stale connections.
+
+        Returns:
+            requests.Session instance for current thread
+        """
+        if not hasattr(self._thread_local, 'session'):
+            import requests
+
+            session = requests.Session()
+
+            # Configure adapter with minimal connection pooling
+            # pool_connections=1: Only keep 1 connection to OpenRouter
+            # pool_maxsize=1: Never pool more than 1 connection
+            # max_retries=0: We handle retries ourselves at request level
+            adapter = requests.adapters.HTTPAdapter(
+                pool_connections=1,
+                pool_maxsize=1,
+                max_retries=0
+            )
+            session.mount('https://', adapter)
+            session.mount('http://', adapter)
+
+            self._thread_local.session = session
+
+        return self._thread_local.session
+
     def _emit_streaming_event(
         self,
         on_event: Optional[Callable[[EventData], None]],
@@ -819,8 +855,6 @@ class LLMBatchClient:
         Returns:
             Tuple of (response_text, usage_dict, cost_usd, ttft_seconds)
         """
-        import requests as req_lib
-
         # Build API request (similar to LLMClient.call)
         headers = {
             "Authorization": f"Bearer {self.llm_client.api_key}",
@@ -847,10 +881,13 @@ class LLMBatchClient:
             )
             payload["messages"] = messages_with_images
 
+        # Get thread-local session to prevent connection pooling issues
+        session = self._get_thread_session()
+
         # Make streaming request
         response = None
         try:
-            response = req_lib.post(
+            response = session.post(
                 self.llm_client.base_url,
                 headers=headers,
                 json=payload,
@@ -873,17 +910,33 @@ class LLMBatchClient:
                 'parse_errors': 0,  # Track malformed SSE chunks
                 'input_tokens': input_tokens,  # For ETA calculation
                 'first_token_time': None,  # Track time to first token
-                'first_token_emitted': False  # Ensure we emit FIRST_TOKEN event only once
+                'first_token_emitted': False,  # Ensure we emit FIRST_TOKEN event only once
+                'last_chunk_time': start_time  # Track time of last received chunk
             }
 
             # Throttle interval (seconds between events)
             # Reduced to 0.2s for more frequent updates during streaming
             throttle_interval = 0.2
 
+            # Stream stall timeout (seconds) - if no chunks received for this long, bail
+            # This catches stale connections that hang mid-stream
+            stream_stall_timeout = 30.0
+
             # Parse SSE stream
             for line in response.iter_lines():
+                # Check for stream stall (no data received for too long)
+                now = time.time()
+                if now - streaming_state['last_chunk_time'] > stream_stall_timeout:
+                    raise TimeoutError(
+                        f"Stream stalled: no data received for {stream_stall_timeout}s. "
+                        f"Possible stale connection."
+                    )
+
                 if not line:
                     continue
+
+                # Update last chunk time
+                streaming_state['last_chunk_time'] = now
 
                 line = line.decode('utf-8')
                 if line.startswith('data: '):

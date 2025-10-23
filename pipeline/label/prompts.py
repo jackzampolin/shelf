@@ -104,29 +104,68 @@ Numbering style patterns:
 - Roman numerals (i, ii, iii): Indicates front_matter region
 - Arabic numerals (1, 2, 3): Indicates body region
 
-Confidence scores:
-- 0.95-1.0: Clear printed number in standard location
-- 0.85-0.94: Number present but unusual placement or formatting
-- 1.0: No number found (high confidence in absence)
+Confidence scores (when page number IS found):
+- 0.90-0.99: Clear printed number in standard location
+- 0.80-0.89: Number present but unusual placement or formatting
+- 0.70-0.79: Number visible but ambiguous or unclear
 
-OCR Validation:
-When extracting page numbers, VERIFY the OCR text matches the image:
+If no page number found: Return null (don't use confidence scores for absence)
 
-Common OCR errors to watch for:
-- "5" misread as "9" (or vice versa)
-- "7" misread as "1" (or vice versa)
-- "3" misread as "5" (or vice versa)
-- "8" misread as "0" (or vice versa)
+PRIMARY SOURCE - THE PAGE IMAGE:
+
+CRITICAL: Your primary source is the PAGE IMAGE, not the OCR text.
+
+Extraction workflow:
+1. LOOK AT IMAGE FIRST:
+   - Scan all margins, corners, headers, footers visually
+   - Identify any small numbers that match page number characteristics
+   - Extract what YOU see in the image directly
+
+2. CROSS-CHECK WITH OCR (secondary confirmation):
+   - After visual extraction, check if OCR text contains the same number
+   - OCR is for CONFIRMATION only, not primary extraction
+   - If OCR is missing the number but you see it in image → Trust your visual extraction
+
+3. HANDLE CONFLICTS:
+   - If image shows "59" but OCR says "99" → TRUST THE IMAGE (extract "59", confidence 0.85)
+   - If image unclear but OCR has number → Use OCR, reduce confidence to 0.75
+   - If both missing → Return null
+
+Common OCR errors to recognize (when image conflicts with OCR):
+- "5" ↔ "9", "3" ↔ "8", "1" ↔ "7", "2" ↔ "3", "0" ↔ "6", "0" ↔ "8"
 - Dropped digits: "157" becomes "15" or "57"
 - Duplicated digits: "45" becomes "445"
 
-Validation process:
-1. Look at the page image directly (don't just trust OCR text)
-2. If OCR text shows unlikely number (large jump from expected), verify image
-3. If image unclear or ambiguous, use confidence 0.85 instead of 0.95
-4. If OCR clearly wrong, extract correct number from image
+Example: OCR says "99" but image shows "59" → Extract "59" with confidence 0.85
 
-Example: OCR says "99" but image shows "59" → Extract "59" with confidence 0.90
+SEQUENCE VALIDATION:
+After extracting a page number, perform sanity checks to catch common errors:
+
+1. DUPLICATE DETECTION (CRITICAL):
+   If you extracted the same number as the previous page (e.g., two consecutive "42"s):
+   - STOP and re-examine the current page image very carefully
+   - Common misreads that cause duplicates: 3↔8, 5↔9, 1↔7, 2↔3, 0↔6
+   - Look for subtle differences (is that "3" actually an "8"?)
+   - If truly identical after careful review, accept it but reduce confidence to 0.80 (valid but unusual)
+
+2. SEQUENCE LOGIC:
+   Expected patterns (normal):
+   - Consecutive: 41 → 42 → 43 (standard)
+   - Skip ahead: 41 → 42 → 44 (page 43 unnumbered, acceptable)
+   - Roman to Arabic: viii → ix → 1 (front matter to body transition, normal)
+
+   Suspicious patterns (re-examine your extraction):
+   - Duplicate: 41 → 42 → 42 (LIKELY ERROR - check image again)
+   - Reversal: 41 → 40 → 42 (LIKELY ERROR - check if "40" is actually "43")
+   - Large gap: 41 → 42 → 67 (unusual unless major section boundary)
+
+3. STYLE CONSISTENCY:
+   - If previous 5 pages used arabic numerals, current should too (unless region boundary)
+   - If previous 5 pages had numbers in footer-right, current should too
+   - Sudden style changes suggest extraction error, not actual page design change
+
+Use these checks to adjust confidence, not to override clear visual evidence.
+If validation fails but visual evidence is clear, keep the extraction but reduce confidence.
 </page_number_extraction>
 
 <page_region_classification>
@@ -225,7 +264,7 @@ Focus on visual and structural signals from the image. Do not correct or modify 
 </output_requirements>"""
 
 
-def build_user_prompt(ocr_page, ocr_text, current_page, total_pages, book_metadata):
+def build_user_prompt(ocr_page, ocr_text, current_page, total_pages, book_metadata, prev_page_number=None):
     """
     Build the user prompt with OCR data and document context.
 
@@ -238,6 +277,7 @@ def build_user_prompt(ocr_page, ocr_text, current_page, total_pages, book_metada
         current_page: Current page number (PDF sequence)
         total_pages: Total pages in document
         book_metadata: Book metadata dict
+        prev_page_number: Previous page's extracted printed_page_number (for sequence validation)
 
     Returns:
         str: User prompt for the LLM
@@ -254,6 +294,11 @@ def build_user_prompt(ocr_page, ocr_text, current_page, total_pages, book_metada
     # Count blocks for explicit instruction
     num_blocks = len(ocr_page.get('blocks', []))
 
+    # Format previous page number context for sequence validation
+    prev_context = ""
+    if prev_page_number is not None:
+        prev_context = f"\nPrevious page's printed number: {prev_page_number} (use for sequence validation)"
+
     return f"""<document_context>
 Title: {title}
 Author: {author}
@@ -263,7 +308,7 @@ Type: {book_type}
 
 <page_context>
 PDF page {current_page} of {total_pages} ({percent_through:.1f}% through document)
-Position suggests: {get_default_region(percent_through)} region
+Position suggests: {get_default_region(percent_through)} region{prev_context}
 </page_context>
 
 <important_reminder>

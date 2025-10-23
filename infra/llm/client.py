@@ -385,6 +385,128 @@ class LLMClient:
 
         return messages
 
+    def call_with_tools(self,
+                       model: str,
+                       messages: List[Dict[str, str]],
+                       tools: List[Dict],
+                       temperature: float = 0.0,
+                       max_tokens: Optional[int] = None,
+                       timeout: int = 120,
+                       max_retries: int = 3) -> Tuple[Optional[str], Dict, float, Optional[List[Dict]]]:
+        """
+        Make LLM API call with tool calling support.
+
+        Args:
+            model: OpenRouter model name (e.g., "anthropic/claude-sonnet-4.5")
+            messages: List of message dicts with 'role' and 'content'
+            tools: List of tool definitions in OpenRouter format
+                   [{"type": "function", "function": {"name": "...", "parameters": {...}}}]
+            temperature: Sampling temperature (0.0-1.0)
+            max_tokens: Maximum tokens to generate (None = no limit)
+            timeout: Request timeout in seconds
+            max_retries: Maximum retry attempts for server errors
+
+        Returns:
+            Tuple of (response_text, usage_dict, cost_usd, tool_calls)
+            - response_text: Can be None if model only calls tools
+            - tool_calls: None if no tools called, otherwise list of:
+              [{"id": "call_xxx", "type": "function", "function": {"name": "...", "arguments": "..."}}]
+
+        Raises:
+            requests.exceptions.RequestException: On non-retryable errors
+        """
+        # Build request payload
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": self.site_url,
+            "X-Title": self.site_name
+        }
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "tools": tools,
+            "stream": False  # Tool calling doesn't support streaming
+        }
+
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
+
+        # Retry loop for server errors
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    self.base_url,
+                    headers=headers,
+                    json=payload,
+                    timeout=timeout
+                )
+
+                # Cache error data for retry logic
+                if not response.ok:
+                    try:
+                        error_data = response.json()
+                        response._error_data_cache = error_data
+                    except:
+                        response._error_data_cache = None
+
+                response.raise_for_status()
+
+                result = response.json()
+
+                # Extract response and tool calls
+                message = result['choices'][0]['message']
+                content = message.get('content')  # Can be None if only tool calls
+                tool_calls = message.get('tool_calls')  # None if no tools called
+                usage = result.get('usage', {})
+
+                # Calculate cost
+                cost = self.cost_calculator.calculate_cost(
+                    model,
+                    usage.get('prompt_tokens', 0),
+                    usage.get('completion_tokens', 0)
+                )
+
+                return content, usage, cost, tool_calls
+
+            except requests.exceptions.HTTPError as e:
+                # Same retry logic as call()
+                should_retry = False
+                error_type = "error"
+
+                if e.response.status_code >= 500:
+                    should_retry = True
+                    error_type = f"{e.response.status_code} server error"
+                elif e.response.status_code == 422:
+                    should_retry = True
+                    error_type = "422 unprocessable entity"
+                elif e.response.status_code == 429:
+                    should_retry = True
+                    error_type = "429 rate limit"
+                elif e.response.status_code in [502, 503, 504]:
+                    should_retry = True
+                    error_type = f"{e.response.status_code} gateway error"
+
+                if should_retry and attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) * 1.0  # Exponential backoff
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    raise
+
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) * 1.0
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    raise
+
+        # Should never reach here
+        raise requests.exceptions.RequestException("Max retries exceeded")
+
     def simple_call(self,
                    model: str,
                    system_prompt: str,
