@@ -15,6 +15,7 @@ import json
 import random
 import threading
 import uuid
+import logging
 from queue import PriorityQueue, Empty
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional, Callable, Tuple
@@ -26,6 +27,12 @@ from infra.llm.models import (
 from infra.llm.rate_limiter import RateLimiter
 from infra.llm.client import LLMClient, CHARS_PER_TOKEN_ESTIMATE
 from infra.config import Config
+
+
+# Configure module logger to suppress console output
+# These are internal retry/error messages that should only go to log files
+_module_logger = logging.getLogger(__name__)
+_module_logger.propagate = False  # Don't propagate to root logger (prevents console spam)
 
 
 class LLMBatchClient:
@@ -74,6 +81,7 @@ class LLMBatchClient:
         self.progress_interval = progress_interval
         self.log_dir = log_dir
         self.log_timestamp = log_timestamp
+        self._log_file_handler = None  # Track handler for cleanup
 
         # Set up failure logging if log_dir provided
         if self.log_dir:
@@ -88,6 +96,16 @@ class LLMBatchClient:
 
             self.failure_log_path = self.log_dir / f"llm_failures_{self.log_timestamp}.jsonl"
             self.retry_log_path = self.log_dir / f"llm_retries_{self.log_timestamp}.jsonl"
+
+            # Add file handler to module logger to capture internal errors/warnings
+            # (but don't show them on console - they're noisy retry messages)
+            log_file = self.log_dir / f"llm_internal_{self.log_timestamp}.log"
+            self._log_file_handler = logging.FileHandler(log_file)
+            self._log_file_handler.setFormatter(logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            ))
+            _module_logger.addHandler(self._log_file_handler)
+            _module_logger.setLevel(logging.DEBUG)  # Capture all levels in file
 
         # Core components
         self.rate_limiter = RateLimiter(requests_per_minute=self.rate_limit)
