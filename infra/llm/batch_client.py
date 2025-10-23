@@ -14,6 +14,7 @@ import time
 import json
 import random
 import threading
+import uuid
 from queue import PriorityQueue, Empty
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional, Callable, Tuple
@@ -861,9 +862,25 @@ class LLMBatchClient:
             "Content-Type": "application/json"
         }
 
+        # Generate unique nonce for this request to prevent cache collisions
+        # Each retry gets a fresh nonce, forcing API to treat it as a new request
+        request_nonce = uuid.uuid4().hex[:16]
+
+        # Add nonce to messages to ensure it's part of request hash
+        # This prevents OpenRouter/provider from serving cached error responses
+        messages_with_nonce = request.messages.copy()
+        if messages_with_nonce:
+            # Append nonce to last message (least intrusive location)
+            last_msg = messages_with_nonce[-1].copy()
+            content = last_msg.get('content', '')
+            if isinstance(content, str):
+                # Add as HTML comment to minimize token impact
+                last_msg['content'] = f"{content}\n<!-- request_id: {request_nonce} -->"
+            messages_with_nonce[-1] = last_msg
+
         payload = {
             "model": model,
-            "messages": request.messages,
+            "messages": messages_with_nonce,
             "temperature": request.temperature,
             "stream": True  # Enable streaming
         }
@@ -875,9 +892,10 @@ class LLMBatchClient:
             payload["response_format"] = request.response_format
 
         # Add images if present (multimodal)
+        # Use messages_with_nonce to preserve the nonce we just added
         if request.images:
             messages_with_images = self.llm_client._add_images_to_messages(
-                request.messages, request.images
+                messages_with_nonce, request.images
             )
             payload["messages"] = messages_with_images
 
