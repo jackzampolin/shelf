@@ -190,17 +190,38 @@ NOTE: Cost tracking is handled separately by the pipeline - do NOT calculate cos
         elif self.stage_name == 'labels':
             return """**Label Stage Focus:**
 Analyze page number extraction and block classification. Key metrics:
-- Page number extraction rate (target: >90%)
-- Classification confidence (target: >0.85)
-- Duplicate page numbers (should be 0%)
-- Missing page numbers in body (investigate if >10%)
-- Region classification accuracy
+- page_number_extracted: Whether a page number was found
+- printed_page_number: The extracted number (if found)
+- avg_classification_confidence: Block classification certainty
+- page_region: Front matter, body, or back matter classification
+- block_count: Number of structural blocks per page
 
-Critical Issues to Identify:
-- Duplicate printed page numbers (OCR errors in page number detection)
-- Missing page numbers in body section (unexpected gaps)
-- Low classification confidence (<0.80)
-- Incorrect region classification (misidentified front/body/back matter)
+IMPORTANT: "Missing" page numbers are often CORRECT - books legitimately have unnumbered pages.
+
+Critical Issues to Identify (use context, not raw metrics):
+- Duplicate printed_page_number values (OCR confusion or legitimate book structure)
+- Systematic extraction failures (>20% in body section with no explanation)
+- Wrong page_region classification (verify against numbering patterns)
+- Very low confidence (<0.80) without corresponding high block_count
+
+Expected Patterns (THESE ARE CORRECT, NOT PROBLEMS):
+- Front matter "failures" (80-95%): Title pages, TOC, dedications are legitimately unnumbered
+- Chapter openings "failures" (common): Decorative chapter starts often lack page numbers
+- Illustration/photo pages "failures" (common): Full-page images often unnumbered
+- Low confidence (0.85-0.92) + High block_count (10+): Complex layouts (endnotes, indices) - appropriate
+- Back matter "failures" (10-30%): Index dividers, appendix sections often unnumbered
+
+Pages to Flag:
+- Primary: Duplicate printed_page_number in body section (verify if legitimate or OCR error)
+- Secondary: page_number_extracted=False in body section with no structural justification
+- Tertiary: avg_classification_confidence < 0.80 without high block_count explanation
+- DO NOT flag pages solely on "missing" page numbers - this creates 85% false positives
+
+Region Classification (100% Trustworthy):
+- Use page_region as validation metric - it's consistently accurate
+- Front matter should have roman numerals or no numbers
+- Body should have sequential arabic numerals
+- Back matter may have continued numbering or independent sequences
 
 NOTE: Cost tracking is handled separately by the pipeline - do NOT calculate costs from JSON files."""
 
