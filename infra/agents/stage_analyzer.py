@@ -192,12 +192,16 @@ Critical Issues to Identify:
 - Duplicate printed page numbers (OCR errors in page number detection)
 - Missing page numbers in body section (unexpected gaps)
 - Low classification confidence (<0.80)
-- Incorrect region classification (misidentified front/body/back matter)"""
+- Incorrect region classification (misidentified front/body/back matter)
+
+NOTE: Cost tracking is handled separately by the pipeline - do NOT calculate costs from JSON files."""
 
         else:
             # Generic guidance for other stages
             return f"""**{self.stage_name.title()} Stage Analysis:**
-Examine the report.csv metrics to identify quality issues, patterns, and pages needing review."""
+Examine the report.csv metrics to identify quality issues, patterns, and pages needing review.
+
+NOTE: Cost tracking is handled separately by the pipeline - do NOT calculate costs from JSON files."""
 
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Execute a tool and return result as string."""
