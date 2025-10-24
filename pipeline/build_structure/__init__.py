@@ -8,14 +8,17 @@ This stage operates on the entire book (not per-page) to identify:
 - Page numbering patterns
 
 Three-phase processing:
-1. Phase 1: LLM analyzes labels/report.csv -> DraftMetadata (~$0.10-0.20, 10-30s)
-2. Phase 2: Validate against merged/ pages -> ValidationResult (~$0-1, 1-2min)
-3. Phase 3: Output validated metadata.json
+1. Phase 1a: Parse ToC (if detected)
+2. Phase 1.5: Extract heading text from chapter heading pages
+3. Phase 1b: LLM analyzes labels/report.csv -> DraftMetadata (~$0.10-0.20, 10-30s)
+4. Phase 2: Validate against merged/ pages -> ValidationResult (~$0-1, 1-2min)
+5. Phase 3: Output validated structure.json
 
-Dependencies: merged
-Output: metadata.json (in book root directory)
+Dependencies: merged, labels
+Output: build_structure/structure.json
 """
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,10 +29,10 @@ from infra.pipeline.logger import PipelineLogger
 from infra.config import Config
 
 from .schemas import BookStructureMetadata
-from .phase1a_toc_parser import parse_toc
-from .phase1_5_heading_extractor import extract_headings
-from .phase1_analyzer import analyze_report
-from .phase2_validator import validate_structure, restructure_draft_from_headings
+from .toc import parse_toc
+from .headings import extract_headings
+from .analyze import analyze_report
+from .validate import validate_structure
 
 
 class BuildStructureStage(BaseStage):
@@ -41,9 +44,9 @@ class BuildStructureStage(BaseStage):
     """
 
     name = "build_structure"
-    dependencies = ["merged"]
+    dependencies = ["merged", "labels"]
 
-    # No output schema (writes to metadata.json, not stage directory)
+    # No output schema (writes to structure.json, not per-page outputs)
     output_schema = None
     checkpoint_schema = None
     report_schema = None
@@ -53,10 +56,12 @@ class BuildStructureStage(BaseStage):
         Initialize build-structure stage.
 
         Args:
-            model: LLM model to use (defaults to Config.text_model_primary)
+            model: LLM model to use (defaults to Config.text_model_expensive)
+                  Supports both internal thinking (claude-3.5-sonnet) and
+                  extended thinking (claude-sonnet-4.5) models
         """
         super().__init__()
-        self.model = model or Config.text_model_primary
+        self.model = model or Config.text_model_expensive
 
     def run(
         self,
@@ -101,7 +106,6 @@ class BuildStructureStage(BaseStage):
         total_cost += phase1a_cost
 
         # Save ToC to build_structure/toc.json (even if None)
-        import json
         toc_path = stage_storage.output_dir / "toc.json"
         with open(toc_path, "w") as f:
             if toc:

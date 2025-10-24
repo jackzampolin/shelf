@@ -1,9 +1,8 @@
 """
-Phase 1a: Parse Table of Contents from merged pages.
+Table of Contents extraction from merged pages.
 
-This phase runs BEFORE structure analysis to extract the book's declared structure.
-The ToC provides top-down structure information that complements the ground-up
-signals from report.csv (chapter headings, page regions, etc.).
+Extracts the book's declared structure from ToC pages, providing top-down
+structure information that complements the ground-up signals from labels stage.
 
 Cost: ~$0.05-0.10 per book (single LLM call on ToC text)
 Time: ~5-15 seconds
@@ -14,12 +13,13 @@ import json
 from pathlib import Path
 from typing import Tuple, Optional
 
-from infra.llm.client import LLMClient
+from infra.llm.batch_client import LLMBatchClient
+from infra.llm.models import LLMRequest
 from infra.pipeline.logger import PipelineLogger
 from infra.storage.book_storage import BookStorage
 
 from .schemas import TableOfContents, PageRange
-from .prompts_v2 import TOC_PARSING_PROMPT
+from .toc_prompts import TOC_PARSING_PROMPT
 
 
 def find_toc_pages(labels_report_path: Path) -> Optional[PageRange]:
@@ -106,13 +106,22 @@ def parse_toc(
         ValueError: If LLM response doesn't match schema
     """
     logger.info("Phase 1a: Parsing Table of Contents")
+    print(f"\n📖 Phase 1a: Parsing Table of Contents...")
 
-    # Find ToC pages
-    toc_range = find_toc_pages(labels_report_path)
+    # Find ToC pages using agentic search
+    from infra.agents.toc_finder import find_toc_pages_agentic
+
+    toc_range, search_cost = find_toc_pages_agentic(
+        storage=storage,
+        logger=logger,
+        max_iterations=15,
+        verbose=True
+    )
 
     if not toc_range:
-        logger.info("No ToC pages found (page_region=toc_area not detected)")
-        return None, 0.0
+        logger.info("No ToC pages found by agent")
+        print("   ⊘ No ToC found (agent exhausted search)")
+        return None, search_cost
 
     logger.info("Found ToC pages", start=toc_range.start_page, end=toc_range.end_page)
 
@@ -121,57 +130,64 @@ def parse_toc(
 
     if not toc_text.strip():
         logger.warning("ToC pages found but no text extracted")
+        print("   ⊘ ToC pages found but no text extracted (skipping)")
         return None, 0.0
 
     logger.info("Extracted ToC text", chars=len(toc_text))
-
-    # Prepare LLM call with structured output
-    response_schema = TableOfContents.model_json_schema()
 
     messages = [
         {"role": "system", "content": TOC_PARSING_PROMPT},
         {"role": "user", "content": f"Table of Contents Text:\n\n{toc_text}"},
     ]
 
-    # Make LLM call
-    client = LLMClient()
-    logger.info("Calling LLM for ToC parsing", model=model)
-    print(f"\n📖 Parsing Table of Contents ({toc_range.end_page - toc_range.start_page + 1} pages)...")
+    # Build JSON schema for structured output
+    # Note: OpenRouter doesn't support "strict": True
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "table_of_contents",
+            "schema": TableOfContents.model_json_schema()
+        }
+    }
 
-    response_text, usage, cost_usd = client.call(
+    # Create LLM request
+    toc_pages = toc_range.end_page - toc_range.start_page + 1
+    request = LLMRequest(
+        id="parse_toc",
         model=model,
         messages=messages,
-        response_format=response_schema,
+        temperature=0.0,
         max_tokens=4000,
-        stream=True,
+        response_format=response_format
     )
 
-    logger.info(
-        "LLM response received",
-        tokens_in=usage.get("prompt_tokens", 0),
-        tokens_out=usage.get("completion_tokens", 0),
-        cost=f"${cost_usd:.4f}",
+    # Make LLM call with batch client (single request)
+    log_dir = storage.stage("build_structure").output_dir / "logs"
+    batch_client = LLMBatchClient(
+        max_workers=1,
+        max_retries=5,  # Retry on validation failures
+        verbose=False,  # Disable verbose for single call (we'll show our own progress)
+        log_dir=log_dir
     )
 
-    # Parse response into TableOfContents
-    response_text = response_text.strip()
-    if response_text.startswith("```json"):
-        response_text = response_text[7:]
-    if response_text.startswith("```"):
-        response_text = response_text[3:]
-    if response_text.endswith("```"):
-        response_text = response_text[:-3]
-    response_text = response_text.strip()
+    logger.info("Calling LLM for ToC parsing", model=model, toc_pages=toc_pages)
+    print(f"   ⏳ Parsing ToC with LLM...")
 
-    try:
-        response_data = json.loads(response_text)
-        toc = TableOfContents(**response_data)
-    except json.JSONDecodeError as e:
-        logger.error("Invalid JSON from LLM", error=str(e), response_preview=response_text[:1000])
-        raise ValueError(f"LLM response is not valid JSON: {e}")
-    except Exception as e:
-        logger.error("Failed to validate schema", error=str(e))
-        raise ValueError(f"LLM response doesn't match TableOfContents schema: {e}")
+    results = batch_client.process_batch([request])
+
+    # Show completion with cost
+    batch_stats = batch_client.get_batch_stats(total_requests=1)
+    print(f"   ✓ ToC parsed (cost: ${batch_stats.total_cost_usd:.4f})")
+
+    # Extract result
+    result = results[0]
+    if not result.success:
+        raise ValueError(f"LLM call failed: {result.error_message}")
+
+    # Parse response as TableOfContents
+    toc = TableOfContents(**result.parsed_json)
+    parsing_cost = result.cost_usd
+    total_cost = search_cost + parsing_cost
 
     logger.info(
         "ToC parsed successfully",
@@ -179,6 +195,12 @@ def parse_toc(
         chapters=toc.total_chapters,
         sections=toc.total_sections,
         confidence=f"{toc.parsing_confidence:.2f}",
+        search_cost=f"${search_cost:.4f}",
+        parsing_cost=f"${parsing_cost:.4f}",
+        total_cost=f"${total_cost:.4f}",
     )
 
-    return toc, cost_usd
+    print(f"   ✓ Parsed {len(toc.entries)} ToC entries ({toc.total_chapters} chapters, {toc.total_sections} sections)")
+    print(f"   💰 Total cost: ${total_cost:.4f} (search: ${search_cost:.4f}, parsing: ${parsing_cost:.4f})")
+
+    return toc, total_cost

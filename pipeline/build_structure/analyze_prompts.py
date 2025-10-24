@@ -1,7 +1,5 @@
 """
-Build-Structure Stage Prompts (V2)
-
-XML-structured prompts following best practices from correction/label stages.
+Structure analysis prompts.
 """
 
 STRUCTURE_ANALYSIS_SYSTEM_PROMPT = """<role>
@@ -153,29 +151,33 @@ Validation checks:
 </cross_validation>
 
 <front_matter_extraction>
-Extract standard front matter components:
-- title_page: Usually page 1
-- copyright_page: Usually page 2
-- dedication, epigraph: Check page_region=front_matter
-- toc: Use page_region=toc_area
-- preface, foreword, introduction: Match with ToC or page_region
+Extract standard front matter components (all use {label, page_range} format):
+- title_page: Usually page 1 (label: "Title Page", "Half Title", etc.)
+- toc: Use page_region=toc_area (label: "Contents", "Table of Contents")
+- preface: Match with ToC or page_region (label: "Preface", "Author's Note", etc.)
+- introduction: Match with ToC or page_region (label: "Introduction", "Prologue")
+- other[]: Anything else (dedication, copyright, foreword, etc.)
 
 Page numbering clues:
 - Front matter typically uses roman numerals (i, ii, iii)
 - Body typically starts at arabic "1"
+- If switches between roman/arabic, use page_numbering_style="mixed"
 - Look for numbering_style transitions in report
 </front_matter_extraction>
 
 <back_matter_extraction>
-Extract standard back matter components:
-- epilogue, afterword: Check page_region=back_matter or ToC
-- notes, bibliography, index: Match with ToC entries
-- appendices: Often multiple, extract as list
+Extract standard back matter components (all use {label, page_range} format):
+- appendices[]: Multiple appendices with labels (e.g., "Appendix A: Statistics", "Appendix B: Charts")
+- notes: Notes/endnotes (label: "Notes", "Endnotes", "References")
+- bibliography: Bibliography (label: "Bibliography", "Works Cited", "Sources")
+- index: Index (label: "Index", "Index of Names", etc.)
+- other[]: Anything else (epilogue, afterword, etc.)
 
 Back matter typically after last chapter, may use:
 - Continued arabic numbering from body
 - Restarted numbering
-- No page numbers
+- No page numbers (page_numbering_style="none")
+- Mixed styles (page_numbering_style="mixed")
 </back_matter_extraction>
 
 <output_schema>
@@ -183,16 +185,13 @@ Return JSON with this EXACT structure:
 
 {
   "front_matter": {
-    "title_page": {"start_page": 1, "end_page": 1},
-    "copyright_page": {"start_page": 2, "end_page": 2},
-    "dedication": null,
-    "epigraph": null,
-    "toc": {"start_page": 6, "end_page": 7},
-    "preface": {"start_page": 9, "end_page": 15},
-    "foreword": null,
+    "title_page": {"label": "Title Page", "page_range": {"start_page": 1, "end_page": 1}},
+    "toc": {"label": "Contents", "page_range": {"start_page": 6, "end_page": 7}},
+    "preface": {"label": "Preface", "page_range": {"start_page": 9, "end_page": 15}},
     "introduction": null,
     "other": [
-      {"label": "Timeline", "page_range": {"start_page": 16, "end_page": 16}}
+      {"label": "Copyright", "page_range": {"start_page": 2, "end_page": 2}},
+      {"label": "Dedication", "page_range": {"start_page": 5, "end_page": 5}}
     ],
     "page_numbering_style": "roman"
   },
@@ -220,27 +219,34 @@ Return JSON with this EXACT structure:
     }
   ],
   "back_matter": {
-    "epilogue": null,
-    "afterword": null,
-    "appendices": null,
-    "notes": {"start_page": 371, "end_page": 437},
-    "bibliography": null,
-    "index": {"start_page": 438, "end_page": 447},
-    "other": [],
-    "page_numbering_style": null
+    "appendices": [
+      {"label": "Appendix A: Statistics", "page_range": {"start_page": 300, "end_page": 305}},
+      {"label": "Appendix B: Documents", "page_range": {"start_page": 306, "end_page": 310}}
+    ],
+    "notes": {"label": "Notes", "page_range": {"start_page": 371, "end_page": 437}},
+    "bibliography": {"label": "Bibliography", "page_range": {"start_page": 438, "end_page": 445}},
+    "index": {"label": "Index", "page_range": {"start_page": 446, "end_page": 457}},
+    "other": [
+      {"label": "Epilogue", "page_range": {"start_page": 295, "end_page": 299}}
+    ],
+    "page_numbering_style": "arabic"
   },
   "total_parts": 1,
   "total_chapters": 2,
   "total_sections": 0,
-  "body_page_range": {"start_page": 16, "end_page": 370},
+  "body_page_range": {"start_page": 16, "end_page": 294},
   "page_numbering_changes": []
 }
 
 CRITICAL FORMAT RULES:
-- Use {"start_page": N, "end_page": M} format (not nested objects)
+- ALL front/back matter sections use {"label": "...", "page_range": {"start_page": N, "end_page": M}}
+- labels should be descriptive (e.g., "Preface to Second Edition", "Appendix A: Charts")
 - All page numbers must be SCAN page numbers from report "page_num"
-- parts = list of Part objects if book has parts, null (or omit) if no parts
+- page_numbering_style can be "roman", "arabic", "none", or "mixed"
+- parts = list of Part objects if book has parts, null (or empty list) if no parts
 - chapters = ALL chapters with part_number field linking to parent (null if no parts)
+- appendices = list of LabeledPageRange (can be empty list)
+- other = list for uncommon sections (dedication, copyright, epilogue, etc.)
 - total_parts = count of parts array (0 if no parts)
 - total_chapters = count of ALL chapters (not parts)
 - total_sections = sum of all sections[] across all chapters
@@ -418,86 +424,3 @@ def build_user_prompt(report_csv: str, toc_json: str = None, headings_json: str 
     parts.append("</task>")
 
     return "\n".join(parts)
-
-
-TOC_PARSING_PROMPT = """<role>
-You are a Table of Contents parser. Extract chapter/section structure from ToC pages.
-</role>
-
-<task>
-Parse the ToC text to extract all chapter and section entries with their page numbers.
-</task>
-
-<patterns>
-Look for these ToC patterns:
-- "Chapter 1: Title ........... 15"
-- "Part I: Title ........... 1"
-- "I. Title ........... 23"
-- "1 Title 45"
-- Indented sections under chapters
-</patterns>
-
-<page_numbers>
-CRITICAL: ToC page numbers are PRINTED pages (what's printed on actual book pages).
-These are NOT scan/file page numbers.
-
-Example: "Chapter 1 ... 1" means printed page "1", which might be scan page 16.
-
-Extract the PRINTED page numbers exactly as shown in ToC.
-If printed page uses roman numerals (ix), convert to arabic (9) if possible, otherwise null.
-</page_numbers>
-
-<hierarchy>
-Detect entry hierarchy using indentation and formatting:
-- level=1: Main chapters or parts (top-level entries)
-- level=2: Sections under chapters
-- level=3: Subsections under sections
-
-Associate sections with parent chapters using chapter_number field.
-</hierarchy>
-
-<output_schema>
-Return JSON:
-
-{
-  "entries": [
-    {
-      "chapter_number": null,
-      "title": "Introduction",
-      "printed_page_number": 9,
-      "level": 1
-    },
-    {
-      "chapter_number": 1,
-      "title": "The Early Years",
-      "printed_page_number": 15,
-      "level": 1
-    },
-    {
-      "chapter_number": 1,
-      "title": "Childhood",
-      "printed_page_number": 17,
-      "level": 2
-    }
-  ],
-  "toc_page_range": {"start_page": 6, "end_page": 8},
-  "total_chapters": 1,
-  "total_sections": 1,
-  "parsing_confidence": 0.95,
-  "notes": ["Roman numerals converted", "Some page numbers missing"]
-}
-
-RULES:
-- Extract ALL entries with reasonable confidence
-- level indicates hierarchy (1=chapter, 2=section, 3=subsection)
-- chapter_number: Use null (NOT 0) for entries without numbers (Introduction, Epilogue, etc.)
-- printed_page_number = number from ToC (convert roman if possible, else null)
-- parsing_confidence = 0.0-1.0 based on ToC clarity
-- notes[] for ambiguities or issues
-</output_schema>
-
-<output_requirements>
-Return ONLY valid JSON.
-Do not include markdown code fences.
-Do not add explanatory text.
-</output_requirements>"""

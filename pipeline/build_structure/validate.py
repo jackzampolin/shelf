@@ -12,12 +12,15 @@ Time: ~1-2 minutes
 """
 
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
-from infra.llm.client import LLMClient
+from infra.pipeline.rich_progress import RichProgressBarHierarchical
+from infra.llm.batch_client import LLMBatchClient
+from infra.llm.models import LLMRequest, LLMResult, EventData
 from infra.config import Config
 
 from .schemas import (
@@ -28,39 +31,10 @@ from .schemas import (
     Part,
     PageRange,
     Section,
+    BoundaryVerificationResult,
     HeadingData,
     HeadingEntry,
 )
-
-
-def find_chapter_heading_pages(
-    storage: BookStorage,
-    logger: PipelineLogger,
-) -> List[int]:
-    """
-    Find all pages with CHAPTER_HEADING blocks in merged/ directory.
-
-    Returns:
-        List of page numbers with CHAPTER_HEADING blocks, sorted
-    """
-    merged_stage = storage.stage("merged")
-    chapter_pages = []
-
-    for page_file in merged_stage.list_output_pages():
-        page_num = int(page_file.stem.split("_")[1])
-        try:
-            page_data = merged_stage.load_page(page_num)
-            blocks = page_data.get("blocks", [])
-
-            # Check if any block is a CHAPTER_HEADING
-            for block in blocks:
-                if block.get("classification") == "CHAPTER_HEADING":
-                    chapter_pages.append(page_num)
-                    break  # Only count page once
-        except Exception:
-            continue
-
-    return sorted(chapter_pages)
 
 
 def validate_page_range(
@@ -113,362 +87,6 @@ def validate_page_range(
     return issues
 
 
-def find_chapter_heading_nearby(
-    claimed_page: int,
-    storage: BookStorage,
-    search_radius: int = 5,
-) -> Optional[int]:
-    """
-    Search for CHAPTER_HEADING block near claimed chapter start page.
-
-    Args:
-        claimed_page: Page where LLM claimed chapter starts
-        storage: BookStorage instance
-        search_radius: How many pages before/after to search
-
-    Returns:
-        Page number with CHAPTER_HEADING, or None if not found
-    """
-    merged_stage = storage.stage("merged")
-
-    # Search nearby pages (claimed_page ± search_radius)
-    start = max(1, claimed_page - search_radius)
-    end = claimed_page + search_radius
-
-    for page_num in range(start, end + 1):
-        page_file = merged_stage.output_page(page_num)
-        if not page_file.exists():
-            continue
-
-        try:
-            page_data = merged_stage.load_page(page_num)
-            blocks = page_data.get("blocks", [])
-
-            # Check if this page has CHAPTER_HEADING
-            for block in blocks:
-                if block.get("classification") == "CHAPTER_HEADING":
-                    return page_num
-        except Exception:
-            continue
-
-    return None
-
-
-def verify_boundary_with_llm(
-    page_num: int,
-    expected_title: str,
-    boundary_type: str,  # "chapter" or "section"
-    storage: BookStorage,
-    model: str,
-    logger: PipelineLogger,
-) -> Tuple[bool, Optional[str], float]:
-    """
-    Use LLM to verify if a page contains a chapter or section boundary.
-
-    Args:
-        page_num: Page to check
-        expected_title: Expected chapter/section title from structure analysis
-        boundary_type: Either "chapter" or "section"
-        storage: BookStorage instance
-        model: LLM model to use
-        logger: Pipeline logger
-
-    Returns:
-        Tuple of (is_boundary, detected_title, cost_usd)
-    """
-    merged_stage = storage.stage("merged")
-
-    # Extract text from page
-    try:
-        page_data = merged_stage.load_page(page_num)
-        blocks = page_data.get("blocks", [])
-
-        # Combine all paragraph text
-        text_parts = []
-        for block in blocks:
-            for para in block.get("paragraphs", []):
-                text = para.get("text", "")
-                if text:
-                    text_parts.append(text)
-
-        page_text = "\n".join(text_parts)
-
-        if not page_text.strip():
-            logger.warning("LLM verification: page has no text", page=page_num, boundary_type=boundary_type)
-            return False, None, 0.0
-
-    except Exception as e:
-        logger.error("LLM verification: failed to load page", page=page_num, boundary_type=boundary_type, error=str(e))
-        return False, None, 0.0
-
-    # Prepare LLM prompt based on boundary type
-    if boundary_type == "chapter":
-        prompt = f"""You are verifying whether a page from a scanned book is the start of a new chapter.
-
-Expected chapter title: "{expected_title}"
-
-Page text (first 1500 chars):
-{page_text[:1500]}
-
-Does this page START a new chapter?
-- Look for chapter headings, titles, or clear chapter markers
-- The expected title is "{expected_title}" but it might be formatted differently
-- Some chapters start with "CHAPTER 1", "Part I", roman numerals, etc.
-
-Respond with JSON:
-{{
-  "is_boundary": true/false,
-  "detected_title": "exact title text from page" or null if not a chapter start,
-  "confidence": 0.0-1.0,
-  "reasoning": "brief explanation"
-}}"""
-    else:  # section
-        prompt = f"""You are verifying whether a page from a scanned book contains a section heading.
-
-Expected section title: "{expected_title}"
-
-Page text (first 1500 chars):
-{page_text[:1500]}
-
-Does this page contain a section heading?
-- Look for section headings, subheadings, or subsection markers
-- The expected title is "{expected_title}" but it might be formatted differently
-- Sections are typically less prominent than chapter headings
-- Sections may appear mid-page, not necessarily at the top
-
-Respond with JSON:
-{{
-  "is_boundary": true/false,
-  "detected_title": "exact title text from page" or null if no section heading found,
-  "confidence": 0.0-1.0,
-  "reasoning": "brief explanation"
-}}"""
-
-    client = LLMClient()
-
-    try:
-        response_text, usage, cost_usd = client.call(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=200,
-            temperature=0.0,  # Deterministic
-        )
-
-        # Parse response
-        import json
-
-        response_text = response_text.strip()
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        if response_text.startswith("```"):
-            response_text = response_text[3:]
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
-        response_text = response_text.strip()
-
-        result = json.loads(response_text)
-
-        is_boundary = result.get("is_boundary", False)
-        title = result.get("detected_title")
-        confidence = result.get("confidence", 0.0)
-
-        logger.info(
-            f"LLM {boundary_type} verification",
-            page=page_num,
-            is_boundary=is_boundary,
-            title=title,
-            confidence=confidence,
-            cost=f"${cost_usd:.4f}",
-        )
-
-        return is_boundary, title, cost_usd
-
-    except Exception as e:
-        logger.error("LLM verification failed", page=page_num, boundary_type=boundary_type, error=str(e))
-        return False, None, 0.0
-
-
-# Keep old function name for backward compatibility
-def verify_chapter_boundary_with_llm(
-    page_num: int,
-    expected_title: str,
-    storage: BookStorage,
-    model: str,
-    logger: PipelineLogger,
-) -> Tuple[bool, Optional[str], float]:
-    """Backward compatibility wrapper for verify_boundary_with_llm."""
-    return verify_boundary_with_llm(page_num, expected_title, "chapter", storage, model, logger)
-
-
-def validate_and_correct_chapter(
-    chapter: Chapter,
-    storage: BookStorage,
-    logger: PipelineLogger,
-    model: Optional[str] = None,
-    use_llm_verification: bool = True,
-) -> tuple[Optional[int], List[ValidationIssue], float]:
-    """
-    Validate chapter start page and attempt to correct if wrong.
-
-    Strategy:
-    1. Check if claimed page has CHAPTER_HEADING (fast path)
-    2. If not, search nearby pages (±5) for CHAPTER_HEADING
-    3. If found, return corrected page number
-    4. If not found AND use_llm_verification=True, use LLM to verify the claimed page
-    5. If LLM confirms, accept it; otherwise return warning
-
-    Args:
-        chapter: Chapter to validate
-        storage: BookStorage instance
-        logger: Pipeline logger
-        model: LLM model for verification (optional)
-        use_llm_verification: Whether to use LLM when classification search fails
-
-    Returns:
-        Tuple of (corrected_page_num or None, issues, cost_usd)
-    """
-    issues = []
-    claimed_page = chapter.start_page
-    total_cost = 0.0
-
-    # Fast path: Check claimed page
-    merged_stage = storage.stage("merged")
-    page_file = merged_stage.output_page(claimed_page)
-
-    if not page_file.exists():
-        issues.append(
-            ValidationIssue(
-                severity="error",
-                issue_type="missing_chapter_start_page",
-                message=f"Chapter {chapter.chapter_number}: claimed page {claimed_page} not found",
-                page_num=claimed_page,
-                chapter_num=chapter.chapter_number,
-                expected="merged page exists",
-                actual="file not found",
-            )
-        )
-        return None, issues, total_cost
-
-    try:
-        page_data = merged_stage.load_page(claimed_page)
-        blocks = page_data.get("blocks", [])
-
-        # Check for CHAPTER_HEADING on claimed page
-        has_heading = any(b.get("classification") == "CHAPTER_HEADING" for b in blocks)
-
-        if has_heading:
-            # Perfect! Claimed page is correct
-            logger.debug(
-                "Chapter heading confirmed",
-                chapter=chapter.chapter_number,
-                page=claimed_page,
-            )
-            return claimed_page, issues, total_cost
-
-        # No heading on claimed page - search nearby
-        logger.info(
-            "Chapter heading missing on claimed page, searching nearby",
-            chapter=chapter.chapter_number,
-            claimed_page=claimed_page,
-        )
-
-        corrected_page = find_chapter_heading_nearby(claimed_page, storage, search_radius=5)
-
-        if corrected_page:
-            # Found it nearby!
-            issues.append(
-                ValidationIssue(
-                    severity="info",
-                    issue_type="chapter_boundary_corrected",
-                    message=f"Chapter {chapter.chapter_number}: corrected start from page {claimed_page} → {corrected_page}",
-                    page_num=corrected_page,
-                    chapter_num=chapter.chapter_number,
-                    expected=f"page {claimed_page}",
-                    actual=f"page {corrected_page} (CHAPTER_HEADING found)",
-                )
-            )
-            logger.info(
-                "Chapter boundary corrected",
-                chapter=chapter.chapter_number,
-                claimed=claimed_page,
-                corrected=corrected_page,
-            )
-            return corrected_page, issues, total_cost
-
-        # Still not found - use LLM verification if enabled
-        if use_llm_verification and model:
-            logger.info(
-                "Using LLM to verify chapter boundary",
-                chapter=chapter.chapter_number,
-                page=claimed_page,
-            )
-
-            is_chapter, detected_title, llm_cost = verify_chapter_boundary_with_llm(
-                page_num=claimed_page,
-                expected_title=chapter.title,
-                storage=storage,
-                model=model,
-                logger=logger,
-            )
-
-            total_cost += llm_cost
-
-            if is_chapter:
-                # LLM confirmed it's a chapter boundary!
-                issues.append(
-                    ValidationIssue(
-                        severity="info",
-                        issue_type="chapter_boundary_verified_by_llm",
-                        message=f"Chapter {chapter.chapter_number}: LLM confirmed chapter start at page {claimed_page}",
-                        page_num=claimed_page,
-                        chapter_num=chapter.chapter_number,
-                        expected=f"Chapter heading classification",
-                        actual=f"LLM verified: '{detected_title or chapter.title}'",
-                    )
-                )
-                logger.info(
-                    "LLM confirmed chapter boundary",
-                    chapter=chapter.chapter_number,
-                    page=claimed_page,
-                    detected_title=detected_title,
-                )
-                return claimed_page, issues, total_cost
-
-        # Not found even with LLM - return warning
-        issues.append(
-            ValidationIssue(
-                severity="warning",
-                issue_type="chapter_heading_not_found",
-                message=f"Chapter {chapter.chapter_number}: no CHAPTER_HEADING found near page {claimed_page} (searched ±5, LLM verification: {'enabled' if use_llm_verification else 'disabled'})",
-                page_num=claimed_page,
-                chapter_num=chapter.chapter_number,
-                expected="CHAPTER_HEADING block within ±5 pages or LLM confirmation",
-                actual=f"not found in pages {claimed_page-5} to {claimed_page+5}",
-            )
-        )
-        logger.warning(
-            "Chapter heading not found",
-            chapter=chapter.chapter_number,
-            claimed_page=claimed_page,
-            llm_verified=use_llm_verification,
-        )
-        return None, issues, total_cost
-
-    except Exception as e:
-        issues.append(
-            ValidationIssue(
-                severity="error",
-                issue_type="page_load_error",
-                message=f"Chapter {chapter.chapter_number}: failed to load page {claimed_page}",
-                page_num=claimed_page,
-                chapter_num=chapter.chapter_number,
-                expected="page loads successfully",
-                actual=f"error: {str(e)}",
-            )
-        )
-        return None, issues, total_cost
-
-
 def calculate_confidence(issues: List[ValidationIssue]) -> float:
     """
     Calculate overall confidence score based on validation issues.
@@ -503,17 +121,19 @@ def batch_verify_boundaries(
     storage: BookStorage,
     model: str,
     logger: PipelineLogger,
-    max_workers: int = None,
+    batch_client: LLMBatchClient,
+    on_event: Optional[Callable[[EventData], None]] = None,
 ) -> Tuple[Dict[int, Tuple[bool, Optional[str]]], float]:
     """
-    Batch verify chapter/section boundaries in parallel using ThreadPoolExecutor.
+    Batch verify chapter/section boundaries in parallel using LLMBatchClient.
 
     Args:
         boundaries: List of (page_num, expected_title, boundary_type) tuples to verify
         storage: BookStorage instance
         model: LLM model to use
         logger: Pipeline logger
-        max_workers: Number of parallel workers (defaults to Config.max_workers)
+        batch_client: LLMBatchClient instance (shared for progress tracking)
+        on_event: Optional event handler for progress tracking
 
     Returns:
         Tuple of (results_dict, total_cost)
@@ -522,38 +142,123 @@ def batch_verify_boundaries(
     if not boundaries:
         return {}, 0.0
 
-    max_workers = max_workers or Config.max_workers
     results = {}
-    total_cost = 0.0
 
-    logger.info(f"Batch verifying {len(boundaries)} boundaries", workers=max_workers)
+    logger.info(f"Batch verifying {len(boundaries)} boundaries", workers=batch_client.max_workers)
 
-    def verify_one(page_num: int, title: str, boundary_type: str):
-        is_boundary, detected_title, cost = verify_boundary_with_llm(
-            page_num=page_num,
-            expected_title=title,
-            boundary_type=boundary_type,
-            storage=storage,
-            model=model,
-            logger=logger,
-        )
-        return page_num, is_boundary, detected_title, cost
+    # Prepare LLM requests for all boundaries
+    requests = []
+    merged_stage = storage.stage("merged")
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_page = {
-            executor.submit(verify_one, page_num, title, btype): page_num
-            for page_num, title, btype in boundaries
+    # Import prompt builders
+    from .validate_prompts import build_chapter_verification_prompt, build_section_verification_prompt
+
+    for page_num, expected_title, boundary_type in boundaries:
+        # Extract text from page
+        try:
+            page_data = merged_stage.load_page(page_num)
+            blocks = page_data.get("blocks", [])
+
+            # Combine all paragraph text
+            text_parts = []
+            for block in blocks:
+                for para in block.get("paragraphs", []):
+                    text = para.get("text", "")
+                    if text:
+                        text_parts.append(text)
+
+            page_text = "\n".join(text_parts)
+
+            if not page_text.strip():
+                logger.warning("Boundary verification: page has no text", page=page_num, boundary_type=boundary_type)
+                results[page_num] = (False, None)
+                continue
+
+        except Exception as e:
+            logger.error("Boundary verification: failed to load page", page=page_num, boundary_type=boundary_type, error=str(e))
+            results[page_num] = (False, None)
+            continue
+
+        # Build LLM prompt based on boundary type
+        if boundary_type == "chapter":
+            prompt = build_chapter_verification_prompt(expected_title, page_text)
+        else:  # section
+            prompt = build_section_verification_prompt(expected_title, page_text)
+
+        # Get schema for structured output
+        from .schemas import BoundaryVerificationResult
+        import copy
+        base_schema = BoundaryVerificationResult.model_json_schema()
+        schema = copy.deepcopy(base_schema)
+
+        # Remove strict mode - OpenRouter's strict validation can be too restrictive
+        # We'll validate with Pydantic after receiving the response instead
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "boundary_verification",
+                "schema": schema
+            }
         }
 
-        for future in as_completed(future_to_page):
-            try:
-                page_num, is_boundary, detected_title, cost = future.result()
-                results[page_num] = (is_boundary, detected_title)
-                total_cost += cost
-            except Exception as e:
-                page_num = future_to_page[future]
-                logger.error("Batch verification failed", page=page_num, error=str(e))
+        # Create LLM request with structured output
+        request = LLMRequest(
+            id=f"page_{page_num:04d}_{boundary_type}",
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=200,
+            response_format=response_format,
+            metadata={
+                'page_num': page_num,
+                'expected_title': expected_title,
+                'boundary_type': boundary_type,
+            }
+        )
+        requests.append(request)
+
+    if not requests:
+        logger.info("No valid boundaries to verify")
+        return results, 0.0
+
+    # Process batch
+    def on_result(result: LLMResult):
+        """Handle LLM result for boundary verification."""
+        try:
+            page_num = result.request.metadata['page_num']
+
+            if result.success and result.parsed_json:
+                # Parse verification result
+                verification = BoundaryVerificationResult(**result.parsed_json)
+                results[page_num] = (verification.is_boundary, verification.detected_title)
+
+                logger.info(
+                    f"LLM {result.request.metadata['boundary_type']} verification",
+                    page=page_num,
+                    is_boundary=verification.is_boundary,
+                    title=verification.detected_title,
+                    confidence=verification.confidence,
+                    cost=f"${result.cost_usd:.4f}",
+                )
+            else:
+                # LLM call failed
+                logger.error("Boundary verification failed", page=page_num, error=result.error)
                 results[page_num] = (False, None)
+
+        except Exception as e:
+            logger.error(f"Error handling verification result", error=str(e))
+            results[result.request.metadata['page_num']] = (False, None)
+
+    # Process batch with event tracking for progress display
+    batch_results = batch_client.process_batch(
+        requests,
+        on_event=on_event,
+        on_result=on_result
+    )
+
+    # Get final stats
+    batch_stats = batch_client.get_batch_stats(total_requests=len(requests))
+    total_cost = batch_stats.total_cost_usd
 
     logger.info("Batch verification complete", verified=len(results), cost=f"${total_cost:.4f}")
 
@@ -745,14 +450,18 @@ def validate_structure(
 
     # Validate front matter page ranges
     fm = draft.front_matter
+    if fm.title_page:
+        issues.extend(validate_page_range(fm.title_page, storage, "Front Matter Title Page"))
     if fm.toc:
         issues.extend(validate_page_range(fm.toc, storage, "Front Matter TOC"))
     if fm.preface:
         issues.extend(validate_page_range(fm.preface, storage, "Front Matter Preface"))
-    if fm.foreword:
-        issues.extend(validate_page_range(fm.foreword, storage, "Front Matter Foreword"))
     if fm.introduction:
         issues.extend(validate_page_range(fm.introduction, storage, "Front Matter Introduction"))
+
+    # Validate other front matter sections
+    for other_section in fm.other:
+        issues.extend(validate_page_range(other_section, storage, f"Front Matter {other_section.label}"))
 
     # Validate and correct chapters using batch processing (strict mode)
     if use_llm_verification and model:
@@ -778,18 +487,55 @@ def validate_structure(
                     "section"
                 ))
 
+        # Setup progress tracking for batch verification
+        logger.info(f"Verifying {len(boundaries_to_verify)} boundaries with LLM...")
+        verify_start_time = time.time()
+        progress = RichProgressBarHierarchical(
+            total=len(boundaries_to_verify),
+            prefix="   ",
+            width=40,
+            unit="boundaries"
+        )
+        progress.update(0, suffix="starting...")
+
+        # Create batch client (shared for event handler and processing)
+        stage_log_dir = storage.stage("build_structure").output_dir / "logs"
+        batch_client = LLMBatchClient(
+            max_workers=Config.max_workers,
+            max_retries=5,
+            retry_jitter=(1.0, 3.0),
+            verbose=True,  # Enable per-request events for progress tracking
+            log_dir=stage_log_dir,
+        )
+
+        # Create event handler
+        on_event = progress.create_llm_event_handler(
+            batch_client=batch_client,
+            start_time=verify_start_time,
+            model=model,
+            total_requests=len(boundaries_to_verify),
+            checkpoint=None  # No checkpoint for structure stage
+        )
+
         # Batch verify all boundaries in parallel
         verification_results, batch_cost = batch_verify_boundaries(
             boundaries=boundaries_to_verify,
             storage=storage,
             model=model,
             logger=logger,
+            batch_client=batch_client,
+            on_event=on_event,
         )
         total_cost += batch_cost
 
+        # Finish progress
+        verify_elapsed = time.time() - verify_start_time
+        batch_stats = batch_client.get_batch_stats(total_requests=len(boundaries_to_verify))
+        progress.finish(f"   ✓ {batch_stats.completed}/{len(boundaries_to_verify)} boundaries verified in {verify_elapsed:.1f}s")
+
         logger.info(
             "Batch verification complete",
-            total_boundaries=len(boundaries_to_verify),
+            verified=batch_stats.completed,
             cost=f"${batch_cost:.4f}",
         )
     else:
@@ -884,10 +630,6 @@ def validate_structure(
 
     # Validate back matter page ranges
     bm = draft.back_matter
-    if bm.epilogue:
-        issues.extend(validate_page_range(bm.epilogue, storage, "Back Matter Epilogue"))
-    if bm.afterword:
-        issues.extend(validate_page_range(bm.afterword, storage, "Back Matter Afterword"))
     if bm.notes:
         issues.extend(validate_page_range(bm.notes, storage, "Back Matter Notes"))
     if bm.bibliography:
@@ -895,9 +637,13 @@ def validate_structure(
     if bm.index:
         issues.extend(validate_page_range(bm.index, storage, "Back Matter Index"))
 
-    if bm.appendices:
-        for i, appendix in enumerate(bm.appendices, start=1):
-            issues.extend(validate_page_range(appendix, storage, f"Back Matter Appendix {i}"))
+    # Validate appendices
+    for appendix in bm.appendices:
+        issues.extend(validate_page_range(appendix, storage, f"Back Matter {appendix.label}"))
+
+    # Validate other back matter sections
+    for other_section in bm.other:
+        issues.extend(validate_page_range(other_section, storage, f"Back Matter {other_section.label}"))
 
     # Count issues by severity
     error_count = sum(1 for i in issues if i.severity == "error")

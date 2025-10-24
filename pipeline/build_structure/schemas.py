@@ -45,6 +45,24 @@ class LabeledPageRange(BaseModel):
             )
         return cls(**data)
 
+    @property
+    def start_page(self) -> int:
+        """Convenience accessor for first page."""
+        return self.page_range.start_page
+
+    @property
+    def end_page(self) -> int:
+        """Convenience accessor for last page."""
+        return self.page_range.end_page
+
+
+class BoundaryVerificationResult(BaseModel):
+    """Result from LLM verification of chapter/section boundaries."""
+    is_boundary: bool = Field(..., description="Whether this page contains the expected heading")
+    detected_title: Optional[str] = Field(None, description="Exact title text found on page, or null if no heading")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0.0-1.0)")
+    reasoning: str = Field(..., min_length=1, description="Brief explanation of the decision")
+
 
 class Section(BaseModel):
     """Subsection within a chapter."""
@@ -118,20 +136,48 @@ class Chapter(BaseModel):
 # ============================================================================
 
 class FrontMatter(BaseModel):
-    """Front matter components (before main body)."""
-    title_page: Optional[PageRange] = Field(None, description="Title page range")
-    copyright_page: Optional[PageRange] = Field(None, description="Copyright page range")
-    dedication: Optional[PageRange] = Field(None, description="Dedication page range")
-    epigraph: Optional[PageRange] = Field(None, description="Epigraph page range")
-    toc: Optional[PageRange] = Field(None, description="Table of Contents page range")
-    preface: Optional[PageRange] = Field(None, description="Preface page range")
-    foreword: Optional[PageRange] = Field(None, description="Foreword page range")
-    introduction: Optional[PageRange] = Field(None, description="Introduction page range")
-    other: List[LabeledPageRange] = Field(default_factory=list, description="Other front matter sections")
+    """
+    Front matter components (before main body).
 
-    page_numbering_style: Optional[Literal["roman", "arabic", "none"]] = Field(
-        None, description="Page numbering style in front matter"
+    All sections use LabeledPageRange to capture descriptive labels
+    (e.g., "Title Page", "Preface to Second Edition", "Contents").
+    """
+    title_page: Optional[LabeledPageRange] = Field(None, description="Title page (half-title, full title)")
+    toc: Optional[LabeledPageRange] = Field(None, description="Table of Contents")
+    preface: Optional[LabeledPageRange] = Field(None, description="Preface, Author's Note, etc.")
+    introduction: Optional[LabeledPageRange] = Field(None, description="Introduction, Prologue")
+    other: List[LabeledPageRange] = Field(default_factory=list, description="Other front matter (dedication, foreword, copyright, etc.)")
+
+    page_numbering_style: Optional[Literal["roman", "arabic", "none", "mixed"]] = Field(
+        None, description="Page numbering style in front matter (mixed if switches between styles)"
     )
+
+    @field_validator('title_page', 'toc', 'preface', 'introduction', mode='before')
+    @classmethod
+    def handle_labeled_page_range(cls, v, info):
+        """Handle LLM returning flat structure for labeled sections."""
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            if "page_range" not in v and "start_page" in v:
+                # Flat structure without label: {start_page, end_page}
+                # OR flat structure with label: {label, start_page, end_page}
+                field_name = info.field_name
+                default_labels = {
+                    'title_page': 'Title Page',
+                    'toc': 'Table of Contents',
+                    'preface': 'Preface',
+                    'introduction': 'Introduction'
+                }
+                label = v.get("label", default_labels.get(field_name, field_name.replace('_', ' ').title()))
+                return LabeledPageRange(
+                    label=label,
+                    page_range=PageRange(start_page=v["start_page"], end_page=v["end_page"])
+                )
+            else:
+                # Nested structure: {label, page_range: {start_page, end_page}}
+                return LabeledPageRange(**v)
+        return v
 
     @field_validator('other', mode='before')
     @classmethod
@@ -157,34 +203,52 @@ class FrontMatter(BaseModel):
 
 
 class BackMatter(BaseModel):
-    """Back matter components (after main body)."""
-    epilogue: Optional[PageRange] = Field(None, description="Epilogue page range")
-    afterword: Optional[PageRange] = Field(None, description="Afterword page range")
-    appendices: Optional[List[PageRange]] = Field(None, description="Appendix sections")
-    notes: Optional[PageRange] = Field(None, description="Notes/endnotes page range")
-    bibliography: Optional[PageRange] = Field(None, description="Bibliography page range")
-    index: Optional[PageRange] = Field(None, description="Index page range")
-    other: List[LabeledPageRange] = Field(default_factory=list, description="Other back matter sections")
+    """
+    Back matter components (after main body).
 
-    page_numbering_style: Optional[Literal["roman", "arabic", "none"]] = Field(
-        None, description="Page numbering style in back matter"
+    All sections use LabeledPageRange to capture descriptive labels
+    (e.g., "Appendix A: Statistics", "Bibliography", "Index of Names").
+    """
+    appendices: List[LabeledPageRange] = Field(default_factory=list, description="Appendix sections with labels (A, B, etc.)")
+    notes: Optional[LabeledPageRange] = Field(None, description="Notes, Endnotes, References")
+    bibliography: Optional[LabeledPageRange] = Field(None, description="Bibliography, Works Cited")
+    index: Optional[LabeledPageRange] = Field(None, description="Index, Indices")
+    other: List[LabeledPageRange] = Field(default_factory=list, description="Other back matter (epilogue, afterword, etc.)")
+
+    page_numbering_style: Optional[Literal["roman", "arabic", "none", "mixed"]] = Field(
+        None, description="Page numbering style in back matter (mixed if switches between styles)"
     )
 
-    @field_validator('appendices', mode='before')
+    @field_validator('notes', 'bibliography', 'index', mode='before')
     @classmethod
-    def handle_null_appendices(cls, v):
-        """Convert null or single dict to list."""
+    def handle_labeled_page_range(cls, v, info):
+        """Handle LLM returning flat structure for labeled sections."""
         if v is None:
-            return []
-        # If LLM returns single appendix as dict, wrap in list
+            return None
         if isinstance(v, dict):
-            return [v]
+            if "page_range" not in v and "start_page" in v:
+                # Flat structure without label: {start_page, end_page}
+                # OR flat structure with label: {label, start_page, end_page}
+                field_name = info.field_name
+                default_labels = {
+                    'notes': 'Notes',
+                    'bibliography': 'Bibliography',
+                    'index': 'Index'
+                }
+                label = v.get("label", default_labels.get(field_name, field_name.replace('_', ' ').title()))
+                return LabeledPageRange(
+                    label=label,
+                    page_range=PageRange(start_page=v["start_page"], end_page=v["end_page"])
+                )
+            else:
+                # Nested structure: {label, page_range: {start_page, end_page}}
+                return LabeledPageRange(**v)
         return v
 
-    @field_validator('other', mode='before')
+    @field_validator('appendices', 'other', mode='before')
     @classmethod
-    def handle_other_sections(cls, v):
-        """Handle LLM returning flat structure for other sections."""
+    def handle_labeled_list(cls, v):
+        """Handle LLM returning flat structure for list sections."""
         if not v:
             return []
         result = []
@@ -193,7 +257,7 @@ class BackMatter(BaseModel):
                 if "page_range" not in item and "start_page" in item:
                     # Flat structure: {label, start_page, end_page}
                     result.append(LabeledPageRange(
-                        label=item.get("label", "Other"),
+                        label=item.get("label", ""),
                         page_range=PageRange(start_page=item["start_page"], end_page=item["end_page"])
                     ))
                 else:

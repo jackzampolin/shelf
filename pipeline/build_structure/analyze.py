@@ -1,7 +1,7 @@
 """
-Phase 1: Analyze report.csv to extract draft structure metadata.
+Structure analysis from labels report.
 
-This phase reads the labels/report.csv file and uses an LLM to identify:
+Analyzes labels/report.csv and optional ToC/headings to extract book structure:
 - Front matter (title, copyright, TOC, preface, etc.)
 - Chapters and sections
 - Back matter (epilogue, notes, bibliography, index, etc.)
@@ -15,11 +15,12 @@ import csv
 from pathlib import Path
 from typing import Tuple, Optional
 
-from infra.llm.client import LLMClient
+from infra.llm.batch_client import LLMBatchClient
+from infra.llm.models import LLMRequest
 from infra.pipeline.logger import PipelineLogger
 
 from .schemas import DraftMetadata, TableOfContents, HeadingData
-from .prompts_v2 import STRUCTURE_ANALYSIS_SYSTEM_PROMPT, build_user_prompt
+from .analyze_prompts import STRUCTURE_ANALYSIS_SYSTEM_PROMPT, build_user_prompt
 
 
 def format_report_for_llm(rows: list[dict]) -> str:
@@ -110,9 +111,6 @@ def analyze_report(
     # Format for LLM
     report_text = format_report_for_llm(rows)
 
-    # Prepare structured output request (same format as label/correction stages)
-    response_schema = DraftMetadata.model_json_schema()
-
     # Format ToC as JSON string if available
     toc_json = None
     if toc:
@@ -149,76 +147,58 @@ def analyze_report(
         {"role": "user", "content": user_prompt},
     ]
 
-    # Make LLM call with structured output and streaming for progress
-    client = LLMClient()
-    logger.info("Calling LLM for structure analysis", model=model, pages=total_pages)
-    print(f"\n📊 Analyzing book structure ({total_pages} pages)...")
+    # Build JSON schema for structured output
+    # Note: OpenRouter doesn't support "strict": True
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "draft_metadata",
+            "schema": DraftMetadata.model_json_schema()
+        }
+    }
 
-    response_text, usage, cost_usd = client.call(
+    # Create LLM request
+    request = LLMRequest(
+        id="analyze_structure",
         model=model,
         messages=messages,
-        response_format=response_schema,  # Pass Pydantic schema directly
+        temperature=0.0,
         max_tokens=4000,  # Structure metadata should be concise
-        stream=True,  # Enable streaming for progress feedback
+        response_format=response_format
     )
+
+    # Make LLM call with batch client (single request)
+    log_dir = labels_report_path.parent.parent / "build_structure" / "logs"
+    batch_client = LLMBatchClient(
+        max_workers=1,
+        max_retries=5,  # Retry on validation failures
+        verbose=False,  # Disable verbose for single call (we'll show our own progress)
+        log_dir=log_dir
+    )
+
+    logger.info("Calling LLM for structure analysis", model=model, pages=total_pages)
+    print(f"\n📊 Analyzing book structure ({total_pages} pages)...")
+    print(f"   ⏳ Calling LLM...")
+
+    results = batch_client.process_batch([request])
+
+    # Show completion with cost
+    batch_stats = batch_client.get_batch_stats(total_requests=1)
+    print(f"   ✓ Complete (cost: ${batch_stats.total_cost_usd:.4f})")
+
+    # Extract result
+    result = results[0]
+    if not result.success:
+        raise ValueError(f"LLM call failed: {result.error_message}")
+
+    # Parse response as DraftMetadata
+    draft = DraftMetadata(**result.parsed_json)
+    cost_usd = result.cost_usd
 
     logger.info(
-        "LLM response received",
-        tokens_in=usage.get("prompt_tokens", 0),
-        tokens_out=usage.get("completion_tokens", 0),
+        "LLM response validated",
         cost=f"${cost_usd:.4f}",
     )
-
-    # Parse response into DraftMetadata
-    import json
-
-    if not response_text or not response_text.strip():
-        logger.error("Empty LLM response!")
-        raise ValueError("LLM returned empty response")
-
-    logger.info("Response length", chars=len(response_text))
-
-    # Strip markdown code fences if present
-    response_text = response_text.strip()
-    if response_text.startswith("```json"):
-        response_text = response_text[7:]  # Remove ```json
-    if response_text.startswith("```"):
-        response_text = response_text[3:]  # Remove ```
-    if response_text.endswith("```"):
-        response_text = response_text[:-3]  # Remove trailing ```
-    response_text = response_text.strip()
-
-    # Extract just the JSON object (handle extra text after JSON closes)
-    # Find the first { and the last matching }
-    first_brace = response_text.find('{')
-    if first_brace == -1:
-        logger.error("No JSON object found in response", response_preview=response_text[:500])
-        raise ValueError("LLM response doesn't contain JSON object")
-
-    # Find matching closing brace by counting braces
-    brace_count = 0
-    last_brace = first_brace
-    for i in range(first_brace, len(response_text)):
-        if response_text[i] == '{':
-            brace_count += 1
-        elif response_text[i] == '}':
-            brace_count -= 1
-            if brace_count == 0:
-                last_brace = i
-                break
-
-    # Extract just the JSON object
-    json_text = response_text[first_brace:last_brace+1]
-
-    try:
-        response_data = json.loads(json_text)
-        draft = DraftMetadata(**response_data)
-    except json.JSONDecodeError as e:
-        logger.error("Invalid JSON from LLM", error=str(e), response_preview=response_text[:1000])
-        raise ValueError(f"LLM response is not valid JSON: {e}")
-    except Exception as e:
-        logger.error("Failed to validate schema", error=str(e), response_type=type(response_data).__name__)
-        raise ValueError(f"LLM response doesn't match DraftMetadata schema: {e}")
 
     logger.info(
         "Draft structure extracted",
