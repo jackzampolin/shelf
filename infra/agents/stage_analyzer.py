@@ -12,6 +12,11 @@ import json
 import hashlib
 from datetime import datetime
 
+from rich.live import Live
+from rich.console import Console, Group
+from rich.text import Text
+from rich.panel import Panel
+
 from infra.llm.client import LLMClient
 from infra.storage.book_storage import BookStorage
 from infra.config import Config
@@ -62,10 +67,61 @@ class StageAnalyzer:
         self.iterations = 0
         self.analysis_path = None
         self.tool_calls_log = []  # Store all tool calls for logging
+        self.recent_tool_calls = []  # Last 5 tool calls for display
+        self.iteration_costs = []  # Cost per iteration for stats
 
         # Setup agent directory
         self.agent_dir = self.storage.stage(self.stage_name).output_dir / "agent"
         self.agent_dir.mkdir(exist_ok=True)
+
+        # Rich console for live display
+        self.console = Console()
+        self.live = None
+
+    def _render_progress(self):
+        """Render compact progress summary with rollups + recent tool calls."""
+        lines = []
+
+        # Rollup metrics
+        avg_cost = sum(self.iteration_costs) / len(self.iteration_costs) if self.iteration_costs else 0
+        total_tools = len(self.tool_calls_log)
+
+        # Tool type breakdown
+        tool_counts = {}
+        for call in self.tool_calls_log:
+            tool_name = call['tool_name']
+            tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+
+        # Format tool counts
+        tool_summary = ', '.join([f"{count} {name}" for name, count in sorted(tool_counts.items())])
+
+        # Header line
+        lines.append(f"Iteration {self.iterations}/{self.max_iterations} • ${self.total_cost:.3f} total • {avg_cost*1000:.1f}¢/iter avg")
+        lines.append(f"Tools: {total_tools} total ({tool_summary})")
+        lines.append("")
+
+        # Recent tool calls (last 5)
+        lines.append("Recent:")
+        if self.recent_tool_calls:
+            for call in self.recent_tool_calls[-5:]:
+                iter_num = call['iteration']
+                tool_name = call['tool_name']
+                exec_time = call['execution_time']
+
+                # Abbreviate arguments
+                args_str = str(call['arguments'])
+                if len(args_str) > 40:
+                    args_str = args_str[:37] + "..."
+
+                # Format: Iteration X: tool_name(args) (time) ✓
+                if tool_name == "write_analysis":
+                    lines.append(f"  Iter {iter_num}: {tool_name}({args_str}) ✓")
+                else:
+                    lines.append(f"  Iter {iter_num}: {tool_name}({args_str}) ({exec_time:.1f}s)")
+        else:
+            lines.append("  (none yet)")
+
+        return Text("\n".join(lines))
 
     def _build_tool_definitions(self) -> List[Dict]:
         """
@@ -519,86 +575,96 @@ Be specific and include page numbers in all findings. Use execute_python() for a
         # Tool definitions
         tools = self._build_tool_definitions()
 
-        # Agent loop with OpenRouter tool calling
-        for iteration in range(self.max_iterations):
-            self.iterations = iteration + 1
+        # Start Rich live display
+        self.live = Live(self._render_progress(), console=self.console, refresh_per_second=4, transient=True)
+        self.live.__enter__()
 
-            # Concise progress
-            print(f"Iteration {self.iterations}: Thinking...", end='', flush=True)
+        try:
+            # Agent loop with OpenRouter tool calling
+            for iteration in range(self.max_iterations):
+                self.iterations = iteration + 1
 
-            # Call LLM with tools
-            content, usage, cost, tool_calls = self.llm_client.call_with_tools(
-                model=self.model,
-                messages=messages,
-                tools=tools,
-                temperature=0.0
-            )
+                # Call LLM with tools
+                content, usage, cost, tool_calls = self.llm_client.call_with_tools(
+                    model=self.model,
+                    messages=messages,
+                    tools=tools,
+                    temperature=0.0
+                )
 
-            self.total_cost += cost
-            print(f" (${cost:.3f})")
+                self.total_cost += cost
+                self.iteration_costs.append(cost)
 
-            # Build assistant message
-            assistant_msg = {"role": "assistant"}
-            if content:
-                assistant_msg["content"] = content
-            if tool_calls:
-                assistant_msg["tool_calls"] = tool_calls
+                # Update display
+                self.live.update(self._render_progress())
 
-            messages.append(assistant_msg)
+                # Build assistant message
+                assistant_msg = {"role": "assistant"}
+                if content:
+                    assistant_msg["content"] = content
+                if tool_calls:
+                    assistant_msg["tool_calls"] = tool_calls
 
-            # If no tool calls, agent is done or stuck
-            if not tool_calls:
-                if self.analysis_path:
-                    # Agent finished successfully
-                    break
-                else:
-                    # Agent didn't call tools - prompt to continue
-                    messages.append({
-                        "role": "user",
-                        "content": "Please use the available tools to complete your analysis."
+                messages.append(assistant_msg)
+
+                # If no tool calls, agent is done or stuck
+                if not tool_calls:
+                    if self.analysis_path:
+                        # Agent finished successfully
+                        break
+                    else:
+                        # Agent didn't call tools - prompt to continue
+                        messages.append({
+                            "role": "user",
+                            "content": "Please use the available tools to complete your analysis."
+                        })
+                        continue
+
+                # Execute tool calls and add results
+                for tool_call in tool_calls:
+                    tool_name = tool_call['function']['name']
+
+                    # Parse arguments (they come as JSON string)
+                    try:
+                        arguments = json.loads(tool_call['function']['arguments'])
+                    except json.JSONDecodeError:
+                        arguments = {}
+
+                    # Execute tool and time it
+                    import time
+                    start_time = time.time()
+                    result = self._execute_tool(tool_name, arguments)
+                    execution_time = time.time() - start_time
+
+                    # Log tool call for later analysis
+                    self._log_tool_call(self.iterations, tool_name, arguments, result, execution_time)
+
+                    # Add to recent tool calls for display
+                    self.recent_tool_calls.append({
+                        'iteration': self.iterations,
+                        'tool_name': tool_name,
+                        'arguments': arguments,
+                        'execution_time': execution_time
                     })
-                    continue
 
-            # Execute tool calls and add results
-            for tool_call in tool_calls:
-                tool_name = tool_call['function']['name']
+                    # Update display after each tool
+                    self.live.update(self._render_progress())
 
-                # Parse arguments (they come as JSON string)
-                try:
-                    arguments = json.loads(tool_call['function']['arguments'])
-                except json.JSONDecodeError:
-                    arguments = {}
+                    # Add tool result to messages
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call['id'],
+                        "content": result
+                    })
 
-                # Concise tool execution log
-                arg_preview = str(arguments)[:40]
-                if len(str(arguments)) > 40:
-                    arg_preview += "..."
-                print(f"  → {tool_name}({arg_preview})", end='', flush=True)
+                # Check if analysis was written (agent is done)
+                if hasattr(self, '_pending_analysis_content'):
+                    break
 
-                # Execute tool and time it
-                start_time = time.time()
-                result = self._execute_tool(tool_name, arguments)
-                execution_time = time.time() - start_time
-
-                # Log tool call for later analysis
-                self._log_tool_call(self.iterations, tool_name, arguments, result, execution_time)
-
-                # Show completion
-                if tool_name == "write_analysis":
-                    print(" ✓")
-                else:
-                    print(f" ({execution_time:.1f}s)")
-
-                # Add tool result to messages
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call['id'],
-                    "content": result
-                })
-
-            # Check if analysis was written (agent is done)
-            if hasattr(self, '_pending_analysis_content'):
-                break
+        finally:
+            # Close live display
+            if self.live:
+                self.live.__exit__(None, None, None)
 
         # Save results
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')

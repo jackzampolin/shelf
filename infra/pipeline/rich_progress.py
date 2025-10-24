@@ -389,49 +389,148 @@ class RichProgressBarHierarchical:
                     batch_stats = batch_client.get_batch_stats(total_requests=total_requests)
                     elapsed = time.time() - start_time
 
-                    # Format: completed/total • pages/sec • elapsed time • cost
-                    suffix = f"{batch_stats.completed}/{total_requests} • {batch_stats.requests_per_second:.1f} pages/sec • {elapsed:.0f}s • ${batch_stats.total_cost_usd:.2f}"
+                    # Format elapsed time as mm:ss
+                    elapsed_mins = int(elapsed // 60)
+                    elapsed_secs = int(elapsed % 60)
+                    elapsed_str = f"{elapsed_mins}:{elapsed_secs:02d}"
 
-                    # Section 1: Running tasks (all executing requests)
+                    # Calculate ETA based on current throughput
+                    remaining = total_requests - batch_stats.completed
+                    if batch_stats.requests_per_second > 0 and remaining > 0:
+                        eta_seconds = remaining / batch_stats.requests_per_second
+                        eta_mins = int(eta_seconds // 60)
+                        eta_secs = int(eta_seconds % 60)
+                        eta_str = f"ETA {eta_mins}:{eta_secs:02d}"
+                    else:
+                        eta_str = ""
+
+                    # Format: completed/total • elapsed time • ETA • total cost
+                    if eta_str:
+                        suffix = f"{batch_stats.completed}/{total_requests} • {elapsed_str} • {eta_str} • ${batch_stats.total_cost_usd:.2f}"
+                    else:
+                        suffix = f"{batch_stats.completed}/{total_requests} • {elapsed_str} • ${batch_stats.total_cost_usd:.2f}"
+
+                    # Section 1: Rollups (aggregated metrics)
                     executing = {req_id: status for req_id, status in active.items()
                                 if status.phase == RequestPhase.EXECUTING}
 
-                    running_ids = []
-                    for req_id, status in sorted(executing.items()):
-                        page_id = req_id.replace('page_', 'p')
-                        elapsed_phase = status.phase_elapsed
+                    # Count active requests by state (waiting vs streaming)
+                    waiting_count = 0
+                    streaming_count = 0
+                    for req_id in executing.keys():
+                        msg = self._sub_lines.get(req_id, "")
+                        if "Waiting for response" in msg or not msg:
+                            waiting_count += 1
+                        else:
+                            streaming_count += 1
 
-                        # Check if we have streaming data for this request
-                        # If yes, keep the streaming message (don't overwrite)
-                        # If no, update "Waiting for response..." message with current elapsed time
-                        current_msg = self._sub_lines.get(req_id, "")
+                    # Calculate aggregate metrics from recent completions
+                    successful_recent = [comp for comp in recent.values() if comp.success]
 
-                        # Only update if no message yet OR message is "Waiting for response" (not streaming)
-                        if not current_msg or "Waiting for response" in current_msg:
-                            # Try to get input tokens from batch_client's active requests
-                            input_tokens = None
-                            try:
-                                # Get the request from batch_client if available
-                                if hasattr(batch_client, '_active_requests'):
-                                    request = batch_client._active_requests.get(req_id)
-                                    if request and hasattr(request, 'metadata'):
-                                        input_tokens = request.metadata.get('ocr_tokens')
-                            except:
-                                pass  # Fall back to basic message if we can't get tokens
+                    # Helper function to calculate percentiles
+                    def percentile(values, p):
+                        if not values:
+                            return None
+                        sorted_vals = sorted(values)
+                        k = (len(sorted_vals) - 1) * p / 100
+                        f = int(k)
+                        c = min(f + 1, len(sorted_vals) - 1)
+                        if f == c:
+                            return sorted_vals[int(k)]
+                        return sorted_vals[f] + (k - f) * (sorted_vals[c] - sorted_vals[f])
 
-                            # Build message with optional token count
-                            if input_tokens:
-                                token_str = f", {input_tokens} tok in"
-                            else:
-                                token_str = ""
+                    # Collect TTFT values
+                    ttfts = [comp.ttft_seconds for comp in successful_recent if comp.ttft_seconds is not None]
+                    avg_ttft = sum(ttfts) / len(ttfts) if ttfts else None
+                    p10_ttft = percentile(ttfts, 10)
+                    p90_ttft = percentile(ttfts, 90)
 
-                            if status.retry_count > 0:
-                                msg = f"{page_id}: Waiting for response... ({elapsed_phase:.1f}s{token_str}, retry {status.retry_count})"
-                            else:
-                                msg = f"{page_id}: Waiting for response... ({elapsed_phase:.1f}s{token_str})"
-                            self.add_sub_line(req_id, msg)
+                    # Collect streaming times (execution - ttft)
+                    streaming_times = []
+                    for comp in successful_recent:
+                        if comp.execution_time_seconds is not None and comp.ttft_seconds is not None:
+                            streaming_time = comp.execution_time_seconds - comp.ttft_seconds
+                            if streaming_time > 0:  # Sanity check
+                                streaming_times.append(streaming_time)
 
-                        running_ids.append(req_id)
+                    avg_streaming = sum(streaming_times) / len(streaming_times) if streaming_times else None
+                    p10_streaming = percentile(streaming_times, 10)
+                    p90_streaming = percentile(streaming_times, 90)
+
+                    # Collect token counts from checkpoint if available
+                    total_input_tokens = 0
+                    total_output_tokens = 0
+                    total_reasoning_tokens = 0
+                    token_count = 0
+
+                    if checkpoint:
+                        # Get metrics for all recent completions
+                        for req_id, comp in recent.items():
+                            if comp.success:
+                                try:
+                                    page_num = int(req_id.split('_')[1])
+                                    metrics = checkpoint.get_page_metrics(page_num)
+                                    if metrics and 'usage' in metrics:
+                                        usage = metrics['usage']
+                                        total_input_tokens += usage.get('prompt_tokens', 0)
+                                        total_output_tokens += usage.get('completion_tokens', 0)
+                                        total_reasoning_tokens += usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+                                        token_count += 1
+                                except:
+                                    pass
+
+                    # Build rollup display
+                    rollup_ids = []
+
+                    # Throughput (pages/sec)
+                    if batch_stats.requests_per_second > 0:
+                        self.add_sub_line("rollup_throughput", f"Throughput: {batch_stats.requests_per_second:.1f} pages/sec")
+                        rollup_ids.append("rollup_throughput")
+
+                    # Average cost per request
+                    if batch_stats.completed > 0:
+                        avg_cost_cents = (batch_stats.total_cost_usd / batch_stats.completed) * 100
+                        self.add_sub_line("rollup_avg_cost", f"Avg cost: {avg_cost_cents:.2f}¢/page")
+                        rollup_ids.append("rollup_avg_cost")
+
+                    # Active requests breakdown (waiting vs streaming)
+                    active_count = len(executing)
+                    if active_count > 0:
+                        parts = []
+                        if waiting_count > 0:
+                            parts.append(f"{waiting_count} waiting")
+                        if streaming_count > 0:
+                            parts.append(f"{streaming_count} streaming")
+                        active_line = f"Active: {' + '.join(parts)}" if parts else f"Active: {active_count}"
+                        self.add_sub_line("rollup_active", active_line)
+                        rollup_ids.append("rollup_active")
+
+                    # TTFT stats (avg with p10/p90 band)
+                    if avg_ttft is not None:
+                        if p10_ttft is not None and p90_ttft is not None and len(ttfts) > 1:
+                            self.add_sub_line("rollup_ttft", f"TTFT: {avg_ttft:.1f}s avg (p10-p90: {p10_ttft:.1f}s-{p90_ttft:.1f}s)")
+                        else:
+                            self.add_sub_line("rollup_ttft", f"TTFT: {avg_ttft:.1f}s avg")
+                        rollup_ids.append("rollup_ttft")
+
+                    # Streaming time (execution - ttft) with p10/p90 band
+                    if avg_streaming is not None:
+                        if p10_streaming is not None and p90_streaming is not None and len(streaming_times) > 1:
+                            self.add_sub_line("rollup_streaming", f"Streaming: {avg_streaming:.1f}s avg (p10-p90: {p10_streaming:.1f}s-{p90_streaming:.1f}s)")
+                        else:
+                            self.add_sub_line("rollup_streaming", f"Streaming: {avg_streaming:.1f}s avg")
+                        rollup_ids.append("rollup_streaming")
+
+                    # Token throughput (recent window)
+                    if token_count > 0:
+                        avg_input = total_input_tokens / token_count
+                        avg_output = total_output_tokens / token_count
+                        token_line = f"Tokens: {avg_input:.0f} in → {avg_output:.0f} out"
+                        if total_reasoning_tokens > 0:
+                            avg_reasoning = total_reasoning_tokens / token_count
+                            token_line += f" (+{avg_reasoning:.0f} reasoning)"
+                        self.add_sub_line("rollup_tokens", token_line)
+                        rollup_ids.append("rollup_tokens")
 
                     # Section 2: Last 5 events (successes, failures, retries - sorted by most recent first)
                     recent_sorted = sorted(
@@ -468,8 +567,9 @@ class RichProgressBarHierarchical:
                                 if usage.get('prompt_tokens') is not None and usage.get('completion_tokens') is not None:
                                     tok_str = f"{usage['prompt_tokens']}→{usage['completion_tokens']}"
                                     # Add reasoning tokens if present
-                                    if usage.get('reasoning_tokens', 0) > 0:
-                                        tok_str += f"+{usage['reasoning_tokens']}r"
+                                    reasoning_tokens = usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+                                    if reasoning_tokens > 0:
+                                        tok_str += f"+{reasoning_tokens}r"
                                     parts.append(f"{tok_str} tok")
                                 elif metrics.get('tokens_total'):
                                     parts.append(f"{metrics['tokens_total']} tok")
@@ -500,7 +600,7 @@ class RichProgressBarHierarchical:
 
                     # Clean up old sub-lines that are no longer in any section
                     # Batch removal to avoid multiple re-renders
-                    all_section_ids = set(running_ids + recent_ids)
+                    all_section_ids = set(rollup_ids + recent_ids)
                     to_remove = [line_id for line_id in self._sub_lines.keys()
                                 if line_id not in all_section_ids]
 
@@ -510,7 +610,8 @@ class RichProgressBarHierarchical:
                     # Re-render happens in update() call below
 
                     # Set sections (creates hierarchical display)
-                    self.set_section("running", f"Running ({len(running_ids)}):", running_ids)
+                    if rollup_ids:
+                        self.set_section("rollups", "Metrics:", rollup_ids)
                     self.set_section("recent", f"Recent ({len(recent_ids)}):", recent_ids)
 
                     # Update main bar (triggers re-render with sections)
