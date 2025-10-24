@@ -14,11 +14,11 @@ The page IMAGE is your primary source - visual signals override OCR text for str
 CRITICAL WORKFLOW:
 1. LOOK AT THE PAGE IMAGE FIRST
 2. Identify visual structural markers (chapter numbers, headings, whitespace patterns)
-3. Use OCR text to confirm what you see visually
+3. Use OCR text to confirm what you see visually and classify content
 4. When image and OCR conflict: TRUST THE IMAGE
 
 Visual chapter markers may appear ONLY in the image, not in OCR text.
-A page with 1-3 blocks likely has unusual layout - CHECK THE IMAGE to see why.
+The OCR block count is unreliable - focus on what you SEE in the image.
 </vision_first_principle>
 
 <task_overview>
@@ -40,38 +40,41 @@ These are independent. Extract book-page from the IMAGE, not the pdf-page number
 <chapter_heading_detection>
 PRIORITY TASK: Detect structural boundaries FIRST by examining the page IMAGE.
 
-VISUAL SIGNALS (check the image):
-1. Whitespace anomaly: Page has only 1-5 OCR blocks (vs 6+ typical body page)
-   - This means unusual layout - LOOK AT THE IMAGE
-   - Common cause: Chapter number/heading at top with whitespace below
+VISUAL SIGNALS (look at the actual page image):
 
-2. Visual chapter markers in the image:
-   - Bare number visible at top (any size, even if OCR missed it)
+1. **Chapter markers** - Number or text at top of page:
+   - Bare number visible at top (any size: "1", "17", "IV")
    - "Chapter X" or "Part Y" visible at top
    - Large centered text isolated at top
-   - Visual discontinuity from normal dense text pages
+   - May appear ONLY in image, not in OCR text
 
-3. Layout patterns:
-   - Much less text than typical body pages
-   - Prominent number or short text at top
-   - Lots of empty space on page
+2. **Visual whitespace** - Sparse page layout:
+   - Much less text than typical dense body pages
+   - Lots of empty vertical space on page
+   - Text concentrated at top with whitespace below
+   - Visual discontinuity from surrounding pages
+
+3. **Typography** - Font and styling differences:
+   - Larger font size than body text (1.5x+ larger)
+   - Centered or decorative positioning
+   - Isolated from other text (not inline with paragraphs)
+   - Prominent visual weight
 
 DETECTION RULE:
-If page has 1-5 blocks AND you see chapter markers in the image → Mark block as CHAPTER_HEADING
+If you SEE chapter markers in the image (number/heading at top + visual whitespace) → CHAPTER_HEADING
 
 Examples to DETECT:
-✓ Image shows "1" at top, OCR text is narrative body → CHAPTER_HEADING
-✓ Image shows "17" at top, only 2 OCR blocks detected → CHAPTER_HEADING
-✓ Image shows "Chapter 10", lots of whitespace → CHAPTER_HEADING
-✓ Image shows "Part IV" centered at top → CHAPTER_HEADING
-✓ Page has 1-3 blocks AND image shows number/heading at top → CHAPTER_HEADING
+✓ Image shows "1" at top with lots of space below → CHAPTER_HEADING
+✓ Image shows "17" centered at top, sparse page → CHAPTER_HEADING
+✓ Image shows "Chapter 10" in large font at top → CHAPTER_HEADING
+✓ Image shows "Part IV" centered, mostly empty page → CHAPTER_HEADING
 
 DO NOT detect as CHAPTER_HEADING:
 ✗ Small page number in footer/header (that's PAGE_NUMBER)
-✗ Number in middle of dense body text
-✗ Pages with 6+ blocks of continuous text (normal body page)
+✗ Number in middle of dense text paragraph (inline reference)
+✗ Dense text page with no visual markers (normal body page)
 
-Philosophy: Better to over-detect boundaries than miss them. Build-structure stage will filter.
+Philosophy: Trust what you SEE in the image. Better to over-detect than miss boundaries.
 </chapter_heading_detection>
 
 <page_number_extraction>
@@ -224,7 +227,7 @@ def build_user_prompt(ocr_page, ocr_text, current_page, total_pages, book_metada
     # Calculate position in document
     percent_through = (current_page / total_pages * 100) if total_pages > 0 else 0
 
-    # Count blocks for explicit instruction
+    # Count blocks for output validation (must classify all blocks)
     num_blocks = len(ocr_page.get('blocks', []))
 
     # Format previous page number context for sequence validation
@@ -253,21 +256,24 @@ Position suggests: {default_region}{prev_context}
 </page_context>
 
 <ocr_data>
-This page has {num_blocks} OCR blocks detected.
-Each block has a block_num, bounding box (bbox), and paragraphs with text content.
+OCR extracted {num_blocks} text blocks from this page.
+Each block contains: block_num, bounding box (bbox), and paragraph text.
+Note: Block count is unreliable for structure detection - use visual signals instead.
 
 {ocr_text}
 </ocr_data>
 
 <tasks>
-STEP 1: LOOK AT THE PAGE IMAGE
-- This page has {num_blocks} blocks detected
-- If {num_blocks} is 1-5: This is a whitespace anomaly - CHECK THE IMAGE for chapter markers
-- Look for: Numbers at top, chapter headings, unusual layout
+STEP 1: LOOK AT THE PAGE IMAGE FIRST
+- Examine the visual appearance of the page
+- Look for: Large numbers/text at top, visual whitespace patterns, typography differences
+- Ignore OCR block count - it's unreliable metadata
 
-STEP 2: Detect chapter headings (VISUAL DETECTION)
-- If image shows chapter number/heading at top → Mark that block as CHAPTER_HEADING
-- Trust what you SEE in the image, even if OCR text looks like body content
+STEP 2: Detect chapter headings (PURELY VISUAL)
+- Do you SEE a chapter number or heading at the top? (could be any size, any style)
+- Is there lots of visual whitespace (sparse page vs dense text)?
+- Does the typography look different (larger font, centered, isolated)?
+- If YES to these visual signals → Mark as CHAPTER_HEADING
 
 STEP 3: Extract printed page number from image
 - Look in margins/corners for small page numbers
@@ -276,10 +282,10 @@ STEP 3: Extract printed page number from image
 STEP 4: Classify page region
 - Use position default ({default_region}), override if content contradicts
 
-STEP 5: Classify each of the {num_blocks} blocks
+STEP 5: Classify each of the {num_blocks} OCR blocks
 - Your output must contain exactly {num_blocks} blocks
 - Preserve block_num from OCR data
-- Use decision tree, starting with chapter heading detection
+- Use decision tree, starting with visual chapter heading detection
 
-Remember: PAGE IMAGE is your primary source. Visual signals override OCR text for structure.
+Remember: PAGE IMAGE is your primary source. Visual signals override OCR metadata.
 </tasks>"""

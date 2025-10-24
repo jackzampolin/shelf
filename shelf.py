@@ -3,25 +3,24 @@
 Scanshelf CLI - Turn physical books into digital libraries
 
 Commands:
-  Library:
-    shelf add <pdf...>           Add book(s) to library
+  Library Management:
+    shelf shelve <pdf...>        Shelve book(s) into library
     shelf list                   List all books
     shelf show <scan-id>         Show book details
-    shelf status <scan-id>       Show pipeline status
-    shelf report <scan-id> --stage <s>        Display stage report (CSV as table)
-    shelf analyze <scan-id> --stage <s>       Analyze stage with AI agent
-    shelf regenerate-reports [--scan-id <s>]  Regenerate reports from checkpoints (no LLM calls)
-    shelf stats                               Library statistics
-    shelf delete <scan-id>                    Delete book from library
+    shelf stats                  Library statistics
+    shelf delete <scan-id>       Delete book from library
 
-  Pipeline:
-    shelf process <scan-id>                 Run full pipeline (auto-resume)
-    shelf process <scan-id> --stage <s>     Run single stage
-    shelf process <scan-id> --stages <s>    Run multiple stages
-    shelf process <scan-id> --clean         Clean and re-run (start fresh)
+  Single Book Operations:
+    shelf process <scan-id>                Run full pipeline (auto-resume)
+    shelf process <scan-id> --stage <s>    Run single stage
+    shelf status <scan-id>                 Show pipeline status
+    shelf report <scan-id> --stage <s>     Display stage report (CSV as table)
+    shelf analyze <scan-id> --stage <s>    Analyze stage with AI agent
+    shelf clean <scan-id> --stage <s>      Clean stage outputs
 
-  Cleanup:
-    shelf clean <scan-id> --stage <s>     Clean stage outputs
+  Library-wide Sweeps:
+    shelf sweep <stage>          Sweep stage across all books (persistent random order)
+    shelf sweep reports          Regenerate reports from checkpoints (no LLM calls)
 """
 
 import sys
@@ -32,7 +31,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from infra.storage.library_storage import LibraryStorage
+from infra.storage.library import Library
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.runner import run_stage, run_pipeline
 from infra.config import Config
@@ -47,9 +46,9 @@ from pipeline.build_structure import BuildStructureStage
 
 # ===== Library Commands =====
 
-def cmd_library_add(args):
-    """Add book(s) to library with LLM metadata extraction."""
-    from infra.utils.ingest import add_books_to_library
+def cmd_shelve(args):
+    """Shelve book(s) into library with LLM metadata extraction."""
+    from infra.storage.library import Library
     import glob
 
     # Expand glob patterns
@@ -73,17 +72,22 @@ def cmd_library_add(args):
             print(f"❌ Not a PDF file: {pdf_path}")
             sys.exit(1)
 
-    # Add to library
+    # Add to library (automatically updates all shuffle orders)
     try:
-        result = add_books_to_library(
+        library = Library(storage_root=Config.book_storage_root)
+        result = library.add_books(
             pdf_paths=pdf_paths,
-            storage_root=Config.book_storage_root,
             run_ocr=args.run_ocr
         )
 
         print(f"\n✅ Added {result['books_added']} book(s) to library")
         for scan_id in result['scan_ids']:
             print(f"  - {scan_id}")
+
+        # Show shuffle update info if any shuffles exist
+        shuffles = library.list_shuffles()
+        if shuffles:
+            print(f"   📚 Updated {len(shuffles)} shuffle order(s): {', '.join(shuffles.keys())}")
 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -94,11 +98,11 @@ def cmd_library_add(args):
 
 def cmd_library_list(args):
     """List all books in library."""
-    library = LibraryStorage(storage_root=Config.book_storage_root)
+    library = Library(storage_root=Config.book_storage_root)
     scans = library.list_all_scans()
 
     if not scans:
-        print("No books in library. Use 'shelf add <pdf>' to add books.")
+        print("No books in library. Use 'shelf shelve <pdf>' to shelve books.")
         return
 
     print(f"\n📚 Library ({len(scans)} books)\n")
@@ -144,7 +148,7 @@ def cmd_library_list(args):
 
 def cmd_library_show(args):
     """Show detailed information about a book."""
-    library = LibraryStorage(storage_root=Config.book_storage_root)
+    library = Library(storage_root=Config.book_storage_root)
     scan = library.get_scan_info(args.scan_id)
 
     if not scan:
@@ -168,7 +172,7 @@ def cmd_library_show(args):
 
 def cmd_library_status(args):
     """Show detailed pipeline status for a book."""
-    library = LibraryStorage(storage_root=Config.book_storage_root)
+    library = Library(storage_root=Config.book_storage_root)
 
     # Verify book exists
     scan = library.get_scan_info(args.scan_id)
@@ -226,7 +230,7 @@ def cmd_library_status(args):
 
 def cmd_library_report(args):
     """Display stage report as a formatted table."""
-    library = LibraryStorage(storage_root=Config.book_storage_root)
+    library = Library(storage_root=Config.book_storage_root)
 
     # Verify book exists
     scan = library.get_scan_info(args.scan_id)
@@ -311,7 +315,7 @@ def cmd_library_report(args):
 
 def cmd_library_stats(args):
     """Show library-wide statistics."""
-    library = LibraryStorage(storage_root=Config.book_storage_root)
+    library = Library(storage_root=Config.book_storage_root)
     stats = library.get_stats()
 
     print(f"\n📊 Library Statistics")
@@ -325,10 +329,12 @@ def cmd_library_stats(args):
 
 def cmd_library_delete(args):
     """Delete a book from the library."""
-    library = LibraryStorage(storage_root=Config.book_storage_root)
+    from infra.storage.library import Library
+
+    library = Library(storage_root=Config.book_storage_root)
 
     # Check if scan exists
-    scan = library.get_scan_info(args.scan_id)
+    scan = library.get_book_info(args.scan_id)
     if not scan:
         print(f"❌ Book not found: {args.scan_id}")
         sys.exit(1)
@@ -355,9 +361,9 @@ def cmd_library_delete(args):
             print("\n❌ Cancelled (no input)")
             sys.exit(0)
 
-    # Delete the scan
+    # Delete the scan (automatically updates all shuffle orders)
     try:
-        result = library.delete_scan(
+        result = library.delete_book(
             scan_id=args.scan_id,
             delete_files=not args.keep_files,
             remove_empty_book=True
@@ -366,6 +372,11 @@ def cmd_library_delete(args):
         print(f"\n✅ Deleted: {result['scan_id']}")
         if result['files_deleted']:
             print(f"   Files deleted from: {result['scan_dir']}")
+
+        # Show shuffle update info if any shuffles exist
+        shuffles = library.list_shuffles()
+        if shuffles:
+            print(f"   📚 Removed from {len(shuffles)} shuffle order(s): {', '.join(shuffles.keys())}")
 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -405,7 +416,7 @@ def _clean_stage_helper(storage, stage_name):
 
 def cmd_analyze(args):
     """Analyze stage outputs with AI agent."""
-    library = LibraryStorage(storage_root=Config.book_storage_root)
+    library = Library(storage_root=Config.book_storage_root)
 
     # Verify book exists
     scan = library.get_scan_info(args.scan_id)
@@ -464,85 +475,9 @@ def cmd_analyze(args):
         sys.exit(1)
 
 
-def cmd_regenerate_reports(args):
-    """Regenerate report.csv files from existing checkpoint data without re-running stages."""
-    library = LibraryStorage(storage_root=Config.book_storage_root)
-
-    # Determine which books to process
-    if hasattr(args, 'scan_id') and args.scan_id:
-        # Single book
-        books = [args.scan_id]
-    else:
-        # All books in library
-        all_scans = library.list_all_scans()
-        books = [scan['scan_id'] for scan in all_scans]
-        print(f"📚 Regenerating reports for {len(books)} books in library")
-
-    # Map stage names to instances
-    stage_map = {
-        'ocr': OCRStage(),
-        'corrected': CorrectionStage(),
-        'labels': LabelStage(),
-        'merged': MergeStage(),
-        'build_structure': BuildStructureStage(),
-    }
-
-    # Determine which stages to process
-    if hasattr(args, 'stage') and args.stage:
-        stages_to_process = [args.stage]
-    else:
-        # All stages that support reports
-        stages_to_process = ['ocr', 'corrected', 'labels']
-
-    total_regenerated = 0
-
-    for book_id in books:
-        # Verify book exists
-        scan = library.get_scan_info(book_id)
-        if not scan:
-            print(f"⚠️  Skipping {book_id} (not found)")
-            continue
-
-        storage = library.get_book_storage(book_id)
-
-        for stage_name in stages_to_process:
-            stage = stage_map.get(stage_name)
-            if not stage:
-                print(f"⚠️  Unknown stage: {stage_name}")
-                continue
-
-            # Check if checkpoint has data
-            stage_storage = storage.stage(stage_name)
-            checkpoint = stage_storage.checkpoint
-            all_metrics = checkpoint.get_all_metrics()
-
-            if not all_metrics:
-                if len(books) == 1:
-                    print(f"⚠️  No checkpoint data for {stage_name} stage (run stage first)")
-                continue
-
-            # Regenerate report
-            try:
-                from infra.pipeline.logger import PipelineLogger
-                logger = PipelineLogger(scan_id=book_id, stage=stage_name)
-
-                report_path = stage.generate_report(storage, logger)
-                if report_path:
-                    total_regenerated += 1
-                    if len(books) == 1:
-                        print(f"✅ Regenerated {stage_name}/report.csv ({len(all_metrics)} pages)")
-                    else:
-                        print(f"✅ {book_id}/{stage_name}/report.csv ({len(all_metrics)} pages)")
-            except Exception as e:
-                print(f"❌ Failed to regenerate {book_id}/{stage_name}/report.csv: {e}")
-
-    if len(books) > 1:
-        print(f"\n✅ Regenerated {total_regenerated} reports across {len(books)} books")
-
-
 def cmd_process(args):
     """Run pipeline stage(s) using runner.py."""
-    library = LibraryStorage(storage_root=Config.book_storage_root)
+    library = Library(storage_root=Config.book_storage_root)
 
     # Verify book exists
     scan = library.get_scan_info(args.scan_id)
@@ -623,7 +558,7 @@ def cmd_process(args):
 
 def cmd_clean(args):
     """Clean stage outputs for a book."""
-    library = LibraryStorage(storage_root=Config.book_storage_root)
+    library = Library(storage_root=Config.book_storage_root)
 
     # Verify book exists
     scan = library.get_scan_info(args.scan_id)
@@ -676,6 +611,181 @@ def cmd_clean(args):
         sys.exit(1)
 
 
+def _sweep_stage(library, all_books, args):
+    """Sweep a pipeline stage across all books in randomized order."""
+    import shutil
+
+    # Get or create shuffle order (Library handles all the logic)
+    scan_ids = library.create_shuffle(args.target, reshuffle=args.reshuffle)
+
+    # Provide user feedback about shuffle state
+    shuffles = library.list_shuffles()
+    shuffle_info = shuffles.get(args.target, {})
+
+    if args.reshuffle:
+        print(f"🔀 Created new shuffle order for '{args.target}' stage")
+    elif shuffle_info:
+        created_date = shuffle_info.get('created_at', '')[:10] if 'created_at' in shuffle_info else 'unknown'
+        print(f"♻️  Using existing shuffle order for '{args.target}' stage (created: {created_date})")
+    else:
+        print(f"🎲 Created random order for '{args.target}' stage")
+
+    print(f"\n🧹 Sweeping '{args.target}' stage across {len(scan_ids)} books")
+    print(f"   Press Ctrl+C to stop at any time")
+    print(f"   Tip: Use --reshuffle to create a new random order\n")
+
+    processed_count = 0
+    skipped_count = 0
+
+    for idx, scan_id in enumerate(scan_ids, 1):
+        print(f"\n{'='*60}")
+        print(f"[{idx}/{len(scan_ids)}] Processing: {scan_id}")
+        print(f"{'='*60}")
+
+        try:
+            # Get storage
+            storage = library.get_book_storage(scan_id)
+            stage_storage = storage.stage(args.target)
+            checkpoint = stage_storage.checkpoint
+
+            # Check if already completed (unless --force flag)
+            if not args.force:
+                status = checkpoint.get_status()
+                if status.get('status') == 'completed':
+                    print(f"  ⏭️  Already completed - skipping (use --force to regenerate)")
+                    skipped_count += 1
+                    continue
+
+            # Clean stage
+            print(f"  🧹 Cleaning {args.target} stage...")
+            if stage_storage.output_dir.exists():
+                for item in stage_storage.output_dir.iterdir():
+                    if item.name == '.gitkeep':
+                        continue
+                    if item.is_file():
+                        item.unlink()
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+
+            # Reset checkpoint
+            checkpoint.reset(confirm=False)
+
+            # Run stage (reuse cmd_process logic)
+            print(f"  ▶️  Running {args.target} stage...")
+
+            # Build args for process command
+            process_args = argparse.Namespace(
+                scan_id=scan_id,
+                stage=args.target,
+                stages=None,
+                model=getattr(args, 'model', None),
+                workers=getattr(args, 'workers', None),
+                clean=False,  # Already cleaned above
+                auto_analyze=False,  # Disabled by default
+            )
+
+            # Run process
+            cmd_process(process_args)
+
+            print(f"  ✅ Completed: {scan_id}")
+            processed_count += 1
+
+        except KeyboardInterrupt:
+            print(f"\n\n⚠️  Interrupted by user. Stopping...")
+            print(f"   Processed: {processed_count}, Skipped: {skipped_count}, Remaining: {len(scan_ids) - idx}")
+            sys.exit(0)
+        except Exception as e:
+            print(f"  ❌ Error processing {scan_id}: {e}")
+            print(f"     Continuing to next book...")
+            continue
+
+    print(f"\n{'='*60}")
+    print(f"✅ Sweep complete:")
+    print(f"   Processed: {processed_count}, Skipped: {skipped_count}, Total: {len(scan_ids)}")
+    print(f"{'='*60}\n")
+
+
+def _sweep_reports(library, all_books, args):
+    """Sweep through library regenerating reports from checkpoint data."""
+    from pipeline.ocr import OCRStage
+    from pipeline.correct import CorrectionStage
+    from pipeline.label import LabelStage
+    from pipeline.merge import MergeStage
+    from pipeline.build_structure import BuildStructureStage
+
+    print(f"📚 Sweeping reports across {len(all_books)} books")
+
+    # Map stage names to instances
+    stage_map = {
+        'ocr': OCRStage(),
+        'corrected': CorrectionStage(),
+        'labels': LabelStage(),
+        'merged': MergeStage(),
+        'build_structure': BuildStructureStage(),
+    }
+
+    # Determine which stages to process
+    if hasattr(args, 'stage_filter') and args.stage_filter:
+        stages_to_process = [args.stage_filter]
+    else:
+        # All stages that support reports
+        stages_to_process = ['ocr', 'corrected', 'labels']
+
+    total_regenerated = 0
+
+    for book in all_books:
+        scan_id = book['scan_id']
+        storage = library.get_book_storage(scan_id)
+
+        for stage_name in stages_to_process:
+            stage = stage_map.get(stage_name)
+            if not stage:
+                print(f"⚠️  Unknown stage: {stage_name}")
+                continue
+
+            # Check if checkpoint has data
+            stage_storage = storage.stage(stage_name)
+            checkpoint = stage_storage.checkpoint
+            all_metrics = checkpoint.get_all_metrics()
+
+            if not all_metrics:
+                continue
+
+            # Regenerate report
+            try:
+                from infra.pipeline.logger import PipelineLogger
+                logger = PipelineLogger(scan_id=scan_id, stage=stage_name)
+
+                report_path = stage.generate_report(storage, logger)
+                if report_path:
+                    total_regenerated += 1
+                    print(f"✅ {scan_id}/{stage_name}/report.csv ({len(all_metrics)} pages)")
+            except Exception as e:
+                print(f"❌ Failed to regenerate {scan_id}/{stage_name}/report.csv: {e}")
+
+    print(f"\n✅ Regenerated {total_regenerated} reports across {len(all_books)} books\n")
+
+
+def cmd_sweep(args):
+    """Sweep through library: run stages or regenerate reports across all books."""
+    from infra.storage.library import Library
+
+    library = Library(storage_root=Config.book_storage_root)
+    all_books = library.list_books()
+
+    if not all_books:
+        print("❌ No books found in library")
+        sys.exit(1)
+
+    # Handle 'reports' sweep differently (no LLM calls, just checkpoint reads)
+    if args.target == 'reports':
+        _sweep_reports(library, all_books, args)
+        return
+
+    # Otherwise, sweep a pipeline stage
+    _sweep_stage(library, all_books, args)
+
+
 # ===== Main =====
 
 def main():
@@ -685,19 +795,29 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  shelf add ~/Documents/Scans/book.pdf
+  # Library management
+  shelf shelve ~/Documents/Scans/book.pdf
+  shelf shelve ~/Documents/Scans/*.pdf --run-ocr
   shelf list
+  shelf stats
+  shelf delete old-book --yes
+
+  # Single book operations
   shelf show modest-lovelace
   shelf status modest-lovelace
   shelf report modest-lovelace --stage corrected
   shelf report modest-lovelace --stage labels --filter "printed_page_number="
   shelf analyze modest-lovelace --stage labels
-  shelf analyze modest-lovelace --stage corrected --focus corrections accuracy
   shelf process modest-lovelace
   shelf process modest-lovelace --stage ocr
-  shelf process modest-lovelace --stages ocr,corrected
-  shelf process modest-lovelace --stage labels --clean
   shelf clean modest-lovelace --stage ocr
+
+  # Library-wide sweeps
+  shelf sweep labels                    # Run labels stage across all books
+  shelf sweep labels --reshuffle        # Create new random order
+  shelf sweep corrected --force         # Regenerate even if completed
+  shelf sweep reports                   # Regenerate all reports from checkpoints
+  shelf sweep reports --stage-filter labels  # Only regenerate labels reports
 """
     )
 
@@ -706,11 +826,11 @@ Examples:
 
     # ===== Library Commands =====
 
-    # shelf add
-    add_parser = subparsers.add_parser('add', help='Add book(s) to library')
-    add_parser.add_argument('pdf_patterns', nargs='+', help='PDF file pattern(s)')
-    add_parser.add_argument('--run-ocr', action='store_true', help='Run OCR after adding')
-    add_parser.set_defaults(func=cmd_library_add)
+    # shelf shelve
+    shelve_parser = subparsers.add_parser('shelve', help='Shelve book(s) into library')
+    shelve_parser.add_argument('pdf_patterns', nargs='+', help='PDF file pattern(s)')
+    shelve_parser.add_argument('--run-ocr', action='store_true', help='Run OCR after shelving')
+    shelve_parser.set_defaults(func=cmd_shelve)
 
     # shelf list
     list_parser = subparsers.add_parser('list', help='List all books')
@@ -743,11 +863,6 @@ Examples:
     analyze_parser.add_argument('--focus', nargs='+', help='Focus areas (e.g., page_numbers regions)')
     analyze_parser.set_defaults(func=cmd_analyze)
 
-    # shelf regenerate-reports
-    regen_parser = subparsers.add_parser('regenerate-reports', help='Regenerate report.csv from checkpoint data (no LLM calls)')
-    regen_parser.add_argument('--scan-id', help='Book scan ID (omit to regenerate all books)')
-    regen_parser.add_argument('--stage', choices=['ocr', 'corrected', 'labels'], help='Stage to regenerate (omit for all stages)')
-    regen_parser.set_defaults(func=cmd_regenerate_reports)
 
     # shelf stats
     stats_parser = subparsers.add_parser('stats', help='Library statistics')
@@ -781,6 +896,18 @@ Examples:
     clean_parser.add_argument('--stage', required=True, choices=['ocr', 'corrected', 'labels', 'merged'], help='Stage to clean')
     clean_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation')
     clean_parser.set_defaults(func=cmd_clean)
+
+    # ===== Sweep Command =====
+
+    # shelf sweep
+    sweep_parser = subparsers.add_parser('sweep', help='Sweep through library: run stages or regenerate reports')
+    sweep_parser.add_argument('target', choices=['ocr', 'corrected', 'labels', 'merged', 'build_structure', 'reports'], help='What to sweep: stage name or "reports"')
+    sweep_parser.add_argument('--model', help='Vision model (for correction/label stages)')
+    sweep_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
+    sweep_parser.add_argument('--reshuffle', action='store_true', help='Create new random order (stages only)')
+    sweep_parser.add_argument('--force', action='store_true', help='Regenerate even if completed (stages only)')
+    sweep_parser.add_argument('--stage-filter', choices=['ocr', 'corrected', 'labels'], help='Filter which stage reports to regenerate (reports only)')
+    sweep_parser.set_defaults(func=cmd_sweep)
 
     # Parse and execute
     args = parser.parse_args()

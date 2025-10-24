@@ -102,7 +102,7 @@ source .venv/bin/activate
 uv pip install -e .
 
 # Running commands
-uv run python ar.py <command>
+uv run python shelf.py <command>
 uv run python -m pytest tests/
 ```
 
@@ -350,20 +350,31 @@ PDF → Split Pages → OCR → Correction → Label → Merge → Structure (TB
 - Quality reports generated in `after()` hook
 
 ### Key Concepts
-- **Library:** `~/Documents/book_scans/` - no library.json, filesystem is source of truth
+- **Library:** `~/Documents/book_scans/` - filesystem is source of truth for books
+- **Library Metadata:** `.library.json` - operational state (shuffle orders for sweeps)
 - **Scan ID:** Random Docker-style name (e.g., "modest-lovelace")
 - **Checkpointing:** `.checkpoint` file per stage, `page_metrics` is source of truth
 - **Schemas:** Input/output/checkpoint/report enforce type safety
-- **Storage tiers:** LibraryStorage → BookStorage → StageStorage → CheckpointManager
+- **Storage tiers:** Library → BookStorage → StageStorage → CheckpointManager
 
 ### CLI Usage
 All commands use `uv run python shelf.py <command>`. See `README.md` for reference.
 
-**Key commands:**
+**Library management:**
+- `shelf.py shelve <pdf>` - Shelve books into library
+- `shelf.py list` - List all books
+- `shelf.py delete <scan-id>` - Delete book
+
+**Single book operations:**
 - `shelf.py process <scan-id>` - Run full pipeline (auto-resumes)
 - `shelf.py process <scan-id> --stage ocr` - Run single stage
 - `shelf.py status <scan-id>` - Check progress and costs
 - `shelf.py clean <scan-id> --stage ocr` - Reset stage to start fresh
+
+**Library-wide sweeps:**
+- `shelf.py sweep labels` - Run stage across all books (persistent random order)
+- `shelf.py sweep labels --reshuffle` - Create new random order
+- `shelf.py sweep reports` - Regenerate reports from checkpoints
 
 ### Cost Awareness
 This pipeline costs money (OpenRouter API). Be mindful:

@@ -30,8 +30,9 @@ uv run python shelf.py --help
 ### Library Management
 
 ```bash
-# Add a book to the library
-uv run python shelf.py add ~/Documents/Scans/book-*.pdf
+# Shelve books into the library
+uv run python shelf.py shelve ~/Documents/Scans/book-*.pdf
+uv run python shelf.py shelve ~/Documents/Scans/book.pdf --run-ocr
 
 # View all books
 uv run python shelf.py list
@@ -85,6 +86,29 @@ uv run python shelf.py process <scan-id> --workers 30 --model gpt-4o
 uv run python shelf.py clean <scan-id> --stage ocr
 uv run python shelf.py clean <scan-id> --stage corrected -y  # Skip confirmation
 ```
+
+### Library-wide Sweeps
+
+Run stages or regenerate reports across all books in your library:
+
+```bash
+# Sweep a stage across all books (persistent random order)
+uv run python shelf.py sweep labels
+uv run python shelf.py sweep corrected --model x-ai/grok-vision-beta
+
+# Control shuffle order
+uv run python shelf.py sweep labels --reshuffle     # Create new random order
+uv run python shelf.py sweep labels --force         # Regenerate completed books
+
+# Regenerate reports from checkpoints (no LLM calls)
+uv run python shelf.py sweep reports                # All stages
+uv run python shelf.py sweep reports --stage-filter labels  # Just labels
+```
+
+**Sweep features:**
+- **Persistent shuffle** - Order saved to `.library.json`, reused across restarts
+- **Smart resume** - Skips already-completed books
+- **Auto-sync** - Adding/deleting books automatically updates shuffle orders
 
 ---
 
@@ -183,6 +207,7 @@ Each stage:
 
 ```
 ~/Documents/book_scans/
+├── .library.json             # Library-wide operational state (shuffle orders)
 ├── {scan-id}/                # Per-book directory (BookStorage)
 │   ├── metadata.json         # Book metadata (title, author, year, etc.)
 │   ├── source/               # Original page images
@@ -210,7 +235,8 @@ Each stage:
 ```
 
 **Key points:**
-- No `library.json` - filesystem is source of truth (LibraryStorage scans directories)
+- Filesystem is source of truth for books (LibraryStorage scans directories)
+- `.library.json` stores operational state (shuffle orders for sweep command)
 - Each stage has independent checkpoint (`.checkpoint`) and logs
 - Quality reports (CSV) generated automatically in `after()` hook
 - Schemas enforce type safety at boundaries (input/output/checkpoint/report)

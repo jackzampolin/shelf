@@ -424,8 +424,37 @@ class RichProgressBarHierarchical:
                         else:
                             streaming_count += 1
 
-                    # Calculate aggregate metrics from recent completions
-                    successful_recent = [comp for comp in recent.values() if comp.success]
+                    # Calculate aggregate metrics from ALL completed pages (session-wide, not just recent window)
+                    # This provides stable stats throughout the entire run instead of only the last 10 seconds
+                    ttfts = []
+                    streaming_times = []
+                    total_input_tokens = 0
+                    total_output_tokens = 0
+                    total_reasoning_tokens = 0
+                    token_count = 0
+
+                    if checkpoint:
+                        # Get all completed page metrics for session-wide statistics
+                        all_metrics = checkpoint.get_all_metrics()
+
+                        for page_num, metrics in all_metrics.items():
+                            # TTFT values
+                            if metrics.get('ttft_seconds') is not None:
+                                ttfts.append(metrics['ttft_seconds'])
+
+                            # Streaming time (execution - ttft)
+                            if metrics.get('execution_time_seconds') is not None and metrics.get('ttft_seconds') is not None:
+                                streaming_time = metrics['execution_time_seconds'] - metrics['ttft_seconds']
+                                if streaming_time > 0:
+                                    streaming_times.append(streaming_time)
+
+                            # Token counts
+                            if 'usage' in metrics:
+                                usage = metrics['usage']
+                                total_input_tokens += usage.get('prompt_tokens', 0)
+                                total_output_tokens += usage.get('completion_tokens', 0)
+                                total_reasoning_tokens += usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+                                token_count += 1
 
                     # Helper function to calculate percentiles
                     def percentile(values, p):
@@ -439,45 +468,14 @@ class RichProgressBarHierarchical:
                             return sorted_vals[int(k)]
                         return sorted_vals[f] + (k - f) * (sorted_vals[c] - sorted_vals[f])
 
-                    # Collect TTFT values
-                    ttfts = [comp.ttft_seconds for comp in successful_recent if comp.ttft_seconds is not None]
+                    # Calculate statistics
                     avg_ttft = sum(ttfts) / len(ttfts) if ttfts else None
                     p10_ttft = percentile(ttfts, 10)
                     p90_ttft = percentile(ttfts, 90)
 
-                    # Collect streaming times (execution - ttft)
-                    streaming_times = []
-                    for comp in successful_recent:
-                        if comp.execution_time_seconds is not None and comp.ttft_seconds is not None:
-                            streaming_time = comp.execution_time_seconds - comp.ttft_seconds
-                            if streaming_time > 0:  # Sanity check
-                                streaming_times.append(streaming_time)
-
                     avg_streaming = sum(streaming_times) / len(streaming_times) if streaming_times else None
                     p10_streaming = percentile(streaming_times, 10)
                     p90_streaming = percentile(streaming_times, 90)
-
-                    # Collect token counts from checkpoint if available
-                    total_input_tokens = 0
-                    total_output_tokens = 0
-                    total_reasoning_tokens = 0
-                    token_count = 0
-
-                    if checkpoint:
-                        # Get metrics for all recent completions
-                        for req_id, comp in recent.items():
-                            if comp.success:
-                                try:
-                                    page_num = int(req_id.split('_')[1])
-                                    metrics = checkpoint.get_page_metrics(page_num)
-                                    if metrics and 'usage' in metrics:
-                                        usage = metrics['usage']
-                                        total_input_tokens += usage.get('prompt_tokens', 0)
-                                        total_output_tokens += usage.get('completion_tokens', 0)
-                                        total_reasoning_tokens += usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
-                                        token_count += 1
-                                except:
-                                    pass
 
                     # Build rollup display
                     rollup_ids = []
@@ -618,8 +616,8 @@ class RichProgressBarHierarchical:
                     self.update(event.completed, suffix=suffix)
 
                 elif event.event_type == LLMEvent.RATE_LIMITED:
-                    # Clear sections during rate limit pause
-                    self.clear_sections()
+                    # Keep rollup metrics visible during rate limit, just update status
+                    # Don't clear sections - users want to see the current stats while waiting
                     self.set_status(f"⏸️  Rate limited, resuming in {event.eta_seconds:.0f}s")
 
             except Exception as e:
