@@ -8,10 +8,11 @@ Commands:
     shelf list                   List all books
     shelf show <scan-id>         Show book details
     shelf status <scan-id>       Show pipeline status
-    shelf report <scan-id> --stage <s>     Display stage report (CSV as table)
-    shelf analyze <scan-id> --stage <s>    Analyze stage with AI agent
-    shelf stats                  Library statistics
-    shelf delete <scan-id>       Delete book from library
+    shelf report <scan-id> --stage <s>        Display stage report (CSV as table)
+    shelf analyze <scan-id> --stage <s>       Analyze stage with AI agent
+    shelf regenerate-reports [--scan-id <s>]  Regenerate reports from checkpoints (no LLM calls)
+    shelf stats                               Library statistics
+    shelf delete <scan-id>                    Delete book from library
 
   Pipeline:
     shelf process <scan-id>                 Run full pipeline (auto-resume)
@@ -41,6 +42,7 @@ from pipeline.ocr import OCRStage
 from pipeline.correction import CorrectionStage
 from pipeline.label import LabelStage
 from pipeline.merged import MergeStage
+from pipeline.build_structure import BuildStructureStage
 
 
 # ===== Library Commands =====
@@ -462,6 +464,82 @@ def cmd_analyze(args):
         sys.exit(1)
 
 
+def cmd_regenerate_reports(args):
+    """Regenerate report.csv files from existing checkpoint data without re-running stages."""
+    library = LibraryStorage(storage_root=Config.book_storage_root)
+
+    # Determine which books to process
+    if hasattr(args, 'scan_id') and args.scan_id:
+        # Single book
+        books = [args.scan_id]
+    else:
+        # All books in library
+        all_scans = library.list_all_scans()
+        books = [scan['scan_id'] for scan in all_scans]
+        print(f"📚 Regenerating reports for {len(books)} books in library")
+
+    # Map stage names to instances
+    stage_map = {
+        'ocr': OCRStage(),
+        'corrected': CorrectionStage(),
+        'labels': LabelStage(),
+        'merged': MergeStage(),
+        'build_structure': BuildStructureStage(),
+    }
+
+    # Determine which stages to process
+    if hasattr(args, 'stage') and args.stage:
+        stages_to_process = [args.stage]
+    else:
+        # All stages that support reports
+        stages_to_process = ['ocr', 'corrected', 'labels']
+
+    total_regenerated = 0
+
+    for book_id in books:
+        # Verify book exists
+        scan = library.get_scan_info(book_id)
+        if not scan:
+            print(f"⚠️  Skipping {book_id} (not found)")
+            continue
+
+        storage = library.get_book_storage(book_id)
+
+        for stage_name in stages_to_process:
+            stage = stage_map.get(stage_name)
+            if not stage:
+                print(f"⚠️  Unknown stage: {stage_name}")
+                continue
+
+            # Check if checkpoint has data
+            stage_storage = storage.stage(stage_name)
+            checkpoint = stage_storage.checkpoint
+            all_metrics = checkpoint.get_all_metrics()
+
+            if not all_metrics:
+                if len(books) == 1:
+                    print(f"⚠️  No checkpoint data for {stage_name} stage (run stage first)")
+                continue
+
+            # Regenerate report
+            try:
+                from infra.pipeline.logger import PipelineLogger
+                logger = PipelineLogger(scan_id=book_id, stage=stage_name)
+
+                report_path = stage.generate_report(storage, logger)
+                if report_path:
+                    total_regenerated += 1
+                    if len(books) == 1:
+                        print(f"✅ Regenerated {stage_name}/report.csv ({len(all_metrics)} pages)")
+                    else:
+                        print(f"✅ {book_id}/{stage_name}/report.csv ({len(all_metrics)} pages)")
+            except Exception as e:
+                print(f"❌ Failed to regenerate {book_id}/{stage_name}/report.csv: {e}")
+
+    if len(books) > 1:
+        print(f"\n✅ Regenerated {total_regenerated} reports across {len(books)} books")
+
+
 def cmd_process(args):
     """Run pipeline stage(s) using runner.py."""
     library = LibraryStorage(storage_root=Config.book_storage_root)
@@ -487,8 +565,8 @@ def cmd_process(args):
         stages_to_run = ['ocr', 'corrected', 'labels', 'merged']
 
     # Map stage names to Stage instances
-    # Auto-analyze enabled by default for correction and label stages
-    auto_analyze = getattr(args, 'auto_analyze', True)
+    # Auto-analyze disabled by default for correction and label stages (use --auto-analyze to enable)
+    auto_analyze = getattr(args, 'auto_analyze', False)
 
     stage_map = {
         'ocr': OCRStage(max_workers=args.workers if args.workers else None),
@@ -502,7 +580,8 @@ def cmd_process(args):
             max_workers=args.workers if args.workers else 30,
             auto_analyze=auto_analyze
         ),
-        'merged': MergeStage(max_workers=args.workers if args.workers else 8)
+        'merged': MergeStage(max_workers=args.workers if args.workers else 8),
+        'build_structure': BuildStructureStage(model=args.model)
     }
 
     # Validate stage names
@@ -664,6 +743,12 @@ Examples:
     analyze_parser.add_argument('--focus', nargs='+', help='Focus areas (e.g., page_numbers regions)')
     analyze_parser.set_defaults(func=cmd_analyze)
 
+    # shelf regenerate-reports
+    regen_parser = subparsers.add_parser('regenerate-reports', help='Regenerate report.csv from checkpoint data (no LLM calls)')
+    regen_parser.add_argument('--scan-id', help='Book scan ID (omit to regenerate all books)')
+    regen_parser.add_argument('--stage', choices=['ocr', 'corrected', 'labels'], help='Stage to regenerate (omit for all stages)')
+    regen_parser.set_defaults(func=cmd_regenerate_reports)
+
     # shelf stats
     stats_parser = subparsers.add_parser('stats', help='Library statistics')
     stats_parser.set_defaults(func=cmd_library_stats)
@@ -685,8 +770,8 @@ Examples:
     process_parser.add_argument('--model', help='Vision model (for correction/label stages)')
     process_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
     process_parser.add_argument('--clean', action='store_true', help='Clean stages before processing (start fresh)')
-    process_parser.add_argument('--no-auto-analyze', action='store_false', dest='auto_analyze', help='Disable automatic stage analysis (enabled by default)')
-    process_parser.set_defaults(func=cmd_process, auto_analyze=True)
+    process_parser.add_argument('--auto-analyze', action='store_true', dest='auto_analyze', help='Enable automatic stage analysis (disabled by default)')
+    process_parser.set_defaults(func=cmd_process, auto_analyze=False)
 
     # ===== Clean Command =====
 
