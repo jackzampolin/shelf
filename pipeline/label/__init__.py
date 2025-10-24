@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
@@ -25,7 +25,7 @@ from infra.config import Config
 
 # Import from local modules
 from pipeline.label.prompts import SYSTEM_PROMPT, build_user_prompt
-from pipeline.label.schemas import LabelPageOutput, LabelPageMetrics, LabelPageReport
+from pipeline.label.schemas import LabelPageOutput, LabelPageMetrics, LabelPageReport, BlockType
 from pipeline.ocr.schemas import OCRPageOutput
 
 
@@ -331,6 +331,19 @@ class LabelStage(BaseStage):
                         # Validate with schema
                         validated = LabelPageOutput(**label_data)
 
+                        # Extract chapter/section heading info for build-structure stage
+                        # Note: We can't get text here because merged stage runs AFTER labels
+                        # Build-structure will load merged pages to get actual chapter text
+                        has_chapter_heading = False
+                        has_section_heading = False
+                        chapter_heading_text = None  # Not available until merged stage
+
+                        for block_class in validated.blocks:
+                            if block_class.classification == BlockType.CHAPTER_HEADING:
+                                has_chapter_heading = True
+                            elif block_class.classification == BlockType.SECTION_HEADING:
+                                has_section_heading = True
+
                         # Validate metrics against schema
                         from pipeline.label.schemas import LabelPageMetrics
                         metrics = LabelPageMetrics(
@@ -355,7 +368,11 @@ class LabelStage(BaseStage):
                             # Book structure fields (for report)
                             printed_page_number=label_data.get('printed_page_number'),
                             numbering_style=label_data.get('numbering_style'),
-                            page_region=label_data.get('page_region')
+                            page_region=label_data.get('page_region'),
+                            # Chapter/section structure (for build-structure stage)
+                            has_chapter_heading=has_chapter_heading,
+                            has_section_heading=has_section_heading,
+                            chapter_heading_text=chapter_heading_text,
                         )
 
                         # Save page output with validated metrics (save_page will call checkpoint.mark_completed)
@@ -406,10 +423,87 @@ class LabelStage(BaseStage):
             'total_cost_usd': total_cost
         }
 
+    def generate_report(self, storage: BookStorage, logger: Optional[PipelineLogger] = None) -> Optional[Path]:
+        """Generate report from labels page files (source of truth)."""
+        import csv
+
+        stage_storage = storage.stage(self.name)
+        page_files = sorted(stage_storage.list_output_pages())
+
+        if not page_files:
+            if logger:
+                logger.info("No pages to report")
+            return None
+
+        # Extract report data from each page file
+        report_rows = []
+        for page_file in page_files:
+            page_num = int(page_file.stem.split('_')[1])
+
+            try:
+                # Load page data (returns dict, validated against schema)
+                page_dict = stage_storage.load_page(page_num, schema=LabelPageOutput)
+
+                # Extract chapter/section heading info
+                blocks = page_dict.get('blocks', [])
+                has_chapter_heading = any(
+                    b.get('classification') == 'CHAPTER_HEADING'
+                    for b in blocks
+                )
+                has_section_heading = any(
+                    b.get('classification') == 'SECTION_HEADING'
+                    for b in blocks
+                )
+
+                # Build report row (matching LabelPageReport schema)
+                report_row = LabelPageReport(
+                    page_num=page_num,
+                    printed_page_number=page_dict.get('printed_page_number'),
+                    numbering_style=page_dict.get('numbering_style'),
+                    page_region=page_dict.get('page_region'),
+                    page_number_extracted=page_dict.get('printed_page_number') is not None,
+                    page_region_classified=page_dict.get('page_region') is not None,
+                    total_blocks_classified=page_dict.get('total_blocks', 0),
+                    avg_classification_confidence=page_dict.get('avg_classification_confidence', 0.0),
+                    has_chapter_heading=has_chapter_heading,
+                    has_section_heading=has_section_heading,
+                    chapter_heading_text=None,  # Not available in labels stage
+                )
+
+                report_rows.append(report_row.model_dump())
+
+            except Exception as e:
+                if logger:
+                    logger.error(f"Failed to process page {page_num} for report", error=str(e))
+                continue
+
+        if not report_rows:
+            return None
+
+        # Write CSV
+        report_path = stage_storage.output_dir / "report.csv"
+
+        try:
+            with open(report_path, 'w', newline='') as f:
+                fieldnames = list(report_rows[0].keys())
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(report_rows)
+
+            if logger:
+                logger.info(f"Generated report: {report_path}")
+
+            return report_path
+
+        except Exception as e:
+            if logger:
+                logger.error(f"Failed to write report: {e}")
+            return None
+
     def after(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger, stats: Dict[str, Any]):
-        """Generate label quality report from checkpoint metrics."""
-        # Generate quality-focused CSV report from checkpoint metrics
-        super().after(storage, checkpoint, logger, stats)
+        """Generate label quality report from page files."""
+        # Generate report from page files (source of truth)
+        self.generate_report(storage, logger)
 
         # Auto-run analysis if enabled
         if self.auto_analyze:
