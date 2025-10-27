@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Shelf Viewer - Home{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="intro-card">
+        <h2>Welcome to Shelf Viewer</h2>
+        <p>A unified debugging interface for the book processing pipeline. Select a tool below to explore your scanned books.</p>
+    </div>
+
+    <div class="tools-grid">
+        <div class="tool-card">
+            <h3>📖 ToC Viewer</h3>
+            <p>View parsed table of contents side-by-side with page images. Debug ToC extraction quality and confidence.</p>
+            <a href="/toc">Open ToC Viewer →</a>
+        </div>
+
+        <div class="tool-card">
+            <h3>✏️ Correction Viewer</h3>
+            <p>Compare OCR output with corrections. See page images, raw OCR blocks, and corrected text side-by-side.</p>
+            <a href="/corrections">Open Corrections →</a>
+        </div>
+
+        <div class="tool-card">
+            <h3>🏷️ Label Viewer</h3>
+            <p>View page labels with visual overlays. See regions, block types, and page numbers highlighted on images.</p>
+            <a href="/labels">Open Labels →</a>
+        </div>
+
+        <div class="tool-card">
+            <h3>📊 Stats Viewer</h3>
+            <p>View book-level statistics from labels stage. Analyze page regions, block types, and confidence scores.</p>
+            <a href="/stats">Open Stats →</a>
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-box">
+            <div class="number">{{ stats.total_books }}</div>
+            <div class="label">Total Books</div>
+        </div>
+        <div class="stat-box">
+            <div class="number">{{ stats.books_with_toc }}</div>
+            <div class="label">With ToC</div>
+        </div>
+        <div class="stat-box">
+            <div class="number">{{ stats.books_with_corrections }}</div>
+            <div class="label">With Corrections</div>
+        </div>
+        <div class="stat-box">
+            <div class="number">{{ stats.books_with_labels }}</div>
+            <div class="label">With Labels</div>
+        </div>
+    </div>
+</div>
+{% endblock %}

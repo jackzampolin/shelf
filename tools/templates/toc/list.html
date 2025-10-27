@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}ToC Viewer - Books{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>📖 ToC Viewer - Books</h2>
+    {% if books %}
+    <ul class="book-list">
+        {% for book in books %}
+        <li class="book-item">
+            <a href="/toc/{{ book.scan_id }}">{{ book.scan_id }}</a>
+            <div class="book-meta">
+                {{ book.entry_count }} ToC entries |
+                Pages {{ book.page_range.start_page }}-{{ book.page_range.end_page }}
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state">
+        <h3>No books with ToC data found</h3>
+        <p>Run the build-structure stage on some books first.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

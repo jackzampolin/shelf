@@ -1,0 +1,45 @@
+<div class="three-panel">
+    <!-- Image Panel -->
+    <div class="image-panel">
+        <h3 style="margin-bottom: 15px;">Page Image</h3>
+        <img src="/image/{{ scan_id }}/{{ current_page }}" alt="Page {{ current_page }}" style="width: 100%; border: 1px solid #bdc3c7; border-radius: 4px;">
+    </div>
+
+    <!-- OCR Text Panel -->
+    <div class="text-panel">
+        <h3 style="margin-bottom: 15px;">OCR Output</h3>
+        {% if ocr_data %}
+            {% for block in ocr_data.blocks %}
+            <div class="block">
+                <div class="block-header">Block {{ loop.index }} | Confidence: {{ "%.2f"|format(block.confidence) }}</div>
+                <div class="block-text">
+                    {% for para in block.paragraphs %}
+                    <p>{{ para.text }}</p>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="no-data">No OCR data available</div>
+        {% endif %}
+    </div>
+
+    <!-- Corrections Panel -->
+    <div class="text-panel">
+        <h3 style="margin-bottom: 15px;">Corrections</h3>
+        {% if correction_data %}
+            {% for block in correction_data.blocks %}
+            <div class="block">
+                <div class="block-header">Block {{ loop.index }}</div>
+                <div class="block-text">
+                    {% for para in block.paragraphs %}
+                    <p>{{ para.text }}</p>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="no-data">No correction data available</div>
+        {% endif %}
+    </div>
+</div>

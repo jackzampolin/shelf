@@ -1,10 +1,11 @@
 """
 Table of Contents extraction from merged pages.
 
-Extracts the book's declared structure from ToC pages, providing top-down
-structure information that complements the ground-up signals from labels stage.
+Extracts the book's declared structure from ToC pages using a two-pass approach:
+1. Initial parse: Text + images for hierarchy detection
+2. Refinement: Images + error guidance to fix common issues
 
-Cost: ~$0.05-0.10 per book (initial parse + refinement)
+Cost: ~$0.10-0.15 per book (search + initial parse + refinement)
 Time: ~10-30 seconds
 """
 
@@ -260,6 +261,9 @@ def parse_toc(
 
     logger.info("Extracted ToC text", chars=len(toc_text))
 
+    # Load ToC images for vision-based parsing (first pass with text + images)
+    toc_images = load_toc_images(storage, toc_range)
+
     messages = [
         {"role": "system", "content": TOC_PARSING_PROMPT},
         {"role": "user", "content": f"Table of Contents Text:\n\n{toc_text}"},
@@ -275,12 +279,13 @@ def parse_toc(
         }
     }
 
-    # Create LLM request
+    # Create LLM request (with images for visual hierarchy detection)
     toc_pages = toc_range.end_page - toc_range.start_page + 1
     request = LLMRequest(
         id="parse_toc",
         model=model,
         messages=messages,
+        images=toc_images,  # Vision input for first pass
         temperature=0.0,
         max_tokens=4000,
         response_format=response_format
@@ -295,8 +300,8 @@ def parse_toc(
         log_dir=log_dir
     )
 
-    logger.info("Calling LLM for ToC parsing", model=model, toc_pages=toc_pages)
-    print(f"   ⏳ Parsing ToC with LLM...")
+    logger.info("Calling LLM for ToC parsing (text + images)", model=model, toc_pages=toc_pages)
+    print(f"   ⏳ Initial parse (text + images)...")
 
     results = batch_client.process_batch([request])
 
@@ -305,16 +310,13 @@ def parse_toc(
     if not result.success:
         raise ValueError(f"LLM call failed: {result.error_message}")
 
-    # Parse response as TableOfContents (initial parse)
+    # Parse response as TableOfContents (initial parse with text + images)
     initial_toc = TableOfContents(**result.parsed_json)
     parsing_cost = result.cost_usd
 
     print(f"   ✓ Initial parse: {len(initial_toc.entries)} entries ({initial_toc.total_chapters} chapters, {initial_toc.total_sections} sections)")
 
-    # Load ToC images for refinement
-    toc_images = load_toc_images(storage, toc_range)
-
-    # Refine parse with vision verification
+    # Refine parse with vision verification (images already loaded)
     toc, refinement_cost = refine_toc_parse(
         initial_toc=initial_toc,
         toc_images=toc_images,

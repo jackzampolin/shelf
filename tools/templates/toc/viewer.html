@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}ToC Viewer - {{ scan_id }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>{{ scan_id }}</h2>
+    <div class="metadata">
+        <span><strong>ToC Pages:</strong> {{ toc_data.toc_page_range.start_page }}-{{ toc_data.toc_page_range.end_page }}</span>
+        <span><strong>Entries:</strong> {{ toc_data.entries|length }}</span>
+        <span><strong>Chapters:</strong> {{ toc_data.total_chapters }}</span>
+        <span><strong>Sections:</strong> {{ toc_data.total_sections }}</span>
+        <span><strong>Confidence:</strong> {{ "%.2f"|format(toc_data.parsing_confidence) }}</span>
+    </div>
+</div>
+
+<div class="two-panel">
+    <div class="image-panel">
+        <h3 style="margin-bottom: 20px;">ToC Page Images</h3>
+        {% for page_num in page_numbers %}
+        <div class="page-image">
+            <h3>Page {{ page_num }}</h3>
+            <img src="/image/{{ scan_id }}/{{ page_num }}" alt="Page {{ page_num }}">
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="text-panel">
+        <h3 style="margin-bottom: 20px;">Parsed ToC Entries</h3>
+        {% for entry in toc_data.entries %}
+        <div class="toc-entry level-{{ entry.level }}">
+            <div class="toc-title">{{ entry.title }}</div>
+            <div class="toc-details">
+                {% if entry.chapter_number %}Chapter {{ entry.chapter_number }} | {% endif %}
+                {% if entry.printed_page_number %}Printed Page: {{ entry.printed_page_number }}{% else %}Page: N/A{% endif %} |
+                Level {{ entry.level }}
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if toc_data.notes %}
+        <div class="notes">
+            <h4>⚠️ Parsing Notes</h4>
+            <ul>
+                {% for note in toc_data.notes %}
+                <li>{{ note }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

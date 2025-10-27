@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Stats Viewer - {{ scan_id }}{% endblock %}
+
+{% block content %}
+<div class="container-wide">
+    <div class="card">
+        <h2>{{ scan_id }} - Label Statistics</h2>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-box">
+            <div class="number">{{ stats.total_pages }}</div>
+            <div class="label">Total Pages</div>
+        </div>
+
+        <div class="stat-box">
+            <div class="number">{{ stats.total_blocks }}</div>
+            <div class="label">Total Blocks</div>
+        </div>
+
+        <div class="stat-box">
+            <div class="number">{{ "%.2f"|format(stats.avg_confidence) }}</div>
+            <div class="label">Avg Confidence</div>
+        </div>
+
+        <div class="stat-box">
+            <div class="number">{{ stats.chapter_headings }}</div>
+            <div class="label">Chapter Headings</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Page Regions</h3>
+        <div style="margin-top: 15px;">
+            {% for region, count in stats.region_breakdown.items() %}
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; margin-bottom: 8px; background: #ecf0f1; border-radius: 4px;">
+                <span style="font-weight: 500; color: #2c3e50;">{{ region }}</span>
+                <div style="display: flex; align-items: center;">
+                    <span style="font-weight: 600; color: #3498db; margin-right: 10px;">{{ count }}</span>
+                    <div style="height: 8px; background: #3498db; border-radius: 4px; min-width: 20px; width: {{ (count / stats.total_pages * 200)|int }}px;"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Block Types</h3>
+        <div style="margin-top: 15px;">
+            {% for block_type, count in stats.block_type_breakdown.items() %}
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; margin-bottom: 8px; background: #ecf0f1; border-radius: 4px;">
+                <span style="font-weight: 500; color: #2c3e50;">{{ block_type }}</span>
+                <div style="display: flex; align-items: center;">
+                    <span style="font-weight: 600; color: #3498db; margin-right: 10px;">{{ count }}</span>
+                    <div style="height: 8px; background: #3498db; border-radius: 4px; min-width: 20px; width: {{ (count / stats.total_blocks * 200)|int }}px;"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Sample Pages (First 50)</h3>
+        <div style="overflow-x: auto; margin-top: 15px;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: #2c3e50; color: white;">
+                        <th style="padding: 12px; text-align: left; font-size: 0.85em; text-transform: uppercase;">Page</th>
+                        <th style="padding: 12px; text-align: left; font-size: 0.85em; text-transform: uppercase;">Printed Page</th>
+                        <th style="padding: 12px; text-align: left; font-size: 0.85em; text-transform: uppercase;">Region</th>
+                        <th style="padding: 12px; text-align: left; font-size: 0.85em; text-transform: uppercase;">Blocks</th>
+                        <th style="padding: 12px; text-align: left; font-size: 0.85em; text-transform: uppercase;">Chapter Heading</th>
+                        <th style="padding: 12px; text-align: left; font-size: 0.85em; text-transform: uppercase;">Avg Confidence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in stats.sample_pages %}
+                    <tr style="border-bottom: 1px solid #ecf0f1;">
+                        <td style="padding: 12px; font-size: 0.9em; color: #2c3e50;">{{ row.page_num }}</td>
+                        <td style="padding: 12px; font-size: 0.9em; color: #2c3e50;">{{ row.printed_page_number or "N/A" }}</td>
+                        <td style="padding: 12px; font-size: 0.9em; color: #2c3e50;">{{ row.page_region }}</td>
+                        <td style="padding: 12px; font-size: 0.9em; color: #2c3e50;">{{ row.block_count }}</td>
+                        <td style="padding: 12px; font-size: 0.9em; color: #2c3e50;">{{ "Yes" if row.has_chapter_heading else "No" }}</td>
+                        <td style="padding: 12px; font-size: 0.9em; color: #2c3e50;">{{ "%.2f"|format(row.avg_confidence) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

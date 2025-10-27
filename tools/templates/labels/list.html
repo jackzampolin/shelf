@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Label Viewer - Books{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>🏷️ Label Viewer - Books</h2>
+    {% if books %}
+    <ul class="book-list">
+        {% for book in books %}
+        <li class="book-item">
+            <a href="/labels/{{ book.scan_id }}">{{ book.scan_id }}</a>
+            <div class="book-meta">{{ book.page_count }} pages</div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state">
+        <h3>No books with labels found</h3>
+        <p>Run the labels stage on some books first.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

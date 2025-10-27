@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Label Viewer - {{ scan_id }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>{{ scan_id }}</h2>
+    <div class="page-selector">
+        <label for="page-select">Page:</label>
+        <select id="page-select" onchange="window.location.href='/labels/{{ scan_id }}/' + this.value">
+            {% for p in all_pages %}
+            <option value="{{ p }}" {% if p == current_page %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+        </select>
+        {% if current_page > 1 %}
+        <button onclick="window.location.href='/labels/{{ scan_id }}/{{ current_page - 1 }}'">← Previous</button>
+        {% else %}
+        <button disabled>← Previous</button>
+        {% endif %}
+        {% if current_page < all_pages|length %}
+        <button onclick="window.location.href='/labels/{{ scan_id }}/{{ current_page + 1 }}'">Next →</button>
+        {% else %}
+        <button disabled>Next →</button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="two-panel">
+    <!-- Image Panel with Canvas Overlay -->
+    <div class="image-panel">
+        <h3 style="margin-bottom: 15px;">Page Image with Label Overlays</h3>
+        <div class="image-wrapper">
+            <img id="page-image"
+                 src="/image/{{ scan_id }}/{{ current_page }}"
+                 alt="Page {{ current_page }}"
+                 data-width="{{ image_width }}"
+                 data-height="{{ image_height }}">
+            <canvas id="bbox-canvas"></canvas>
+        </div>
+    </div>
+
+    <!-- Metadata Sidebar -->
+    <div class="text-panel">
+        <h3 style="margin-bottom: 15px;">Page Labels</h3>
+
+        {% if label_data %}
+        <div class="metadata-item">
+            <div class="label">Page Number</div>
+            <div class="value">{{ label_data.page_num }}</div>
+        </div>
+
+        <div class="metadata-item">
+            <div class="label">Printed Page Number</div>
+            <div class="value">{{ label_data.printed_page_number or "N/A" }}</div>
+        </div>
+
+        <div class="metadata-item">
+            <div class="label">Page Region</div>
+            <div class="value">{{ label_data.page_region }}</div>
+        </div>
+
+        <div class="metadata-item">
+            <div class="label">Has Chapter Heading</div>
+            <div class="value">{{ "Yes" if label_data.has_chapter_heading else "No" }}</div>
+        </div>
+
+        <div class="block-list">
+            <h4>Blocks ({{ label_data.blocks|length }})</h4>
+            {% for block in label_data.blocks %}
+            <div class="block-item">
+                <div class="block-type">{{ block.block_type }}</div>
+                <div class="block-details">
+                    Confidence: {{ "%.2f"|format(block.confidence) }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="legend">
+            <h4>Legend</h4>
+            <div class="legend-item">
+                <div class="legend-color" style="background: rgba(231, 76, 60, 0.3);"></div>
+                <div class="legend-label">Chapter Heading</div>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: rgba(230, 126, 34, 0.3);"></div>
+                <div class="legend-label">Section Heading</div>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: rgba(52, 152, 219, 0.3);"></div>
+                <div class="legend-label">Body Text</div>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: rgba(149, 165, 166, 0.3);"></div>
+                <div class="legend-label">Header/Footer</div>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: rgba(142, 68, 173, 0.3);"></div>
+                <div class="legend-label">Page Number</div>
+            </div>
+        </div>
+        {% else %}
+        <div class="no-data">No label data available</div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Inject data from server for canvas drawing
+window.labelData = {{ label_data | tojson | safe }};
+window.ocrData = {{ ocr_data | tojson | safe }};
+</script>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/labels.js') }}"></script>
+{% endblock %}
