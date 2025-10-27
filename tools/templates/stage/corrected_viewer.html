@@ -75,8 +75,8 @@
                     {% for block in ocr_data.blocks %}
                     <div class="text-block">
                         <div class="block-header">Block {{ loop.index }}</div>
+                        {% set block_idx = loop.index0 %}
                         {% for para in block.paragraphs %}
-                        {% set block_idx = loop.parent.index0 %}
                         {% set para_idx = loop.index0 %}
                         {% set corrected_text = para.text %}
                         {% if stage_data and stage_data.blocks and stage_data.blocks[block_idx] and stage_data.blocks[block_idx].paragraphs[para_idx] and stage_data.blocks[block_idx].paragraphs[para_idx].text %}
