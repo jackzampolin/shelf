@@ -82,6 +82,23 @@ class TocFinderTools:
             {
                 "type": "function",
                 "function": {
+                    "name": "get_page_labels",
+                    "description": "Get label stage data for a page (block classifications, page region, confidence). Free, no vision cost. Use to inspect what labels detected before vision checking.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "page_num": {
+                                "type": "integer",
+                                "description": "Page number to inspect"
+                            }
+                        },
+                        "required": ["page_num"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "get_front_matter_range",
                     "description": "Get front matter page range to constrain search",
                     "parameters": {
@@ -276,6 +293,35 @@ class TocFinderTools:
             return json.dumps({
                 "found": False,
                 "reason": "No ToC detected in labels (checked page_region and block classifications)"
+            })
+
+    def get_page_labels(self, page_num: int) -> str:
+        """Get label stage classifications for a page."""
+        try:
+            labels_stage = self.storage.stage('labels')
+            label_data = labels_stage.load_page(page_num)
+
+            blocks = label_data.get('blocks', [])
+            toc_blocks = [b for b in blocks if b.get('classification') == 'TABLE_OF_CONTENTS']
+            body_blocks = [b for b in blocks if b.get('classification') == 'BODY']
+            chapter_blocks = [b for b in blocks if b.get('classification') == 'CHAPTER_HEADING']
+
+            return json.dumps({
+                'page_num': page_num,
+                'page_region': label_data.get('page_region'),
+                'page_region_confidence': label_data.get('page_region_confidence'),
+                'total_blocks': len(blocks),
+                'toc_blocks': len(toc_blocks),
+                'body_blocks': len(body_blocks),
+                'chapter_blocks': len(chapter_blocks),
+                'block_classifications': [b.get('classification') for b in blocks],
+                'avg_classification_confidence': label_data.get('avg_classification_confidence'),
+                'printed_page_number': label_data.get('printed_page_number'),
+                'numbering_style': label_data.get('numbering_style')
+            })
+        except Exception as e:
+            return json.dumps({
+                'error': f"Could not load label data for page {page_num}: {str(e)}"
             })
 
     def get_front_matter_range(self) -> str:
@@ -525,6 +571,8 @@ class TocFinderTools:
         """Execute a tool by name with arguments."""
         if tool_name == "check_labels_report":
             return self.check_labels_report()
+        elif tool_name == "get_page_labels":
+            return self.get_page_labels(**arguments)
         elif tool_name == "get_front_matter_range":
             return self.get_front_matter_range()
         elif tool_name == "keyword_search_pages":
