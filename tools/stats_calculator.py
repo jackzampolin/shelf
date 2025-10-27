@@ -131,8 +131,8 @@ def calculate_corrected_stats(rows: List[Dict], total_pages: int) -> Dict[str, A
             except ValueError:
                 pass
 
-    # Sort problem pages by similarity (worst first)
-    problem_pages.sort(key=lambda x: x['similarity'])
+    # Sort problem pages by confidence (worst first)
+    problem_pages.sort(key=lambda x: x['confidence'])
 
     # Calculate similarity histogram bins
     similarity_histogram = {
