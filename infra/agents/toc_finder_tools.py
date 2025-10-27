@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from infra.storage.book_storage import BookStorage
 from infra.llm.client import LLMClient
 from infra.config import Config
+from infra.utils.pdf import downsample_for_vision
 from pipeline.build_structure.schemas import PageRange
 
 
@@ -358,6 +359,11 @@ class TocFinderTools:
                     "error": f"Page {page_num} image not found"
                 })
 
+            # Downsample image for vision API (avoid 413 Payload Too Large)
+            from PIL import Image
+            image = Image.open(page_image_path)
+            downsampled_image = downsample_for_vision(image, max_payload_kb=800)
+
             # Load merged text for context
             merged_data = self.storage.stage('merged').load_page(page_num)
             text = extract_text_from_merged(merged_data)
@@ -373,7 +379,7 @@ class TocFinderTools:
             response, usage, cost = self.llm_client.call(
                 model=Config.vision_model_expensive,
                 messages=messages,
-                images=[str(page_image_path)],
+                images=[downsampled_image],  # Pass downsampled PIL Image
                 temperature=0.0,
                 response_format={
                     "type": "json_schema",
