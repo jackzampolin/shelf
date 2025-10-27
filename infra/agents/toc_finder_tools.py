@@ -192,11 +192,14 @@ class TocFinderTools:
         # Phase 2: Scan label JSON files for TABLE_OF_CONTENTS blocks
         toc_pages_from_blocks = []
         try:
-            # Get all label pages
-            label_pages = labels_stage.list_output_pages()
+            # Get all label pages (returns Path objects)
+            label_page_paths = labels_stage.list_output_pages()
 
-            for page_num in label_pages:
+            for page_path in label_page_paths:
                 try:
+                    # Extract page number from path (page_0004.json → 4)
+                    page_num = int(page_path.stem.split('_')[1])
+
                     label_data = labels_stage.load_page(page_num)
                     blocks = label_data.get('blocks', [])
 
