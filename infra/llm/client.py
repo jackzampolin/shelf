@@ -91,6 +91,14 @@ class LLMClient:
 
         Raises:
             requests.exceptions.RequestException: On non-retryable errors
+
+        Note:
+            Reasoning models (Grok-4-fast, o1/o4) use extended reasoning by default.
+            Usage dict includes 'completion_tokens_details': {'reasoning_tokens': N}
+            To control reasoning behavior, add to payload (not yet implemented):
+                payload['reasoning'] = {"effort": "high"|"medium"|"low"}  # Grok, o-series
+                payload['reasoning'] = {"max_tokens": 2000}                # Anthropic, Gemini
+                payload['reasoning'] = {"enabled": False}                   # Disable
         """
         # Handle vision models with images
         if images:
@@ -147,6 +155,11 @@ class LLMClient:
                         # Truncate long error messages
                         if len(error_msg) > 80:
                             error_msg = error_msg[:80] + "..."
+
+                # Retry 413 errors (payload too large - may be transient capacity issue)
+                elif e.response.status_code == 413:
+                    should_retry = True
+                    error_type = "413 payload too large"
 
                 if should_retry and attempt < max_retries - 1:
                     delay = (2 ** attempt) * 2  # Exponential backoff: 2s, 4s, 8s
@@ -392,7 +405,8 @@ class LLMClient:
                        temperature: float = 0.0,
                        max_tokens: Optional[int] = None,
                        timeout: int = 120,
-                       max_retries: int = 3) -> Tuple[Optional[str], Dict, float, Optional[List[Dict]]]:
+                       max_retries: int = 3,
+                       images: Optional[List[Union[bytes, str, Path]]] = None) -> Tuple[Optional[str], Dict, float, Optional[List[Dict]], Optional[List[Dict]]]:
         """
         Make LLM API call with tool calling support.
 
@@ -405,16 +419,25 @@ class LLMClient:
             max_tokens: Maximum tokens to generate (None = no limit)
             timeout: Request timeout in seconds
             max_retries: Maximum retry attempts for server errors
+            images: Optional list of images for vision models
+                    Can be bytes, base64 strings, PIL Images, or file paths
 
         Returns:
-            Tuple of (response_text, usage_dict, cost_usd, tool_calls)
+            Tuple of (response_text, usage_dict, cost_usd, tool_calls, reasoning_details)
             - response_text: Can be None if model only calls tools
             - tool_calls: None if no tools called, otherwise list of:
               [{"id": "call_xxx", "type": "function", "function": {"name": "...", "arguments": "..."}}]
+            - reasoning_details: None if no reasoning, otherwise list of reasoning blocks:
+              [{"type": "reasoning.encrypted", "data": "...", "id": "rs_...", "format": "...", "index": 0}]
 
         Raises:
             requests.exceptions.RequestException: On non-retryable errors
         """
+        # Convert images to base64 if provided
+        processed_images = None
+        if images:
+            processed_images = self._process_images(images)
+
         # Build request payload
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -422,6 +445,10 @@ class LLMClient:
             "HTTP-Referer": self.site_url,
             "X-Title": self.site_name
         }
+
+        # If images provided, add them to the last user message
+        if processed_images:
+            messages = self._add_images_to_messages(messages.copy(), processed_images)
 
         payload = {
             "model": model,
@@ -460,6 +487,7 @@ class LLMClient:
                 message = result['choices'][0]['message']
                 content = message.get('content')  # Can be None if only tool calls
                 tool_calls = message.get('tool_calls')  # None if no tools called
+                reasoning_details = message.get('reasoning_details')  # None if no reasoning (e.g., Grok encrypted reasoning)
                 usage = result.get('usage', {})
 
                 # Calculate cost
@@ -469,7 +497,7 @@ class LLMClient:
                     usage.get('completion_tokens', 0)
                 )
 
-                return content, usage, cost, tool_calls
+                return content, usage, cost, tool_calls, reasoning_details
 
             except requests.exceptions.HTTPError as e:
                 # Same retry logic as call()
@@ -482,6 +510,9 @@ class LLMClient:
                 elif e.response.status_code == 422:
                     should_retry = True
                     error_type = "422 unprocessable entity"
+                elif e.response.status_code == 413:
+                    should_retry = True
+                    error_type = "413 payload too large"
                 elif e.response.status_code == 429:
                     should_retry = True
                     error_type = "429 rate limit"

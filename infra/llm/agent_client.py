@@ -30,7 +30,8 @@ class AgentResult:
     total_cost_usd: float
     execution_time_seconds: float
     final_messages: List[Dict]
-    tool_calls_log_path: Optional[Path] = None
+    tool_calls_log_path: Optional[Path] = None  # Deprecated: kept for backward compat
+    run_log_path: Optional[Path] = None  # New: comprehensive JSON log
     error_message: Optional[str] = None
 
 
@@ -86,7 +87,17 @@ class AgentClient:
         self.iteration_count = 0
         self.total_cost = 0.0
         self.start_time = None
-        self.tool_calls_log = []
+        self.tool_calls_log = []  # Deprecated: kept for backward compat
+
+        # Vision support: images context passed to every LLM call
+        self.images = []  # List of PIL Images or paths, accumulates across iterations
+
+        # New: Comprehensive run log (everything in one structure)
+        self.run_log = {
+            'metadata': {},
+            'initial_messages': [],
+            'iterations': []  # List of iteration objects
+        }
 
     def run(
         self,
@@ -120,6 +131,24 @@ class AgentClient:
         self.start_time = time.time()
         messages = initial_messages.copy()
 
+        # Initialize run log
+        self.run_log = {
+            'metadata': {
+                'model': model,
+                'temperature': temperature,
+                'max_tokens': max_tokens,
+                'max_iterations': self.max_iterations,
+                'start_time': datetime.now().isoformat(),
+                'end_time': None,  # Set on completion
+                'success': None,  # Set on completion
+                'total_iterations': 0,  # Set on completion
+                'total_cost_usd': 0.0,  # Updated incrementally
+                'execution_time_seconds': 0.0  # Set on completion
+            },
+            'initial_messages': initial_messages.copy(),
+            'iterations': []
+        }
+
         # Emit start event
         self._emit_event(on_event, "agent_start", 0, {
             "model": model,
@@ -130,23 +159,54 @@ class AgentClient:
             for iteration in range(1, self.max_iterations + 1):
                 self.iteration_count = iteration
 
+                # Create iteration log entry
+                iteration_log = {
+                    'iteration': iteration,
+                    'llm_request': {
+                        'model': model,
+                        'temperature': temperature,
+                        'max_tokens': max_tokens,
+                        'timestamp': datetime.now().isoformat()
+                    },
+                    'llm_response': None,  # Filled after LLM call
+                    'tool_executions': []  # Filled as tools execute
+                }
+
                 # Emit iteration start
                 self._emit_event(on_event, "iteration_start", iteration, {})
 
-                # Call LLM with tools
+                # Call LLM with tools (include images context if present)
                 try:
-                    content, usage, cost, tool_calls = llm_client.call_with_tools(
+                    content, usage, cost, tool_calls, reasoning_details = llm_client.call_with_tools(
                         model=model,
                         messages=messages,
                         tools=tools,
                         temperature=temperature,
-                        max_tokens=max_tokens
+                        max_tokens=max_tokens,
+                        images=self.images if self.images else None
                     )
 
                     self.total_cost += cost
+                    self.run_log['metadata']['total_cost_usd'] = self.total_cost
+
+                    # Log LLM response (including reasoning details)
+                    iteration_log['llm_response'] = {
+                        'content': content,  # Can be empty string or None
+                        'tool_calls': tool_calls,  # Can be None
+                        'reasoning_details': reasoning_details,  # Can be None (Grok encrypted reasoning)
+                        'usage': usage,
+                        'cost_usd': cost,
+                        'timestamp': datetime.now().isoformat()
+                    }
 
                 except Exception as e:
-                    # LLM call failed
+                    # LLM call failed - add error to iteration log
+                    iteration_log['llm_response'] = {
+                        'error': str(e),
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    self.run_log['iterations'].append(iteration_log)
+
                     return self._create_error_result(
                         messages,
                         f"LLM call failed in iteration {iteration}: {str(e)}"
@@ -198,8 +258,19 @@ class AgentClient:
 
                     tool_time = time.time() - tool_start
 
-                    # Log tool call
+                    # Log tool call (deprecated JSONL format - kept for backward compat)
                     self._log_tool_call(iteration, tool_name, arguments, result, tool_time)
+
+                    # NEW: Log to structured iteration log (FULL result, no truncation)
+                    tool_execution_log = {
+                        'tool_call_id': tool_call['id'],
+                        'tool_name': tool_name,
+                        'arguments': arguments,
+                        'result': result,  # FULL result (was truncated to 500 chars)
+                        'execution_time_seconds': tool_time,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                    iteration_log['tool_executions'].append(tool_execution_log)
 
                     # Emit tool call event
                     self._emit_event(on_event, "tool_call", iteration, {
@@ -214,6 +285,9 @@ class AgentClient:
                         "tool_call_id": tool_call['id'],
                         "content": result
                     })
+
+                # Add iteration log to run log
+                self.run_log['iterations'].append(iteration_log)
 
                 # Emit iteration complete
                 self._emit_event(on_event, "iteration_complete", iteration, {
@@ -263,7 +337,7 @@ class AgentClient:
         })
 
     def _save_tool_calls(self, run_timestamp: str) -> Optional[Path]:
-        """Save tool calls to JSONL file."""
+        """Save tool calls to JSONL file (deprecated - kept for backward compat)."""
         if not self.log_dir or not self.tool_calls_log:
             return None
 
@@ -277,6 +351,31 @@ class AgentClient:
                 f.write(json.dumps(call) + '\n')
 
         return tool_calls_path
+
+    def _save_run_log(self, run_timestamp: str, success: bool, error_message: Optional[str] = None) -> Optional[Path]:
+        """Save comprehensive run log to single JSON file."""
+        if not self.log_dir:
+            return None
+
+        # Ensure log directory exists
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Finalize metadata
+        self.run_log['metadata']['end_time'] = datetime.now().isoformat()
+        self.run_log['metadata']['success'] = success
+        self.run_log['metadata']['total_iterations'] = self.iteration_count
+        self.run_log['metadata']['execution_time_seconds'] = time.time() - self.start_time if self.start_time else 0.0
+
+        if error_message:
+            self.run_log['metadata']['error_message'] = error_message
+
+        # Save to JSON file
+        run_log_path = self.log_dir / f"run-{run_timestamp}.json"
+
+        with open(run_log_path, 'w') as f:
+            json.dump(self.run_log, f, indent=2)
+
+        return run_log_path
 
     def _emit_event(
         self,
@@ -299,7 +398,10 @@ class AgentClient:
         """Create successful AgentResult."""
         elapsed = time.time() - self.start_time
         run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_path = self._save_tool_calls(run_timestamp)
+
+        # Save both logs
+        tool_calls_log_path = self._save_tool_calls(run_timestamp)  # Deprecated
+        run_log_path = self._save_run_log(run_timestamp, success=True)  # NEW
 
         return AgentResult(
             success=True,
@@ -307,7 +409,8 @@ class AgentClient:
             total_cost_usd=self.total_cost,
             execution_time_seconds=elapsed,
             final_messages=messages,
-            tool_calls_log_path=log_path
+            tool_calls_log_path=tool_calls_log_path,  # Deprecated
+            run_log_path=run_log_path  # NEW
         )
 
     def _create_error_result(
@@ -318,7 +421,10 @@ class AgentClient:
         """Create failed AgentResult."""
         elapsed = time.time() - self.start_time if self.start_time else 0.0
         run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_path = self._save_tool_calls(run_timestamp)
+
+        # Save both logs
+        tool_calls_log_path = self._save_tool_calls(run_timestamp)  # Deprecated
+        run_log_path = self._save_run_log(run_timestamp, success=False, error_message=error_message)  # NEW
 
         return AgentResult(
             success=False,
@@ -326,6 +432,7 @@ class AgentClient:
             total_cost_usd=self.total_cost,
             execution_time_seconds=elapsed,
             final_messages=messages,
-            tool_calls_log_path=log_path,
+            tool_calls_log_path=tool_calls_log_path,  # Deprecated
+            run_log_path=run_log_path,  # NEW
             error_message=error_message
         )

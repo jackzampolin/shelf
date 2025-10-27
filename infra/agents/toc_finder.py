@@ -20,8 +20,8 @@ from infra.pipeline.logger import PipelineLogger
 from infra.config import Config
 from pipeline.build_structure.schemas import PageRange
 
-from .toc_finder_tools import TocFinderTools, TocFinderResult
-from .toc_finder_prompts import SYSTEM_PROMPT, build_user_prompt
+from .toc_finder_tools_v2 import TocFinderTools, TocFinderResult
+from .toc_finder_prompts_v2 import SYSTEM_PROMPT, build_user_prompt
 
 
 class TocFinderAgent:
@@ -60,7 +60,6 @@ class TocFinderAgent:
 
         # Initialize components
         self.llm_client = LLMClient()
-        self.tools = TocFinderTools(storage=storage)
 
         # Get book metadata
         self.metadata = storage.load_metadata()
@@ -75,6 +74,9 @@ class TocFinderAgent:
             logger=logger,
             verbose=verbose
         )
+
+        # Initialize tools (needs agent_client for image context)
+        self.tools = TocFinderTools(storage=storage, agent_client=self.agent_client)
 
     def search(self) -> TocFinderResult:
         """
@@ -169,8 +171,8 @@ class TocFinderAgent:
             print(f"      Cost: ${final_result.total_cost_usd:.4f}")
             print(f"      Time: {elapsed:.1f}s")
             print(f"      Iterations: {agent_result.iterations}")
-            if agent_result.tool_calls_log_path:
-                print(f"      Tool calls log: {agent_result.tool_calls_log_path}")
+            if agent_result.run_log_path:
+                print(f"      Agent log: {agent_result.run_log_path}")
 
         if self.logger:
             self.logger.info("ToC search complete",
@@ -179,7 +181,7 @@ class TocFinderAgent:
                            cost=f"${final_result.total_cost_usd:.4f}",
                            iterations=agent_result.iterations,
                            elapsed=f"{elapsed:.1f}s",
-                           tool_calls_log=str(agent_result.tool_calls_log_path) if agent_result.tool_calls_log_path else None)
+                           run_log=str(agent_result.run_log_path) if agent_result.run_log_path else None)
 
         return final_result
 
