@@ -63,14 +63,14 @@ class TocFinderTools:
                 "type": "function",
                 "function": {
                     "name": "add_page_images_to_context",
-                    "description": "Load page images to see them visually. REPLACES any previously loaded images (doesn't accumulate). Load 2-4 pages at a time to avoid payload limits. Images are downsampled.",
+                    "description": "Load page images to see them visually. REPLACES any previously loaded images (doesn't accumulate). Load 1-2 pages at a time to avoid payload limits. Images are downsampled.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "page_nums": {
                                 "type": "array",
                                 "items": {"type": "integer"},
-                                "description": "List of page numbers to load (e.g., [4, 5]). Limit to 2-4 pages to avoid 413 errors."
+                                "description": "List of page numbers to load (e.g., [4, 5]). IMPORTANT: Limit to 1-2 pages max to avoid 422/413 errors."
                             }
                         },
                         "required": ["page_nums"]

@@ -516,6 +516,9 @@ class LLMClient:
                     error_type = f"{e.response.status_code} gateway error"
 
                 if should_retry and attempt < max_retries - 1:
+                    import logging
+                    logger = logging.getLogger(__name__)
+
                     # For 413/422 errors, add nonce to avoid cached error responses
                     if e.response.status_code in [413, 422]:
                         import uuid
@@ -529,6 +532,7 @@ class LLMClient:
                             if isinstance(content, str):
                                 # Simple text message
                                 last_msg['content'] = f"{content}\n<!-- retry_{attempt}_id: {nonce} -->"
+                                logger.warning(f"Retry {attempt+1}/{max_retries} for {e.response.status_code} - added nonce to text content")
                             elif isinstance(content, list):
                                 # Multipart message (text + images)
                                 # Find the text part and add nonce there
@@ -540,8 +544,11 @@ class LLMClient:
                                         item_copy['text'] = f"{item_copy.get('text', '')}\n<!-- retry_{attempt}_id: {nonce} -->"
                                     content_copy.append(item_copy)
                                 last_msg['content'] = content_copy
+                                logger.warning(f"Retry {attempt+1}/{max_retries} for {e.response.status_code} - added nonce {nonce} to multipart content ({len(content)} parts, {sum(1 for c in content if c.get('type')=='image_url')} images)")
 
                             payload['messages'][-1] = last_msg
+                    else:
+                        logger.warning(f"Retry {attempt+1}/{max_retries} for {error_type}")
 
                     wait_time = (2 ** attempt) * 1.0  # Exponential backoff
                     time.sleep(wait_time)
