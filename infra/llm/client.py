@@ -433,10 +433,9 @@ class LLMClient:
         Raises:
             requests.exceptions.RequestException: On non-retryable errors
         """
-        # Convert images to base64 if provided
-        processed_images = None
+        # Handle vision models with images
         if images:
-            processed_images = self._process_images(images)
+            messages = self._add_images_to_messages(messages, images)
 
         # Build request payload
         headers = {
@@ -445,10 +444,6 @@ class LLMClient:
             "HTTP-Referer": self.site_url,
             "X-Title": self.site_name
         }
-
-        # If images provided, add them to the last user message
-        if processed_images:
-            messages = self._add_images_to_messages(messages.copy(), processed_images)
 
         payload = {
             "model": model,

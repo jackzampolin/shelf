@@ -142,7 +142,9 @@ class TocFinderAgent:
         if agent_result.success and self.tools._pending_result:
             final_result = self.tools._pending_result
             # Update costs (include vision costs from tools)
-            final_result.total_cost_usd = agent_result.total_cost_usd + self.tools.total_vision_cost
+            # Populate cost and pages checked from agent execution
+            final_result.total_cost_usd = agent_result.total_cost_usd
+            final_result.pages_checked = len(self.agent_client.images)  # Number of images loaded
         else:
             # Agent failed or max iterations
             final_result = TocFinderResult(
@@ -150,8 +152,8 @@ class TocFinderAgent:
                 toc_page_range=None,
                 confidence=0.0,
                 search_strategy_used="agent_error" if not agent_result.success else "max_iterations",
-                pages_checked=self.tools.pages_checked_with_vision,
-                total_cost_usd=agent_result.total_cost_usd + self.tools.total_vision_cost,
+                pages_checked=len(self.agent_client.images),  # Number of images loaded
+                total_cost_usd=agent_result.total_cost_usd,
                 reasoning=agent_result.error_message or "Search incomplete"
             )
 
@@ -160,7 +162,7 @@ class TocFinderAgent:
 
         if self.verbose:
             if final_result.toc_found:
-                range_str = f"{final_result.toc_page_range['start_page']}-{final_result.toc_page_range['end_page']}"
+                range_str = f"{final_result.toc_page_range.start_page}-{final_result.toc_page_range.end_page}"
                 print(f"\n   ✅ ToC found: pages {range_str}")
                 print(f"      Strategy: {final_result.search_strategy_used}")
                 print(f"      Confidence: {final_result.confidence:.2f}")

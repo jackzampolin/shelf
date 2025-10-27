@@ -24,6 +24,8 @@ class TocFinderResult(BaseModel):
     toc_page_range: Optional[PageRange] = None
     confidence: float = Field(ge=0.0, le=1.0)
     search_strategy_used: str
+    pages_checked: int = 0  # Number of pages examined (populated by agent)
+    total_cost_usd: float = 0.0  # Total cost (populated by agent)
     reasoning: str
 
 
