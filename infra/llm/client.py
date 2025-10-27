@@ -516,8 +516,8 @@ class LLMClient:
                     error_type = f"{e.response.status_code} gateway error"
 
                 if should_retry and attempt < max_retries - 1:
-                    # For 413 errors, add nonce to avoid cached error responses
-                    if e.response.status_code == 413:
+                    # For 413/422 errors, add nonce to avoid cached error responses
+                    if e.response.status_code in [413, 422]:
                         import uuid
                         # Add nonce to last message to force new request
                         if payload['messages']:
