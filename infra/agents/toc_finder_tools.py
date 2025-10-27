@@ -121,7 +121,7 @@ class TocFinderTools:
                 "type": "function",
                 "function": {
                     "name": "vision_check_page",
-                    "description": "Use vision model to check if page is ToC (costs ~$0.01)",
+                    "description": "Use vision model to check if page is ToC (costs ~$0.0005). PREFERRED: Use this for careful one-page-at-a-time checking. Examines BOTH image AND OCR text.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -155,7 +155,7 @@ class TocFinderTools:
                 "type": "function",
                 "function": {
                     "name": "sample_pages_vision",
-                    "description": "Check multiple pages with vision (batch operation, costs ~$0.01 per page)",
+                    "description": "DEPRECATED: Check multiple pages in batch. NOT RECOMMENDED - misses non-standard ToC titles and graphical headings. Use vision_check_page() instead for careful one-at-a-time checking.",
                     "parameters": {
                         "type": "object",
                         "properties": {

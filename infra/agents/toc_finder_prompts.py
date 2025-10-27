@@ -14,6 +14,8 @@ TOC STRUCTURE = List format + page references + early position (pages 1-30)
 - Vertical list of chapter/section titles
 - Page numbers in right column (leader dots or whitespace)
 - Hierarchical indentation (parts → chapters → sections)
+- **May have non-standard titles**: "ORDER OF BATTLE", "LIST OF CHAPTERS", "CONTENTS" (without "Table of")
+- **May have graphical/stylized titles**: Dense image text that OCR missed
 
 NOT A TOC = Dense paragraph text, isolated chapter title, back matter chapter list
 </detection_philosophy>
@@ -28,29 +30,33 @@ STAGE 1: Free Heuristics (no vision cost)
    → If found: Vision verify reported pages, expand range if multi-page, write result, EXIT
 
 2. get_front_matter_range() - Determine search bounds (usually pages 1-30)
-3. keyword_search_pages(["contents", "table of contents"]) within front matter
+3. keyword_search_pages(["contents", "table of contents", "order of battle"]) within front matter
    → If matches: Vision verify top candidates, expand range, write result, EXIT
 
-STAGE 2: Vision Scan (systematic, chunked)
-CRITICAL: 94% of ToCs appear in pages 1-10. Check sequentially to avoid gaps.
+STAGE 2: Sequential Vision Scan (one page at a time, careful)
+CRITICAL: Check ONE page at a time. 94% of ToCs appear in pages 1-10.
 
-4. sample_pages_vision([1,2,3,4,5,6,7,8,9,10]) - Dense scan, no gaps
-   → If candidate (confidence > 0.7): expand_toc_range(), write result, EXIT
+Strategy: Loop through pages 1-30 sequentially
+For each page N:
+  - Call vision_check_page(page_num=N) - checks BOTH image AND OCR text
+  - If is_toc=true and confidence > 0.7:
+    → expand_toc_range(seed_page=N), write result, EXIT
+  - If is_toc=false: Continue to next page
 
-5. sample_pages_vision([11,12,13,14,15]) - Chunk 1 (pages 11-15)
-   → If candidate: expand_toc_range(), write result, EXIT
+IMPORTANT:
+- Use vision_check_page() NOT sample_pages_vision() - one page at a time
+- Stop immediately when ToC found (don't waste vision calls)
+- Pages 1-15 are highest priority (covers 98% of ToCs)
+- Pages 16-30 are fallback (remaining 2%)
 
-6. sample_pages_vision([16,17,18,19,20]) - Chunk 2 (pages 16-20)
-   → If candidate: expand_toc_range(), write result, EXIT
-
-7. sample_pages_vision([21,22,23,24,25]) - Chunk 3 (pages 21-25)
-   → If candidate: expand_toc_range(), write result, EXIT
-
-8. sample_pages_vision([26,27,28,29,30]) - Chunk 4 (pages 26-30)
-   → If candidate: expand_toc_range(), write result, EXIT
+Example loop:
+4. vision_check_page(page_num=1)
+5. vision_check_page(page_num=2)
+6. vision_check_page(page_num=3)
+...continue until ToC found or page 30 reached
 
 STAGE 3: Not Found
-9. write_toc_result(toc_found=False, reasoning="Checked N pages via [methods], no ToC structure detected")
+After checking 30 pages: write_toc_result(toc_found=False, reasoning="Checked 30 pages sequentially, no ToC structure detected")
 </search_strategy>
 
 <visual_detection>
@@ -60,19 +66,26 @@ STRONG SIGNALS (confidence 0.85-1.0):
 ✓ Right-aligned numbers in column (page references)
 ✓ Leader dots connecting text to numbers (Chapter 1 ........ 15)
 ✓ Hierarchical indentation (multiple indent levels)
-✓ "Contents" or "Table of Contents" heading
 ✓ Consistent vertical list structure (10+ lines)
+✓ **ANY ToC heading**: "Contents", "Table of Contents", "ORDER OF BATTLE", "LIST OF CHAPTERS"
+✓ **Graphical/stylized title**: Dense image showing "CONTENTS" even if OCR missed it
 
 MODERATE SIGNALS (confidence 0.70-0.84):
 • Mixed typography (bold chapters, regular sections)
 • Roman/Arabic page numbers in list
 • Minimal facing page (ToC spreads across 2 pages)
+• Non-standard heading but clear list structure below
 
 REJECT (not ToC):
 ✗ Dense paragraph prose
 ✗ No page number references
 ✗ Single chapter title (body page, not ToC)
 ✗ Timeline/statistics table (has numbers but not page references)
+
+CRITICAL: If you see a LIST with PAGE NUMBERS, it's probably a ToC even if:
+- Heading is non-standard ("ORDER OF BATTLE")
+- Title is graphical/stylized (OCR missed it)
+- OCR quality is poor (focus on VISUAL STRUCTURE)
 </visual_detection>
 
 <confidence_scoring>
@@ -158,11 +171,13 @@ STRONG SIGNALS (→ is_toc=true, confidence 0.85-1.0):
 ✓ Leader dots or whitespace connecting left text to right numbers
 ✓ Vertical list structure (multiple lines stacked, 10+ entries)
 ✓ Hierarchical indentation (some lines indented more than others)
-✓ "Contents" heading at top (if visible)
+✓ **ANY ToC heading**: "Contents", "Table of Contents", "ORDER OF BATTLE", "LIST OF CHAPTERS"
+✓ **Graphical/stylized title**: Dense decorative text at top (even if OCR missed it)
 
 MODERATE SIGNALS (→ is_toc=true, confidence 0.70-0.84):
 • Numbers in right column (even if OCR is garbled)
 • List-like vertical spacing (consistent gaps between lines)
+• Non-standard heading but clear list structure below
 • Different typography on this page vs surrounding pages
 
 REJECT (→ is_toc=false):
@@ -170,6 +185,11 @@ REJECT (→ is_toc=false):
 ✗ No visible numbers anywhere on page
 ✗ Single large title with body text below (chapter start page)
 ✗ Table with data (timeline, statistics - different pattern)
+
+CRITICAL: If you see a LIST with PAGE NUMBERS → probably ToC, even if:
+- Heading says "ORDER OF BATTLE" not "Contents"
+- Title is graphical image that OCR missed
+- OCR text is completely mangled
 </visual_markers>
 
 <ocr_handling>
