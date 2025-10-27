@@ -68,16 +68,16 @@
             <h4>Blocks ({{ label_data.blocks|length }})</h4>
             {% for block in label_data.blocks %}
             <div class="block-item">
-                <div class="block-type">{{ block.block_type }}</div>
+                <div class="block-type">{{ block.classification }}</div>
                 <div class="block-details">
-                    Confidence: {{ "%.2f"|format(block.confidence) }}
+                    Confidence: {{ "%.2f"|format(block.classification_confidence) }}
                 </div>
             </div>
             {% endfor %}
         </div>
 
         <div class="legend">
-            <h4>Legend</h4>
+            <h4>Legend (Common Types)</h4>
             <div class="legend-item">
                 <div class="legend-color" style="background: rgba(231, 76, 60, 0.3);"></div>
                 <div class="legend-label">Chapter Heading</div>
@@ -97,6 +97,10 @@
             <div class="legend-item">
                 <div class="legend-color" style="background: rgba(142, 68, 173, 0.3);"></div>
                 <div class="legend-label">Page Number</div>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: rgba(241, 196, 15, 0.3);"></div>
+                <div class="legend-label">Footnote/Endnotes</div>
             </div>
         </div>
         {% else %}

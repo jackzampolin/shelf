@@ -43,7 +43,7 @@ def find_all_books() -> List[Dict[str, Any]]:
             "scan_id": book_dir.name,
             "has_source": (book_dir / "source").exists(),
             "has_ocr": (book_dir / "ocr").exists(),
-            "has_corrections": (book_dir / "corrections").exists(),
+            "has_corrections": (book_dir / "corrected").exists(),
             "has_labels": (book_dir / "labels").exists(),
             "has_merged": (book_dir / "merged").exists(),
             "has_toc": False,
@@ -195,7 +195,7 @@ def correction_list():
     for book_dir in sorted(LIBRARY_ROOT.iterdir()):
         if not book_dir.is_dir() or book_dir.name.startswith('.'):
             continue
-        corrections_dir = book_dir / "corrections"
+        corrections_dir = book_dir / "corrected"
         if corrections_dir.exists():
             page_count = len(list(corrections_dir.glob("page_*.json")))
             if page_count > 0:
@@ -228,7 +228,7 @@ def correction_view(scan_id: str, page_num: int):
         abort(404, f"Page {page_num} not found")
 
     ocr_data = get_stage_data(scan_id, "ocr", page_num)
-    correction_data = get_stage_data(scan_id, "corrections", page_num)
+    correction_data = get_stage_data(scan_id, "corrected", page_num)
 
     return render_template(
         'corrections/viewer.html',
@@ -252,7 +252,7 @@ def correction_page_api(scan_id: str):
         abort(404, f"Page {page_num} not found")
 
     ocr_data = get_stage_data(scan_id, "ocr", page_num)
-    correction_data = get_stage_data(scan_id, "corrections", page_num)
+    correction_data = get_stage_data(scan_id, "corrected", page_num)
 
     return render_template(
         'corrections/_page_content.html',

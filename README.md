@@ -110,6 +110,29 @@ uv run python shelf.py sweep reports --stage-filter labels  # Just labels
 - **Smart resume** - Skips already-completed books
 - **Auto-sync** - Adding/deleting books automatically updates shuffle orders
 
+### Debugging & Review
+
+Debug and visually review pipeline outputs with the Shelf Viewer web interface:
+
+```bash
+# Start web viewer (Flask + HTMX)
+python tools/shelf_viewer.py --port 5000
+
+# Then open http://127.0.0.1:5000 in your browser
+```
+
+**Available viewers:**
+- **📖 ToC Viewer** - Review table of contents extraction with page images
+- **✏️ Corrections Viewer** - Compare OCR output vs corrected text side-by-side
+- **🏷️ Labels Viewer** - View page labels with visual bounding box overlays
+- **📊 Stats Viewer** - Aggregate label statistics and confidence metrics
+
+**Features:**
+- Side-by-side image and data comparison
+- Canvas overlays for bounding boxes with color-coded block types
+- HTMX-powered smooth navigation (no full page reloads)
+- Responsive design with proper template inheritance
+
 ---
 
 ## Current Status

@@ -376,6 +376,13 @@ All commands use `uv run python shelf.py <command>`. See `README.md` for referen
 - `shelf.py sweep labels --reshuffle` - Create new random order
 - `shelf.py sweep reports` - Regenerate reports from checkpoints
 
+**Debugging tools:**
+- `tools/shelf_viewer.py` - Web interface for visual review (Flask + HTMX)
+  - ToC Viewer: Review table of contents extraction with page images
+  - Corrections Viewer: Compare OCR vs corrected text side-by-side
+  - Labels Viewer: Page labels with visual bounding box overlays
+  - Stats Viewer: Aggregate label statistics and confidence metrics
+
 ### Cost Awareness
 This pipeline costs money (OpenRouter API). Be mindful:
 - Don't re-run stages unnecessarily (check status first)

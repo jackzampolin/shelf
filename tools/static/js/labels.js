@@ -40,7 +40,7 @@ function drawBoundingBoxes() {
             const height = (bbox.y1 - bbox.y0) * scaleY;
 
             // Get color for this block type
-            const blockType = labelBlock.block_type || 'BODY';
+            const blockType = labelBlock.classification || 'BODY';
             const color = colors[blockType] || colors['BODY'];
 
             // Draw rectangle
@@ -69,9 +69,21 @@ function getBlockTypeColors() {
         'FOOTER': 'rgba(149, 165, 166, 1)',             // Gray
         'PAGE_NUMBER': 'rgba(142, 68, 173, 1)',         // Purple
         'FOOTNOTE': 'rgba(241, 196, 15, 1)',            // Yellow
+        'ENDNOTES': 'rgba(241, 196, 15, 1)',            // Yellow
         'QUOTE': 'rgba(26, 188, 156, 1)',               // Teal
-        'TABLE': 'rgba(22, 160, 133, 1)',               // Dark Teal
-        'IMAGE': 'rgba(211, 84, 0, 1)',                 // Dark Orange
+        'TITLE_PAGE': 'rgba(46, 204, 113, 1)',          // Green
+        'TABLE_OF_CONTENTS': 'rgba(155, 89, 182, 1)',   // Purple
+        'COPYRIGHT': 'rgba(127, 140, 141, 1)',          // Dark Gray
+        'DEDICATION': 'rgba(236, 240, 241, 1)',         // Light Gray
+        'EPIGRAPH': 'rgba(52, 73, 94, 1)',              // Dark Blue
+        'INTRODUCTION': 'rgba(41, 128, 185, 1)',        // Medium Blue
+        'EPILOGUE': 'rgba(192, 57, 43, 1)',             // Dark Red
+        'ACKNOWLEDGMENTS': 'rgba(39, 174, 96, 1)',      // Green
+        'INDEX': 'rgba(211, 84, 0, 1)',                 // Orange
+        'ILLUSTRATION_CAPTION': 'rgba(243, 156, 18, 1)',// Yellow-Orange
+        'PHOTO_CREDIT': 'rgba(189, 195, 199, 1)',       // Light Gray
+        'OCR_ARTIFACT': 'rgba(231, 76, 60, 0.5)',       // Transparent Red
+        'OTHER': 'rgba(149, 165, 166, 0.7)',            // Transparent Gray
     };
 }
 
