@@ -13,25 +13,31 @@
     <div class="data-viewer">
         <div class="data-header">
             <h3>📖 Before & After Comparison</h3>
-            <div class="page-selector">
-                <label for="page-input">Page:</label>
-                <input type="number"
-                       id="page-input"
-                       value="{{ current_page }}"
-                       min="1"
-                       max="{{ all_pages[-1] }}"
-                       onkeyup="if(event.key==='Enter') window.location.href='/stage/{{ scan_id }}/corrected/viewer?page=' + this.value">
-                <span class="page-info">of {{ all_pages[-1] }}</span>
-                {% if current_page > 1 %}
-                <button onclick="window.location.href='/stage/{{ scan_id }}/corrected/viewer?page={{ current_page - 1 }}'">← Previous</button>
-                {% else %}
-                <button disabled>← Previous</button>
-                {% endif %}
-                {% if current_page < all_pages[-1] %}
-                <button onclick="window.location.href='/stage/{{ scan_id }}/corrected/viewer?page={{ current_page + 1 }}'">Next →</button>
-                {% else %}
-                <button disabled>Next →</button>
-                {% endif %}
+            <div class="header-controls">
+                <div class="view-toggle">
+                    <button id="view-side-by-side" class="view-btn active" onclick="switchView('side-by-side')">Side by Side</button>
+                    <button id="view-diff" class="view-btn" onclick="switchView('diff')">Diff View</button>
+                </div>
+                <div class="page-selector">
+                    <label for="page-input">Page:</label>
+                    <input type="number"
+                           id="page-input"
+                           value="{{ current_page }}"
+                           min="1"
+                           max="{{ all_pages[-1] }}"
+                           onkeyup="if(event.key==='Enter') window.location.href='/stage/{{ scan_id }}/corrected/viewer?page=' + this.value">
+                    <span class="page-info">of {{ all_pages[-1] }}</span>
+                    {% if current_page > 1 %}
+                    <button onclick="window.location.href='/stage/{{ scan_id }}/corrected/viewer?page={{ current_page - 1 }}'">← Previous</button>
+                    {% else %}
+                    <button disabled>← Previous</button>
+                    {% endif %}
+                    {% if current_page < all_pages[-1] %}
+                    <button onclick="window.location.href='/stage/{{ scan_id }}/corrected/viewer?page={{ current_page + 1 }}'">Next →</button>
+                    {% else %}
+                    <button disabled>Next →</button>
+                    {% endif %}
+                </div>
             </div>
         </div>
 
@@ -100,6 +106,28 @@
                 {% endif %}
             </div>
         </div>
+
+        <!-- Diff View (hidden by default) -->
+        <div class="diff-view" style="display: none;">
+            <div class="two-panel">
+                <!-- Image Panel -->
+                <div class="image-panel">
+                    <h4>Page Image</h4>
+                    <div class="image-wrapper">
+                        <img src="/image/{{ scan_id }}/{{ current_page }}"
+                             alt="Page {{ current_page }}">
+                    </div>
+                </div>
+
+                <!-- Diff Panel -->
+                <div class="diff-panel" id="diff-container">
+                    <h4>Changes (Git-style Diff)</h4>
+                    <div id="diff-content">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -143,6 +171,45 @@
 
     .data-header h3 {
         margin: 0;
+    }
+
+    .header-controls {
+        display: flex;
+        gap: 30px;
+        align-items: center;
+    }
+
+    .view-toggle {
+        display: flex;
+        gap: 0;
+        border: 1px solid var(--light);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .view-btn {
+        padding: 8px 16px;
+        background: white;
+        color: var(--text);
+        border: none;
+        cursor: pointer;
+        font-size: 0.9em;
+        transition: all 0.2s ease;
+        border-right: 1px solid var(--light);
+    }
+
+    .view-btn:last-child {
+        border-right: none;
+    }
+
+    .view-btn:hover {
+        background: #f8f9fa;
+    }
+
+    .view-btn.active {
+        background: var(--primary);
+        color: white;
+        font-weight: 500;
     }
 
     .page-selector {
@@ -276,6 +343,106 @@
         color: var(--text-secondary);
     }
 
+    /* Diff View Styles */
+    .two-panel {
+        display: flex;
+        gap: 20px;
+        height: 70vh;
+    }
+
+    .two-panel .image-panel {
+        flex: 0 0 30%;
+    }
+
+    .diff-panel {
+        flex: 1;
+        overflow-y: auto;
+        border: 1px solid var(--light);
+        border-radius: 4px;
+        padding: 15px;
+        background: #fafafa;
+    }
+
+    .diff-panel h4 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        color: var(--dark);
+        font-size: 0.95em;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid var(--light);
+        padding-bottom: 8px;
+    }
+
+    .diff-block {
+        margin-bottom: 20px;
+        background: white;
+        border-radius: 4px;
+        overflow: hidden;
+        border: 1px solid var(--light);
+    }
+
+    .diff-block-header {
+        background: var(--dark);
+        color: white;
+        padding: 8px 12px;
+        font-weight: 600;
+        font-size: 0.9em;
+    }
+
+    .diff-para {
+        padding: 12px;
+        border-bottom: 1px solid var(--light);
+        font-family: 'Monaco', 'Courier New', monospace;
+        font-size: 0.85em;
+        line-height: 1.6;
+        white-space: pre-wrap;
+    }
+
+    .diff-para:last-child {
+        border-bottom: none;
+    }
+
+    .diff-para.unchanged {
+        background: white;
+        color: var(--text);
+    }
+
+    .diff-para.changed {
+        background: #fff5f5;
+    }
+
+    .diff-del {
+        background: #fbb;
+        text-decoration: line-through;
+        padding: 2px 0;
+    }
+
+    .diff-add {
+        background: #bfb;
+        padding: 2px 0;
+    }
+
+    .diff-para-label {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 0.75em;
+        font-weight: 600;
+        margin-right: 8px;
+        font-family: sans-serif;
+    }
+
+    .diff-para-label.unchanged {
+        background: #e2e3e5;
+        color: #6c757d;
+    }
+
+    .diff-para-label.changed {
+        background: #28a745;
+        color: white;
+    }
+
     @media (max-width: 1200px) {
         .three-panel {
             flex-direction: column;
@@ -314,6 +481,164 @@ if (textPanels.length === 2) {
                 setTimeout(() => { isScrolling = false; }, 50);
             }
         });
+    });
+}
+
+// View switching
+function switchView(view) {
+    const sideBySide = document.querySelector('.three-panel').parentElement;
+    const diffView = document.querySelector('.diff-view');
+    const btnSideBySide = document.getElementById('view-side-by-side');
+    const btnDiff = document.getElementById('view-diff');
+
+    if (view === 'side-by-side') {
+        sideBySide.style.display = 'block';
+        diffView.style.display = 'none';
+        btnSideBySide.classList.add('active');
+        btnDiff.classList.remove('active');
+    } else {
+        sideBySide.style.display = 'none';
+        diffView.style.display = 'block';
+        btnSideBySide.classList.remove('active');
+        btnDiff.classList.add('active');
+
+        // Generate diff on first view
+        if (!diffView.dataset.generated) {
+            generateDiff();
+            diffView.dataset.generated = 'true';
+        }
+    }
+}
+
+// Simple character-level diff (Myers algorithm approximation)
+function computeDiff(oldText, newText) {
+    if (oldText === newText) {
+        return { type: 'unchanged', content: oldText };
+    }
+
+    const words1 = oldText.split(/(\s+)/);
+    const words2 = newText.split(/(\s+)/);
+
+    const diffs = [];
+    let i = 0, j = 0;
+
+    while (i < words1.length || j < words2.length) {
+        if (i >= words1.length) {
+            diffs.push({ type: 'add', text: words2[j] });
+            j++;
+        } else if (j >= words2.length) {
+            diffs.push({ type: 'del', text: words1[i] });
+            i++;
+        } else if (words1[i] === words2[j]) {
+            diffs.push({ type: 'unchanged', text: words1[i] });
+            i++;
+            j++;
+        } else {
+            // Try to find match ahead
+            const lookAhead = 3;
+            let foundInNew = false;
+            let foundInOld = false;
+
+            for (let k = 1; k <= lookAhead && j + k < words2.length; k++) {
+                if (words1[i] === words2[j + k]) {
+                    foundInNew = true;
+                    break;
+                }
+            }
+
+            for (let k = 1; k <= lookAhead && i + k < words1.length; k++) {
+                if (words1[i + k] === words2[j]) {
+                    foundInOld = true;
+                    break;
+                }
+            }
+
+            if (foundInNew && !foundInOld) {
+                diffs.push({ type: 'add', text: words2[j] });
+                j++;
+            } else if (foundInOld && !foundInNew) {
+                diffs.push({ type: 'del', text: words1[i] });
+                i++;
+            } else {
+                diffs.push({ type: 'del', text: words1[i] });
+                diffs.push({ type: 'add', text: words2[j] });
+                i++;
+                j++;
+            }
+        }
+    }
+
+    return { type: 'changed', diffs };
+}
+
+// Generate diff view using safe DOM methods
+function generateDiff() {
+    const diffContainer = document.getElementById('diff-content');
+
+    // Clear existing content safely
+    while (diffContainer.firstChild) {
+        diffContainer.removeChild(diffContainer.firstChild);
+    }
+
+    if (!window.ocrData || !window.ocrData.blocks) {
+        const emptyP = document.createElement('p');
+        emptyP.className = 'empty-state';
+        emptyP.textContent = 'No OCR data available';
+        diffContainer.appendChild(emptyP);
+        return;
+    }
+
+    window.ocrData.blocks.forEach((block, blockIdx) => {
+        const blockDiv = document.createElement('div');
+        blockDiv.className = 'diff-block';
+
+        const blockHeader = document.createElement('div');
+        blockHeader.className = 'diff-block-header';
+        blockHeader.textContent = `Block ${blockIdx + 1}`;
+        blockDiv.appendChild(blockHeader);
+
+        block.paragraphs.forEach((para, paraIdx) => {
+            const oldText = para.text;
+            const newText = (window.correctionData?.blocks?.[blockIdx]?.paragraphs?.[paraIdx]?.text) || oldText;
+
+            const paraDiv = document.createElement('div');
+
+            if (oldText === newText) {
+                paraDiv.className = 'diff-para unchanged';
+                const label = document.createElement('span');
+                label.className = 'diff-para-label unchanged';
+                label.textContent = 'UNCHANGED';
+                paraDiv.appendChild(label);
+                paraDiv.appendChild(document.createTextNode(oldText));
+            } else {
+                paraDiv.className = 'diff-para changed';
+                const label = document.createElement('span');
+                label.className = 'diff-para-label changed';
+                label.textContent = 'CORRECTED';
+                paraDiv.appendChild(label);
+
+                const diffResult = computeDiff(oldText, newText);
+                diffResult.diffs.forEach(diff => {
+                    if (diff.type === 'del') {
+                        const span = document.createElement('span');
+                        span.className = 'diff-del';
+                        span.textContent = diff.text;
+                        paraDiv.appendChild(span);
+                    } else if (diff.type === 'add') {
+                        const span = document.createElement('span');
+                        span.className = 'diff-add';
+                        span.textContent = diff.text;
+                        paraDiv.appendChild(span);
+                    } else {
+                        paraDiv.appendChild(document.createTextNode(diff.text));
+                    }
+                });
+            }
+
+            blockDiv.appendChild(paraDiv);
+        });
+
+        diffContainer.appendChild(blockDiv);
     });
 }
 </script>
