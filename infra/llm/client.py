@@ -354,6 +354,17 @@ class LLMClient:
         # Convert message content to multipart format
         original_content = messages[user_msg_idx]['content']
 
+        # If content is already multipart format (from previous iteration),
+        # extract just the text part
+        if isinstance(original_content, list):
+            # Find the text part
+            original_text = ""
+            for item in original_content:
+                if item.get('type') == 'text':
+                    original_text = item.get('text', '')
+                    break
+            original_content = original_text
+
         # Build content array with text + images
         content = [{"type": "text", "text": original_content}]
 
@@ -531,29 +542,37 @@ class LLMClient:
                         import uuid
                         nonce = uuid.uuid4().hex[:16]
 
-                        # Add nonce to last message to force new request
+                        # Add nonce to last USER message (not last message, which might be a tool result)
                         if payload['messages']:
-                            last_msg = payload['messages'][-1].copy()
-                            content = last_msg.get('content', '')
+                            # Find last user message
+                            user_msg_idx = None
+                            for i in range(len(payload['messages']) - 1, -1, -1):
+                                if payload['messages'][i]['role'] == 'user':
+                                    user_msg_idx = i
+                                    break
 
-                            if isinstance(content, str):
-                                # Simple text message
-                                last_msg['content'] = f"{content}\n<!-- retry_{attempt}_id: {nonce} -->"
-                                logger.warning(f"Retry {attempt+1}/{max_retries} for {e.response.status_code} - added nonce to text content")
-                            elif isinstance(content, list):
-                                # Multipart message (text + images)
-                                # Find the text part and add nonce there
-                                content_copy = []
-                                for item in content:
-                                    item_copy = item.copy()
-                                    if item_copy.get('type') == 'text':
-                                        # Add nonce to text content
-                                        item_copy['text'] = f"{item_copy.get('text', '')}\n<!-- retry_{attempt}_id: {nonce} -->"
-                                    content_copy.append(item_copy)
-                                last_msg['content'] = content_copy
-                                logger.warning(f"Retry {attempt+1}/{max_retries} for {e.response.status_code} - added nonce {nonce} to multipart content ({len(content)} parts, {sum(1 for c in content if c.get('type')=='image_url')} images)")
+                            if user_msg_idx is not None:
+                                last_msg = payload['messages'][user_msg_idx].copy()
+                                content = last_msg.get('content', '')
 
-                            payload['messages'][-1] = last_msg
+                                if isinstance(content, str):
+                                    # Simple text message
+                                    last_msg['content'] = f"{content}\n<!-- retry_{attempt}_id: {nonce} -->"
+                                    logger.warning(f"Retry {attempt+1}/{max_retries} for {e.response.status_code} - added nonce to text content")
+                                elif isinstance(content, list):
+                                    # Multipart message (text + images)
+                                    # Find the text part and add nonce there
+                                    content_copy = []
+                                    for item in content:
+                                        item_copy = item.copy()
+                                        if item_copy.get('type') == 'text':
+                                            # Add nonce to text content
+                                            item_copy['text'] = f"{item_copy.get('text', '')}\n<!-- retry_{attempt}_id: {nonce} -->"
+                                        content_copy.append(item_copy)
+                                    last_msg['content'] = content_copy
+                                    logger.warning(f"Retry {attempt+1}/{max_retries} for {e.response.status_code} - added nonce {nonce} to multipart content ({len(content)} parts, {sum(1 for c in content if c.get('type')=='image_url')} images)")
+
+                                payload['messages'][user_msg_idx] = last_msg
                     else:
                         logger.warning(f"Retry {attempt+1}/{max_retries} for {error_type}")
 
