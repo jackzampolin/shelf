@@ -99,44 +99,6 @@ class TocFinderTools:
             {
                 "type": "function",
                 "function": {
-                    "name": "get_front_matter_range",
-                    "description": "Get front matter page range to constrain search",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "keyword_search_pages",
-                    "description": "Search merged text for ToC keywords in page range (fast, free)",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "keywords": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "Keywords to search for (e.g., ['contents', 'table of contents'])"
-                            },
-                            "start_page": {
-                                "type": "integer",
-                                "description": "Start of search range"
-                            },
-                            "end_page": {
-                                "type": "integer",
-                                "description": "End of search range"
-                            }
-                        },
-                        "required": ["keywords", "start_page", "end_page"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
                     "name": "vision_check_page",
                     "description": "Use vision model to check if page is ToC (costs ~$0.0005). PREFERRED: Use this for careful one-page-at-a-time checking. Examines BOTH image AND OCR text.",
                     "parameters": {
@@ -165,24 +127,6 @@ class TocFinderTools:
                             }
                         },
                         "required": ["seed_page"]
-                    }
-                }
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "sample_pages_vision",
-                    "description": "DEPRECATED: Check multiple pages in batch. NOT RECOMMENDED - misses non-standard ToC titles and graphical headings. Use vision_check_page() instead for careful one-at-a-time checking.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "page_nums": {
-                                "type": "array",
-                                "items": {"type": "integer"},
-                                "description": "List of page numbers to check (max 10 to control cost)"
-                            }
-                        },
-                        "required": ["page_nums"]
                     }
                 }
             },
@@ -573,16 +517,10 @@ class TocFinderTools:
             return self.check_labels_report()
         elif tool_name == "get_page_labels":
             return self.get_page_labels(**arguments)
-        elif tool_name == "get_front_matter_range":
-            return self.get_front_matter_range()
-        elif tool_name == "keyword_search_pages":
-            return self.keyword_search_pages(**arguments)
         elif tool_name == "vision_check_page":
             return self.vision_check_page(**arguments)
         elif tool_name == "expand_toc_range":
             return self.expand_toc_range(**arguments)
-        elif tool_name == "sample_pages_vision":
-            return self.sample_pages_vision(**arguments)
         elif tool_name == "write_toc_result":
             return self.write_toc_result(**arguments)
         else:

@@ -21,51 +21,38 @@ NOT A TOC = Dense paragraph text, isolated chapter title, back matter chapter li
 </detection_philosophy>
 
 <search_strategy>
-Execute in order. STOP when ToC found.
+You have 5 tools. Use them in THIS ORDER:
 
-STAGE 1: Validate Label Detection (PRIORITY - Check First!)
-CRITICAL: Label stage already ran vision models on all pages. Trust but verify.
+STEP 1: check_labels_report()
+→ Returns pages where label stage detected TABLE_OF_CONTENTS blocks
+→ If "found": true, you MUST proceed to STEP 2
+→ If "found": false, skip to STEP 3
 
-1. check_labels_report() - Checks TWO signals from upstream labels stage:
-   - Block-level: Scans label JSON files for blocks classified as TABLE_OF_CONTENTS
-   - Page-level: Checks report CSV for page_region='toc_area'
+STEP 2: Validate Label Detections (if labels found pages)
+For EACH page in the "pages" list from check_labels_report():
+  a. get_page_labels(page_num) - See what labels detected
+  b. vision_check_page(page_num) - Verify with vision
+  c. If is_toc=true:
+     → expand_toc_range(seed_page) - Find full range
+     → write_toc_result(toc_found=True, ...) - EXIT
+  d. If is_toc=false: Try next page in list
 
-   → If label stage found ToC pages:
-     a. For EACH page reported: get_page_labels(page_num) to inspect classifications
-     b. Vision verify THOSE pages FIRST (before searching elsewhere):
-        - vision_check_page(page_num) for each labeled page
-        - If confirmed: expand_toc_range(seed_page), write result, EXIT
-        - If not confirmed: Note disagreement, continue to Stage 2
+If ALL labeled pages rejected: Continue to STEP 3
 
-   → If label stage found nothing: Continue to Stage 2
+STEP 3: Sequential Vision Scan (if no labels OR all rejected)
+Loop pages 1-30:
+  a. vision_check_page(page_num=1)
+  b. If is_toc=true: expand_toc_range(), write_toc_result(), EXIT
+  c. If is_toc=false: vision_check_page(page_num=2)
+  d. Continue until ToC found or page 30 reached
 
-WHY: Label stage already used vision models. If it detected ToC blocks, those pages are HIGH PRIORITY.
-Check them first before wasting vision calls on other pages.
+STEP 4: Not Found
+→ write_toc_result(toc_found=False, reasoning="Checked N pages, no ToC detected")
 
-STAGE 2: Broader Search (if label validation didn't find ToC)
-Only reach this stage if:
-- Label stage found nothing, OR
-- Label-detected pages were vision-checked but rejected
-
-2a. get_front_matter_range() - Determine search bounds (usually pages 1-30)
-2b. keyword_search_pages(["contents", "table of contents", "order of battle"]) within front matter
-    → If matches: Vision verify top candidates, expand range, write result, EXIT
-
-2c. Sequential Vision Scan (one page at a time, careful)
-    CRITICAL: Check ONE page at a time. 94% of ToCs appear in pages 1-10.
-
-    Loop through pages 1-30 sequentially:
-    - vision_check_page(page_num=N) for each page
-    - If is_toc=true and confidence > 0.7:
-      → expand_toc_range(seed_page=N), write result, EXIT
-
-    IMPORTANT:
-    - Use vision_check_page() NOT sample_pages_vision()
-    - Stop immediately when ToC found
-    - Pages 1-15 are highest priority (98% of ToCs)
-
-STAGE 3: Not Found
-After exhausting search: write_toc_result(toc_found=False, reasoning="Checked labels + N pages via vision, no ToC structure detected")
+CRITICAL RULES:
+- If labels found pages, check THOSE pages FIRST (don't start at page 1)
+- Stop immediately when ToC confirmed (don't keep checking)
+- 94% of ToCs are in pages 1-10 (prioritize early pages in STEP 3)
 </search_strategy>
 
 <visual_detection>
