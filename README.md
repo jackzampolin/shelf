@@ -116,9 +116,9 @@ Debug and visually review pipeline outputs with the Shelf Viewer web interface:
 
 ```bash
 # Start web viewer (Flask + HTMX)
-python tools/shelf_viewer.py --port 5000
+python tools/shelf_viewer.py
 
-# Then open http://127.0.0.1:5000 in your browser
+# Then open http://127.0.0.1:5001 in your browser
 ```
 
 **Available viewers:**

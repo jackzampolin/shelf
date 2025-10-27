@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+
+{% block title %}OCR Viewer - {{ scan_id }}{% endblock %}
+
+{% block content %}
+<div class="container-wide">
+    <div class="stage-header">
+        <h2>📄 OCR Viewer - {{ scan_id }}</h2>
+        <a href="/stage/{{ scan_id }}/ocr" class="back-link">← Back to Overview</a>
+    </div>
+
+    <!-- OCR Data Viewer -->
+    <div class="data-viewer">
+        <div class="data-header">
+            <h3>📖 OCR Output</h3>
+            <div class="page-selector">
+                <label for="page-input">Page:</label>
+                <input type="number"
+                       id="page-input"
+                       value="{{ current_page }}"
+                       min="1"
+                       max="{{ all_pages[-1] }}"
+                       onkeyup="if(event.key==='Enter') window.location.href='/stage/{{ scan_id }}/ocr/viewer?page=' + this.value">
+                <span class="page-info">of {{ all_pages[-1] }}</span>
+                {% if current_page > 1 %}
+                <button onclick="window.location.href='/stage/{{ scan_id }}/ocr/viewer?page={{ current_page - 1 }}'">← Previous</button>
+                {% else %}
+                <button disabled>← Previous</button>
+                {% endif %}
+                {% if current_page < all_pages[-1] %}
+                <button onclick="window.location.href='/stage/{{ scan_id }}/ocr/viewer?page={{ current_page + 1 }}'">Next →</button>
+                {% else %}
+                <button disabled>Next →</button>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="two-panel">
+            <!-- Image Panel with Canvas Overlay -->
+            <div class="image-panel">
+                <h4>Page Image with Block Overlays</h4>
+                <div class="image-wrapper">
+                    <img id="page-image"
+                         src="/image/{{ scan_id }}/{{ current_page }}"
+                         alt="Page {{ current_page }}"
+                         data-width="{{ image_width }}"
+                         data-height="{{ image_height }}">
+                    <canvas id="bbox-canvas"></canvas>
+                </div>
+            </div>
+
+            <!-- OCR Output Panel -->
+            <div class="text-panel">
+                <h4>OCR Text Output</h4>
+                {% if stage_data and stage_data.blocks %}
+                    {% for block in stage_data.blocks %}
+                    <div class="ocr-block">
+                        <div class="block-header">
+                            Block {{ loop.index }}
+                            {% if block.confidence %}
+                            | Confidence: {{ "%.2f"|format(block.confidence) }}
+                            {% endif %}
+                        </div>
+                        {% for para in block.paragraphs %}
+                        <p>{{ para.text }}</p>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state">
+                        <p>No OCR data available for this page</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .stage-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+    }
+
+    .stage-header h2 {
+        margin: 0;
+    }
+
+    .back-link {
+        color: var(--primary);
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .back-link:hover {
+        text-decoration: underline;
+    }
+
+    .data-viewer {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .data-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 2px solid var(--light);
+    }
+
+    .data-header h3 {
+        margin: 0;
+    }
+
+    .page-selector {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .page-selector input[type="number"] {
+        width: 80px;
+        padding: 8px 12px;
+        border: 1px solid var(--light);
+        border-radius: 4px;
+        font-size: 0.9em;
+        text-align: center;
+    }
+
+    .page-info {
+        color: var(--text-secondary);
+        font-size: 0.9em;
+    }
+
+    .page-selector button {
+        padding: 8px 16px;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+    }
+
+    .page-selector button:hover:not(:disabled) {
+        background: #2980b9;
+    }
+
+    .page-selector button:disabled {
+        background: var(--light);
+        color: var(--text-secondary);
+        cursor: not-allowed;
+    }
+
+    .two-panel {
+        display: flex;
+        gap: 20px;
+        height: 70vh;
+    }
+
+    .image-panel, .text-panel {
+        flex: 1;
+        overflow-y: auto;
+        border: 1px solid var(--light);
+        border-radius: 4px;
+        padding: 15px;
+    }
+
+    .image-panel h4, .text-panel h4 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        color: var(--dark);
+    }
+
+    .image-wrapper {
+        position: relative;
+        width: 100%;
+    }
+
+    .image-wrapper img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 4px;
+    }
+
+    .image-wrapper canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+    }
+
+    .ocr-block {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 4px;
+        border-left: 3px solid var(--primary);
+    }
+
+    .block-header {
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: var(--dark);
+        font-size: 0.9em;
+    }
+
+    .ocr-block p {
+        margin: 8px 0;
+        line-height: 1.6;
+        color: var(--text);
+    }
+
+    @media (max-width: 768px) {
+        .two-panel {
+            flex-direction: column;
+            height: auto;
+        }
+    }
+</style>
+
+<script>
+// Inject OCR data for canvas drawing
+window.ocrData = {{ stage_data | tojson | safe }};
+</script>
+
+<script>
+// Draw bounding boxes on canvas
+function drawBoundingBoxes() {
+    const img = document.getElementById('page-image');
+    const canvas = document.getElementById('bbox-canvas');
+
+    if (!img || !canvas || !window.ocrData || !window.ocrData.blocks) return;
+
+    const ctx = canvas.getContext('2d');
+
+    // Match canvas size to image display size
+    canvas.width = img.offsetWidth;
+    canvas.height = img.offsetHeight;
+
+    // Get image dimensions from data attributes
+    const imgWidth = parseInt(img.dataset.width);
+    const imgHeight = parseInt(img.dataset.height);
+
+    if (!imgWidth || !imgHeight) return;
+
+    // Calculate scale
+    const scaleX = canvas.width / imgWidth;
+    const scaleY = canvas.height / imgHeight;
+
+    // Draw each block
+    window.ocrData.blocks.forEach((block, idx) => {
+        if (!block.bbox) return;
+
+        const bbox = block.bbox;
+
+        // Scale coordinates
+        const x = bbox.x0 * scaleX;
+        const y = bbox.y0 * scaleY;
+        const width = (bbox.x1 - bbox.x0) * scaleX;
+        const height = (bbox.y1 - bbox.y0) * scaleY;
+
+        // Color based on confidence
+        const confidence = block.confidence || 0;
+        let color;
+        if (confidence >= 0.9) {
+            color = 'rgba(46, 204, 113, 1)';  // Green - high confidence
+        } else if (confidence >= 0.7) {
+            color = 'rgba(52, 152, 219, 1)';  // Blue - medium confidence
+        } else {
+            color = 'rgba(231, 76, 60, 1)';   // Red - low confidence
+        }
+
+        // Draw rectangle
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, width, height);
+
+        // Fill with semi-transparent color
+        ctx.fillStyle = color.replace('1)', '0.1)');
+        ctx.fillRect(x, y, width, height);
+
+        // Draw block number
+        ctx.fillStyle = color.replace('1)', '0.9)');
+        ctx.font = '14px sans-serif';
+        ctx.fillText(String(idx + 1), x + 5, y + 18);
+    });
+}
+
+// Redraw on window resize
+window.addEventListener('resize', drawBoundingBoxes);
+
+// Draw on page load
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        const img = document.getElementById('page-image');
+        if (img) {
+            if (img.complete) {
+                drawBoundingBoxes();
+            } else {
+                img.addEventListener('load', drawBoundingBoxes);
+            }
+        }
+    });
+} else {
+    const img = document.getElementById('page-image');
+    if (img) {
+        if (img.complete) {
+            drawBoundingBoxes();
+        } else {
+            img.addEventListener('load', drawBoundingBoxes);
+        }
+    }
+}
+</script>
+{% endblock %}

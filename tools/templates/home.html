@@ -1,57 +1,326 @@
 {% extends "base.html" %}
 
-{% block title %}Shelf Viewer - Home{% endblock %}
+{% block title %}Shelf Viewer - Library Status{% endblock %}
+
+{% block extra_head %}
+<style>
+    .library-header {
+        margin-bottom: 30px;
+    }
+
+    .library-header h2 {
+        margin-bottom: 10px;
+        color: var(--dark);
+    }
+
+    .library-stats {
+        display: flex;
+        gap: 20px;
+        margin-top: 15px;
+        font-size: 0.9em;
+        color: var(--text-secondary);
+    }
+
+    .stat-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .status-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .status-table thead {
+        background: var(--dark);
+        color: white;
+    }
+
+    .status-table th {
+        padding: 15px 12px;
+        text-align: left;
+        font-size: 0.85em;
+        text-transform: uppercase;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+
+    .status-table td {
+        padding: 12px;
+        border-bottom: 1px solid var(--light);
+    }
+
+    .status-table tbody tr:hover {
+        background: #f8f9fa;
+    }
+
+    .book-name {
+        font-weight: 500;
+        color: var(--dark);
+        font-family: 'Monaco', 'Courier New', monospace;
+        font-size: 0.9em;
+    }
+
+    .status-link {
+        text-decoration: none;
+    }
+
+    .status-link:hover .status-badge {
+        transform: scale(1.05);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 0.85em;
+        font-weight: 500;
+        white-space: nowrap;
+        transition: all 0.2s ease;
+    }
+
+    .status-complete {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .status-in_progress {
+        background: #fff3cd;
+        color: #856404;
+    }
+
+    .status-not_started {
+        background: #e2e3e5;
+        color: #6c757d;
+    }
+
+    .status-no_data {
+        background: #f8f9fa;
+        color: #adb5bd;
+    }
+
+    .badge-icon {
+        font-size: 1em;
+    }
+
+    .toc-badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 3px;
+        font-size: 0.85em;
+        font-weight: 500;
+    }
+
+    .toc-yes {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .toc-no {
+        background: #e2e3e5;
+        color: #6c757d;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: var(--text-secondary);
+    }
+
+    .empty-state h3 {
+        margin-bottom: 10px;
+        color: var(--dark);
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container">
-    <div class="intro-card">
-        <h2>Welcome to Shelf Viewer</h2>
-        <p>A unified debugging interface for the book processing pipeline. Select a tool below to explore your scanned books.</p>
-    </div>
-
-    <div class="tools-grid">
-        <div class="tool-card">
-            <h3>📖 ToC Viewer</h3>
-            <p>View parsed table of contents side-by-side with page images. Debug ToC extraction quality and confidence.</p>
-            <a href="/toc">Open ToC Viewer →</a>
-        </div>
-
-        <div class="tool-card">
-            <h3>✏️ Correction Viewer</h3>
-            <p>Compare OCR output with corrections. See page images, raw OCR blocks, and corrected text side-by-side.</p>
-            <a href="/corrections">Open Corrections →</a>
-        </div>
-
-        <div class="tool-card">
-            <h3>🏷️ Label Viewer</h3>
-            <p>View page labels with visual overlays. See regions, block types, and page numbers highlighted on images.</p>
-            <a href="/labels">Open Labels →</a>
-        </div>
-
-        <div class="tool-card">
-            <h3>📊 Stats Viewer</h3>
-            <p>View book-level statistics from labels stage. Analyze page regions, block types, and confidence scores.</p>
-            <a href="/stats">Open Stats →</a>
-        </div>
-    </div>
-
-    <div class="stats-grid">
-        <div class="stat-box">
-            <div class="number">{{ stats.total_books }}</div>
-            <div class="label">Total Books</div>
-        </div>
-        <div class="stat-box">
-            <div class="number">{{ stats.books_with_toc }}</div>
-            <div class="label">With ToC</div>
-        </div>
-        <div class="stat-box">
-            <div class="number">{{ stats.books_with_corrections }}</div>
-            <div class="label">With Corrections</div>
-        </div>
-        <div class="stat-box">
-            <div class="number">{{ stats.books_with_labels }}</div>
-            <div class="label">With Labels</div>
+<div class="container-wide">
+    <div class="library-header">
+        <h2>📚 Library Status</h2>
+        <div class="library-stats">
+            <div class="stat-item">
+                <strong>{{ books|length }}</strong> books in library
+            </div>
+            <div class="stat-item">
+                •
+            </div>
+            <div class="stat-item">
+                {% set ocr_complete = namespace(count=0) %}
+                {% for book in books %}
+                    {% if book.ocr.status == 'complete' %}
+                        {% set ocr_complete.count = ocr_complete.count + 1 %}
+                    {% endif %}
+                {% endfor %}
+                <strong>{{ ocr_complete.count }}</strong> with OCR complete
+            </div>
+            <div class="stat-item">
+                •
+            </div>
+            <div class="stat-item">
+                {% set toc_count = namespace(count=0) %}
+                {% for book in books %}
+                    {% if book.has_toc %}
+                        {% set toc_count.count = toc_count.count + 1 %}
+                    {% endif %}
+                {% endfor %}
+                <strong>{{ toc_count.count }}</strong> with ToC extracted
+            </div>
         </div>
     </div>
+
+    {% if books %}
+    <table class="status-table">
+        <thead>
+            <tr>
+                <th style="width: 25%;">Book</th>
+                <th style="width: 12%;">OCR</th>
+                <th style="width: 12%;">Corrected</th>
+                <th style="width: 12%;">Labels</th>
+                <th style="width: 12%;">Merged</th>
+                <th style="width: 10%;">ToC</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for book in books %}
+            <tr>
+                <td>
+                    <div class="book-name">{{ book.scan_id }}</div>
+                </td>
+
+                <!-- OCR Status -->
+                <td>
+                    {% if book.ocr.status == 'complete' or book.ocr.status == 'in_progress' %}
+                    <a href="/stage/{{ book.scan_id }}/ocr" class="status-link">
+                        {% if book.ocr.status == 'complete' %}
+                        <span class="status-badge status-complete">
+                            <span class="badge-icon">✓</span>
+                            {{ book.ocr.completed }}/{{ book.ocr.total }}
+                        </span>
+                        {% else %}
+                        <span class="status-badge status-in_progress">
+                            <span class="badge-icon">⚠</span>
+                            {{ book.ocr.completed }}/{{ book.ocr.total }}
+                        </span>
+                        {% endif %}
+                    </a>
+                    {% elif book.ocr.status == 'not_started' %}
+                    <span class="status-badge status-not_started">
+                        <span class="badge-icon">○</span>
+                        Not started
+                    </span>
+                    {% else %}
+                    <span class="status-badge status-no_data">
+                        <span class="badge-icon">-</span>
+                        No data
+                    </span>
+                    {% endif %}
+                </td>
+
+                <!-- Corrected Status -->
+                <td>
+                    {% if book.corrected.status == 'complete' or book.corrected.status == 'in_progress' %}
+                    <a href="/stage/{{ book.scan_id }}/corrected" class="status-link">
+                        {% if book.corrected.status == 'complete' %}
+                        <span class="status-badge status-complete">
+                            <span class="badge-icon">✓</span>
+                            {{ book.corrected.completed }}/{{ book.corrected.total }}
+                        </span>
+                        {% else %}
+                        <span class="status-badge status-in_progress">
+                            <span class="badge-icon">⚠</span>
+                            {{ book.corrected.completed }}/{{ book.corrected.total }}
+                        </span>
+                        {% endif %}
+                    </a>
+                    {% elif book.corrected.status == 'not_started' %}
+                    <span class="status-badge status-not_started">
+                        <span class="badge-icon">○</span>
+                        Not started
+                    </span>
+                    {% else %}
+                    <span class="status-badge status-no_data">
+                        <span class="badge-icon">-</span>
+                        No data
+                    </span>
+                    {% endif %}
+                </td>
+
+                <!-- Labels Status -->
+                <td>
+                    {% if book.labels.status == 'complete' %}
+                    <span class="status-badge status-complete">
+                        <span class="badge-icon">✓</span>
+                        {{ book.labels.completed }}/{{ book.labels.total }}
+                    </span>
+                    {% elif book.labels.status == 'in_progress' %}
+                    <span class="status-badge status-in_progress">
+                        <span class="badge-icon">⚠</span>
+                        {{ book.labels.completed }}/{{ book.labels.total }}
+                    </span>
+                    {% elif book.labels.status == 'not_started' %}
+                    <span class="status-badge status-not_started">
+                        <span class="badge-icon">○</span>
+                        Not started
+                    </span>
+                    {% else %}
+                    <span class="status-badge status-no_data">
+                        <span class="badge-icon">-</span>
+                        No data
+                    </span>
+                    {% endif %}
+                </td>
+
+                <!-- Merged Status -->
+                <td>
+                    {% if book.merged.status == 'complete' %}
+                    <span class="status-badge status-complete">
+                        <span class="badge-icon">✓</span>
+                        {{ book.merged.completed }}/{{ book.merged.total }}
+                    </span>
+                    {% elif book.merged.status == 'in_progress' %}
+                    <span class="status-badge status-in_progress">
+                        <span class="badge-icon">⚠</span>
+                        {{ book.merged.completed }}/{{ book.merged.total }}
+                    </span>
+                    {% elif book.merged.status == 'not_started' %}
+                    <span class="status-badge status-not_started">
+                        <span class="badge-icon">○</span>
+                        Not started
+                    </span>
+                    {% else %}
+                    <span class="status-badge status-no_data">
+                        <span class="badge-icon">-</span>
+                        No data
+                    </span>
+                    {% endif %}
+                </td>
+
+                <!-- ToC Status -->
+                <td>
+                    {% if book.has_toc %}
+                    <span class="toc-badge toc-yes">✓ Yes</span>
+                    {% else %}
+                    <span class="toc-badge toc-no">- No</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <h3>No books in library</h3>
+        <p>Use <code>shelf.py shelve</code> to add books to your library.</p>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
