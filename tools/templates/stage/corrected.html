@@ -40,92 +40,78 @@
             </div>
         </div>
 
-        <!-- Similarity Histogram (Most Important) -->
+        <!-- Pie Charts Side by Side -->
         <div class="viz-section">
-            <h4>📈 Text Similarity Distribution (Most Important)</h4>
-            <p class="viz-help">Higher similarity = minor fixes (good). Lower similarity = major rewrites (check for over-correction).</p>
-            <div class="histogram">
-                {% for bin, count in stats.similarity_histogram.items() %}
-                <div class="histogram-bar-wrapper">
-                    <div class="histogram-label">{{ bin }}</div>
-                    <div class="histogram-bar
-                        {% if bin == '0.00-0.85' %}bar-red-flag
-                        {% elif bin == '0.85-0.90' %}bar-concerning
-                        {% elif bin == '0.90-0.95' %}bar-normal
-                        {% elif bin == '0.95-0.98' %}bar-minor
-                        {% else %}bar-very-minor{% endif %}"
-                        style="width: {% if stats.total_pages > 0 %}{{ (count / stats.total_pages * 100)|int }}{% else %}0{% endif %}%;">
-                        <span class="bar-count">{{ count }}</span>
+            <div class="pie-charts-container">
+                <!-- Text Similarity Pie -->
+                <div class="pie-chart-wrapper">
+                    <h4>📈 Text Similarity Distribution</h4>
+                    <p class="viz-help">Higher similarity = minor fixes (good)</p>
+                    {% set sim_total = stats.similarity_histogram['0.00-0.85'] + stats.similarity_histogram['0.85-0.90'] + stats.similarity_histogram['0.90-0.95'] + stats.similarity_histogram['0.95-0.98'] + stats.similarity_histogram['0.98-1.00'] %}
+                    {% if sim_total > 0 %}
+                    {% set pct_1 = (stats.similarity_histogram['0.00-0.85'] / sim_total * 100) %}
+                    {% set pct_2 = (stats.similarity_histogram['0.85-0.90'] / sim_total * 100) %}
+                    {% set pct_3 = (stats.similarity_histogram['0.90-0.95'] / sim_total * 100) %}
+                    {% set pct_4 = (stats.similarity_histogram['0.95-0.98'] / sim_total * 100) %}
+                    {% set pct_5 = (stats.similarity_histogram['0.98-1.00'] / sim_total * 100) %}
+                    <div class="pie-chart" style="background: conic-gradient(
+                        #e74c3c 0% {{ pct_1 }}%,
+                        #e67e22 {{ pct_1 }}% {{ pct_1 + pct_2 }}%,
+                        #f39c12 {{ pct_1 + pct_2 }}% {{ pct_1 + pct_2 + pct_3 }}%,
+                        #3498db {{ pct_1 + pct_2 + pct_3 }}% {{ pct_1 + pct_2 + pct_3 + pct_4 }}%,
+                        #2ecc71 {{ pct_1 + pct_2 + pct_3 + pct_4 }}% 100%
+                    )"></div>
+                    {% endif %}
+                    <div class="pie-legend">
+                        <div class="legend-item"><span class="dot dot-red-flag"></span> 0.00-0.85 ({{ stats.similarity_histogram['0.00-0.85'] }})</div>
+                        <div class="legend-item"><span class="dot dot-concerning"></span> 0.85-0.90 ({{ stats.similarity_histogram['0.85-0.90'] }})</div>
+                        <div class="legend-item"><span class="dot dot-normal"></span> 0.90-0.95 ({{ stats.similarity_histogram['0.90-0.95'] }})</div>
+                        <div class="legend-item"><span class="dot dot-minor"></span> 0.95-0.98 ({{ stats.similarity_histogram['0.95-0.98'] }})</div>
+                        <div class="legend-item"><span class="dot dot-very-minor"></span> 0.98-1.00 ({{ stats.similarity_histogram['0.98-1.00'] }})</div>
                     </div>
                 </div>
-                {% endfor %}
-            </div>
-            <div class="histogram-legend">
-                <span class="legend-item"><span class="dot dot-red-flag"></span> Red Flag (0.00-0.85) - Over-correction</span>
-                <span class="legend-item"><span class="dot dot-concerning"></span> Concerning (0.85-0.90)</span>
-                <span class="legend-item"><span class="dot dot-normal"></span> Normal (0.90-0.95)</span>
-                <span class="legend-item"><span class="dot dot-minor"></span> Minor Fixes (0.95-0.98)</span>
-                <span class="legend-item"><span class="dot dot-very-minor"></span> Very Minor (0.98-1.00)</span>
+
+                <!-- Confidence Pie -->
+                <div class="pie-chart-wrapper">
+                    <h4>🎯 Confidence Distribution</h4>
+                    <p class="viz-help">Model certainty in corrections</p>
+                    {% set conf_total = stats.confidence_histogram['0.0-0.5'] + stats.confidence_histogram['0.5-0.7'] + stats.confidence_histogram['0.7-0.85'] + stats.confidence_histogram['0.85-0.95'] + stats.confidence_histogram['0.95-1.0'] %}
+                    {% if conf_total > 0 %}
+                    {% set pct_1 = (stats.confidence_histogram['0.0-0.5'] / conf_total * 100) %}
+                    {% set pct_2 = (stats.confidence_histogram['0.5-0.7'] / conf_total * 100) %}
+                    {% set pct_3 = (stats.confidence_histogram['0.7-0.85'] / conf_total * 100) %}
+                    {% set pct_4 = (stats.confidence_histogram['0.85-0.95'] / conf_total * 100) %}
+                    {% set pct_5 = (stats.confidence_histogram['0.95-1.0'] / conf_total * 100) %}
+                    <div class="pie-chart" style="background: conic-gradient(
+                        #e74c3c 0% {{ pct_1 }}%,
+                        #e67e22 {{ pct_1 }}% {{ pct_1 + pct_2 }}%,
+                        #f39c12 {{ pct_1 + pct_2 }}% {{ pct_1 + pct_2 + pct_3 }}%,
+                        #3498db {{ pct_1 + pct_2 + pct_3 }}% {{ pct_1 + pct_2 + pct_3 + pct_4 }}%,
+                        #2ecc71 {{ pct_1 + pct_2 + pct_3 + pct_4 }}% 100%
+                    )"></div>
+                    {% endif %}
+                    <div class="pie-legend">
+                        <div class="legend-item"><span class="dot dot-unreadable"></span> 0.0-0.5 ({{ stats.confidence_histogram['0.0-0.5'] }})</div>
+                        <div class="legend-item"><span class="dot dot-marginal"></span> 0.5-0.7 ({{ stats.confidence_histogram['0.5-0.7'] }})</div>
+                        <div class="legend-item"><span class="dot dot-acceptable"></span> 0.7-0.85 ({{ stats.confidence_histogram['0.7-0.85'] }})</div>
+                        <div class="legend-item"><span class="dot dot-good"></span> 0.85-0.95 ({{ stats.confidence_histogram['0.85-0.95'] }})</div>
+                        <div class="legend-item"><span class="dot dot-excellent"></span> 0.95-1.0 ({{ stats.confidence_histogram['0.95-1.0'] }})</div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Confidence Histogram -->
-        <div class="viz-section">
-            <h4>🎯 Confidence Distribution</h4>
-            <div class="histogram">
-                {% for bin, count in stats.confidence_histogram.items() %}
-                <div class="histogram-bar-wrapper">
-                    <div class="histogram-label">{{ bin }}</div>
-                    <div class="histogram-bar
-                        {% if bin == '0.0-0.5' %}bar-unreadable
-                        {% elif bin == '0.5-0.7' %}bar-marginal
-                        {% elif bin == '0.7-0.85' %}bar-acceptable
-                        {% elif bin == '0.85-0.95' %}bar-good
-                        {% else %}bar-excellent{% endif %}"
-                        style="width: {% if stats.total_pages > 0 %}{{ (count / stats.total_pages * 100)|int }}{% else %}0{% endif %}%;">
-                        <span class="bar-count">{{ count }}</span>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-            <div class="histogram-legend">
-                <span class="legend-item"><span class="dot dot-unreadable"></span> Very Low (0.0-0.5)</span>
-                <span class="legend-item"><span class="dot dot-marginal"></span> Low (0.5-0.7)</span>
-                <span class="legend-item"><span class="dot dot-acceptable"></span> Acceptable (0.7-0.85)</span>
-                <span class="legend-item"><span class="dot dot-good"></span> Good (0.85-0.95)</span>
-                <span class="legend-item"><span class="dot dot-excellent"></span> High (0.95-1.0)</span>
-            </div>
-        </div>
-
-        <!-- Problem Pages List -->
+        <!-- Lowest Confidence Pages -->
         {% if stats.problem_pages %}
         <div class="viz-section">
-            <h4>⚠️ Pages Needing Review (Low Similarity or Low Confidence)</h4>
-            <div class="problem-pages-table">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Page</th>
-                            <th>Similarity</th>
-                            <th>Confidence</th>
-                            <th>Corrections</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for page in stats.problem_pages %}
-                        <tr class="{% if page.similarity < 0.85 %}severity-high{% elif page.similarity < 0.90 %}severity-medium{% else %}severity-low{% endif %}">
-                            <td class="page-num">{{ page.page_num }}</td>
-                            <td class="metric">{{ "%.3f"|format(page.similarity) }}</td>
-                            <td class="metric">{{ "%.3f"|format(page.confidence) }}</td>
-                            <td class="metric">{{ page.corrections }}</td>
-                            <td>
-                                <a href="/stage/{{ scan_id }}/corrected/viewer?page={{ page.page_num }}" class="view-link">View</a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <h4>⚠️ Lowest 20 Pages by Confidence</h4>
+            <div class="problem-pages">
+                {% for page in stats.problem_pages[:20] %}
+                <a href="/stage/{{ scan_id }}/corrected/viewer?page={{ page.page_num }}" class="problem-page">
+                    <div class="problem-page-num">Page {{ page.page_num }}</div>
+                    <div class="problem-page-conf">{{ "%.3f"|format(page.confidence) }}</div>
+                </a>
+                {% endfor %}
             </div>
         </div>
         {% endif %}
@@ -248,71 +234,42 @@
         font-style: italic;
     }
 
-    .histogram {
+    .pie-charts-container {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 40px;
         margin: 20px 0;
     }
 
-    .histogram-bar-wrapper {
-        display: flex;
-        align-items: center;
-        margin-bottom: 12px;
+    .pie-chart-wrapper {
+        text-align: center;
     }
 
-    .histogram-label {
-        width: 100px;
-        font-size: 0.85em;
-        color: var(--text-secondary);
-        text-align: right;
-        margin-right: 15px;
+    .pie-chart-wrapper h4 {
+        margin-top: 0;
+        margin-bottom: 8px;
+        font-size: 1em;
     }
 
-    .histogram-bar {
-        height: 32px;
-        border-radius: 4px;
-        display: flex;
-        align-items: center;
-        padding-left: 10px;
-        min-width: 40px;
-        transition: all 0.3s ease;
+    .pie-chart {
+        width: 200px;
+        height: 200px;
+        border-radius: 50%;
+        margin: 20px auto;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
 
-    .histogram-bar:hover {
-        transform: scaleX(1.02);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-    }
-
-    .bar-count {
-        color: white;
-        font-weight: 600;
-        font-size: 0.9em;
-    }
-
-    /* Similarity-specific colors */
-    .bar-red-flag { background: #e74c3c; }
-    .bar-concerning { background: #e67e22; }
-    .bar-normal { background: #f39c12; }
-    .bar-minor { background: #3498db; }
-    .bar-very-minor { background: #2ecc71; }
-
-    /* Confidence colors (reuse from OCR) */
-    .bar-unreadable { background: #e74c3c; }
-    .bar-marginal { background: #e67e22; }
-    .bar-acceptable { background: #f39c12; }
-    .bar-good { background: #3498db; }
-    .bar-excellent { background: #2ecc71; }
-
-    .histogram-legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 15px;
-        margin-top: 15px;
+    .pie-legend {
+        text-align: left;
+        display: inline-block;
         font-size: 0.85em;
     }
 
-    .legend-item {
+    .pie-legend .legend-item {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
+        margin-bottom: 6px;
     }
 
     .dot {
@@ -332,65 +289,47 @@
     .dot-good { background: #3498db; }
     .dot-excellent { background: #2ecc71; }
 
-    .problem-pages-table {
-        overflow-x: auto;
+    .problem-pages {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 10px;
+        max-height: 400px;
+        overflow-y: auto;
+        padding: 10px;
+        background: #fafafa;
+        border-radius: 6px;
     }
 
-    .problem-pages-table table {
-        width: 100%;
-        border-collapse: collapse;
+    .problem-page {
+        background: #fff5f5;
+        border: 2px solid #feb2b2;
+        border-radius: 6px;
+        padding: 12px;
+        text-decoration: none;
+        transition: all 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .problem-page:hover {
+        background: #fed7d7;
+        border-color: #fc8181;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    .problem-page-num {
+        font-weight: 600;
+        color: #742a2a;
         font-size: 0.9em;
     }
 
-    .problem-pages-table thead {
-        background: var(--dark);
-        color: white;
-    }
-
-    .problem-pages-table th {
-        padding: 12px;
-        text-align: left;
-        font-weight: 600;
-        text-transform: uppercase;
+    .problem-page-conf {
         font-size: 0.85em;
-        letter-spacing: 0.5px;
-    }
-
-    .problem-pages-table td {
-        padding: 10px 12px;
-        border-bottom: 1px solid var(--light);
-    }
-
-    .problem-pages-table tr.severity-high {
-        background: #fff5f5;
-    }
-
-    .problem-pages-table tr.severity-medium {
-        background: #fffbf0;
-    }
-
-    .problem-pages-table tr.severity-low {
-        background: #f8f9fa;
-    }
-
-    .page-num {
-        font-weight: 600;
+        color: #c53030;
         font-family: 'Monaco', monospace;
-    }
-
-    .metric {
-        font-family: 'Monaco', monospace;
-        font-size: 0.95em;
-    }
-
-    .view-link {
-        color: var(--primary);
-        text-decoration: none;
-        font-weight: 500;
-    }
-
-    .view-link:hover {
-        text-decoration: underline;
     }
 </style>
 {% endblock %}
