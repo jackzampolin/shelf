@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block title %}Table of Contents - {{ scan_id }}{% endblock %}
+
+{% block content %}
+<div class="container-wide">
+    <div class="stage-header">
+        <h2>📖 Table of Contents - {{ scan_id }}</h2>
+        <a href="/stage/{{ scan_id }}/build_structure" class="back-link">← Back to Overview</a>
+    </div>
+
+    <div class="page-header">
+        <div class="metadata">
+            <span><strong>ToC Pages:</strong> {{ toc_data.toc_page_range.start_page }}-{{ toc_data.toc_page_range.end_page }}</span>
+            <span><strong>Entries:</strong> {{ toc_data.entries|length }}</span>
+            <span><strong>Chapters:</strong> {{ toc_data.total_chapters }}</span>
+            <span><strong>Sections:</strong> {{ toc_data.total_sections }}</span>
+            <span><strong>Confidence:</strong> {{ "%.2f"|format(toc_data.parsing_confidence) }}</span>
+        </div>
+    </div>
+
+    <div class="two-panel">
+        <div class="image-panel">
+            <h3>ToC Page Images</h3>
+            {% for page_num in page_numbers %}
+            <div class="page-image">
+                <h4>Page {{ page_num }}</h4>
+                <img src="/image/{{ scan_id }}/{{ page_num }}" alt="Page {{ page_num }}">
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="text-panel">
+            <h3>Parsed ToC Entries</h3>
+            {% for entry in toc_data.entries %}
+            <div class="toc-entry level-{{ entry.level }}">
+                <div class="toc-title">{{ entry.title }}</div>
+                <div class="toc-details">
+                    {% if entry.chapter_number %}Chapter {{ entry.chapter_number }} | {% endif %}
+                    {% if entry.printed_page_number %}Printed Page: {{ entry.printed_page_number }}{% else %}Page: N/A{% endif %} |
+                    Level {{ entry.level }}
+                </div>
+            </div>
+            {% endfor %}
+
+            {% if toc_data.notes %}
+            <div class="notes">
+                <h4>⚠️ Parsing Notes</h4>
+                <ul>
+                    {% for note in toc_data.notes %}
+                    <li>{{ note }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+    .stage-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+    }
+
+    .stage-header h2 {
+        margin: 0;
+    }
+
+    .back-link {
+        color: var(--primary);
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .back-link:hover {
+        text-decoration: underline;
+    }
+
+    .page-header {
+        background: white;
+        padding: 20px 25px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .metadata {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        font-size: 0.95em;
+    }
+
+    .metadata span {
+        color: var(--text);
+    }
+
+    .metadata strong {
+        color: var(--dark);
+    }
+
+    .two-panel {
+        display: flex;
+        gap: 20px;
+        height: 75vh;
+    }
+
+    .image-panel, .text-panel {
+        flex: 1;
+        overflow-y: auto;
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .image-panel h3, .text-panel h3 {
+        margin-top: 0;
+        margin-bottom: 20px;
+        color: var(--dark);
+        font-size: 1.1em;
+        border-bottom: 2px solid var(--light);
+        padding-bottom: 10px;
+    }
+
+    .page-image {
+        margin-bottom: 30px;
+    }
+
+    .page-image h4 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        color: var(--dark);
+        font-size: 0.95em;
+    }
+
+    .page-image img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 4px;
+        border: 1px solid var(--light);
+    }
+
+    .toc-entry {
+        padding: 15px;
+        margin-bottom: 10px;
+        border-radius: 4px;
+        border-left: 3px solid var(--primary);
+        background: #f8f9fa;
+    }
+
+    .toc-entry.level-0 {
+        background: #e3f2fd;
+        border-left-color: #2196f3;
+    }
+
+    .toc-entry.level-1 {
+        background: #f3e5f5;
+        border-left-color: #9c27b0;
+        margin-left: 20px;
+    }
+
+    .toc-entry.level-2 {
+        background: #e8f5e9;
+        border-left-color: #4caf50;
+        margin-left: 40px;
+    }
+
+    .toc-title {
+        font-weight: 600;
+        font-size: 1em;
+        color: var(--dark);
+        margin-bottom: 8px;
+    }
+
+    .toc-details {
+        font-size: 0.85em;
+        color: var(--text-secondary);
+        font-family: 'Monaco', monospace;
+    }
+
+    .notes {
+        margin-top: 30px;
+        padding: 20px;
+        background: #fff3cd;
+        border-radius: 6px;
+        border-left: 4px solid #ffc107;
+    }
+
+    .notes h4 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        color: #856404;
+    }
+
+    .notes ul {
+        margin: 0;
+        padding-left: 20px;
+        line-height: 1.8;
+        color: #856404;
+    }
+
+    @media (max-width: 1200px) {
+        .two-panel {
+            flex-direction: column;
+            height: auto;
+        }
+
+        .image-panel, .text-panel {
+            flex: none;
+            min-height: 400px;
+        }
+    }
+</style>
+{% endblock %}

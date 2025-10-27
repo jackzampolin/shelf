@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+
+{% block title %}Merged Viewer - {{ scan_id }}{% endblock %}
+
+{% block content %}
+<div class="container-wide">
+    <div class="stage-header">
+        <h2>🔗 Merged Viewer - {{ scan_id }}</h2>
+        <a href="/stage/{{ scan_id }}/merged" class="back-link">← Back to Overview</a>
+    </div>
+
+    <!-- Page Data Viewer -->
+    <div class="data-viewer">
+        <div class="data-header">
+            <h3>📖 Merged Page Data</h3>
+            <div class="page-selector">
+                <label for="page-input">Page:</label>
+                <input type="number"
+                       id="page-input"
+                       value="{{ current_page }}"
+                       min="1"
+                       max="{{ all_pages[-1] }}"
+                       onkeyup="if(event.key==='Enter') window.location.href='/stage/{{ scan_id }}/merged/viewer?page=' + this.value">
+                <span class="page-info">of {{ all_pages[-1] }}</span>
+                {% if current_page > 1 %}
+                <button onclick="window.location.href='/stage/{{ scan_id }}/merged/viewer?page={{ current_page - 1 }}'">← Previous</button>
+                {% else %}
+                <button disabled>← Previous</button>
+                {% endif %}
+                {% if current_page < all_pages[-1] %}
+                <button onclick="window.location.href='/stage/{{ scan_id }}/merged/viewer?page={{ current_page + 1 }}'">Next →</button>
+                {% else %}
+                <button disabled>Next →</button>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Page Metadata -->
+        {% if stage_data %}
+        <div class="page-metadata">
+            <div class="metadata-item">
+                <span class="label">Printed Page:</span>
+                <span class="value">{{ stage_data.printed_page_number or 'Not detected' }}</span>
+            </div>
+            <div class="metadata-item">
+                <span class="label">Numbering Style:</span>
+                <span class="value">{{ stage_data.numbering_style or 'none' }}</span>
+            </div>
+            <div class="metadata-item">
+                <span class="label">Region:</span>
+                <span class="value region-badge region-{{ stage_data.page_region or 'unknown' }}">
+                    {{ (stage_data.page_region or 'unknown')|replace('_', ' ')|title }}
+                </span>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="two-panel">
+            <!-- Image Panel -->
+            <div class="image-panel">
+                <h4>Page Image</h4>
+                <div class="image-wrapper">
+                    <img id="page-image"
+                         src="/image/{{ scan_id }}/{{ current_page }}"
+                         alt="Page {{ current_page }}">
+                </div>
+            </div>
+
+            <!-- Merged Data Panel -->
+            <div class="text-panel">
+                <h4>Merged Text & Classifications</h4>
+                {% if stage_data and stage_data.blocks %}
+                    {% for block in stage_data.blocks %}
+                    <div class="merged-block">
+                        <div class="block-header">
+                            <span class="block-num">Block {{ loop.index }}</span>
+                            {% if block.classification %}
+                            <span class="block-type">{{ block.classification|replace('_', ' ')|title }}</span>
+                            {% endif %}
+                        </div>
+                        {% for para in block.paragraphs %}
+                        <p class="para-text">
+                            {{ para.text }}
+                            {% if para.notes %}
+                            <span class="notes-badge" title="{{ para.notes }}">📝 Notes</span>
+                            {% endif %}
+                        </p>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state">
+                        <p>No merged data available</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .stage-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+    }
+
+    .stage-header h2 {
+        margin: 0;
+    }
+
+    .back-link {
+        color: var(--primary);
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .back-link:hover {
+        text-decoration: underline;
+    }
+
+    .data-viewer {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .data-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 2px solid var(--light);
+    }
+
+    .data-header h3 {
+        margin: 0;
+    }
+
+    .page-selector {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .page-selector input[type="number"] {
+        width: 80px;
+        padding: 8px 12px;
+        border: 1px solid var(--light);
+        border-radius: 4px;
+        font-size: 0.9em;
+        text-align: center;
+    }
+
+    .page-info {
+        color: var(--text-secondary);
+        font-size: 0.9em;
+    }
+
+    .page-selector button {
+        padding: 8px 16px;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+    }
+
+    .page-selector button:hover:not(:disabled) {
+        background: #2980b9;
+    }
+
+    .page-selector button:disabled {
+        background: var(--light);
+        color: var(--text-secondary);
+        cursor: not-allowed;
+    }
+
+    .page-metadata {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 6px;
+        flex-wrap: wrap;
+    }
+
+    .metadata-item {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .metadata-item .label {
+        font-weight: 600;
+        font-size: 0.9em;
+        color: var(--text-secondary);
+    }
+
+    .metadata-item .value {
+        font-family: 'Monaco', monospace;
+        font-size: 0.9em;
+    }
+
+    .region-badge {
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-weight: 500;
+        font-size: 0.85em;
+    }
+
+    .region-front_matter { background: #fef5e7; color: #f39c12; }
+    .region-body { background: #ebf5fb; color: #3498db; }
+    .region-back_matter { background: #fdecea; color: #e74c3c; }
+    .region-toc_area { background: #f4ecf7; color: #9b59b6; }
+    .region-unknown { background: #ecf0f1; color: #95a5a6; }
+
+    .two-panel {
+        display: flex;
+        gap: 20px;
+        height: 70vh;
+    }
+
+    .image-panel {
+        flex: 0 0 35%;
+        overflow-y: auto;
+        border: 1px solid var(--light);
+        border-radius: 4px;
+        padding: 15px;
+    }
+
+    .text-panel {
+        flex: 1;
+        overflow-y: auto;
+        border: 1px solid var(--light);
+        border-radius: 4px;
+        padding: 15px;
+    }
+
+    .image-panel h4, .text-panel h4 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        color: var(--dark);
+        font-size: 0.95em;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 2px solid var(--light);
+        padding-bottom: 8px;
+    }
+
+    .image-wrapper {
+        width: 100%;
+    }
+
+    .image-wrapper img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 4px;
+    }
+
+    .merged-block {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 4px;
+        border-left: 3px solid var(--primary);
+    }
+
+    .block-header {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+
+    .block-num {
+        font-weight: 600;
+        font-size: 0.9em;
+        color: var(--dark);
+    }
+
+    .block-type {
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 0.85em;
+        font-weight: 500;
+        background: #3498db;
+        color: white;
+    }
+
+    .para-text {
+        margin: 8px 0;
+        line-height: 1.6;
+        color: var(--text);
+        padding: 8px;
+        border-radius: 3px;
+        background: white;
+    }
+
+    .notes-badge {
+        display: inline-block;
+        margin-left: 8px;
+        padding: 2px 8px;
+        background: #fff3cd;
+        color: #856404;
+        font-size: 0.75em;
+        border-radius: 3px;
+        font-weight: 600;
+        vertical-align: middle;
+        cursor: help;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--text-secondary);
+    }
+
+    @media (max-width: 1200px) {
+        .two-panel {
+            flex-direction: column;
+            height: auto;
+        }
+
+        .image-panel {
+            flex: none;
+            max-height: 400px;
+        }
+
+        .text-panel {
+            flex: none;
+            min-height: 300px;
+        }
+    }
+</style>
+{% endblock %}

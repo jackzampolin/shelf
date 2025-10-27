@@ -71,7 +71,7 @@ class TocFinderTools:
                 "type": "function",
                 "function": {
                     "name": "check_labels_report",
-                    "description": "Check if labels stage already detected ToC pages (fast, free)",
+                    "description": "Check if labels stage already detected ToC pages (fast, free). Checks both block-level TABLE_OF_CONTENTS classifications and page-level toc_area regions.",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -209,29 +209,74 @@ class TocFinderTools:
         ]
 
     def check_labels_report(self) -> str:
-        """Check if labels stage already detected ToC pages."""
-        labels_report = self.storage.stage('labels').output_dir / 'report.csv'
+        """Check if labels stage already detected ToC pages.
 
-        if not labels_report.exists():
-            return json.dumps({
-                "found": False,
-                "reason": "Labels report not found"
-            })
+        Two-phase detection:
+        1. Check report CSV for page_region='toc_area' (page-level classification)
+        2. Scan label JSON files for blocks with classification='TABLE_OF_CONTENTS' (block-level)
 
-        toc_pages = []
-        with open(labels_report) as f:
-            for row in csv.DictReader(f):
-                if row.get('page_region') == 'toc_area':
-                    toc_pages.append(int(row['page_num']))
+        Returns combined results prioritizing block-level detection (more accurate).
+        """
+        labels_stage = self.storage.stage('labels')
+        labels_report = labels_stage.output_dir / 'report.csv'
 
-        if toc_pages:
+        # Phase 1: Check CSV for page_region='toc_area'
+        toc_pages_from_region = []
+        if labels_report.exists():
+            with open(labels_report) as f:
+                for row in csv.DictReader(f):
+                    if row.get('page_region') == 'toc_area':
+                        toc_pages_from_region.append(int(row['page_num']))
+
+        # Phase 2: Scan label JSON files for TABLE_OF_CONTENTS blocks
+        toc_pages_from_blocks = []
+        try:
+            # Get all label pages
+            label_pages = labels_stage.list_output_pages()
+
+            for page_num in label_pages:
+                try:
+                    label_data = labels_stage.load_page(page_num)
+                    blocks = label_data.get('blocks', [])
+
+                    # Check if any block is classified as TABLE_OF_CONTENTS
+                    for block in blocks:
+                        if block.get('classification') == 'TABLE_OF_CONTENTS':
+                            toc_pages_from_blocks.append(page_num)
+                            break  # Found ToC on this page, move to next page
+                except Exception:
+                    continue  # Skip pages that fail to load
+        except Exception:
+            pass  # Labels stage may not exist yet
+
+        # Combine results (prioritize block-level detection)
+        if toc_pages_from_blocks:
             return json.dumps({
                 "found": True,
-                "page_range": {"start_page": min(toc_pages), "end_page": max(toc_pages)},
-                "page_count": len(toc_pages)
+                "page_range": {
+                    "start_page": min(toc_pages_from_blocks),
+                    "end_page": max(toc_pages_from_blocks)
+                },
+                "page_count": len(toc_pages_from_blocks),
+                "detection_method": "block_classification",
+                "pages": sorted(toc_pages_from_blocks)
+            })
+        elif toc_pages_from_region:
+            return json.dumps({
+                "found": True,
+                "page_range": {
+                    "start_page": min(toc_pages_from_region),
+                    "end_page": max(toc_pages_from_region)
+                },
+                "page_count": len(toc_pages_from_region),
+                "detection_method": "page_region",
+                "pages": sorted(toc_pages_from_region)
             })
         else:
-            return json.dumps({"found": False})
+            return json.dumps({
+                "found": False,
+                "reason": "No ToC detected in labels (checked page_region and block classifications)"
+            })
 
     def get_front_matter_range(self) -> str:
         """Get front matter range from labels report."""

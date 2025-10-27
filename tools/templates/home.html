@@ -256,16 +256,20 @@
 
                 <!-- Labels Status -->
                 <td>
-                    {% if book.labels.status == 'complete' %}
-                    <span class="status-badge status-complete">
-                        <span class="badge-icon">✓</span>
-                        {{ book.labels.completed }}/{{ book.labels.total }}
-                    </span>
-                    {% elif book.labels.status == 'in_progress' %}
-                    <span class="status-badge status-in_progress">
-                        <span class="badge-icon">⚠</span>
-                        {{ book.labels.completed }}/{{ book.labels.total }}
-                    </span>
+                    {% if book.labels.status == 'complete' or book.labels.status == 'in_progress' %}
+                    <a href="/stage/{{ book.scan_id }}/labels" class="status-link">
+                        {% if book.labels.status == 'complete' %}
+                        <span class="status-badge status-complete">
+                            <span class="badge-icon">✓</span>
+                            {{ book.labels.completed }}/{{ book.labels.total }}
+                        </span>
+                        {% else %}
+                        <span class="status-badge status-in_progress">
+                            <span class="badge-icon">⚠</span>
+                            {{ book.labels.completed }}/{{ book.labels.total }}
+                        </span>
+                        {% endif %}
+                    </a>
                     {% elif book.labels.status == 'not_started' %}
                     <span class="status-badge status-not_started">
                         <span class="badge-icon">○</span>
@@ -281,16 +285,20 @@
 
                 <!-- Merged Status -->
                 <td>
-                    {% if book.merged.status == 'complete' %}
-                    <span class="status-badge status-complete">
-                        <span class="badge-icon">✓</span>
-                        {{ book.merged.completed }}/{{ book.merged.total }}
-                    </span>
-                    {% elif book.merged.status == 'in_progress' %}
-                    <span class="status-badge status-in_progress">
-                        <span class="badge-icon">⚠</span>
-                        {{ book.merged.completed }}/{{ book.merged.total }}
-                    </span>
+                    {% if book.merged.status == 'complete' or book.merged.status == 'in_progress' %}
+                    <a href="/stage/{{ book.scan_id }}/merged" class="status-link">
+                        {% if book.merged.status == 'complete' %}
+                        <span class="status-badge status-complete">
+                            <span class="badge-icon">✓</span>
+                            {{ book.merged.completed }}/{{ book.merged.total }}
+                        </span>
+                        {% else %}
+                        <span class="status-badge status-in_progress">
+                            <span class="badge-icon">⚠</span>
+                            {{ book.merged.completed }}/{{ book.merged.total }}
+                        </span>
+                        {% endif %}
+                    </a>
                     {% elif book.merged.status == 'not_started' %}
                     <span class="status-badge status-not_started">
                         <span class="badge-icon">○</span>
@@ -307,7 +315,9 @@
                 <!-- ToC Status -->
                 <td>
                     {% if book.has_toc %}
-                    <span class="toc-badge toc-yes">✓ Yes</span>
+                    <a href="/stage/{{ book.scan_id }}/build_structure" class="status-link">
+                        <span class="toc-badge toc-yes">✓ Yes</span>
+                    </a>
                     {% else %}
                     <span class="toc-badge toc-no">- No</span>
                     {% endif %}

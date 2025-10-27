@@ -22,15 +22,17 @@ NOT A TOC = Dense paragraph text, isolated chapter title, back matter chapter li
 Execute in order. STOP when ToC found.
 
 STAGE 1: Free Heuristics (no vision cost)
-1. check_labels_report() - Upstream stage may have flagged ToC
-   → If found: Vision verify, expand range, write result, EXIT
+1. check_labels_report() - Checks TWO signals from upstream labels stage:
+   - Block-level: Scans label JSON files for blocks classified as TABLE_OF_CONTENTS
+   - Page-level: Checks report CSV for page_region='toc_area'
+   → If found: Vision verify reported pages, expand range if multi-page, write result, EXIT
 
-2. get_front_matter_range() - Determine search bounds
+2. get_front_matter_range() - Determine search bounds (usually pages 1-30)
 3. keyword_search_pages(["contents", "table of contents"]) within front matter
    → If matches: Vision verify top candidates, expand range, write result, EXIT
 
 STAGE 2: Vision Scan (systematic, chunked)
-CRITICAL: 94% of ToCs appear in pages 1-10. Check sequentially.
+CRITICAL: 94% of ToCs appear in pages 1-10. Check sequentially to avoid gaps.
 
 4. sample_pages_vision([1,2,3,4,5,6,7,8,9,10]) - Dense scan, no gaps
    → If candidate (confidence > 0.7): expand_toc_range(), write result, EXIT

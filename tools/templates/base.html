@@ -9,17 +9,6 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body>
-    <nav class="navbar">
-        <h1>📚 Shelf Viewer</h1>
-        <div class="nav-links">
-            <a href="/" {% if active == 'home' %}class="active"{% endif %}>Home</a>
-            <a href="/toc" {% if active == 'toc' %}class="active"{% endif %}>ToC</a>
-            <a href="/corrections" {% if active == 'corrections' %}class="active"{% endif %}>Corrections</a>
-            <a href="/labels" {% if active == 'labels' %}class="active"{% endif %}>Labels</a>
-            <a href="/stats" {% if active == 'stats' %}class="active"{% endif %}>Stats</a>
-        </div>
-    </nav>
-
     <main>
         {% block content %}{% endblock %}
     </main>

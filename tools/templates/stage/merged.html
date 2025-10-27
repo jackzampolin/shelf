@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Merged Stage - {{ scan_id }}{% endblock %}
+
+{% block content %}
+<div class="container-wide">
+    <div class="stage-header">
+        <h2>🔗 Merged Stage - {{ scan_id }}</h2>
+        <div class="stage-actions">
+            <a href="/stage/{{ scan_id }}/merged/viewer" class="action-button">
+                📖 Open Page Viewer
+            </a>
+            <a href="/" class="back-link">← Back to Library</a>
+        </div>
+    </div>
+
+    <div class="info-panel">
+        <h3>ℹ️ About Merged Stage</h3>
+        <p>The merged stage combines data from three upstream stages:</p>
+        <ul>
+            <li><strong>OCR</strong> - Text and bounding boxes</li>
+            <li><strong>Corrected</strong> - Error-corrected text</li>
+            <li><strong>Labels</strong> - Block classifications and page metadata</li>
+        </ul>
+        <p>This is a deterministic merge that produces the final structured output for each page. Use the viewer to inspect the merged data.</p>
+    </div>
+
+    <!-- Log Viewer (Reusable Component) -->
+    {% include '_log_viewer.html' %}
+</div>
+
+<style>
+    .stage-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+    }
+
+    .stage-header h2 {
+        margin: 0;
+    }
+
+    .stage-actions {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+    }
+
+    .action-button {
+        padding: 10px 20px;
+        background: var(--primary);
+        color: white;
+        text-decoration: none;
+        border-radius: 6px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    }
+
+    .action-button:hover {
+        background: #2980b9;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    .back-link {
+        color: var(--primary);
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .back-link:hover {
+        text-decoration: underline;
+    }
+
+    .info-panel {
+        background: white;
+        border-radius: 8px;
+        padding: 25px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .info-panel h3 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        color: var(--dark);
+    }
+
+    .info-panel p {
+        line-height: 1.6;
+        color: var(--text);
+        margin-bottom: 15px;
+    }
+
+    .info-panel ul {
+        line-height: 1.8;
+        color: var(--text);
+        margin-left: 20px;
+    }
+
+    .info-panel li strong {
+        color: var(--dark);
+    }
+</style>
+{% endblock %}

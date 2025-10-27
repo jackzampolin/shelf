@@ -830,6 +830,36 @@ def stage_view(scan_id: str, stage_name: str):
     if stage_name not in valid_stages:
         abort(404, f"Invalid stage: {stage_name}")
 
+    # Special handling for build_structure (uses toc.json)
+    if stage_name == "build_structure":
+        toc_path = LIBRARY_ROOT / scan_id / "build_structure" / "toc.json"
+        has_toc = toc_path.exists()
+        toc_data = None
+
+        if has_toc:
+            with open(toc_path) as f:
+                toc_data = json.load(f)
+            # Check if ToC was actually found
+            if "note" in toc_data and "No ToC found" in toc_data["note"]:
+                has_toc = False
+                toc_data = None
+
+        # Get latest logs
+        level_filter = request.args.get('level')
+        search = request.args.get('search')
+        logs = get_stage_logs(scan_id, stage_name, level_filter=level_filter, search=search)
+
+        return render_template(
+            'stage/build_structure.html',
+            active='stage',
+            scan_id=scan_id,
+            stage_name=stage_name,
+            has_toc=has_toc,
+            toc_data=toc_data,
+            logs=logs,
+        )
+
+    # Standard handling for other stages
     # Get stats from report.csv
     stats = get_stage_stats(scan_id, stage_name)
 
@@ -858,6 +888,29 @@ def stage_viewer(scan_id: str, stage_name: str):
     if stage_name not in valid_stages:
         abort(404, f"Invalid stage: {stage_name}")
 
+    # Special handling for build_structure (ToC viewer)
+    if stage_name == "build_structure":
+        toc_path = LIBRARY_ROOT / scan_id / "build_structure" / "toc.json"
+        if not toc_path.exists():
+            abort(404, f"No ToC data found for {scan_id}")
+
+        with open(toc_path) as f:
+            toc_data = json.load(f)
+
+        page_range = toc_data.get("toc_page_range", {})
+        start_page = page_range.get("start_page", 1)
+        end_page = page_range.get("end_page", 1)
+        page_numbers = list(range(start_page, end_page + 1))
+
+        return render_template(
+            'stage/build_structure_viewer.html',
+            active='stage',
+            scan_id=scan_id,
+            toc_data=toc_data,
+            page_numbers=page_numbers,
+        )
+
+    # Standard handling for other stages
     # Get page list
     all_pages = get_book_pages(scan_id)
     if not all_pages:
