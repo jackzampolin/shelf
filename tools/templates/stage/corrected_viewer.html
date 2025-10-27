@@ -486,18 +486,18 @@ if (textPanels.length === 2) {
 
 // View switching
 function switchView(view) {
-    const sideBySide = document.querySelector('.three-panel').parentElement;
+    const threePanel = document.querySelector('.three-panel');
     const diffView = document.querySelector('.diff-view');
     const btnSideBySide = document.getElementById('view-side-by-side');
     const btnDiff = document.getElementById('view-diff');
 
     if (view === 'side-by-side') {
-        sideBySide.style.display = 'block';
+        threePanel.style.display = 'flex';
         diffView.style.display = 'none';
         btnSideBySide.classList.add('active');
         btnDiff.classList.remove('active');
     } else {
-        sideBySide.style.display = 'none';
+        threePanel.style.display = 'none';
         diffView.style.display = 'block';
         btnSideBySide.classList.remove('active');
         btnDiff.classList.add('active');
@@ -598,8 +598,13 @@ function generateDiff() {
         blockDiv.appendChild(blockHeader);
 
         block.paragraphs.forEach((para, paraIdx) => {
-            const oldText = para.text;
+            const oldText = para.text || '';
             const newText = (window.correctionData?.blocks?.[blockIdx]?.paragraphs?.[paraIdx]?.text) || oldText;
+
+            // Skip empty paragraphs
+            if (!oldText && !newText) {
+                return;
+            }
 
             const paraDiv = document.createElement('div');
 
