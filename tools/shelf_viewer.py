@@ -243,6 +243,8 @@ def get_stage_stats(scan_id: str, stage: str) -> Optional[Dict[str, Any]]:
             return _calculate_ocr_stats(rows, total_pages)
         elif stage == "corrected":
             return _calculate_corrected_stats(rows, total_pages)
+        elif stage == "labels":
+            return _calculate_labels_stats(rows, total_pages)
         else:
             # Generic stats for other stages
             confidences = []
@@ -445,6 +447,103 @@ def _calculate_corrected_stats(rows: List[Dict], total_pages: int) -> Dict[str, 
         "avg_chars_changed": sum(chars_changed) / len(chars_changed) if chars_changed else None,
         "problem_pages": problem_pages[:20],  # Top 20 worst
         "similarity_histogram": similarity_histogram,
+        "confidence_histogram": confidence_histogram,
+    }
+
+
+def _calculate_labels_stats(rows: List[Dict], total_pages: int) -> Dict[str, Any]:
+    """Calculate detailed label-specific statistics.
+
+    Key metrics:
+    - avg_classification_confidence: Block classification quality
+    - page_number_extracted: Printed page numbers found
+    - page_region_classified: Regions identified
+    - has_chapter_heading: Chapter boundary markers
+    """
+    confidences = []
+    page_numbers_extracted = 0
+    regions_classified = 0
+    chapter_headings = []
+    problem_pages = []
+    region_breakdown = {"front_matter": 0, "body": 0, "back_matter": 0, "toc_area": 0, "unknown": 0}
+
+    for row in rows:
+        page_num = int(row['page_num'])
+
+        # Confidence
+        if 'avg_classification_confidence' in row and row['avg_classification_confidence']:
+            try:
+                conf = float(row['avg_classification_confidence'])
+                confidences.append(conf)
+
+                # Flag problem pages (< 0.80 confidence or missing classification)
+                if conf < 0.80:
+                    problem_pages.append({
+                        'page_num': page_num,
+                        'confidence': conf,
+                        'region': row.get('page_region', 'unknown'),
+                        'blocks': int(row.get('total_blocks_classified', 0))
+                    })
+            except (ValueError, TypeError):
+                pass
+
+        # Page number extraction
+        if row.get('page_number_extracted', '').lower() == 'true':
+            page_numbers_extracted += 1
+
+        # Region classification
+        region = row.get('page_region', 'unknown')
+        if region and region != 'null':
+            regions_classified += 1
+            region_breakdown[region] = region_breakdown.get(region, 0) + 1
+        else:
+            region_breakdown['unknown'] += 1
+
+        # Chapter headings
+        if row.get('has_chapter_heading', '').lower() == 'true':
+            chapter_headings.append({
+                'page_num': page_num,
+                'printed_page': row.get('printed_page_number', '-'),
+                'text': row.get('chapter_heading_text', '(No text)')
+            })
+
+    # Sort problem pages by confidence (worst first)
+    problem_pages.sort(key=lambda x: x['confidence'])
+
+    # Calculate confidence histogram bins
+    confidence_histogram = {
+        "0.00-0.80": 0,  # Red flag
+        "0.80-0.85": 0,  # Concerning
+        "0.85-0.90": 0,  # Acceptable
+        "0.90-0.95": 0,  # Good
+        "0.95-1.00": 0,  # Excellent
+    }
+
+    for conf in confidences:
+        if conf < 0.80:
+            confidence_histogram["0.00-0.80"] += 1
+        elif conf < 0.85:
+            confidence_histogram["0.80-0.85"] += 1
+        elif conf < 0.90:
+            confidence_histogram["0.85-0.90"] += 1
+        elif conf < 0.95:
+            confidence_histogram["0.90-0.95"] += 1
+        else:
+            confidence_histogram["0.95-1.00"] += 1
+
+    return {
+        "total_pages": total_pages,
+        "avg_confidence": sum(confidences) / len(confidences) if confidences else None,
+        "min_confidence": min(confidences) if confidences else None,
+        "max_confidence": max(confidences) if confidences else None,
+        "page_numbers_extracted": page_numbers_extracted,
+        "page_numbers_percentage": (page_numbers_extracted / total_pages * 100) if total_pages > 0 else 0,
+        "regions_classified": regions_classified,
+        "regions_percentage": (regions_classified / total_pages * 100) if total_pages > 0 else 0,
+        "chapter_headings_count": len(chapter_headings),
+        "chapter_headings": chapter_headings[:20],  # Top 20
+        "region_breakdown": region_breakdown,
+        "problem_pages": problem_pages[:20],  # Top 20 worst
         "confidence_histogram": confidence_histogram,
     }
 

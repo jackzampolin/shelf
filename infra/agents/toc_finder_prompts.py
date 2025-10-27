@@ -136,22 +136,51 @@ TOC_DETECTION_VISION_PROMPT = """<task>
 Determine if this page contains Table of Contents material.
 </task>
 
+<critical_instruction>
+LOOK AT THE VISUAL LAYOUT, NOT THE OCR TEXT.
+
+IGNORE OCR QUALITY. Even if OCR is mangled/garbage, if the VISUAL STRUCTURE shows:
+- List layout (vertical stacking of entries)
+- Numbers in right column
+- Whitespace or dots connecting left to right
+→ It's a ToC
+
+OCR may show garbled text, but VISUAL LAYOUT reveals structure.
+</critical_instruction>
+
 <visual_markers>
-LOOK AT THE IMAGE. ToC pages show these patterns:
+EXAMINE THE IMAGE. Look for these LAYOUT patterns:
 
 STRONG SIGNALS (→ is_toc=true, confidence 0.85-1.0):
-✓ Right-aligned column of numbers (page references)
-✓ Leader dots connecting titles to numbers (Chapter 1 ........ 15)
-✓ Hierarchical indentation (multiple levels visible)
-✓ "Contents" or "Table of Contents" heading
-✓ Vertical list structure (10+ lines with consistent formatting)
+✓ Right-aligned column of numbers (ANY numbers - page references)
+✓ Leader dots or whitespace connecting left text to right numbers
+✓ Vertical list structure (multiple lines stacked, 10+ entries)
+✓ Hierarchical indentation (some lines indented more than others)
+✓ "Contents" heading at top (if visible)
+
+MODERATE SIGNALS (→ is_toc=true, confidence 0.70-0.84):
+• Numbers in right column (even if OCR is garbled)
+• List-like vertical spacing (consistent gaps between lines)
+• Different typography on this page vs surrounding pages
 
 REJECT (→ is_toc=false):
-✗ Dense paragraph prose (body text)
-✗ No page number references
-✗ Single chapter title on page (body page start, not ToC)
-✗ Timeline/table with numbers (not page references)
+✗ Dense paragraph blocks (body text flowing left-to-right)
+✗ No visible numbers anywhere on page
+✗ Single large title with body text below (chapter start page)
+✗ Table with data (timeline, statistics - different pattern)
 </visual_markers>
+
+<ocr_handling>
+CRITICAL: Bad OCR does NOT mean "not ToC"
+
+EXAMPLE - Mangled OCR but CLEAR ToC:
+OCR shows: "Chptor 1....... XK", "Ghaper 2....... W3"
+BUT IMAGE shows: Vertical list, dots connecting to right-aligned numbers
+→ {"is_toc": true, "confidence": 0.90, "visual_markers": ["Leader dots", "Right-aligned numbers", "Vertical list"]}
+
+If VISUAL LAYOUT looks like a list with page references → ToC
+If OCR is garbled but LAYOUT is clear → Still ToC
+</ocr_handling>
 
 <output_format>
 Return JSON:
@@ -163,11 +192,11 @@ Return JSON:
 }
 
 EXAMPLES:
-✓ Page with "Chapter 1 ... 15", "Chapter 2 ... 42" in indented list
-  → {"is_toc": true, "confidence": 0.95, "visual_markers": ["Leader dots", "Right-aligned numbers"], ...}
+✓ Page with dots connecting text to right-aligned numbers (even if OCR is garbled)
+  → {"is_toc": true, "confidence": 0.90, "visual_markers": ["Leader dots", "Right-aligned numbers"], ...}
 
-✗ Dense paragraph page
-  → {"is_toc": false, "confidence": 0.9, "visual_markers": [], "reasoning": "No list structure or page references"}
+✗ Dense paragraph page with no visible numbers
+  → {"is_toc": false, "confidence": 0.9, "visual_markers": [], "reasoning": "No list structure or page references visible"}
 </output_format>
 """
 
@@ -181,13 +210,52 @@ Verify if this page continues a multi-page Table of Contents.
 A nearby page was identified as ToC. Determine if THIS page is also part of the same ToC.
 </context>
 
+<critical_instruction>
+LOOK AT THE VISUAL LAYOUT, NOT THE OCR TEXT.
+
+IGNORE OCR QUALITY. Even if OCR is completely mangled, if the VISUAL STRUCTURE matches ToC layout:
+- Vertical list of entries
+- Numbers in right column
+- Leader dots or whitespace connecting left to right
+- Same visual pattern as seed ToC page
+→ It's part of the ToC
+
+OCR may be garbled, but VISUAL LAYOUT shows continuation.
+</critical_instruction>
+
 <detection_signals>
-Look for:
-✓ Continuation of chapter/section listing
-✓ Same formatting as seed ToC page
-✓ Page numbers continuing in sequence
-✗ Different content type (body text, different list type)
+EXAMINE THE IMAGE for these patterns:
+
+STRONG SIGNALS (→ is_toc=true):
+✓ Vertical list structure (same as seed ToC page)
+✓ Numbers in right column (page references continuing)
+✓ Leader dots or whitespace pattern (same as seed)
+✓ Similar typography and spacing (same visual style)
+
+MODERATE SIGNALS:
+• List-like layout (even if OCR is garbled)
+• Numbers visible on right side
+• Consistent vertical spacing between lines
+
+REJECT (→ is_toc=false):
+✗ Dense paragraph blocks (body text, not list)
+✗ No visible numbers anywhere
+✗ Completely different layout pattern from seed page
 </detection_signals>
+
+<ocr_tolerance>
+CRITICAL: Bad OCR does NOT mean "not part of ToC"
+
+If the seed ToC page has clear structure, THIS page might have worse OCR but SAME structure.
+
+EXAMPLE - Mangled OCR but CLEAR continuation:
+Seed page 5: Clear "Chapter 18... 200", "Chapter 19... 215"
+THIS page 4: OCR garbled BUT IMAGE shows same list layout + right-aligned numbers
+→ {"is_toc": true, "confidence": 0.85, "visual_markers": ["Vertical list matches seed", "Right-aligned numbers"]}
+
+If VISUAL LAYOUT matches seed page → Part of same ToC
+If OCR is worse but STRUCTURE is same → Still part of ToC
+</ocr_tolerance>
 
 <output_format>
 Return JSON:
