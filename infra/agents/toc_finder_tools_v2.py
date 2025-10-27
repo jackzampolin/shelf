@@ -63,14 +63,14 @@ class TocFinderTools:
                 "type": "function",
                 "function": {
                     "name": "add_page_images_to_context",
-                    "description": "Load page images and add them to conversation context so you can see them. Images are downsampled for vision API. Use this to visually inspect pages.",
+                    "description": "Load page images to see them visually. REPLACES any previously loaded images (doesn't accumulate). Load 2-4 pages at a time to avoid payload limits. Images are downsampled.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "page_nums": {
                                 "type": "array",
                                 "items": {"type": "integer"},
-                                "description": "List of page numbers to load (e.g., [4, 5, 6])"
+                                "description": "List of page numbers to load (e.g., [4, 5]). Limit to 2-4 pages to avoid 413 errors."
                             }
                         },
                         "required": ["page_nums"]
@@ -176,19 +176,20 @@ class TocFinderTools:
 
     def add_page_images_to_context(self, page_nums: List[int]) -> str:
         """
-        Load page images and add them to agent context.
+        Load page images and REPLACE current images in context.
 
-        The images will be visible in your next LLM call.
+        This replaces any previously loaded images. The images will be visible in your next LLM call.
 
         Args:
             page_nums: List of page numbers to load
 
         Returns:
-            JSON confirmation: {"added": [4, 5, 6], "total_images_in_context": 3}
+            JSON confirmation: {"loaded": [4, 5], "message": "Now viewing 2 pages"}
         """
         try:
             source_stage = self.storage.stage('source')
-            added_pages = []
+            loaded_pages = []
+            new_images = []
 
             for page_num in page_nums:
                 page_image_path = source_stage.output_page(page_num, extension='png')
@@ -197,17 +198,20 @@ class TocFinderTools:
                     continue
 
                 # Load and downsample image (avoid 413 Payload Too Large)
+                # Use smaller max to allow multiple images without 413
                 image = Image.open(page_image_path)
-                downsampled_image = downsample_for_vision(image, max_payload_kb=800)
+                downsampled_image = downsample_for_vision(image, max_payload_kb=400)
 
-                # Add to agent's images context
-                self.agent_client.images.append(downsampled_image)
-                added_pages.append(page_num)
+                new_images.append(downsampled_image)
+                loaded_pages.append(page_num)
+
+            # REPLACE images (don't accumulate) to avoid 413 Payload Too Large
+            self.agent_client.images = new_images
 
             return json.dumps({
-                "added": added_pages,
-                "total_images_in_context": len(self.agent_client.images),
-                "message": f"Added {len(added_pages)} images. You can now see pages {added_pages} in this conversation."
+                "loaded": loaded_pages,
+                "count": len(loaded_pages),
+                "message": f"Now viewing pages {loaded_pages}. Previous images were cleared."
             })
 
         except Exception as e:

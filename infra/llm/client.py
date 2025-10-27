@@ -516,6 +516,19 @@ class LLMClient:
                     error_type = f"{e.response.status_code} gateway error"
 
                 if should_retry and attempt < max_retries - 1:
+                    # For 413 errors, add nonce to avoid cached error responses
+                    if e.response.status_code == 413:
+                        import uuid
+                        # Add nonce to last message to force new request
+                        if payload['messages']:
+                            last_msg = payload['messages'][-1].copy()
+                            content = last_msg.get('content', '')
+                            if isinstance(content, str):
+                                # Add as HTML comment to minimize token impact
+                                nonce = uuid.uuid4().hex[:16]
+                                last_msg['content'] = f"{content}\n<!-- retry_{attempt}_id: {nonce} -->"
+                                payload['messages'][-1] = last_msg
+
                     wait_time = (2 ** attempt) * 1.0  # Exponential backoff
                     time.sleep(wait_time)
                     continue

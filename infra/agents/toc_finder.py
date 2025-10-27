@@ -219,10 +219,7 @@ def find_toc_pages_agentic(
     result = agent.search()
 
     if result.toc_found and result.toc_page_range:
-        page_range = PageRange(
-            start_page=result.toc_page_range['start_page'],
-            end_page=result.toc_page_range['end_page']
-        )
-        return page_range, result.total_cost_usd
+        # toc_page_range is already a PageRange object
+        return result.toc_page_range, result.total_cost_usd
     else:
         return None, result.total_cost_usd

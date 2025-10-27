@@ -82,25 +82,31 @@ REMEMBER: If it LOOKS like a list with page numbers → probably ToC
 </visual_detection_guide>
 
 <finding_full_range>
-When you find a ToC page, determine if you have the COMPLETE ToC:
+When you find ToC pages, determine if you have the COMPLETE ToC:
 
-1. Does the ToC start mid-content?
-   → Load previous pages to find the beginning
+**BE CONFIDENT** - If you see pages that clearly show:
+- ToC heading/title at the top
+- List continues to the last chapter
+- Clear boundary (next page is body text or different content)
+→ You're done! Write the result. Don't check neighbors unless uncertain.
 
-2. Does the ToC end abruptly?
-   → Load next pages to find the end
+**Only check adjacent pages if:**
+- ToC starts mid-chapter (e.g., "Chapter 18" on first page)
+- ToC ends abruptly without clear finale
+- No clear heading/boundary markers
 
-3. Stop expanding when you hit:
-   → 2 consecutive non-ToC pages
-   → Page 1 (ToC can't start before page 1)
-   → Pages with completely different layout
+EXAMPLE (confident - no need to check neighbors):
+- Labels found pages 4-5
+- Page 4: "CONTENTS" heading, chapters 1-15
+- Page 5: Chapters 16-30, ends with clear layout break
+→ Result: pages 4-5 (DON'T check pages 3 or 6)
 
-EXAMPLE:
+EXAMPLE (uncertain - check neighbors):
 - Labels found page 5
-- You see page 5 has ToC content BUT it starts with "Chapter 18"
-- Load page 4 - it shows "Chapter 1" through "Chapter 17" → ToC starts on page 4
-- Load page 6 - it's body text → ToC ends on page 5
-- Result: pages 4-5
+- Page 5: Starts with "Chapter 18" (no heading, mid-content)
+→ Check page 4 to find the beginning
+- Page 4: Shows "Contents" heading + Chapters 1-17
+→ Result: pages 4-5
 </finding_full_range>
 
 <cost_awareness>
