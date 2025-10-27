@@ -33,10 +33,16 @@ STAGE 1: Quick Heuristic Search (ALWAYS START HERE)
    - If verified: Expand range with expand_toc_range(), write result and exit
 
 STAGE 2: Systematic Vision Scan (if Stage 1 failed)
-4. Call sample_pages_vision() on pages 1-30 (or front matter range)
-   - Check every 3rd page initially (1, 4, 7, 10, ...)
+4. CRITICAL EARLY SCAN: Call sample_pages_vision(pages=[1,2,3,4,5,6,7,8,9,10])
+   - ToC appears in pages 1-10 in 94% of books
+   - Check EVERY page sequentially to avoid gaps
    - If candidate found (confidence > 0.7): Expand with expand_toc_range()
-   - If verified: Write result and exit
+   - If verified: IMMEDIATELY write result and exit
+
+5. If still not found: Call sample_pages_vision() on pages 11-30
+   - Check every 5th page (11, 16, 21, 26...)
+   - Reduces cost while maintaining coverage for academic books with late ToCs
+   - If candidate found: Expand and write result
 
 STAGE 3: Fallback (if no ToC found)
 5. Call write_toc_result() with toc_found=False

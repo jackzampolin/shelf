@@ -118,6 +118,27 @@ class BuildStructureStage(BaseStage):
         else:
             logger.info("No ToC found, saved placeholder toc.json", path=str(toc_path))
 
+        # TEMPORARY: Skip remaining phases for Phase 1 testing (issue #75)
+        # Just test ToC extraction across library
+        logger.info("Phase 1 testing: Skipping structure analysis phases")
+        checkpoint.mark_completed(
+            page_num=1,
+            cost_usd=total_cost,
+            metrics={
+                "toc_found": toc is not None,
+                "toc_entries": len(toc.entries) if toc else 0,
+                "toc_confidence": toc.parsing_confidence if toc else 0.0,
+            },
+        )
+        return {
+            "status": "success (phase 1 testing)",
+            "toc_found": toc is not None,
+            "toc_entries": len(toc.entries) if toc else 0,
+            "cost_usd": total_cost,
+        }
+
+        # TODO: Re-enable for Phase 3 (multi-agent structure extraction)
+        """
         # Phase 1.5: Extract heading text from all chapter heading pages
         heading_data = extract_headings(
             storage=storage,
@@ -220,3 +241,4 @@ class BuildStructureStage(BaseStage):
             "validation_warnings": validation.warning_count,
             "cost_usd": total_cost,
         }
+        """

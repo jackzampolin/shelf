@@ -4,22 +4,24 @@ Table of Contents extraction from merged pages.
 Extracts the book's declared structure from ToC pages, providing top-down
 structure information that complements the ground-up signals from labels stage.
 
-Cost: ~$0.05-0.10 per book (single LLM call on ToC text)
-Time: ~5-15 seconds
+Cost: ~$0.05-0.10 per book (initial parse + refinement)
+Time: ~10-30 seconds
 """
 
 import csv
 import json
 from pathlib import Path
 from typing import Tuple, Optional
+from PIL import Image
 
 from infra.llm.batch_client import LLMBatchClient
 from infra.llm.models import LLMRequest
 from infra.pipeline.logger import PipelineLogger
 from infra.storage.book_storage import BookStorage
+from infra.utils.pdf import downsample_for_vision
 
 from .schemas import TableOfContents, PageRange
-from .toc_prompts import TOC_PARSING_PROMPT
+from .toc_prompts import TOC_PARSING_PROMPT, TOC_REFINEMENT_PROMPT
 
 
 def find_toc_pages(labels_report_path: Path) -> Optional[PageRange]:
@@ -79,6 +81,129 @@ def extract_toc_text(storage: BookStorage, toc_range: PageRange) -> str:
             toc_text_parts.append(f"=== Page {page_num} ===\n" + "\n".join(page_text_lines) + "\n")
 
     return "\n".join(toc_text_parts)
+
+
+def load_toc_images(storage: BookStorage, toc_range: PageRange) -> list:
+    """
+    Load ToC page images for vision-based parsing.
+
+    Args:
+        storage: BookStorage instance
+        toc_range: Page range for ToC
+
+    Returns:
+        List of downsampled PIL Images
+    """
+    source_storage = storage.stage("source")
+    toc_images = []
+
+    for page_num in range(toc_range.start_page, toc_range.end_page + 1):
+        page_file = source_storage.output_dir / f"page_{page_num:04d}.png"
+        if page_file.exists():
+            image = Image.open(page_file)
+            image = downsample_for_vision(image)
+            toc_images.append(image)
+
+    return toc_images
+
+
+def refine_toc_parse(
+    initial_toc: TableOfContents,
+    toc_images: list,
+    model: str,
+    logger: PipelineLogger,
+    log_dir: Path,
+) -> Tuple[TableOfContents, float]:
+    """
+    Refine ToC parse with vision-based second pass.
+
+    Args:
+        initial_toc: Initial parse result from text-based parsing
+        toc_images: List of ToC page images
+        model: LLM model to use
+        logger: Pipeline logger
+        log_dir: Directory for logging
+
+    Returns:
+        Tuple of (refined TableOfContents, refinement cost)
+    """
+    logger.info("Refining ToC parse with vision verification", entries=len(initial_toc.entries))
+    print(f"   🔍 Refining parse with vision verification...")
+
+    # Build refinement user prompt
+    initial_json = initial_toc.model_dump_json(indent=2)
+    user_prompt = f"""Here is the initial ToC parse from text-only analysis:
+
+```json
+{initial_json}
+```
+
+Please review the ToC page images and verify/correct this parse, focusing on:
+1. Hierarchy levels (visual indentation)
+2. Page numbers (check right-aligned column)
+3. Chapter numbers (extract from titles)
+
+Return the corrected JSON following the same schema."""
+
+    # Build JSON schema for structured output
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "table_of_contents_refined",
+            "schema": TableOfContents.model_json_schema()
+        }
+    }
+
+    # Create refinement LLM request with images
+    request = LLMRequest(
+        id="refine_toc",
+        model=model,
+        messages=[
+            {"role": "system", "content": TOC_REFINEMENT_PROMPT},
+            {"role": "user", "content": user_prompt}
+        ],
+        images=toc_images,  # Vision input
+        temperature=0.0,
+        max_tokens=4000,
+        response_format=response_format
+    )
+
+    # Make LLM call
+    batch_client = LLMBatchClient(
+        max_workers=1,
+        max_retries=5,
+        verbose=False,
+        log_dir=log_dir
+    )
+
+    results = batch_client.process_batch([request])
+
+    # Extract result
+    result = results[0]
+    if not result.success:
+        logger.warning("Refinement failed, using initial parse", error=result.error_message)
+        print(f"   ⚠️  Refinement failed, using initial parse")
+        return initial_toc, 0.0
+
+    # Parse response as TableOfContents
+    refined_toc = TableOfContents(**result.parsed_json)
+    refinement_cost = result.cost_usd
+
+    # Compare changes
+    hierarchy_changes = sum(1 for i, entry in enumerate(refined_toc.entries)
+                           if i < len(initial_toc.entries) and entry.level != initial_toc.entries[i].level)
+    page_num_changes = sum(1 for i, entry in enumerate(refined_toc.entries)
+                          if i < len(initial_toc.entries) and entry.printed_page_number != initial_toc.entries[i].printed_page_number)
+
+    logger.info(
+        "ToC refinement complete",
+        hierarchy_changes=hierarchy_changes,
+        page_num_changes=page_num_changes,
+        cost=f"${refinement_cost:.4f}"
+    )
+    print(f"   ✓ Refinement complete (hierarchy: {hierarchy_changes} changes, page nums: {page_num_changes} changes)")
+
+    return refined_toc, refinement_cost
 
 
 def parse_toc(
@@ -175,32 +300,44 @@ def parse_toc(
 
     results = batch_client.process_batch([request])
 
-    # Show completion with cost
-    batch_stats = batch_client.get_batch_stats(total_requests=1)
-    print(f"   ✓ ToC parsed (cost: ${batch_stats.total_cost_usd:.4f})")
-
     # Extract result
     result = results[0]
     if not result.success:
         raise ValueError(f"LLM call failed: {result.error_message}")
 
-    # Parse response as TableOfContents
-    toc = TableOfContents(**result.parsed_json)
+    # Parse response as TableOfContents (initial parse)
+    initial_toc = TableOfContents(**result.parsed_json)
     parsing_cost = result.cost_usd
-    total_cost = search_cost + parsing_cost
+
+    print(f"   ✓ Initial parse: {len(initial_toc.entries)} entries ({initial_toc.total_chapters} chapters, {initial_toc.total_sections} sections)")
+
+    # Load ToC images for refinement
+    toc_images = load_toc_images(storage, toc_range)
+
+    # Refine parse with vision verification
+    toc, refinement_cost = refine_toc_parse(
+        initial_toc=initial_toc,
+        toc_images=toc_images,
+        model=model,
+        logger=logger,
+        log_dir=log_dir
+    )
+
+    total_cost = search_cost + parsing_cost + refinement_cost
+
+    print(f"   ✓ Final: {len(toc.entries)} entries ({toc.total_chapters} chapters, {toc.total_sections} sections)")
+    print(f"   💰 Total cost: ${total_cost:.4f} (search: ${search_cost:.4f}, parse: ${parsing_cost:.4f}, refine: ${refinement_cost:.4f})")
 
     logger.info(
-        "ToC parsed successfully",
+        "ToC parsed successfully (with refinement)",
         entries=len(toc.entries),
         chapters=toc.total_chapters,
         sections=toc.total_sections,
         confidence=f"{toc.parsing_confidence:.2f}",
         search_cost=f"${search_cost:.4f}",
         parsing_cost=f"${parsing_cost:.4f}",
+        refinement_cost=f"${refinement_cost:.4f}",
         total_cost=f"${total_cost:.4f}",
     )
-
-    print(f"   ✓ Parsed {len(toc.entries)} ToC entries ({toc.total_chapters} chapters, {toc.total_sections} sections)")
-    print(f"   💰 Total cost: ${total_cost:.4f} (search: ${search_cost:.4f}, parsing: ${parsing_cost:.4f})")
 
     return toc, total_cost
