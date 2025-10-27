@@ -368,45 +368,67 @@ class TocFinderTools:
             })
 
     def expand_toc_range(self, seed_page: int) -> str:
-        """Expand bidirectionally from seed page to find full ToC range."""
+        """Expand bidirectionally from seed page to find full ToC range.
+
+        Uses tolerant expansion: continues checking even if one page fails,
+        only stops after 2 consecutive non-ToC pages.
+        """
         metadata = self.storage.load_metadata()
         total_pages = metadata.get('total_pages', 500)
 
         start = seed_page
         end = seed_page
+        pages_checked_backward = 0
+        pages_checked_forward = 0
 
-        # Check backwards (max 5 pages)
+        # Check backwards (max 5 pages) - tolerant to single gaps
+        consecutive_non_toc = 0
         for page_num in range(seed_page - 1, max(1, seed_page - 6), -1):
             result_str = self.vision_check_page(page_num)
             result = json.loads(result_str)
+            pages_checked_backward += 1
 
             if 'error' in result:
-                break
+                consecutive_non_toc += 1
+                if consecutive_non_toc >= 2:  # Stop after 2 consecutive errors
+                    break
+                continue
 
             if result.get('is_toc') and result.get('confidence', 0) > 0.6:
                 start = page_num
+                consecutive_non_toc = 0  # Reset counter on ToC page
             else:
-                break
+                consecutive_non_toc += 1
+                if consecutive_non_toc >= 2:  # Stop after 2 consecutive non-ToC
+                    break
 
-        # Check forwards (max 5 pages)
+        # Check forwards (max 5 pages) - tolerant to single gaps
+        consecutive_non_toc = 0
         for page_num in range(seed_page + 1, min(seed_page + 6, total_pages + 1)):
             result_str = self.vision_check_page(page_num)
             result = json.loads(result_str)
+            pages_checked_forward += 1
 
             if 'error' in result:
-                break
+                consecutive_non_toc += 1
+                if consecutive_non_toc >= 2:  # Stop after 2 consecutive errors
+                    break
+                continue
 
             if result.get('is_toc') and result.get('confidence', 0) > 0.6:
                 end = page_num
+                consecutive_non_toc = 0  # Reset counter on ToC page
             else:
-                break
+                consecutive_non_toc += 1
+                if consecutive_non_toc >= 2:  # Stop after 2 consecutive non-ToC
+                    break
 
         return json.dumps({
             'seed_page': seed_page,
             'start_page': start,
             'end_page': end,
             'total_pages': end - start + 1,
-            'pages_checked': abs(start - seed_page) + abs(end - seed_page)
+            'pages_checked': pages_checked_backward + pages_checked_forward
         })
 
     def sample_pages_vision(self, page_nums: List[int]) -> str:
