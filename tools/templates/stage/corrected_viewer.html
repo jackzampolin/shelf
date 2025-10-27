@@ -53,8 +53,9 @@
                     {% for block in ocr_data.blocks %}
                     <div class="text-block">
                         <div class="block-header">Block {{ loop.index }}</div>
+                        {% set block_idx = loop.index0 %}
                         {% for para in block.paragraphs %}
-                        <p class="para-text" data-block="{{ loop.parent.index0 }}" data-para="{{ loop.index0 }}">
+                        <p class="para-text" data-block="{{ block_idx }}" data-para="{{ loop.index0 }}">
                             {{ para.text }}
                         </p>
                         {% endfor %}
