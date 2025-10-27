@@ -519,15 +519,29 @@ class LLMClient:
                     # For 413/422 errors, add nonce to avoid cached error responses
                     if e.response.status_code in [413, 422]:
                         import uuid
+                        nonce = uuid.uuid4().hex[:16]
+
                         # Add nonce to last message to force new request
                         if payload['messages']:
                             last_msg = payload['messages'][-1].copy()
                             content = last_msg.get('content', '')
+
                             if isinstance(content, str):
-                                # Add as HTML comment to minimize token impact
-                                nonce = uuid.uuid4().hex[:16]
+                                # Simple text message
                                 last_msg['content'] = f"{content}\n<!-- retry_{attempt}_id: {nonce} -->"
-                                payload['messages'][-1] = last_msg
+                            elif isinstance(content, list):
+                                # Multipart message (text + images)
+                                # Find the text part and add nonce there
+                                content_copy = []
+                                for item in content:
+                                    item_copy = item.copy()
+                                    if item_copy.get('type') == 'text':
+                                        # Add nonce to text content
+                                        item_copy['text'] = f"{item_copy.get('text', '')}\n<!-- retry_{attempt}_id: {nonce} -->"
+                                    content_copy.append(item_copy)
+                                last_msg['content'] = content_copy
+
+                            payload['messages'][-1] = last_msg
 
                     wait_time = (2 ** attempt) * 1.0  # Exponential backoff
                     time.sleep(wait_time)
