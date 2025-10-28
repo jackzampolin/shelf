@@ -75,186 +75,64 @@ uv run python -m pytest tests/tools/ -v
 
 ## Prompt Engineering Principles
 
-**Core philosophy: Teach concepts that generalize, not patterns that memorize.**
+**Core rule: Teach concepts that generalize, never reference test data.**
 
-### 1. Never Reference Test Data in Prompts
+### Structure and Format
 
-**CRITICAL:** Referencing specific books from your test dataset causes the model to memorize patterns instead of learning concepts.
+**Use XML tags for semantic organization:**
+- `<role>`, `<task>`, `<output_schema>` - Clear section boundaries
+- Put critical instructions at START and END (primacy/recency effect)
+- Vision-first workflow: Examine images before text analysis
 
-**Bad (dataset leakage):**
+**Example structure:**
 ```python
-<example>
-Book: "The Accidental President" has 5 Parts, each containing numbered chapters
+"""<role>You are a [role]. Your job is [purpose].</role>
 
-ToC shows:
-- Part I: April 12, 1945 (printed page 1)
-- Part II: The Political Education (printed page 39)
+<critical_instructions>
+Most important constraint/rule here (primacy effect)
+</critical_instructions>
+
+<task>Main instructions...</task>
+
+<output_requirements>
+Critical output rules here (recency effect)
+</output_requirements>"""
 ```
 
-**Good (generalized pattern):**
+### Avoid Overfitting
+
+**NEVER reference specific test books:**
 ```python
-<example type="parts_with_chapters">
-PATTERN: Parts-based book structure (5-10 major divisions)
-
-Visual indicators:
-- ToC contains "Part [I-X]:" or "Part [1-10]:" prefixes
-- Large page gaps between parts (50-100+ pages typical)
-- Chapters numbered separately within each part
-
-The key: Structural hierarchy, not specific titles.
-```
-
-**Why this matters:** The first example only teaches the model about one specific book. The second teaches the *pattern* that works for any parts-based book.
-
-### 2. Use Vision-First Workflow for Multimodal Tasks
-
-**Pattern from `label/prompts.py` (works well):**
-
-```python
-<chapter_heading_detection>
-PRIORITY TASK: Detect structural boundaries FIRST by examining the page IMAGE.
-
-VISUAL SIGNALS (look at the actual page image):
-
-1. **Chapter markers** - Number or text at top of page:
-   - Bare number visible at top (any size: "1", "17", "IV")
-   - "Chapter X" or "Part Y" visible at top
-   - Large centered text isolated at top
-
-2. **Visual whitespace** - Sparse page layout:
-   - Much less text than typical dense body pages
-   - Lots of empty vertical space on page
-   - Text concentrated at top with whitespace below
-
-3. **Typography** - Font and styling differences:
-   - Larger font size than body text (1.5x+ larger)
-   - Centered or decorative positioning
-   - Isolated from other text
-```
-
-**Why this works:**
-- Teaches WHAT to look for (visual signals, not specific text)
-- Explains WHY it matters (structural boundaries)
-- Lists general principles (whitespace, typography) not book-specific patterns
-- Works on any book with visual chapter markers
-
-### 3. Include Self-Verification Checklists
-
-**Pattern from `toc_prompts.py` (reduces retries):**
-
-```python
-<self_verification>
-**CRITICAL: After extraction, verify BEFORE returning:**
-
-1. **Count check:**
-   - Stage 1 observed ~20 entries
-   - How many did I extract? ___
-   - If significantly different (off by 3+), LOOK AGAIN at images
-
-2. **Sequence check (if numbered):**
-   - List my chapter numbers: [1, 2, 3, ...]
-   - Are there gaps? (e.g., [1, 2, 4, 5] is missing 3)
-   - If gaps exist, LOOK AGAIN to find missing entries
-
-**If ANY check fails → Fix it before returning!**
-</self_verification>
-```
-
-**Why this works:**
-- Model catches its own errors before returning
-- Reduces expensive retry loops
-- Teaches reasoning process (gap detection)
-- Generalizes to any extraction task
-
-### 4. Teach Correction Philosophy, Not Rules
-
-**Pattern from `correction/prompts.py` (prevents over-correction):**
-
-```python
-<correction_philosophy>
-CRITICAL: You are CORRECTING (fixing OCR misreads), not NORMALIZING (style preferences).
-
-CORRECTION = Fix what OCR misread from the image
-  - "tbe" → "the" (OCR misread 'h' as 'b')
-  - "1914" → "1944" (OCR misread '4' as '1')
-
-NORMALIZATION = Change authorial choices (DO NOT DO THIS)
-  - "color" → "colour" (author's spelling choice)
-  - "Mr Smith" → "Mr. Smith" (author's punctuation choice)
-
-When in doubt: If the image shows what OCR extracted, it's not an error.
-</correction_philosophy>
-```
-
-**Why this works:**
-- Explains WHAT/WHY before HOW
-- Teaches decision framework, not rigid rules
-- Handles edge cases conceptually
-- No dataset-specific examples
-
-### 5. Two-Stage Prompting for Complex Tasks
-
-**Pattern from `toc_prompts.py` (reduces hallucination):**
-
-- **Stage 1:** Observation (describe what you SEE, no reasoning)
-- **Stage 2:** Extraction (use Stage 1 context, apply reasoning)
-
-**Why this works:**
-- Separates observation from inference
-- Stage 1 can't hallucinate (just describing)
-- Stage 2 has structural context to guide extraction
-- Better error attribution (which stage failed?)
-
-### Anti-Patterns to Avoid
-
-Based on audit of actual codebase prompts:
-
-**1. Dataset-Specific Examples**
-```
 ❌ "Book: 'The Accidental President' has 5 Parts..."
-✓ "PATTERN: Parts-based books have 5-10 major divisions..."
+✓ "PATTERN: Parts-based structure (5-10 divisions, 'Part [I-X]:' prefix, 50-100 page gaps)"
 ```
 
-**2. Over-Specification Without Concepts**
-```
-❌ "Bare numbers ('17') are chapter numbers within parts"
-✓ "Bare numbers: Context-dependent. Check ToC structure, page position, surrounding pages."
-```
-
-**3. Ignoring Failure Modes**
-```
-❌ "Extract the ToC from pages marked toc_area"
-✓ "If toc_area found: verify visually. If no toc_area: scan pages 1-30. If not found: return toc_found=False."
+**Teach concepts, not patterns:**
+```python
+❌ "Extract 'Chapter 1: Title' format"
+✓ "Remove chapter number prefix from title (works for Roman, Arabic, 'Chapter X', etc.)"
 ```
 
-**4. Rigid Confidence Thresholds**
-```
-❌ "Return 0.95 if all signals present"
-✓ "Base confidence on signal strength AND image quality. Perfect signals + blurry image = 0.85."
-```
+### Design Patterns That Work
 
-### Test for Generalization
+**1. Two-stage for complexity:** Stage 1 observes (no reasoning), Stage 2 extracts (uses context)
 
-Before finalizing any prompt:
+**2. Self-verification checklists:** Model checks own work before returning (reduces retries)
 
-1. **Remove test data references:** Search for any book titles, specific text patterns
-2. **Ask:** "Would this work on a book I haven't seen?"
-3. **Check:** Am I teaching a concept or memorizing a pattern?
-4. **Verify:** Do I explain WHAT/WHY/HOW, not just give examples?
+**3. Vision-first:** Examine images for structure, use text for accuracy
 
-**Remember:** We're building a system for *all books*, not just the 18 books in our current test set.
+**4. Philosophy over rules:** Teach WHAT/WHY, then HOW (e.g., "correction vs normalization")
 
-### Good Practices Summary
+**5. Handle failure modes:** Explicit "if not found" instructions, not just happy path
 
-From audit of scanshelf prompts:
+### Quick Test
 
-✓ **Vision-first workflow** - Examine images before text
-✓ **Self-verification checklists** - Catch errors before returning
-✓ **Correction philosophy** - Teach WHAT/WHY before HOW
-✓ **Two-stage prompting** - Observation → Reasoning
-✓ **Conceptual teaching** - Explain patterns, don't memorize
-✓ **Edge case handling** - Explicit failure mode coverage
-✓ **Confidence calibration** - Context-aware scoring
+Before finalizing a prompt, ask:
+1. Does it reference specific books from test data? (Remove them)
+2. Does it teach a concept or memorize a pattern? (Teach concepts)
+3. Would it work on a book I haven't seen? (Test generalization)
+
+**Remember:** Building for all books, not just our current 18 test cases.
 
 ---
 
