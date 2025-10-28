@@ -282,6 +282,9 @@ def parse_toc(
     # Build Stage 2 prompt with structure context
     detail_prompt = build_detail_extraction_prompt(structure_overview)
 
+    # Extract OCR text for accurate title extraction
+    toc_text = extract_toc_text(storage, toc_range)
+
     # Build JSON schema for structured output
     response_format = {
         "type": "json_schema",
@@ -291,15 +294,29 @@ def parse_toc(
         }
     }
 
-    # Create detail extraction request
+    # Create detail extraction request (vision for structure, OCR for titles)
+    user_message = f"""Extract ALL entries from the ToC following the structure guidance above.
+
+**ToC page range (scan pages):** {toc_range.start_page}-{toc_range.end_page}
+
+**OCR Text (corrected):**
+
+{toc_text}
+
+**Instructions:**
+- Use the IMAGES to determine structure (indentation, hierarchy, entry count)
+- Use the OCR TEXT above to extract accurate chapter titles
+- Trust OCR text for what words are written
+- Trust images for how entries are visually arranged"""
+
     request = LLMRequest(
         id="extract_details",
         model=model,
         messages=[
             {"role": "system", "content": detail_prompt},
-            {"role": "user", "content": f"Extract ALL entries from the ToC following the structure guidance above.\n\nToC page range (scan pages): {toc_range.start_page}-{toc_range.end_page}"}
+            {"role": "user", "content": user_message}
         ],
-        images=toc_images,  # Same images, now with structure context
+        images=toc_images,  # Vision for structure
         temperature=0.0,
         max_tokens=4000,
         response_format=response_format
