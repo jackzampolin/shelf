@@ -297,7 +297,7 @@ def parse_toc(
         model=model,
         messages=[
             {"role": "system", "content": detail_prompt},
-            {"role": "user", "content": "Extract ALL entries from the ToC following the structure guidance above."}
+            {"role": "user", "content": f"Extract ALL entries from the ToC following the structure guidance above.\n\nToC page range (scan pages): {toc_range.start_page}-{toc_range.end_page}"}
         ],
         images=toc_images,  # Same images, now with structure context
         temperature=0.0,

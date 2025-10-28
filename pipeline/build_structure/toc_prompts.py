@@ -274,7 +274,7 @@ Return JSON with all entries:
 - title: Clean title WITHOUT number prefix
 - printed_page_number: String ("ix", "23") or null
 - level: 1, 2, or 3 based on VISUAL indentation
-- toc_page_range: Scan page numbers where ToC appears
+- toc_page_range: The scan page range provided in the user message (e.g., {{"start_page": 5, "end_page": 6}})
 - total_chapters: Count of level=1 entries
 - total_sections: Count of level=2+ entries
 - parsing_confidence: 0.0-1.0 based on extraction quality
