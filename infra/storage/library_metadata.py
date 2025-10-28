@@ -2,7 +2,7 @@
 Library metadata for operational state.
 
 This file manages library-level state that doesn't belong in individual book metadata:
-- Shuffle orders for regenerate-stage commands
+- Global shuffle order for all operations (sweeps, webapp listing, etc.)
 - Future: batch processing queues, library-wide settings, etc.
 
 Philosophy: Book metadata lives in metadata.json per book (filesystem-based).
@@ -22,7 +22,7 @@ class LibraryMetadata:
     Manage library-level operational state.
 
     Stores state that spans multiple books or workflow sessions:
-    - Shuffle orders for stage regeneration (persistent random order)
+    - Global shuffle order (persistent random order for all operations)
     - Future: processing queues, library settings, etc.
 
     Thread-safe for concurrent operations.
@@ -57,9 +57,9 @@ class LibraryMetadata:
                     # Version mismatch - start fresh
                     return self._create_new_metadata()
 
-                # Ensure shuffles dict exists
-                if 'shuffles' not in state:
-                    state['shuffles'] = {}
+                # Ensure shuffle dict exists
+                if 'shuffle' not in state:
+                    state['shuffle'] = None
 
                 return state
             except Exception:
@@ -72,7 +72,7 @@ class LibraryMetadata:
         """Create new metadata state."""
         return {
             "version": self.METADATA_VERSION,
-            "shuffles": {}
+            "shuffle": None
         }
 
     def _save(self):
@@ -103,61 +103,62 @@ class LibraryMetadata:
                 pass
             raise
 
-    def get_shuffle(self, stage: str) -> Optional[List[str]]:
+    def get_shuffle(self) -> Optional[List[str]]:
         """
-        Get shuffle order for a stage.
-
-        Args:
-            stage: Stage name (e.g., "labels", "corrected")
+        Get global shuffle order.
 
         Returns:
             List of scan_ids in shuffle order, or None if no shuffle exists
         """
         with self._lock:
-            shuffle_data = self._state['shuffles'].get(stage)
+            shuffle_data = self._state.get('shuffle')
             if not shuffle_data:
                 return None
             return shuffle_data.get('order', [])
 
-    def set_shuffle(self, stage: str, scan_ids: List[str]):
+    def set_shuffle(self, scan_ids: List[str]):
         """
-        Set shuffle order for a stage.
+        Set global shuffle order.
 
         Args:
-            stage: Stage name (e.g., "labels", "corrected")
             scan_ids: List of scan_ids in desired order
         """
         with self._lock:
-            self._state['shuffles'][stage] = {
+            self._state['shuffle'] = {
                 'created_at': datetime.now().isoformat(),
                 'order': scan_ids
             }
             self._save()
 
-    def clear_shuffle(self, stage: str):
-        """
-        Clear shuffle order for a stage.
-
-        Args:
-            stage: Stage name to clear
-        """
+    def clear_shuffle(self):
+        """Clear global shuffle order."""
         with self._lock:
-            if stage in self._state['shuffles']:
-                del self._state['shuffles'][stage]
-                self._save()
+            self._state['shuffle'] = None
+            self._save()
 
-    def list_shuffles(self) -> Dict[str, Dict[str, Any]]:
+    def has_shuffle(self) -> bool:
         """
-        Get all shuffle orders.
+        Check if global shuffle exists.
 
         Returns:
-            Dict mapping stage names to shuffle data
+            True if shuffle order exists
         """
         with self._lock:
+            shuffle_data = self._state.get('shuffle')
+            return shuffle_data is not None and len(shuffle_data.get('order', [])) > 0
+
+    def get_shuffle_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Get shuffle metadata.
+
+        Returns:
+            Dict with 'created_at' and 'count' or None if no shuffle
+        """
+        with self._lock:
+            shuffle_data = self._state.get('shuffle')
+            if not shuffle_data:
+                return None
             return {
-                stage: {
-                    'created_at': data.get('created_at'),
-                    'count': len(data.get('order', []))
-                }
-                for stage, data in self._state['shuffles'].items()
+                'created_at': shuffle_data.get('created_at'),
+                'count': len(shuffle_data.get('order', []))
             }

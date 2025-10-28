@@ -1,243 +1,183 @@
 """
-Table of Contents parsing prompts - Two-stage holistic approach.
+Table of Contents parsing prompts - Research-backed two-stage approach.
 
-Stage 1: Structure Detection (document-level pattern recognition)
-Stage 2: Detail Extraction (entry-level with structure context)
+Stage 1: Pure Observation (no reasoning, just describe what you see)
+Stage 2: Extraction + Self-Verification (extract, then verify completeness)
 """
 
-# STAGE 1: Document-level structure detection
+# STAGE 1: Pure observation of document structure
 TOC_STRUCTURE_DETECTION_PROMPT = """<role>
-You are a Table of Contents analyst. Your job is to understand the OVERALL STRUCTURE of the ToC by looking at ALL pages together.
+You are a document observer. Describe what you SEE in these ToC pages WITHOUT reasoning or making predictions.
 </role>
 
 <task>
-Look at the ToC pages as a COMPLETE DOCUMENT and identify:
-1. How many chapters/entries total?
-2. What numbering pattern? (Roman numerals I-XV? Arabic 1-20? None?)
-3. How many hierarchy levels? (just chapters? chapters + sections? parts + chapters + sections?)
-4. What's the visual formatting pattern?
-5. Are there any gaps or inconsistencies?
+Look at ALL ToC pages together and describe the VISUAL PATTERNS you observe:
+- How many entries do you see? (approximate count, e.g., "20-25 entries")
+- What numbering style? (Roman numerals? Arabic? "Chapter X"? None?)
+- How many indentation levels?
+- What formatting patterns? (leader dots? page numbers right-aligned?)
+- Any unusual features?
+
+DO NOT:
+- Detect gaps (just describe what you SEE)
+- Predict expected ranges (don't guess "I-XV", just say "Roman numerals")
+- Count exact entries (estimates like "~20" are fine)
+- Reason about completeness (just observe)
 </task>
 
-<see_the_whole_document>
-**CRITICAL: Look at ALL ToC pages together before answering.**
+<what_to_observe>
+**Visual structure:**
+- Approximate number of entries visible
+- Vertical spacing patterns (consistent? varied?)
+- Indentation levels (flush left, indented once, indented twice)
 
-Count the visual entries:
-- How many flush-left entries? (top-level chapters/parts)
-- How many indented entries? (sections/subsections)
-- What's the last chapter number you see?
+**Numbering patterns you see:**
+- Roman numerals (I, II, III...)?
+- Arabic numerals (1, 2, 3...)?
+- "Chapter" prefix (Chapter 1, Chapter 2...)?
+- No numbers (just titles)?
+- Mixed (some numbered, some not)?
 
-Pattern recognition:
-- Do all chapters follow the SAME format? ("I. Title ... PageNum" or "Chapter 1: Title" or just "Title")
-- Are chapter numbers sequential? (I, II, III, IV... or 1, 2, 3, 4... or mixed?)
-- Are there visual gaps in the sequence? (if you see I, II, IV → chapter III is missing!)
+**Layout features:**
+- Leader dots between titles and page numbers?
+- Page numbers right-aligned?
+- Bold/larger text for certain entries?
+- Parts/sections visible?
 
-Hierarchy detection:
-- How many indentation levels do you SEE in the images?
-- Flush left = level 1
-- Indented once = level 2
-- Indented twice = level 3
-</see_the_whole_document>
-
-<numbering_patterns>
-Common patterns to recognize:
-
-**Roman numerals:**
-- "I. The Early Years ... 1"
-- "II. West Point ... 23"
-- Pattern: Roman numeral, period, title, page number
-
-**Arabic numerals:**
-- "1 The Beginning ... 15"
-- "2. The Next Chapter ... 42"
-- Pattern: Arabic number, optional period, title, page number
-
-**Chapter prefix:**
-- "Chapter 1: Title ... 15"
-- "CHAPTER ONE Title ... 23"
-- Pattern: Word "Chapter", number/word, optional colon, title, page number
-
-**No numbers:**
-- "Introduction ... ix"
-- "The Early Years ... 1"
-- Pattern: Just title and page number (unnumbered)
-
-**Parts + Chapters:**
-- "PART I: THE WAR" (no page number)
-- "  1. Pearl Harbor ... 45" (indented)
-- Pattern: Parts at level 1 (no numbers), chapters at level 2 (numbered)
-</numbering_patterns>
-
-<gap_detection>
-**CRITICAL: Check for missing entries**
-
-If you see chapter numbers I, II, IV, V:
-- You're MISSING chapter III
-- Note this in detected_gaps: [3]
-
-If you see chapters 1, 2, 3, 5, 6:
-- You're MISSING chapter 4
-- Note this in detected_gaps: [4]
-
-**Common causes of gaps:**
-- OCR failed to detect entry (look at image again!)
-- Entry spans multiple pages (check page boundaries)
-- Entry has unusual formatting (still there, just different pattern)
-
-If you detect gaps, LOOK AGAIN at the images to see if you missed an entry.
-</gap_detection>
+**Formatting observations:**
+- All entries follow same visual pattern?
+- Different formatting for different levels?
+- Any unusual spacing or breaks?
+</what_to_observe>
 
 <output_schema>
-Return JSON with document-level structure analysis:
+Return JSON with your observations:
 
 {
-  "structure_overview": {
-    "total_entries_visible": 25,
-    "total_chapters": 15,
-    "total_sections": 10,
-    "numbering_pattern": "roman_numerals",
-    "expected_range": "I-XV",
-    "hierarchy_levels": 2,
-    "has_parts": false,
-    "formatting_pattern": "Number. Title ..... PageNum",
-    "detected_gaps": [],
-    "visual_observations": [
-      "All chapters follow consistent Roman numeral pattern",
-      "Two indentation levels: chapters flush left, sections indented",
-      "Page numbers right-aligned with leader dots"
+  "visual_observations": {
+    "approximate_entry_count": "20-25 entries",
+    "numbering_style": "roman_numerals",
+    "indentation_levels": 2,
+    "formatting_notes": [
+      "Leader dots connect titles to page numbers",
+      "Page numbers right-aligned",
+      "Some entries indented (sections under chapters)"
+    ],
+    "structural_features": [
+      "Vertical list with consistent spacing",
+      "Two-column layout (titles left, numbers right)"
     ]
   },
   "confidence": 0.95,
-  "notes": ["Clean structure, no ambiguities"]
+  "notes": ["Clear visual structure", "All entries visible"]
 }
 
-**Field definitions:**
-
-- total_entries_visible: Total entries you SEE in images (count them!)
-- total_chapters: Top-level chapters/parts (level 1)
-- total_sections: Subsections (level 2+)
-- numbering_pattern: "roman_numerals", "arabic_numerals", "chapter_prefix", "mixed", or "none"
-- expected_range: "I-XV" or "1-20" or "none"
-- hierarchy_levels: 1 (flat), 2 (chapters + sections), or 3 (parts + chapters + sections)
-- has_parts: true if ToC has PART I, PART II, etc.
-- formatting_pattern: Describe the visual pattern you see
-- detected_gaps: List of missing chapter numbers [3, 7, 10]
-- visual_observations: What patterns did you notice?
-- confidence: 0.0-1.0 based on clarity and consistency
-- notes: Any ambiguities or concerns
+**Field descriptions:**
+- approximate_entry_count: Rough count (e.g., "15-20", "30-35", "~25")
+- numbering_style: What you see ("roman_numerals", "arabic_numerals", "chapter_prefix", "mixed", "none")
+- indentation_levels: How many levels (1, 2, or 3)
+- formatting_notes: List of visual formatting you observe
+- structural_features: Overall layout observations
+- confidence: 0.0-1.0 based on image clarity
+- notes: Any concerns or ambiguities
 </output_schema>
 
 <output_requirements>
 Return ONLY valid JSON.
 No markdown code fences.
-No explanatory text outside JSON.
+No explanatory text.
 </output_requirements>"""
 
 
-# STAGE 2: Detail extraction with structure context
+# STAGE 2: Extraction with self-verification
 def build_detail_extraction_prompt(structure_overview: dict) -> str:
     """
-    Build Stage 2 prompt with structure context from Stage 1.
+    Build Stage 2 prompt with observations from Stage 1.
 
     Args:
-        structure_overview: Output from Stage 1 structure detection
+        structure_overview: Observations from Stage 1
 
     Returns:
-        Formatted prompt for detail extraction
+        Formatted prompt for extraction + self-verification
     """
-    total_entries = structure_overview.get('total_entries_visible', '?')
-    total_chapters = structure_overview.get('total_chapters', '?')
-    numbering_pattern = structure_overview.get('numbering_pattern', 'unknown')
-    expected_range = structure_overview.get('expected_range', 'unknown')
-    formatting_pattern = structure_overview.get('formatting_pattern', 'unknown')
-    hierarchy_levels = structure_overview.get('hierarchy_levels', 1)
-    detected_gaps = structure_overview.get('detected_gaps', [])
+    approx_count = structure_overview.get('approximate_entry_count', 'unknown')
+    numbering_style = structure_overview.get('numbering_style', 'unknown')
+    indentation_levels = structure_overview.get('indentation_levels', 'unknown')
+    formatting_notes = structure_overview.get('formatting_notes', [])
 
-    gap_warning = ""
-    if detected_gaps:
-        gap_warning = f"""
-<gap_warning>
-**CRITICAL:** Structure analysis detected MISSING chapters: {detected_gaps}
-
-Before you extract, LOOK AGAIN at the images to find these missing entries:
-- Check page boundaries (entry might span pages)
-- Check for unusual formatting (different pattern)
-- Check for OCR failures (entry visible but not in OCR text)
-
-You MUST extract all {total_entries} entries, including the missing ones.
-</gap_warning>
-"""
+    formatting_bullets = "\n".join(f"- {note}" for note in formatting_notes) if formatting_notes else "- (no specific notes)"
 
     return f"""<role>
-You are a Table of Contents extractor. Extract ALL entries from the ToC pages with complete accuracy.
+You are a Table of Contents extractor. Extract ALL entries accurately, then verify completeness.
 </role>
 
-<structure_context>
-From structure analysis, this ToC has:
-- **Total entries:** {total_entries} (you must extract ALL of them)
-- **Total chapters:** {total_chapters}
-- **Numbering pattern:** {numbering_pattern}
-- **Expected range:** {expected_range}
-- **Formatting pattern:** {formatting_pattern}
-- **Hierarchy levels:** {hierarchy_levels}
-</structure_context>
-{gap_warning}
-<extraction_rules>
-**1. Title Cleanup (CRITICAL):**
+<observations_from_stage1>
+From visual analysis, this ToC has:
+- **Approximate count:** {approx_count}
+- **Numbering style:** {numbering_style}
+- **Indentation levels:** {indentation_levels}
+- **Formatting:**
+{formatting_bullets}
 
-If the numbering pattern is "{numbering_pattern}":
-- Remove the number prefix from titles
-- "I. The Early Years" → chapter_number=1, title="The Early Years"
-- "II. West Point" → chapter_number=2, title="West Point"
-- "Chapter 1: Title" → chapter_number=1, title="Title"
+These are OBSERVATIONS, not requirements. Extract what you actually see.
+</observations_from_stage1>
+
+<extraction_instructions>
+You will receive:
+1. IMAGES of the ToC pages (for visual structure)
+2. OCR TEXT (for accurate word extraction)
+3. ToC page range (scan page numbers)
+
+**Extract using hybrid approach:**
+- IMAGES → indentation, hierarchy, entry count, visual layout
+- OCR TEXT → exact titles, chapter numbers, page numbers
+
+**Title cleanup rules:**
+For numbering style "{numbering_style}":
+- "I. Title" → chapter_number=1, title="Title"
+- "Chapter 5: Title" → chapter_number=5, title="Title"
 - "1. Title" → chapter_number=1, title="Title"
+- Title field must NEVER include the chapter number
 
-**DO NOT copy the number prefix into the title field!**
+**Hierarchy detection (from images):**
+- Level 1: Flush left (top-level chapters/parts)
+- Level 2: Indented once (sections)
+- Level 3: Indented twice (subsections)
 
-**2. Chapter Number Extraction:**
+**Page numbers (from OCR):**
+- Roman numerals: "ix", "xiv" (strings, not integers)
+- Arabic numerals: "15", "203" (strings, not integers)
+- Missing: null
+</extraction_instructions>
 
-Expected range is {expected_range}:
-- Roman numerals (I, II, III, IV, V, VI, VII, VIII, IX, X, XI, XII, XIII, XIV, XV)
-  - I → 1, II → 2, III → 3, IV → 4, V → 5, etc.
-- Arabic numerals: use as-is
-- Unnumbered entries (Introduction, Epilogue, Appendix): chapter_number=null
+<self_verification>
+**CRITICAL: After extraction, verify BEFORE returning:**
 
-**3. Page Number Extraction:**
+1. **Count check:**
+   - Stage 1 observed {approx_count}
+   - How many did I extract? ___
+   - If significantly different (off by 3+), LOOK AGAIN at images
 
-Keep EXACTLY as shown in image:
-- Roman numerals: "ix", "xiv", "xxiii" (keep as string)
-- Arabic numerals: "1", "23", "145" (keep as string)
-- No number visible: null
+2. **Sequence check (if numbered):**
+   - List my chapter numbers: [1, 2, 3, ...]
+   - Are there gaps? (e.g., [1, 2, 4, 5] is missing 3)
+   - If gaps exist, LOOK AGAIN at images/OCR to find missing entries
 
-**4. Hierarchy Detection:**
+3. **Title cleanup check:**
+   - Do any titles still have number prefixes? ("I.", "1.", "Chapter")
+   - If yes, remove them now
 
-Use VISUAL INDENTATION (not OCR spacing):
-- Flush left = level 1
-- Indented once = level 2
-- Indented twice = level 3
+4. **Page number check:**
+   - Are page numbers strings (not integers)?
+   - Did I extract them from OCR text accurately?
 
-This ToC has {hierarchy_levels} levels.
+5. **Boundary check:**
+   - Did I check FIRST page for any entries?
+   - Did I check LAST page for any entries?
+   - Check page breaks (entries spanning pages)
 
-**5. Completeness:**
-
-You must extract ALL {total_entries} entries:
-- Count your entries before returning
-- If you have fewer than {total_entries}, LOOK AGAIN at images
-- Check for entries at page boundaries
-- Check for entries with unusual formatting
-</extraction_rules>
-
-<self_validation>
-Before returning, check:
-
-✓ Did I extract all {total_entries} entries? (count them!)
-✓ Are chapter numbers sequential {expected_range}? (no gaps!)
-✓ Did I REMOVE number prefixes from titles? (no "I." or "1." in titles!)
-✓ Are page numbers strings? (not integers!)
-✓ Do hierarchy levels match visual indentation? ({hierarchy_levels} levels expected!)
-
-If any check fails, LOOK AT THE IMAGES AGAIN and fix it.
-</self_validation>
+**If ANY check fails → Fix it before returning!**
+</self_verification>
 
 <output_schema>
 Return JSON with all entries:
@@ -257,38 +197,37 @@ Return JSON with all entries:
       "level": 2
     }}
   ],
-  "toc_page_range": {{"start_page": 6, "end_page": 8}},
-  "total_chapters": {total_chapters},
-  "total_sections": 10,
+  "toc_page_range": {{"start_page": 5, "end_page": 6}},
+  "total_chapters": 15,
+  "total_sections": 8,
   "parsing_confidence": 0.95,
   "notes": [
-    "Extracted all {total_entries} entries",
-    "Removed Roman numeral prefixes from titles",
-    "No gaps in chapter sequence"
+    "Extracted X entries (Stage 1 estimated {approx_count})",
+    "Verified no gaps in chapter sequence",
+    "Cleaned Roman numeral prefixes from titles"
   ]
 }}
 
 **RULES:**
-- entries: ALL {total_entries} entries from ToC
-- chapter_number: Integer (1, 2, 3...) or null for unnumbered
+- entries: ALL entries you found (may differ from Stage 1 estimate)
+- chapter_number: Integer or null (extract from OCR, then remove from title)
 - title: Clean title WITHOUT number prefix
-- printed_page_number: String ("ix", "23") or null
-- level: 1, 2, or 3 based on VISUAL indentation
-- toc_page_range: The scan page range provided in the user message (e.g., {{"start_page": 5, "end_page": 6}})
+- printed_page_number: String from OCR or null
+- level: 1/2/3 from VISUAL indentation
+- toc_page_range: Scan page numbers provided in user message
 - total_chapters: Count of level=1 entries
 - total_sections: Count of level=2+ entries
-- parsing_confidence: 0.0-1.0 based on extraction quality
-- notes: Document what you did (cleaned titles, found missing entries, etc.)
+- parsing_confidence: 0.0-1.0 based on your self-verification
+- notes: Document your self-verification results
 </output_schema>
 
 <output_requirements>
 Return ONLY valid JSON.
 No markdown code fences.
-No explanatory text outside JSON.
+No explanatory text.
 </output_requirements>"""
 
 
-# Legacy prompts (kept for backward compatibility, will be removed after migration)
+# Legacy prompts (deprecated)
 TOC_PARSING_PROMPT = """DEPRECATED: Use TOC_STRUCTURE_DETECTION_PROMPT + build_detail_extraction_prompt() instead."""
-
 TOC_REFINEMENT_PROMPT = """DEPRECATED: Use two-stage approach instead."""

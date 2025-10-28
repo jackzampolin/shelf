@@ -84,10 +84,9 @@ def cmd_shelve(args):
         for scan_id in result['scan_ids']:
             print(f"  - {scan_id}")
 
-        # Show shuffle update info if any shuffles exist
-        shuffles = library.list_shuffles()
-        if shuffles:
-            print(f"   📚 Updated {len(shuffles)} shuffle order(s): {', '.join(shuffles.keys())}")
+        # Show shuffle update info if shuffle exists
+        if library.has_shuffle():
+            print(f"   📚 Updated global shuffle order")
 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -373,10 +372,9 @@ def cmd_library_delete(args):
         if result['files_deleted']:
             print(f"   Files deleted from: {result['scan_dir']}")
 
-        # Show shuffle update info if any shuffles exist
-        shuffles = library.list_shuffles()
-        if shuffles:
-            print(f"   📚 Removed from {len(shuffles)} shuffle order(s): {', '.join(shuffles.keys())}")
+        # Show shuffle update info if shuffle exists
+        if library.has_shuffle():
+            print(f"   📚 Removed from global shuffle order")
 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -615,35 +613,31 @@ def _sweep_stage(library, all_books, args):
     """Sweep a pipeline stage across all books in randomized order."""
     import shutil
 
-    # Get or create shuffle order (Library handles all the logic)
-    scan_ids = library.create_shuffle(args.target, reshuffle=args.reshuffle)
+    # Get or create global shuffle order (Library handles all the logic)
+    scan_ids = library.create_shuffle(reshuffle=args.reshuffle)
 
     # Provide user feedback about shuffle state
-    shuffles = library.list_shuffles()
-    shuffle_info = shuffles.get(args.target, {})
+    shuffle_info = library.get_shuffle_info()
 
     if args.reshuffle:
-        print(f"🔀 Created new shuffle order for '{args.target}' stage")
+        print(f"🔀 Created new global shuffle order")
     elif shuffle_info:
         created_date = shuffle_info.get('created_at', '')[:10] if 'created_at' in shuffle_info else 'unknown'
-        print(f"♻️  Using existing shuffle order for '{args.target}' stage (created: {created_date})")
+        print(f"♻️  Using existing global shuffle order (created: {created_date})")
     else:
-        print(f"🎲 Created random order for '{args.target}' stage")
+        print(f"🎲 Created random order")
 
     print(f"\n🧹 Sweeping '{args.target}' stage across {len(scan_ids)} books")
     print(f"   Press Ctrl+C to stop at any time")
     print(f"   Tip: Use --reshuffle to create a new random order\n")
 
-    processed_count = 0
+    # Phase 1: Determine which books need processing and clean them all first
+    books_to_process = []
     skipped_count = 0
 
+    print("Phase 1: Checking status and cleaning...")
     for idx, scan_id in enumerate(scan_ids, 1):
-        print(f"\n{'='*60}")
-        print(f"[{idx}/{len(scan_ids)}] Processing: {scan_id}")
-        print(f"{'='*60}")
-
         try:
-            # Get storage
             storage = library.get_book_storage(scan_id)
             stage_storage = storage.stage(args.target)
             checkpoint = stage_storage.checkpoint
@@ -652,12 +646,12 @@ def _sweep_stage(library, all_books, args):
             if not args.force:
                 status = checkpoint.get_status()
                 if status.get('status') == 'completed':
-                    print(f"  ⏭️  Already completed - skipping (use --force to regenerate)")
+                    print(f"  [{idx}/{len(scan_ids)}] ⏭️  {scan_id}: Already completed - skipping")
                     skipped_count += 1
                     continue
 
             # Clean stage
-            print(f"  🧹 Cleaning {args.target} stage...")
+            print(f"  [{idx}/{len(scan_ids)}] 🧹 {scan_id}: Cleaning {args.target} stage...")
             if stage_storage.output_dir.exists():
                 for item in stage_storage.output_dir.iterdir():
                     if item.name == '.gitkeep':
@@ -670,6 +664,36 @@ def _sweep_stage(library, all_books, args):
             # Reset checkpoint
             checkpoint.reset(confirm=False)
 
+            # Add to process list
+            books_to_process.append(scan_id)
+
+        except KeyboardInterrupt:
+            print(f"\n\n⚠️  Interrupted during cleaning phase")
+            print(f"   Cleaned: {len(books_to_process)}, Skipped: {skipped_count}, Remaining: {len(scan_ids) - idx}")
+            print(f"   Note: {len(books_to_process)} books were cleaned and need processing")
+            sys.exit(0)
+        except Exception as e:
+            print(f"  [{idx}/{len(scan_ids)}] ❌ {scan_id}: Error during cleaning: {e}")
+            continue
+
+    print(f"\nPhase 1 complete: Cleaned {len(books_to_process)} books, skipped {skipped_count}")
+
+    if not books_to_process:
+        print("\n✅ No books to process")
+        return
+
+    # Phase 2: Run the stage on all cleaned books
+    print(f"\nPhase 2: Running {args.target} stage on {len(books_to_process)} books...\n")
+    processed_count = 0
+
+    for idx, scan_id in enumerate(books_to_process, 1):
+        print(f"\n{'='*60}")
+        print(f"[{idx}/{len(books_to_process)}] Processing: {scan_id}")
+        print(f"{'='*60}")
+
+        try:
+            storage = library.get_book_storage(scan_id)
+
             # Run stage (reuse cmd_process logic)
             print(f"  ▶️  Running {args.target} stage...")
 
@@ -680,7 +704,7 @@ def _sweep_stage(library, all_books, args):
                 stages=None,
                 model=getattr(args, 'model', None),
                 workers=getattr(args, 'workers', None),
-                clean=False,  # Already cleaned above
+                clean=False,  # Already cleaned in Phase 1
                 auto_analyze=False,  # Disabled by default
             )
 
@@ -692,7 +716,8 @@ def _sweep_stage(library, all_books, args):
 
         except KeyboardInterrupt:
             print(f"\n\n⚠️  Interrupted by user. Stopping...")
-            print(f"   Processed: {processed_count}, Skipped: {skipped_count}, Remaining: {len(scan_ids) - idx}")
+            print(f"   Processed: {processed_count}, Skipped: {skipped_count}, Remaining: {len(books_to_process) - idx}")
+            print(f"   Note: Run without --force to continue from where you left off")
             sys.exit(0)
         except Exception as e:
             print(f"  ❌ Error processing {scan_id}: {e}")

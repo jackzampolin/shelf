@@ -33,11 +33,11 @@ function drawBoundingBoxes() {
 
             if (!bbox || !labelBlock) return;
 
-            // Scale coordinates
-            const x = bbox.x0 * scaleX;
-            const y = bbox.y0 * scaleY;
-            const width = (bbox.x1 - bbox.x0) * scaleX;
-            const height = (bbox.y1 - bbox.y0) * scaleY;
+            // Scale coordinates (bbox format: {x, y, width, height})
+            const x = bbox.x * scaleX;
+            const y = bbox.y * scaleY;
+            const width = bbox.width * scaleX;
+            const height = bbox.height * scaleY;
 
             // Get color for this block type
             const blockType = labelBlock.classification || 'BODY';

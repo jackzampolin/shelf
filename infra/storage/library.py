@@ -136,18 +136,17 @@ class Library:
 
     # ===== Shuffle Operations =====
 
-    def get_shuffle(self, stage: str, defensive: bool = True) -> Optional[List[str]]:
+    def get_shuffle(self, defensive: bool = True) -> Optional[List[str]]:
         """
-        Get shuffle order for a stage.
+        Get global shuffle order.
 
         Args:
-            stage: Stage name (e.g., "labels", "corrected")
             defensive: Filter out books that don't exist on filesystem
 
         Returns:
             List of scan_ids in shuffle order, or None if no shuffle exists
         """
-        shuffle = self._metadata.get_shuffle(stage)
+        shuffle = self._metadata.get_shuffle()
 
         if shuffle is None:
             return None
@@ -161,21 +160,19 @@ class Library:
 
         # If shuffle changed, save the cleaned version
         if len(valid_shuffle) != len(shuffle):
-            self._metadata.set_shuffle(stage, valid_shuffle)
+            self._metadata.set_shuffle(valid_shuffle)
 
         return valid_shuffle
 
     def create_shuffle(
         self,
-        stage: str,
         reshuffle: bool = False,
         books: Optional[List[str]] = None
     ) -> List[str]:
         """
-        Create or get shuffle order for a stage.
+        Create or get global shuffle order.
 
         Args:
-            stage: Stage name
             reshuffle: Force creation of new random order
             books: Optional list of scan_ids to shuffle (defaults to all books)
 
@@ -183,7 +180,7 @@ class Library:
             List of scan_ids in shuffle order
         """
         # Check for existing shuffle
-        existing_shuffle = self.get_shuffle(stage, defensive=True)
+        existing_shuffle = self.get_shuffle(defensive=True)
 
         if not reshuffle and existing_shuffle:
             # Use existing shuffle, but add any new books
@@ -197,7 +194,7 @@ class Library:
                 # Add new books to end (preserves existing order)
                 random.shuffle(new_books)
                 updated_shuffle = existing_shuffle + new_books
-                self._metadata.set_shuffle(stage, updated_shuffle)
+                self._metadata.set_shuffle(updated_shuffle)
                 return updated_shuffle
 
             return existing_shuffle
@@ -208,41 +205,41 @@ class Library:
 
         shuffled = books.copy()
         random.shuffle(shuffled)
-        self._metadata.set_shuffle(stage, shuffled)
+        self._metadata.set_shuffle(shuffled)
 
         return shuffled
 
-    def clear_shuffle(self, stage: str):
-        """Clear shuffle order for a stage."""
-        self._metadata.clear_shuffle(stage)
+    def clear_shuffle(self):
+        """Clear global shuffle order."""
+        self._metadata.clear_shuffle()
 
-    def list_shuffles(self) -> Dict[str, Dict[str, Any]]:
-        """List all shuffle orders."""
-        return self._metadata.list_shuffles()
+    def has_shuffle(self) -> bool:
+        """Check if global shuffle exists."""
+        return self._metadata.has_shuffle()
+
+    def get_shuffle_info(self) -> Optional[Dict[str, Any]]:
+        """Get shuffle metadata (created_at, count)."""
+        return self._metadata.get_shuffle_info()
 
     # ===== Private Helpers =====
 
     def _add_books_to_shuffles(self, scan_ids: List[str]):
-        """Add books to all existing shuffles (appends to end)."""
-        shuffles = self._metadata.list_shuffles()
+        """Add books to global shuffle (appends to end)."""
+        current_shuffle = self._metadata.get_shuffle()
 
-        for stage in shuffles.keys():
-            current_shuffle = self._metadata.get_shuffle(stage)
-            if current_shuffle:
-                # Append new books to end (preserves order for in-progress operations)
-                random.shuffle(scan_ids)  # Randomize new books relative to each other
-                updated_shuffle = current_shuffle + scan_ids
-                self._metadata.set_shuffle(stage, updated_shuffle)
+        if current_shuffle:
+            # Append new books to end (preserves order for in-progress operations)
+            random.shuffle(scan_ids)  # Randomize new books relative to each other
+            updated_shuffle = current_shuffle + scan_ids
+            self._metadata.set_shuffle(updated_shuffle)
 
     def _remove_book_from_shuffles(self, scan_id: str):
-        """Remove book from all existing shuffles."""
-        shuffles = self._metadata.list_shuffles()
+        """Remove book from global shuffle."""
+        current_shuffle = self._metadata.get_shuffle()
 
-        for stage in shuffles.keys():
-            current_shuffle = self._metadata.get_shuffle(stage)
-            if current_shuffle and scan_id in current_shuffle:
-                updated_shuffle = [sid for sid in current_shuffle if sid != scan_id]
-                self._metadata.set_shuffle(stage, updated_shuffle)
+        if current_shuffle and scan_id in current_shuffle:
+            updated_shuffle = [sid for sid in current_shuffle if sid != scan_id]
+            self._metadata.set_shuffle(updated_shuffle)
 
     # ===== Delegation to LibraryStorage =====
     # These methods delegate to LibraryStorage for backward compatibility

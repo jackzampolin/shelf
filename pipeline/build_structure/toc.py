@@ -129,30 +129,25 @@ def detect_toc_structure(
     logger.info("Stage 1: Detecting ToC structure (document-level)", toc_pages=len(toc_images))
     print(f"   🔍 Stage 1: Analyzing document structure...")
 
-    # Simple schema for structure detection output
+    # Simple schema for observation output
     structure_schema = {
         "type": "object",
         "properties": {
-            "structure_overview": {
+            "visual_observations": {
                 "type": "object",
                 "properties": {
-                    "total_entries_visible": {"type": "integer"},
-                    "total_chapters": {"type": "integer"},
-                    "total_sections": {"type": "integer"},
-                    "numbering_pattern": {"type": "string"},
-                    "expected_range": {"type": "string"},
-                    "hierarchy_levels": {"type": "integer"},
-                    "has_parts": {"type": "boolean"},
-                    "formatting_pattern": {"type": "string"},
-                    "detected_gaps": {"type": "array", "items": {"type": "integer"}},
-                    "visual_observations": {"type": "array", "items": {"type": "string"}}
+                    "approximate_entry_count": {"type": "string"},
+                    "numbering_style": {"type": "string"},
+                    "indentation_levels": {"type": "integer"},
+                    "formatting_notes": {"type": "array", "items": {"type": "string"}},
+                    "structural_features": {"type": "array", "items": {"type": "string"}}
                 },
-                "required": ["total_entries_visible", "total_chapters", "numbering_pattern", "expected_range", "hierarchy_levels"]
+                "required": ["approximate_entry_count", "numbering_style", "indentation_levels"]
             },
             "confidence": {"type": "number"},
             "notes": {"type": "array", "items": {"type": "string"}}
         },
-        "required": ["structure_overview", "confidence"]
+        "required": ["visual_observations", "confidence"]
     }
 
     response_format = {
@@ -193,30 +188,24 @@ def detect_toc_structure(
         raise ValueError(f"Structure detection failed: {result.error_message}")
 
     structure_data = result.parsed_json
-    structure_overview = structure_data["structure_overview"]
+    observations = structure_data["visual_observations"]
     detection_cost = result.cost_usd
 
     # Log structure findings
     logger.info(
-        "Structure detected",
-        total_entries=structure_overview["total_entries_visible"],
-        chapters=structure_overview["total_chapters"],
-        pattern=structure_overview["numbering_pattern"],
-        range=structure_overview["expected_range"],
-        levels=structure_overview["hierarchy_levels"],
-        gaps=structure_overview.get("detected_gaps", []),
+        "Structure observed",
+        approx_entries=observations["approximate_entry_count"],
+        numbering=observations["numbering_style"],
+        levels=observations["indentation_levels"],
+        confidence=structure_data.get("confidence", 0.0),
         cost=f"${detection_cost:.4f}"
     )
 
-    print(f"   ✓ Structure: {structure_overview['total_entries_visible']} entries, "
-          f"{structure_overview['total_chapters']} chapters, "
-          f"pattern={structure_overview['numbering_pattern']}, "
-          f"levels={structure_overview['hierarchy_levels']}")
+    print(f"   ✓ Observations: {observations['approximate_entry_count']}, "
+          f"numbering={observations['numbering_style']}, "
+          f"levels={observations['indentation_levels']}")
 
-    if structure_overview.get("detected_gaps"):
-        print(f"   ⚠️  Detected gaps in numbering: {structure_overview['detected_gaps']}")
-
-    return structure_overview, detection_cost
+    return observations, detection_cost
 
 
 def parse_toc(
@@ -268,7 +257,7 @@ def parse_toc(
     log_dir = storage.stage("build_structure").output_dir / "logs"
 
     # STAGE 1: Detect document-level structure
-    structure_overview, structure_cost = detect_toc_structure(
+    observations, structure_cost = detect_toc_structure(
         toc_images=toc_images,
         model=model,
         logger=logger,
@@ -279,8 +268,8 @@ def parse_toc(
     logger.info("Stage 2: Extracting ToC entries (structure-guided)", model=model)
     print(f"   📝 Stage 2: Extracting entries with structure guidance...")
 
-    # Build Stage 2 prompt with structure context
-    detail_prompt = build_detail_extraction_prompt(structure_overview)
+    # Build Stage 2 prompt with structure context (passes observations, not commands)
+    detail_prompt = build_detail_extraction_prompt(observations)
 
     # Extract OCR text for accurate title extraction
     toc_text = extract_toc_text(storage, toc_range)
@@ -295,7 +284,7 @@ def parse_toc(
     }
 
     # Create detail extraction request (vision for structure, OCR for titles)
-    user_message = f"""Extract ALL entries from the ToC following the structure guidance above.
+    user_message = f"""Extract ALL entries from this Table of Contents.
 
 **ToC page range (scan pages):** {toc_range.start_page}-{toc_range.end_page}
 
@@ -303,11 +292,10 @@ def parse_toc(
 
 {toc_text}
 
-**Instructions:**
-- Use the IMAGES to determine structure (indentation, hierarchy, entry count)
-- Use the OCR TEXT above to extract accurate chapter titles
-- Trust OCR text for what words are written
-- Trust images for how entries are visually arranged"""
+Remember to:
+1. Use IMAGES for structure (indentation, layout, visual hierarchy)
+2. Use OCR TEXT for accurate titles and numbers
+3. Run self-verification checks before returning"""
 
     request = LLMRequest(
         id="extract_details",

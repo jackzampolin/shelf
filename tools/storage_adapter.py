@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from pydantic import BaseModel
 
 from infra.storage.book_storage import BookStorage
-from infra.storage.library_storage import LibraryStorage
+from infra.storage.library import Library
 
 # Import stage schemas directly without triggering __init__.py
 # This avoids heavy dependencies (cv2, etc.) that stages have
@@ -94,7 +94,7 @@ class ViewerStorageAdapter:
         self._book_cache: Dict[str, BookStorage] = {}
 
         # Library instance for library-wide operations
-        self._library = LibraryStorage(storage_root=self.storage_root)
+        self._library = Library(storage_root=self.storage_root)
 
     def _get_storage(self, scan_id: str) -> BookStorage:
         """Get or create cached BookStorage instance."""
@@ -107,9 +107,12 @@ class ViewerStorageAdapter:
 
     # ===== Library Operations =====
 
-    def find_all_books(self) -> List[Dict[str, Any]]:
+    def find_all_books(self, use_shuffle: bool = True) -> List[Dict[str, Any]]:
         """
         Find all books in library with their stage statuses.
+
+        Args:
+            use_shuffle: If True, return books in global shuffle order (default: True)
 
         Returns:
             List of book info dicts with keys:
@@ -118,16 +121,29 @@ class ViewerStorageAdapter:
             - ocr/corrected/labels/merged: Status dicts
             - has_toc: True if ToC extracted
         """
-        books = []
-
         if not self.storage_root.exists():
-            return books
+            return []
 
-        for book_dir in sorted(self.storage_root.iterdir()):
-            if not book_dir.is_dir() or book_dir.name.startswith('.'):
-                continue
+        # Collect all scan_ids
+        all_scan_ids = []
+        for book_dir in self.storage_root.iterdir():
+            if book_dir.is_dir() and not book_dir.name.startswith('.'):
+                all_scan_ids.append(book_dir.name)
 
-            scan_id = book_dir.name
+        # Determine order
+        if use_shuffle and self._library.has_shuffle():
+            # Use global shuffle order (defensive filtering applied)
+            shuffle = self._library.get_shuffle(defensive=True)
+            # Preserve shuffle order but include any books not in shuffle at the end
+            shuffle_set = set(shuffle) if shuffle else set()
+            ordered_scan_ids = (shuffle or []) + sorted([sid for sid in all_scan_ids if sid not in shuffle_set])
+        else:
+            # Alphabetical order
+            ordered_scan_ids = sorted(all_scan_ids)
+
+        # Build book info list in order
+        books = []
+        for scan_id in ordered_scan_ids:
             storage = self._get_storage(scan_id)
 
             book_info = {
