@@ -1,202 +1,294 @@
 """
-Table of Contents parsing prompts.
+Table of Contents parsing prompts - Two-stage holistic approach.
+
+Stage 1: Structure Detection (document-level pattern recognition)
+Stage 2: Detail Extraction (entry-level with structure context)
 """
 
-TOC_PARSING_PROMPT = """<role>
-You are a Table of Contents parser with vision capabilities. Extract chapter/section structure by LOOKING AT THE VISUAL LAYOUT first, then using OCR text to confirm titles.
+# STAGE 1: Document-level structure detection
+TOC_STRUCTURE_DETECTION_PROMPT = """<role>
+You are a Table of Contents analyst. Your job is to understand the OVERALL STRUCTURE of the ToC by looking at ALL pages together.
 </role>
 
 <task>
-Parse the ToC to extract all chapter and section entries with their page numbers.
-CRITICAL: Trust the VISUAL STRUCTURE (indentation, spacing, formatting) over the OCR text.
+Look at the ToC pages as a COMPLETE DOCUMENT and identify:
+1. How many chapters/entries total?
+2. What numbering pattern? (Roman numerals I-XV? Arabic 1-20? None?)
+3. How many hierarchy levels? (just chapters? chapters + sections? parts + chapters + sections?)
+4. What's the visual formatting pattern?
+5. Are there any gaps or inconsistencies?
 </task>
 
-<visual_hierarchy_first>
-STEP 1: Look at the IMAGE to detect hierarchy:
-- Indentation levels (flush left = level 1, indented once = level 2, twice = level 3)
-- Vertical spacing between entries (larger gaps often indicate level boundaries)
-- Font size/weight differences (bold/larger = higher level)
-- Leader dots connecting titles to page numbers
+<see_the_whole_document>
+**CRITICAL: Look at ALL ToC pages together before answering.**
 
-STEP 2: Use OCR text to extract the actual title/number text
+Count the visual entries:
+- How many flush-left entries? (top-level chapters/parts)
+- How many indented entries? (sections/subsections)
+- What's the last chapter number you see?
 
-DO NOT trust OCR-only parsing for hierarchy - OCR often loses indentation information.
-</visual_hierarchy_first>
+Pattern recognition:
+- Do all chapters follow the SAME format? ("I. Title ... PageNum" or "Chapter 1: Title" or just "Title")
+- Are chapter numbers sequential? (I, II, III, IV... or 1, 2, 3, 4... or mixed?)
+- Are there visual gaps in the sequence? (if you see I, II, IV → chapter III is missing!)
 
-<patterns>
-Look for these ToC patterns:
-- "Chapter 1: Title ........... 15"
-- "Part I: Title ........... 1"
-- "I. Title ........... 23"
-- "1 Title 45"
-- Indented sections under chapters
-</patterns>
+Hierarchy detection:
+- How many indentation levels do you SEE in the images?
+- Flush left = level 1
+- Indented once = level 2
+- Indented twice = level 3
+</see_the_whole_document>
 
-<page_numbers>
-CRITICAL: ToC page numbers are PRINTED pages (what's printed on actual book pages).
-These are NOT scan/file page numbers.
+<numbering_patterns>
+Common patterns to recognize:
 
-Example: "Chapter 1 ... 1" means printed page "1", which might be scan page 16.
+**Roman numerals:**
+- "I. The Early Years ... 1"
+- "II. West Point ... 23"
+- Pattern: Roman numeral, period, title, page number
 
-Extract the PRINTED page numbers exactly as shown in ToC:
-- Roman numerals (i, ii, iii, iv, ix, xiv, etc.) → Keep as-is, don't convert
-- Arabic numerals (1, 2, 3, etc.) → Keep as-is
-- If no page number visible → Use null
-</page_numbers>
+**Arabic numerals:**
+- "1 The Beginning ... 15"
+- "2. The Next Chapter ... 42"
+- Pattern: Arabic number, optional period, title, page number
 
-<hierarchy>
-Detect entry hierarchy by LOOKING AT VISUAL INDENTATION:
-- level=1: Flush left (Parts, Chapters without parent)
-- level=2: Indented once (Sections under chapters)
-- level=3: Indented twice (Subsections under sections)
+**Chapter prefix:**
+- "Chapter 1: Title ... 15"
+- "CHAPTER ONE Title ... 23"
+- Pattern: Word "Chapter", number/word, optional colon, title, page number
 
-Associate sections with parent chapters using chapter_number field.
-Example: If "Chapter 1" is at level=1, then all level=2 entries until "Chapter 2" should have chapter_number=1.
-</hierarchy>
+**No numbers:**
+- "Introduction ... ix"
+- "The Early Years ... 1"
+- Pattern: Just title and page number (unnumbered)
+
+**Parts + Chapters:**
+- "PART I: THE WAR" (no page number)
+- "  1. Pearl Harbor ... 45" (indented)
+- Pattern: Parts at level 1 (no numbers), chapters at level 2 (numbered)
+</numbering_patterns>
+
+<gap_detection>
+**CRITICAL: Check for missing entries**
+
+If you see chapter numbers I, II, IV, V:
+- You're MISSING chapter III
+- Note this in detected_gaps: [3]
+
+If you see chapters 1, 2, 3, 5, 6:
+- You're MISSING chapter 4
+- Note this in detected_gaps: [4]
+
+**Common causes of gaps:**
+- OCR failed to detect entry (look at image again!)
+- Entry spans multiple pages (check page boundaries)
+- Entry has unusual formatting (still there, just different pattern)
+
+If you detect gaps, LOOK AGAIN at the images to see if you missed an entry.
+</gap_detection>
 
 <output_schema>
-Return JSON:
+Return JSON with document-level structure analysis:
 
 {
-  "entries": [
-    {
-      "chapter_number": null,
-      "title": "Introduction",
-      "printed_page_number": "ix",
-      "level": 1
-    },
-    {
-      "chapter_number": 1,
-      "title": "The Early Years",
-      "printed_page_number": "15",
-      "level": 1
-    },
-    {
-      "chapter_number": 1,
-      "title": "Childhood",
-      "printed_page_number": "17",
-      "level": 2
-    }
-  ],
-  "toc_page_range": {"start_page": 6, "end_page": 8},
-  "total_chapters": 2,
-  "total_sections": 1,
-  "parsing_confidence": 0.95,
-  "notes": ["Introduction has no chapter number (unnumbered front matter)", "Page numbers include roman numerals"]
+  "structure_overview": {
+    "total_entries_visible": 25,
+    "total_chapters": 15,
+    "total_sections": 10,
+    "numbering_pattern": "roman_numerals",
+    "expected_range": "I-XV",
+    "hierarchy_levels": 2,
+    "has_parts": false,
+    "formatting_pattern": "Number. Title ..... PageNum",
+    "detected_gaps": [],
+    "visual_observations": [
+      "All chapters follow consistent Roman numeral pattern",
+      "Two indentation levels: chapters flush left, sections indented",
+      "Page numbers right-aligned with leader dots"
+    ]
+  },
+  "confidence": 0.95,
+  "notes": ["Clean structure, no ambiguities"]
 }
 
-RULES:
-- Extract ALL entries with reasonable confidence
-- level: Determined by VISUAL INDENTATION (1=flush left, 2=indented once, 3=indented twice)
-- chapter_number: Extract from title if present (e.g., "Chapter 1", "1.", "I") → Use 1. For unnumbered entries (Introduction, Epilogue), use null
-- printed_page_number: STRING field - keep exactly as shown ("ix", "15", "203"). Use null if no page number visible
-- total_chapters: Count of level=1 entries (top-level chapters/parts)
-- total_sections: Count of level=2+ entries (subsections)
-- parsing_confidence: 0.0-1.0 based on ToC clarity and visual structure quality
-- notes[]: Document ambiguities, OCR issues, or structural observations
+**Field definitions:**
+
+- total_entries_visible: Total entries you SEE in images (count them!)
+- total_chapters: Top-level chapters/parts (level 1)
+- total_sections: Subsections (level 2+)
+- numbering_pattern: "roman_numerals", "arabic_numerals", "chapter_prefix", "mixed", or "none"
+- expected_range: "I-XV" or "1-20" or "none"
+- hierarchy_levels: 1 (flat), 2 (chapters + sections), or 3 (parts + chapters + sections)
+- has_parts: true if ToC has PART I, PART II, etc.
+- formatting_pattern: Describe the visual pattern you see
+- detected_gaps: List of missing chapter numbers [3, 7, 10]
+- visual_observations: What patterns did you notice?
+- confidence: 0.0-1.0 based on clarity and consistency
+- notes: Any ambiguities or concerns
 </output_schema>
 
 <output_requirements>
 Return ONLY valid JSON.
-Do not include markdown code fences.
-Do not add explanatory text.
+No markdown code fences.
+No explanatory text outside JSON.
 </output_requirements>"""
 
 
-# Refinement prompt for second-pass ToC parsing
-TOC_REFINEMENT_PROMPT = """<role>
-You are a Table of Contents validator. Review and refine an initial ToC parse to fix common errors.
+# STAGE 2: Detail extraction with structure context
+def build_detail_extraction_prompt(structure_overview: dict) -> str:
+    """
+    Build Stage 2 prompt with structure context from Stage 1.
+
+    Args:
+        structure_overview: Output from Stage 1 structure detection
+
+    Returns:
+        Formatted prompt for detail extraction
+    """
+    total_entries = structure_overview.get('total_entries_visible', '?')
+    total_chapters = structure_overview.get('total_chapters', '?')
+    numbering_pattern = structure_overview.get('numbering_pattern', 'unknown')
+    expected_range = structure_overview.get('expected_range', 'unknown')
+    formatting_pattern = structure_overview.get('formatting_pattern', 'unknown')
+    hierarchy_levels = structure_overview.get('hierarchy_levels', 1)
+    detected_gaps = structure_overview.get('detected_gaps', [])
+
+    gap_warning = ""
+    if detected_gaps:
+        gap_warning = f"""
+<gap_warning>
+**CRITICAL:** Structure analysis detected MISSING chapters: {detected_gaps}
+
+Before you extract, LOOK AGAIN at the images to find these missing entries:
+- Check page boundaries (entry might span pages)
+- Check for unusual formatting (different pattern)
+- Check for OCR failures (entry visible but not in OCR text)
+
+You MUST extract all {total_entries} entries, including the missing ones.
+</gap_warning>
+"""
+
+    return f"""<role>
+You are a Table of Contents extractor. Extract ALL entries from the ToC pages with complete accuracy.
 </role>
 
-<task>
-You'll receive:
-1. ToC page images (SAME images as initial parse)
-2. Initial parse results (JSON)
+<structure_context>
+From structure analysis, this ToC has:
+- **Total entries:** {total_entries} (you must extract ALL of them)
+- **Total chapters:** {total_chapters}
+- **Numbering pattern:** {numbering_pattern}
+- **Expected range:** {expected_range}
+- **Formatting pattern:** {formatting_pattern}
+- **Hierarchy levels:** {hierarchy_levels}
+</structure_context>
+{gap_warning}
+<extraction_rules>
+**1. Title Cleanup (CRITICAL):**
 
-Your job: LOOK AT THE IMAGES AGAIN and verify/correct the initial parse, focusing on:
-- Hierarchy detection (are levels correct based on VISUAL indentation?)
-- Page number extraction (are they complete and accurate?)
-- Chapter number extraction (are they present when visible?)
-</task>
+If the numbering pattern is "{numbering_pattern}":
+- Remove the number prefix from titles
+- "I. The Early Years" → chapter_number=1, title="The Early Years"
+- "II. West Point" → chapter_number=2, title="West Point"
+- "Chapter 1: Title" → chapter_number=1, title="Title"
+- "1. Title" → chapter_number=1, title="Title"
 
-<common_errors>
-Based on analysis of 17 books, initial parses often have these issues:
+**DO NOT copy the number prefix into the title field!**
 
-1. **Flat hierarchy (40% of books)**
-   - All entries marked as level=1 when visual indentation shows 2-3 levels
-   - FIX: Look at INDENTATION in the image, not just OCR text
+**2. Chapter Number Extraction:**
 
-2. **Missing page numbers (67% of books)**
-   - printed_page_number set to null when numbers ARE visible in image
-   - FIX: Look at right-aligned column of numbers in image
+Expected range is {expected_range}:
+- Roman numerals (I, II, III, IV, V, VI, VII, VIII, IX, X, XI, XII, XIII, XIV, XV)
+  - I → 1, II → 2, III → 3, IV → 4, V → 5, etc.
+- Arabic numerals: use as-is
+- Unnumbered entries (Introduction, Epilogue, Appendix): chapter_number=null
 
-3. **Missing chapter numbers (93% of books)**
-   - chapter_number set to null when "Chapter 1", "1.", "I" appears in title
-   - FIX: Extract numbers from title text (e.g., "Chapter 1" → chapter_number=1)
+**3. Page Number Extraction:**
 
-4. **Roman numeral conversion (87% of books)**
-   - Converting "ix" to "9" instead of keeping as-is
-   - FIX: Keep page numbers EXACTLY as shown ("ix", "xiv", "23")
+Keep EXACTLY as shown in image:
+- Roman numerals: "ix", "xiv", "xxiii" (keep as string)
+- Arabic numerals: "1", "23", "145" (keep as string)
+- No number visible: null
 
-5. **Visual structure ignored**
-   - Trusting OCR text spacing over actual visual indentation
-   - FIX: Use the IMAGE to determine hierarchy levels
-</common_errors>
+**4. Hierarchy Detection:**
 
-<verification_steps>
-For EACH entry in the initial parse:
+Use VISUAL INDENTATION (not OCR spacing):
+- Flush left = level 1
+- Indented once = level 2
+- Indented twice = level 3
 
-1. **Verify level** - Look at image indentation:
-   - Flush left = level 1
-   - Indented once (1-2em) = level 2
-   - Indented twice (2-4em) = level 3
+This ToC has {hierarchy_levels} levels.
 
-2. **Verify printed_page_number** - Look at right side of image:
-   - Is there a number/roman numeral? Extract it as STRING
-   - No number visible? Use null
+**5. Completeness:**
 
-3. **Verify chapter_number** - Look at title text:
-   - "Chapter 1", "1.", "I", "One" → chapter_number=1
-   - "Introduction", "Epilogue" (no number) → chapter_number=null
+You must extract ALL {total_entries} entries:
+- Count your entries before returning
+- If you have fewer than {total_entries}, LOOK AGAIN at images
+- Check for entries at page boundaries
+- Check for entries with unusual formatting
+</extraction_rules>
 
-4. **Verify completeness** - Are there entries in the IMAGE not in the parse?
-   - Add missing entries with correct hierarchy
-</verification_steps>
+<self_validation>
+Before returning, check:
+
+✓ Did I extract all {total_entries} entries? (count them!)
+✓ Are chapter numbers sequential {expected_range}? (no gaps!)
+✓ Did I REMOVE number prefixes from titles? (no "I." or "1." in titles!)
+✓ Are page numbers strings? (not integers!)
+✓ Do hierarchy levels match visual indentation? ({hierarchy_levels} levels expected!)
+
+If any check fails, LOOK AT THE IMAGES AGAIN and fix it.
+</self_validation>
 
 <output_schema>
-Return the SAME JSON schema as initial parse, with corrections:
+Return JSON with all entries:
 
-{
+{{
   "entries": [
-    {
+    {{
       "chapter_number": 1,
       "title": "The Early Years",
       "printed_page_number": "15",
       "level": 1
-    },
-    {
+    }},
+    {{
       "chapter_number": 1,
       "title": "Childhood",
       "printed_page_number": "17",
       "level": 2
-    }
+    }}
   ],
-  "toc_page_range": {"start_page": 6, "end_page": 8},
-  "total_chapters": 1,
-  "total_sections": 1,
+  "toc_page_range": {{"start_page": 6, "end_page": 8}},
+  "total_chapters": {total_chapters},
+  "total_sections": 10,
   "parsing_confidence": 0.95,
-  "notes": ["Fixed hierarchy: 'Childhood' was level=1, corrected to level=2 based on visual indentation"]
-}
+  "notes": [
+    "Extracted all {total_entries} entries",
+    "Removed Roman numeral prefixes from titles",
+    "No gaps in chapter sequence"
+  ]
+}}
 
-RULES:
-- Return ALL entries (don't remove entries unless they're clearly not ToC)
-- In notes[], explain what you CHANGED from initial parse and WHY
-- Increase parsing_confidence if you fixed errors, decrease if you found ambiguities
-- Trust VISUAL LAYOUT over OCR text for hierarchy
+**RULES:**
+- entries: ALL {total_entries} entries from ToC
+- chapter_number: Integer (1, 2, 3...) or null for unnumbered
+- title: Clean title WITHOUT number prefix
+- printed_page_number: String ("ix", "23") or null
+- level: 1, 2, or 3 based on VISUAL indentation
+- toc_page_range: Scan page numbers where ToC appears
+- total_chapters: Count of level=1 entries
+- total_sections: Count of level=2+ entries
+- parsing_confidence: 0.0-1.0 based on extraction quality
+- notes: Document what you did (cleaned titles, found missing entries, etc.)
 </output_schema>
 
 <output_requirements>
 Return ONLY valid JSON.
-Do not include markdown code fences.
-Do not add explanatory text.
+No markdown code fences.
+No explanatory text outside JSON.
 </output_requirements>"""
+
+
+# Legacy prompts (kept for backward compatibility, will be removed after migration)
+TOC_PARSING_PROMPT = """DEPRECATED: Use TOC_STRUCTURE_DETECTION_PROMPT + build_detail_extraction_prompt() instead."""
+
+TOC_REFINEMENT_PROMPT = """DEPRECATED: Use two-stage approach instead."""

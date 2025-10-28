@@ -22,7 +22,7 @@ from infra.storage.book_storage import BookStorage
 from infra.utils.pdf import downsample_for_vision
 
 from .schemas import TableOfContents, PageRange
-from .toc_prompts import TOC_PARSING_PROMPT, TOC_REFINEMENT_PROMPT
+from .toc_prompts import TOC_STRUCTURE_DETECTION_PROMPT, build_detail_extraction_prompt
 
 
 def find_toc_pages(labels_report_path: Path) -> Optional[PageRange]:
@@ -108,64 +108,72 @@ def load_toc_images(storage: BookStorage, toc_range: PageRange) -> list:
     return toc_images
 
 
-def refine_toc_parse(
-    initial_toc: TableOfContents,
+def detect_toc_structure(
     toc_images: list,
     model: str,
     logger: PipelineLogger,
     log_dir: Path,
-) -> Tuple[TableOfContents, float]:
+) -> Tuple[dict, float]:
     """
-    Refine ToC parse with vision-based second pass.
+    STAGE 1: Detect document-level ToC structure.
 
     Args:
-        initial_toc: Initial parse result from text-based parsing
         toc_images: List of ToC page images
         model: LLM model to use
         logger: Pipeline logger
         log_dir: Directory for logging
 
     Returns:
-        Tuple of (refined TableOfContents, refinement cost)
+        Tuple of (structure_overview dict, detection cost)
     """
-    logger.info("Refining ToC parse with vision verification", entries=len(initial_toc.entries))
-    print(f"   🔍 Refining parse with vision verification...")
+    logger.info("Stage 1: Detecting ToC structure (document-level)", toc_pages=len(toc_images))
+    print(f"   🔍 Stage 1: Analyzing document structure...")
 
-    # Build refinement user prompt
-    initial_json = initial_toc.model_dump_json(indent=2)
-    user_prompt = f"""Here is the initial ToC parse from text-only analysis:
+    # Simple schema for structure detection output
+    structure_schema = {
+        "type": "object",
+        "properties": {
+            "structure_overview": {
+                "type": "object",
+                "properties": {
+                    "total_entries_visible": {"type": "integer"},
+                    "total_chapters": {"type": "integer"},
+                    "total_sections": {"type": "integer"},
+                    "numbering_pattern": {"type": "string"},
+                    "expected_range": {"type": "string"},
+                    "hierarchy_levels": {"type": "integer"},
+                    "has_parts": {"type": "boolean"},
+                    "formatting_pattern": {"type": "string"},
+                    "detected_gaps": {"type": "array", "items": {"type": "integer"}},
+                    "visual_observations": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["total_entries_visible", "total_chapters", "numbering_pattern", "expected_range", "hierarchy_levels"]
+            },
+            "confidence": {"type": "number"},
+            "notes": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["structure_overview", "confidence"]
+    }
 
-```json
-{initial_json}
-```
-
-Please review the ToC page images and verify/correct this parse, focusing on:
-1. Hierarchy levels (visual indentation)
-2. Page numbers (check right-aligned column)
-3. Chapter numbers (extract from titles)
-
-Return the corrected JSON following the same schema."""
-
-    # Build JSON schema for structured output
     response_format = {
         "type": "json_schema",
         "json_schema": {
-            "name": "table_of_contents_refined",
-            "schema": TableOfContents.model_json_schema()
+            "name": "toc_structure_detection",
+            "schema": structure_schema
         }
     }
 
-    # Create refinement LLM request with images
+    # Create structure detection request (vision-only, no text)
     request = LLMRequest(
-        id="refine_toc",
+        id="detect_structure",
         model=model,
         messages=[
-            {"role": "system", "content": TOC_REFINEMENT_PROMPT},
-            {"role": "user", "content": user_prompt}
+            {"role": "system", "content": TOC_STRUCTURE_DETECTION_PROMPT},
+            {"role": "user", "content": "Analyze these ToC pages and identify the overall document structure."}
         ],
-        images=toc_images,  # Vision input
+        images=toc_images,
         temperature=0.0,
-        max_tokens=4000,
+        max_tokens=2000,
         response_format=response_format
     )
 
@@ -182,29 +190,33 @@ Return the corrected JSON following the same schema."""
     # Extract result
     result = results[0]
     if not result.success:
-        logger.warning("Refinement failed, using initial parse", error=result.error_message)
-        print(f"   ⚠️  Refinement failed, using initial parse")
-        return initial_toc, 0.0
+        raise ValueError(f"Structure detection failed: {result.error_message}")
 
-    # Parse response as TableOfContents
-    refined_toc = TableOfContents(**result.parsed_json)
-    refinement_cost = result.cost_usd
+    structure_data = result.parsed_json
+    structure_overview = structure_data["structure_overview"]
+    detection_cost = result.cost_usd
 
-    # Compare changes
-    hierarchy_changes = sum(1 for i, entry in enumerate(refined_toc.entries)
-                           if i < len(initial_toc.entries) and entry.level != initial_toc.entries[i].level)
-    page_num_changes = sum(1 for i, entry in enumerate(refined_toc.entries)
-                          if i < len(initial_toc.entries) and entry.printed_page_number != initial_toc.entries[i].printed_page_number)
-
+    # Log structure findings
     logger.info(
-        "ToC refinement complete",
-        hierarchy_changes=hierarchy_changes,
-        page_num_changes=page_num_changes,
-        cost=f"${refinement_cost:.4f}"
+        "Structure detected",
+        total_entries=structure_overview["total_entries_visible"],
+        chapters=structure_overview["total_chapters"],
+        pattern=structure_overview["numbering_pattern"],
+        range=structure_overview["expected_range"],
+        levels=structure_overview["hierarchy_levels"],
+        gaps=structure_overview.get("detected_gaps", []),
+        cost=f"${detection_cost:.4f}"
     )
-    print(f"   ✓ Refinement complete (hierarchy: {hierarchy_changes} changes, page nums: {page_num_changes} changes)")
 
-    return refined_toc, refinement_cost
+    print(f"   ✓ Structure: {structure_overview['total_entries_visible']} entries, "
+          f"{structure_overview['total_chapters']} chapters, "
+          f"pattern={structure_overview['numbering_pattern']}, "
+          f"levels={structure_overview['hierarchy_levels']}")
+
+    if structure_overview.get("detected_gaps"):
+        print(f"   ⚠️  Detected gaps in numbering: {structure_overview['detected_gaps']}")
+
+    return structure_overview, detection_cost
 
 
 def parse_toc(
@@ -251,26 +263,26 @@ def parse_toc(
 
     logger.info("Found ToC pages", start=toc_range.start_page, end=toc_range.end_page)
 
-    # Extract text from ToC pages
-    toc_text = extract_toc_text(storage, toc_range)
-
-    if not toc_text.strip():
-        logger.warning("ToC pages found but no text extracted")
-        print("   ⊘ ToC pages found but no text extracted (skipping)")
-        return None, 0.0
-
-    logger.info("Extracted ToC text", chars=len(toc_text))
-
-    # Load ToC images for vision-based parsing (first pass with text + images)
+    # Load ToC images for vision-based parsing
     toc_images = load_toc_images(storage, toc_range)
+    log_dir = storage.stage("build_structure").output_dir / "logs"
 
-    messages = [
-        {"role": "system", "content": TOC_PARSING_PROMPT},
-        {"role": "user", "content": f"Table of Contents Text:\n\n{toc_text}"},
-    ]
+    # STAGE 1: Detect document-level structure
+    structure_overview, structure_cost = detect_toc_structure(
+        toc_images=toc_images,
+        model=model,
+        logger=logger,
+        log_dir=log_dir
+    )
+
+    # STAGE 2: Extract details using structure context
+    logger.info("Stage 2: Extracting ToC entries (structure-guided)", model=model)
+    print(f"   📝 Stage 2: Extracting entries with structure guidance...")
+
+    # Build Stage 2 prompt with structure context
+    detail_prompt = build_detail_extraction_prompt(structure_overview)
 
     # Build JSON schema for structured output
-    # Note: OpenRouter doesn't support "strict": True
     response_format = {
         "type": "json_schema",
         "json_schema": {
@@ -279,66 +291,53 @@ def parse_toc(
         }
     }
 
-    # Create LLM request (with images for visual hierarchy detection)
-    toc_pages = toc_range.end_page - toc_range.start_page + 1
+    # Create detail extraction request
     request = LLMRequest(
-        id="parse_toc",
+        id="extract_details",
         model=model,
-        messages=messages,
-        images=toc_images,  # Vision input for first pass
+        messages=[
+            {"role": "system", "content": detail_prompt},
+            {"role": "user", "content": "Extract ALL entries from the ToC following the structure guidance above."}
+        ],
+        images=toc_images,  # Same images, now with structure context
         temperature=0.0,
         max_tokens=4000,
         response_format=response_format
     )
 
-    # Make LLM call with batch client (single request)
-    log_dir = storage.stage("build_structure").output_dir / "logs"
+    # Make LLM call
     batch_client = LLMBatchClient(
         max_workers=1,
-        max_retries=5,  # Retry on validation failures
-        verbose=False,  # Disable verbose for single call (we'll show our own progress)
+        max_retries=5,
+        verbose=False,
         log_dir=log_dir
     )
-
-    logger.info("Calling LLM for ToC parsing (text + images)", model=model, toc_pages=toc_pages)
-    print(f"   ⏳ Initial parse (text + images)...")
 
     results = batch_client.process_batch([request])
 
     # Extract result
     result = results[0]
     if not result.success:
-        raise ValueError(f"LLM call failed: {result.error_message}")
+        raise ValueError(f"Detail extraction failed: {result.error_message}")
 
-    # Parse response as TableOfContents (initial parse with text + images)
-    initial_toc = TableOfContents(**result.parsed_json)
-    parsing_cost = result.cost_usd
+    # Parse response as TableOfContents
+    toc = TableOfContents(**result.parsed_json)
+    extraction_cost = result.cost_usd
 
-    print(f"   ✓ Initial parse: {len(initial_toc.entries)} entries ({initial_toc.total_chapters} chapters, {initial_toc.total_sections} sections)")
+    total_cost = search_cost + structure_cost + extraction_cost
 
-    # Refine parse with vision verification (images already loaded)
-    toc, refinement_cost = refine_toc_parse(
-        initial_toc=initial_toc,
-        toc_images=toc_images,
-        model=model,
-        logger=logger,
-        log_dir=log_dir
-    )
-
-    total_cost = search_cost + parsing_cost + refinement_cost
-
-    print(f"   ✓ Final: {len(toc.entries)} entries ({toc.total_chapters} chapters, {toc.total_sections} sections)")
-    print(f"   💰 Total cost: ${total_cost:.4f} (search: ${search_cost:.4f}, parse: ${parsing_cost:.4f}, refine: ${refinement_cost:.4f})")
+    print(f"   ✓ Extracted: {len(toc.entries)} entries ({toc.total_chapters} chapters, {toc.total_sections} sections)")
+    print(f"   💰 Total cost: ${total_cost:.4f} (search: ${search_cost:.4f}, structure: ${structure_cost:.4f}, extract: ${extraction_cost:.4f})")
 
     logger.info(
-        "ToC parsed successfully (with refinement)",
+        "ToC parsed successfully (two-stage holistic)",
         entries=len(toc.entries),
         chapters=toc.total_chapters,
         sections=toc.total_sections,
         confidence=f"{toc.parsing_confidence:.2f}",
         search_cost=f"${search_cost:.4f}",
-        parsing_cost=f"${parsing_cost:.4f}",
-        refinement_cost=f"${refinement_cost:.4f}",
+        structure_cost=f"${structure_cost:.4f}",
+        extraction_cost=f"${extraction_cost:.4f}",
         total_cost=f"${total_cost:.4f}",
     )
 

@@ -212,12 +212,15 @@ class AgentClient:
                         f"LLM call failed in iteration {iteration}: {str(e)}"
                     )
 
-                # Build assistant message
+                # Build assistant message (include reasoning for stateless continuation)
                 assistant_msg = {"role": "assistant"}
                 if content:
                     assistant_msg["content"] = content
                 if tool_calls:
                     assistant_msg["tool_calls"] = tool_calls
+                if reasoning_details:
+                    # Pass encrypted reasoning back for continuation (required for Grok)
+                    assistant_msg["reasoning_details"] = reasoning_details
 
                 messages.append(assistant_msg)
 
@@ -369,13 +372,85 @@ class AgentClient:
         if error_message:
             self.run_log['metadata']['error_message'] = error_message
 
+        # Clean log for readability (strip bloat before saving)
+        cleaned_log = self._clean_run_log(self.run_log)
+
         # Save to JSON file
         run_log_path = self.log_dir / f"run-{run_timestamp}.json"
 
         with open(run_log_path, 'w') as f:
-            json.dump(self.run_log, f, indent=2)
+            json.dump(cleaned_log, f, indent=2)
 
         return run_log_path
+
+    def _clean_run_log(self, log: Dict) -> Dict:
+        """
+        Clean run log by removing bloat (images, encrypted data).
+
+        Keeps:
+        - Reasoning metadata (ID, format, type, token counts)
+        - Tool results (full text)
+        - LLM responses (text content)
+
+        Removes:
+        - Image data from multipart messages (can be 100KB+ each)
+        - Encrypted reasoning data payload (unreadable noise)
+        """
+        import copy
+        cleaned = copy.deepcopy(log)
+
+        # Clean initial messages
+        if 'initial_messages' in cleaned:
+            cleaned['initial_messages'] = self._strip_images_from_messages(cleaned['initial_messages'])
+
+        # Clean iterations
+        for iteration in cleaned.get('iterations', []):
+            # Clean reasoning_details: keep metadata, remove encrypted data
+            if iteration.get('llm_response') and iteration['llm_response'].get('reasoning_details'):
+                cleaned_reasoning = []
+                for detail in iteration['llm_response']['reasoning_details']:
+                    cleaned_detail = {
+                        'type': detail.get('type'),
+                        'id': detail.get('id'),
+                        'format': detail.get('format'),
+                        'index': detail.get('index'),
+                        'data_size_bytes': len(detail.get('data', '')) if detail.get('data') else 0,
+                        # NOTE: 'data' field removed (encrypted, unreadable)
+                    }
+                    cleaned_reasoning.append(cleaned_detail)
+                iteration['llm_response']['reasoning_details'] = cleaned_reasoning
+
+        return cleaned
+
+    def _strip_images_from_messages(self, messages: List[Dict]) -> List[Dict]:
+        """Strip base64 image data from messages, replace with metadata."""
+        cleaned_messages = []
+        for msg in messages:
+            cleaned_msg = msg.copy()
+
+            # Check if content is multipart (list with images)
+            content = cleaned_msg.get('content')
+            if isinstance(content, list):
+                cleaned_content = []
+                for item in content:
+                    if item.get('type') == 'image_url':
+                        # Replace image data with metadata
+                        url = item.get('image_url', {}).get('url', '')
+                        cleaned_content.append({
+                            'type': 'image_url',
+                            'image_url': {
+                                'url': '[IMAGE_DATA_REMOVED]',
+                                'original_size_bytes': len(url)
+                            }
+                        })
+                    else:
+                        # Keep text parts as-is
+                        cleaned_content.append(item)
+                cleaned_msg['content'] = cleaned_content
+
+            cleaned_messages.append(cleaned_msg)
+
+        return cleaned_messages
 
     def _emit_event(
         self,
