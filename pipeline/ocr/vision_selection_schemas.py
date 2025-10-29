@@ -22,7 +22,7 @@ class VisionSelectionResponse(BaseModel):
     )
 
     reason: str = Field(
-        max_length=300,
+        max_length=500,
         description="Brief explanation of why this PSM is best (structural advantages)"
     )
 
