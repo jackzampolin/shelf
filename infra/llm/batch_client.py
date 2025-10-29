@@ -905,8 +905,18 @@ class LLMBatchClient:
             last_msg = messages_with_nonce[-1].copy()
             content = last_msg.get('content', '')
             if isinstance(content, str):
-                # Add as HTML comment to minimize token impact
+                # Simple text message
                 last_msg['content'] = f"{content}\n<!-- request_id: {request_nonce} -->"
+            elif isinstance(content, list):
+                # Multipart message (text + images) - add nonce to text part
+                content_copy = []
+                for item in content:
+                    item_copy = item.copy()
+                    if item_copy.get('type') == 'text':
+                        # Add nonce to text content
+                        item_copy['text'] = f"{item_copy.get('text', '')}\n<!-- request_id: {request_nonce} -->"
+                    content_copy.append(item_copy)
+                last_msg['content'] = content_copy
             messages_with_nonce[-1] = last_msg
 
         payload = {
