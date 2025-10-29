@@ -53,6 +53,45 @@ When creating PRs:
 
 ---
 
+## Cost Awareness & Testing Protocol
+
+**CRITICAL: This pipeline costs real money via OpenRouter API calls.**
+
+### Never Run Expensive Operations Without Asking
+
+**Operations that cost money (ALWAYS ask user before running):**
+- `shelf.py process <scan-id>` - Full pipeline processing
+- `shelf.py process <scan-id> --stage <stage>` - Single stage processing
+- `shelf.py sweep <stage>` - Library-wide stage processing
+- Any command that spawns LLM API calls (correction, labels, merge, structure)
+
+**Safe operations (can run freely):**
+- `shelf.py list` - List books
+- `shelf.py status <scan-id>` - Check progress
+- `shelf.py show <scan-id>` - Show book details
+- `pytest tests/` - Run tests
+- Reading files, grepping, analyzing code
+- Non-LLM scripts (like migration scripts)
+
+### Testing Protocol
+
+**For code changes:**
+1. Write/update tests first
+2. Run tests locally with pytest
+3. User runs pipeline tests in their terminal
+
+**For prompt changes:**
+1. Propose changes and explain reasoning
+2. User tests on sample pages first
+3. User runs full evaluation
+
+**Never:**
+- Start expensive sweeps without explicit approval
+- Assume "test it" means "run a $50 operation"
+- Run full pipeline to test a small change
+
+---
+
 ## Testing Discipline
 
 **Before any commit:**

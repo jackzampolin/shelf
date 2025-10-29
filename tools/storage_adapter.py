@@ -196,6 +196,11 @@ class ViewerStorageAdapter:
         if not storage.has_stage(stage):
             return {"status": "no_data", "completed": 0, "total": 0}
 
+        # SPECIAL HANDLING FOR OCR: Multi-PSM checkpoints + reports
+        if stage == "ocr":
+            return self._get_ocr_status(storage)
+
+        # Standard single-checkpoint handling for other stages
         # Get status from checkpoint using pipeline's method
         checkpoint_data = storage.stage_status(stage)
 
@@ -223,6 +228,135 @@ class ViewerStorageAdapter:
                 return {"status": "not_started", "completed": 0, "total": total}
             else:
                 return {"status": "in_progress", "completed": completed, "total": total}
+
+    def _get_ocr_status(self, storage: "BookStorage") -> Dict[str, Any]:
+        """
+        Get OCR stage status using multi-PSM checkpoint structure.
+
+        OCR completion requires:
+        1. All PSM checkpoints (psm3, psm4, psm6) have status == 'completed'
+        2. All reports exist (psm_confidence_report.json, psm_agreement_report.json, psm_selection.json)
+
+        Returns:
+            Status dict with keys:
+            - status: 'complete', 'in_progress', 'not_started', 'no_data'
+            - completed: number of completed pages
+            - total: total number of pages
+        """
+        ocr_dir = storage.stage('ocr').output_dir
+        psm_modes = [3, 4, 6]  # Standard PSM modes
+
+        # Get total pages from metadata
+        try:
+            metadata = storage.load_metadata()
+            total_pages = metadata.get('total_pages', 0)
+        except:
+            total_pages = 0
+
+        # If no total_pages in metadata, try to infer from source
+        if total_pages == 0:
+            try:
+                source_pages = storage.stage('source').list_output_pages(extension='png')
+                total_pages = len(source_pages)
+            except:
+                pass
+
+        if total_pages == 0:
+            return {"status": "no_data", "completed": 0, "total": 0}
+
+        # Check if PSM-specific checkpoints exist (new multi-PSM structure)
+        has_psm_checkpoints = any(
+            (ocr_dir / f'psm{psm}' / '.checkpoint').exists()
+            for psm in psm_modes
+        )
+
+        # BACKWARD COMPATIBILITY: Fall back to old single-checkpoint structure
+        if not has_psm_checkpoints:
+            # Try old root checkpoint
+            root_checkpoint = ocr_dir / '.checkpoint'
+            if root_checkpoint.exists():
+                try:
+                    import json
+                    with open(root_checkpoint) as f:
+                        root_data = json.load(f)
+
+                    root_status = root_data.get('status', 'not_started')
+                    root_metrics = root_data.get('page_metrics', {})
+                    root_completed = len(root_metrics)
+
+                    # Check if reports exist (even for old checkpoints)
+                    required_reports = [
+                        'psm_confidence_report.json',
+                        'psm_agreement_report.json',
+                        'psm_selection.json'
+                    ]
+                    all_reports_exist = all(
+                        (ocr_dir / report).exists() for report in required_reports
+                    )
+
+                    # Complete if status is completed AND reports exist
+                    if root_status == 'completed' and all_reports_exist:
+                        return {"status": "complete", "completed": total_pages, "total": total_pages}
+                    elif root_completed > 0:
+                        return {"status": "in_progress", "completed": root_completed, "total": total_pages}
+                    else:
+                        return {"status": "not_started", "completed": 0, "total": total_pages}
+                except:
+                    pass
+
+            # No valid checkpoints found
+            return {"status": "not_started", "completed": 0, "total": total_pages}
+
+        # NEW STRUCTURE: Check all PSM checkpoints
+        all_psms_complete = True
+        min_completed = total_pages
+
+        for psm in psm_modes:
+            psm_checkpoint_file = ocr_dir / f'psm{psm}' / '.checkpoint'
+
+            if not psm_checkpoint_file.exists():
+                all_psms_complete = False
+                min_completed = 0
+                continue
+
+            try:
+                import json
+                with open(psm_checkpoint_file) as f:
+                    psm_data = json.load(f)
+
+                psm_status = psm_data.get('status', 'not_started')
+                psm_metrics = psm_data.get('page_metrics', {})
+                psm_completed = len(psm_metrics)
+
+                # Track minimum completed across all PSMs
+                min_completed = min(min_completed, psm_completed)
+
+                # Accept either "completed" status OR all pages processed
+                # (OCR pipeline bug: doesn't mark PSM checkpoints complete)
+                if psm_status == 'not_started' or psm_completed < total_pages:
+                    all_psms_complete = False
+            except:
+                all_psms_complete = False
+                min_completed = 0
+
+        # Check required reports exist
+        required_reports = [
+            'psm_confidence_report.json',
+            'psm_agreement_report.json',
+            'psm_selection.json'
+        ]
+
+        all_reports_exist = all(
+            (ocr_dir / report).exists() for report in required_reports
+        )
+
+        # Determine status
+        if all_psms_complete and all_reports_exist:
+            return {"status": "complete", "completed": total_pages, "total": total_pages}
+        elif min_completed > 0:
+            return {"status": "in_progress", "completed": min_completed, "total": total_pages}
+        else:
+            return {"status": "not_started", "completed": 0, "total": total_pages}
 
     # ===== Page Data Operations =====
 

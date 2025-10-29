@@ -12,7 +12,30 @@
     <!-- OCR Data Viewer -->
     <div class="data-viewer">
         <div class="data-header">
-            <h3>📖 OCR Output</h3>
+            <div class="header-left">
+                <h3>📖 OCR Output</h3>
+                {% if winning_psm %}
+                <div class="psm-info">
+                    <span class="psm-badge-viewer">PSM {{ winning_psm }} ⭐ Selected</span>
+                    <span class="selection-reason">({{ selection_criteria }})</span>
+                    {% if available_psms and available_psms|length > 1 %}
+                    <div class="psm-selector">
+                        <label for="psm-select">View PSM:</label>
+                        <select id="psm-select"
+                                hx-get="/api/ocr/{{ scan_id }}/page/{{ current_page }}"
+                                hx-target="#ocr-content"
+                                hx-swap="innerHTML">
+                            {% for psm in available_psms %}
+                            <option value="{{ psm }}" {% if psm == winning_psm %}selected{% endif %}>
+                                PSM {{ psm }}{% if psm == winning_psm %} ⭐{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
             <div class="page-selector">
                 <label for="page-input">Page:</label>
                 <input type="number"
@@ -52,25 +75,33 @@
             <!-- OCR Output Panel -->
             <div class="text-panel">
                 <h4>OCR Text Output</h4>
-                {% if stage_data and stage_data.blocks %}
-                    {% for block in stage_data.blocks %}
-                    <div class="ocr-block">
-                        <div class="block-header">
-                            Block {{ loop.index }}
-                            {% if block.confidence %}
-                            | Confidence: {{ "%.2f"|format(block.confidence) }}
-                            {% endif %}
+                <div id="ocr-content">
+                    {% if stage_data and stage_data.blocks %}
+                        {% for block in stage_data.blocks %}
+                        <div class="ocr-block">
+                            <div class="block-header">
+                                Block {{ loop.index }}
+                                {% if block.paragraphs %}
+                                    {% set block_confidences = [] %}
+                                    {% for para in block.paragraphs %}
+                                        {% set _ = block_confidences.append(para.avg_confidence) %}
+                                    {% endfor %}
+                                    {% if block_confidences %}
+                                        | Confidence: {{ "%.2f"|format(block_confidences|sum / block_confidences|length) }}
+                                    {% endif %}
+                                {% endif %}
+                            </div>
+                            {% for para in block.paragraphs %}
+                            <p>{{ para.text }}</p>
+                            {% endfor %}
                         </div>
-                        {% for para in block.paragraphs %}
-                        <p>{{ para.text }}</p>
                         {% endfor %}
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="empty-state">
-                        <p>No OCR data available for this page</p>
-                    </div>
-                {% endif %}
+                    {% else %}
+                        <div class="empty-state">
+                            <p>No OCR data available for this page</p>
+                        </div>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>
@@ -114,8 +145,64 @@
         border-bottom: 2px solid var(--light);
     }
 
+    .header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
     .data-header h3 {
         margin: 0;
+    }
+
+    .psm-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.9em;
+    }
+
+    .psm-badge-viewer {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 0.85em;
+    }
+
+    .selection-reason {
+        color: var(--text-secondary);
+        font-size: 0.85em;
+        font-style: italic;
+    }
+
+    .psm-selector {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: 12px;
+    }
+
+    .psm-selector label {
+        font-size: 0.85em;
+        color: var(--text-secondary);
+    }
+
+    .psm-selector select {
+        padding: 4px 8px;
+        border: 1px solid var(--light);
+        border-radius: 4px;
+        font-size: 0.85em;
+        background: white;
+        cursor: pointer;
+    }
+
+    .psm-selector select:hover {
+        border-color: var(--primary);
     }
 
     .page-selector {

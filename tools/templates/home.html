@@ -66,6 +66,48 @@
         font-size: 0.9em;
     }
 
+    /* Progress Bar */
+    .progress-cell {
+        min-width: 150px;
+    }
+
+    .progress-container {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .progress-bar {
+        height: 20px;
+        background: #ecf0f1;
+        border-radius: 10px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .progress-fill {
+        height: 100%;
+        transition: width 0.3s ease;
+        border-radius: 10px;
+    }
+
+    .progress-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 0.75em;
+        font-weight: 600;
+        color: var(--dark);
+        text-shadow: 0 0 3px rgba(255,255,255,0.8);
+    }
+
+    .progress-label {
+        font-size: 0.8em;
+        color: var(--text-secondary);
+    }
+
+    /* Status Link and Badge */
     .status-link {
         text-decoration: none;
     }
@@ -111,6 +153,34 @@
         font-size: 1em;
     }
 
+    /* PSM Analysis Badge */
+    .psm-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 0.85em;
+        font-weight: 500;
+        white-space: nowrap;
+        transition: all 0.2s ease;
+    }
+
+    .psm-complete {
+        background: #d4edda;
+        color: #155724;
+    }
+
+    .psm-partial {
+        background: #fff3cd;
+        color: #856404;
+    }
+
+    .psm-none {
+        background: #f8f9fa;
+        color: #adb5bd;
+    }
+
     .toc-badge {
         display: inline-block;
         padding: 4px 8px;
@@ -139,6 +209,21 @@
         margin-bottom: 10px;
         color: var(--dark);
     }
+
+    /* Stage Progress Mini Bars */
+    .stage-mini-progress {
+        width: 100%;
+        height: 6px;
+        background: #ecf0f1;
+        border-radius: 3px;
+        overflow: hidden;
+        margin-top: 4px;
+    }
+
+    .stage-mini-fill {
+        height: 100%;
+        transition: width 0.3s ease;
+    }
 </style>
 {% endblock %}
 
@@ -166,13 +251,13 @@
                 •
             </div>
             <div class="stat-item">
-                {% set toc_count = namespace(count=0) %}
+                {% set psm_complete = namespace(count=0) %}
                 {% for book in books %}
-                    {% if book.has_toc %}
-                        {% set toc_count.count = toc_count.count + 1 %}
+                    {% if book.psm_analysis.status == 'complete' %}
+                        {% set psm_complete.count = psm_complete.count + 1 %}
                     {% endif %}
                 {% endfor %}
-                <strong>{{ toc_count.count }}</strong> with ToC extracted
+                <strong>{{ psm_complete.count }}</strong> with PSM analysis
             </div>
         </div>
     </div>
@@ -181,133 +266,168 @@
     <table class="status-table">
         <thead>
             <tr>
-                <th style="width: 25%;">Book</th>
-                <th style="width: 12%;">OCR</th>
-                <th style="width: 12%;">Corrected</th>
-                <th style="width: 12%;">Labels</th>
-                <th style="width: 12%;">Merged</th>
-                <th style="width: 10%;">ToC</th>
+                <th style="width: 20%;">Book</th>
+                <th style="width: 15%;">Overall Progress</th>
+                <th style="width: 10%;">OCR</th>
+                <th style="width: 10%;">Corrected</th>
+                <th style="width: 10%;">Labels</th>
+                <th style="width: 10%;">Merged</th>
+                <th style="width: 10%;">PSM Analysis</th>
+                <th style="width: 8%;">ToC</th>
             </tr>
         </thead>
         <tbody>
             {% for book in books %}
             <tr>
+                <!-- Book Name -->
                 <td>
                     <div class="book-name">{{ book.scan_id }}</div>
                 </td>
 
+                <!-- Overall Progress -->
+                <td class="progress-cell">
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            {% set progress = book.overall_progress %}
+                            <div class="progress-fill" style="width: {{ progress }}%; background: {% if progress >= 80 %}#2ecc71{% elif progress >= 50 %}#3498db{% elif progress >= 25 %}#f39c12{% else %}#e74c3c{% endif %};"></div>
+                            <span class="progress-text">{{ progress }}%</span>
+                        </div>
+                    </div>
+                </td>
+
                 <!-- OCR Status -->
                 <td>
-                    {% if book.ocr.status == 'complete' or book.ocr.status == 'in_progress' %}
+                    {% set ocr = book.ocr %}
+                    {% if ocr.status == 'complete' or ocr.status == 'in_progress' %}
                     <a href="/stage/{{ book.scan_id }}/ocr" class="status-link">
-                        {% if book.ocr.status == 'complete' %}
+                        {% if ocr.status == 'complete' %}
                         <span class="status-badge status-complete">
                             <span class="badge-icon">✓</span>
-                            {{ book.ocr.completed }}/{{ book.ocr.total }}
+                            {{ ocr.completed }}/{{ ocr.total }}
                         </span>
                         {% else %}
                         <span class="status-badge status-in_progress">
                             <span class="badge-icon">⚠</span>
-                            {{ book.ocr.completed }}/{{ book.ocr.total }}
+                            {{ ocr.completed }}/{{ ocr.total }}
                         </span>
                         {% endif %}
+                        <div class="stage-mini-progress">
+                            <div class="stage-mini-fill" style="width: {{ (ocr.completed / ocr.total * 100) if ocr.total > 0 else 0 }}%; background: {% if ocr.status == 'complete' %}#2ecc71{% else %}#f39c12{% endif %};"></div>
+                        </div>
                     </a>
-                    {% elif book.ocr.status == 'not_started' %}
-                    <span class="status-badge status-not_started">
-                        <span class="badge-icon">○</span>
-                        Not started
-                    </span>
                     {% else %}
-                    <span class="status-badge status-no_data">
-                        <span class="badge-icon">-</span>
-                        No data
+                    <span class="status-badge status-{{ ocr.status }}">
+                        <span class="badge-icon">{% if ocr.status == 'not_started' %}○{% else %}-{% endif %}</span>
+                        {% if ocr.status == 'not_started' %}Not started{% else %}No data{% endif %}
                     </span>
                     {% endif %}
                 </td>
 
                 <!-- Corrected Status -->
                 <td>
-                    {% if book.corrected.status == 'complete' or book.corrected.status == 'in_progress' %}
+                    {% set corrected = book.corrected %}
+                    {% if corrected.status == 'complete' or corrected.status == 'in_progress' %}
                     <a href="/stage/{{ book.scan_id }}/corrected" class="status-link">
-                        {% if book.corrected.status == 'complete' %}
+                        {% if corrected.status == 'complete' %}
                         <span class="status-badge status-complete">
                             <span class="badge-icon">✓</span>
-                            {{ book.corrected.completed }}/{{ book.corrected.total }}
+                            {{ corrected.completed }}/{{ corrected.total }}
                         </span>
                         {% else %}
                         <span class="status-badge status-in_progress">
                             <span class="badge-icon">⚠</span>
-                            {{ book.corrected.completed }}/{{ book.corrected.total }}
+                            {{ corrected.completed }}/{{ corrected.total }}
                         </span>
                         {% endif %}
+                        <div class="stage-mini-progress">
+                            <div class="stage-mini-fill" style="width: {{ (corrected.completed / corrected.total * 100) if corrected.total > 0 else 0 }}%; background: {% if corrected.status == 'complete' %}#2ecc71{% else %}#f39c12{% endif %};"></div>
+                        </div>
                     </a>
-                    {% elif book.corrected.status == 'not_started' %}
-                    <span class="status-badge status-not_started">
-                        <span class="badge-icon">○</span>
-                        Not started
-                    </span>
                     {% else %}
-                    <span class="status-badge status-no_data">
-                        <span class="badge-icon">-</span>
-                        No data
+                    <span class="status-badge status-{{ corrected.status }}">
+                        <span class="badge-icon">{% if corrected.status == 'not_started' %}○{% else %}-{% endif %}</span>
+                        {% if corrected.status == 'not_started' %}Not started{% else %}No data{% endif %}
                     </span>
                     {% endif %}
                 </td>
 
                 <!-- Labels Status -->
                 <td>
-                    {% if book.labels.status == 'complete' or book.labels.status == 'in_progress' %}
+                    {% set labels = book.labels %}
+                    {% if labels.status == 'complete' or labels.status == 'in_progress' %}
                     <a href="/stage/{{ book.scan_id }}/labels" class="status-link">
-                        {% if book.labels.status == 'complete' %}
+                        {% if labels.status == 'complete' %}
                         <span class="status-badge status-complete">
                             <span class="badge-icon">✓</span>
-                            {{ book.labels.completed }}/{{ book.labels.total }}
+                            {{ labels.completed }}/{{ labels.total }}
                         </span>
                         {% else %}
                         <span class="status-badge status-in_progress">
                             <span class="badge-icon">⚠</span>
-                            {{ book.labels.completed }}/{{ book.labels.total }}
+                            {{ labels.completed }}/{{ labels.total }}
                         </span>
                         {% endif %}
+                        <div class="stage-mini-progress">
+                            <div class="stage-mini-fill" style="width: {{ (labels.completed / labels.total * 100) if labels.total > 0 else 0 }}%; background: {% if labels.status == 'complete' %}#2ecc71{% else %}#f39c12{% endif %};"></div>
+                        </div>
                     </a>
-                    {% elif book.labels.status == 'not_started' %}
-                    <span class="status-badge status-not_started">
-                        <span class="badge-icon">○</span>
-                        Not started
-                    </span>
                     {% else %}
-                    <span class="status-badge status-no_data">
-                        <span class="badge-icon">-</span>
-                        No data
+                    <span class="status-badge status-{{ labels.status }}">
+                        <span class="badge-icon">{% if labels.status == 'not_started' %}○{% else %}-{% endif %}</span>
+                        {% if labels.status == 'not_started' %}Not started{% else %}No data{% endif %}
                     </span>
                     {% endif %}
                 </td>
 
                 <!-- Merged Status -->
                 <td>
-                    {% if book.merged.status == 'complete' or book.merged.status == 'in_progress' %}
+                    {% set merged = book.merged %}
+                    {% if merged.status == 'complete' or merged.status == 'in_progress' %}
                     <a href="/stage/{{ book.scan_id }}/merged" class="status-link">
-                        {% if book.merged.status == 'complete' %}
+                        {% if merged.status == 'complete' %}
                         <span class="status-badge status-complete">
                             <span class="badge-icon">✓</span>
-                            {{ book.merged.completed }}/{{ book.merged.total }}
+                            {{ merged.completed }}/{{ merged.total }}
                         </span>
                         {% else %}
                         <span class="status-badge status-in_progress">
                             <span class="badge-icon">⚠</span>
-                            {{ book.merged.completed }}/{{ book.merged.total }}
+                            {{ merged.completed }}/{{ merged.total }}
                         </span>
                         {% endif %}
+                        <div class="stage-mini-progress">
+                            <div class="stage-mini-fill" style="width: {{ (merged.completed / merged.total * 100) if merged.total > 0 else 0 }}%; background: {% if merged.status == 'complete' %}#2ecc71{% else %}#f39c12{% endif %};"></div>
+                        </div>
                     </a>
-                    {% elif book.merged.status == 'not_started' %}
-                    <span class="status-badge status-not_started">
-                        <span class="badge-icon">○</span>
-                        Not started
-                    </span>
                     {% else %}
-                    <span class="status-badge status-no_data">
+                    <span class="status-badge status-{{ merged.status }}">
+                        <span class="badge-icon">{% if merged.status == 'not_started' %}○{% else %}-{% endif %}</span>
+                        {% if merged.status == 'not_started' %}Not started{% else %}No data{% endif %}
+                    </span>
+                    {% endif %}
+                </td>
+
+                <!-- PSM Analysis Status -->
+                <td>
+                    {% set psm = book.psm_analysis %}
+                    {% if psm.status == 'complete' %}
+                    <a href="/stage/{{ book.scan_id }}/ocr" class="status-link">
+                        <span class="psm-badge psm-complete">
+                            <span class="badge-icon">✓</span>
+                            Complete
+                        </span>
+                    </a>
+                    {% elif psm.status == 'partial' %}
+                    <a href="/stage/{{ book.scan_id }}/ocr" class="status-link">
+                        <span class="psm-badge psm-partial">
+                            <span class="badge-icon">⚠</span>
+                            Partial
+                        </span>
+                    </a>
+                    {% else %}
+                    <span class="psm-badge psm-none">
                         <span class="badge-icon">-</span>
-                        No data
+                        None
                     </span>
                     {% endif %}
                 </td>

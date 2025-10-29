@@ -8,6 +8,7 @@ Processes pages in parallel using ProcessPoolExecutor (CPU-bound).
 import json
 import csv
 import io
+import time
 from pathlib import Path
 from datetime import datetime
 from PIL import Image
@@ -27,6 +28,11 @@ from infra.pipeline.rich_progress import RichProgressBar
 
 # Import from local modules
 from pipeline.ocr.schemas import OCRPageOutput, OCRPageMetrics, OCRPageReport
+from pipeline.ocr.parsers import (
+    parse_tesseract_hierarchy,
+    parse_hocr_typography,
+    merge_typography_into_blocks
+)
 
 
 class OCRStage(BaseStage):
@@ -34,7 +40,7 @@ class OCRStage(BaseStage):
     OCR Stage - First pipeline stage.
 
     Reads: source/*.png (page images from ingest process)
-    Writes: ocr/page_NNNN.json (hierarchical text blocks)
+    Writes: ocr_psm3/, ocr_psm4/, ocr_psm6/ (multi-PSM outputs)
     Also creates: images/ (extracted image regions)
     """
 
@@ -47,18 +53,20 @@ class OCRStage(BaseStage):
     checkpoint_schema = OCRPageMetrics
     report_schema = OCRPageReport  # Quality-focused report
 
-    def __init__(self, max_workers: int = None):
+    def __init__(self, max_workers: int = None, psm_modes: list = None):
         """
         Initialize OCR stage.
 
         Args:
             max_workers: Number of parallel workers (default: all CPU cores)
+            psm_modes: List of PSM modes to run (default: [3, 4, 6])
         """
         self.max_workers = max_workers or multiprocessing.cpu_count()
+        self.psm_modes = psm_modes or [3, 4, 6]
         self.progress_lock = threading.Lock()
 
     def before(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger):
-        """Validate source images exist."""
+        """Validate source images exist and create PSM-specific subdirectories."""
         source_stage = storage.stage('source')
         source_pages = source_stage.list_output_pages(extension='png')
 
@@ -69,14 +77,55 @@ class OCRStage(BaseStage):
             )
 
         logger.info(f"Found {len(source_pages)} source pages to OCR")
+        logger.info(f"Will run PSM modes: {self.psm_modes}")
 
-        # Ensure images directory exists
-        images_dir = storage.book_dir / "images"
-        
-        images_dir.mkdir(exist_ok=True)
+        # Create main OCR directory
+        ocr_dir = storage.stage(self.name).output_dir
+        ocr_dir.mkdir(exist_ok=True)
+
+        # Create PSM-specific subdirectories under ocr/
+        for psm in self.psm_modes:
+            psm_dir = ocr_dir / f"psm{psm}"
+            psm_dir.mkdir(exist_ok=True)
+            logger.info(f"Created directory: ocr/psm{psm}/")
+
+    def _get_remaining_pages_for_psm(
+        self,
+        checkpoint: CheckpointManager,
+        total_pages: int,
+        psm: int
+    ) -> list:
+        """
+        Get remaining pages for a specific PSM mode from main checkpoint.
+
+        Args:
+            checkpoint: Main OCR checkpoint
+            total_pages: Total pages in book
+            psm: PSM mode (3, 4, 6, etc.)
+
+        Returns:
+            List of page numbers that need processing for this PSM
+        """
+        # Get current checkpoint state
+        status = checkpoint.get_status()
+        page_metrics = status.get('page_metrics', {})
+
+        # Find pages where this PSM is not complete
+        remaining = []
+        psm_key = f'psm{psm}'
+
+        for page_num in range(1, total_pages + 1):
+            page_key = str(page_num)
+            metrics = page_metrics.get(page_key, {})
+
+            # If psm{N} is not True, needs processing
+            if not metrics.get(psm_key, False):
+                remaining.append(page_num)
+
+        return remaining
 
     def run(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger) -> Dict[str, Any]:
-        """Process pages in parallel with Tesseract OCR."""
+        """Process pages in parallel with multiple PSM modes."""
         # Get total pages from metadata
         metadata = storage.load_metadata()
         total_pages = metadata.get('total_pages', 0)
@@ -85,95 +134,213 @@ class OCRStage(BaseStage):
             raise ValueError("total_pages not set in metadata")
 
         logger.start_stage(total_pages=total_pages, max_workers=self.max_workers)
-        logger.info("OCR Stage - Tesseract text extraction + OpenCV image detection")
+        logger.info("OCR Stage - Multi-PSM Tesseract extraction + OpenCV image detection")
 
-        # Get pages to process
-        pages = checkpoint.get_remaining_pages(total_pages=total_pages, resume=True)
+        # Track overall stats
+        total_completed = 0
+        total_failed = 0
+        stage_start_time = time.time()
+        any_work_done = False
 
-        if not pages:
-            logger.info("No pages to process (all complete)")
-            return checkpoint.get_status().get('metadata', {})
+        # Check if all PSMs are already complete before entering processing loop
+        all_psms_complete = True
+        for psm in self.psm_modes:
+            psm_checkpoint = CheckpointManager(
+                scan_id=storage.scan_id,
+                stage='ocr',
+                storage_root=storage.storage_root,
+                output_dir=f'ocr/psm{psm}'
+            )
+            pages = psm_checkpoint.get_remaining_pages(total_pages=total_pages, resume=True)
+            if pages:
+                all_psms_complete = False
+                break
 
-        logger.info(f"Processing {len(pages)} pages with {self.max_workers} workers")
+        if all_psms_complete:
+            logger.info("All PSM modes already complete - skipping to vision selection")
+        else:
+            # Process each PSM mode sequentially with separate progress tracking
+            for psm_idx, psm in enumerate(self.psm_modes, 1):
+                psm_start_time = time.time()
+                logger.info(f"[PSM {psm}] Starting extraction ({psm_idx}/{len(self.psm_modes)})")
 
-        # Build tasks for parallel processing
-        tasks = []
-        for page_num in pages:
-            tasks.append({
-                'storage_root': str(storage.storage_root),
-                'scan_id': storage.scan_id,
-                'page_number': page_num
-            })
+                # Create PSM-specific checkpoint
+                psm_checkpoint = CheckpointManager(
+                    scan_id=storage.scan_id,
+                    stage='ocr',
+                    storage_root=storage.storage_root,
+                    output_dir=f'ocr/psm{psm}'
+                )
 
-        # Track stats
-        completed = 0
-        failed = 0
+                # Get pages to process for this PSM (independent resume)
+                pages = psm_checkpoint.get_remaining_pages(total_pages=total_pages, resume=True)
 
-        # Progress bar
-        progress = RichProgressBar(
-            total=len(pages),
-            prefix="   ",
-            width=40,
-            unit="pages"
-        )
+                if not pages:
+                    logger.info(f"[PSM {psm}] All pages already complete, skipping")
+                    continue
 
-        # Process in parallel using all CPU cores
-        with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_page = {
-                executor.submit(_process_page_worker, task): task['page_number']
-                for task in tasks
-            }
+                any_work_done = True
+                logger.info(f"[PSM {psm}] Processing {len(pages)} pages with {self.max_workers} workers")
 
-            for future in as_completed(future_to_page):
-                page_num = future_to_page[future]
+                # Build tasks for this PSM
+                tasks = []
+                for page_num in pages:
+                    tasks.append({
+                        'storage_root': str(storage.storage_root),
+                        'scan_id': storage.scan_id,
+                        'page_number': page_num,
+                        'psm_mode': psm
+                    })
 
-                try:
-                    success, returned_page_num, error_msg, page_data, metrics = future.result()
+                # Track PSM-specific stats
+                psm_completed = 0
+                psm_failed = 0
 
-                    if success:
-                        # Validate metrics against schema
-                        from pipeline.ocr.schemas import OCRPageMetrics
-                        validated_metrics = OCRPageMetrics(**metrics)
+                # Progress bar for this PSM
+                progress = RichProgressBar(
+                    total=len(pages),
+                    prefix=f"   PSM {psm}",
+                    width=40,
+                    unit="pages"
+                )
 
-                        # Save page output using storage API (with metrics)
-                        storage.stage(self.name).save_page(
-                            page_num=returned_page_num,
-                            data=page_data,
-                            schema=OCRPageOutput,
-                            metrics=validated_metrics.model_dump()
-                        )
-                        completed += 1
-                    else:
-                        logger.error(f"Page {page_num} failed", error=error_msg)
-                        failed += 1
+                # Process in parallel using all CPU cores
+                with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+                    future_to_page = {
+                        executor.submit(_process_page_psm_worker, task): task['page_number']
+                        for task in tasks
+                    }
 
-                except Exception as e:
-                    logger.error(f"Page {page_num} exception", error=str(e))
-                    failed += 1
+                    for future in as_completed(future_to_page):
+                        page_num = future_to_page[future]
 
-                # Update progress
-                with self.progress_lock:
-                    current = completed + failed
-                    suffix = f"{completed} ok" + (f", {failed} failed" if failed > 0 else "")
-                    progress.update(current, suffix=suffix)
+                        try:
+                            success, returned_page_num, error_msg, page_data, metrics = future.result()
 
-        # Finish progress
-        progress.finish(f"   ✓ Processed {completed}/{len(pages)} pages")
+                            if success:
+                                # Validate metrics against schema
+                                from pipeline.ocr.schemas import OCRPageMetrics
+                                validated_metrics = OCRPageMetrics(**metrics)
 
-        if failed > 0:
-            logger.warning(f"{failed} pages failed")
+                                # Save to PSM-specific subdirectory under ocr/
+                                ocr_dir = storage.stage(self.name).output_dir
+                                psm_dir = ocr_dir / f"psm{psm}"
+                                page_file = psm_dir / f"page_{returned_page_num:04d}.json"
 
-        # Return stats
+                                # Write page data
+                                validated_page = OCRPageOutput(**page_data)
+                                page_file.write_text(validated_page.model_dump_json(indent=2))
+
+                                # Mark complete in PSM-specific checkpoint
+                                psm_checkpoint.mark_completed(
+                                    page_num=returned_page_num,
+                                    cost_usd=0.0,
+                                    metrics=validated_metrics.model_dump()
+                                )
+                                psm_completed += 1
+                            else:
+                                logger.error(f"[PSM {psm}] Page {page_num} failed", error=error_msg)
+                                psm_failed += 1
+
+                        except Exception as e:
+                            logger.error(f"[PSM {psm}] Page {page_num} exception", error=str(e))
+                            psm_failed += 1
+
+                        # Update progress
+                        with self.progress_lock:
+                            current = psm_completed + psm_failed
+                            suffix = f"{psm_completed} ok" + (f", {psm_failed} failed" if psm_failed > 0 else "")
+                            progress.update(current, suffix=suffix)
+
+                # Calculate PSM elapsed time
+                psm_elapsed = time.time() - psm_start_time
+                minutes = int(psm_elapsed // 60)
+                seconds = int(psm_elapsed % 60)
+
+                # Finish PSM progress
+                progress.finish(f"   ✓ PSM {psm}: {psm_completed}/{len(pages)} pages in {minutes}m {seconds}s")
+
+                if psm_failed > 0:
+                    logger.warning(f"[PSM {psm}] {psm_failed} pages failed")
+
+                # Accumulate stats
+                total_completed += psm_completed
+                total_failed += psm_failed
+
+        # Calculate total elapsed time
+        stage_elapsed = time.time() - stage_start_time
+        total_minutes = int(stage_elapsed // 60)
+        total_seconds = int(stage_elapsed % 60)
+
+        # Log final summary with timing
+        if not any_work_done:
+            logger.info("All PSM modes already complete")
+        else:
+            logger.info(f"Completed all PSM modes: {total_completed} pages processed, {total_failed} failures")
+            logger.info(f"Total stage time: {total_minutes}m {total_seconds}s")
+
+        # Phase 2: Vision-based PSM selection (always run, even if PSMs were cached)
+        vision_stats = self._run_vision_selection(storage, checkpoint, logger, metadata)
+
+        # Return combined stats
         return {
-            'pages_processed': completed,
-            'pages_failed': failed,
-            'total_cost_usd': 0.0  # No LLM cost for OCR
+            'pages_processed': total_completed,
+            'pages_failed': total_failed,
+            'total_cost_usd': vision_stats.get('total_cost_usd', 0.0),
+            'psm_modes': self.psm_modes,
+            'total_time_seconds': stage_elapsed + vision_stats.get('total_time_seconds', 0.0),
+            'vision_selection_pages': vision_stats.get('pages_processed', 0)
         }
 
     def after(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger, stats: Dict[str, Any]):
-        """Generate OCR quality report and extract book metadata."""
-        # Generate quality report from checkpoint metrics (parent implementation)
-        super().after(storage, checkpoint, logger, stats)
+        """Generate PSM analysis reports, PSM selection, and extract book metadata."""
+        # Check if ALL sub-stages (PSMs + vision selection) are complete
+        all_complete = True
+        metadata = storage.load_metadata()
+        total_pages = metadata.get('total_pages', 0)
+
+        # Check PSM checkpoints
+        for psm in self.psm_modes:
+            psm_checkpoint = CheckpointManager(
+                scan_id=storage.scan_id,
+                stage='ocr',
+                storage_root=storage.storage_root,
+                output_dir=f'ocr/psm{psm}'
+            )
+            psm_status = psm_checkpoint.get_status()
+
+            if psm_status.get('status') != 'completed':
+                all_complete = False
+                logger.warning(f"PSM {psm} not fully complete: {psm_status.get('progress', {}).get('completed', 0)}/{total_pages} pages")
+
+        # Check vision selection checkpoint
+        vision_checkpoint = CheckpointManager(
+            scan_id=storage.scan_id,
+            stage='ocr',
+            storage_root=storage.storage_root,
+            output_dir='ocr/psm_selection'
+        )
+        vision_status = vision_checkpoint.get_status()
+
+        if vision_status.get('status') != 'completed':
+            all_complete = False
+            logger.warning(f"Vision selection not complete: {vision_status.get('progress', {}).get('completed', 0)}/{total_pages} pages")
+
+        # Only mark main checkpoint complete if ALL sub-stages are done
+        if all_complete:
+            logger.info("All PSM modes and vision selection complete - marking main checkpoint")
+            checkpoint.mark_stage_complete()
+        else:
+            logger.warning("Sub-stages incomplete - main checkpoint not marked complete")
+
+        # Generate PSM comparison reports (includes agreement analysis)
+        from pipeline.ocr.analyze_psm_reports import generate_all_reports
+        generate_all_reports(storage, logger, self.psm_modes)
+
+        # Generate/update PSM selection file from checkpoint
+        # This updates the deterministic selections with vision LLM results
+        logger.info("Updating PSM selection file from checkpoint...")
+        self._generate_psm_selection_from_checkpoint(storage, logger, total_pages)
 
         # Extract book metadata from first 15 pages (stage-specific)
         logger.info("Extracting book metadata from OCR text...")
@@ -199,8 +366,10 @@ class OCRStage(BaseStage):
         from infra.llm.client import LLMClient
         from infra.config import Config
 
-        ocr_stage = storage.stage('ocr')
-        ocr_files = sorted(ocr_stage.output_dir.glob("page_*.json"))
+        # Use PSM 4 for metadata extraction (optimized for single-column book text)
+        ocr_dir = storage.stage('ocr').output_dir
+        psm4_dir = ocr_dir / 'psm4'
+        ocr_files = sorted(psm4_dir.glob("page_*.json"))
 
         if not ocr_files:
             logger.warning("No OCR files found for metadata extraction")
@@ -387,15 +556,633 @@ Return JSON only. No explanations.
             logger.error("Traceback", error=traceback.format_exc())
             return False
 
+    def _select_winning_psm_for_page(
+        self,
+        storage: BookStorage,
+        page_num: int,
+        confidence_threshold: float = 0.85
+    ) -> Dict[str, Any]:
+        """
+        Select the best PSM mode for a single page based on quality heuristics.
 
-def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str, Any], Dict[str, Any]]:
+        Selection criteria:
+        1. Highest mean confidence (primary)
+        2. Fewest paragraphs below threshold (tie-breaker if within 1%)
+
+        Args:
+            storage: BookStorage instance
+            page_num: Page number to analyze
+            confidence_threshold: Threshold for low-confidence detection (default: 0.85)
+
+        Returns:
+            {
+                "winning_psm": 4,
+                "reason": "highest_confidence",
+                "scores": {
+                    3: {"mean_confidence": 0.91, "below_threshold_pct": 12.5, ...},
+                    4: {"mean_confidence": 0.93, "below_threshold_pct": 8.2, ...},
+                    6: {"mean_confidence": 0.89, "below_threshold_pct": 15.1, ...}
+                }
+            }
+        """
+        from pipeline.ocr.schemas import OCRPageOutput
+
+        ocr_dir = storage.stage('ocr').output_dir
+        scores = {}
+
+        # Load and score each PSM output
+        for psm in self.psm_modes:
+            psm_file = ocr_dir / f'psm{psm}' / f'page_{page_num:04d}.json'
+
+            if not psm_file.exists():
+                continue
+
+            try:
+                page_data = OCRPageOutput.model_validate_json(psm_file.read_text())
+            except Exception:
+                # Invalid JSON or schema validation failed - skip
+                continue
+
+            # Collect paragraph-level confidence scores
+            all_confidences = []
+            below_threshold_count = 0
+
+            for block in page_data.blocks:
+                for para in block.paragraphs:
+                    all_confidences.append(para.avg_confidence)
+                    if para.avg_confidence < confidence_threshold:
+                        below_threshold_count += 1
+
+            # Skip PSMs that found no text
+            if len(all_confidences) == 0:
+                continue
+
+            # Calculate quality metrics
+            mean_confidence = sum(all_confidences) / len(all_confidences)
+            below_threshold_pct = (below_threshold_count / len(all_confidences)) * 100
+
+            scores[psm] = {
+                'mean_confidence': round(mean_confidence, 4),
+                'below_threshold_pct': round(below_threshold_pct, 2),
+                'block_count': len(page_data.blocks),
+                'paragraph_count': len(all_confidences),
+                'image_count': len(page_data.images)
+            }
+
+        # Handle edge case: no valid PSM outputs
+        if not scores:
+            return {
+                'winning_psm': None,
+                'reason': 'no_valid_outputs',
+                'scores': {}
+            }
+
+        # Primary selection: highest mean confidence
+        winner = max(scores.keys(), key=lambda psm: scores[psm]['mean_confidence'])
+        reason = "highest_confidence"
+
+        # Check for ties (within 1% confidence)
+        winner_conf = scores[winner]['mean_confidence']
+        ties = [
+            psm for psm in scores.keys()
+            if abs(scores[psm]['mean_confidence'] - winner_conf) < 0.01
+        ]
+
+        # Tie-breaker: fewest paragraphs below threshold
+        if len(ties) > 1:
+            winner = min(ties, key=lambda psm: scores[psm]['below_threshold_pct'])
+            reason = "tie_broken_by_threshold"
+
+        return {
+            'winning_psm': winner,
+            'reason': reason,
+            'scores': scores
+        }
+
+    def _generate_psm_selection(
+        self,
+        storage: BookStorage,
+        logger: PipelineLogger,
+        total_pages: int
+    ):
+        """
+        Generate psm_selection.json file mapping each page to its winning PSM.
+
+        Args:
+            storage: BookStorage instance
+            logger: PipelineLogger instance
+            total_pages: Total number of pages in the book
+        """
+        ocr_dir = storage.stage('ocr').output_dir
+        selection_file = ocr_dir / 'psm_selection.json'
+
+        # Skip if already exists
+        if selection_file.exists():
+            logger.info("  PSM selection file already exists, skipping generation")
+            return
+
+        logger.info(f"  Selecting best PSM for {total_pages} pages...")
+
+        page_selections = {}
+        psm_win_counts = {psm: 0 for psm in self.psm_modes}
+        tie_broken_count = 0
+        no_output_count = 0
+
+        for page_num in range(1, total_pages + 1):
+            result = self._select_winning_psm_for_page(storage, page_num)
+
+            winner = result['winning_psm']
+            reason = result['reason']
+
+            if winner is None:
+                no_output_count += 1
+                # Store None for pages with no valid outputs
+                page_selections[str(page_num)] = None
+            else:
+                page_selections[str(page_num)] = winner
+                psm_win_counts[winner] += 1
+
+                if reason == 'tie_broken_by_threshold':
+                    tie_broken_count += 1
+
+        # Build selection document
+        selection_data = {
+            'scan_id': storage.scan_id,
+            'selection_criteria': 'highest_mean_confidence',
+            'confidence_threshold': 0.85,
+            'psm_modes': self.psm_modes,
+            'page_selections': page_selections,
+            'summary': {
+                'total_pages': total_pages,
+                'psm_win_counts': psm_win_counts,
+                'ties_broken': tie_broken_count,
+                'no_valid_outputs': no_output_count
+            }
+        }
+
+        # Save to file
+        selection_file.write_text(json.dumps(selection_data, indent=2))
+        logger.info(f"  Saved: ocr/psm_selection.json")
+
+        # Log summary
+        for psm, count in sorted(psm_win_counts.items()):
+            pct = (count / total_pages * 100) if total_pages > 0 else 0
+            logger.info(f"    PSM {psm}: {count} pages ({pct:.1f}%)")
+
+        if tie_broken_count > 0:
+            logger.info(f"    Ties broken by threshold: {tie_broken_count}")
+
+        if no_output_count > 0:
+            logger.warning(f"    Pages with no valid outputs: {no_output_count}")
+
+    def _generate_psm_selection_from_checkpoint(
+        self,
+        storage: BookStorage,
+        logger: PipelineLogger,
+        total_pages: int
+    ):
+        """
+        Generate/update psm_selection.json from vision selection checkpoint.
+
+        Merges deterministic confidence-based selections with LLM vision selections.
+        """
+        ocr_dir = storage.stage('ocr').output_dir
+        selection_file = ocr_dir / 'psm_selection.json'
+
+        # Load vision selection checkpoint if it exists
+        vision_checkpoint_file = ocr_dir / 'psm_selection' / '.checkpoint'
+        vision_selections = {}
+
+        if vision_checkpoint_file.exists():
+            try:
+                with open(vision_checkpoint_file) as f:
+                    vision_checkpoint_data = json.load(f)
+
+                # Extract vision selections from page_metrics
+                vision_model = None
+                for page_num_str, metrics in vision_checkpoint_data.get('page_metrics', {}).items():
+                    page_num = int(page_num_str)
+                    vision_selections[page_num] = {
+                        'selected_psm': metrics.get('selected_psm'),
+                        'confidence': metrics.get('confidence'),
+                        'reason': metrics.get('reason', 'Vision-based selection'),
+                        'cost_usd': metrics.get('cost_usd', 0.0)
+                    }
+                    # Get model from first page's metrics
+                    if vision_model is None:
+                        vision_model = metrics.get('model_used')
+
+                logger.info(f"  Loaded {len(vision_selections)} vision selections from checkpoint")
+            except Exception as e:
+                logger.warning(f"  Failed to load vision selections: {e}")
+
+        # Generate base selection file if it doesn't exist
+        if not selection_file.exists():
+            logger.info("  Generating deterministic PSM selections...")
+            self._generate_psm_selection(storage, logger, total_pages)
+
+        # If no vision selections, we're done
+        if not vision_selections:
+            return
+
+        # Load existing selection file
+        with open(selection_file) as f:
+            selection_data = json.load(f)
+
+        # Update with vision selections
+        updated_count = 0
+        for page_num, vision_sel in vision_selections.items():
+            page_str = str(page_num)
+            if page_str in selection_data.get('page_selections', {}):
+                old_psm = selection_data['page_selections'][page_str]
+                new_psm = vision_sel['selected_psm']
+
+                selection_data['page_selections'][page_str] = new_psm
+
+                if old_psm != new_psm:
+                    updated_count += 1
+
+        # Update metadata
+        selection_data['selection_method'] = 'hybrid' if vision_selections else 'confidence'
+        selection_data['vision_model'] = vision_model if vision_selections else None
+        selection_data['vision_selections_count'] = len(vision_selections)
+        selection_data['selections_changed'] = updated_count
+
+        # Recalculate win counts
+        psm_win_counts = {psm: 0 for psm in self.psm_modes}
+        for psm_val in selection_data['page_selections'].values():
+            if psm_val is not None:
+                psm_win_counts[psm_val] = psm_win_counts.get(psm_val, 0) + 1
+        selection_data['summary']['psm_win_counts'] = psm_win_counts
+
+        # Save updated file
+        selection_file.write_text(json.dumps(selection_data, indent=2))
+        logger.info(f"  Updated psm_selection.json with {len(vision_selections)} vision selections ({updated_count} changed)")
+
+    def _run_vision_selection(
+        self,
+        storage: BookStorage,
+        checkpoint: CheckpointManager,
+        logger: PipelineLogger,
+        metadata: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Run vision-based PSM selection for pages with major disagreements.
+
+        Follows correction/label pattern:
+        - ThreadPoolExecutor for I/O-bound LLM calls
+        - LLMBatchClient with rate limiting
+        - RichProgressBarHierarchical for live stats
+        - Structured responses with validation
+
+        Returns:
+            Stats dict with pages_processed, total_cost_usd, total_time_seconds
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from PIL import Image
+        import json
+        import time
+        import threading
+
+        from infra.llm.batch_client import LLMBatchClient, LLMRequest, LLMResult
+        from infra.utils.pdf import downsample_for_vision
+        from infra.pipeline.rich_progress import RichProgressBar, RichProgressBarHierarchical
+        from infra.config import Config
+        from pipeline.ocr.vision_selection_prompts import SYSTEM_PROMPT, build_user_prompt
+        from pipeline.ocr.vision_selection_schemas import VisionSelectionResponse, VisionSelectionMetrics
+
+        logger.info("=== Phase 2: Vision-based PSM Selection ===")
+
+        total_pages = metadata.get('total_pages', 0)
+
+        # Run vision selection on ALL pages
+        # Rationale: Agreement analysis measures text similarity, not structural correctness.
+        # Two PSMs can have identical text but different block/paragraph structures.
+        # Only visual inspection can determine which structure is correct.
+
+        ocr_dir = storage.stage('ocr').output_dir
+
+        # Build list of all pages for vision selection
+        pages_needing_llm = []
+        for page_num in range(1, total_pages + 1):
+            # Check if all 3 PSM outputs exist for this page
+            has_all_psms = all(
+                (ocr_dir / f'psm{psm}' / f'page_{page_num:04d}.json').exists()
+                for psm in self.psm_modes
+            )
+
+            if has_all_psms:
+                pages_needing_llm.append({
+                    'page_num': page_num,
+                    # No agreement metrics needed - we removed them from prompt
+                })
+
+        if not pages_needing_llm:
+            logger.info("No pages with complete PSM outputs found")
+            return {'pages_processed': 0, 'total_cost_usd': 0.0, 'total_time_seconds': 0.0}
+
+        logger.info(f"Running vision selection on {len(pages_needing_llm)} pages")
+
+        # Create vision selection checkpoint
+        vision_checkpoint = CheckpointManager(
+            scan_id=storage.scan_id,
+            stage='ocr',
+            storage_root=storage.storage_root,
+            output_dir='ocr/psm_selection'
+        )
+
+        # Get remaining pages (resume support)
+        # Use actual total pages from metadata, not max page number
+        page_nums_needing_llm = [p['page_num'] for p in pages_needing_llm]
+
+        # Get checkpoint status
+        vision_status = vision_checkpoint.get_status()
+        logger.info(f"Vision checkpoint status: {vision_status.get('status', 'not_started')}, pages_completed: {vision_status.get('pages_completed', 0)}")
+
+        remaining_pages = vision_checkpoint.get_remaining_pages(
+            total_pages=total_pages,  # Use book's total_pages, not max page needing LLM
+            resume=True
+        )
+
+        logger.info(f"Remaining pages from checkpoint: {len(remaining_pages)}/{len(page_nums_needing_llm)}")
+
+        # Filter to only pages that both need LLM AND are not complete
+        remaining_pages_set = set(remaining_pages)
+        pages_to_process = [p for p in pages_needing_llm if p['page_num'] in remaining_pages_set]
+
+        if not pages_to_process:
+            logger.info("All vision selection pages already complete")
+            # Get stats from checkpoint
+            status = vision_checkpoint.get_status()
+            return {
+                'pages_processed': status.get('pages_completed', 0),
+                'total_cost_usd': status.get('metadata', {}).get('total_cost_usd', 0.0),
+                'total_time_seconds': 0.0
+            }
+
+        logger.info(f"Processing {len(pages_to_process)} pages with vision LLM ({Config.vision_model_primary})")
+
+        # Initialize batch LLM client
+        stage_log_dir = ocr_dir / 'psm_selection' / 'logs'
+        stage_log_dir.mkdir(parents=True, exist_ok=True)
+
+        batch_client = LLMBatchClient(
+            max_workers=Config.max_workers,
+            max_retries=3,
+            retry_jitter=(1.0, 3.0),
+            verbose=True,
+            log_dir=stage_log_dir,
+            log_timestamp=logger.log_file.stem.split('_', 1)[1] if hasattr(logger, 'log_file') else None
+        )
+
+        # Phase A: Parallel page loading
+        logger.info(f"Loading {len(pages_to_process)} pages...")
+        load_start_time = time.time()
+        load_progress = RichProgressBar(
+            total=len(pages_to_process),
+            prefix="   ",
+            width=40,
+            unit="pages"
+        )
+        load_progress.update(0, suffix="loading...")
+
+        requests = []
+        page_data_map = {}
+        completed_loads = 0
+        load_lock = threading.Lock()
+
+        def load_page_for_selection(page_result):
+            """Load and prepare a single page for vision selection."""
+            page_num = page_result['page_num']
+            agreement_metrics = {
+                'avg_similarity': page_result.get('avg_similarity', 0.0),
+                'category': page_result.get('category', 'unknown'),
+                'max_word_diff': page_result.get('max_word_diff', 0)
+            }
+
+            try:
+                # Load all 3 PSM outputs
+                psm_outputs = {}
+                for psm in self.psm_modes:
+                    psm_file = ocr_dir / f'psm{psm}' / f'page_{page_num:04d}.json'
+                    if psm_file.exists():
+                        with open(psm_file, 'r') as f:
+                            psm_outputs[psm] = json.load(f)
+
+                if len(psm_outputs) < len(self.psm_modes):
+                    missing_psms = set(self.psm_modes) - set(psm_outputs.keys())
+                    logger.warning(f"Page {page_num} missing PSM outputs: {missing_psms}, skipping")
+                    return None
+
+                # Load source image
+                source_stage = storage.stage('source')
+                page_file = source_stage.output_page(page_num, extension='png')
+
+                if not page_file.exists():
+                    logger.warning(f"Page {page_num} source image not found")
+                    return None
+
+                # Load and downsample image
+                page_image = Image.open(page_file)
+                page_image = downsample_for_vision(page_image)
+
+                # Build prompt
+                user_prompt = build_user_prompt(
+                    page_num=page_num,
+                    total_pages=total_pages,
+                    book_metadata=metadata,
+                    psm_outputs=psm_outputs,
+                    agreement_metrics=agreement_metrics
+                )
+
+                # Create LLM request with structured response
+                request = LLMRequest(
+                    id=f"page_{page_num:04d}",
+                    model=Config.vision_model_primary,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    images=[page_image],
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "psm_selection",
+                            "strict": True,
+                            "schema": VisionSelectionResponse.model_json_schema()
+                        }
+                    },
+                    metadata={
+                        'page_num': page_num,
+                        'agreement_metrics': agreement_metrics,
+                        'psm_outputs': psm_outputs
+                    }
+                )
+
+                return (page_num, agreement_metrics, request)
+
+            except Exception as e:
+                logger.error(f"Failed to load page {page_num}", error=str(e))
+                return None
+
+        # Load pages in parallel
+        with ThreadPoolExecutor(max_workers=Config.max_workers) as executor:
+            future_to_page = {
+                executor.submit(load_page_for_selection, page_result): page_result['page_num']
+                for page_result in pages_to_process
+            }
+
+            for future in as_completed(future_to_page):
+                result = future.result()
+                if result:
+                    page_num, agreement_metrics, request = result
+                    requests.append(request)
+                    page_data_map[page_num] = {
+                        'agreement_metrics': agreement_metrics,
+                        'request': request
+                    }
+
+                with load_lock:
+                    completed_loads += 1
+                    load_progress.update(completed_loads, suffix=f"{len(requests)} loaded")
+
+        load_elapsed = time.time() - load_start_time
+        load_progress.finish(f"   ✓ {len(requests)} pages loaded in {load_elapsed:.1f}s")
+
+        if len(requests) == 0:
+            logger.info("No valid pages to process")
+            return {'pages_processed': 0, 'total_cost_usd': 0.0, 'total_time_seconds': load_elapsed}
+
+        # Phase B: Concurrent LLM processing
+        logger.info(f"Selecting best PSM for {len(requests)} pages...")
+        selection_start_time = time.time()
+        progress = RichProgressBarHierarchical(
+            total=len(requests),
+            prefix="   ",
+            width=40,
+            unit="pages"
+        )
+        progress.update(0, suffix="starting...")
+
+        failed_pages = []
+        selections = {}  # Store selections for updating psm_selection.json
+
+        # Create event handler
+        on_event = progress.create_llm_event_handler(
+            batch_client=batch_client,
+            start_time=selection_start_time,
+            model=Config.vision_model_primary,
+            total_requests=len(requests),
+            checkpoint=vision_checkpoint
+        )
+
+        def on_result(result: LLMResult):
+            """Handle LLM result - save selection to checkpoint."""
+            try:
+                page_num = result.request.metadata['page_num']
+                agreement_metrics = result.request.metadata['agreement_metrics']
+
+                if result.success:
+                    try:
+                        # Parse structured response
+                        selection_data = result.parsed_json
+                        if selection_data is None:
+                            raise ValueError("parsed_json is None for successful result")
+
+                        # Validate with schema
+                        validated = VisionSelectionResponse(**selection_data)
+
+                        # Calculate alternatives rejected
+                        alternatives = [psm for psm in self.psm_modes if psm != validated.selected_psm]
+
+                        # Build metrics
+                        metrics = VisionSelectionMetrics(
+                            page_num=page_num,
+                            processing_time_seconds=result.total_time_seconds,
+                            cost_usd=result.cost_usd,
+                            attempts=result.attempts,
+                            tokens_total=result.tokens_received,
+                            tokens_per_second=result.tokens_per_second,
+                            model_used=result.model_used,
+                            provider=result.provider,
+                            queue_time_seconds=result.queue_time_seconds,
+                            execution_time_seconds=result.execution_time_seconds,
+                            total_time_seconds=result.total_time_seconds,
+                            ttft_seconds=result.ttft_seconds,
+                            usage=result.usage,
+                            # Vision selection specific
+                            selected_psm=validated.selected_psm,
+                            confidence=validated.confidence,
+                            alternatives_rejected=alternatives,
+                            agreement_similarity=agreement_metrics['avg_similarity'],
+                            agreement_category=agreement_metrics['category']
+                        )
+
+                        # Save to checkpoint (no page file needed, just metrics)
+                        vision_checkpoint.mark_completed(
+                            page_num=page_num,
+                            cost_usd=result.cost_usd,
+                            metrics=metrics.model_dump()
+                        )
+
+                        # Store for psm_selection.json update
+                        selections[page_num] = {
+                            'selected_psm': validated.selected_psm,
+                            'confidence': validated.confidence,
+                            'reason': validated.reason,
+                            'cost_usd': result.cost_usd
+                        }
+
+                    except Exception as e:
+                        logger.error(f"Failed to process page {page_num} result", error=str(e))
+                        failed_pages.append(page_num)
+                else:
+                    logger.error(f"Page {page_num} LLM call failed", error=result.error)
+                    failed_pages.append(page_num)
+
+            except Exception as e:
+                logger.error(f"Error handling result", error=str(e))
+
+        # Process batch
+        results = batch_client.process_batch(
+            requests,
+            on_event=on_event,
+            on_result=on_result
+        )
+
+        # Finish progress
+        selection_elapsed = time.time() - selection_start_time
+        batch_stats = batch_client.get_batch_stats(total_requests=len(requests))
+        progress.finish(f"   ✓ {batch_stats.completed}/{len(requests)} pages selected in {selection_elapsed:.1f}s")
+
+        # Vision selections are saved to checkpoint - will be merged in after() hook
+        logger.info(f"Vision selection saved {len(selections)} pages to checkpoint")
+
+        # Get final stats
+        status = vision_checkpoint.get_status()
+        total_cost = status.get('metadata', {}).get('total_cost_usd', 0.0)
+        completed = batch_stats.completed
+
+        if failed_pages:
+            logger.warning(f"{len(failed_pages)} pages failed: {sorted(failed_pages)[:10]}")
+
+        logger.info(f"Vision selection complete: {completed} pages, ${total_cost:.4f}")
+
+        return {
+            'pages_processed': completed,
+            'total_cost_usd': total_cost,
+            'total_time_seconds': load_elapsed + selection_elapsed
+        }
+
+
+def _process_page_psm_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str, Any], Dict[str, Any]]:
     """
-    Standalone worker function for parallel OCR processing.
+    Standalone worker function for parallel OCR processing with specific PSM mode.
 
     Runs in separate process via ProcessPoolExecutor.
 
     Args:
-        task: Dict with storage_root, scan_id, page_number
+        task: Dict with storage_root, scan_id, page_number, psm_mode
 
     Returns:
         (success, page_number, error_msg, page_data, metrics)
@@ -412,20 +1199,45 @@ def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str
         )
 
         page_number = task['page_number']
+        psm_mode = task['psm_mode']
 
         # Load image from source
         page_file = storage.stage('source').output_page(page_number, extension='png')
         pil_image = Image.open(page_file)
-        images_dir = storage.book_dir / "images"
+
+        # Create PSM-specific images directory for this page
+        ocr_dir = storage.book_dir / "ocr"
+        psm_images_dir = ocr_dir / f"psm{psm_mode}" / f"page_{page_number:04d}_images"
+        psm_images_dir.mkdir(parents=True, exist_ok=True)
 
         # Extract dimensions
         width, height = pil_image.size
 
-        # Run Tesseract OCR
-        tsv_output = pytesseract.image_to_data(pil_image, lang='eng', output_type=pytesseract.Output.STRING)
+        # Run Tesseract OCR with specified PSM mode
+        # 1. Extract TSV for hierarchical structure
+        tsv_output = pytesseract.image_to_data(
+            pil_image,
+            lang='eng',
+            config=f'--psm {psm_mode}',
+            output_type=pytesseract.Output.STRING
+        )
+
+        # 2. Extract hOCR for typography metadata
+        hocr_output = pytesseract.image_to_pdf_or_hocr(
+            pil_image,
+            lang='eng',
+            config=f'--psm {psm_mode}',
+            extension='hocr'
+        )
 
         # Parse TSV into hierarchical blocks (returns blocks_data and confidence stats)
-        blocks_data, confidence_stats = _parse_tesseract_hierarchy(tsv_output)
+        blocks_data, confidence_stats = parse_tesseract_hierarchy(tsv_output)
+
+        # Parse hOCR for typography metadata
+        typography_data = parse_hocr_typography(hocr_output)
+
+        # Merge typography into blocks
+        blocks_data = merge_typography_into_blocks(blocks_data, typography_data)
 
         # Detect image regions
         text_boxes = []
@@ -433,23 +1245,54 @@ def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str
             for para in block['paragraphs']:
                 text_boxes.append(para['bbox'])
 
-        image_boxes = ImageDetector.detect_images(pil_image, text_boxes)
+        image_candidates = ImageDetector.detect_images(pil_image, text_boxes)
 
-        # Create image regions
+        # Validate image candidates (filter out decorative text)
+        confirmed_images, recovered_text_blocks = _validate_image_candidates(
+            pil_image,
+            image_candidates,
+            psm_mode
+        )
+
+        # Create image regions from confirmed images
         images = []
-        for img_id, img_box in enumerate(image_boxes, 1):
+        for img_id, img_box in enumerate(confirmed_images, 1):
             x, y, w, h = img_box
             cropped = pil_image.crop((x, y, x + w, y + h))
 
-            # Save to images directory
-            img_path = images_dir / f"page_{page_number:04d}_img_{img_id:03d}.png"
+            # Save to PSM-specific page images directory
+            img_filename = f"img_{img_id:03d}.png"
+            img_path = psm_images_dir / img_filename
             cropped.save(img_path)
+
+            # Store relative path from book root
+            relative_path = img_path.relative_to(storage.book_dir)
 
             images.append({
                 'image_id': img_id,
                 'bbox': list(img_box),
-                'image_file': img_path.name
+                'image_file': str(relative_path),
+                'ocr_attempted': True,
+                'ocr_text_recovered': None
             })
+
+        # Add recovered text blocks back to blocks_data
+        if recovered_text_blocks:
+            for recovered_block in recovered_text_blocks:
+                # Create a new block for recovered text
+                new_block_num = max((b['block_num'] for b in blocks_data), default=0) + 1
+                blocks_data.append({
+                    'block_num': new_block_num,
+                    'bbox': recovered_block['bbox'],
+                    'paragraphs': [{
+                        'par_num': 0,
+                        'text': recovered_block['text'],
+                        'bbox': recovered_block['bbox'],
+                        'avg_confidence': recovered_block['confidence'],
+                        'source': 'recovered_from_image',
+                        'lines': []  # No line detail for recovered text
+                    }]
+                })
 
         # Build page data
         page_data = {
@@ -472,9 +1315,11 @@ def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str
             'page_num': page_number,
             'processing_time_seconds': processing_time,
             'cost_usd': 0.0,  # No cost for Tesseract
+            'psm_mode': psm_mode,
             'tesseract_version': str(tesseract_version),
             'confidence_mean': confidence_stats['mean_confidence'],
-            'blocks_detected': len(blocks_data)
+            'blocks_detected': len(blocks_data),
+            'recovered_text_blocks_count': len(recovered_text_blocks)
         }
 
         return (True, page_number, None, page_data, metrics)
@@ -482,136 +1327,56 @@ def _process_page_worker(task: Dict[str, Any]) -> Tuple[bool, int, str, Dict[str
     except Exception as e:
         return (False, task['page_number'], str(e), None, None)
 
-
-def _parse_tesseract_hierarchy(tsv_string):
+def _validate_image_candidates(pil_image, image_candidates, psm_mode):
     """
-    Parse Tesseract TSV into hierarchical blocks->paragraphs structure.
+    Validate image candidates by running OCR on each.
 
-    Standalone version for use in worker processes.
+    Filters out decorative text misclassified as images.
+
+    Args:
+        pil_image: PIL Image of full page
+        image_candidates: List of (x, y, w, h) candidate bboxes
+        psm_mode: PSM mode for context
 
     Returns:
-        (blocks_list, confidence_stats) where confidence_stats contains
-        'mean_confidence' and other aggregate metrics
+        (confirmed_images, recovered_text_blocks)
+        - confirmed_images: List of (x, y, w, h) that are actually images
+        - recovered_text_blocks: List of dicts with recovered text
     """
-    reader = csv.DictReader(io.StringIO(tsv_string), delimiter='\t', quoting=csv.QUOTE_NONE)
-    blocks = {}
-    all_confidences = []  # Track all word-level confidences for stats
+    confirmed_images = []
+    recovered_text_blocks = []
 
-    for row in reader:
+    for candidate_bbox in image_candidates:
+        x, y, w, h = candidate_bbox
+
+        # Crop candidate region
+        cropped = pil_image.crop((x, y, x + w, y + h))
+
+        # Quick OCR test with PSM 7 (single line, fast)
         try:
-            level = int(row['level'])
-            if level != 5:  # Word level
-                continue
-
-            block_num = int(row['block_num'])
-            par_num = int(row['par_num'])
-            conf = float(row['conf'])
-            text = row['text'].strip()
-
-            if conf < 0 or not text:
-                continue
-
-            left = int(row['left'])
-            top = int(row['top'])
-            width = int(row['width'])
-            height = int(row['height'])
-
-            # Initialize block
-            if block_num not in blocks:
-                blocks[block_num] = {}
-
-            # Initialize paragraph
-            para_key = par_num
-            if para_key not in blocks[block_num]:
-                blocks[block_num][para_key] = {
-                    'words': [],
-                    'confs': [],
-                    'xs': [],
-                    'ys': [],
-                    'x2s': [],
-                    'y2s': []
-                }
-
-            # Add word data
-            para = blocks[block_num][para_key]
-            para['words'].append(text)
-            para['confs'].append(conf)
-            para['xs'].append(left)
-            para['ys'].append(top)
-            para['x2s'].append(left + width)
-            para['y2s'].append(top + height)
-
-            # Track for page-level stats
-            all_confidences.append(conf)
-
-        except (ValueError, KeyError):
+            validation_text = pytesseract.image_to_string(
+                cropped,
+                lang='eng',
+                config='--psm 7 --oem 1'
+            ).strip()
+        except Exception:
+            # If validation fails, assume it's an image
+            confirmed_images.append(candidate_bbox)
             continue
 
-    # Convert to list format
-    blocks_list = []
-    for block_num in sorted(blocks.keys()):
-        paragraphs_list = []
-
-        for par_num in sorted(blocks[block_num].keys()):
-            para = blocks[block_num][par_num]
-
-            if not para['words']:
-                continue
-
-            # Combine words into text
-            text = ' '.join(para['words'])
-
-            # Calculate average confidence
-            avg_conf = sum(para['confs']) / len(para['confs'])
-
-            # Calculate paragraph bounding box
-            para_bbox = [
-                min(para['xs']),
-                min(para['ys']),
-                max(para['x2s']) - min(para['xs']),
-                max(para['y2s']) - min(para['ys'])
-            ]
-
-            paragraphs_list.append({
-                'par_num': par_num,
-                'text': text,
-                'bbox': para_bbox,
-                'avg_confidence': round(avg_conf / 100, 3)
+        # Check if meaningful text was found
+        if len(validation_text) > 3:
+            # This is decorative text! Recover it
+            recovered_text_blocks.append({
+                'text': validation_text,
+                'bbox': list(candidate_bbox),
+                'confidence': 0.7  # Lower confidence for recovered text
             })
+        else:
+            # Actually an image
+            confirmed_images.append(candidate_bbox)
 
-        # Calculate block bounding box from all paragraphs
-        if paragraphs_list:
-            xs = [p['bbox'][0] for p in paragraphs_list]
-            ys = [p['bbox'][1] for p in paragraphs_list]
-            x2s = [p['bbox'][0] + p['bbox'][2] for p in paragraphs_list]
-            y2s = [p['bbox'][1] + p['bbox'][3] for p in paragraphs_list]
-
-            block_bbox = [
-                min(xs),
-                min(ys),
-                max(x2s) - min(xs),
-                max(y2s) - min(ys)
-            ]
-
-            blocks_list.append({
-                'block_num': block_num,
-                'bbox': block_bbox,
-                'paragraphs': paragraphs_list
-            })
-
-    # Calculate confidence statistics
-    if all_confidences:
-        mean_conf = sum(all_confidences) / len(all_confidences)
-        # Tesseract confidence is 0-100, normalize to 0-1
-        confidence_stats = {
-            'mean_confidence': round(mean_conf / 100, 3)
-        }
-    else:
-        confidence_stats = {
-            'mean_confidence': 0.0
-        }
-
-    return blocks_list, confidence_stats
+    return confirmed_images, recovered_text_blocks
 
 
 class ImageDetector:

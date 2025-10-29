@@ -255,51 +255,41 @@ CRITICAL FORMAT RULES:
 
 <examples>
 <example type="parts_with_chapters">
-Book: "The Accidental President" has 5 Parts, each containing numbered chapters
+PATTERN: Parts-based book structure (5-10 major divisions, each containing chapters)
 
-ToC shows:
-- Part I: April 12, 1945 (printed page 1)
-- Part II: The Political Education (printed page 39)
-- Part III: April-May 1945 (printed page 115)
-- Part IV: June-July 1945 (no page number)
-- Part V: Little Boy, Fat Man (printed page 293)
+Visual indicators:
+- ToC contains "Part [I-X]:" or "PART [1-10]:" prefixes
+- Large page gaps between parts (50-100+ pages typical)
+- Report shows has_chapter_heading=True at part boundaries AND chapter starts
+- Parts may have descriptive titles ("The War Years", "Early Life")
 
-Report shows has_chapter_heading=True at pages:
-- 16 (Part I heading)
-- 53 (Part II heading)
-- 128 (Part III heading)
-- 158 (bare "17" - chapter within Part III)
-- 248 (Part IV heading)
-- 310 (Part V heading)
+Disambiguation:
+- Part headings: Full text ("Part I: The War Years")
+- Chapter headings within parts: May be bare numbers or "Chapter X" format
+- Use ToC hierarchy and page gaps to distinguish
 
-Correct extraction:
-- Extract 5 Parts as "chapters"
-- Skip page 158 (bare number, not Part heading)
-- For Part III (pages 128-247): Extract numbered chapters as sections[]
+Extraction strategy:
+- Top-level: Extract Part boundaries as "chapters" in output
+- Nested: Extract numbered chapters within parts as "sections[]"
+- Page ranges: Part start → next part start (or end of book)
 
-Output:
+Example output structure:
 {
   "chapters": [
     {
       "chapter_number": 1,
-      "title": "April 12, 1945",
+      "title": "The War Years",
       "page_range": {"start_page": 16, "end_page": 52},
-      "sections": [...]
+      "sections": []
     },
     {
       "chapter_number": 3,
-      "title": "April-May 1945",
+      "title": "The Reconstruction",
       "page_range": {"start_page": 128, "end_page": 247},
       "sections": [
         {"title": "12", "page_range": {"start_page": 128, "end_page": 143}, "level": 1},
         {"title": "17", "page_range": {"start_page": 158, "end_page": 172}, "level": 1}
       ]
-    },
-    {
-      "chapter_number": 4,
-      "title": "June-July 1945",
-      "page_range": {"start_page": 248, "end_page": 309},
-      "sections": [...]
     }
   ],
   "total_chapters": 5,
@@ -308,21 +298,20 @@ Output:
 </example>
 
 <example type="chapters_only">
-Book: Standard non-fiction with 25 chapters, no parts
+PATTERN: Standard chapter-based book (15-30 chapters, no parts)
 
-ToC shows:
-- Chapter 1: Introduction (page 1)
-- Chapter 2: Early Years (page 15)
-- Chapter 3: The Decision (page 32)
-... (22 more)
+Visual indicators:
+- ToC shows flat list of chapters (no "Part" groupings)
+- Chapter titles: "Chapter X: Title" or just numbered
+- Report shows has_chapter_heading=True at regular intervals
+- Typical spacing: 10-25 pages between chapters
 
-Report shows has_chapter_heading=True at pages: 1, 15, 32, 48, ...
+Extraction strategy:
+- Extract all chapter boundaries as "chapters" array
+- sections[] empty (unless ToC shows subsections at level=2)
+- Page ranges: Chapter start → next chapter start
 
-Correct extraction:
-- Extract all 25 chapter boundaries as "chapters"
-- sections[] empty or from ToC level=2 if present
-
-Output:
+Example output structure:
 {
   "chapters": [
     {"chapter_number": 1, "title": "Introduction", "page_range": {"start_page": 1, "end_page": 14}, "sections": []},

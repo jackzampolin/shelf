@@ -337,6 +337,30 @@ def stage_view(scan_id: str, stage_name: str):
             logs=logs,
         )
 
+    # Special handling for OCR (uses PSM reports)
+    if stage_name == "ocr":
+        from data_loaders import get_psm_selection, get_psm_reports
+
+        stats = get_stage_stats(scan_id, stage_name)
+        psm_selection = get_psm_selection(scan_id)
+        psm_reports = get_psm_reports(scan_id)
+
+        # Get latest logs
+        level_filter = request.args.get('level')
+        search = request.args.get('search')
+        logs = get_stage_logs(scan_id, stage_name, level_filter=level_filter, search=search)
+
+        return render_template(
+            'stage/ocr.html',
+            active='stage',
+            scan_id=scan_id,
+            stage_name=stage_name,
+            stats=stats,
+            psm_selection=psm_selection,
+            psm_reports=psm_reports,
+            logs=logs,
+        )
+
     # Standard handling for other stages
     stats = get_stage_stats(scan_id, stage_name)
 
@@ -395,7 +419,43 @@ def stage_viewer(scan_id: str, stage_name: str):
     if current_page not in all_pages:
         current_page = all_pages[0]
 
-    # Get stage data for current page
+    # Special handling for OCR viewer: load winning PSM
+    if stage_name == "ocr":
+        from data_loaders import get_winning_ocr_data
+
+        winning_ocr = get_winning_ocr_data(scan_id, current_page)
+        if winning_ocr:
+            stage_data = winning_ocr["data"]
+            winning_psm = winning_ocr["winning_psm"]
+            available_psms = winning_ocr["available_psms"]
+            selection_criteria = winning_ocr["selection_criteria"]
+        else:
+            # Fallback: try to load any PSM data
+            stage_data = get_stage_data(scan_id, "ocr", current_page)
+            winning_psm = None
+            available_psms = [3, 4, 6]
+            selection_criteria = "unknown"
+
+        ocr_data = stage_data  # For consistency with other stages
+        image_width, image_height = get_page_image_dimensions(scan_id, current_page)
+
+        return render_template(
+            'stage/ocr_viewer.html',
+            active='stage',
+            scan_id=scan_id,
+            stage_name=stage_name,
+            current_page=current_page,
+            all_pages=all_pages,
+            stage_data=stage_data,
+            ocr_data=ocr_data,
+            winning_psm=winning_psm,
+            available_psms=available_psms,
+            selection_criteria=selection_criteria,
+            image_width=image_width,
+            image_height=image_height,
+        )
+
+    # Standard handling for non-OCR stages
     stage_data = get_stage_data(scan_id, stage_name, current_page)
     ocr_data = get_stage_data(scan_id, "ocr", current_page)  # Always need OCR for images
 
@@ -414,6 +474,31 @@ def stage_viewer(scan_id: str, stage_name: str):
         image_width=image_width,
         image_height=image_height,
     )
+
+
+@app.route("/api/ocr/<scan_id>/page/<int:page_num>")
+def ocr_page_psm_api(scan_id: str, page_num: int):
+    """HTMX API endpoint to load OCR data from a specific PSM."""
+    psm = int(request.args.get('psm-select', 3))
+
+    # Load OCR data from specified PSM
+    ocr_dir = LIBRARY_ROOT / scan_id / "ocr"
+    psm_file = ocr_dir / f"psm{psm}" / f"page_{page_num:04d}.json"
+
+    if not psm_file.exists():
+        return "<div class='empty-state'><p>No OCR data available for PSM {}</p></div>".format(psm)
+
+    try:
+        with open(psm_file) as f:
+            stage_data = json.load(f)
+
+        # Render just the OCR content blocks
+        return render_template(
+            'stage/_ocr_content.html',
+            stage_data=stage_data
+        )
+    except Exception as e:
+        return f"<div class='empty-state'><p>Error loading PSM {psm} data: {str(e)}</p></div>"
 
 
 @app.route("/image/<scan_id>/<int:page_num>")

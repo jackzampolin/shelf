@@ -733,9 +733,9 @@ def _sweep_stage(library, all_books, args):
 def _sweep_reports(library, all_books, args):
     """Sweep through library regenerating reports from checkpoint data."""
     from pipeline.ocr import OCRStage
-    from pipeline.correct import CorrectionStage
+    from pipeline.correction import CorrectionStage
     from pipeline.label import LabelStage
-    from pipeline.merge import MergeStage
+    from pipeline.merged import MergeStage
     from pipeline.build_structure import BuildStructureStage
 
     print(f"📚 Sweeping reports across {len(all_books)} books")
@@ -771,22 +771,46 @@ def _sweep_reports(library, all_books, args):
             # Check if checkpoint has data
             stage_storage = storage.stage(stage_name)
             checkpoint = stage_storage.checkpoint
-            all_metrics = checkpoint.get_all_metrics()
 
-            if not all_metrics:
-                continue
+            # For OCR stage, check PSM checkpoints instead of main checkpoint
+            if stage_name == 'ocr':
+                # Check if any PSM checkpoint has data
+                ocr_dir = stage_storage.output_dir
+                has_psm_data = False
+                for psm in [3, 4, 6]:
+                    psm_checkpoint_file = ocr_dir / f'psm{psm}' / '.checkpoint'
+                    if psm_checkpoint_file.exists():
+                        has_psm_data = True
+                        break
+                if not has_psm_data:
+                    continue
+            else:
+                # Other stages: check main checkpoint
+                all_metrics = checkpoint.get_all_metrics()
+                if not all_metrics:
+                    continue
 
-            # Regenerate report
+            # Regenerate report (and run after() hook for OCR to generate selection file)
             try:
                 from infra.pipeline.logger import PipelineLogger
                 logger = PipelineLogger(scan_id=scan_id, stage=stage_name)
 
-                report_path = stage.generate_report(storage, logger)
-                if report_path:
+                # For OCR stage, run full after() hook to generate PSM selection + reports
+                if stage_name == 'ocr':
+                    metadata = storage.load_metadata()
+                    total_pages = metadata.get('total_pages', 0)
+                    stats = {'pages_processed': total_pages}  # Dummy stats for after()
+                    stage.after(storage, checkpoint, logger, stats)
                     total_regenerated += 1
-                    print(f"✅ {scan_id}/{stage_name}/report.csv ({len(all_metrics)} pages)")
+                    print(f"✅ {scan_id}/{stage_name}/ (report.csv + psm_selection.json + psm reports)")
+                else:
+                    # Other stages: just regenerate CSV report
+                    report_path = stage.generate_report(storage, logger)
+                    if report_path:
+                        total_regenerated += 1
+                        print(f"✅ {scan_id}/{stage_name}/report.csv ({len(all_metrics)} pages)")
             except Exception as e:
-                print(f"❌ Failed to regenerate {scan_id}/{stage_name}/report.csv: {e}")
+                print(f"❌ Failed to regenerate {scan_id}/{stage_name}: {e}")
 
     print(f"\n✅ Regenerated {total_regenerated} reports across {len(all_books)} books\n")
 

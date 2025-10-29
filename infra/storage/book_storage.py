@@ -78,9 +78,20 @@ class StageStorage:
         """
         return self._dependencies
 
-    def output_page(self, page_num: int, extension: str = "json") -> Path:
-        """Get output page file path: {output_dir}/page_{num:04d}.{ext}"""
-        return self.output_dir / f"page_{page_num:04d}.{extension}"
+    def output_page(self, page_num: int, extension: str = "json", subfolder: Optional[str] = None) -> Path:
+        """
+        Get output page file path.
+
+        Args:
+            page_num: Page number
+            extension: File extension (default: "json")
+            subfolder: Optional subfolder within stage directory (e.g., "psm3", "psm4")
+
+        Returns:
+            Path: {output_dir}/[subfolder/]page_{num:04d}.{ext}
+        """
+        base_dir = self.output_dir / subfolder if subfolder else self.output_dir
+        return base_dir / f"page_{page_num:04d}.{extension}"
 
     def list_output_pages(self, extension: str = "json") -> List[Path]:
         """List all output page files, sorted by page number"""
@@ -248,6 +259,7 @@ class StageStorage:
         self,
         page_num: int,
         extension: str = "json",
+        subfolder: Optional[str] = None,
         schema: Optional[Type[BaseModel]] = None
     ) -> Dict[str, Any]:
         """
@@ -256,6 +268,7 @@ class StageStorage:
         Args:
             page_num: Page number to load
             extension: File extension (default: "json")
+            subfolder: Optional subfolder within stage directory (e.g., "psm3", "psm4")
             schema: Optional Pydantic model for validation
 
         Returns:
@@ -268,12 +281,20 @@ class StageStorage:
         Example:
             from pipeline.2_correction.schemas import CorrectedPageOutput
 
+            # Load from main stage directory
             page_data = storage.correction.load_page(
                 page_num=42,
                 schema=CorrectedPageOutput
             )
+
+            # Load from subfolder (e.g., OCR PSM outputs)
+            page_data = storage.ocr.load_page(
+                page_num=42,
+                subfolder="psm4",
+                schema=OCRPageOutput
+            )
         """
-        output_file = self.output_page(page_num, extension=extension)
+        output_file = self.output_page(page_num, extension=extension, subfolder=subfolder)
 
         if not output_file.exists():
             raise FileNotFoundError(f"Page {page_num} not found: {output_file}")

@@ -1,0 +1,25 @@
+{% if stage_data and stage_data.blocks %}
+    {% for block in stage_data.blocks %}
+    <div class="ocr-block">
+        <div class="block-header">
+            Block {{ loop.index }}
+            {% if block.paragraphs %}
+                {% set block_confidences = [] %}
+                {% for para in block.paragraphs %}
+                    {% set _ = block_confidences.append(para.avg_confidence) %}
+                {% endfor %}
+                {% if block_confidences %}
+                    | Confidence: {{ "%.2f"|format(block_confidences|sum / block_confidences|length) }}
+                {% endif %}
+            {% endif %}
+        </div>
+        {% for para in block.paragraphs %}
+        <p>{{ para.text }}</p>
+        {% endfor %}
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="empty-state">
+        <p>No OCR data available for this page</p>
+    </div>
+{% endif %}

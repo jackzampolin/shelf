@@ -16,7 +16,7 @@ For correction stage:
 - Block structure enables semantic classification
 """
 
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Tuple
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -50,6 +50,53 @@ class PageDimensions(BaseModel):
     height: int = Field(..., ge=1, description="Page height in pixels")
 
 
+class Word(BaseModel):
+    """
+    A single word detected by Tesseract.
+
+    Word-level detail for targeted analysis (not used in correction).
+    """
+    text: str = Field(..., min_length=1, description="Word text")
+    bbox: BoundingBox = Field(..., description="Word bounding box")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="OCR confidence for this word (0.0-1.0)")
+
+    @field_validator('bbox', mode='before')
+    @classmethod
+    def parse_bbox(cls, v):
+        """Handle bbox as list or BoundingBox."""
+        if isinstance(v, list):
+            return BoundingBox.from_list(v)
+        return v
+
+
+class Line(BaseModel):
+    """
+    A text line detected by Tesseract.
+
+    Preserves line breaks and hyphenation context.
+    Typography metadata enables font size-based classification.
+    """
+    line_num: int = Field(..., ge=0, description="Tesseract line number within paragraph")
+    text: str = Field(..., min_length=1, description="Full line text (all words joined)")
+    bbox: BoundingBox = Field(..., description="Line bounding box")
+    words: List[Word] = Field(default_factory=list, description="Words in this line")
+    avg_confidence: float = Field(..., ge=0.0, le=1.0, description="Average OCR confidence (0.0-1.0)")
+
+    # Typography metadata from hOCR (optional)
+    baseline: Optional[Tuple[float, float]] = Field(None, description="Baseline (slope, offset)")
+    x_size: Optional[float] = Field(None, description="X-height (font size estimate)")
+    x_ascenders: Optional[float] = Field(None, description="Ascender height")
+    x_descenders: Optional[float] = Field(None, description="Descender height")
+
+    @field_validator('bbox', mode='before')
+    @classmethod
+    def parse_bbox(cls, v):
+        """Handle bbox as list or BoundingBox."""
+        if isinstance(v, list):
+            return BoundingBox.from_list(v)
+        return v
+
+
 class Paragraph(BaseModel):
     """
     A paragraph detected by Tesseract.
@@ -59,8 +106,15 @@ class Paragraph(BaseModel):
     """
     par_num: int = Field(..., ge=0, description="Tesseract paragraph number within block")
     bbox: BoundingBox = Field(..., description="Paragraph bounding box")
-    text: str = Field(..., min_length=1, description="Full paragraph text")
+    text: str = Field(..., min_length=1, description="Full paragraph text (all lines joined)")
+    lines: List[Line] = Field(default_factory=list, description="Lines in this paragraph")
     avg_confidence: float = Field(..., ge=0.0, le=1.0, description="Average OCR confidence (0.0-1.0)")
+
+    # Source tracking for recovered text
+    source: Literal["primary_ocr", "recovered_from_image"] = Field(
+        "primary_ocr",
+        description="Whether text came from normal OCR or was recovered from misclassified image"
+    )
 
     @field_validator('bbox', mode='before')
     @classmethod
@@ -86,6 +140,10 @@ class Block(BaseModel):
     block_num: int = Field(..., ge=0, description="Tesseract block number")
     bbox: BoundingBox = Field(..., description="Block bounding box")
     paragraphs: List[Paragraph] = Field(default_factory=list, description="Paragraphs in this block")
+
+    # Hints from hOCR (optional, not authoritative)
+    block_type_hint: Optional[str] = Field(None, description="Block type hint from hOCR (e.g. 'text', 'header', 'footer')")
+    reading_order: Optional[int] = Field(None, description="Reading order hint from hOCR")
 
     @field_validator('bbox', mode='before')
     @classmethod
@@ -121,11 +179,16 @@ class ImageRegion(BaseModel):
     """
     An image region detected on page.
 
-    Detected via OpenCV contour analysis of non-text regions.
+    Detected via OpenCV contour analysis, validated by OCR.
+    Only confirmed images (not decorative text) are saved.
     """
     image_id: int = Field(..., ge=1, description="Unique image ID within page")
     bbox: BoundingBox = Field(..., description="Image bounding box")
     image_file: str = Field(..., description="Saved image filename")
+
+    # Validation metadata
+    ocr_attempted: bool = Field(True, description="Whether OCR validation was attempted")
+    ocr_text_recovered: Optional[str] = Field(None, description="If text found during validation, moved to blocks instead")
 
     @field_validator('bbox', mode='before')
     @classmethod
@@ -213,7 +276,7 @@ class OCRPageMetrics(BaseModel):
     """
     Checkpoint metrics for OCR stage.
 
-    Tracks Tesseract OCR performance per page.
+    Tracks Tesseract OCR performance per page per PSM mode.
     OCR stage is unique - no LLM costs for pages, but tracks
     OCR quality metrics (confidence, blocks detected).
     """
@@ -222,9 +285,11 @@ class OCRPageMetrics(BaseModel):
     cost_usd: float = Field(0.0, ge=0.0, description="Cost (always 0 for Tesseract)")
 
     # OCR-specific metrics
+    psm_mode: int = Field(..., ge=0, le=13, description="Tesseract PSM mode used")
     tesseract_version: str = Field(..., description="Tesseract version used")
     confidence_mean: float = Field(..., ge=0.0, le=1.0, description="Mean OCR confidence across page")
     blocks_detected: int = Field(..., ge=0, description="Number of text blocks detected")
+    recovered_text_blocks_count: int = Field(0, ge=0, description="Number of text blocks recovered from image validation")
 
 
 # ============================================================================
