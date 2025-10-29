@@ -355,18 +355,13 @@ class LLMClient:
         original_content = messages[user_msg_idx]['content']
 
         # If content is already multipart format (from previous iteration),
-        # extract just the text part
+        # reuse it and just append images (preserves any nonces in text)
         if isinstance(original_content, list):
-            # Find the text part
-            original_text = ""
-            for item in original_content:
-                if item.get('type') == 'text':
-                    original_text = item.get('text', '')
-                    break
-            original_content = original_text
-
-        # Build content array with text + images
-        content = [{"type": "text", "text": original_content}]
+            # Content is already multipart - just append images to it
+            content = original_content.copy()
+        else:
+            # Build new content array with text + images
+            content = [{"type": "text", "text": original_content}]
 
         for img in images:
             # Convert to base64 if needed
