@@ -139,11 +139,33 @@ def build_user_prompt(
         prompt_parts.append(f"- Paragraphs: {num_paragraphs}")
         prompt_parts.append(f"- Mean confidence: {mean_conf:.3f}")
         prompt_parts.append("")
-        prompt_parts.append("```json")
 
-        # Include full structure for evaluation
+        # Include structural summary (NO TEXT - just metadata for layout evaluation)
+        # This keeps prompts small and focuses LLM on visual structure vs text comparison
         import json
-        prompt_parts.append(json.dumps(ocr_data, indent=2))
+        structure_summary = {
+            "blocks": [
+                {
+                    "block_num": block.get('block_num'),
+                    "bbox": block.get('bbox'),
+                    "confidence": block.get('confidence'),
+                    "paragraphs": [
+                        {
+                            "par_num": para.get('par_num'),
+                            "bbox": para.get('bbox'),
+                            "confidence": para.get('confidence'),
+                            "word_count": len(para.get('text', '').split()),
+                            "text_preview": para.get('text', '')[:100]  # First 100 chars only
+                        }
+                        for para in block.get('paragraphs', [])
+                    ]
+                }
+                for block in ocr_data.get('blocks', [])
+            ]
+        }
+
+        prompt_parts.append("```json")
+        prompt_parts.append(json.dumps(structure_summary, indent=2))
         prompt_parts.append("```")
         prompt_parts.append("")
 
