@@ -140,8 +140,14 @@ class OCRStage(BaseStage):
         if total_pages == 0:
             raise ValueError("total_pages not set in metadata")
 
-        # Initialize main checkpoint with total_pages (enables resume)
-        checkpoint.get_remaining_pages(total_pages=total_pages, resume=True)
+        # Initialize checkpoint with total_pages (but don't sync with outputs)
+        # OCR uses substage markers (psm3, psm4, psm6, vision_psm) instead of output file scanning
+        # because it saves to subdirectories (psm3/, psm4/, psm6/) not the main stage directory
+        with checkpoint._lock:
+            checkpoint._state['total_pages'] = total_pages
+            if checkpoint._state['status'] == 'not_started':
+                checkpoint._state['status'] = 'in_progress'
+            checkpoint._save_checkpoint()
 
         logger.start_stage(total_pages=total_pages, max_workers=self.max_workers)
         logger.info("OCR Stage - Multi-PSM Tesseract extraction + OpenCV image detection")
