@@ -108,23 +108,8 @@ class OCRStage(BaseStage):
         Returns:
             List of page numbers that need processing for this PSM
         """
-        # Get current checkpoint state
-        status = checkpoint.get_status()
-        page_metrics = status.get('page_metrics', {})
-
-        # Find pages where this PSM is not complete
-        remaining = []
-        psm_key = f'psm{psm}'
-
-        for page_num in range(1, total_pages + 1):
-            page_key = str(page_num)
-            metrics = page_metrics.get(page_key, {})
-
-            # If psm{N} is not True, needs processing
-            if not metrics.get(psm_key, False):
-                remaining.append(page_num)
-
-        return remaining
+        # Delegate to checkpoint's sub-stage API
+        return checkpoint.get_remaining_pages_for_substage(total_pages, f'psm{psm}')
 
     def run(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger) -> Dict[str, Any]:
         """Process pages in parallel with multiple PSM modes."""
@@ -134,6 +119,9 @@ class OCRStage(BaseStage):
 
         if total_pages == 0:
             raise ValueError("total_pages not set in metadata")
+
+        # Initialize main checkpoint with total_pages (enables resume)
+        checkpoint.get_remaining_pages(total_pages=total_pages, resume=True)
 
         logger.start_stage(total_pages=total_pages, max_workers=self.max_workers)
         logger.info("OCR Stage - Multi-PSM Tesseract extraction + OpenCV image detection")
@@ -147,13 +135,7 @@ class OCRStage(BaseStage):
         # Check if all PSMs are already complete before entering processing loop
         all_psms_complete = True
         for psm in self.psm_modes:
-            psm_checkpoint = CheckpointManager(
-                scan_id=storage.scan_id,
-                stage='ocr',
-                storage_root=storage.storage_root,
-                output_dir=f'ocr/psm{psm}'
-            )
-            pages = psm_checkpoint.get_remaining_pages(total_pages=total_pages, resume=True)
+            pages = self._get_remaining_pages_for_psm(checkpoint, total_pages, psm)
             if pages:
                 all_psms_complete = False
                 break
@@ -166,16 +148,8 @@ class OCRStage(BaseStage):
                 psm_start_time = time.time()
                 logger.info(f"[PSM {psm}] Starting extraction ({psm_idx}/{len(self.psm_modes)})")
 
-                # Create PSM-specific checkpoint
-                psm_checkpoint = CheckpointManager(
-                    scan_id=storage.scan_id,
-                    stage='ocr',
-                    storage_root=storage.storage_root,
-                    output_dir=f'ocr/psm{psm}'
-                )
-
-                # Get pages to process for this PSM (independent resume)
-                pages = psm_checkpoint.get_remaining_pages(total_pages=total_pages, resume=True)
+                # Get pages to process for this PSM from main checkpoint
+                pages = self._get_remaining_pages_for_psm(checkpoint, total_pages, psm)
 
                 if not pages:
                     logger.info(f"[PSM {psm}] All pages already complete, skipping")
@@ -233,11 +207,12 @@ class OCRStage(BaseStage):
                                 validated_page = OCRPageOutput(**page_data)
                                 page_file.write_text(validated_page.model_dump_json(indent=2))
 
-                                # Mark complete in PSM-specific checkpoint
-                                psm_checkpoint.mark_completed(
+                                # Mark PSM complete in checkpoint (atomic, preserves other sub-stages)
+                                checkpoint.mark_substage_completed(
                                     page_num=returned_page_num,
-                                    cost_usd=0.0,
-                                    metrics=validated_metrics.model_dump()
+                                    substage=f'psm{psm}',
+                                    value=True,
+                                    cost_usd=0.0
                                 )
                                 psm_completed += 1
                             else:
@@ -297,43 +272,25 @@ class OCRStage(BaseStage):
     def after(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger, stats: Dict[str, Any]):
         """Generate PSM analysis reports, PSM selection, and extract book metadata."""
         # Check if ALL sub-stages (PSMs + vision selection) are complete
-        all_complete = True
         metadata = storage.load_metadata()
         total_pages = metadata.get('total_pages', 0)
 
-        # Check PSM checkpoints
-        for psm in self.psm_modes:
-            psm_checkpoint = CheckpointManager(
-                scan_id=storage.scan_id,
-                stage='ocr',
-                storage_root=storage.storage_root,
-                output_dir=f'ocr/psm{psm}'
-            )
-            psm_status = psm_checkpoint.get_status()
+        # Build list of required sub-stages
+        required_substages = [f'psm{psm}' for psm in self.psm_modes] + ['vision_psm']
 
-            if psm_status.get('status') != 'completed':
-                all_complete = False
-                logger.warning(f"PSM {psm} not fully complete: {psm_status.get('progress', {}).get('completed', 0)}/{total_pages} pages")
+        # Check completion using clean checkpoint API
+        all_complete = checkpoint.check_substages_complete(total_pages, required_substages)
 
-        # Check vision selection checkpoint
-        vision_checkpoint = CheckpointManager(
-            scan_id=storage.scan_id,
-            stage='ocr',
-            storage_root=storage.storage_root,
-            output_dir='ocr/psm_selection'
-        )
-        vision_status = vision_checkpoint.get_status()
-
-        if vision_status.get('status') != 'completed':
-            all_complete = False
-            logger.warning(f"Vision selection not complete: {vision_status.get('progress', {}).get('completed', 0)}/{total_pages} pages")
-
-        # Only mark main checkpoint complete if ALL sub-stages are done
-        if all_complete:
+        if not all_complete:
+            # Get detailed counts for logging
+            counts = checkpoint.get_substage_completion_counts(total_pages, required_substages)
+            for substage, count in counts.items():
+                if count < total_pages:
+                    logger.warning(f"{substage} not fully complete: {count}/{total_pages} pages")
+            logger.warning("Sub-stages incomplete - main checkpoint not marked complete")
+        else:
             logger.info("All PSM modes and vision selection complete - marking main checkpoint")
             checkpoint.mark_stage_complete()
-        else:
-            logger.warning("Sub-stages incomplete - main checkpoint not marked complete")
 
         # Generate PSM comparison reports (includes agreement analysis)
         from pipeline.ocr.analyze_psm_reports import generate_all_reports
@@ -885,26 +842,12 @@ Return JSON only. No explanations.
 
         logger.info(f"Running vision selection on {len(pages_needing_llm)} pages")
 
-        # Create vision selection checkpoint
-        vision_checkpoint = CheckpointManager(
-            scan_id=storage.scan_id,
-            stage='ocr',
-            storage_root=storage.storage_root,
-            output_dir='ocr/psm_selection'
-        )
-
-        # Get remaining pages (resume support)
-        # Use actual total pages from metadata, not max page number
+        # Get remaining pages from main checkpoint (pages without vision_psm set)
         page_nums_needing_llm = [p['page_num'] for p in pages_needing_llm]
 
-        # Get checkpoint status
-        vision_status = vision_checkpoint.get_status()
-        logger.info(f"Vision checkpoint status: {vision_status.get('status', 'not_started')}, pages_completed: {vision_status.get('pages_completed', 0)}")
-
-        remaining_pages = vision_checkpoint.get_remaining_pages(
-            total_pages=total_pages,  # Use book's total_pages, not max page needing LLM
-            resume=True
-        )
+        # Use checkpoint API to find pages without vision selection
+        all_remaining = checkpoint.get_remaining_pages_for_substage(total_pages, 'vision_psm')
+        remaining_pages = [p for p in all_remaining if p in page_nums_needing_llm]
 
         logger.info(f"Remaining pages from checkpoint: {len(remaining_pages)}/{len(page_nums_needing_llm)}")
 
@@ -914,10 +857,13 @@ Return JSON only. No explanations.
 
         if not pages_to_process:
             logger.info("All vision selection pages already complete")
-            # Get stats from checkpoint
-            status = vision_checkpoint.get_status()
+            # Get stats from main checkpoint
+            status = checkpoint.get_status()
+            # Count pages with vision_psm set
+            pages_with_vision = sum(1 for metrics in status.get('page_metrics', {}).values()
+                                   if 'vision_psm' in metrics)
             return {
-                'pages_processed': status.get('pages_completed', 0),
+                'pages_processed': pages_with_vision,
                 'total_cost_usd': status.get('metadata', {}).get('total_cost_usd', 0.0),
                 'total_time_seconds': 0.0
             }
@@ -1075,7 +1021,7 @@ Return JSON only. No explanations.
             start_time=selection_start_time,
             model=Config.vision_model_primary,
             total_requests=len(requests),
-            checkpoint=vision_checkpoint
+            checkpoint=checkpoint
         )
 
         def on_result(result: LLMResult):
@@ -1120,11 +1066,12 @@ Return JSON only. No explanations.
                             agreement_category=agreement_metrics['category']
                         )
 
-                        # Save to checkpoint (no page file needed, just metrics)
-                        vision_checkpoint.mark_completed(
+                        # Save vision selection to checkpoint (atomic, preserves PSM flags)
+                        checkpoint.mark_substage_completed(
                             page_num=page_num,
-                            cost_usd=result.cost_usd,
-                            metrics=metrics.model_dump()
+                            substage='vision_psm',
+                            value=validated.selected_psm,
+                            cost_usd=result.cost_usd
                         )
 
                         # Store for psm_selection.json update
