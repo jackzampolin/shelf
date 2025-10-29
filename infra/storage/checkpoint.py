@@ -716,3 +716,171 @@ class CheckpointManager:
                 'models': models,
                 'retry_distribution': retries
             }
+
+    # Sub-stage support methods
+
+    def mark_substage_completed(
+        self,
+        page_num: int,
+        substage: str,
+        value: Any = True,
+        cost_usd: float = 0.0
+    ):
+        """
+        Mark a sub-stage as completed for a page (thread-safe).
+
+        Atomically updates page_metrics to track sub-stage completion.
+        Preserves existing metrics for other sub-stages on the same page.
+
+        Args:
+            page_num: Page number
+            substage: Sub-stage identifier (e.g., 'psm3', 'psm4', 'vision_psm')
+            value: Value to store for this sub-stage (default: True for boolean completion)
+            cost_usd: Cost for this sub-stage in USD
+
+        Example:
+            # Mark PSM 3 complete for page 5
+            checkpoint.mark_substage_completed(5, 'psm3', True, cost_usd=0.0)
+
+            # Mark vision selection complete with selected PSM value
+            checkpoint.mark_substage_completed(42, 'vision_psm', 3, cost_usd=0.05)
+        """
+        with self._lock:
+            # Ensure page_metrics exists
+            if 'page_metrics' not in self._state:
+                self._state['page_metrics'] = {}
+
+            page_key = str(page_num)
+
+            # Get existing metrics for this page (or create new dict)
+            existing_metrics = self._state['page_metrics'].get(page_key, {})
+
+            # Update with sub-stage completion
+            existing_metrics[substage] = value
+
+            # Update cost (cumulative across sub-stages)
+            existing_cost = existing_metrics.get('cost_usd', 0.0)
+            existing_metrics['cost_usd'] = existing_cost + cost_usd
+
+            # Store updated metrics
+            self._state['page_metrics'][page_key] = existing_metrics
+
+            # Save checkpoint
+            self._save_checkpoint()
+
+    def get_remaining_pages_for_substage(
+        self,
+        total_pages: int,
+        substage: str
+    ) -> List[int]:
+        """
+        Get pages that need processing for a specific sub-stage.
+
+        Args:
+            total_pages: Total number of pages in book
+            substage: Sub-stage identifier (e.g., 'psm3', 'vision_psm')
+
+        Returns:
+            List of page numbers where this sub-stage is not complete
+
+        Example:
+            # Get pages where PSM 3 hasn't been run
+            pages = checkpoint.get_remaining_pages_for_substage(447, 'psm3')
+        """
+        with self._lock:
+            page_metrics = self._state.get('page_metrics', {})
+
+            remaining = []
+            for page_num in range(1, total_pages + 1):
+                page_key = str(page_num)
+                metrics = page_metrics.get(page_key, {})
+
+                # If substage key doesn't exist or is falsy, needs processing
+                if not metrics.get(substage):
+                    remaining.append(page_num)
+
+            return remaining
+
+    def check_substages_complete(
+        self,
+        total_pages: int,
+        required_substages: List[str]
+    ) -> bool:
+        """
+        Check if all required sub-stages are complete for all pages.
+
+        Args:
+            total_pages: Total number of pages expected
+            required_substages: List of substage identifiers that must be complete
+                               (e.g., ['psm3', 'psm4', 'psm6', 'vision_psm'])
+
+        Returns:
+            True if all sub-stages complete for all pages, False otherwise
+
+        Example:
+            # Check if OCR stage is fully complete
+            all_done = checkpoint.check_substages_complete(
+                total_pages=447,
+                required_substages=['psm3', 'psm4', 'psm6', 'vision_psm']
+            )
+        """
+        with self._lock:
+            page_metrics = self._state.get('page_metrics', {})
+
+            for page_num in range(1, total_pages + 1):
+                page_key = str(page_num)
+                metrics = page_metrics.get(page_key, {})
+
+                # Check all required sub-stages for this page
+                for substage in required_substages:
+                    # For vision_psm, check existence (value can be 0)
+                    if 'vision' in substage:
+                        if substage not in metrics:
+                            return False
+                    # For PSM completion flags, check truthiness
+                    elif not metrics.get(substage):
+                        return False
+
+            return True
+
+    def get_substage_completion_counts(
+        self,
+        total_pages: int,
+        substages: List[str]
+    ) -> Dict[str, int]:
+        """
+        Get completion counts for each sub-stage.
+
+        Args:
+            total_pages: Total number of pages
+            substages: List of substage identifiers to check
+
+        Returns:
+            Dict mapping substage -> count of completed pages
+
+        Example:
+            counts = checkpoint.get_substage_completion_counts(
+                total_pages=447,
+                substages=['psm3', 'psm4', 'psm6', 'vision_psm']
+            )
+            # Returns: {'psm3': 447, 'psm4': 445, 'psm6': 447, 'vision_psm': 320}
+        """
+        with self._lock:
+            page_metrics = self._state.get('page_metrics', {})
+
+            counts = {substage: 0 for substage in substages}
+
+            for page_num in range(1, total_pages + 1):
+                page_key = str(page_num)
+                metrics = page_metrics.get(page_key, {})
+
+                for substage in substages:
+                    # For vision_psm, check existence
+                    if 'vision' in substage:
+                        if substage in metrics:
+                            counts[substage] += 1
+                    # For PSM flags, check truthiness
+                    elif metrics.get(substage):
+                        counts[substage] += 1
+
+            return counts
