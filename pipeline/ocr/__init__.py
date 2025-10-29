@@ -301,10 +301,6 @@ class OCRStage(BaseStage):
         logger.info("Updating PSM selection file from checkpoint...")
         self._generate_psm_selection_from_checkpoint(storage, logger, total_pages)
 
-        # Copy winning PSM outputs to main ocr/ directory for downstream stages
-        logger.info("Copying winning PSM outputs to main directory...")
-        self._copy_winning_psm_outputs(storage, checkpoint, logger, total_pages)
-
         # Extract book metadata from first 15 pages (stage-specific)
         logger.info("Extracting book metadata from OCR text...")
         metadata_extracted = self._extract_metadata(storage, logger)
@@ -781,64 +777,6 @@ Return JSON only. No explanations.
         # Save updated file
         selection_file.write_text(json.dumps(selection_data, indent=2))
         logger.info(f"  Updated psm_selection.json with {len(vision_selections)} vision selections ({updated_count} changed)")
-
-    def _copy_winning_psm_outputs(
-        self,
-        storage: BookStorage,
-        checkpoint: CheckpointManager,
-        logger: PipelineLogger,
-        total_pages: int
-    ):
-        """
-        Copy winning PSM outputs to main ocr/ directory for downstream stages.
-
-        Reads vision_psm from checkpoint and copies the selected PSM's output
-        to ocr/page_*.json so downstream stages (correction, label, merge) work.
-
-        Args:
-            storage: BookStorage instance
-            checkpoint: Main checkpoint
-            logger: Logger
-            total_pages: Total number of pages
-        """
-        import shutil
-
-        ocr_dir = storage.stage('ocr').output_dir
-        status = checkpoint.get_status()
-        page_metrics = status.get('page_metrics', {})
-
-        copied_count = 0
-        skipped_count = 0
-        missing_count = 0
-
-        for page_num in range(1, total_pages + 1):
-            metrics = page_metrics.get(str(page_num), {})
-            selected_psm = metrics.get('vision_psm')
-
-            if selected_psm is None:
-                skipped_count += 1
-                continue
-
-            # Source: ocr/psm{N}/page_*.json
-            source_file = ocr_dir / f'psm{selected_psm}' / f'page_{page_num:04d}.json'
-
-            # Destination: ocr/page_*.json
-            dest_file = ocr_dir / f'page_{page_num:04d}.json'
-
-            if not source_file.exists():
-                missing_count += 1
-                logger.warning(f"  Page {page_num}: PSM {selected_psm} output not found")
-                continue
-
-            # Copy file
-            shutil.copy2(source_file, dest_file)
-            copied_count += 1
-
-        logger.info(f"  Copied {copied_count} pages to main directory")
-        if skipped_count > 0:
-            logger.info(f"  Skipped {skipped_count} pages (no vision selection)")
-        if missing_count > 0:
-            logger.warning(f"  Missing {missing_count} PSM outputs")
 
     def _run_vision_selection(
         self,
