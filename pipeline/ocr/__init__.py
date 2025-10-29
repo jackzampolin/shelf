@@ -67,6 +67,26 @@ class OCRStage(BaseStage):
         self.psm_modes = psm_modes or [3, 4, 6]
         self.progress_lock = threading.Lock()
 
+    def clean(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger):
+        """Clean OCR stage including PSM subdirectories."""
+        import shutil
+
+        ocr_dir = storage.stage(self.name).output_dir
+
+        # Remove all subdirectories and files
+        if ocr_dir.exists():
+            for item in ocr_dir.iterdir():
+                if item.is_dir():
+                    shutil.rmtree(item)
+                    logger.info(f"Removed directory: {item.name}/")
+                elif item.name != '.checkpoint':  # Preserve checkpoint for tracking
+                    item.unlink()
+                    logger.info(f"Removed file: {item.name}")
+
+        # Reset checkpoint
+        checkpoint.reset()
+        logger.info("Reset OCR checkpoint")
+
     def before(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger):
         """Validate source images exist and create PSM-specific subdirectories."""
         source_stage = storage.stage('source')
@@ -1108,8 +1128,7 @@ Return JSON only. No explanations.
         logger.info(f"Vision selection saved {len(selections)} pages to checkpoint")
 
         # Get final stats
-        status = vision_checkpoint.get_status()
-        total_cost = status.get('metadata', {}).get('total_cost_usd', 0.0)
+        total_cost = batch_stats.total_cost_usd
         completed = batch_stats.completed
 
         if failed_pages:
