@@ -138,12 +138,18 @@ class CheckpointManager:
 
     def _cleanup_temp_files(self):
         """Clean up orphaned temporary checkpoint files from previous crashes."""
+        import time
         try:
             # Look for temp files in stage directory
             temp_pattern = ".checkpoint.tmp*"
+            current_time = time.time()
             for temp_file in self.stage_dir.glob(temp_pattern):
                 try:
-                    temp_file.unlink()
+                    # Only delete temp files older than 60 seconds to avoid interfering
+                    # with concurrent writes in other threads/processes
+                    file_age = current_time - temp_file.stat().st_mtime
+                    if file_age > 60:
+                        temp_file.unlink()
                 except Exception:
                     # Best effort cleanup - don't fail if we can't delete
                     pass
@@ -160,11 +166,14 @@ class CheckpointManager:
         """
         import os
         import logging
+        import uuid
 
         # Update timestamp
         self._state['updated_at'] = datetime.now().isoformat()
 
-        temp_file = self.checkpoint_file.with_suffix('.tmp')
+        # Use unique temp file name to prevent concurrent write conflicts
+        # Multiple threads calling mark_substage_completed() concurrently need separate temp files
+        temp_file = self.checkpoint_file.with_suffix(f'.tmp.{uuid.uuid4().hex[:8]}')
 
         try:
             # Write to temp file
