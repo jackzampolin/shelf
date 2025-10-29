@@ -1086,13 +1086,23 @@ Return JSON only. No explanations.
                             agreement_category=agreement_metrics['category']
                         )
 
-                        # Save vision selection to checkpoint (atomic, preserves PSM flags)
+                        # Save vision selection substage marker
                         checkpoint.mark_substage_completed(
                             page_num=page_num,
                             substage='vision_psm',
                             value=validated.selected_psm,
                             cost_usd=result.cost_usd
                         )
+
+                        # Merge full metrics into existing page metrics for progress bar display
+                        # Note: mark_completed() would skip since page already has PSM metrics,
+                        # so we manually update the checkpoint state
+                        with checkpoint._lock:
+                            page_key = str(page_num)
+                            if page_key in checkpoint._state.get('page_metrics', {}):
+                                # Merge vision metrics with existing PSM metrics
+                                checkpoint._state['page_metrics'][page_key].update(metrics.model_dump())
+                                checkpoint._save_checkpoint()
 
                         # Store for psm_selection.json update
                         selections[page_num] = {
