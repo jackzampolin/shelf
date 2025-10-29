@@ -692,6 +692,68 @@ class BookStorage:
             metadata.update(updates)
             self._save_metadata_unsafe(metadata)
 
+    # ===== OCR Helpers =====
+
+    def load_selected_ocr(self, page_num: int):
+        """
+        Load OCR output from winning PSM for this page.
+
+        After OCR stage runs with multi-PSM processing, this helper loads
+        the OCR output from the selected PSM subdirectory.
+
+        Args:
+            page_num: Page number to load
+
+        Returns:
+            OCRPageOutput from the selected PSM
+
+        Raises:
+            FileNotFoundError: If psm_selection.json doesn't exist
+            ValueError: If no PSM selection found for this page
+            FileNotFoundError: If OCR file doesn't exist for selected PSM
+
+        Example:
+            >>> ocr_page = storage.load_selected_ocr(42)
+            >>> # Loads from ocr/psm3/page_0042.json (if PSM 3 was selected)
+        """
+        from pipeline.ocr.schemas import OCRPageOutput
+
+        # Load PSM selection file
+        selection_file = self.stage('ocr').output_dir / 'psm_selection.json'
+
+        if not selection_file.exists():
+            raise FileNotFoundError(
+                f"PSM selection file not found: {selection_file}. "
+                f"OCR stage must complete vision selection first."
+            )
+
+        with open(selection_file) as f:
+            selection_data = json.load(f)
+
+        # Get winning PSM for this page
+        page_selections = selection_data.get('page_selections', {})
+        selected_psm = page_selections.get(str(page_num))
+
+        if selected_psm is None:
+            raise ValueError(
+                f"No PSM selection found for page {page_num}. "
+                f"Available pages: {sorted([int(p) for p in page_selections.keys()])[:10]}"
+            )
+
+        # Load from PSM subdirectory
+        ocr_file = self.stage('ocr').output_dir / f'psm{selected_psm}' / f'page_{page_num:04d}.json'
+
+        if not ocr_file.exists():
+            raise FileNotFoundError(
+                f"OCR file not found: {ocr_file}. "
+                f"PSM {selected_psm} was selected but file is missing."
+            )
+
+        with open(ocr_file) as f:
+            ocr_data = json.load(f)
+
+        return OCRPageOutput(**ocr_data)
+
     # ===== Validation =====
 
     def validate_book(self) -> Dict[str, bool]:
