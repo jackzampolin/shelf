@@ -631,11 +631,14 @@ def _sweep_stage(library, all_books, args):
     print(f"   Press Ctrl+C to stop at any time")
     print(f"   Tip: Use --reshuffle to create a new random order\n")
 
-    # Phase 1: Determine which books need processing and clean them all first
+    # Phase 1: Determine which books need processing (and clean if --force)
     books_to_process = []
     skipped_count = 0
 
-    print("Phase 1: Checking status and cleaning...")
+    if args.force:
+        print("Phase 1: Checking status and cleaning...")
+    else:
+        print("Phase 1: Checking status (resume mode)...")
     for idx, scan_id in enumerate(scan_ids, 1):
         try:
             storage = library.get_book_storage(scan_id)
@@ -650,33 +653,47 @@ def _sweep_stage(library, all_books, args):
                     skipped_count += 1
                     continue
 
-            # Clean stage
-            print(f"  [{idx}/{len(scan_ids)}] 🧹 {scan_id}: Cleaning {args.target} stage...")
-            if stage_storage.output_dir.exists():
-                for item in stage_storage.output_dir.iterdir():
-                    if item.name == '.gitkeep':
-                        continue
-                    if item.is_file():
-                        item.unlink()
-                    elif item.is_dir():
-                        shutil.rmtree(item)
+            # Only clean if --force flag is set
+            if args.force:
+                print(f"  [{idx}/{len(scan_ids)}] 🧹 {scan_id}: Cleaning {args.target} stage...")
+                if stage_storage.output_dir.exists():
+                    for item in stage_storage.output_dir.iterdir():
+                        if item.name == '.gitkeep':
+                            continue
+                        if item.is_file():
+                            item.unlink()
+                        elif item.is_dir():
+                            shutil.rmtree(item)
 
-            # Reset checkpoint
-            checkpoint.reset(confirm=False)
+                # Reset checkpoint
+                checkpoint.reset(confirm=False)
+            else:
+                # Resume from checkpoint - check if in progress
+                status = checkpoint.get_status()
+                if status.get('status') == 'in_progress':
+                    completed_pages = len(status.get('completed_pages', []))
+                    total_pages = status.get('total_pages', 0)
+                    print(f"  [{idx}/{len(scan_ids)}] ▶️  {scan_id}: Resuming ({completed_pages}/{total_pages} complete)")
+                else:
+                    print(f"  [{idx}/{len(scan_ids)}] ▶️  {scan_id}: Will process")
 
             # Add to process list
             books_to_process.append(scan_id)
 
         except KeyboardInterrupt:
-            print(f"\n\n⚠️  Interrupted during cleaning phase")
-            print(f"   Cleaned: {len(books_to_process)}, Skipped: {skipped_count}, Remaining: {len(scan_ids) - idx}")
-            print(f"   Note: {len(books_to_process)} books were cleaned and need processing")
+            print(f"\n\n⚠️  Interrupted during Phase 1")
+            print(f"   Queued: {len(books_to_process)}, Skipped: {skipped_count}, Remaining: {len(scan_ids) - idx}")
+            if args.force:
+                print(f"   Note: {len(books_to_process)} books were cleaned and need processing")
             sys.exit(0)
         except Exception as e:
-            print(f"  [{idx}/{len(scan_ids)}] ❌ {scan_id}: Error during cleaning: {e}")
+            print(f"  [{idx}/{len(scan_ids)}] ❌ {scan_id}: Error during Phase 1: {e}")
             continue
 
-    print(f"\nPhase 1 complete: Cleaned {len(books_to_process)} books, skipped {skipped_count}")
+    if args.force:
+        print(f"\nPhase 1 complete: Cleaned {len(books_to_process)} books, skipped {skipped_count}")
+    else:
+        print(f"\nPhase 1 complete: {len(books_to_process)} books to process, {skipped_count} skipped")
 
     if not books_to_process:
         print("\n✅ No books to process")
