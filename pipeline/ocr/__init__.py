@@ -1081,6 +1081,7 @@ Return JSON only. No explanations.
                             # Vision selection specific
                             selected_psm=validated.selected_psm,
                             confidence=validated.confidence,
+                            reason=validated.reason,
                             alternatives_rejected=alternatives,
                             agreement_similarity=agreement_metrics['avg_similarity'],
                             agreement_category=agreement_metrics['category']
