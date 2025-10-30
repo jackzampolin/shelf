@@ -1,4 +1,4 @@
-"""Provider-specific schemas for OCR v2."""
+"""Provider-specific schemas for OCR."""
 
 from .selection import ProviderSelection
 from .output import ProviderOutput

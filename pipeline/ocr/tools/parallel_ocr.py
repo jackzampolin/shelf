@@ -1,5 +1,5 @@
 """
-Parallel OCR orchestrator for OCR v2 (Phase 1).
+Parallel OCR orchestrator for OCR (Phase 1).
 
 Executes all OCR providers in parallel using ProcessPoolExecutor,
 with incremental checkpoint updates as each provider completes.
@@ -16,7 +16,7 @@ from infra.pipeline.rich_progress import RichProgressBar
 
 from ..providers import OCRProvider, TesseractProvider
 from .worker import process_ocr_task
-from ..storage import OCRStageV2Storage
+from ..storage import OCRStageStorage
 from ..status import OCRStageStatus
 
 
@@ -24,7 +24,7 @@ def run_parallel_ocr(
     storage: BookStorage,
     checkpoint: CheckpointManager,
     logger: PipelineLogger,
-    ocr_storage: OCRStageV2Storage,
+    ocr_storage: OCRStageStorage,
     providers: List[OCRProvider],
     output_schema,  # OCRPageOutput schema
     total_pages: int,
@@ -40,7 +40,7 @@ def run_parallel_ocr(
         storage: BookStorage instance
         checkpoint: CheckpointManager instance
         logger: PipelineLogger instance
-        ocr_storage: OCRStageV2Storage instance
+        ocr_storage: OCRStageStorage instance
         providers: List of OCR providers
         output_schema: Pydantic schema for validation (OCRPageOutput)
         total_pages: Total pages in book

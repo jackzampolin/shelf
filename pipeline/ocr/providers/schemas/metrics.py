@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class OCRPageMetrics(BaseModel):
     """
-    Checkpoint metrics for OCRv2 stage.
+    Checkpoint metrics for OCR stage.
 
     Flat provider list approach - tracks which providers completed,
     and which was ultimately selected.

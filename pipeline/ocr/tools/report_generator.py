@@ -1,5 +1,5 @@
 """
-Report generation for OCR v2 (Phase 4).
+Report generation for OCR (Phase 4).
 
 Generates report.csv from checkpoint metrics after all pages are complete.
 """
@@ -12,7 +12,7 @@ from infra.storage.book_storage import BookStorage
 from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 
-from ..storage import OCRStageV2Storage
+from ..storage import OCRStageStorage
 from ..schemas import OCRPageReport
 
 
@@ -20,7 +20,7 @@ def generate_report(
     storage: BookStorage,
     checkpoint: CheckpointManager,
     logger: PipelineLogger,
-    ocr_storage: OCRStageV2Storage,
+    ocr_storage: OCRStageStorage,
     report_schema,  # OCRPageReport
 ) -> Optional[Path]:
     """
@@ -32,7 +32,7 @@ def generate_report(
         storage: BookStorage instance
         checkpoint: CheckpointManager instance
         logger: PipelineLogger instance
-        ocr_storage: OCRStageV2Storage instance
+        ocr_storage: OCRStageStorage instance
         report_schema: Pydantic schema for report (OCRPageReport)
 
     Returns:

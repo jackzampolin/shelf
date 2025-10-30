@@ -1,7 +1,7 @@
 """
-OCR Stage V2 Storage
+OCR Stage Storage
 
-Handles all file I/O operations for OCR v2 stage using thread-safe StageStorage APIs.
+Handles all file I/O operations for OCR stage using thread-safe StageStorage APIs.
 Separates storage logic from pipeline orchestration.
 """
 
@@ -12,9 +12,9 @@ from infra.storage.book_storage import BookStorage
 from .providers.schemas import ProviderSelection
 
 
-class OCRStageV2Storage:
+class OCRStageStorage:
     """
-    Storage manager for OCR v2 stage.
+    Storage manager for OCR stage.
 
     Wraps StageStorage to provide OCR-specific convenience methods
     while using thread-safe file operations.
@@ -27,10 +27,10 @@ class OCRStageV2Storage:
     All file I/O uses StageStorage APIs for thread safety.
     """
 
-    def __init__(self, stage_name: str = "ocr_v2"):
+    def __init__(self, stage_name: str = "ocr"):
         """
         Args:
-            stage_name: OCR stage name (default: "ocr_v2")
+            stage_name: OCR stage name (default: "ocr")
         """
         self.stage_name = stage_name
 

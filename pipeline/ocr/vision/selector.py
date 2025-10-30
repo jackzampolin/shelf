@@ -1,5 +1,5 @@
 """
-Vision-based provider selection for OCR v2 (Phase 2c).
+Vision-based provider selection for OCR (Phase 2c).
 
 For low-agreement pages (agreement < 0.95), uses vision model to examine
 the source image and select the best OCR provider output.
@@ -17,7 +17,7 @@ from infra.utils.pdf import downsample_for_vision
 from infra.config import Config
 
 from ..providers import OCRProvider
-from ..storage import OCRStageV2Storage
+from ..storage import OCRStageStorage
 from ..status import OCRStageStatus
 from ..tools.agreement import _load_provider_outputs
 from .prompts import SYSTEM_PROMPT, build_user_prompt
@@ -28,7 +28,7 @@ def vision_select_pages(
     storage: BookStorage,
     checkpoint: CheckpointManager,
     logger: PipelineLogger,
-    ocr_storage: OCRStageV2Storage,
+    ocr_storage: OCRStageStorage,
     providers: List[OCRProvider],
     page_numbers: List[int],
     total_pages: int,
@@ -44,7 +44,7 @@ def vision_select_pages(
         storage: BookStorage instance
         checkpoint: CheckpointManager instance
         logger: PipelineLogger instance
-        ocr_storage: OCRStageV2Storage instance
+        ocr_storage: OCRStageStorage instance
         providers: List of OCR providers
         page_numbers: List of page numbers to process
         total_pages: Total pages in book (for prompt context)
@@ -147,7 +147,7 @@ def vision_select_pages(
 
 def _build_vision_requests(
     storage: BookStorage,
-    ocr_storage: OCRStageV2Storage,
+    ocr_storage: OCRStageStorage,
     logger: PipelineLogger,
     providers: List[OCRProvider],
     page_numbers: List[int],

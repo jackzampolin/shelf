@@ -1,5 +1,5 @@
 """
-Agreement calculation for OCR v2 provider selection (Phase 2a).
+Agreement calculation for OCR provider selection (Phase 2a).
 
 Calculates text similarity across OCR provider outputs to determine
 if providers agree on the page content.
@@ -14,14 +14,14 @@ from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.rich_progress import RichProgressBar
 
 from ..providers import OCRProvider
-from ..storage import OCRStageV2Storage
+from ..storage import OCRStageStorage
 
 
 def calculate_agreements(
     storage: BookStorage,
     checkpoint: CheckpointManager,
     logger: PipelineLogger,
-    ocr_storage: OCRStageV2Storage,
+    ocr_storage: OCRStageStorage,
     providers: List[OCRProvider],
     page_numbers: List[int],
 ):
@@ -35,7 +35,7 @@ def calculate_agreements(
         storage: BookStorage instance
         checkpoint: CheckpointManager instance
         logger: PipelineLogger instance
-        ocr_storage: OCRStageV2Storage instance
+        ocr_storage: OCRStageStorage instance
         providers: List of OCR providers
         page_numbers: List of page numbers to process
     """
@@ -81,7 +81,7 @@ def calculate_agreements(
 
 def _load_provider_outputs(
     storage: BookStorage,
-    ocr_storage: OCRStageV2Storage,
+    ocr_storage: OCRStageStorage,
     providers: List[OCRProvider],
     page_num: int,
 ) -> Dict[str, Dict[str, Any]]:

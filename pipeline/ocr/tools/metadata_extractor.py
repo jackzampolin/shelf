@@ -1,5 +1,5 @@
 """
-Metadata extraction for OCR v2 (Phase 3).
+Metadata extraction for OCR (Phase 3).
 
 Extracts book metadata (title, author, year, publisher, etc.) from
 the first 15 pages of OCR output after all pages have been selected.
@@ -14,7 +14,7 @@ from infra.pipeline.logger import PipelineLogger
 from infra.llm.batch_client import LLMBatchClient, LLMRequest, LLMResult
 from infra.config import Config
 
-from ..storage import OCRStageV2Storage
+from ..storage import OCRStageStorage
 from ..status import OCRStageStatus
 
 
@@ -22,7 +22,7 @@ def extract_metadata(
     storage: BookStorage,
     checkpoint: CheckpointManager,
     logger: PipelineLogger,
-    ocr_storage: OCRStageV2Storage,
+    ocr_storage: OCRStageStorage,
     num_pages: int = 15,
 ) -> bool:
     """
@@ -36,7 +36,7 @@ def extract_metadata(
         storage: BookStorage instance
         checkpoint: CheckpointManager instance
         logger: PipelineLogger instance
-        ocr_storage: OCRStageV2Storage instance
+        ocr_storage: OCRStageStorage instance
         num_pages: Number of pages to analyze (default: 15)
 
     Returns:

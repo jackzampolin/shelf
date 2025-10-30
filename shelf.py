@@ -38,7 +38,6 @@ from infra.config import Config
 
 # Import Stage classes
 from pipeline.ocr import OCRStage
-from pipeline.ocr_v2 import OCRStageV2
 from pipeline.correction import CorrectionStage
 from pipeline.label import LabelStage
 from pipeline.merged import MergeStage
@@ -192,7 +191,6 @@ def cmd_library_status(args):
     # Check each stage
     stages = [
         ('ocr', 'OCR'),
-        ('ocr_v2', 'OCR v2'),
         ('corrected', 'Correction'),
         ('labels', 'Label'),
         ('merged', 'Merge')
@@ -232,8 +230,8 @@ def cmd_library_status(args):
             mins = stage_metrics['total_time_seconds'] / 60
             print(f"   Time:   {mins:.1f}m")
 
-        # OCR v2 specific details
-        if stage_name == 'ocr_v2' and stage_status not in ['not_started', 'completed']:
+        # OCR specific details
+        if stage_name == 'ocr' and stage_status not in ['not_started', 'completed']:
             providers = status.get('providers', {})
             if providers:
                 print(f"   Providers:")
@@ -268,7 +266,6 @@ def cmd_stage_status(args):
     # Get stage instance
     stage_map = {
         'ocr': OCRStage(),
-        'ocr_v2': OCRStageV2(),
         'corrected': CorrectionStage(),
         'labels': LabelStage(),
         'merged': MergeStage(),
@@ -573,7 +570,6 @@ def cmd_process(args):
 
     stage_map = {
         'ocr': OCRStage(max_workers=args.workers if args.workers else None),
-        'ocr_v2': OCRStageV2(max_workers=args.workers if args.workers else None),
         'corrected': CorrectionStage(
             model=args.model,
             max_workers=args.workers if args.workers else 30,
@@ -821,7 +817,6 @@ def _sweep_stage(library, all_books, args):
 def _sweep_reports(library, all_books, args):
     """Sweep through library regenerating reports from checkpoint data."""
     from pipeline.ocr import OCRStage
-    from pipeline.ocr_v2 import OCRStageV2
     from pipeline.correction import CorrectionStage
     from pipeline.label import LabelStage
     from pipeline.merged import MergeStage
@@ -832,7 +827,6 @@ def _sweep_reports(library, all_books, args):
     # Map stage names to instances
     stage_map = {
         'ocr': OCRStage(),
-        'ocr_v2': OCRStageV2(),
         'corrected': CorrectionStage(),
         'labels': LabelStage(),
         'merged': MergeStage(),

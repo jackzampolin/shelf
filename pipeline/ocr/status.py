@@ -1,5 +1,5 @@
 """
-OCR Stage V2 Status Tracker
+OCR Stage Status Tracker
 
 Responsible for calculating progress by checking files on disk (ground truth).
 Separates status tracking logic from the main stage implementation.
@@ -14,12 +14,12 @@ from infra.storage.book_storage import BookStorage
 from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 
-from .storage import OCRStageV2Storage
+from .storage import OCRStageStorage
 
 
 class OCRStageStatus(str, Enum):
     """
-    OCR Stage V2 status progression.
+    OCR Stage status progression.
 
     Ordered from start to completion, reflecting the actual pipeline flow.
     """
@@ -65,9 +65,9 @@ class OCRStageStatus(str, Enum):
         return order_map.get(status, 0)
 
 
-class OCRStageV2Status:
+class OCRStatusTracker:
     """
-    Status tracker for OCR v2 stage.
+    Status tracker for OCR stage.
 
     Ground truth: Files on disk, not checkpoint state.
     - A page is complete when it appears in selection_map.json
@@ -77,12 +77,12 @@ class OCRStageV2Status:
     def __init__(self, stage_name: str, provider_names: List[str]):
         """
         Args:
-            stage_name: OCR stage name (e.g., "ocr_v2")
+            stage_name: OCR stage name (e.g., "ocr")
             provider_names: List of provider names to track
         """
         self.stage_name = stage_name
         self.provider_names = provider_names
-        self.storage = OCRStageV2Storage(stage_name=stage_name)
+        self.storage = OCRStageStorage(stage_name=stage_name)
 
     def get_progress(
         self,
