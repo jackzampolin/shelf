@@ -5,6 +5,9 @@ Prompts for LLM to select best OCR output by comparing multiple PSM modes
 against the original page image.
 """
 
+import json
+from pipeline.ocr_v2.tools.downsample import downsample_ocr_for_vision, calculate_ocr_summary_stats
+
 SYSTEM_PROMPT = """<role>
 You are an OCR quality evaluator for book digitization. Your job is to select the best OCR output for a book page by comparing multiple page segmentation modes against the original image.
 </role>
@@ -74,8 +77,8 @@ Examples of bad reasons:
 def build_user_prompt(
     page_num: int,
     total_pages: int,
-    book_metadata: dict,
-    psm_outputs: dict,
+    book_metadata: dict = None,
+    psm_outputs: dict = None,
     agreement_metrics: dict = None
 ) -> str:
     """
@@ -84,21 +87,27 @@ def build_user_prompt(
     Args:
         page_num: Current page number
         total_pages: Total pages in book
-        book_metadata: Book metadata (title, author, etc.)
+        book_metadata: Optional book metadata (title, author, etc.)
         psm_outputs: Dict mapping PSM mode to OCRPageOutput dict
         agreement_metrics: Optional agreement analysis metrics
 
     Returns:
         Formatted user prompt string
     """
-    # Build context
-    title = book_metadata.get('title', 'Unknown')
-    author = book_metadata.get('author', 'Unknown')
-
+    # Build context (metadata optional)
     prompt_parts = [
         f"**Page {page_num} of {total_pages}**",
-        f"Book: {title}",
-        f"Author: {author}",
+    ]
+
+    if book_metadata:
+        title = book_metadata.get('title', 'Unknown')
+        author = book_metadata.get('author', 'Unknown')
+        prompt_parts.extend([
+            f"Book: {title}",
+            f"Author: {author}",
+        ])
+
+    prompt_parts.extend([
         "",
         "**Instructions:**",
         "1. First, carefully examine the page image below",
@@ -106,7 +115,7 @@ def build_user_prompt(
         "3. Then review the three OCR outputs and compare their block/paragraph structure to what you see",
         "4. Select the PSM mode whose structure best matches the visual layout",
         ""
-    ]
+    ])
 
     # Note: We intentionally do NOT include agreement_metrics here
     # The LLM should make decisions based purely on visual inspection,
@@ -119,50 +128,18 @@ def build_user_prompt(
 
         ocr_data = psm_outputs[psm_mode]
 
-        # Calculate summary stats
-        num_blocks = len(ocr_data.get('blocks', []))
-        num_paragraphs = sum(
-            len(block.get('paragraphs', []))
-            for block in ocr_data.get('blocks', [])
-        )
-
-        # Calculate mean confidence
-        all_confidences = []
-        for block in ocr_data.get('blocks', []):
-            for para in block.get('paragraphs', []):
-                all_confidences.append(para.get('confidence', 0.0))
-
-        mean_conf = sum(all_confidences) / len(all_confidences) if all_confidences else 0.0
+        # Calculate summary stats using utility function
+        stats = calculate_ocr_summary_stats(ocr_data)
 
         prompt_parts.append(f"### PSM {psm_mode}")
-        prompt_parts.append(f"- Blocks: {num_blocks}")
-        prompt_parts.append(f"- Paragraphs: {num_paragraphs}")
-        prompt_parts.append(f"- Mean confidence: {mean_conf:.3f}")
+        prompt_parts.append(f"- Blocks: {stats['num_blocks']}")
+        prompt_parts.append(f"- Paragraphs: {stats['num_paragraphs']}")
+        prompt_parts.append(f"- Mean confidence: {stats['mean_confidence']:.3f}")
         prompt_parts.append("")
 
         # Include structural summary (NO TEXT - just metadata for layout evaluation)
         # This keeps prompts small and focuses LLM on visual structure vs text comparison
-        import json
-        structure_summary = {
-            "blocks": [
-                {
-                    "block_num": block.get('block_num'),
-                    "bbox": block.get('bbox'),
-                    "confidence": block.get('confidence'),
-                    "paragraphs": [
-                        {
-                            "par_num": para.get('par_num'),
-                            "bbox": para.get('bbox'),
-                            "confidence": para.get('confidence'),
-                            "word_count": len(para.get('text', '').split()),
-                            "text_preview": para.get('text', '')[:100]  # First 100 chars only
-                        }
-                        for para in block.get('paragraphs', [])
-                    ]
-                }
-                for block in ocr_data.get('blocks', [])
-            ]
-        }
+        structure_summary = downsample_ocr_for_vision(ocr_data, text_preview_chars=100)
 
         prompt_parts.append("```json")
         prompt_parts.append(json.dumps(structure_summary, indent=2))

@@ -80,7 +80,15 @@ def run_stage(
         # Check if already complete
         status = checkpoint.get_status()
         if status.get('status') == 'completed':
-            # Validate that outputs actually exist before trusting checkpoint
+            # Self-validating stages manage their own completion status
+            if stage.self_validating:
+                print(f"   Stage already complete (self-validating), running after() hook")
+                logger.info("Stage already complete (self-validating), skipping")
+                # Call after() hook for post-processing (e.g., analysis)
+                stage.after(storage, checkpoint, logger, status.get('metadata', {}))
+                return status.get('metadata', {})
+
+            # For non-self-validating stages, validate outputs exist
             metadata = storage.load_metadata()
             total_pages = metadata.get('total_pages', 0)
 

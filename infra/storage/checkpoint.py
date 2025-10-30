@@ -126,8 +126,7 @@ class CheckpointManager:
             "status": "not_started",
             "total_pages": 0,
             "metadata": {
-                "pages_failed": 0,
-                "accumulated_duration_seconds": 0.0
+                "pages_failed": 0
             },
             "page_metrics": {},  # Source of truth: completed_pages, progress, total_cost derived from this
             "validation": {
@@ -411,28 +410,32 @@ class CheckpointManager:
             # This ensures pages completed since last incremental save are recorded
             self._save_checkpoint()
 
-            # Calculate this run's duration
-            current_run_duration = 0.0
+            # Calculate wall time for this run (created_at -> now)
+            this_run_wall_time = 0.0
             if self._state.get('created_at'):
                 try:
                     start_time = datetime.fromisoformat(self._state['created_at'])
                     end_time = datetime.now()
-                    current_run_duration = (end_time - start_time).total_seconds()
+                    this_run_wall_time = (end_time - start_time).total_seconds()
                 except:
                     pass
 
-            # Accumulate duration in metadata (don't rely on created_at/completed_at timestamps)
-            existing_duration = self._state.get('metadata', {}).get('accumulated_duration_seconds', 0.0)
-            total_duration = existing_duration + current_run_duration
+            # Accumulate wall time across runs (for cancel/resume scenarios)
+            existing_wall_time = self._state.get('metadata', {}).get('wall_time_seconds', 0.0)
+            total_wall_time = existing_wall_time + this_run_wall_time
 
             self._state['status'] = 'completed'
             self._state['completed_at'] = datetime.now().isoformat()
 
+            # Clear error fields from previous failed runs
+            self._state.pop('error', None)
+            self._state.pop('failed_at', None)
+
             if metadata:
                 self._state['metadata'].update(metadata)
 
-            # Always set accumulated duration
-            self._state['metadata']['accumulated_duration_seconds'] = total_duration
+            # Store accumulated wall time across all runs
+            self._state['metadata']['wall_time_seconds'] = total_wall_time
 
             # Save again with completion status
             self._save_checkpoint()
@@ -525,6 +528,20 @@ class CheckpointManager:
             status['metadata']['total_cost_usd'] = total_cost
             status['metadata']['pages_processed'] = completed
 
+            # Calculate elapsed time (wall time from created_at to now or completed_at)
+            elapsed_time = 0.0
+            if status.get('created_at'):
+                try:
+                    start_time = datetime.fromisoformat(status['created_at'])
+                    if status.get('completed_at'):
+                        end_time = datetime.fromisoformat(status['completed_at'])
+                    else:
+                        end_time = datetime.now()
+                    elapsed_time = (end_time - start_time).total_seconds()
+                except:
+                    pass
+            status['elapsed_time'] = elapsed_time
+
             return status
 
     def validate_completed_status(self, total_pages: int) -> bool:
@@ -606,14 +623,22 @@ class CheckpointManager:
         with self._lock:
             progress = self._state['progress']
             status = self._state['status']
+            phase = self._state.get('phase')
+            phase_details = self._state.get('phase_details')
 
             if status == 'completed':
                 return f"✅ Stage completed - {progress['completed']} pages"
             elif status == 'in_progress':
-                return (
+                base_status = (
                     f"⏳ In progress - {progress['completed']}/{self._state['total_pages']} "
                     f"({progress['percent']:.1f}%) - {progress['remaining']} remaining"
                 )
+                if phase:
+                    phase_str = f" [{phase}]"
+                    if phase_details:
+                        phase_str += f" {phase_details}"
+                    return base_status + phase_str
+                return base_status
             elif status == 'failed':
                 return f"❌ Failed - {progress['completed']} pages completed before failure"
             else:
@@ -632,6 +657,53 @@ class CheckpointManager:
         with self._lock:
             page_metrics = self._state.get('page_metrics', {})
             return page_metrics.get(str(page_num))
+
+    def update_page_metrics(self, page_num: int, updates: Dict[str, Any]):
+        """
+        Update (merge) metrics for a page atomically.
+
+        Unlike mark_completed() which skips existing pages, this method
+        updates existing metrics by merging new fields in.
+
+        Args:
+            page_num: Page number to update
+            updates: Dict of fields to merge into existing metrics
+        """
+        with self._lock:
+            if 'page_metrics' not in self._state:
+                self._state['page_metrics'] = {}
+
+            page_key = str(page_num)
+
+            # Get existing metrics or create empty dict
+            existing = self._state['page_metrics'].get(page_key, {})
+
+            # Merge updates into existing
+            existing.update(updates)
+
+            # Save back
+            self._state['page_metrics'][page_key] = existing
+
+            # Persist to disk
+            self._save_checkpoint()
+
+    def set_phase(self, phase: str, details: Optional[str] = None):
+        """
+        Set the current processing phase for better status visibility.
+
+        Useful for multi-phase stages (e.g., OCR: extraction -> selection)
+        to show what's happening when looking at status.
+
+        Args:
+            phase: Phase name (e.g., "running-ocr", "running-vision", "calculating-agreement")
+            details: Optional details (e.g., "51/1341 tasks")
+        """
+        with self._lock:
+            self._state['phase'] = phase
+            if details:
+                self._state['phase_details'] = details
+            self._state['phase_updated_at'] = datetime.now().isoformat()
+            self._save_checkpoint()
 
     def get_all_metrics(self) -> Dict[int, Dict[str, Any]]:
         """

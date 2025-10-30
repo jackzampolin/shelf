@@ -64,6 +64,10 @@ class BaseStage:
     checkpoint_schema: Type[BaseModel] = BasePageMetrics
     report_schema: Optional[Type[BaseModel]] = None  # Quality-focused subset for reports
 
+    # Set to True for stages that manage their own completion validation
+    # (e.g., OCR v2 with multi-phase status tracking)
+    self_validating: bool = False
+
     def before(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger) -> None:
         """
         Pre-flight hook: Validate inputs, check dependencies.
