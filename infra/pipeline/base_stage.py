@@ -1,8 +1,17 @@
 """
 Base Stage abstraction for pipeline stages.
 
-Provides lifecycle hooks (before/run/after) and standardized interface.
+Provides lifecycle hooks (before/get_progress/run/after) and standardized interface.
 Each stage implements its own processing logic.
+
+Modern stages (OCR pattern):
+- Implement get_progress() to track multi-phase work
+- Handle all processing (including reports) in run()
+- Don't override after() (backward compatibility only)
+
+Legacy stages (Correction/Label pattern):
+- Use checkpoint.get_remaining_pages() in run()
+- Rely on after() for report generation
 """
 
 from typing import Dict, List, Any, Type, Optional
@@ -19,10 +28,16 @@ class BaseStage:
     """
     Base class for all pipeline stages.
 
-    Lifecycle:
+    Lifecycle (Modern Pattern - OCR):
         1. before() - Pre-flight checks, input validation
-        2. run() - Main processing logic (REQUIRED)
-        3. after() - Post-processing, reports, output validation
+        2. get_progress() - Calculate what work remains (multi-phase aware)
+        3. run() - Main processing logic, handles all phases including reports
+        4. after() - NOT USED (backward compatibility only)
+
+    Lifecycle (Legacy Pattern - Correction/Label):
+        1. before() - Pre-flight checks, input validation
+        2. run() - Main processing logic (page-by-page)
+        3. after() - Post-processing, report generation
 
     Subclasses must:
         - Set `name` class attribute
@@ -33,23 +48,48 @@ class BaseStage:
         - `input_schema`: Pydantic model for input data from dependencies
         - `output_schema`: Pydantic model for output data written by stage
         - `checkpoint_schema`: Pydantic model for metrics tracked in checkpoint
+        - `report_schema`: Quality-focused subset for CSV reports (optional)
 
     Subclasses may override:
+        - get_progress() for multi-phase progress tracking
         - before() for input validation
-        - after() for custom reports/validation (default generates report.csv)
+        - after() for legacy report generation (new stages handle in run())
 
-    Example:
+    Example (Modern Pattern):
+        class OCRStage(BaseStage):
+            name = "ocr"
+            dependencies = ["source"]
+            output_schema = OCRPageOutput
+            checkpoint_schema = OCRPageMetrics
+            report_schema = OCRPageReport
+
+            def get_progress(self, storage, checkpoint, logger):
+                # Calculate multi-phase progress
+                return {"status": ..., "remaining_pages": ..., ...}
+
+            def run(self, storage, checkpoint, logger):
+                progress = self.get_progress(storage, checkpoint, logger)
+                # Phase 1: OCR extraction
+                # Phase 2: Selection
+                # Phase 3: Metadata extraction
+                # Phase 4: Report generation
+                return {"pages_processed": 100}
+
+    Example (Legacy Pattern):
         class CorrectionStage(BaseStage):
             name = "corrected"
             dependencies = ["ocr"]
-
-            input_schema = OCRPageOutput
             output_schema = CorrectionPageOutput
             checkpoint_schema = CorrectionPageMetrics
+            report_schema = CorrectionPageReport
 
             def run(self, storage, checkpoint, logger):
-                # Correction logic here
-                return {"pages_processed": 100}
+                # Simple page-by-page processing
+                remaining = checkpoint.get_remaining_pages(total, resume=True)
+                for page_num in remaining:
+                    # Process page
+                    checkpoint.mark_completed(page_num, ...)
+                return {"pages_processed": len(remaining)}
 
             # after() inherited - auto-generates report.csv from checkpoint
     """
@@ -65,8 +105,49 @@ class BaseStage:
     report_schema: Optional[Type[BaseModel]] = None  # Quality-focused subset for reports
 
     # Set to True for stages that manage their own completion validation
-    # (e.g., OCR v2 with multi-phase status tracking)
+    # (e.g., OCR with multi-phase status tracking)
     self_validating: bool = False
+
+    def get_progress(
+        self,
+        storage: BookStorage,
+        checkpoint: CheckpointManager,
+        logger: PipelineLogger
+    ) -> Dict[str, Any]:
+        """
+        Get detailed progress information for this stage.
+
+        Optional hook for stages with complex multi-phase processing
+        (e.g., OCR with provider selection phases).
+
+        Use for:
+        - Calculating what work remains (page-by-page, phase-by-phase)
+        - Determining current status (not_started, running, completed)
+        - Providing detailed progress for resume logic
+
+        Args:
+            storage: BookStorage instance for this book
+            checkpoint: CheckpointManager for this stage
+            logger: Logger instance for this stage
+
+        Returns:
+            Dict with progress details. Common keys:
+            - "status": Current stage status (e.g., "running-ocr", "completed")
+            - "total_pages": Total pages in book
+            - "remaining_pages": List of incomplete page numbers
+            - "metrics": Aggregate metrics (cost, time, etc.)
+
+        Default: Returns basic checkpoint-based progress
+        """
+        # Default implementation: Basic checkpoint progress
+        total_pages = storage.metadata.get('total_pages', 0)
+        remaining = checkpoint.get_remaining_pages(total_pages, resume=True)
+
+        return {
+            "status": "completed" if len(remaining) == 0 else "in_progress",
+            "total_pages": total_pages,
+            "remaining_pages": remaining,
+        }
 
     def before(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger) -> None:
         """
