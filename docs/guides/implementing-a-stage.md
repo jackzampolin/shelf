@@ -271,27 +271,7 @@ llm_calls/correction/
 
 ## Testing Your Stage
 
-```python
-def test_my_stage(tmp_path):
-    # Setup fake dependency
-    book_dir = tmp_path / "test-book"
-    prev_dir = book_dir / "prev_stage"
-    prev_dir.mkdir(parents=True)
-
-    # Create fake inputs
-    for i in range(1, 6):
-        (prev_dir / f"page_{i:04d}.json").write_text('{"page_number": ' + str(i) + '}')
-
-    # Run stage
-    storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-    stage = MyStage()
-    stats = run_stage(stage, storage)
-
-    # Verify outputs
-    my_dir = book_dir / "my_stage"
-    assert (my_dir / "page_0001.json").exists()
-    assert (my_dir / "report.csv").exists()
-```
+The User will run the stage when it is time to test. DO NOT run these stages youself in background jobs. these stages cost money and the user wants a nice command line experience so is using our coding time together to audit and work on that experience. 
 
 ## Reference Implementation
 
