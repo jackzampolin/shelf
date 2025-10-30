@@ -3,6 +3,9 @@ Stage orchestration and execution.
 
 Provides functions to run individual stages or entire pipelines with
 consistent logging, error handling, and checkpoint management.
+
+Modern stages handle all processing (including reports) in run().
+Legacy after() hook removed - stages must be self-contained.
 """
 
 from typing import List, Optional
@@ -18,12 +21,12 @@ def run_stage(
     resume: bool = False
 ) -> dict:
     """
-    Run a single stage with full lifecycle (before/run/after).
+    Run a single stage with modern lifecycle (before/run).
 
     Handles:
     - Checkpoint initialization
     - Logger creation
-    - Before/run/after orchestration
+    - Before/run orchestration
     - Error handling
     - Checkpoint finalization
 
@@ -82,10 +85,8 @@ def run_stage(
         if status.get('status') == 'completed':
             # Self-validating stages manage their own completion status
             if stage.self_validating:
-                print(f"   Stage already complete (self-validating), running after() hook")
+                print(f"   Stage already complete (self-validating)")
                 logger.info("Stage already complete (self-validating), skipping")
-                # Call after() hook for post-processing (e.g., analysis)
-                stage.after(storage, checkpoint, logger, status.get('metadata', {}))
                 return status.get('metadata', {})
 
             # For non-self-validating stages, validate outputs exist
@@ -104,16 +105,12 @@ def run_stage(
                     )
                     logger.info("Re-running stage to process missing pages")
                 else:
-                    print(f"   Stage already complete, running after() hook")
+                    print(f"   Stage already complete")
                     logger.info("Stage already complete (validated), skipping")
-                    # Call after() hook for post-processing (e.g., analysis)
-                    stage.after(storage, checkpoint, logger, status.get('metadata', {}))
                     return status.get('metadata', {})
             else:
-                print(f"   Stage already complete (no total_pages), running after() hook")
+                print(f"   Stage already complete")
                 logger.info("Stage already complete, skipping")
-                # Call after() hook for post-processing (e.g., analysis)
-                stage.after(storage, checkpoint, logger, status.get('metadata', {}))
                 return status.get('metadata', {})
 
         # Run lifecycle hooks
@@ -123,11 +120,10 @@ def run_stage(
         logger.info("Running run() hook")
         stats = stage.run(storage, checkpoint, logger)
 
-        logger.info("Running after() hook")
-        stage.after(storage, checkpoint, logger, stats)
-
-        # Mark stage complete
-        checkpoint.mark_stage_complete(metadata=stats)
+        # Mark stage complete (stage handles its own completion in run())
+        # Modern stages call checkpoint.set_phase("completed") internally
+        if not stage.self_validating:
+            checkpoint.mark_stage_complete(metadata=stats)
 
         logger.info(f"✅ Stage complete: {stage.name}", **stats)
         return stats
@@ -152,7 +148,7 @@ def run_pipeline(
     """
     Run multiple stages in sequence.
 
-    Each stage runs with full lifecycle (before/run/after).
+    Each stage runs with modern lifecycle (before/run).
     Logs overall pipeline progress.
 
     Args:
