@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from infra.storage.book_storage import BookStorage
-from .schemas import ProviderSelection
+from .providers.schemas import ProviderSelection
 
 
 class OCRStageV2Storage:

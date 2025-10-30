@@ -19,7 +19,8 @@ from infra.storage.book_storage import BookStorage
 from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 
-from .schemas import OCRPageOutput, OCRPageMetrics, OCRPageReport
+from .schemas import OCRPageOutput, OCRPageReport
+from .providers.schemas import OCRPageMetrics
 from .providers import OCRProvider, TesseractProvider, OCRProviderConfig
 from .status import OCRStageV2Status, OCRStageStatus
 from .storage import OCRStageV2Storage
