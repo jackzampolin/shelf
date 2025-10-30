@@ -1,30 +1,6 @@
-"""
-Vision-based PSM selection schemas.
-
-Pydantic models for structured LLM responses and checkpoint metrics.
-"""
+"""Vision-based PSM selection checkpoint metrics schema."""
 
 from pydantic import BaseModel, Field
-from typing import Literal
-
-
-class VisionSelectionResponse(BaseModel):
-    """LLM response for PSM selection."""
-
-    selected_psm: Literal[3, 4, 6] = Field(
-        description="Selected PSM mode (3=auto, 4=single column, 6=uniform block)"
-    )
-
-    confidence: float = Field(
-        ge=0.0,
-        le=1.0,
-        description="LLM confidence in this selection (0.0-1.0)"
-    )
-
-    reason: str = Field(
-        max_length=500,
-        description="Brief explanation of why this PSM is best (structural advantages)"
-    )
 
 
 class VisionSelectionMetrics(BaseModel):
