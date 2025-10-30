@@ -1,449 +1,302 @@
 # Implementing a Pipeline Stage
 
-## Overview
+A one-page guide for building maintainable, resumable pipeline stages following the OCR pattern.
 
-This guide explains how to implement a new pipeline stage using the BaseStage abstraction. For detailed architecture, see [Stage Abstraction](../architecture/stage-abstraction.md).
+## Directory Structure
 
-## Quick Reference
-
-| Stage Type | Parallelization | Workers | Example |
-|------------|-----------------|---------|---------|
-| **CPU-bound** | ProcessPoolExecutor | `cpu_count()` | OCR (Tesseract) |
-| **I/O-bound (LLM)** | ThreadPoolExecutor | `Config.max_workers` (30) | Correction, Label |
-| **Deterministic** | ThreadPoolExecutor | Fixed (e.g., 8) | Merge |
-
-## Stage Structure
-
-**Location:** Implement in `pipeline/{stage_name}/__init__.py`
-
-**Required components:**
-
-1. **Output schema** (`schemas.py`) - What you write to disk
-2. **Checkpoint schema** (`schemas.py`) - Metrics you track
-3. **Report schema** (`schemas.py`, optional) - Quality subset for CSV
-4. **Stage class** - Inherits from BaseStage with three hooks
-
-## Step 1: Define Schemas
-
-### Output Schema - Data Structure
-
-What gets saved to `{stage}/page_NNNN.json`:
-
-```python
-# pipeline/{stage}/schemas.py
-from pydantic import BaseModel, Field
-
-class MyPageOutput(BaseModel):
-    page_number: int
-    blocks: List[BlockData]
-    metadata: Dict[str, Any]
+```
+pipeline/your_stage/
+├── __init__.py          # Stage class + BaseStage methods ONLY
+├── status.py            # Progress tracking and status logic
+├── storage.py           # Stage-specific storage operations
+├── schemas/             # Pydantic schemas (one per file)
+│   ├── __init__.py
+│   ├── page_output.py   # Output schema
+│   ├── page_metrics.py  # Checkpoint metrics schema
+│   └── page_report.py   # Report schema (quality metrics only)
+├── tools/               # Helper functions and workers
+│   ├── processor.py
+│   └── parallel_worker.py
+└── llm_calls/           # Per-LLM-call organization (if needed)
+    ├── schemas/
+    │   └── response.py
+    ├── prompts.py
+    └── caller.py
 ```
 
-**See:** `pipeline/correction/schemas.py:CorrectionPageOutput` for example.
+## Core Files
 
-### Checkpoint Schema - Metrics
+### `__init__.py` - Stage Class Only
 
-Extends `BasePageMetrics` (non-LLM) or `LLMPageMetrics` (LLM-based):
-
-```python
-from infra.pipeline.schemas import LLMPageMetrics
-
-class MyPageMetrics(LLMPageMetrics):
-    # LLMPageMetrics includes: cost, tokens, timing, model, provider
-    # Add domain-specific quality metrics:
-    total_corrections: int
-    avg_confidence: float
-```
-
-**See:** `pipeline/correction/schemas.py:CorrectionPageMetrics` for full example.
-
-### Report Schema - Quality Focus (Optional)
-
-Subset of checkpoint for `report.csv`:
-
-```python
-class MyPageReport(BaseModel):
-    page_num: int
-    total_corrections: int  # Quality metric
-    avg_confidence: float   # Quality metric
-    # Omit: cost, tokens, timing (operational, not quality)
-```
-
-**When to use:** Always for LLM stages to highlight quality issues.
-
-## Step 2: Implement Stage Class
-
-**Location:** `pipeline/{stage_name}/__init__.py`
+Contains ONLY the BaseStage implementation. No business logic.
 
 ```python
 from infra.pipeline.base_stage import BaseStage
-from .schemas import MyPageOutput, MyPageMetrics, MyPageReport
+from .schemas import YourPageOutput, YourPageMetrics, YourPageReport
+from .status import YourStatusTracker
+from .storage import YourStageStorage
 
-class MyStage(BaseStage):
-    name = "my_stage"           # Output directory name
-    dependencies = ["prev_stage"]  # Required upstream stages
+class YourStage(BaseStage):
+    name = "your_stage"
+    dependencies = ["prev_stage"]
 
-    output_schema = MyPageOutput
-    checkpoint_schema = MyPageMetrics
-    report_schema = MyPageReport  # Optional
+    output_schema = YourPageOutput
+    checkpoint_schema = YourPageMetrics
+    report_schema = YourPageReport
+    self_validating = True  # If multi-phase
 
-    def __init__(self, max_workers: int = None):
-        # For LLM stages:
-        self.max_workers = max_workers or Config.max_workers
-        self.model = Config.vision_model_primary
+    def __init__(self, max_workers=None):
+        super().__init__()
+        self.max_workers = max_workers
+        self.status_tracker = YourStatusTracker(stage_name=self.name)
+        self.stage_storage = YourStageStorage(stage_name=self.name)
 
-        # For CPU stages:
-        # self.max_workers = max_workers or multiprocessing.cpu_count()
+    def get_progress(self, storage, checkpoint, logger):
+        """Delegate to status tracker."""
+        return self.status_tracker.get_progress(storage, checkpoint, logger)
 
     def before(self, storage, checkpoint, logger):
-        """Validate inputs - see Step 3"""
+        """Validate dependencies exist."""
+        # Check input files exist
         pass
 
     def run(self, storage, checkpoint, logger):
-        """Main processing - see Step 4"""
-        return {"pages_processed": 0}
+        """Execute all phases with resume support."""
+        progress = self.get_progress(storage, checkpoint, logger)
+        total_pages = progress["total_pages"]
 
-    def after(self, storage, checkpoint, logger, stats):
-        """Post-processing - see Step 5"""
-        super().after(storage, checkpoint, logger, stats)  # Generates report.csv
-```
+        # Phase 1: Main processing
+        if progress["status"] in ["not_started", "processing"]:
+            remaining = progress["remaining_pages"]
+            if len(remaining) > 0:
+                logger.info(f"=== Phase 1: Processing {len(remaining)} pages ===")
+                checkpoint.set_phase("processing")
+                from .tools.processor import process_pages
+                process_pages(storage, checkpoint, logger, remaining)
+                progress = self.get_progress(storage, checkpoint, logger)
 
-**See:** `pipeline/correction/__init__.py:CorrectionStage` for complete example.
+        # Phase 2: Report generation
+        if len(progress["remaining_pages"]) == 0:
+            if not progress["artifacts"]["report_exists"]:
+                logger.info("=== Phase 2: Generate Report ===")
+                checkpoint.set_phase("generating_report")
+                from .tools.report_generator import generate_report
+                generate_report(storage, checkpoint, logger, self.report_schema)
 
-## Step 3: Implement before() Hook
+        # Mark complete
+        if len(progress["remaining_pages"]) == 0 and progress["artifacts"]["report_exists"]:
+            checkpoint.set_phase("completed")
 
-**Purpose:** Validate dependencies exist and are consistent. Fail fast before expensive processing.
-
-**Common pattern:**
-
-```python
-def before(self, storage, checkpoint, logger):
-    # Check dependency outputs exist
-    prev_stage = storage.stage('prev_stage')
-    prev_pages = prev_stage.list_output_pages(extension='json')
-
-    if not prev_pages:
-        raise FileNotFoundError(
-            f"No outputs from {prev_stage}. Run that stage first."
-        )
-
-    # Verify consistency (e.g., 1-1 correspondence)
-    source_pages = storage.stage('source').list_output_pages(extension='png')
-    source_nums = {int(p.stem.split('_')[1]) for p in source_pages}
-    prev_nums = {int(p.stem.split('_')[1]) for p in prev_pages}
-
-    if source_nums != prev_nums:
-        raise FileNotFoundError(
-            f"Page count mismatch: {len(source_nums)} source, {len(prev_nums)} prev"
-        )
-
-    logger.info(f"Validated {len(prev_pages)} pages ready")
-```
-
-**What belongs here:**
-- Input file existence checks
-- Consistency validation
-- Dependency verification
-
-**What doesn't belong:**
-- Data loading (do in run())
-- Processing (belongs in run())
-- Report generation (belongs in after())
-
-**See:** `pipeline/correction/__init__.py:80-95` for real example.
-
-## Step 4: Implement run() Hook
-
-**Purpose:** Main processing logic. Return stats dict.
-
-**Critical pattern:** Always use `checkpoint.get_remaining_pages(resume=True)` to support resume.
-
-### Pattern A: CPU-Bound (ProcessPoolExecutor)
-
-**When:** Tesseract OCR, image processing, CPU-intensive work
-
-```python
-def run(self, storage, checkpoint, logger):
-    from concurrent.futures import ProcessPoolExecutor, as_completed
-
-    # Get pages to process (resume-aware)
-    total_pages = len(storage.stage('source').list_output_pages(extension='png'))
-    remaining = checkpoint.get_remaining_pages(total_pages, resume=True)
-
-    logger.info(f"Processing {len(remaining)} pages")
-
-    # Build work items
-    futures = {}
-    with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-        for page_num in remaining:
-            future = executor.submit(_process_page_cpu, storage.book_dir, page_num)
-            futures[future] = page_num
-
-        # Collect results
-        for future in as_completed(futures):
-            page_num = futures[future]
-            try:
-                data, metrics = future.result()
-
-                # Save atomically (includes checkpoint update)
-                storage.stage(self.name).save_page(
-                    page_num, data, metrics=metrics, schema=self.output_schema
-                )
-
-                logger.page_event(f"Completed page {page_num}", page=page_num)
-
-            except Exception as e:
-                logger.page_error(f"Failed page {page_num}", page=page_num, error=str(e))
-
-    return {"pages_processed": len(remaining)}
-
-# Must be top-level function for multiprocessing
-def _process_page_cpu(book_dir: Path, page_num: int):
-    # Load data, process, return (data, metrics)
-    pass
-```
-
-**See:** `pipeline/ocr/__init__.py:90-140` for full example.
-
-### Pattern B: I/O-Bound with LLM (ThreadPoolExecutor + LLMBatchClient)
-
-**When:** LLM API calls, network I/O
-
-```python
-def run(self, storage, checkpoint, logger):
-    from infra.llm.batch_client import LLMBatchClient, LLMRequest
-
-    # Get pages
-    total_pages = len(storage.stage('prev_stage').list_output_pages())
-    remaining = checkpoint.get_remaining_pages(total_pages, resume=True)
-
-    logger.info(f"Processing {len(remaining)} pages with {self.model}")
-
-    # Initialize LLM client
-    batch_client = LLMBatchClient(
-        max_workers=self.max_workers,
-        max_retries=3,
-        log_dir=storage.stage(self.name).output_dir / 'logs'
-    )
-
-    # Build requests
-    requests = []
-    for page_num in remaining:
-        # Load input
-        prev_data = storage.stage('prev_stage').load_page(
-            page_num, schema=PrevPageOutput
-        )
-
-        # Build LLM request
-        request = LLMRequest(
-            request_id=f"page_{page_num:04d}",
-            model=self.model,
-            messages=[
-                {"role": "user", "content": f"Process this: {prev_data}"}
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "page_output",
-                    "schema": MyPageOutput.model_json_schema()
-                }
-            },
-            metadata={"page_num": page_num}
-        )
-        requests.append(request)
-
-    # Process batch with callbacks
-    def on_result(result):
-        page_num = result.metadata['page_num']
-
-        # Extract data from structured response
-        data = result.parsed_response  # Already validates against schema
-
-        # Build metrics
-        metrics = {
-            'page_num': page_num,
-            'cost_usd': result.cost_usd,
-            'processing_time_seconds': result.total_time_seconds,
-            'attempts': result.attempts,
-            'tokens_total': result.usage['completion_tokens'],
-            # ... LLMPageMetrics fields
-            # ... domain-specific fields
+        return {
+            "pages_processed": total_pages - len(progress["remaining_pages"]),
+            "total_cost_usd": progress["metrics"]["total_cost_usd"]
         }
-
-        # Save atomically
-        storage.stage(self.name).save_page(page_num, data, metrics=metrics)
-        logger.page_event(f"Completed page {page_num}", page=page_num)
-
-    batch_client.process_batch(requests, on_result=on_result)
-
-    return {"pages_processed": len(remaining)}
 ```
 
-**See:** `pipeline/correction/__init__.py:100-200` for full example.
+### `status.py` - Progress Tracking
 
-### Pattern C: Deterministic (No LLM)
+Calculates what work remains by reading disk state (ground truth).
 
-**When:** Merge, transform, deterministic processing
+```python
+from enum import Enum
+from .storage import YourStageStorage
+
+class YourStageStatus(str, Enum):
+    """Status progression for this stage."""
+    NOT_STARTED = "not_started"
+    PROCESSING = "processing"
+    GENERATING_REPORT = "generating_report"
+    COMPLETED = "completed"
+
+class YourStatusTracker:
+    """Tracks progress by checking files on disk."""
+
+    def __init__(self, stage_name: str):
+        self.stage_name = stage_name
+        self.storage = YourStageStorage(stage_name=stage_name)
+
+    def get_progress(self, storage, checkpoint, logger):
+        """
+        Calculate what work remains.
+
+        Returns:
+            {
+                "status": "processing",
+                "total_pages": 100,
+                "remaining_pages": [5, 10, 23],
+                "metrics": {"total_cost_usd": 1.23},
+                "artifacts": {"report_exists": False}
+            }
+        """
+        metadata = storage.load_metadata()
+        total_pages = metadata.get('total_pages', 0)
+
+        # Check which pages have outputs on disk
+        completed_pages = self.storage.list_completed_pages(storage)
+        remaining_pages = [p for p in range(1, total_pages + 1) if p not in completed_pages]
+
+        # Check artifacts
+        stage_storage = storage.stage(self.stage_name)
+        report_exists = (stage_storage.output_dir / "report.csv").exists()
+
+        # Determine status
+        if len(remaining_pages) == total_pages:
+            status = YourStageStatus.NOT_STARTED.value
+        elif len(remaining_pages) > 0:
+            status = YourStageStatus.PROCESSING.value
+        elif not report_exists:
+            status = YourStageStatus.GENERATING_REPORT.value
+        else:
+            status = YourStageStatus.COMPLETED.value
+
+        # Calculate aggregate metrics
+        all_metrics = checkpoint.get_all_metrics()
+        total_cost = sum(m.get('cost_usd', 0) for m in all_metrics.values())
+
+        return {
+            "status": status,
+            "total_pages": total_pages,
+            "remaining_pages": remaining_pages,
+            "metrics": {"total_cost_usd": total_cost},
+            "artifacts": {"report_exists": report_exists}
+        }
+```
+
+### `storage.py` - Stage-Specific Storage
+
+All file I/O operations for this stage.
+
+```python
+from infra.storage.book_storage import BookStorage
+
+class YourStageStorage:
+    """Storage operations for your stage."""
+
+    def __init__(self, stage_name: str):
+        self.stage_name = stage_name
+
+    def list_completed_pages(self, storage: BookStorage) -> list[int]:
+        """Get list of completed page numbers by checking disk."""
+        stage_storage = storage.stage(self.stage_name)
+        output_pages = stage_storage.list_output_pages(extension='json')
+        return sorted(output_pages)
+
+    def load_custom_data(self, storage: BookStorage, filename: str):
+        """Load stage-specific file (e.g., selection_map.json)."""
+        stage_storage = storage.stage(self.stage_name)
+        custom_file = stage_storage.output_dir / filename
+
+        if custom_file.exists():
+            return stage_storage.load_file(filename)
+        return {}
+
+    def save_custom_data(self, storage: BookStorage, filename: str, data: dict):
+        """Save stage-specific file."""
+        stage_storage = storage.stage(self.stage_name)
+        stage_storage.save_file(filename, data)
+```
+
+## Key Patterns
+
+### 1. Resume with if-gates
+
+Structure `run()` as a series of if-gates that check progress:
 
 ```python
 def run(self, storage, checkpoint, logger):
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    progress = self.get_progress(storage, checkpoint, logger)
 
-    total_pages = len(storage.stage('source').list_output_pages(extension='png'))
-    remaining = checkpoint.get_remaining_pages(total_pages, resume=True)
+    # Each phase checks if work remains
+    if needs_phase_1(progress):
+        do_phase_1()
+        progress = self.get_progress(...)  # Refresh
 
-    futures = {}
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        for page_num in remaining:
-            future = executor.submit(self._process_page, storage, page_num)
-            futures[future] = page_num
+    if needs_phase_2(progress):
+        do_phase_2()
+        progress = self.get_progress(...)  # Refresh
 
-        for future in as_completed(futures):
-            page_num = futures[future]
-            data, metrics = future.result()
-            storage.stage(self.name).save_page(page_num, data, metrics=metrics)
+    if all_done(progress):
+        checkpoint.set_phase("completed")
 
-    return {"pages_processed": len(remaining)}
-
-def _process_page(self, storage, page_num):
-    # Load inputs, merge/transform, return (data, metrics)
-    pass
+    return stats
 ```
 
-**See:** `pipeline/merged/__init__.py:80-150` for full example.
+### 2. Ground truth from disk
 
-## Step 5: Implement after() Hook (Optional)
+`status.py` determines progress by checking files on disk, not checkpoint state:
+- **Completed pages**: Check if output files exist
+- **Artifacts**: Check if report.csv exists
+- **Status**: Derive from what's on disk
 
-**Purpose:** Post-processing and validation. Default generates `report.csv` from checkpoint metrics.
+### 3. Incremental processing
 
-**Default behavior** (usually sufficient):
+Use `checkpoint.mark_completed()` after each page for immediate resume:
 
 ```python
-def after(self, storage, checkpoint, logger, stats):
-    super().after(storage, checkpoint, logger, stats)  # Calls generate_report()
+for page_num in remaining_pages:
+    result = process_page(page_num)
+
+    # Save output
+    storage.stage(self.name).save_page(page_num, result, schema=self.output_schema)
+
+    # Save metrics atomically
+    checkpoint.mark_completed(page_num, cost_usd=0.1, metrics={...})
 ```
 
-**Override when you need custom post-processing:**
+### 4. LLM call organization
 
-```python
-def after(self, storage, checkpoint, logger, stats):
-    # Call parent first (generates report.csv)
-    super().after(storage, checkpoint, logger, stats)
+For complex LLM calls, create a subdirectory:
 
-    # Custom: Extract metadata from first N pages
-    metadata = self._extract_metadata(storage, logger)
-    storage.update_metadata(metadata)
+```
+llm_calls/correction/
+├── schemas/
+│   └── response.py     # Structured LLM response
+├── prompts.py          # System and user prompts
+└── caller.py           # LLM invocation logic
 ```
 
-**See:** `pipeline/ocr/__init__.py:150-165` for metadata extraction example.
+## Common Mistakes
 
-## Step 6: Integrate with CLI
+❌ **Don't put business logic in `__init__.py`**
+✅ **Keep `__init__.py` minimal** - only BaseStage methods
 
-**Location:** `shelf.py:cmd_process()`
+❌ **Don't check checkpoint for resume logic**
+✅ **Check disk state** - files are ground truth
 
-Add stage to the stage mapping:
+❌ **Don't batch checkpoint updates**
+✅ **Mark completed immediately** - enables resume at any point
 
-```python
-# Map stage names to Stage instances
-stage_map = {
-    'ocr': OCRStage(max_workers=args.workers),
-    'corrected': CorrectionStage(model=args.model, max_workers=args.workers),
-    'labels': LabelStage(model=args.model, max_workers=args.workers),
-    'merged': MergeStage(max_workers=8),
-    'my_stage': MyStage(max_workers=args.workers),  # Add here
-}
-```
-
-Now users can run: `uv run python shelf.py process <scan-id> --stage my_stage`
-
-## Decision Points
-
-### When to use ProcessPoolExecutor vs ThreadPoolExecutor?
-
-**ProcessPoolExecutor:**
-- CPU-bound work (Tesseract, image processing, compute-heavy)
-- Can't share state between workers
-- Requires top-level worker functions (picklable)
-
-**ThreadPoolExecutor:**
-- I/O-bound work (LLM API calls, file I/O)
-- Can share state (e.g., progress tracking)
-- Can use class methods as workers
-
-### When to use vision models vs text-only?
-
-**Vision (multimodal):**
-- Need to see page images (correction, label classification)
-- Cost: ~10x more than text-only
-- Quality: Better for OCR correction, formatting detection
-
-**Text-only:**
-- Only need text (metadata extraction, text analysis)
-- Cost: Cheaper
-- Quality: Sufficient when visual context not needed
-
-### How many workers?
-
-**CPU-bound:** `multiprocessing.cpu_count()` - maximize CPU utilization
-**LLM I/O-bound:** `Config.max_workers` (30) - balance speed vs rate limits
-**Deterministic:** Fixed small number (8) - prevent resource contention
-
-## Common Pitfalls
-
-1. **Forgetting resume support** - Always use `checkpoint.get_remaining_pages(resume=True)`
-2. **Not validating schemas** - Pass `schema=` to `save_page()` and `load_page()`
-3. **Missing report_schema** - LLM stages should define to filter operational metrics
-4. **Blocking in before()** - Only validate, don't load data or process
-5. **Not handling failures** - Wrap page processing in try/except, log errors
-6. **Hardcoding paths** - Use `storage.stage(name)` API, not manual path construction
+❌ **Don't put schemas in `__init__.py`**
+✅ **One schema per file** in `schemas/` directory
 
 ## Testing Your Stage
 
-Create `tests/pipeline/test_{stage}.py`:
-
 ```python
 def test_my_stage(tmp_path):
-    # Setup: Create fake inputs
+    # Setup fake dependency
     book_dir = tmp_path / "test-book"
-    prev_stage_dir = book_dir / "prev_stage"
-    prev_stage_dir.mkdir(parents=True)
+    prev_dir = book_dir / "prev_stage"
+    prev_dir.mkdir(parents=True)
 
-    # Create fake input
-    fake_page = PrevPageOutput(page_number=1, ...)
-    (prev_stage_dir / "page_0001.json").write_text(fake_page.model_dump_json())
+    # Create fake inputs
+    for i in range(1, 6):
+        (prev_dir / f"page_{i:04d}.json").write_text('{"page_number": ' + str(i) + '}')
 
     # Run stage
     storage = BookStorage(scan_id="test-book", storage_root=tmp_path)
-    stage = MyStage(max_workers=1)
-
+    stage = MyStage()
     stats = run_stage(stage, storage)
 
-    # Assert
-    output = storage.stage("my_stage").load_page(1, schema=MyPageOutput)
-    assert output.page_number == 1
+    # Verify outputs
+    my_dir = book_dir / "my_stage"
+    assert (my_dir / "page_0001.json").exists()
+    assert (my_dir / "report.csv").exists()
 ```
 
-**See:** `tests/infra/test_storage.py` for storage testing patterns.
+## Reference Implementation
 
-## Summary
-
-Implementing a stage requires:
-
-1. **Schemas** - Output, checkpoint, report (3 Pydantic models)
-2. **Class** - Extends BaseStage with name, dependencies, schemas
-3. **before()** - Validate inputs, fail fast
-4. **run()** - Main processing with resume support
-5. **after()** - Optional custom post-processing (default: report generation)
-6. **CLI integration** - Add to shelf.py stage map
-
-**Key principles:**
-- Always support resume (`get_remaining_pages(resume=True)`)
-- Validate with schemas at boundaries
-- Track costs and quality metrics
-- Use appropriate parallelization strategy
-- Follow existing patterns (see `pipeline/correction/` as reference)
-
-See also:
-- [Stage Abstraction](../architecture/stage-abstraction.md) - Design philosophy
-- [Checkpoint & Resume](../architecture/checkpoint-resume.md) - Resume mechanisms
-- [Logging & Metrics](../architecture/logging-metrics.md) - Observability integration
+See `pipeline/ocr/` for complete reference implementation with:
+- Multi-phase processing (OCR → Selection → Metadata → Report)
+- Complex status tracking (provider progress, selection states)
+- Custom storage operations (selection_map.json, provider outputs)
+- Vision LLM calls organized in `vision/` subdirectory
