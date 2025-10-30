@@ -68,12 +68,12 @@ class TesseractProvider(OCRProvider):
             Exception: If OCR processing fails
         """
         # Import parsers here to avoid circular imports
-        from pipeline.ocr.parsers import (
+        from .parsers import (
             parse_tesseract_hierarchy,
             parse_hocr_typography,
             merge_typography_into_blocks,
         )
-        from pipeline.ocr.image_detection import (
+        from .image_detection import (
             validate_image_candidates,
             ImageDetector,
         )

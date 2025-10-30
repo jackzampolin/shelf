@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""
+Simplified LLM batch processor - pure orchestration layer.
+
+Provides:
+- Parallel LLM execution with retries
+- Progress bar with token/cost tracking
+- Event callbacks for result handling
+- Aggregate batch statistics
+
+Callers handle:
+- Result parsing
+- Persistence (files, checkpoint, etc.)
+- Schema validation
+- Error recovery
+
+This separation makes the processor reusable across any LLM batch workflow,
+not just page-based pipeline stages.
+"""
+
+import time
+from pathlib import Path
+from typing import List, Dict, Any, Callable, Optional
+
+from infra.llm.batch_client import LLMBatchClient, LLMRequest, LLMResult
+from infra.storage.checkpoint import CheckpointManager
+from infra.pipeline.logger import PipelineLogger
+from infra.pipeline.rich_progress import RichProgressBarHierarchical
+from infra.config import Config
+
+
+class LLMBatchProcessor:
+    """
+    Simplified LLM batch processor - pure orchestration.
+
+    Responsibilities:
+    - Parallel LLM execution with retries
+    - Progress tracking with token/cost display
+    - Event callbacks for lifecycle hooks
+
+    Caller responsibilities:
+    - Parse and validate results
+    - Persist outputs (files, checkpoint, database, etc.)
+    - Handle errors and retries
+    - Update application state
+
+    Usage:
+        processor = LLMBatchProcessor(
+            checkpoint=checkpoint,
+            logger=logger,
+            model="grok-4-fast",
+            log_dir=Path("logs/"),
+        )
+
+        def handle_result(result: LLMResult):
+            if result.success:
+                data = parse_my_data(result.parsed_json)
+                save_to_disk(data)
+                checkpoint.update_page_metrics(...)
+            else:
+                logger.error(f"Failed: {result.error_message}")
+
+        stats = processor.process_batch(
+            requests=requests,
+            on_result=handle_result,
+        )
+
+        # stats contains: completed, failed, total_cost_usd, total_tokens, etc.
+    """
+
+    def __init__(
+        self,
+        checkpoint: CheckpointManager,
+        logger: PipelineLogger,
+        model: str,
+        log_dir: Path,
+        max_workers: Optional[int] = None,
+        max_retries: int = 3,
+        retry_jitter: tuple = (1.0, 3.0),
+        verbose: bool = True,
+    ):
+        """
+        Args:
+            checkpoint: CheckpointManager for progress bar metrics display
+            logger: PipelineLogger instance
+            model: OpenRouter model name
+            log_dir: Directory for LLM request/response logs
+            max_workers: Thread pool size (default: Config.max_workers)
+            max_retries: Max retry attempts per request
+            retry_jitter: Retry delay range in seconds
+            verbose: Enable verbose logging
+        """
+        self.checkpoint = checkpoint
+        self.logger = logger
+        self.model = model
+        self.log_dir = log_dir
+
+        # Create log directory
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create batch client
+        self.batch_client = LLMBatchClient(
+            max_workers=max_workers or Config.max_workers,
+            max_retries=max_retries,
+            retry_jitter=retry_jitter,
+            verbose=verbose,
+            log_dir=self.log_dir,
+        )
+
+    def process_batch(
+        self,
+        requests: List[LLMRequest],
+        on_result: Callable[[LLMResult], None],
+    ) -> Dict[str, Any]:
+        """
+        Process a batch of LLM requests with progress tracking.
+
+        Args:
+            requests: List of LLM requests to process
+            on_result: Callback for each completed request
+                      Signature: (result: LLMResult) -> None
+                      Caller handles parsing, validation, persistence
+
+        Returns:
+            Stats dict with:
+            - completed: Number of successful requests
+            - failed: Number of failed requests
+            - total_cost_usd: Total cost in USD
+            - total_tokens: Total tokens processed
+            - total_reasoning_tokens: Total reasoning tokens
+            - elapsed_seconds: Total elapsed time
+            - batch_stats: Full BatchStats object
+        """
+        if not requests:
+            return {
+                "completed": 0,
+                "failed": 0,
+                "total_cost_usd": 0.0,
+                "total_tokens": 0,
+                "total_reasoning_tokens": 0,
+                "elapsed_seconds": 0.0,
+                "batch_stats": None,
+            }
+
+        self.logger.info(f"Processing {len(requests)} LLM requests...")
+        start_time = time.time()
+
+        # Create hierarchical progress bar
+        progress = RichProgressBarHierarchical(
+            total=len(requests),
+            prefix="   ",
+            width=40,
+            unit="pages",
+        )
+        progress.update(0, suffix="starting...")
+
+        # Create event handler (wires up progress bar)
+        on_event = progress.create_llm_event_handler(
+            batch_client=self.batch_client,
+            start_time=start_time,
+            model=self.model,
+            total_requests=len(requests),
+            checkpoint=self.checkpoint,
+        )
+
+        # Execute batch (caller's on_result handles everything)
+        try:
+            self.batch_client.process_batch(
+                requests,
+                on_event=on_event,
+                on_result=on_result,  # Caller handles parsing, validation, persistence
+            )
+        finally:
+            # Get final stats
+            elapsed = time.time() - start_time
+            batch_stats = self.batch_client.get_batch_stats(total_requests=len(requests))
+
+            progress.finish(
+                f"   ✓ {batch_stats.completed}/{len(requests)} requests in {elapsed:.1f}s"
+            )
+
+            self.logger.info(
+                f"Batch complete: {batch_stats.completed} completed, "
+                f"{batch_stats.failed} failed, "
+                f"${batch_stats.total_cost_usd:.4f}, "
+                f"{batch_stats.total_tokens} tokens"
+            )
+
+        return {
+            "completed": batch_stats.completed,
+            "failed": batch_stats.failed,
+            "total_cost_usd": batch_stats.total_cost_usd,
+            "total_tokens": batch_stats.total_tokens,
+            "total_reasoning_tokens": batch_stats.total_reasoning_tokens,
+            "elapsed_seconds": elapsed,
+            "batch_stats": batch_stats,
+        }

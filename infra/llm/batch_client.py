@@ -1266,6 +1266,11 @@ class LLMBatchClient:
         else:
             queued = 0
 
+        # Calculate token stats
+        total_tokens = stats.get('total_tokens', 0)
+        total_reasoning_tokens = stats.get('total_reasoning_tokens', 0)
+        avg_tokens = total_tokens / completed_count if completed_count > 0 else 0.0
+
         return BatchStats(
             total_requests=total_requests or (completed_count + in_progress),
             completed=completed_count,
@@ -1277,6 +1282,9 @@ class LLMBatchClient:
             max_time=max_time,
             total_cost_usd=stats['total_cost_usd'],
             avg_cost_per_request=avg_cost,
+            total_tokens=total_tokens,
+            total_reasoning_tokens=total_reasoning_tokens,
+            avg_tokens_per_request=avg_tokens,
             requests_per_second=requests_per_second,
             rate_limit_utilization=rate_status.get('utilization', 0.0),
             rate_limit_tokens_available=rate_status.get('tokens_available', 0)

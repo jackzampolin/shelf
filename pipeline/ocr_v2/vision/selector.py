@@ -19,9 +19,9 @@ from infra.config import Config
 from ..providers import OCRProvider
 from ..storage import OCRStageV2Storage
 from ..status import OCRStageStatus
-from .agreement import _load_provider_outputs
-from pipeline.ocr.vision_selection_prompts import SYSTEM_PROMPT, build_user_prompt
-from pipeline.ocr.vision_selection_schemas import VisionSelectionResponse
+from ..tools.agreement import _load_provider_outputs
+from .vision_selection_prompts import SYSTEM_PROMPT, build_user_prompt
+from .vision_selection_schemas import VisionSelectionResponse
 
 
 def vision_select_pages(

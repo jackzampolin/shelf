@@ -38,6 +38,7 @@ from infra.config import Config
 
 # Import Stage classes
 from pipeline.ocr import OCRStage
+from pipeline.ocr_v2 import OCRStageV2
 from pipeline.correction import CorrectionStage
 from pipeline.label import LabelStage
 from pipeline.merged import MergeStage
@@ -191,6 +192,7 @@ def cmd_library_status(args):
     # Check each stage
     stages = [
         ('ocr', 'OCR'),
+        ('ocr_v2', 'OCR v2'),
         ('corrected', 'Correction'),
         ('labels', 'Label'),
         ('merged', 'Merge')
@@ -202,28 +204,96 @@ def cmd_library_status(args):
         status = checkpoint.get_status()
 
         stage_status = status.get('status', 'not_started')
-        completed_pages = len(status.get('completed_pages', []))
+        remaining_pages = len(status.get('remaining_pages', []))
+        completed_pages = total_pages - remaining_pages
 
         # Status symbol
         if stage_status == 'completed':
             symbol = '✅'
-        elif stage_status == 'in_progress':
-            symbol = '⏳'
+        elif stage_status in ['not_started']:
+            symbol = '○'
         elif stage_status == 'failed':
             symbol = '❌'
         else:
-            symbol = '○'
+            # In-progress or checkpoint-specific phase (running-ocr, etc.)
+            symbol = '⏳'
 
         # Print stage info
         print(f"\n{symbol} {stage_label} ({stage_name})")
         print(f"   Status: {stage_status}")
-        print(f"   Pages:  {completed_pages}/{total_pages}")
+        print(f"   Pages:  {completed_pages}/{total_pages} ({remaining_pages} remaining)")
 
-        if stage_status == 'completed':
-            stage_metadata = status.get('metadata', {})
-            if 'total_cost_usd' in stage_metadata:
-                print(f"   Cost:   ${stage_metadata['total_cost_usd']:.3f}")
+        # Show metrics for completed or in-progress stages
+        stage_metrics = status.get('metrics', {})
+        if stage_metrics.get('total_cost_usd', 0) > 0:
+            print(f"   Cost:   ${stage_metrics['total_cost_usd']:.4f}")
 
+        if stage_metrics.get('total_time_seconds', 0) > 0:
+            mins = stage_metrics['total_time_seconds'] / 60
+            print(f"   Time:   {mins:.1f}m")
+
+        # OCR v2 specific details
+        if stage_name == 'ocr_v2' and stage_status not in ['not_started', 'completed']:
+            providers = status.get('providers', {})
+            if providers:
+                print(f"   Providers:")
+                for pname, premaining in providers.items():
+                    pcompleted = total_pages - len(premaining)
+                    print(f"      {pname}: {pcompleted}/{total_pages} ({len(premaining)} remaining)")
+
+            selection = status.get('selection', {})
+            if selection:
+                auto = selection.get('auto_selected', 0)
+                vision = selection.get('vision_selected', 0)
+                if auto > 0 or vision > 0:
+                    print(f"   Selection: {auto} auto, {vision} vision")
+                    if stage_metrics.get('vision_cost_usd', 0) > 0:
+                        print(f"      Vision cost: ${stage_metrics['vision_cost_usd']:.4f}")
+
+    print()
+
+
+def cmd_stage_status(args):
+    """Show detailed status for a specific stage (for debugging)."""
+    library = Library(storage_root=Config.book_storage_root)
+
+    # Verify book exists
+    scan = library.get_scan_info(args.scan_id)
+    if not scan:
+        print(f"❌ Book not found: {args.scan_id}")
+        sys.exit(1)
+
+    storage = library.get_book_storage(args.scan_id)
+
+    # Get stage instance
+    stage_map = {
+        'ocr': OCRStage(),
+        'ocr_v2': OCRStageV2(),
+        'corrected': CorrectionStage(),
+        'labels': LabelStage(),
+        'merged': MergeStage(),
+    }
+
+    if args.stage not in stage_map:
+        print(f"❌ Unknown stage: {args.stage}")
+        print(f"Available stages: {', '.join(stage_map.keys())}")
+        sys.exit(1)
+
+    stage = stage_map[args.stage]
+    checkpoint = storage.stage(args.stage).checkpoint
+
+    # Import logger
+    from infra.pipeline.logger import PipelineLogger
+    logger = PipelineLogger(storage.book_dir, args.stage)
+
+    # Get progress structure
+    progress = stage.get_progress(storage, checkpoint, logger)
+
+    # Print as formatted JSON
+    import json
+    print(f"\n📊 Stage Status: {args.scan_id} / {args.stage}")
+    print("=" * 80)
+    print(json.dumps(progress, indent=2))
     print()
 
 
@@ -503,6 +573,7 @@ def cmd_process(args):
 
     stage_map = {
         'ocr': OCRStage(max_workers=args.workers if args.workers else None),
+        'ocr_v2': OCRStageV2(max_workers=args.workers if args.workers else None),
         'corrected': CorrectionStage(
             model=args.model,
             max_workers=args.workers if args.workers else 30,
@@ -750,6 +821,7 @@ def _sweep_stage(library, all_books, args):
 def _sweep_reports(library, all_books, args):
     """Sweep through library regenerating reports from checkpoint data."""
     from pipeline.ocr import OCRStage
+    from pipeline.ocr_v2 import OCRStageV2
     from pipeline.correction import CorrectionStage
     from pipeline.label import LabelStage
     from pipeline.merged import MergeStage
@@ -760,6 +832,7 @@ def _sweep_reports(library, all_books, args):
     # Map stage names to instances
     stage_map = {
         'ocr': OCRStage(),
+        'ocr_v2': OCRStageV2(),
         'corrected': CorrectionStage(),
         'labels': LabelStage(),
         'merged': MergeStage(),
@@ -911,6 +984,12 @@ Examples:
     status_parser = subparsers.add_parser('status', help='Show pipeline status')
     status_parser.add_argument('scan_id', help='Book scan ID')
     status_parser.set_defaults(func=cmd_library_status)
+
+    # shelf stage-status
+    stage_status_parser = subparsers.add_parser('stage-status', help='Show detailed stage status (for debugging)')
+    stage_status_parser.add_argument('scan_id', help='Book scan ID')
+    stage_status_parser.add_argument('--stage', required=True, help='Stage name')
+    stage_status_parser.set_defaults(func=cmd_stage_status)
 
     # shelf report
     report_parser = subparsers.add_parser('report', help='Display stage report as table')

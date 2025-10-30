@@ -287,6 +287,11 @@ class BatchStats:
     total_cost_usd: float
     avg_cost_per_request: float
 
+    # Tokens
+    total_tokens: int
+    total_reasoning_tokens: int
+    avg_tokens_per_request: float
+
     # Throughput
     requests_per_second: float
 

@@ -176,7 +176,7 @@ class OCRStageV2(BaseStage):
         if len(pages_needing_vision) > 0:
             logger.info("=== Phase 2c: Vision-Select Low Agreement Pages ===")
             checkpoint.set_phase(OCRStageStatus.RUNNING_VISION.value)
-            from .tools.vision_selector import vision_select_pages
+            from .vision.selector import vision_select_pages
             vision_select_pages(
                 storage, checkpoint, logger, self.ocr_storage,
                 self.providers, pages_needing_vision, total_pages
