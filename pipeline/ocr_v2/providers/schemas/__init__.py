@@ -1,11 +1,9 @@
 """Provider-specific schemas for OCR v2."""
 
-from .provider_selection import (
-    ProviderSelection,
-    ProviderOutput,
-    VisionSelectionResponse,
-    OCRPageMetrics,
-)
+from .selection import ProviderSelection
+from .output import ProviderOutput
+from .vision_response import VisionSelectionResponse
+from .metrics import OCRPageMetrics
 
 __all__ = [
     "ProviderSelection",
