@@ -2,7 +2,7 @@ import copy
 from typing import Dict, Any
 
 from pipeline.ocr.schemas import OCRPageOutput
-from .llm_response import CorrectionLLMResponse
+from .correction_llm_response import CorrectionLLMResponse
 
 
 def build_page_specific_schema(ocr_page: OCRPageOutput) -> Dict[str, Any]:

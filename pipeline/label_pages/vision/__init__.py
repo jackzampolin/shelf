@@ -1,5 +1,3 @@
-"""Vision-based labeling components."""
-
 from .caller import prepare_label_request
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 from .schemas import (

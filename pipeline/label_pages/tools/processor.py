@@ -1,5 +1,3 @@
-"""Page labeling using LLMBatchProcessor for parallel vision-based labeling."""
-
 import time
 from datetime import datetime
 from typing import List
@@ -28,23 +26,6 @@ def label_pages(
     total_pages: int,
     output_schema,
 ):
-    """
-    Label remaining pages using vision-based LLM classification.
-
-    Uses LLMBatchProcessor for clean parallel execution with progress tracking.
-
-    Args:
-        storage: BookStorage instance
-        checkpoint: CheckpointManager instance
-        logger: PipelineLogger instance
-        stage_storage: LabelPagesStageStorage instance
-        model: Vision model to use
-        max_workers: Number of parallel workers
-        max_retries: Maximum retry attempts per page
-        remaining_pages: List of page numbers to process
-        total_pages: Total pages in book
-        output_schema: LabelPagesPageOutput schema for validation
-    """
     if not remaining_pages:
         logger.info("No pages to label")
         return
@@ -52,16 +33,13 @@ def label_pages(
     logger.info(f"Labeling {len(remaining_pages)} pages with {model}")
     start_time = time.time()
 
-    # Phase 1: Prepare all requests in parallel
     logger.info(f"Loading {len(remaining_pages)} pages...")
     load_start = time.time()
 
     requests = []
-    page_data_map = {}  # Store OCR data for later use
-    printed_numbers = {}  # Track previous page numbers for sequence validation
+    page_data_map = {}
+    printed_numbers = {}
 
-    # Pre-load any existing labeled pages for sequence validation
-    # (helps with resume scenarios where we need previous page context)
     completed_pages = stage_storage.list_completed_pages(storage)
     for page_num in sorted(completed_pages):
         if page_num < min(remaining_pages):
@@ -73,9 +51,7 @@ def label_pages(
                 pass
 
     def load_page(page_num):
-        """Load and prepare a single page request."""
         try:
-            # Get previous page's printed number for sequence validation
             prev_page_number = None
             if page_num > 1 and (page_num - 1) in printed_numbers:
                 prev_page_number = printed_numbers[page_num - 1]
@@ -92,7 +68,6 @@ def label_pages(
             logger.error(f"Failed to prepare page {page_num}", error=str(e))
             return None
 
-    # Create progress bar for loading
     from infra.pipeline.rich_progress import RichProgressBarHierarchical
     load_progress = RichProgressBarHierarchical(
         total=len(remaining_pages),
@@ -102,7 +77,6 @@ def label_pages(
     )
     load_progress.update(0, suffix="loading OCR data...")
 
-    # Load pages in parallel
     loaded = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_page = {
@@ -127,7 +101,6 @@ def label_pages(
         logger.warning("No valid requests to process")
         return
 
-    # Phase 2: Process batch with LLMBatchProcessor
     stage_log_dir = storage.stage("label-pages").output_dir / "logs"
     processor = LLMBatchProcessor(
         checkpoint=checkpoint,
@@ -142,12 +115,6 @@ def label_pages(
     failed_pages = []
 
     def on_result(result: LLMResult):
-        """
-        Handle each labeling result.
-
-        Callback for LLMBatchProcessor - parses, validates, extracts metrics,
-        and saves output atomically.
-        """
         page_num = result.request.metadata['page_num']
         ocr_page = page_data_map[page_num]
 
@@ -157,19 +124,16 @@ def label_pages(
             return
 
         try:
-            # Parse LLM response
             label_data = result.parsed_json
             if label_data is None:
                 raise ValueError("parsed_json is None for successful result")
 
-            # Calculate summary stats
             total_blocks = len(label_data.get('blocks', []))
             avg_classification_confidence = (
                 sum(b.get('classification_confidence', 0) for b in label_data.get('blocks', []))
                 / total_blocks if total_blocks > 0 else 0.0
             )
 
-            # Build page output with metadata
             page_output = {
                 'page_number': page_num,
                 'printed_page_number': label_data.get('printed_page_number'),
@@ -186,14 +150,11 @@ def label_pages(
                 'avg_classification_confidence': avg_classification_confidence,
             }
 
-            # Validate with schema
             validated = output_schema(**page_output)
 
-            # Track printed page number for sequence validation
             if validated.printed_page_number:
                 printed_numbers[page_num] = validated.printed_page_number
 
-            # Extract chapter/section heading info
             has_chapter_heading = any(
                 b.classification == BlockType.CHAPTER_HEADING
                 for b in validated.blocks
@@ -203,28 +164,23 @@ def label_pages(
                 for b in validated.blocks
             )
 
-            # Build checkpoint metrics using helper
             metrics = LabelPagesPageMetrics(**llm_result_to_metrics(
                 result=result,
                 page_num=page_num,
                 extra_fields={
-                    # Label-specific metrics
                     "total_blocks_classified": total_blocks,
                     "avg_classification_confidence": avg_classification_confidence,
                     "page_number_extracted": validated.printed_page_number is not None,
                     "page_region_classified": validated.page_region is not None,
-                    # Book structure fields
                     "printed_page_number": validated.printed_page_number,
                     "numbering_style": validated.numbering_style,
                     "page_region": validated.page_region,
-                    # Chapter/section structure
                     "has_chapter_heading": has_chapter_heading,
                     "has_section_heading": has_section_heading,
                     "chapter_heading_text": None,  # Text extraction happens in merged stage
                 }
             ))
 
-            # Save page output with metrics (atomic operation)
             stage_storage.save_labeled_page(
                 storage=storage,
                 page_num=page_num,
@@ -238,13 +194,11 @@ def label_pages(
             logger.error(f"Failed to save page {page_num}", error=str(e))
             failed_pages.append(page_num)
 
-    # Execute batch
     batch_stats = processor.process_batch(
         requests=requests,
         on_result=on_result,
     )
 
-    # Log results
     elapsed = time.time() - start_time
     logger.info(
         f"Labeling complete: {batch_stats['completed']} succeeded, "

@@ -1,18 +1,9 @@
-"""
-LLM Response Schema
-
-The structured response we request from the vision LLM.
-This schema is page-specific (constrained to match OCR block count).
-"""
-
 from typing import List, Optional, Literal
 from enum import Enum
 from pydantic import BaseModel, Field
 
 
 class BlockType(str, Enum):
-    """Classification types for book content blocks."""
-
     # Front matter
     TITLE_PAGE = "TITLE_PAGE"
     COPYRIGHT = "COPYRIGHT"
@@ -49,41 +40,31 @@ class BlockType(str, Enum):
 
     # Special
     ILLUSTRATION_CAPTION = "ILLUSTRATION_CAPTION"
-    CAPTION = "CAPTION"  # Generic caption (maps to ILLUSTRATION_CAPTION)
+    CAPTION = "CAPTION"
     TABLE = "TABLE"
-    MAP_LABEL = "MAP_LABEL"  # Geographic/map labels and annotations
-    DIAGRAM_LABEL = "DIAGRAM_LABEL"  # Timeline, chart, diagram labels
-    PHOTO_CREDIT = "PHOTO_CREDIT"  # Photo/image attribution text
-    OCR_ARTIFACT = "OCR_ARTIFACT"  # Garbled/nonsense text from OCR errors
-    OTHER = "OTHER"  # Catch-all (use sparingly)
+    MAP_LABEL = "MAP_LABEL"
+    DIAGRAM_LABEL = "DIAGRAM_LABEL"
+    PHOTO_CREDIT = "PHOTO_CREDIT"
+    OCR_ARTIFACT = "OCR_ARTIFACT"
+    OTHER = "OTHER"
 
 
 class PageRegion(str, Enum):
     """Page region classification based on position in book."""
-    FRONT_MATTER = "front_matter"  # Before main body (ToC, preface, etc.)
-    BODY = "body"                   # Main content chapters
-    BACK_MATTER = "back_matter"     # After main body (index, bibliography, etc.)
-    TOC_AREA = "toc_area"           # Table of Contents region
-    UNCERTAIN = "uncertain"          # Ambiguous or insufficient context
+    FRONT_MATTER = "front_matter"
+    BODY = "body"
+    BACK_MATTER = "back_matter"
+    TOC_AREA = "toc_area"
+    UNCERTAIN = "uncertain"
 
 
 class BlockClassification(BaseModel):
-    """Classification labels for a single block."""
-
     block_num: int = Field(..., ge=1, description="Block number (matches OCR)")
     classification: BlockType = Field(..., description="Classified content type")
     classification_confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in classification")
 
 
 class LabelLLMResponse(BaseModel):
-    """
-    Structured LLM response for label stage.
-
-    This schema is constrained at runtime to match the OCR block count
-    using minItems/maxItems on the blocks array.
-    """
-
-    # Book page number extraction (from vision analysis)
     printed_page_number: Optional[str] = Field(
         None,
         description="Book-page number as printed on the image (e.g., 'ix', '45', None if unnumbered)"
@@ -103,7 +84,6 @@ class LabelLLMResponse(BaseModel):
         description="Confidence in book-page number extraction (1.0 if no number found)"
     )
 
-    # Page region classification (from position in book)
     page_region: Optional[PageRegion] = Field(
         None,
         description="Classified region of book (front/body/back matter, ToC)"
@@ -115,5 +95,4 @@ class LabelLLMResponse(BaseModel):
         description="Confidence in page region classification"
     )
 
-    # Classified blocks (constrained to match OCR block count at runtime)
     blocks: List[BlockClassification] = Field(..., description="Block classifications")

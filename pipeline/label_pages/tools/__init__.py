@@ -1,5 +1,3 @@
-"""Label-Pages tools."""
-
 from .processor import label_pages
 from .report_generator import generate_report
 

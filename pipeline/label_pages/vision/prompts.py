@@ -1,6 +1,3 @@
-"""Vision-based page labeling prompts."""
-
-# System prompt (constant for all pages)
 SYSTEM_PROMPT = """<role>
 You are a vision-based page structure analyst. You analyze BOTH page images AND OCR text.
 The page IMAGE is your primary source - visual signals override OCR text for structural analysis.
@@ -204,41 +201,19 @@ def build_user_prompt(
     book_metadata: dict,
     prev_page_number: str = None
 ):
-    """
-    Build the user prompt with OCR data and document context.
-
-    The page image is attached separately via the multimodal API
-    and sent alongside this text prompt for vision-based analysis.
-
-    Args:
-        ocr_page: OCR page data as dict
-        ocr_text: Pre-formatted OCR text (JSON string)
-        current_page: Current page number (PDF sequence)
-        total_pages: Total pages in document
-        book_metadata: Book metadata dict
-        prev_page_number: Previous page's extracted printed_page_number (for sequence validation)
-
-    Returns:
-        str: User prompt for the LLM
-    """
-    # Extract metadata fields with defaults
     title = book_metadata.get('title', 'Unknown')
     author = book_metadata.get('author', 'Unknown')
     year = book_metadata.get('year', 'Unknown')
     book_type = book_metadata.get('type', 'Unknown')
 
-    # Calculate position in document
     percent_through = (current_page / total_pages * 100) if total_pages > 0 else 0
 
-    # Count blocks for output validation (must classify all blocks)
     num_blocks = len(ocr_page.get('blocks', []))
 
-    # Format previous page number context for sequence validation
     prev_context = ""
     if prev_page_number is not None:
         prev_context = f"\nPrevious page's printed number: {prev_page_number} (use for sequence validation)"
 
-    # Determine default region
     if percent_through <= 15:
         default_region = "front_matter (early pages)"
     elif percent_through >= 85:

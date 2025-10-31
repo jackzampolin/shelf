@@ -1,10 +1,3 @@
-"""
-Report Generator
-
-Generates report.csv from checkpoint metrics.
-Filters metrics to show only quality-relevant data for label assessment.
-"""
-
 import csv
 from pathlib import Path
 
@@ -20,22 +13,8 @@ def generate_report(
     stage_storage,
     report_schema,
 ):
-    """
-    Generate report.csv from checkpoint metrics.
-
-    Reads all page metrics from checkpoint and writes a CSV report
-    with quality-focused metrics only (filtered by report_schema).
-
-    Args:
-        storage: BookStorage instance
-        checkpoint: CheckpointManager instance
-        logger: PipelineLogger instance
-        stage_storage: LabelPagesStageStorage instance
-        report_schema: LabelPagesPageReport schema for filtering
-    """
     logger.info("Generating report.csv from checkpoint metrics")
 
-    # Get all page metrics from checkpoint
     checkpoint_state = checkpoint.get_status()
     page_metrics = checkpoint_state.get('page_metrics', {})
 
@@ -43,13 +22,11 @@ def generate_report(
         logger.warning("No page metrics found in checkpoint")
         return
 
-    # Filter metrics through report schema (only quality metrics)
     report_rows = []
     for page_num_str, metrics in sorted(page_metrics.items()):
         page_num = int(page_num_str)
 
         try:
-            # Extract only report-relevant fields
             report_row = report_schema(
                 page_num=page_num,
                 printed_page_number=metrics.get('printed_page_number'),
@@ -72,7 +49,6 @@ def generate_report(
         logger.warning("No valid metrics to write to report")
         return
 
-    # Write CSV report
     report_path = stage_storage.get_report_path(storage)
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
