@@ -1,10 +1,3 @@
-"""
-Paragraph Correction Processor
-
-Main correction logic using LLMBatchProcessor for parallel vision-based correction.
-Handles request preparation, result processing, and quality metric calculation.
-"""
-
 import time
 from datetime import datetime
 from typing import List
@@ -34,23 +27,6 @@ def correct_pages(
     total_pages: int,
     output_schema,
 ):
-    """
-    Correct remaining pages using vision-based LLM correction.
-
-    Uses LLMBatchProcessor for clean parallel execution with progress tracking.
-
-    Args:
-        storage: BookStorage instance
-        checkpoint: CheckpointManager instance
-        logger: PipelineLogger instance
-        stage_storage: ParagraphCorrectStageStorage instance
-        model: Vision model to use
-        max_workers: Number of parallel workers
-        max_retries: Maximum retry attempts per page
-        remaining_pages: List of page numbers to process
-        total_pages: Total pages in book
-        output_schema: ParagraphCorrectPageOutput schema for validation
-    """
     if not remaining_pages:
         logger.info("No pages to correct")
         return
@@ -58,15 +34,13 @@ def correct_pages(
     logger.info(f"Correcting {len(remaining_pages)} pages with {model}")
     start_time = time.time()
 
-    # Phase 1: Prepare all requests in parallel
     logger.info(f"Loading {len(remaining_pages)} pages...")
     load_start = time.time()
 
     requests = []
-    page_data_map = {}  # Store OCR data for later use
+    page_data_map = {}
 
     def load_page(page_num):
-        """Load and prepare a single page request."""
         try:
             request, ocr_page = prepare_correction_request(
                 page_num=page_num,
@@ -79,7 +53,6 @@ def correct_pages(
             logger.error(f"Failed to prepare page {page_num}", error=str(e))
             return None
 
-    # Create progress bar for loading
     from infra.pipeline.rich_progress import RichProgressBarHierarchical
     load_progress = RichProgressBarHierarchical(
         total=len(remaining_pages),
@@ -89,7 +62,6 @@ def correct_pages(
     )
     load_progress.update(0, suffix="loading OCR data...")
 
-    # Load pages in parallel
     loaded = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_page = {
@@ -114,7 +86,6 @@ def correct_pages(
         logger.warning("No valid requests to process")
         return
 
-    # Phase 2: Process batch with LLMBatchProcessor
     stage_log_dir = storage.stage("paragraph_correct").output_dir / "logs"
     processor = LLMBatchProcessor(
         checkpoint=checkpoint,
@@ -129,12 +100,6 @@ def correct_pages(
     failed_pages = []
 
     def on_result(result: LLMResult):
-        """
-        Handle each correction result.
-
-        Callback for LLMBatchProcessor - parses, validates, calculates metrics,
-        and saves output atomically.
-        """
         page_num = result.request.metadata['page_num']
         ocr_page = page_data_map[page_num]
 
@@ -144,18 +109,15 @@ def correct_pages(
             return
 
         try:
-            # Parse LLM response
             correction_data = result.parsed_json
             if correction_data is None:
                 raise ValueError("parsed_json is None for successful result")
 
-            # Calculate quality metrics (similarity between OCR and corrected)
             similarity_ratio, chars_changed = calculate_similarity_metrics(
                 ocr_page=ocr_page,
                 correction_data=correction_data
             )
 
-            # Build page output with metadata
             page_output = {
                 'page_number': page_num,
                 'blocks': correction_data['blocks'],
@@ -178,24 +140,19 @@ def correct_pages(
                 ))
             }
 
-            # Validate with schema
             validated = output_schema(**page_output)
 
-            # Build checkpoint metrics using helper
             metrics = ParagraphCorrectPageMetrics(**llm_result_to_metrics(
                 result=result,
                 page_num=page_num,
                 extra_fields={
-                    # Correction-specific metrics
                     "total_corrections": page_output['total_corrections'],
                     "avg_confidence": page_output['avg_confidence'],
-                    # Similarity metrics
                     "text_similarity_ratio": similarity_ratio,
                     "characters_changed": chars_changed,
                 }
             ))
 
-            # Save page output with metrics (atomic operation)
             stage_storage.save_corrected_page(
                 storage=storage,
                 page_num=page_num,
@@ -209,13 +166,11 @@ def correct_pages(
             logger.error(f"Failed to save page {page_num}", error=str(e))
             failed_pages.append(page_num)
 
-    # Execute batch
     batch_stats = processor.process_batch(
         requests=requests,
         on_result=on_result,
     )
 
-    # Log results
     elapsed = time.time() - start_time
     logger.info(
         f"Correction complete: {batch_stats['completed']} succeeded, "

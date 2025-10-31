@@ -1,10 +1,3 @@
-"""
-Vision LLM Caller for Paragraph Correction
-
-Prepares LLM requests for vision-based OCR correction.
-Handles image loading, prompt building, and schema generation.
-"""
-
 from typing import Optional, Tuple
 from PIL import Image
 
@@ -23,32 +16,12 @@ def prepare_correction_request(
     model: str,
     total_pages: int,
 ) -> Optional[Tuple[LLMRequest, OCRPageOutput]]:
-    """
-    Prepare a single correction LLM request.
-
-    Loads OCR data and source image, generates page-specific schema,
-    and builds the LLM request with vision input.
-
-    Args:
-        page_num: Page number (1-indexed)
-        storage: BookStorage instance
-        model: Vision model to use
-        total_pages: Total pages in book (for prompt context)
-
-    Returns:
-        Tuple of (LLMRequest, OCRPageOutput) or None if page can't be loaded
-
-    Raises:
-        Exception: If OCR data or source image is missing
-    """
-    # Load OCR data using OCR stage's selection map
-    # Strip line/word data to reduce token cost (we only need paragraph text)
     from pipeline.ocr.storage import OCRStageStorage
     ocr_storage = OCRStageStorage(stage_name='ocr')
     ocr_data = ocr_storage.load_selected_page(
         storage,
         page_num,
-        include_line_word_data=False  # Only need paragraph text, not line/word bboxes
+        include_line_word_data=False
     )
 
     if not ocr_data:
@@ -56,7 +29,6 @@ def prepare_correction_request(
 
     ocr_page = OCRPageOutput(**ocr_data)
 
-    # Load source image
     source_stage = storage.stage('source')
     image_file = source_stage.output_page(page_num, extension='png')
 
@@ -66,13 +38,10 @@ def prepare_correction_request(
     page_image = Image.open(image_file)
     page_image = downsample_for_vision(page_image)
 
-    # Generate page-specific schema (constrains block/paragraph structure)
     response_schema = build_page_specific_schema(ocr_page)
 
-    # Load book metadata for context
     metadata = storage.load_metadata()
 
-    # Build page-specific prompt
     user_prompt = build_user_prompt(
         page_num=page_num,
         total_pages=total_pages,
@@ -80,7 +49,6 @@ def prepare_correction_request(
         ocr_data=ocr_page.model_dump()
     )
 
-    # Create LLM request (multimodal) with page-specific schema
     request = LLMRequest(
         id=f"page_{page_num:04d}",
         model=model,
@@ -88,8 +56,8 @@ def prepare_correction_request(
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ],
-        images=[page_image],  # Vision input
-        response_format=response_schema,  # Page-specific constraints!
+        images=[page_image],
+        response_format=response_schema,
         metadata={
             'page_num': page_num,
             'ocr_page': ocr_page,

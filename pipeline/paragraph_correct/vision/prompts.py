@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""
-Prompts for vision-based OCR text correction.
-
-This stage receives OCR text that already has good structure (block boundaries,
-paragraph segmentation). Our job is purely text correction: fix character-level
-OCR misreads by comparing text against the page image.
-"""
-
-# System prompt (same for all pages)
 SYSTEM_PROMPT = """<role>
 You are an OCR text correction specialist. Your task: fix character-level reading
 errors by comparing OCR text against page images. The structure (blocks, paragraphs)
@@ -180,33 +171,15 @@ Format: Return ONLY valid JSON (no markdown fences, no explanatory text)
 
 
 def build_user_prompt(page_num: int, total_pages: int, book_metadata: dict, ocr_data: dict) -> str:
-    """
-    Build user prompt with page context and OCR data.
-
-    The page image is attached separately via LLMRequest.images parameter
-    for vision-based correction.
-
-    Args:
-        page_num: Current page number (1-indexed)
-        total_pages: Total pages in book
-        book_metadata: Book metadata dict with keys: title, author, year, type
-        ocr_data: OCR page data as dict (from OCRPageOutput.model_dump())
-
-    Returns:
-        User prompt with vision-first task, OCR data, and critical reminders
-    """
     import json
 
-    # Extract metadata
     title = book_metadata.get('title', 'Unknown')
     author = book_metadata.get('author', 'Unknown')
     year = book_metadata.get('year', 'Unknown')
     book_type = book_metadata.get('type', 'Unknown')
 
-    # Count blocks for structural constraint
     num_blocks = len(ocr_data.get('blocks', []))
 
-    # Pretty-print OCR JSON
     ocr_json = json.dumps(ocr_data, indent=2)
 
     return f"""<task>

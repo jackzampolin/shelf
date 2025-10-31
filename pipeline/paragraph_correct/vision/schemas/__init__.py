@@ -1,7 +1,3 @@
-"""
-Vision LLM Schemas for Paragraph Correction
-"""
-
 from .response import build_page_specific_schema
 from .llm_response import (
     ParagraphCorrection,
