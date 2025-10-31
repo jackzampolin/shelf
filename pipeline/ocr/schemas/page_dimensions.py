@@ -1,5 +1,3 @@
-"""Page dimensions schema."""
-
 from pydantic import BaseModel, Field
 
 

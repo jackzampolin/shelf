@@ -1,5 +1,3 @@
-"""Vision-based OCR provider selection."""
-
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 from .schemas import VisionSelectionResponse
 

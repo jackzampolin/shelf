@@ -1,5 +1,3 @@
-"""OCR page schemas - reusable across stages."""
-
 from .bounding_box import BoundingBox
 from .page_dimensions import PageDimensions
 from .word import Word

@@ -1,12 +1,10 @@
 """
-OCR Stage: Parallel OCR with unified page iteration.
+OCR Stage: Parallel provider execution with vision-based selection.
 
 Architecture:
-- All PSM modes run in parallel per page (not sequentially)
-- Vision selection queued immediately after PSM completion
-- Simple checkpointing with multi-phase resume support
-- Amortizes LLM latency over Tesseract CPU cycles
-- Pluggable OCR providers for easy experimentation
+- All providers run in parallel per page (Tesseract PSM 3/4/6 by default)
+- Vision LLM selects best provider output for low-agreement pages
+- Multi-phase resume support with incremental checkpointing
 """
 
 import multiprocessing
@@ -25,43 +23,21 @@ from .storage import OCRStageStorage
 
 
 class OCRStage(BaseStage):
-    """
-    OCR Stage: Unified page iteration with parallel provider execution.
-
-    Architecture:
-    - Tesseract Pool (ProcessPoolExecutor): All providers run in parallel per page
-    - Vision Pool (ThreadPoolExecutor): Vision selection queued as PSMs complete
-    - Pipeline: Vision processes page N-1 while Tesseract processes page N
-
-    Each page:
-    1. Run all OCR providers in parallel (e.g., PSM3, PSM4, PSM6)
-    2. Queue vision selection to choose best provider output
-    3. Save selected result + checkpoint
-    """
-
     name = "ocr"
     dependencies = ["source"]
 
     output_schema = OCRPageOutput
     checkpoint_schema = OCRPageMetrics
     report_schema = OCRPageReport
-    self_validating = True  # Stage manages its own multi-phase completion status
+    self_validating = True
 
     def __init__(
         self,
         providers: Optional[List[OCRProvider]] = None,
         max_workers: Optional[int] = None,
     ):
-        """
-        Args:
-            providers: List of OCR providers to run in parallel.
-                      Default: [TesseractProvider(psm=3/4/6)]
-            max_workers: CPU workers for parallel OCR processing.
-                        Default: cpu_count()
-        """
         super().__init__()
 
-        # Default to traditional Tesseract PSM modes
         if providers is None:
             self.providers = [
                 TesseractProvider(
@@ -74,11 +50,8 @@ class OCRStage(BaseStage):
             self.providers = providers
 
         self.max_workers = max_workers or multiprocessing.cpu_count()
-
-        # Extract provider identifiers for checkpoint tracking
         self.provider_ids = [p.config.name for p in self.providers]
 
-        # Create status tracker and storage manager
         self.status_tracker = OCRStatusTracker(
             stage_name=self.name,
             provider_names=self.provider_ids
@@ -86,17 +59,14 @@ class OCRStage(BaseStage):
         self.ocr_storage = OCRStageStorage(stage_name=self.name)
 
     def get_progress(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger) -> Dict[str, Any]:
-        """Delegate to status tracker for progress calculation."""
         return self.status_tracker.get_progress(storage, checkpoint, logger)
 
     def before(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger):
-        """Pre-run validation and initialization."""
         logger.info(f"OCR with {len(self.providers)} providers:")
         for provider in self.providers:
             logger.info(f"  - {provider.provider_name}")
         logger.info(f"CPU workers: {self.max_workers}")
 
-        # Validate source files exist
         source_stage = storage.stage("source")
         source_pages = source_stage.list_output_pages(extension="png")
 
@@ -109,16 +79,6 @@ class OCRStage(BaseStage):
         checkpoint: CheckpointManager,
         logger: PipelineLogger,
     ) -> Dict[str, Any]:
-        """
-        Run OCR with status-based resume.
-
-        Uses progress status to determine what work needs to be done,
-        enabling efficient resume from any interruption point.
-
-        Returns:
-            Stats dict with pages_processed, total_cost_usd, etc.
-        """
-        # Get current progress to determine what needs to be done
         progress = self.get_progress(storage, checkpoint, logger)
         total_pages = progress["total_pages"]
         status = progress["status"]
@@ -126,9 +86,8 @@ class OCRStage(BaseStage):
         logger.info(f"OCR Status: {status}")
         logger.info(f"Progress: {total_pages - len(progress['remaining_pages'])}/{total_pages} pages complete")
 
-        # Phase 1: Run OCR for incomplete providers
+        # Phase 1: Parallel OCR extraction
         if status in [OCRStageStatus.NOT_STARTED.value, OCRStageStatus.RUNNING_OCR.value]:
-            # Check if any provider work remains
             has_ocr_work = any(len(pages) > 0 for pages in progress["providers"].values())
 
             if has_ocr_work:
@@ -140,13 +99,9 @@ class OCRStage(BaseStage):
                     self.providers, self.output_schema, total_pages,
                     self.max_workers, self.name
                 )
-                # Refresh progress after OCR
                 progress = self.get_progress(storage, checkpoint, logger)
 
-        # Phase 2: Provider selection - broken into 3 sub-phases for resume
-        # Each sub-phase writes incrementally for seamless cancel/resume
-
-        # Phase 2a: Calculate agreement
+        # Phase 2a: Calculate provider agreement
         pages_needing_agreement = progress["selection"]["pages_needing_agreement"]
         if len(pages_needing_agreement) > 0:
             logger.info("=== Phase 2a: Calculate Provider Agreement ===")
@@ -184,8 +139,8 @@ class OCRStage(BaseStage):
         else:
             logger.info("No pages need vision selection (all pages have high agreement)")
 
-        # Phase 3: Extract book metadata from first 15 pages
-        if len(progress["remaining_pages"]) == 0:  # All pages selected
+        # Phase 3: Extract book metadata
+        if len(progress["remaining_pages"]) == 0:
             needs_metadata = progress["metadata"]["needs_extraction"]
             if needs_metadata:
                 logger.info("=== Phase 3: Extract Book Metadata ===")
@@ -196,7 +151,7 @@ class OCRStage(BaseStage):
                 )
                 progress = self.get_progress(storage, checkpoint, logger)
 
-        # Phase 4: Generate report.csv from checkpoint metrics
+        # Phase 4: Generate report
         if len(progress["remaining_pages"]) == 0 and not progress["metadata"]["needs_extraction"]:
             needs_report = not progress["artifacts"]["report_exists"]
             if needs_report:
@@ -208,7 +163,6 @@ class OCRStage(BaseStage):
                 )
                 progress = self.get_progress(storage, checkpoint, logger)
 
-        # Mark stage as completed if all phases done
         all_complete = (
             len(progress["remaining_pages"]) == 0
             and not progress["metadata"]["needs_extraction"]
@@ -217,7 +171,6 @@ class OCRStage(BaseStage):
         if all_complete:
             checkpoint.set_phase(OCRStageStatus.COMPLETED.value)
 
-        # Calculate final stats
         completed_pages = total_pages - len(progress["remaining_pages"])
         total_cost = progress["metrics"]["total_cost_usd"]
 

@@ -1,5 +1,3 @@
-"""Paragraph schema for OCR text detection."""
-
 from typing import List, Literal
 from pydantic import BaseModel, Field, field_validator
 
@@ -8,12 +6,6 @@ from .line import Line
 
 
 class Paragraph(BaseModel):
-    """
-    A paragraph detected by Tesseract.
-
-    Tesseract groups related text into paragraphs based on spatial proximity
-    and text flow. This is the primary unit for LLM correction.
-    """
     par_num: int = Field(..., ge=0, description="Tesseract paragraph number within block")
     bbox: BoundingBox = Field(..., description="Paragraph bounding box")
     text: str = Field(..., min_length=1, description="Full paragraph text (all lines joined)")
@@ -29,7 +21,6 @@ class Paragraph(BaseModel):
     @field_validator('bbox', mode='before')
     @classmethod
     def parse_bbox(cls, v):
-        """Handle bbox as list or BoundingBox."""
         if isinstance(v, list):
             return BoundingBox.from_list(v)
         return v

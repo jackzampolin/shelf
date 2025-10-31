@@ -1,10 +1,3 @@
-"""
-Automatic provider selection for OCR (Phase 2b).
-
-For high-agreement pages (agreement >= 0.95), automatically selects
-the provider with highest confidence score.
-"""
-
 from typing import List
 
 from infra.storage.book_storage import BookStorage
@@ -26,20 +19,6 @@ def auto_select_pages(
     providers: List[OCRProvider],
     page_numbers: List[int],
 ):
-    """
-    Auto-select best provider for high-agreement pages (Phase 2b).
-
-    For pages with agreement >= 0.95, picks provider with highest confidence
-    and writes selection to checkpoint + selection_map incrementally.
-
-    Args:
-        storage: BookStorage instance
-        checkpoint: CheckpointManager instance
-        logger: PipelineLogger instance
-        ocr_storage: OCRStageStorage instance
-        providers: List of OCR providers
-        page_numbers: List of page numbers to process
-    """
     if not page_numbers:
         return
 
@@ -52,7 +31,6 @@ def auto_select_pages(
     selected_count = 0
     for idx, page_num in enumerate(page_numbers):
         try:
-            # Load provider outputs and metrics
             provider_outputs = _load_provider_outputs(
                 storage, ocr_storage, providers, page_num
             )
@@ -64,12 +42,10 @@ def auto_select_pages(
             page_metrics = checkpoint.get_page_metrics(page_num) or {}
             agreement = page_metrics.get("provider_agreement", 0.0)
 
-            # Select provider with highest confidence
             best_provider = max(
                 provider_outputs.items(), key=lambda x: x[1]["confidence"]
             )[0]
 
-            # Update checkpoint with selection
             selected_data = provider_outputs[best_provider]["data"]
             page_metrics.update({
                 "selected_provider": best_provider,
@@ -78,7 +54,6 @@ def auto_select_pages(
             })
             checkpoint.update_page_metrics(page_num, page_metrics)
 
-            # Write to selection_map incrementally (critical for resume support)
             ocr_storage.update_selection(storage, page_num, {
                 "provider": best_provider,
                 "method": "automatic",
@@ -89,7 +64,6 @@ def auto_select_pages(
             selected_count += 1
             progress.update(idx + 1, suffix=f"{selected_count}/{len(page_numbers)}")
 
-            # Update phase periodically
             if (idx + 1) % 10 == 0 or (idx + 1) == len(page_numbers):
                 checkpoint.set_phase(
                     OCRStageStatus.AUTO_SELECTING.value,

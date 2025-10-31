@@ -1,5 +1,3 @@
-"""Vision-based PSM selection checkpoint metrics schema."""
-
 from pydantic import BaseModel, Field
 
 

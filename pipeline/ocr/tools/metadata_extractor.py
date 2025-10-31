@@ -1,10 +1,3 @@
-"""
-Metadata extraction for OCR (Phase 3).
-
-Extracts book metadata (title, author, year, publisher, etc.) from
-the first 15 pages of OCR output after all pages have been selected.
-"""
-
 import json
 from typing import Optional
 
@@ -25,40 +18,19 @@ def extract_metadata(
     ocr_storage: OCRStageStorage,
     num_pages: int = 15,
 ) -> bool:
-    """
-    Extract book metadata from first N pages of OCR output (Phase 3).
-
-    Uses vision model to analyze first pages and extract:
-    - title, author, year, publisher, type, isbn
-    - confidence score for extraction quality
-
-    Args:
-        storage: BookStorage instance
-        checkpoint: CheckpointManager instance
-        logger: PipelineLogger instance
-        ocr_storage: OCRStageStorage instance
-        num_pages: Number of pages to analyze (default: 15)
-
-    Returns:
-        True if metadata extracted and updated, False otherwise
-    """
     logger.info(f"Extracting book metadata from first {num_pages} pages...")
 
-    # Load selection map to find selected provider for each page
     selection_map = ocr_storage.load_selection_map(storage)
 
-    # Collect text from first N pages (using selected provider for each)
     pages_text = []
     for page_num in range(1, min(num_pages + 1, len(selection_map) + 1)):
         if page_num not in selection_map:
             continue
 
         try:
-            # Get selected provider for this page
             selection = selection_map[page_num]
             provider_name = selection["provider"]
 
-            # Load OCR data from selected provider
             provider_dir = ocr_storage.get_provider_dir(storage, provider_name)
             ocr_file = provider_dir / f"page_{page_num:04d}.json"
 
@@ -69,7 +41,6 @@ def extract_metadata(
             with open(ocr_file, 'r') as f:
                 ocr_data = json.load(f)
 
-            # Extract all text from blocks/paragraphs
             page_text = []
             for block in ocr_data.get('blocks', []):
                 for para in block.get('paragraphs', []):
@@ -88,7 +59,6 @@ def extract_metadata(
         logger.error("No text extracted from OCR files for metadata extraction")
         return False
 
-    # Build extraction prompt
     combined_text = "\n\n".join(pages_text)
 
     prompt = f"""You are analyzing the first pages of a scanned book to extract bibliographic metadata.
@@ -128,7 +98,6 @@ Extract the following metadata fields:
 - isbn: ISBN number (can be ISBN-10 or ISBN-13)
 - confidence: Your confidence in this extraction (0.0-1.0)"""
 
-    # Build JSON schema for structured output
     response_format = {
         "type": "json_schema",
         "json_schema": {
@@ -150,7 +119,6 @@ Extract the following metadata fields:
         }
     }
 
-    # Create LLM request
     request = LLMRequest(
         id="extract_metadata",
         model=Config.vision_model_primary,
@@ -184,21 +152,17 @@ Extract the following metadata fields:
             logger.error(f"Metadata extraction failed: {result.error_message}")
             return False
 
-        # Parse and validate metadata
         metadata = result.parsed_json
         confidence = metadata.get("confidence", 0.0)
 
         logger.info(f"Metadata extracted with confidence {confidence:.2f}")
 
-        # Only update if confidence >= 0.5
         if confidence < 0.5:
             logger.warning("Metadata confidence too low, not updating")
             return False
 
-        # Update metadata.json
         current_metadata = storage.load_metadata()
 
-        # Update fields (preserve existing non-None values if extraction is None)
         for field in ['title', 'author', 'year', 'publisher', 'type', 'isbn']:
             extracted_value = metadata.get(field)
             if extracted_value is not None:
@@ -206,7 +170,6 @@ Extract the following metadata fields:
 
         current_metadata['metadata_extraction_confidence'] = confidence
 
-        # Save updated metadata
         storage.save_metadata(current_metadata)
 
         logger.info(f"✓ Metadata updated: {current_metadata.get('title')} by {current_metadata.get('author')}")

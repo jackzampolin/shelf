@@ -1,5 +1,3 @@
-"""Vision-based PSM selection response schema."""
-
 from typing import Literal
 from pydantic import BaseModel, Field
 

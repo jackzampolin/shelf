@@ -1,10 +1,3 @@
-"""
-Agreement calculation for OCR provider selection (Phase 2a).
-
-Calculates text similarity across OCR provider outputs to determine
-if providers agree on the page content.
-"""
-
 import difflib
 from typing import List, Dict, Any
 
@@ -25,20 +18,7 @@ def calculate_agreements(
     providers: List[OCRProvider],
     page_numbers: List[int],
 ):
-    """
-    Calculate provider agreement for pages (Phase 2a).
 
-    For each page, calculates text similarity across all provider outputs
-    and writes provider_agreement score to checkpoint.
-
-    Args:
-        storage: BookStorage instance
-        checkpoint: CheckpointManager instance
-        logger: PipelineLogger instance
-        ocr_storage: OCRStageStorage instance
-        providers: List of OCR providers
-        page_numbers: List of page numbers to process
-    """
     if not page_numbers:
         return
 
@@ -51,7 +31,6 @@ def calculate_agreements(
     calculated = 0
     for idx, page_num in enumerate(page_numbers):
         try:
-            # Load all provider outputs
             provider_outputs = _load_provider_outputs(
                 storage, ocr_storage, providers, page_num
             )
@@ -62,10 +41,8 @@ def calculate_agreements(
                 )
                 continue
 
-            # Calculate agreement
             agreement = _calculate_text_agreement(provider_outputs)
 
-            # Update checkpoint with agreement score
             page_metrics = checkpoint.get_page_metrics(page_num) or {}
             page_metrics["provider_agreement"] = agreement
             checkpoint.update_page_metrics(page_num, page_metrics)
@@ -85,7 +62,6 @@ def _load_provider_outputs(
     providers: List[OCRProvider],
     page_num: int,
 ) -> Dict[str, Dict[str, Any]]:
-    """Load all provider outputs for a page with extracted text and confidence"""
     provider_outputs = {}
 
     for provider in providers:
@@ -104,7 +80,6 @@ def _load_provider_outputs(
 
 
 def _extract_text(ocr_output: Dict[str, Any]) -> str:
-    """Extract full text from OCR output"""
     blocks = ocr_output.get("blocks", [])
     paragraphs = []
 
@@ -118,7 +93,6 @@ def _extract_text(ocr_output: Dict[str, Any]) -> str:
 
 
 def _calculate_confidence(ocr_output: Dict[str, Any]) -> float:
-    """Calculate average confidence from OCR output"""
     blocks = ocr_output.get("blocks", [])
     confidences = []
 
@@ -132,12 +106,6 @@ def _calculate_confidence(ocr_output: Dict[str, Any]) -> float:
 
 
 def _calculate_text_agreement(provider_outputs: Dict[str, Dict]) -> float:
-    """
-    Calculate pairwise text similarity across providers.
-
-    Uses difflib.SequenceMatcher to compare all pairs of provider outputs
-    and returns the average similarity score (0.0 to 1.0).
-    """
     texts = [output["text"] for output in provider_outputs.values()]
 
     if len(texts) < 2:

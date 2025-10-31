@@ -1,10 +1,3 @@
-"""
-Vision-based PSM selection prompts.
-
-Prompts for LLM to select best OCR output by comparing multiple PSM modes
-against the original page image.
-"""
-
 import json
 from ..tools.downsample import downsample_ocr_for_vision, calculate_ocr_summary_stats
 
@@ -81,20 +74,6 @@ def build_user_prompt(
     psm_outputs: dict = None,
     agreement_metrics: dict = None
 ) -> str:
-    """
-    Build page-specific vision selection prompt.
-
-    Args:
-        page_num: Current page number
-        total_pages: Total pages in book
-        book_metadata: Optional book metadata (title, author, etc.)
-        psm_outputs: Dict mapping PSM mode to OCRPageOutput dict
-        agreement_metrics: Optional agreement analysis metrics
-
-    Returns:
-        Formatted user prompt string
-    """
-    # Build context (metadata optional)
     prompt_parts = [
         f"**Page {page_num} of {total_pages}**",
     ]
