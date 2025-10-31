@@ -39,6 +39,7 @@ from infra.config import Config
 # Import Stage classes
 from pipeline.ocr import OCRStage
 from pipeline.correction import CorrectionStage
+from pipeline.paragraph_correct import ParagraphCorrectStage
 from pipeline.label import LabelStage
 from pipeline.merged import MergeStage
 from pipeline.build_structure import BuildStructureStage
@@ -574,6 +575,11 @@ def cmd_process(args):
             model=args.model,
             max_workers=args.workers if args.workers else 30,
             auto_analyze=auto_analyze
+        ),
+        'paragraph_correct': ParagraphCorrectStage(
+            model=args.model,
+            max_workers=args.workers if args.workers else 30,
+            max_retries=3
         ),
         'labels': LabelStage(
             model=args.model,

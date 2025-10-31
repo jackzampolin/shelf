@@ -5,6 +5,7 @@ Provides:
 - LLMClient: Single LLM calls with retry logic and vision support
 - LLMBatchClient: Batch processing with queue-based retries
 - Data models: Request/result structures for batch processing
+- Metrics: Helper utilities for converting results to checkpoint metrics
 - Pricing: Dynamic cost calculation from OpenRouter API
 - RateLimiter: Token bucket rate limiting
 """
@@ -21,6 +22,7 @@ from infra.llm.models import (
     CompletedStatus,
     BatchStats
 )
+from infra.llm.metrics import llm_result_to_metrics
 from infra.llm.pricing import PricingCache, CostCalculator, calculate_cost
 from infra.llm.rate_limiter import RateLimiter
 
@@ -35,6 +37,7 @@ __all__ = [
     "RequestStatus",
     "CompletedStatus",
     "BatchStats",
+    "llm_result_to_metrics",
     "PricingCache",
     "CostCalculator",
     "calculate_cost",
