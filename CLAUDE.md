@@ -21,42 +21,36 @@ Read `pipeline/ocr/` and `docs/guides/implementing-a-stage.md` to understand the
 ### Directory Structure
 ```
 pipeline/your_stage/
-├── __init__.py          # Stage class ONLY (no business logic)
-├── status.py            # Progress tracking (ground truth from disk)
-├── storage.py           # Stage-specific file I/O
-├── schemas/             # One schema per file
+├── __init__.py
+├── status.py
+├── storage.py
+├── schemas/
 │   ├── page_output.py
 │   ├── page_metrics.py
 │   └── page_report.py
-├── tools/               # Helper functions
-└── llm_calls/           # Per-LLM-call organization (optional)
+├── tools/
+└── llm_calls/
 ```
 
 ### Lifecycle Hooks
 ```python
 class YourStage(BaseStage):
     def get_progress(self, storage, checkpoint, logger):
-        """Calculate what work remains (delegate to status tracker)."""
         return self.status_tracker.get_progress(...)
 
     def before(self, storage, checkpoint, logger):
-        """Validate dependencies exist."""
         pass
 
     def run(self, storage, checkpoint, logger):
-        """Execute all phases with if-gates for resume."""
         progress = self.get_progress(storage, checkpoint, logger)
 
-        # Phase 1: Main processing
         if needs_phase_1(progress):
             do_phase_1()
-            progress = self.get_progress(...)  # Refresh
+            progress = self.get_progress(...)
 
-        # Phase 2: Report generation
         if needs_phase_2(progress):
             generate_report()
 
-        # Mark complete
         if all_done(progress):
             checkpoint.set_phase("completed")
 
@@ -71,16 +65,15 @@ def run(self, storage, checkpoint, logger):
     progress = self.get_progress(...)
 
     if progress["remaining_pages"]:
-        # Process remaining pages
-        progress = self.get_progress(...)  # Refresh after each phase
+        process_pages()
+        progress = self.get_progress(...)
 
     if not progress["artifacts"]["report_exists"]:
-        # Generate report
+        generate_report()
 ```
 
 **2. Ground truth from disk:**
 ```python
-# status.py checks files on disk
 def get_progress(self, storage, checkpoint, logger):
     completed = [p for p in pages if output_file_exists(p)]
     remaining = [p for p in pages if p not in completed]
@@ -102,18 +95,15 @@ for page_num in remaining_pages:
 **Always one schema per file:**
 
 ```python
-# schemas/page_output.py
 class YourPageOutput(BaseModel):
     page_number: int
     content: str
 
-# schemas/page_metrics.py
 class YourPageMetrics(BaseModel):
     page_num: int
     cost_usd: float
     processing_time_seconds: float
 
-# schemas/page_report.py (quality metrics only)
 class YourPageReport(BaseModel):
     page_num: int
     quality_score: float
@@ -147,15 +137,15 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 **CRITICAL: Pipeline costs real money (OpenRouter API).**
 
 **ALWAYS ask before running:**
-- `shelf.py process <scan-id>` - Costs money
-- `shelf.py sweep <stage>` - Costs money per book
+- `shelf.py process <scan-id>`
+- `shelf.py sweep <stage>`
 - Any LLM-based stage (correction, labels, merge)
 
 **Safe to run:**
-- `shelf.py list` - Free
-- `shelf.py status <scan-id>` - Free
-- `pytest tests/` - Free
-- Reading code, grepping, analyzing - Free
+- `shelf.py list`
+- `shelf.py status <scan-id>`
+- `pytest tests/`
+- Reading code, grepping, analyzing
 
 ---
 
@@ -218,22 +208,22 @@ uv run python -m pytest tests/ -v
 
 **CLI:**
 ```bash
-shelf.py shelve <pdf>           # Add book to library
-shelf.py list                   # List all books
-shelf.py status <scan-id>       # Check progress
-shelf.py process <scan-id>      # Run full pipeline
-shelf.py clean <scan-id> --stage ocr  # Reset stage
+shelf.py shelve <pdf>
+shelf.py list
+shelf.py status <scan-id>
+shelf.py process <scan-id>
+shelf.py clean <scan-id> --stage ocr
 ```
 
 ---
 
 ## Documentation Hierarchy
 
-1. **Code** - Ultimate source of truth
-2. **docs/guides/implementing-a-stage.md** - How to build stages
-3. **pipeline/ocr/** - Reference implementation
-4. **README.md** - Quick start and usage
-5. **CLAUDE.md** (this file) - Development principles
+1. Code
+2. docs/guides/implementing-a-stage.md
+3. pipeline/ocr/
+4. README.md
+5. CLAUDE.md (this file)
 
 ---
 
