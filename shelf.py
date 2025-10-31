@@ -38,9 +38,8 @@ from infra.config import Config
 
 # Import Stage classes
 from pipeline.ocr import OCRStage
-from pipeline.correction import CorrectionStage
 from pipeline.paragraph_correct import ParagraphCorrectStage
-from pipeline.label import LabelStage
+from pipeline.label_pages import LabelPagesStage
 from pipeline.merged import MergeStage
 from pipeline.build_structure import BuildStructureStage
 
@@ -118,7 +117,7 @@ def cmd_library_list(args):
             storage = library.get_book_storage(scan_id)
             stage_symbols = []
 
-            for stage_name in ['ocr', 'corrected', 'labels', 'merged']:
+            for stage_name in ['ocr', 'paragraph-correct', 'label-pages', 'merged']:
                 stage_storage = storage.stage(stage_name)
                 checkpoint = stage_storage.checkpoint
                 status = checkpoint.get_status()
@@ -192,8 +191,8 @@ def cmd_library_status(args):
     # Check each stage
     stages = [
         ('ocr', 'OCR'),
-        ('corrected', 'Correction'),
-        ('labels', 'Label'),
+        ('paragraph-correct', 'Paragraph-Correct'),
+        ('label-pages', 'Label-Pages'),
         ('merged', 'Merge')
     ]
 
@@ -267,8 +266,8 @@ def cmd_stage_status(args):
     # Get stage instance
     stage_map = {
         'ocr': OCRStage(),
-        'corrected': CorrectionStage(),
-        'labels': LabelStage(),
+        'paragraph-correct': ParagraphCorrectStage(),
+        'label-pages': LabelPagesStage(),
         'merged': MergeStage(),
     }
 
@@ -504,8 +503,8 @@ def cmd_analyze(args):
 
     # Map stage names to stage classes
     stage_classes = {
-        'labels': LabelStage,
-        'corrected': CorrectionStage,
+        'label-pages': LabelPagesStage,
+        'paragraph-correct': ParagraphCorrectStage,
     }
 
     stage_class = stage_classes[args.stage]
@@ -563,28 +562,20 @@ def cmd_process(args):
         stages_to_run = [s.strip() for s in args.stages.split(',')]
     else:
         # Full pipeline
-        stages_to_run = ['ocr', 'corrected', 'labels', 'merged']
+        stages_to_run = ['ocr', 'paragraph-correct', 'label-pages', 'merged']
 
     # Map stage names to Stage instances
-    # Auto-analyze disabled by default for correction and label stages (use --auto-analyze to enable)
-    auto_analyze = getattr(args, 'auto_analyze', False)
-
     stage_map = {
         'ocr': OCRStage(max_workers=args.workers if args.workers else None),
-        'corrected': CorrectionStage(
-            model=args.model,
-            max_workers=args.workers if args.workers else 30,
-            auto_analyze=auto_analyze
-        ),
-        'paragraph_correct': ParagraphCorrectStage(
+        'paragraph-correct': ParagraphCorrectStage(
             model=args.model,
             max_workers=args.workers if args.workers else 30,
             max_retries=3
         ),
-        'labels': LabelStage(
+        'label-pages': LabelPagesStage(
             model=args.model,
             max_workers=args.workers if args.workers else 30,
-            auto_analyze=auto_analyze
+            max_retries=3
         ),
         'merged': MergeStage(max_workers=args.workers if args.workers else 8),
         'build_structure': BuildStructureStage(model=args.model)
@@ -823,8 +814,8 @@ def _sweep_stage(library, all_books, args):
 def _sweep_reports(library, all_books, args):
     """Sweep through library regenerating reports from checkpoint data."""
     from pipeline.ocr import OCRStage
-    from pipeline.correction import CorrectionStage
-    from pipeline.label import LabelStage
+    from pipeline.paragraph_correct import ParagraphCorrectStage
+    from pipeline.label_pages import LabelPagesStage
     from pipeline.merged import MergeStage
     from pipeline.build_structure import BuildStructureStage
 
@@ -833,8 +824,8 @@ def _sweep_reports(library, all_books, args):
     # Map stage names to instances
     stage_map = {
         'ocr': OCRStage(),
-        'corrected': CorrectionStage(),
-        'labels': LabelStage(),
+        'paragraph-correct': ParagraphCorrectStage(),
+        'label-pages': LabelPagesStage(),
         'merged': MergeStage(),
         'build_structure': BuildStructureStage(),
     }
@@ -844,7 +835,7 @@ def _sweep_reports(library, all_books, args):
         stages_to_process = [args.stage_filter]
     else:
         # All stages that support reports
-        stages_to_process = ['ocr', 'corrected', 'labels']
+        stages_to_process = ['ocr', 'paragraph-correct', 'label-pages']
 
     total_regenerated = 0
 
@@ -944,19 +935,19 @@ Examples:
   # Single book operations
   shelf show modest-lovelace
   shelf status modest-lovelace
-  shelf report modest-lovelace --stage corrected
-  shelf report modest-lovelace --stage labels --filter "printed_page_number="
-  shelf analyze modest-lovelace --stage labels
+  shelf report modest-lovelace --stage paragraph-correct
+  shelf report modest-lovelace --stage label-pages --filter "printed_page_number="
+  shelf analyze modest-lovelace --stage label-pages
   shelf process modest-lovelace
   shelf process modest-lovelace --stage ocr
   shelf clean modest-lovelace --stage ocr
 
   # Library-wide sweeps
-  shelf sweep labels                    # Run labels stage across all books
-  shelf sweep labels --reshuffle        # Create new random order
-  shelf sweep corrected --force         # Regenerate even if completed
+  shelf sweep label-pages                    # Run label-pages stage across all books
+  shelf sweep label-pages --reshuffle        # Create new random order
+  shelf sweep paragraph-correct --force         # Regenerate even if completed
   shelf sweep reports                   # Regenerate all reports from checkpoints
-  shelf sweep reports --stage-filter labels  # Only regenerate labels reports
+  shelf sweep reports --stage-filter label-pages  # Only regenerate label-pages reports
 """
     )
 
@@ -994,7 +985,7 @@ Examples:
     # shelf report
     report_parser = subparsers.add_parser('report', help='Display stage report as table')
     report_parser.add_argument('scan_id', help='Book scan ID')
-    report_parser.add_argument('--stage', required=True, choices=['ocr', 'corrected', 'labels'], help='Stage to show report for')
+    report_parser.add_argument('--stage', required=True, choices=['ocr', 'paragraph-correct', 'label-pages'], help='Stage to show report for')
     report_parser.add_argument('--limit', type=int, help='Number of rows to show (default: 20)')
     report_parser.add_argument('--all', '-a', action='store_true', help='Show all rows')
     report_parser.add_argument('--filter', help='Filter rows (e.g., "total_corrections>0")')
@@ -1003,7 +994,7 @@ Examples:
     # shelf analyze
     analyze_parser = subparsers.add_parser('analyze', help='Analyze stage outputs with AI agent')
     analyze_parser.add_argument('scan_id', help='Book scan ID')
-    analyze_parser.add_argument('--stage', required=True, choices=['labels', 'corrected'], help='Stage to analyze')
+    analyze_parser.add_argument('--stage', required=True, choices=['label-pages', 'paragraph-correct'], help='Stage to analyze')
     analyze_parser.add_argument('--model', help='OpenRouter model (default: Config.text_model_primary)')
     analyze_parser.add_argument('--focus', nargs='+', help='Focus areas (e.g., page_numbers regions)')
     analyze_parser.set_defaults(func=cmd_analyze)
@@ -1025,7 +1016,7 @@ Examples:
     # shelf process
     process_parser = subparsers.add_parser('process', help='Run pipeline stages (auto-resume)')
     process_parser.add_argument('scan_id', help='Book scan ID')
-    process_parser.add_argument('--stage', help='Single stage to run')
+    process_parser.add_argument('--stage', choices=['ocr', 'paragraph-correct', 'label-pages', 'merged', 'build_structure'], help='Single stage to run')
     process_parser.add_argument('--stages', help='Multiple stages (comma-separated)')
     process_parser.add_argument('--model', help='Vision model (for correction/label stages)')
     process_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
@@ -1038,7 +1029,7 @@ Examples:
     # shelf clean
     clean_parser = subparsers.add_parser('clean', help='Clean stage outputs')
     clean_parser.add_argument('scan_id', help='Book scan ID')
-    clean_parser.add_argument('--stage', required=True, choices=['ocr', 'corrected', 'labels', 'merged'], help='Stage to clean')
+    clean_parser.add_argument('--stage', required=True, choices=['ocr', 'paragraph-correct', 'label-pages', 'merged'], help='Stage to clean')
     clean_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation')
     clean_parser.set_defaults(func=cmd_clean)
 
@@ -1046,12 +1037,12 @@ Examples:
 
     # shelf sweep
     sweep_parser = subparsers.add_parser('sweep', help='Sweep through library: run stages or regenerate reports')
-    sweep_parser.add_argument('target', choices=['ocr', 'corrected', 'labels', 'merged', 'build_structure', 'reports'], help='What to sweep: stage name or "reports"')
+    sweep_parser.add_argument('target', choices=['ocr', 'paragraph-correct', 'label-pages', 'merged', 'build_structure', 'reports'], help='What to sweep: stage name or "reports"')
     sweep_parser.add_argument('--model', help='Vision model (for correction/label stages)')
     sweep_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
     sweep_parser.add_argument('--reshuffle', action='store_true', help='Create new random order (stages only)')
     sweep_parser.add_argument('--force', action='store_true', help='Regenerate even if completed (stages only)')
-    sweep_parser.add_argument('--stage-filter', choices=['ocr', 'corrected', 'labels'], help='Filter which stage reports to regenerate (reports only)')
+    sweep_parser.add_argument('--stage-filter', choices=['ocr', 'paragraph-correct', 'label-pages'], help='Filter which stage reports to regenerate (reports only)')
     sweep_parser.set_defaults(func=cmd_sweep)
 
     # Parse and execute

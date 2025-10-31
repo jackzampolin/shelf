@@ -1,10 +1,10 @@
 """
-Merge Stage - Combines OCR, Correction, and Label data.
+Merge Stage - Combines OCR, Paragraph-Correct, and Label-Pages data.
 
 Merges three data sources into unified page records:
 - OCR: Original text and spatial layout (bounding boxes)
-- Correction: Corrected text where errors were found
-- Label: Block classifications and printed page numbers
+- Paragraph-Correct: Corrected text where errors were found
+- Label-Pages: Block classifications and printed page numbers
 
 Cost: $0 (deterministic merge, no LLM)
 Performance: <30s for 400 pages
@@ -26,20 +26,20 @@ from infra.pipeline.rich_progress import RichProgressBar
 # Import from local modules
 from pipeline.merged.schemas import MergedPageOutput
 from pipeline.ocr.schemas import OCRPageOutput
-from pipeline.correction.schemas import CorrectionPageOutput
-from pipeline.label.schemas import LabelPageOutput
+from pipeline.paragraph_correct.schemas import ParagraphCorrectPageOutput
+from pipeline.label_pages.schemas import LabelPagesPageOutput
 
 
 class MergeStage(BaseStage):
     """
-    Merge Stage - Three-way merge of OCR, Correction, and Label data.
+    Merge Stage - Three-way merge of OCR, Paragraph-Correct, and Label-Pages data.
 
-    Reads: ocr/*.json + corrected/*.json + labels/*.json
+    Reads: ocr/*.json + paragraph-correct/*.json + label-pages/*.json
     Writes: merged/*.json (unified page records)
     """
 
     name = "merged"  # Output directory name
-    dependencies = ["ocr", "corrected", "labels"]  # Requires all three stages
+    dependencies = ["ocr", "paragraph-correct", "label-pages"]  # Requires all three stages
 
     def __init__(self, max_workers: int = 8):
         """
@@ -65,7 +65,7 @@ class MergeStage(BaseStage):
             )
 
         # Get correction outputs
-        correction_stage = storage.stage('corrected')
+        correction_stage = storage.stage('paragraph-correct')
         correction_pages = correction_stage.list_output_pages(extension='json')
 
         if not correction_pages:
@@ -75,7 +75,7 @@ class MergeStage(BaseStage):
             )
 
         # Get label outputs
-        label_stage = storage.stage('labels')
+        label_stage = storage.stage('label-pages')
         label_pages = label_stage.list_output_pages(extension='json')
 
         if not label_pages:
@@ -254,24 +254,24 @@ class MergeStage(BaseStage):
             ocr_page = OCRPageOutput(**ocr_data)
 
             # Load correction data
-            correction_file = storage.stage('corrected').output_page(page_num, extension='json')
+            correction_file = storage.stage('paragraph-correct').output_page(page_num, extension='json')
             if not correction_file.exists():
                 logger.error(f"Correction file not found", page=page_num)
                 return False, 0, False, {}
 
             with open(correction_file, 'r') as f:
                 correction_data = json.load(f)
-            correction_page = CorrectionPageOutput(**correction_data)
+            correction_page = ParagraphCorrectPageOutput(**correction_data)
 
             # Load label data
-            label_file = storage.stage('labels').output_page(page_num, extension='json')
+            label_file = storage.stage('label-pages').output_page(page_num, extension='json')
             if not label_file.exists():
                 logger.error(f"Label file not found", page=page_num)
                 return False, 0, False, {}
 
             with open(label_file, 'r') as f:
                 label_data = json.load(f)
-            label_page = LabelPageOutput(**label_data)
+            label_page = LabelPagesPageOutput(**label_data)
 
             # Merge page data (three-way merge)
             merged_page, corrections_used, has_continuation = self._merge_page_data(
@@ -290,8 +290,8 @@ class MergeStage(BaseStage):
     def _merge_page_data(
         self,
         ocr_page: OCRPageOutput,
-        correction_page: CorrectionPageOutput,
-        label_page: LabelPageOutput,
+        correction_page: ParagraphCorrectPageOutput,
+        label_page: LabelPagesPageOutput,
         logger: PipelineLogger
     ) -> Tuple[Dict, int, bool]:
         """
