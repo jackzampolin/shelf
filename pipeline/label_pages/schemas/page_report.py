@@ -1,9 +1,4 @@
-"""
-Report Schema
-
-Quality-focused metrics for CSV report.
-Filters checkpoint metrics to show only what matters for quality assessment.
-"""
+"""CSV report schema with labeling-focused metrics subset."""
 
 from typing import Optional, Literal
 from pydantic import BaseModel, Field

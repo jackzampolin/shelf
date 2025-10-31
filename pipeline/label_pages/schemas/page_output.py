@@ -1,9 +1,4 @@
-"""
-Page Output Schema
-
-What we write to disk after labeling.
-This is the LLM response + metadata added by the stage.
-"""
+"""Page output schema: labeled blocks with classifications and page numbers."""
 
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field

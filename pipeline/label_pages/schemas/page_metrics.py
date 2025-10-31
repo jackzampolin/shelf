@@ -1,9 +1,4 @@
-"""
-Checkpoint Metrics Schema
-
-What we track in checkpoint for each page.
-Extends LLMPageMetrics with label-specific quality metrics.
-"""
+"""Checkpoint metrics schema extending LLMPageMetrics with labeling quality data."""
 
 from typing import Optional, Literal
 from pydantic import Field

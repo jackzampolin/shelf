@@ -1,8 +1,4 @@
-"""
-Vision-Based Page Labeling Prompts
-
-Prompts for extracting page numbers and classifying content blocks using multimodal LLM.
-"""
+"""Vision-based page labeling prompts."""
 
 # System prompt (constant for all pages)
 SYSTEM_PROMPT = """<role>

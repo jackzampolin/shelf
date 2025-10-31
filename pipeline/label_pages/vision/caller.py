@@ -1,9 +1,4 @@
-"""
-Vision LLM Caller for Page Labeling
-
-Prepares LLM requests for vision-based page number extraction and block classification.
-Handles image loading, prompt building, and schema generation.
-"""
+"""Vision-based page labeling: prompts, request preparation, and dynamic schemas."""
 
 import json
 from typing import Optional, Tuple

@@ -1,9 +1,4 @@
-"""
-Page Labeling Processor
-
-Main labeling logic using LLMBatchProcessor for parallel vision-based labeling.
-Handles request preparation, result processing, and classification metrics.
-"""
+"""Page labeling using LLMBatchProcessor for parallel vision-based labeling."""
 
 import time
 from datetime import datetime
