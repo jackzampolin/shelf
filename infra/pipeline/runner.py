@@ -12,6 +12,7 @@ from typing import List, Optional
 from pathlib import Path
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
+from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import create_logger, PipelineLogger
 
 
@@ -58,7 +59,10 @@ def run_stage(
 
     # Initialize infrastructure for this stage
     stage_storage = storage.stage(stage.name)
-    checkpoint = stage_storage.checkpoint
+    checkpoint = CheckpointManager(
+        scan_id=storage.scan_id,
+        stage=stage.name
+    )
 
     # Create logger in stage-specific logs directory
     logs_dir = stage_storage.output_dir / "logs"

@@ -1,20 +1,19 @@
 """
-Build-structure stage: Extract and validate book structure metadata.
+Build-structure stage: Validate and build book structure metadata.
 
-This stage operates on the entire book (not per-page) to identify:
-- Front matter (title, copyright, TOC, preface, etc.)
-- Chapters and sections
-- Back matter (epilogue, notes, bibliography, index, etc.)
-- Page numbering patterns
+This stage operates on the entire book (not per-page) to:
+- Load ToC from extract_toc stage
+- Extract heading text from chapter heading pages
+- Analyze and validate structure
+- Output final structure.json
 
-Three-phase processing:
-1. Phase 1a: Parse ToC (if detected)
-2. Phase 1.5: Extract heading text from chapter heading pages
-3. Phase 1b: LLM analyzes labels/report.csv -> DraftMetadata (~$0.10-0.20, 10-30s)
-4. Phase 2: Validate against merged/ pages -> ValidationResult (~$0-1, 1-2min)
-5. Phase 3: Output validated structure.json
+Processing phases:
+1. Phase 1: Load ToC from extract_toc stage
+2. Phase 2: Extract heading text from label_pages
+3. Phase 3: Analyze and validate structure
+4. Phase 4: Output validated structure.json
 
-Dependencies: merged, labels
+Dependencies: extract_toc, label_pages, merged
 Output: build_structure/structure.json
 """
 
@@ -44,7 +43,7 @@ class BuildStructureStage(BaseStage):
     """
 
     name = "build_structure"
-    dependencies = ["merged", "labels"]
+    dependencies = ["extract_toc", "label_pages", "merged"]
 
     # No output schema (writes to structure.json, not per-page outputs)
     output_schema = None
@@ -94,33 +93,30 @@ class BuildStructureStage(BaseStage):
         total_cost = 0.0
         stage_storage = storage.stage(self.name)
 
-        # Phase 1a: Parse Table of Contents (provides top-down structure)
-        labels_report_path = storage.book_dir / "labels" / "report.csv"
-        toc, phase1a_cost = parse_toc(
-            storage=storage,
-            labels_report_path=labels_report_path,
-            model=self.model,
-            logger=logger,
-        )
+        # Phase 1: Load ToC from extract_toc stage
+        logger.info("Phase 1: Loading ToC from extract_toc stage")
+        print(f"\n📖 Phase 1: Loading ToC from extract_toc stage...")
 
-        total_cost += phase1a_cost
+        extract_toc_storage = storage.stage("extract_toc")
+        toc_data = extract_toc_storage.load_page(1)  # Book-level, uses sentinel page_num=1
 
-        # Save ToC to build_structure/toc.json (even if None)
-        toc_path = stage_storage.output_dir / "toc.json"
-        with open(toc_path, "w") as f:
-            if toc:
-                json.dump(toc.model_dump(), f, indent=2)
-            else:
-                json.dump({"note": "No ToC found in labels report"}, f, indent=2)
-
-        if toc:
-            logger.info("Saved toc.json", path=str(toc_path), entries=len(toc.entries))
+        toc = None
+        if toc_data and toc_data.get("toc"):
+            # Parse ToC from extract_toc output
+            from .schemas import TableOfContents
+            toc = TableOfContents(**toc_data["toc"])
+            logger.info("Loaded ToC from extract_toc", entries=len(toc.entries))
+            print(f"   ✓ Loaded ToC: {len(toc.entries)} entries ({toc.total_chapters} chapters)")
         else:
-            logger.info("No ToC found, saved placeholder toc.json", path=str(toc_path))
+            logger.info("No ToC found (extract_toc stage did not find one)")
+            print(f"   ⊘ No ToC found")
 
-        # TEMPORARY: Skip remaining phases for Phase 1 testing (issue #75)
-        # Just test ToC extraction across library
-        logger.info("Phase 1 testing: Skipping structure analysis phases")
+        # Note: extract_toc stage already paid the cost, don't double-count
+        # We're just loading the result here
+
+        # TEMPORARY: Skip remaining phases for now (waiting for full implementation)
+        # Just load ToC and save basic structure
+        logger.info("TEMPORARY: Skipping structure analysis phases (not yet implemented)")
         checkpoint.mark_completed(
             page_num=1,
             cost_usd=total_cost,
@@ -131,7 +127,7 @@ class BuildStructureStage(BaseStage):
             },
         )
         return {
-            "status": "success (phase 1 testing)",
+            "status": "success (temporary - toc loaded only)",
             "toc_found": toc is not None,
             "toc_entries": len(toc.entries) if toc else 0,
             "cost_usd": total_cost,
@@ -139,10 +135,11 @@ class BuildStructureStage(BaseStage):
 
         # TODO: Re-enable for Phase 3 (multi-agent structure extraction)
         """
-        # Phase 1.5: Extract heading text from all chapter heading pages
+        # Phase 2: Extract heading text from all chapter heading pages
+        label_pages_report_path = storage.book_dir / "label_pages" / "report.csv"
         heading_data = extract_headings(
             storage=storage,
-            labels_report_path=labels_report_path,
+            labels_report_path=label_pages_report_path,
             logger=logger,
         )
 
@@ -159,19 +156,19 @@ class BuildStructureStage(BaseStage):
             chapters=heading_data.chapter_count,
         )
 
-        # Phase 1b: Analyze report.csv (informed by ToC and heading data)
-        draft, phase1b_cost = analyze_report(
-            labels_report_path=labels_report_path,
-            toc=toc,  # Pass ToC data to structure analysis
+        # Phase 3: Analyze report.csv (informed by ToC and heading data)
+        draft, phase3_cost = analyze_report(
+            labels_report_path=label_pages_report_path,
+            toc=toc,  # Pass ToC data from extract_toc stage
             heading_data=heading_data,  # Pass extracted heading text
             model=self.model,
             logger=logger,
         )
 
-        total_cost += phase1b_cost
+        total_cost += phase3_cost
 
-        # Phase 2: Restructure (if needed) and validate against merged pages with LLM verification
-        draft, validation, phase2_cost = validate_structure(
+        # Phase 4: Restructure (if needed) and validate against merged pages with LLM verification
+        draft, validation, phase4_cost = validate_structure(
             draft=draft,
             heading_data=heading_data,
             storage=storage,
@@ -180,9 +177,9 @@ class BuildStructureStage(BaseStage):
             use_llm_verification=True,
         )
 
-        total_cost += phase2_cost
+        total_cost += phase4_cost
 
-        # Phase 3: Build final structure and save to build_structure/structure.json
+        # Phase 5: Build final structure and save to build_structure/structure.json
         timestamp = datetime.now(timezone.utc).isoformat()
 
         structure_metadata = BookStructureMetadata(

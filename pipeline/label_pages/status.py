@@ -10,8 +10,8 @@ from .storage import LabelPagesStageStorage
 
 class LabelPagesStatus(str, Enum):
     NOT_STARTED = "not_started"
-    LABELING_STAGE1 = "labeling_stage1"  # Structural analysis (3-image context)
-    LABELING_STAGE2 = "labeling_stage2"  # Block classification (1-image + Stage 1 context)
+    LABELING_STAGE1 = "labeling_stage1"
+    LABELING_STAGE2 = "labeling_stage2"
     GENERATING_REPORT = "generating_report"
     COMPLETED = "completed"
 

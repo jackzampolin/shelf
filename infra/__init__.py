@@ -2,7 +2,7 @@
 Infrastructure for Scanshelf Pipeline
 
 Organized into logical subsystems:
-- storage: Book data storage, checkpointing, metadata
+- storage: Book data storage, metrics tracking, metadata
 - llm: LLM API integration, batching, cost tracking
 - pipeline: Logging, progress tracking
 - utils: Shared utilities (PDF, image processing)
@@ -15,7 +15,7 @@ from infra.config import Config
 # Storage subsystem
 from infra.storage import (
     BookStorage,
-    CheckpointManager,
+    MetricsManager,
     update_book_metadata,
     get_latest_processing_record,
     get_scan_total_cost,
@@ -61,7 +61,7 @@ __all__ = [
 
     # Storage
     "BookStorage",
-    "CheckpointManager",
+    "MetricsManager",
     "update_book_metadata",
     "get_latest_processing_record",
     "get_scan_total_cost",
