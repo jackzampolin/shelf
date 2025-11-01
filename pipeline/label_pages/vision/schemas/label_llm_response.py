@@ -1,39 +1,23 @@
-from typing import List, Optional, Literal
+from typing import List
 from pydantic import BaseModel, Field
 
-from .page_region import PageRegion
 from .block_classification import BlockClassification
 
 
 class LabelLLMResponse(BaseModel):
-    printed_page_number: Optional[str] = Field(
-        None,
-        description="Book-page number as printed on the image (e.g., 'ix', '45', None if unnumbered)"
-    )
-    numbering_style: Optional[Literal["roman", "arabic", "none"]] = Field(
-        None,
-        description="Style of book-page numbering detected"
-    )
-    page_number_location: Optional[Literal["header", "footer", "none"]] = Field(
-        None,
-        description="Where the book-page number was found on the image"
-    )
-    page_number_confidence: float = Field(
-        1.0,
-        ge=0.0,
-        le=1.0,
-        description="Confidence in book-page number extraction (1.0 if no number found)"
-    )
+    """
+    Stage 2 LLM Response: Block-level classifications only.
 
-    page_region: Optional[PageRegion] = Field(
-        None,
-        description="Classified region of book (front/body/back matter, ToC)"
-    )
-    page_region_confidence: Optional[float] = Field(
-        None,
-        ge=0.0,
-        le=1.0,
-        description="Confidence in page region classification"
-    )
+    Page-level metadata (page numbers, page regions, structural boundaries)
+    comes from Stage 1's 3-image context analysis. Stage 2 focuses solely on
+    classifying OCR blocks using Stage 1 context as guidance.
 
-    blocks: List[BlockClassification] = Field(..., description="Block classifications")
+    This separation ensures:
+    - Clear responsibility: Stage 1 = page-level, Stage 2 = block-level
+    - Single source of truth: No conflicting page-level data
+    - Cost efficiency: Stage 2 doesn't re-extract what Stage 1 already found
+    """
+    blocks: List[BlockClassification] = Field(
+        ...,
+        description="Block-level classifications for all OCR blocks on this page"
+    )
