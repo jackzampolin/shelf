@@ -20,11 +20,14 @@ def create_stage1_handler(storage, stage_storage, checkpoint, logger):
                 cost_usd=result.cost_usd or 0.0,
             )
 
-            # Track cost in checkpoint
+            # Track Stage 1 metrics in checkpoint
+            stage1_metrics = llm_result_to_metrics(result, page_num)
+            stage1_metrics['stage'] = 'stage1'  # Mark as Stage 1 for multi-stage tracking
+
             checkpoint.mark_completed(
                 page_num=page_num,
                 cost_usd=result.cost_usd or 0.0,
-                metrics={'stage': 'stage1'},
+                metrics=stage1_metrics,
             )
 
             logger.info(f"✓ Stage 1 complete: page {page_num}")

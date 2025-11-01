@@ -366,23 +366,51 @@ class CheckpointManager:
         """
         Mark a page as completed (thread-safe) with detailed metrics.
 
+        Supports multi-stage workflows where the same page is processed multiple times
+        (e.g., label-pages Stage 1 + Stage 2). When called multiple times for the same
+        page, accumulates costs and merges metrics.
+
         Args:
             page_num: Page number that was completed
             cost_usd: Cost for this page in USD (stored in metrics)
             metrics: Detailed metrics dict (TTFT, execution time, tokens, etc.)
                     If None, creates minimal metrics with just cost and page_num
+                    If metrics contains 'stage' field, metrics are prefixed with stage name
         """
         with self._lock:
-            # Check if already completed
             page_key = str(page_num)
-            if page_key in self._state.get('page_metrics', {}):
-                return  # Already completed, skip
 
             # Ensure page_metrics exists
             if 'page_metrics' not in self._state:
                 self._state['page_metrics'] = {}
 
-            # Store metrics (create minimal if not provided)
+            # Check if page already has metrics (multi-stage case)
+            if page_key in self._state['page_metrics']:
+                existing = self._state['page_metrics'][page_key]
+
+                # Extract costs
+                existing_cost = existing.get('cost_usd', 0.0)
+                new_cost = metrics.get('cost_usd', cost_usd) if metrics else cost_usd
+
+                # Merge metrics
+                if metrics:
+                    stage = metrics.get('stage')
+                    if stage:
+                        # Stage-specific metrics: prefix with stage name (e.g., stage1_cost_usd)
+                        for key, value in metrics.items():
+                            if key != 'stage':
+                                existing[f'{stage}_{key}'] = value
+                    else:
+                        # Final stage metrics: merge directly (may overwrite)
+                        existing.update(metrics)
+
+                    # Accumulate total cost
+                    existing['cost_usd'] = existing_cost + new_cost
+
+                self._save_checkpoint()
+                return
+
+            # First call for this page - store as usual
             if metrics:
                 self._state['page_metrics'][page_key] = metrics
             else:
