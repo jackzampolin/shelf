@@ -36,6 +36,7 @@ def prepare_stage1_request(
     next_page_num = min(total_pages, page_num + 1) if page_num < total_pages else page_num
 
     # Load three images
+    # Reduce max_payload_kb since we're sending 3 images (3 * 300KB ~= 900KB total)
     images = []
     for p in [prev_page_num, page_num, next_page_num]:
         image_file = source_stage.output_page(p, extension='png')
@@ -43,7 +44,7 @@ def prepare_stage1_request(
             raise FileNotFoundError(f"Source image not found for page {p}")
 
         page_image = Image.open(image_file)
-        page_image = downsample_for_vision(page_image)
+        page_image = downsample_for_vision(page_image, max_payload_kb=300)
         images.append(page_image)
 
     # Build response schema from Stage1LLMResponse
