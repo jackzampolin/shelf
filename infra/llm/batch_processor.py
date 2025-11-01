@@ -227,7 +227,7 @@ def batch_process_with_preparation(
     Returns:
         Stats dict from processor.process_batch()
     """
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     if not pages:
         logger.info(f"{stage_name}: No pages to process")
@@ -257,7 +257,7 @@ def batch_process_with_preparation(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(prepare_request, page_num): page_num for page_num in pages}
-        for future in futures:
+        for future in as_completed(futures):
             request, extra = future.result()
             if request:
                 requests.append(request)
