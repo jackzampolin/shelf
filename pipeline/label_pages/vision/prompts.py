@@ -132,9 +132,13 @@ Regions:
 <block_classification>
 Available block types:
 
-Structural:
+Structural hierarchy:
+- PART_HEADING (major division: "Part IV", "Book Two")
 - CHAPTER_HEADING (detected above using visual signals)
-- SECTION_HEADING, HEADER, FOOTER, PAGE_NUMBER
+- SECTION_HEADING (major section within chapter)
+- SUBSECTION_HEADING (second-level section)
+- SUBSUBSECTION_HEADING (third-level section)
+- HEADER, FOOTER, PAGE_NUMBER
 
 Content:
 - BODY, QUOTE, EPIGRAPH

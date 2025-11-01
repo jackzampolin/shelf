@@ -87,16 +87,40 @@ class LabelPagesStage(BaseStage):
         logger.info(f"Remaining pages: {len(progress['remaining_pages'])}")
         logger.info(f"Progress: {total_pages - len(progress['remaining_pages'])}/{total_pages} pages complete")
 
-        # Phase 1: Vision-based labeling (parallel processing)
+        # Phase 1: Two-stage vision processing
         if status in [LabelPagesStatus.NOT_STARTED.value, LabelPagesStatus.LABELING.value]:
+            # Phase 1a: Stage 1 - Structural analysis (3-image context)
+            stage1_completed = self.stage_storage.list_stage1_completed_pages(storage)
+            stage1_remaining = [p for p in range(1, total_pages + 1) if p not in stage1_completed]
+
+            if len(stage1_remaining) > 0:
+                logger.info("=== Phase 1a: Stage 1 - Structural Analysis (3 images) ===")
+                logger.info(f"Remaining: {len(stage1_remaining)}/{total_pages} pages")
+                checkpoint.set_phase(LabelPagesStatus.LABELING.value, f"Stage 1: 0/{total_pages} pages")
+
+                from .tools.processor_stage1 import process_stage1
+                process_stage1(
+                    storage=storage,
+                    checkpoint=checkpoint,
+                    logger=logger,
+                    stage_storage=self.stage_storage,
+                    model=self.model,
+                    max_workers=self.max_workers,
+                    max_retries=self.max_retries,
+                    remaining_pages=stage1_remaining,
+                    total_pages=total_pages,
+                )
+
+            # Phase 1b: Stage 2 - Block classification (1 image + Stage 1 context)
             remaining_pages = progress["remaining_pages"]
 
             if len(remaining_pages) > 0:
-                logger.info("=== Phase 1: Vision-Based Labeling ===")
-                checkpoint.set_phase(LabelPagesStatus.LABELING.value, f"0/{total_pages} pages")
+                logger.info("=== Phase 1b: Stage 2 - Block Classification (with Stage 1 context) ===")
+                logger.info(f"Remaining: {len(remaining_pages)}/{total_pages} pages")
+                checkpoint.set_phase(LabelPagesStatus.LABELING.value, f"Stage 2: 0/{total_pages} pages")
 
-                from .tools.processor import label_pages
-                label_pages(
+                from .tools.processor_stage2 import process_stage2
+                process_stage2(
                     storage=storage,
                     checkpoint=checkpoint,
                     logger=logger,
