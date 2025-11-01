@@ -119,6 +119,7 @@ class LabelPagesStage(BaseStage):
                     logger=logger,
                     max_workers=self.max_workers,
                     storage=storage,
+                    model=self.model,
                     total_pages=total_pages,
                 )
 
@@ -155,6 +156,7 @@ class LabelPagesStage(BaseStage):
                     logger=logger,
                     max_workers=self.max_workers,
                     storage=storage,
+                    model=self.model,
                     total_pages=total_pages,
                     stage1_results=None,  # Loaded inside prepare_stage2_request
                 )

@@ -18,7 +18,7 @@ def prepare_stage2_request(
     storage: BookStorage,
     model: str,
     total_pages: int,
-    stage1_results: dict,
+    stage1_results: dict = None,
 ) -> Optional[Tuple[LLMRequest, OCRPageOutput]]:
     """
     Prepare Stage 2 vision request with Stage 1 context.
@@ -28,11 +28,18 @@ def prepare_stage2_request(
         storage: Book storage
         model: Vision model to use
         total_pages: Total pages in book
-        stage1_results: Stage 1 structural analysis results
+        stage1_results: Stage 1 structural analysis results (loaded if None)
 
     Returns:
         Tuple of (LLMRequest, OCRPageOutput) or None if data unavailable
     """
+    # Load Stage 1 results if not provided
+    if stage1_results is None:
+        from ..storage import LabelPagesStageStorage
+        stage_storage = LabelPagesStageStorage(stage_name='label-pages')
+        stage1_results = stage_storage.load_stage1_result(storage, page_num)
+        if not stage1_results:
+            raise FileNotFoundError(f"Stage 1 results not found for page {page_num}")
     from pipeline.ocr.storage import OCRStageStorage
     ocr_storage = OCRStageStorage(stage_name='ocr')
     ocr_data = ocr_storage.load_selected_page(
