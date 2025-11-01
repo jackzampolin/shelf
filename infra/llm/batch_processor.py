@@ -282,9 +282,9 @@ def batch_process_with_preparation(
         original_handler = result_handler
 
         def wrapped_handler(result: LLMResult):
-            page_num = result.metadata.get('page_num')
+            page_num = result.request.metadata.get('page_num')
             if page_num and page_num in extra_data:
-                result.metadata['extra_data'] = extra_data[page_num]
+                result.request.metadata['extra_data'] = extra_data[page_num]
             original_handler(result)
 
         result_handler = wrapped_handler

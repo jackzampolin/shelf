@@ -9,7 +9,7 @@ def create_stage1_handler(storage, stage_storage, checkpoint, logger):
 
     def on_result(result: LLMResult):
         if result.success:
-            page_num = result.metadata['page_num']
+            page_num = result.request.metadata['page_num']
             stage1_data = result.parsed_json
 
             # Save Stage 1 intermediate result
@@ -29,7 +29,7 @@ def create_stage1_handler(storage, stage_storage, checkpoint, logger):
 
             logger.info(f"✓ Stage 1 complete: page {page_num}")
         else:
-            page_num = result.metadata.get('page_num', 'unknown')
+            page_num = result.request.metadata.get('page_num', 'unknown')
             logger.error(f"✗ Stage 1 failed: page {page_num}", error=result.error)
 
     return on_result
@@ -40,7 +40,7 @@ def create_stage2_handler(storage, stage_storage, checkpoint, logger, model, out
 
     def on_result(result: LLMResult):
         if result.success:
-            page_num = result.metadata['page_num']
+            page_num = result.request.metadata['page_num']
             ocr_page = ocr_pages[page_num]
             label_data = result.parsed_json
 
@@ -97,7 +97,7 @@ def create_stage2_handler(storage, stage_storage, checkpoint, logger, model, out
 
             logger.info(f"✓ Stage 2 complete: page {page_num}")
         else:
-            page_num = result.metadata.get('page_num', 'unknown')
+            page_num = result.request.metadata.get('page_num', 'unknown')
             logger.error(f"✗ Stage 2 failed: page {page_num}", error=result.error)
 
     return on_result
