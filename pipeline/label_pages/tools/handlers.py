@@ -1,7 +1,7 @@
 """Result handlers for Stage 1 and Stage 2 LLM batch processing."""
 
 from infra.llm.batch_client import LLMResult
-from infra.llm.utils import llm_result_to_metrics
+from infra.llm.metrics import llm_result_to_metrics
 
 
 def create_stage1_handler(storage, stage_storage, checkpoint, logger):
