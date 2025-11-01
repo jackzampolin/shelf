@@ -48,14 +48,25 @@ def create_stage2_handler(storage, stage_storage, checkpoint, logger, model, out
             stage1_results = stage_storage.load_stage1_result(storage, page_num)
 
             # Build final output combining Stage 1 + Stage 2
+            from datetime import datetime, timezone
+
+            # Extract Stage 1 data with proper nesting
+            page_number_data = stage1_results.get('page_number', {})
+            page_region_data = stage1_results.get('page_region', {})
+            sequence_validation = page_number_data.get('sequence_validation', {})
+
             page_output = {
                 "page_number": page_num,
-                "printed_page_number": stage1_results.get('page_number', {}).get('printed_number'),
-                "numbering_style": stage1_results.get('page_number', {}).get('numbering_style'),
-                "page_region": stage1_results.get('page_region', {}).get('region'),
+                "printed_page_number": page_number_data.get('printed_number'),
+                "numbering_style": page_number_data.get('numbering_style'),
+                "page_number_location": page_number_data.get('location'),
+                "page_number_confidence": sequence_validation.get('confidence', 1.0),
+                "page_region": page_region_data.get('region'),
+                "page_region_confidence": page_region_data.get('confidence'),
                 "blocks": label_data.get('blocks', []),
                 "model_used": model,
                 "processing_cost": result.cost_usd or 0.0,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "total_blocks": len(label_data.get('blocks', [])),
                 "avg_classification_confidence": sum(
                     b.get('classification_confidence', 0.0) for b in label_data.get('blocks', [])
