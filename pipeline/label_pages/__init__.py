@@ -89,6 +89,11 @@ class LabelPagesStage(BaseStage):
 
         # Phase 1: Two-stage vision processing
         if status in [LabelPagesStatus.NOT_STARTED.value, LabelPagesStatus.LABELING.value]:
+            from infra.llm.batch_processor import LLMBatchProcessor, batch_process_with_preparation
+            from .vision.caller_stage1 import prepare_stage1_request
+            from .vision.caller_stage2 import prepare_stage2_request
+            from .tools.handlers import create_stage1_handler, create_stage2_handler
+
             # Phase 1a: Stage 1 - Structural analysis (3-image context)
             stage1_completed = self.stage_storage.list_stage1_completed_pages(storage)
             stage1_remaining = [p for p in range(1, total_pages + 1) if p not in stage1_completed]
@@ -98,16 +103,22 @@ class LabelPagesStage(BaseStage):
                 logger.info(f"Remaining: {len(stage1_remaining)}/{total_pages} pages")
                 checkpoint.set_phase(LabelPagesStatus.LABELING.value, f"Stage 1: 0/{total_pages} pages")
 
-                from .tools.processor_stage1 import process_stage1
-                process_stage1(
-                    storage=storage,
-                    checkpoint=checkpoint,
+                # Setup processor and handler
+                stage_storage_dir = storage.stage(self.stage_storage.stage_name)
+                log_dir = stage_storage_dir.output_dir / "logs" / "stage1"
+                processor = LLMBatchProcessor(checkpoint, logger, self.model, log_dir, self.max_workers, self.max_retries)
+                handler = create_stage1_handler(storage, self.stage_storage, checkpoint, logger)
+
+                # Process batch
+                batch_process_with_preparation(
+                    stage_name="Stage 1",
+                    pages=stage1_remaining,
+                    request_builder=prepare_stage1_request,
+                    result_handler=handler,
+                    processor=processor,
                     logger=logger,
-                    stage_storage=self.stage_storage,
-                    model=self.model,
                     max_workers=self.max_workers,
-                    max_retries=self.max_retries,
-                    remaining_pages=stage1_remaining,
+                    storage=storage,
                     total_pages=total_pages,
                 )
 
@@ -119,18 +130,33 @@ class LabelPagesStage(BaseStage):
                 logger.info(f"Remaining: {len(remaining_pages)}/{total_pages} pages")
                 checkpoint.set_phase(LabelPagesStatus.LABELING.value, f"Stage 2: 0/{total_pages} pages")
 
-                from .tools.processor_stage2 import process_stage2
-                process_stage2(
-                    storage=storage,
-                    checkpoint=checkpoint,
+                # Collect OCR pages for Stage 2 handler
+                ocr_pages = {}
+                from pipeline.ocr.storage import OCRStageStorage
+                from pipeline.ocr.schemas import OCRPageOutput
+                ocr_storage = OCRStageStorage(stage_name='ocr')
+                for page_num in remaining_pages:
+                    ocr_data = ocr_storage.load_selected_page(storage, page_num, include_line_word_data=False)
+                    if ocr_data:
+                        ocr_pages[page_num] = OCRPageOutput(**ocr_data)
+
+                # Setup processor and handler
+                log_dir = stage_storage_dir.output_dir / "logs" / "stage2"
+                processor = LLMBatchProcessor(checkpoint, logger, self.model, log_dir, self.max_workers, self.max_retries)
+                handler = create_stage2_handler(storage, self.stage_storage, checkpoint, logger, self.model, self.output_schema, ocr_pages)
+
+                # Process batch
+                batch_process_with_preparation(
+                    stage_name="Stage 2",
+                    pages=remaining_pages,
+                    request_builder=prepare_stage2_request,
+                    result_handler=handler,
+                    processor=processor,
                     logger=logger,
-                    stage_storage=self.stage_storage,
-                    model=self.model,
                     max_workers=self.max_workers,
-                    max_retries=self.max_retries,
-                    remaining_pages=remaining_pages,
+                    storage=storage,
                     total_pages=total_pages,
-                    output_schema=self.output_schema,
+                    stage1_results=None,  # Loaded inside prepare_stage2_request
                 )
 
                 progress = self.get_progress(storage, checkpoint, logger)

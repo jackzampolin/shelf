@@ -195,3 +195,102 @@ class LLMBatchProcessor:
             "elapsed_seconds": elapsed,
             "batch_stats": batch_stats,
         }
+
+
+def batch_process_with_preparation(
+    stage_name: str,
+    pages: List[int],
+    request_builder: Callable,
+    result_handler: Callable[[LLMResult], None],
+    processor: 'LLMBatchProcessor',
+    logger: 'PipelineLogger',
+    max_workers: int,
+    **request_builder_kwargs
+) -> Dict[str, Any]:
+    """
+    Generic helper: Prepare requests in parallel, then process batch.
+
+    Eliminates duplication across stages (paragraph_correct, label_pages, etc.)
+
+    Args:
+        stage_name: Name for logging (e.g., "Stage 1", "Correction")
+        pages: List of page numbers to process
+        request_builder: Function that builds LLMRequest for a page
+            Signature: (page_num, **kwargs) -> LLMRequest or (LLMRequest, extra_data)
+        result_handler: Callback for each completed request
+            Signature: (result: LLMResult) -> None
+        processor: LLMBatchProcessor instance
+        logger: Pipeline logger
+        max_workers: Max parallel workers for request preparation
+        **request_builder_kwargs: Extra kwargs passed to request_builder
+
+    Returns:
+        Stats dict from processor.process_batch()
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    if not pages:
+        logger.info(f"{stage_name}: No pages to process")
+        return {
+            "completed": 0,
+            "failed": 0,
+            "total_cost_usd": 0.0,
+            "total_tokens": 0,
+        }
+
+    logger.info(f"{stage_name}: Preparing {len(pages)} requests...")
+
+    requests = []
+    extra_data = {}
+
+    def prepare_request(page_num):
+        try:
+            result = request_builder(page_num=page_num, **request_builder_kwargs)
+            # Handle both single return (LLMRequest) and tuple (LLMRequest, extra)
+            if isinstance(result, tuple):
+                return result
+            else:
+                return (result, None)
+        except Exception as e:
+            logger.warning(f"Failed to prepare request for page {page_num}", error=str(e))
+            return (None, None)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(prepare_request, page_num): page_num for page_num in pages}
+        for future in futures:
+            request, extra = future.result()
+            if request:
+                requests.append(request)
+                if extra:
+                    page_num = request.metadata.get('page_num')
+                    if page_num:
+                        extra_data[page_num] = extra
+
+    if not requests:
+        logger.error(f"{stage_name}: No valid requests prepared")
+        return {
+            "completed": 0,
+            "failed": 0,
+            "total_cost_usd": 0.0,
+            "total_tokens": 0,
+        }
+
+    logger.info(f"{stage_name}: Prepared {len(requests)} requests")
+
+    # If result_handler needs extra_data, inject it into metadata
+    if extra_data:
+        original_handler = result_handler
+
+        def wrapped_handler(result: LLMResult):
+            page_num = result.metadata.get('page_num')
+            if page_num and page_num in extra_data:
+                result.metadata['extra_data'] = extra_data[page_num]
+            original_handler(result)
+
+        result_handler = wrapped_handler
+
+    # Process batch
+    return processor.process_batch(
+        requests=requests,
+        on_result=result_handler,
+    )
