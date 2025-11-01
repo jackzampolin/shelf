@@ -21,12 +21,29 @@ not just page-based pipeline stages.
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Callable, Optional
+from dataclasses import dataclass
 
 from infra.llm.batch_client import LLMBatchClient, LLMRequest, LLMResult
 from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.rich_progress import RichProgressBarHierarchical
 from infra.config import Config
+
+
+@dataclass
+class LLMBatchConfig:
+    """
+    Configuration for LLM batch processing.
+
+    Encapsulates all settings needed to configure an LLMBatchProcessor instance.
+    This makes it easy to see what parameters are required and provides a clean
+    interface for stage implementations.
+    """
+    model: str
+    max_workers: Optional[int] = None  # Default: Config.max_workers
+    max_retries: int = 3
+    retry_jitter: tuple = (1.0, 3.0)
+    verbose: bool = True
 
 
 class LLMBatchProcessor:
@@ -72,38 +89,73 @@ class LLMBatchProcessor:
         self,
         checkpoint: CheckpointManager,
         logger: PipelineLogger,
-        model: str,
         log_dir: Path,
+        config: Optional[LLMBatchConfig] = None,
+        # Legacy parameters (for backward compatibility)
+        model: Optional[str] = None,
         max_workers: Optional[int] = None,
-        max_retries: int = 3,
-        retry_jitter: tuple = (1.0, 3.0),
-        verbose: bool = True,
+        max_retries: Optional[int] = None,
+        retry_jitter: Optional[tuple] = None,
+        verbose: Optional[bool] = None,
     ):
         """
+        Initialize LLMBatchProcessor.
+
+        Supports two initialization patterns:
+
+        1. **New (recommended):** Use LLMBatchConfig
+           ```python
+           config = LLMBatchConfig(model="grok-4-fast", max_workers=10)
+           processor = LLMBatchProcessor(checkpoint, logger, log_dir, config=config)
+           ```
+
+        2. **Legacy:** Pass parameters directly (for backward compatibility)
+           ```python
+           processor = LLMBatchProcessor(checkpoint, logger, log_dir, model="grok-4-fast")
+           ```
+
         Args:
             checkpoint: CheckpointManager for progress bar metrics display
             logger: PipelineLogger instance
-            model: OpenRouter model name
             log_dir: Directory for LLM request/response logs
-            max_workers: Thread pool size (default: Config.max_workers)
-            max_retries: Max retry attempts per request
-            retry_jitter: Retry delay range in seconds
-            verbose: Enable verbose logging
+            config: LLMBatchConfig instance (recommended)
+            model: OpenRouter model name (legacy, use config instead)
+            max_workers: Thread pool size (legacy, use config instead)
+            max_retries: Max retry attempts (legacy, use config instead)
+            retry_jitter: Retry delay range (legacy, use config instead)
+            verbose: Enable verbose logging (legacy, use config instead)
         """
         self.checkpoint = checkpoint
         self.logger = logger
-        self.model = model
         self.log_dir = log_dir
+
+        # Handle both config-based and legacy parameter-based initialization
+        if config is not None:
+            # New pattern: Use config object
+            self.model = config.model
+            self.max_workers = config.max_workers or Config.max_workers
+            self.max_retries = config.max_retries
+            self.retry_jitter = config.retry_jitter
+            self.verbose = config.verbose
+        else:
+            # Legacy pattern: Use individual parameters
+            if model is None:
+                raise ValueError("Either 'config' or 'model' must be provided")
+            self.model = model
+            self.max_workers = max_workers or Config.max_workers
+            self.max_retries = max_retries if max_retries is not None else 3
+            self.retry_jitter = retry_jitter if retry_jitter is not None else (1.0, 3.0)
+            self.verbose = verbose if verbose is not None else True
 
         # Create log directory
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         # Create batch client
         self.batch_client = LLMBatchClient(
-            max_workers=max_workers or Config.max_workers,
-            max_retries=max_retries,
-            retry_jitter=retry_jitter,
-            verbose=verbose,
+            max_workers=self.max_workers,
+            max_retries=self.max_retries,
+            retry_jitter=self.retry_jitter,
+            verbose=self.verbose,
             log_dir=self.log_dir,
         )
 
@@ -204,7 +256,6 @@ def batch_process_with_preparation(
     result_handler: Callable[[LLMResult], None],
     processor: 'LLMBatchProcessor',
     logger: 'PipelineLogger',
-    max_workers: int,
     **request_builder_kwargs
 ) -> Dict[str, Any]:
     """
@@ -219,14 +270,14 @@ def batch_process_with_preparation(
             Signature: (page_num, **kwargs) -> LLMRequest or (LLMRequest, extra_data)
         result_handler: Callback for each completed request
             Signature: (result: LLMResult) -> None
-        processor: LLMBatchProcessor instance
+        processor: LLMBatchProcessor instance (max_workers taken from processor.max_workers)
         logger: Pipeline logger
-        max_workers: Max parallel workers for request preparation
         **request_builder_kwargs: Extra kwargs passed to request_builder
 
     Returns:
         Stats dict from processor.process_batch()
     """
+    max_workers = processor.max_workers
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from infra.pipeline.rich_progress import RichProgressBarHierarchical
     import time
