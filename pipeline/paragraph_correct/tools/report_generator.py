@@ -23,7 +23,7 @@ def generate_report(
         return
 
     report_rows = []
-    for page_num_str, metrics in sorted(page_metrics.items()):
+    for page_num_str, metrics in sorted(page_metrics.items(), key=lambda x: int(x[0])):
         page_num = int(page_num_str)
 
         try:
