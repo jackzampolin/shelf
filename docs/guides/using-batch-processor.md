@@ -229,7 +229,7 @@ batch_process_with_preparation(
 
 ---
 
-### Option 2: Multi-Stage Pattern (Current label-pages)
+### Option 2: Multi-Stage Pattern (Recommended for sequential stages)
 
 **Best for:** Stages with multiple sequential LLM calls (Stage 1 → Stage 2)
 
@@ -239,53 +239,61 @@ pipeline/your_stage/
 ├── status.py
 ├── storage.py
 ├── schemas/
-│   ├── page_output.py
+│   ├── page_output.py           # Final output (merged stages)
 │   └── page_metrics.py
-└── vision/
-    ├── caller_stage1.py         # Stage 1 request builder
-    ├── caller_stage2.py         # Stage 2 request builder
-    ├── prompts_stage1.py        # Stage 1 prompts
-    ├── prompts_stage2.py        # Stage 2 prompts
-    ├── schemas/
-    │   ├── stage1_response.py   # Stage 1 LLM response
-    │   ├── stage2_response.py   # Stage 2 LLM response
-    │   └── shared.py            # Shared types
-    └── tools/
-        └── handlers.py          # Both stage handlers
+├── stage1/                       # Stage 1 processing
+│   ├── request_builder.py       # prepare_stage1_request()
+│   ├── result_handler.py        # create_stage1_handler()
+│   ├── prompts.py               # Stage 1 prompts
+│   └── schemas.py               # Stage1Response (LLM output)
+└── stage2/                       # Stage 2 processing
+    ├── request_builder.py       # prepare_stage2_request()
+    ├── result_handler.py        # create_stage2_handler()
+    ├── prompts.py               # Stage 2 prompts
+    └── schemas.py               # Stage2Response (LLM output)
 ```
 
 **Rationale:**
-- ✅ Clear stage separation
-- ✅ Each stage has its own request builder + prompts + schema
-- ✅ Shared handlers in tools/ (can access both stage results)
-- ✅ Works well when Stage 2 depends on Stage 1
+- ✅ **Crystal clear** - Each stage in its own folder
+- ✅ **Self-contained** - All Stage 1 code in `stage1/`, all Stage 2 code in `stage2/`
+- ✅ **Consistent** - Same structure as Option 1, just repeated per stage
+- ✅ **Scalable** - Easy to add `stage3/` if needed
 
 **Example usage:**
 ```python
-from .vision.caller_stage1 import prepare_stage1_request
-from .vision.caller_stage2 import prepare_stage2_request
-from .tools.handlers import create_stage1_handler, create_stage2_handler
+from .stage1.request_builder import prepare_stage1_request
+from .stage1.result_handler import create_stage1_handler
+from .stage2.request_builder import prepare_stage2_request
+from .stage2.result_handler import create_stage2_handler
 
-# Stage 1
+# Stage 1: Structural analysis
 processor_s1 = LLMBatchProcessor(checkpoint, logger, log_dir_s1, config=config)
+handler_s1 = create_stage1_handler(storage, stage_storage, checkpoint, logger)
+
 batch_process_with_preparation(
     stage_name="Stage 1",
     pages=stage1_remaining,
     request_builder=prepare_stage1_request,
-    result_handler=create_stage1_handler(...),
+    result_handler=handler_s1,
     processor=processor_s1,
     logger=logger,
+    storage=storage,
+    model=config.model,
 )
 
-# Stage 2 (uses Stage 1 results)
+# Stage 2: Block classification (uses Stage 1 results)
 processor_s2 = LLMBatchProcessor(checkpoint, logger, log_dir_s2, config=config)
+handler_s2 = create_stage2_handler(storage, stage_storage, checkpoint, logger, output_schema)
+
 batch_process_with_preparation(
     stage_name="Stage 2",
     pages=stage2_remaining,
     request_builder=prepare_stage2_request,
-    result_handler=create_stage2_handler(...),
+    result_handler=handler_s2,
     processor=processor_s2,
     logger=logger,
+    storage=storage,
+    model=config.model,
 )
 ```
 
@@ -330,11 +338,16 @@ pipeline/your_stage/
 
 | Pattern | Pros | Cons | Best For |
 |---------|------|------|----------|
-| **Option 1: Single-Stage** | Simple, flat, easy to navigate | Doesn't scale to multi-stage | Simple workflows (1 LLM call) |
-| **Option 2: Multi-Stage** | Stage separation clear | Slightly more files | Sequential stages (Stage 1→2) |
-| **Option 3: Component-Based** | Consistent grouping | More directories | Many stages (3+) |
+| **Option 1: Single-Stage** | ✅ Simple, flat<br>✅ Easy to navigate<br>✅ Quick to scaffold | ❌ Doesn't scale to multi-stage | Single LLM call per page |
+| **Option 2: Multi-Stage** | ✅ Crystal clear (stage1/, stage2/)<br>✅ Self-contained stages<br>✅ Same structure as Option 1<br>✅ Easy to add stage3/ | ❌ More folders | Sequential stages (Stage 1→2→3) |
+| **Option 3: Component-Based** | ✅ Consistent grouping | ❌ More directories to navigate<br>❌ More imports needed | Many stages (4+), but rare |
 
-**Recommendation:** Start with **Option 1** (single-stage). If you add a second stage, migrate to **Option 2** (multi-stage). Only use **Option 3** if you have 3+ stages.
+**Recommendation:**
+- **Start with Option 1** (`vision/` folder) for single-stage workflows
+- **Migrate to Option 2** (`stage1/`, `stage2/` folders) when adding sequential stages
+- **Avoid Option 3** unless you have 4+ stages (very rare)
+
+**Key insight:** Option 2 is just Option 1 repeated - each stage gets its own self-contained folder with the same structure.
 
 ---
 
@@ -345,7 +358,7 @@ Here's a complete minimal stage using the batch processor:
 ```python
 # pipeline/example_stage/__init__.py
 from infra.llm.batch_processor import LLMBatchProcessor, LLMBatchConfig, batch_process_with_preparation
-from .vision.request_builder import prepare_request
+from .vision.request_builder import prepare_request  # or .stage1.request_builder for multi-stage
 from .vision.result_handler import create_result_handler
 from .schemas.page_output import ExamplePageOutput
 
