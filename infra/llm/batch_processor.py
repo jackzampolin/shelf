@@ -228,6 +228,8 @@ def batch_process_with_preparation(
         Stats dict from processor.process_batch()
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    from infra.pipeline.rich_progress import RichProgressBarHierarchical
+    import time
 
     if not pages:
         logger.info(f"{stage_name}: No pages to process")
@@ -239,6 +241,16 @@ def batch_process_with_preparation(
         }
 
     logger.info(f"{stage_name}: Preparing {len(pages)} requests...")
+
+    # Create progress bar for request preparation phase
+    prep_start = time.time()
+    prep_progress = RichProgressBarHierarchical(
+        total=len(pages),
+        prefix="   ",
+        width=40,
+        unit="requests"
+    )
+    prep_progress.update(0, suffix="loading data...")
 
     requests = []
     extra_data = {}
@@ -255,6 +267,7 @@ def batch_process_with_preparation(
             logger.warning(f"Failed to prepare request for page {page_num}", error=str(e))
             return (None, None)
 
+    prepared = 0
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(prepare_request, page_num): page_num for page_num in pages}
         for future in as_completed(futures):
@@ -265,6 +278,14 @@ def batch_process_with_preparation(
                     page_num = request.metadata.get('page_num')
                     if page_num:
                         extra_data[page_num] = extra
+
+            # Update progress
+            prepared += 1
+            prep_progress.update(prepared, suffix=f"{prepared}/{len(pages)} prepared")
+
+    # Finish preparation progress bar
+    prep_elapsed = time.time() - prep_start
+    prep_progress.finish(f"   ✓ Prepared {len(requests)} requests in {prep_elapsed:.1f}s")
 
     if not requests:
         logger.error(f"{stage_name}: No valid requests prepared")
