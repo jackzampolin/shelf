@@ -30,9 +30,6 @@ def get_stage_instance(stage_name: str):
         elif stage_name == 'label-pages':
             from pipeline.label_pages import LabelPagesStage
             return LabelPagesStage()
-        elif stage_name == 'merged':
-            from pipeline.merged import MergeStage
-            return MergeStage()
     except ImportError:
         return None
     return None

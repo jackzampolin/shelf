@@ -123,7 +123,6 @@ def sweep_reports(library, args):
     from pipeline.ocr import OCRStage
     from pipeline.paragraph_correct import ParagraphCorrectStage
     from pipeline.label_pages import LabelPagesStage
-    from pipeline.merged import MergeStage
 
     all_books = library.list_books()
     print(f"📚 Sweeping reports across {len(all_books)} books")
@@ -131,8 +130,7 @@ def sweep_reports(library, args):
     stage_map = {
         'ocr': OCRStage(),
         'paragraph-correct': ParagraphCorrectStage(),
-        'label-pages': LabelPagesStage(),
-        'merged': MergeStage()
+        'label-pages': LabelPagesStage()
     }
 
     if hasattr(args, 'stage_filter') and args.stage_filter:

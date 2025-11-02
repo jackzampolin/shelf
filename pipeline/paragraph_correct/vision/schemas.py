@@ -3,8 +3,10 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 from pipeline.ocr.schemas import OCRPageOutput
+from infra.pipeline.schemas import LLMPageMetrics
 
 
+# LLM Response Schemas (for structured output)
 class ParagraphCorrection(BaseModel):
     par_num: int = Field(..., ge=1, description="Paragraph number within block (matches OCR)")
     text: Optional[str] = Field(None, description="Full corrected paragraph text (omit if no errors found)")
@@ -19,6 +21,35 @@ class BlockCorrection(BaseModel):
 
 class CorrectionLLMResponse(BaseModel):
     blocks: List[BlockCorrection] = Field(..., description="Block corrections")
+
+
+# Stage Output Schema (saved to disk per page)
+class ParagraphCorrectPageOutput(BaseModel):
+    page_number: int = Field(..., ge=1)
+    blocks: List[BlockCorrection]
+    model_used: str
+    processing_cost: float = Field(..., ge=0.0)
+    timestamp: str
+    total_blocks: int = Field(..., ge=0)
+    total_corrections: int = Field(..., ge=0)
+    avg_confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+# Stage Metrics Schema (saved to metrics manager)
+class ParagraphCorrectPageMetrics(LLMPageMetrics):
+    total_corrections: int = Field(..., ge=0)
+    avg_confidence: float = Field(..., ge=0.0, le=1.0)
+    text_similarity_ratio: float = Field(..., ge=0.0, le=1.0)
+    characters_changed: int = Field(..., ge=0)
+
+
+# Stage Report Schema (for report.csv generation)
+class ParagraphCorrectPageReport(BaseModel):
+    page_num: int = Field(..., ge=1)
+    total_corrections: int = Field(..., ge=0)
+    avg_confidence: float = Field(..., ge=0.0, le=1.0)
+    text_similarity_ratio: float = Field(..., ge=0.0, le=1.0)
+    characters_changed: int = Field(..., ge=0)
 
 
 def build_page_specific_schema(ocr_page: OCRPageOutput) -> Dict[str, Any]:

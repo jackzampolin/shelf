@@ -7,7 +7,6 @@ from infra.llm.batch_client import LLMResult
 from infra.llm.metrics import llm_result_to_metrics
 
 from pipeline.ocr.schemas import OCRPageOutput
-from ..schemas import ParagraphCorrectPageMetrics
 from ..tools.quality_metrics import calculate_similarity_metrics
 
 

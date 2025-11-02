@@ -10,7 +10,6 @@ def cmd_process(args):
     from pipeline.ocr import OCRStage
     from pipeline.paragraph_correct import ParagraphCorrectStage
     from pipeline.label_pages import LabelPagesStage
-    from pipeline.merged import MergeStage
 
     library = Library(storage_root=Config.book_storage_root)
     scan = library.get_scan_info(args.scan_id)
@@ -39,8 +38,7 @@ def cmd_process(args):
             model=args.model,
             max_workers=args.workers if args.workers else 30,
             max_retries=3
-        ),
-        'merged': MergeStage(max_workers=args.workers if args.workers else 8)
+        )
     }
 
     for stage_name in stages_to_run:

@@ -4,7 +4,7 @@ from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 
-from .schemas import ParagraphCorrectPageOutput, ParagraphCorrectPageMetrics, ParagraphCorrectPageReport
+from .vision.schemas import ParagraphCorrectPageOutput, ParagraphCorrectPageMetrics, ParagraphCorrectPageReport
 from .status import ParagraphCorrectStatusTracker, ParagraphCorrectStatus
 from .storage import ParagraphCorrectStageStorage
 
