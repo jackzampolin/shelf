@@ -2,7 +2,7 @@ from typing import Optional, Literal
 from pydantic import Field
 from infra.pipeline.schemas import LLMPageMetrics
 
-from ..vision.schemas import PageRegion
+PageRegion = Literal["front_matter", "body", "back_matter"]
 
 
 class LabelPagesPageMetrics(LLMPageMetrics):

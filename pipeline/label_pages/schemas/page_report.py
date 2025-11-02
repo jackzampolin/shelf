@@ -1,7 +1,7 @@
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 
-from ..vision.schemas import PageRegion
+PageRegion = Literal["front_matter", "body", "back_matter"]
 
 
 class LabelPagesPageReport(BaseModel):

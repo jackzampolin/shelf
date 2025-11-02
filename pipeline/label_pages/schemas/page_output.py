@@ -1,7 +1,9 @@
 from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 
-from ..vision.schemas import BlockClassification, PageRegion
+from ..stage2.schemas import BlockClassification
+
+PageRegion = Literal["front_matter", "body", "back_matter"]
 
 
 class LabelPagesPageOutput(BaseModel):
