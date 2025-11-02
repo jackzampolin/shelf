@@ -2,8 +2,6 @@ from enum import Enum
 from typing import Dict, Any
 
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
-from infra.pipeline.logger import PipelineLogger
 
 from .storage import LabelPagesStageStorage
 
@@ -21,11 +19,9 @@ class LabelPagesStatusTracker:
         self.stage_name = stage_name
         self.storage = LabelPagesStageStorage(stage_name=stage_name)
 
-    def get_progress(
+    def get_status(
         self,
-        storage: BookStorage,
-        checkpoint: CheckpointManager,
-        logger: PipelineLogger
+        storage: BookStorage
     ) -> Dict[str, Any]:
 
         metadata = storage.load_metadata()
@@ -66,8 +62,8 @@ class LabelPagesStatusTracker:
             # Everything complete
             status = LabelPagesStatus.COMPLETED.value
 
-        checkpoint_state = checkpoint.get_status()
-        page_metrics = checkpoint_state.get('page_metrics', {})
+        stage_storage = storage.stage(self.stage_name)
+        all_metrics = stage_storage.metrics_manager.get_all()
 
         # Separate Stage 1 and Stage 2 metrics
         stage1_cost = 0.0
@@ -79,7 +75,7 @@ class LabelPagesStatusTracker:
         pages_with_numbers = 0
         pages_with_regions = 0
 
-        for metrics in page_metrics.values():
+        for metrics in all_metrics.values():
             cost = metrics.get('cost_usd', 0.0)
             stage = metrics.get('stage')  # 'stage1' or None (Stage 2)
 
@@ -118,7 +114,7 @@ class LabelPagesStatusTracker:
             if classification_confidences else 0.0
         )
 
-        total_time = checkpoint_state.get('elapsed_time', 0.0)
+        total_time = stage_storage.metrics_manager.get_total_time()
 
         return {
             "status": status,

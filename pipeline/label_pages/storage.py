@@ -11,11 +11,8 @@ class LabelPagesStageStorage:
         self.stage_name = stage_name
 
     def list_completed_pages(self, storage: BookStorage) -> List[int]:
-        stage_storage = storage.stage(self.stage_name)
-        output_pages = stage_storage.list_output_pages(extension='json')
-        # Extract page numbers from paths: page_0001.json -> 1
-        page_nums = [int(p.stem.split('_')[1]) for p in output_pages]
-        return sorted(page_nums)
+        """List pages that have completed final output (Stage 2)."""
+        return self.list_stage2_completed_pages(storage)
 
     def load_ocr_page(self, storage: BookStorage, page_num: int) -> Optional[dict]:
         from pipeline.ocr.storage import OCRStageStorage
@@ -31,24 +28,6 @@ class LabelPagesStageStorage:
             return None
 
         return Image.open(image_file)
-
-    def save_labeled_page(
-        self,
-        storage: BookStorage,
-        page_num: int,
-        data: dict,
-        schema,
-        cost_usd: float,
-        metrics: dict
-    ):
-        stage_storage = storage.stage(self.stage_name)
-        stage_storage.save_page(
-            page_num=page_num,
-            data=data,
-            schema=schema,
-            cost_usd=cost_usd,
-            metrics=metrics,
-        )
 
     def get_report_path(self, storage: BookStorage) -> Path:
         stage_storage = storage.stage(self.stage_name)
@@ -71,6 +50,7 @@ class LabelPagesStageStorage:
         page_num: int,
         stage1_data: dict,
         cost_usd: float,
+        metrics: dict = None,
     ):
         """Save Stage 1 structural analysis result."""
         import json
@@ -86,6 +66,20 @@ class LabelPagesStageStorage:
 
         with open(output_file, 'w') as f:
             json.dump(stage1_data_with_meta, f, indent=2)
+
+        # Record metrics if provided
+        if metrics:
+            stage_storage = storage.stage(self.stage_name)
+            key = f"page_{page_num:04d}"
+            stage_storage.metrics_manager.record(
+                key=key,
+                cost_usd=metrics.get('cost_usd', 0.0),
+                time_seconds=metrics.get('total_time_seconds', 0.0),
+                tokens=metrics.get('tokens_total'),
+                custom_metrics={k: v for k, v in metrics.items()
+                               if k not in ['cost_usd', 'total_time_seconds', 'tokens_total']},
+                accumulate=False
+            )
 
     def load_stage1_result(self, storage: BookStorage, page_num: int) -> Optional[dict]:
         """Load Stage 1 result for a page."""
@@ -104,4 +98,78 @@ class LabelPagesStageStorage:
         stage1_dir = self.get_stage1_dir(storage)
         stage1_files = sorted(stage1_dir.glob("page_*.json"))
         page_nums = [int(p.stem.split('_')[1]) for p in stage1_files]
+        return sorted(page_nums)
+
+    # Stage 2 final output storage
+    def get_stage2_dir(self, storage: BookStorage) -> Path:
+        """Get Stage 2 final results directory."""
+        stage_storage = storage.stage(self.stage_name)
+        stage2_dir = stage_storage.output_dir / "stage2"
+        stage2_dir.mkdir(parents=True, exist_ok=True)
+        return stage2_dir
+
+    def save_stage2_result(
+        self,
+        storage: BookStorage,
+        page_num: int,
+        data: dict,
+        schema,
+        cost_usd: float,
+        metrics: dict = None,
+    ):
+        """Save Stage 2 final result."""
+        import json
+        stage2_dir = self.get_stage2_dir(storage)
+        output_file = stage2_dir / f"page_{page_num:04d}.json"
+
+        # Validate with schema
+        validated = schema(**data)
+        final_data = validated.model_dump()
+
+        # Add cost metadata
+        final_data['cost_usd'] = cost_usd
+        final_data['page_num'] = page_num
+
+        # Save file
+        temp_file = output_file.with_suffix('.json.tmp')
+        try:
+            with open(temp_file, 'w') as f:
+                json.dump(final_data, f, indent=2)
+            temp_file.replace(output_file)
+        except Exception as e:
+            if temp_file.exists():
+                temp_file.unlink()
+            raise e
+
+        # Record metrics if provided
+        if metrics:
+            stage_storage = storage.stage(self.stage_name)
+            key = f"page_{page_num:04d}"
+            stage_storage.metrics_manager.record(
+                key=key,
+                cost_usd=metrics.get('cost_usd', 0.0),
+                time_seconds=metrics.get('total_time_seconds', 0.0),
+                tokens=metrics.get('tokens_total'),
+                custom_metrics={k: v for k, v in metrics.items()
+                               if k not in ['cost_usd', 'total_time_seconds', 'tokens_total']},
+                accumulate=False
+            )
+
+    def load_stage2_result(self, storage: BookStorage, page_num: int) -> Optional[dict]:
+        """Load Stage 2 result for a page."""
+        import json
+        stage2_dir = self.get_stage2_dir(storage)
+        input_file = stage2_dir / f"page_{page_num:04d}.json"
+
+        if not input_file.exists():
+            return None
+
+        with open(input_file, 'r') as f:
+            return json.load(f)
+
+    def list_stage2_completed_pages(self, storage: BookStorage) -> List[int]:
+        """List pages that have Stage 2 results (final output)."""
+        stage2_dir = self.get_stage2_dir(storage)
+        stage2_files = sorted(stage2_dir.glob("page_*.json"))
+        page_nums = [int(p.stem.split('_')[1]) for p in stage2_files]
         return sorted(page_nums)

@@ -2,7 +2,6 @@ from typing import Dict, Any
 
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 
 from .schemas import LabelPagesPageOutput, LabelPagesPageMetrics, LabelPagesPageReport
@@ -36,18 +35,16 @@ class LabelPagesStage(BaseStage):
         self.status_tracker = LabelPagesStatusTracker(stage_name=self.name)
         self.stage_storage = LabelPagesStageStorage(stage_name=self.name)
 
-    def get_progress(
+    def get_status(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger
     ) -> Dict[str, Any]:
-        return self.status_tracker.get_progress(storage, checkpoint, logger)
+        return self.status_tracker.get_status(storage)
 
     def before(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger
     ):
         logger.info(f"Label-Pages with {self.model}")
@@ -56,12 +53,7 @@ class LabelPagesStage(BaseStage):
         from pipeline.ocr import OCRStage
         ocr_stage = OCRStage()
 
-        ocr_checkpoint = CheckpointManager(
-            scan_id=storage.scan_id,
-            stage='ocr'
-        )
-
-        ocr_progress = ocr_stage.get_progress(storage, ocr_checkpoint, logger)
+        ocr_progress = ocr_stage.get_status(storage, logger)
 
         if ocr_progress['status'] != 'completed':
             raise RuntimeError(
@@ -74,11 +66,10 @@ class LabelPagesStage(BaseStage):
     def run(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger,
     ) -> Dict[str, Any]:
 
-        progress = self.get_progress(storage, checkpoint, logger)
+        progress = self.get_status(storage, logger)
         total_pages = progress["total_pages"]
         status = progress["status"]
 
@@ -89,10 +80,11 @@ class LabelPagesStage(BaseStage):
 
         # Phase 1: Two-stage vision processing
         if status in [LabelPagesStatus.NOT_STARTED.value, LabelPagesStatus.LABELING.value]:
-            from infra.llm.batch_processor import LLMBatchProcessor, batch_process_with_preparation
-            from .vision.caller_stage1 import prepare_stage1_request
-            from .vision.caller_stage2 import prepare_stage2_request
-            from .tools.handlers import create_stage1_handler, create_stage2_handler
+            from infra.llm.batch_processor import LLMBatchProcessor, LLMBatchConfig, batch_process_with_preparation
+            from .stage1.request_builder import prepare_stage1_request
+            from .stage1.result_handler import create_stage1_handler
+            from .stage2.request_builder import prepare_stage2_request
+            from .stage2.result_handler import create_stage2_handler
 
             # Phase 1a: Stage 1 - Structural analysis (3-image context)
             stage1_completed = self.stage_storage.list_stage1_completed_pages(storage)
@@ -101,13 +93,13 @@ class LabelPagesStage(BaseStage):
             if len(stage1_remaining) > 0:
                 logger.info("=== Phase 1a: Stage 1 - Structural Analysis (3 images) ===")
                 logger.info(f"Remaining: {len(stage1_remaining)}/{total_pages} pages")
-                checkpoint.set_phase(LabelPagesStatus.LABELING.value, f"Stage 1: 0/{total_pages} pages")
 
                 # Setup processor and handler
                 stage_storage_dir = storage.stage(self.stage_storage.stage_name)
                 log_dir = stage_storage_dir.output_dir / "logs" / "stage1"
-                processor = LLMBatchProcessor(checkpoint, logger, self.model, log_dir, self.max_workers, self.max_retries)
-                handler = create_stage1_handler(storage, self.stage_storage, checkpoint, logger)
+                config = LLMBatchConfig(model=self.model, max_workers=self.max_workers, max_retries=self.max_retries)
+                processor = LLMBatchProcessor(checkpoint=None, logger=logger, log_dir=log_dir, config=config)
+                handler = create_stage1_handler(storage, self.stage_storage, logger, self.name)
 
                 # Process batch
                 batch_process_with_preparation(
@@ -128,7 +120,6 @@ class LabelPagesStage(BaseStage):
             if len(remaining_pages) > 0:
                 logger.info("=== Phase 1b: Stage 2 - Block Classification (with Stage 1 context) ===")
                 logger.info(f"Remaining: {len(remaining_pages)}/{total_pages} pages")
-                checkpoint.set_phase(LabelPagesStatus.LABELING.value, f"Stage 2: 0/{total_pages} pages")
 
                 # Collect OCR pages for Stage 2 handler
                 ocr_pages = {}
@@ -142,8 +133,9 @@ class LabelPagesStage(BaseStage):
 
                 # Setup processor and handler
                 log_dir = stage_storage_dir.output_dir / "logs" / "stage2"
-                processor = LLMBatchProcessor(checkpoint, logger, self.model, log_dir, self.max_workers, self.max_retries)
-                handler = create_stage2_handler(storage, self.stage_storage, checkpoint, logger, self.model, self.output_schema, ocr_pages)
+                config = LLMBatchConfig(model=self.model, max_workers=self.max_workers, max_retries=self.max_retries)
+                processor = LLMBatchProcessor(checkpoint=None, logger=logger, log_dir=log_dir, config=config)
+                handler = create_stage2_handler(storage, self.stage_storage, logger, self.model, self.output_schema, ocr_pages, self.name)
 
                 # Process batch
                 batch_process_with_preparation(
@@ -159,30 +151,22 @@ class LabelPagesStage(BaseStage):
                     stage1_results=None,  # Loaded inside prepare_stage2_request
                 )
 
-                progress = self.get_progress(storage, checkpoint, logger)
+                progress = self.get_status(storage, logger)
 
         # Phase 2: Generate classification report (CSV with page numbers and block types)
         if not progress["artifacts"]["report_exists"]:
                 logger.info("=== Phase 2: Generate Report ===")
-                checkpoint.set_phase(LabelPagesStatus.GENERATING_REPORT.value)
 
                 from .tools.report_generator import generate_report
                 generate_report(
                     storage=storage,
-                    checkpoint=checkpoint,
                     logger=logger,
                     stage_storage=self.stage_storage,
                     report_schema=self.report_schema,
+                    stage_name=self.name,
                 )
 
-                progress = self.get_progress(storage, checkpoint, logger)
-
-        all_complete = (
-            len(progress["remaining_pages"]) == 0
-            and progress["artifacts"]["report_exists"]
-        )
-        if all_complete:
-            checkpoint.set_phase(LabelPagesStatus.COMPLETED.value)
+                progress = self.get_status(storage, logger)
 
         completed_pages = total_pages - len(progress["remaining_pages"])
         total_cost = progress["metrics"]["total_cost_usd"]

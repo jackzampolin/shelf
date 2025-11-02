@@ -7,8 +7,8 @@ from infra.llm.batch_client import LLMRequest
 from infra.storage.book_storage import BookStorage
 from infra.utils.pdf import downsample_for_vision
 
-from .prompts_stage1 import STAGE1_SYSTEM_PROMPT, build_stage1_user_prompt
-from .schemas.stage1_response import Stage1LLMResponse
+from .prompts import STAGE1_SYSTEM_PROMPT, build_stage1_user_prompt
+from .schemas import Stage1LLMResponse
 
 
 def prepare_stage1_request(

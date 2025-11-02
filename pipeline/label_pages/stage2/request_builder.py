@@ -1,3 +1,5 @@
+"""Stage 2: Block-level classification with Stage 1 context."""
+
 import json
 from typing import Optional, Tuple
 from PIL import Image
@@ -7,23 +9,43 @@ from infra.storage.book_storage import BookStorage
 from infra.utils.pdf import downsample_for_vision
 from pipeline.ocr.schemas import OCRPageOutput
 
-from .prompts import SYSTEM_PROMPT, build_user_prompt
+from .prompts import STAGE2_SYSTEM_PROMPT, build_stage2_user_prompt
 from .schemas import build_page_specific_schema
 
 
-def prepare_label_request(
+def prepare_stage2_request(
     page_num: int,
     storage: BookStorage,
     model: str,
     total_pages: int,
-    prev_page_number: str = None,
+    stage1_results: dict = None,
 ) -> Optional[Tuple[LLMRequest, OCRPageOutput]]:
+    """
+    Prepare Stage 2 vision request with Stage 1 context.
+
+    Args:
+        page_num: Current page number
+        storage: Book storage
+        model: Vision model to use
+        total_pages: Total pages in book
+        stage1_results: Stage 1 structural analysis results (loaded if None)
+
+    Returns:
+        Tuple of (LLMRequest, OCRPageOutput) or None if data unavailable
+    """
+    # Load Stage 1 results if not provided
+    if stage1_results is None:
+        from ..storage import LabelPagesStageStorage
+        stage_storage = LabelPagesStageStorage(stage_name='label-pages')
+        stage1_results = stage_storage.load_stage1_result(storage, page_num)
+        if not stage1_results:
+            raise FileNotFoundError(f"Stage 1 results not found for page {page_num}")
     from pipeline.ocr.storage import OCRStageStorage
     ocr_storage = OCRStageStorage(stage_name='ocr')
     ocr_data = ocr_storage.load_selected_page(
         storage,
         page_num,
-        include_line_word_data=False  # Only need paragraph text, not line/word bboxes
+        include_line_word_data=False
     )
 
     if not ocr_data:
@@ -42,31 +64,31 @@ def prepare_label_request(
 
     response_schema = build_page_specific_schema(ocr_page)
 
-    metadata = storage.load_metadata()
-
+    # Build OCR summary for prompt
+    ocr_blocks_summary = f"{len(ocr_page.blocks)} OCR blocks"
     ocr_text = json.dumps(ocr_page.model_dump(), indent=2)
 
-    user_prompt = build_user_prompt(
-        ocr_page=ocr_page.model_dump(),
+    user_prompt = build_stage2_user_prompt(
+        ocr_blocks_summary=ocr_blocks_summary,
         ocr_text=ocr_text,
+        stage1_results=stage1_results,
         current_page=page_num,
         total_pages=total_pages,
-        book_metadata=metadata,
-        prev_page_number=prev_page_number,
     )
 
     request = LLMRequest(
-        id=f"page_{page_num:04d}",
+        id=f"stage2_page_{page_num:04d}",
         model=model,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": STAGE2_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ],
-        images=[page_image],
+        images=[page_image],  # Single image for Stage 2
         response_format=response_schema,
         metadata={
             'page_num': page_num,
             'ocr_page': ocr_page,
+            'stage': 'stage2',
         }
     )
 
