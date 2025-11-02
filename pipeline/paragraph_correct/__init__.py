@@ -43,6 +43,22 @@ class ParagraphCorrectStage(BaseStage):
     ) -> Dict[str, Any]:
         return self.status_tracker.get_status(storage)
 
+    def pretty_print_status(self, status: Dict[str, Any]) -> str:
+        """Return formatted paragraph-correct status with corrections and confidence."""
+        lines = [super().pretty_print_status(status)]
+
+        # Paragraph-correct specific: corrections and confidence
+        metrics = status.get('metrics', {})
+        total_corrections = metrics.get('total_corrections', 0)
+        avg_confidence = metrics.get('avg_confidence', 0.0)
+
+        if total_corrections > 0:
+            lines.append(f"   Corrections: {total_corrections} total")
+        if avg_confidence > 0:
+            lines.append(f"   Avg Confidence: {avg_confidence:.2%}")
+
+        return '\n'.join(lines)
+
     def before(
         self,
         storage: BookStorage,

@@ -60,6 +60,31 @@ class OCRStage(BaseStage):
     def get_status(self, storage: BookStorage, logger: PipelineLogger) -> Dict[str, Any]:
         return self.status_tracker.get_status(storage)
 
+    def pretty_print_status(self, status: Dict[str, Any]) -> str:
+        """Return formatted OCR status with provider and selection details."""
+        lines = [super().pretty_print_status(status)]
+
+        # OCR-specific: Provider status
+        providers = status.get('providers', {})
+        if providers:
+            lines.append("   Providers:")
+            total = status.get('total_pages', 0)
+            for pname, premaining in providers.items():
+                pcompleted = total - len(premaining)
+                lines.append(f"      {pname}: {pcompleted}/{total} ({len(premaining)} remaining)")
+
+        # OCR-specific: Selection info
+        selection = status.get('selection', {})
+        auto = selection.get('auto_selected', 0)
+        vision = selection.get('vision_selected', 0)
+        if auto > 0 or vision > 0:
+            lines.append(f"   Selection: {auto} auto, {vision} vision")
+            metrics = status.get('metrics', {})
+            if metrics.get('vision_cost_usd', 0) > 0:
+                lines.append(f"      Vision cost: ${metrics['vision_cost_usd']:.4f}")
+
+        return '\n'.join(lines)
+
     def before(self, storage: BookStorage, logger: PipelineLogger):
         logger.info(f"OCR with {len(self.providers)} providers:")
         for provider in self.providers:

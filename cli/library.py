@@ -1,10 +1,12 @@
 import sys
 import os
 import glob
+import re
 from pathlib import Path
 
 from infra.storage.library import Library
 from infra.config import Config
+from cli.constants import CORE_STAGES
 
 
 def cmd_shelve(args):
@@ -66,7 +68,7 @@ def cmd_list(args):
             storage = library.get_book_storage(scan_id)
             stage_symbols = []
 
-            for stage_name in ['ocr', 'paragraph-correct', 'label-pages', 'merged']:
+            for stage_name in CORE_STAGES:
                 status = get_stage_status(storage, stage_name)
 
                 if status is None:
@@ -132,14 +134,15 @@ def cmd_status(args):
 
     storage = library.get_book_storage(args.scan_id)
 
-    stages = [
-        ('ocr', 'OCR'),
-        ('paragraph-correct', 'Paragraph-Correct'),
-        ('label-pages', 'Label-Pages'),
-        ('merged', 'Merge')
-    ]
+    stage_labels = {
+        'ocr': 'OCR',
+        'paragraph-correct': 'Paragraph-Correct',
+        'label-pages': 'Label-Pages',
+        'merged': 'Merge'
+    }
 
-    for stage_name, stage_label in stages:
+    for stage_name in CORE_STAGES:
+        stage_label = stage_labels[stage_name]
         status = get_stage_status(storage, stage_name)
 
         if status is None:
@@ -254,24 +257,29 @@ def cmd_report(args):
 
     filtered_rows = rows
     if args.filter:
-        filter_parts = args.filter.split('=')
-        if len(filter_parts) == 2:
-            col, val = filter_parts
-            filtered_rows = [r for r in rows if r.get(col) == val]
-        else:
-            for op in ['>', '<', '>=', '<=']:
-                if op in args.filter:
-                    col, val = args.filter.split(op)
-                    val = float(val)
+        match = re.match(r'([^>=<!]+)(>=|<=|>|<|=)(.+)', args.filter)
+        if match:
+            col, op, val = match.groups()
+            col = col.strip()
+            val = val.strip()
+
+            if op == '=':
+                filtered_rows = [r for r in rows if r.get(col) == val]
+            else:
+                try:
+                    val_num = float(val)
                     if op == '>':
-                        filtered_rows = [r for r in rows if float(r.get(col, 0)) > val]
+                        filtered_rows = [r for r in rows if float(r.get(col, 0)) > val_num]
                     elif op == '<':
-                        filtered_rows = [r for r in rows if float(r.get(col, 0)) < val]
+                        filtered_rows = [r for r in rows if float(r.get(col, 0)) < val_num]
                     elif op == '>=':
-                        filtered_rows = [r for r in rows if float(r.get(col, 0)) >= val]
+                        filtered_rows = [r for r in rows if float(r.get(col, 0)) >= val_num]
                     elif op == '<=':
-                        filtered_rows = [r for r in rows if float(r.get(col, 0)) <= val]
-                    break
+                        filtered_rows = [r for r in rows if float(r.get(col, 0)) <= val_num]
+                except (ValueError, TypeError):
+                    print(f"⚠️  Invalid filter value: {val}")
+        else:
+            print(f"⚠️  Invalid filter format: {args.filter}")
 
     table = Table(title=f"{args.scan_id} - {args.stage} report ({len(filtered_rows)} rows)")
 

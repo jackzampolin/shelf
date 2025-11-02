@@ -4,10 +4,11 @@ import argparse
 from infra.storage.library import Library
 from infra.config import Config
 from cli.helpers import get_stage_status, clean_stage_directory
-from cli.constants import REPORT_STAGES
+from cli.constants import CORE_STAGES
 
 
-def sweep_stage(library, args):
+def cmd_batch(args):
+    library = Library(storage_root=Config.book_storage_root)
     scan_ids = library.create_shuffle(reshuffle=args.reshuffle)
     shuffle_info = library.get_shuffle_info()
 
@@ -19,7 +20,7 @@ def sweep_stage(library, args):
     else:
         print(f"🎲 Created random order")
 
-    print(f"\n🧹 Sweeping '{args.target}' stage across {len(scan_ids)} books")
+    print(f"\n🧹 Sweeping '{args.stage}' stage across {len(scan_ids)} books")
     print(f"   Press Ctrl+C to stop at any time")
     print(f"   Tip: Use --reshuffle to create a new random order\n")
 
@@ -36,10 +37,10 @@ def sweep_stage(library, args):
             storage = library.get_book_storage(scan_id)
 
             if args.force:
-                print(f"  [{idx}/{len(scan_ids)}] 🧹 {scan_id}: Cleaning {args.target} stage...")
-                clean_stage_directory(storage, args.target)
+                print(f"  [{idx}/{len(scan_ids)}] 🧹 {scan_id}: Cleaning {args.stage} stage...")
+                clean_stage_directory(storage, args.stage)
             else:
-                status = get_stage_status(storage, args.target)
+                status = get_stage_status(storage, args.stage)
                 if status and status.get('status') == 'completed':
                     print(f"  [{idx}/{len(scan_ids)}] ⏭️  {scan_id}: Already completed - skipping")
                     skipped_count += 1
@@ -74,10 +75,10 @@ def sweep_stage(library, args):
         print("\n✅ No books to process")
         return
 
-    print(f"\nPhase 2: Running {args.target} stage on {len(books_to_process)} books...\n")
+    print(f"\nPhase 2: Running {args.stage} stage on {len(books_to_process)} books...\n")
     processed_count = 0
 
-    from cli.pipeline import cmd_process
+    from cli.namespace_book import cmd_run_stage
 
     for idx, scan_id in enumerate(books_to_process, 1):
         print(f"\n{'='*60}")
@@ -86,18 +87,17 @@ def sweep_stage(library, args):
 
         try:
             storage = library.get_book_storage(scan_id)
-            print(f"  ▶️  Running {args.target} stage...")
+            print(f"  ▶️  Running {args.stage} stage...")
 
-            process_args = argparse.Namespace(
+            run_args = argparse.Namespace(
                 scan_id=scan_id,
-                stage=args.target,
-                stages=None,
+                stage=args.stage,
                 model=getattr(args, 'model', None),
                 workers=getattr(args, 'workers', None),
                 clean=False
             )
 
-            cmd_process(process_args)
+            cmd_run_stage(run_args)
 
             print(f"  ✅ Completed: {scan_id}")
             processed_count += 1
@@ -118,83 +118,11 @@ def sweep_stage(library, args):
     print(f"{'='*60}\n")
 
 
-def sweep_reports(library, args):
-    from infra.pipeline.logger import PipelineLogger
-    from pipeline.ocr import OCRStage
-    from pipeline.paragraph_correct import ParagraphCorrectStage
-    from pipeline.label_pages import LabelPagesStage
-    from pipeline.merged import MergeStage
-
-    all_books = library.list_books()
-    print(f"📚 Sweeping reports across {len(all_books)} books")
-
-    stage_map = {
-        'ocr': OCRStage(),
-        'paragraph-correct': ParagraphCorrectStage(),
-        'label-pages': LabelPagesStage(),
-        'merged': MergeStage()
-    }
-
-    if hasattr(args, 'stage_filter') and args.stage_filter:
-        stages_to_process = [args.stage_filter]
-    else:
-        stages_to_process = list(REPORT_STAGES)
-
-    total_regenerated = 0
-
-    for book in all_books:
-        scan_id = book['scan_id']
-        storage = library.get_book_storage(scan_id)
-
-        for stage_name in stages_to_process:
-            stage = stage_map.get(stage_name)
-            if not stage:
-                print(f"⚠️  Unknown stage: {stage_name}")
-                continue
-
-            stage_storage = storage.stage(stage_name)
-
-            if stage_name == 'ocr':
-                ocr_dir = stage_storage.output_dir
-                has_psm_data = False
-                for psm in [3, 4, 6]:
-                    psm_checkpoint_file = ocr_dir / f'psm{psm}' / '.checkpoint'
-                    if psm_checkpoint_file.exists():
-                        has_psm_data = True
-                        break
-                if not has_psm_data:
-                    continue
-            else:
-                all_metrics = stage_storage.metrics_manager.get_all()
-                if not all_metrics:
-                    continue
-
-            try:
-                logger = PipelineLogger(scan_id=scan_id, stage=stage_name)
-
-                if stage_name == 'ocr':
-                    metadata = storage.load_metadata()
-                    total_pages = metadata.get('total_pages', 0)
-                    stats = {'pages_processed': total_pages}
-                    stage.after(storage, logger, stats)
-                    total_regenerated += 1
-                    print(f"✅ {scan_id}/{stage_name}/ (report.csv + psm_selection.json + psm reports)")
-                else:
-                    report_path = stage.generate_report(storage, logger)
-                    if report_path:
-                        total_regenerated += 1
-                        all_metrics = stage_storage.metrics_manager.get_all()
-                        print(f"✅ {scan_id}/{stage_name}/report.csv ({len(all_metrics)} pages)")
-            except Exception as e:
-                print(f"❌ Failed to regenerate {scan_id}/{stage_name}: {e}")
-
-    print(f"\n✅ Regenerated {total_regenerated} reports across {len(all_books)} books\n")
-
-
-def cmd_sweep(args):
-    library = Library(storage_root=Config.book_storage_root)
-
-    if args.target == 'reports':
-        sweep_reports(library, args)
-    else:
-        sweep_stage(library, args)
+def setup_batch_parser(subparsers):
+    batch_parser = subparsers.add_parser('batch', help='Run stage across all books in library')
+    batch_parser.add_argument('stage', choices=CORE_STAGES, help='Stage to run')
+    batch_parser.add_argument('--model', help='Vision model (for correction/label stages)')
+    batch_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
+    batch_parser.add_argument('--reshuffle', action='store_true', help='Create new random order')
+    batch_parser.add_argument('--force', action='store_true', help='Regenerate even if completed')
+    batch_parser.set_defaults(func=cmd_batch)
