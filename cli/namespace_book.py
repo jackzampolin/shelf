@@ -26,7 +26,7 @@ def cmd_info(args):
         'ocr': 'OCR',
         'paragraph-correct': 'Paragraph-Correct',
         'label-pages': 'Label-Pages',
-        'extract_toc': 'Extract-ToC',
+        'extract-toc': 'Extract-ToC',
     }
 
     if args.json:
@@ -56,7 +56,7 @@ def cmd_info(args):
             'ocr': 'OCR',
             'paragraph-correct': 'Paragraph-Correct',
             'label-pages': 'Label-Pages',
-            'extract_toc': 'Extract-ToC',
+            'extract-toc': 'Extract-ToC',
         }
         stage_label = stage_labels.get(args.stage, args.stage.title())
 
@@ -94,7 +94,7 @@ def cmd_info(args):
         'ocr': 'OCR',
         'paragraph-correct': 'Paragraph-Correct',
         'label-pages': 'Label-Pages',
-        'extract_toc': 'Extract-ToC'
+        'extract-toc': 'Extract-ToC'
     }
 
     total_cost = 0.0

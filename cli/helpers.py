@@ -30,7 +30,7 @@ def get_stage_instance(stage_name: str):
         elif stage_name == 'label-pages':
             from pipeline.label_pages import LabelPagesStage
             return LabelPagesStage()
-        elif stage_name == 'extract_toc':
+        elif stage_name == 'extract-toc':
             from pipeline.extract_toc import ExtractTocStage
             return ExtractTocStage()
     except ImportError:

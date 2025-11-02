@@ -13,7 +13,7 @@ from .storage import ExtractTocStageStorage
 
 class ExtractTocStage(BaseStage):
 
-    name = "extract_toc"
+    name = "extract-toc"
     dependencies = ["paragraph-correct", "source"]
 
     output_schema = ExtractTocBookOutput
