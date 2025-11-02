@@ -6,12 +6,10 @@ from infra.storage.book_storage import BookStorage
 
 
 class LabelPagesStageStorage:
-
     def __init__(self, stage_name: str):
         self.stage_name = stage_name
 
     def list_completed_pages(self, storage: BookStorage) -> List[int]:
-        """List pages that have completed final output (Stage 2)."""
         return self.list_stage2_completed_pages(storage)
 
     def load_ocr_page(self, storage: BookStorage, page_num: int) -> Optional[dict]:
@@ -36,9 +34,7 @@ class LabelPagesStageStorage:
     def report_exists(self, storage: BookStorage) -> bool:
         return self.get_report_path(storage).exists()
 
-    # Stage 1 intermediate storage
     def get_stage1_dir(self, storage: BookStorage) -> Path:
-        """Get Stage 1 intermediate results directory."""
         stage_storage = storage.stage(self.stage_name)
         stage1_dir = stage_storage.output_dir / "stage1"
         stage1_dir.mkdir(parents=True, exist_ok=True)
@@ -52,12 +48,10 @@ class LabelPagesStageStorage:
         cost_usd: float,
         metrics: dict = None,
     ):
-        """Save Stage 1 structural analysis result."""
         import json
         stage1_dir = self.get_stage1_dir(storage)
         output_file = stage1_dir / f"page_{page_num:04d}.json"
 
-        # Add cost metadata
         stage1_data_with_meta = {
             **stage1_data,
             "cost_usd": cost_usd,
@@ -67,7 +61,6 @@ class LabelPagesStageStorage:
         with open(output_file, 'w') as f:
             json.dump(stage1_data_with_meta, f, indent=2)
 
-        # Record metrics if provided
         if metrics:
             stage_storage = storage.stage(self.stage_name)
             key = f"page_{page_num:04d}"
@@ -82,7 +75,6 @@ class LabelPagesStageStorage:
             )
 
     def load_stage1_result(self, storage: BookStorage, page_num: int) -> Optional[dict]:
-        """Load Stage 1 result for a page."""
         import json
         stage1_dir = self.get_stage1_dir(storage)
         input_file = stage1_dir / f"page_{page_num:04d}.json"
@@ -94,15 +86,12 @@ class LabelPagesStageStorage:
             return json.load(f)
 
     def list_stage1_completed_pages(self, storage: BookStorage) -> List[int]:
-        """List pages that have Stage 1 results."""
         stage1_dir = self.get_stage1_dir(storage)
         stage1_files = sorted(stage1_dir.glob("page_*.json"))
         page_nums = [int(p.stem.split('_')[1]) for p in stage1_files]
         return sorted(page_nums)
 
-    # Stage 2 final output storage
     def get_stage2_dir(self, storage: BookStorage) -> Path:
-        """Get Stage 2 final results directory."""
         stage_storage = storage.stage(self.stage_name)
         stage2_dir = stage_storage.output_dir / "stage2"
         stage2_dir.mkdir(parents=True, exist_ok=True)
@@ -117,20 +106,16 @@ class LabelPagesStageStorage:
         cost_usd: float,
         metrics: dict = None,
     ):
-        """Save Stage 2 final result."""
         import json
         stage2_dir = self.get_stage2_dir(storage)
         output_file = stage2_dir / f"page_{page_num:04d}.json"
 
-        # Validate with schema
         validated = schema(**data)
         final_data = validated.model_dump()
 
-        # Add cost metadata
         final_data['cost_usd'] = cost_usd
         final_data['page_num'] = page_num
 
-        # Save file
         temp_file = output_file.with_suffix('.json.tmp')
         try:
             with open(temp_file, 'w') as f:
@@ -141,7 +126,6 @@ class LabelPagesStageStorage:
                 temp_file.unlink()
             raise e
 
-        # Record metrics if provided
         if metrics:
             stage_storage = storage.stage(self.stage_name)
             key = f"page_{page_num:04d}"
@@ -156,7 +140,6 @@ class LabelPagesStageStorage:
             )
 
     def load_stage2_result(self, storage: BookStorage, page_num: int) -> Optional[dict]:
-        """Load Stage 2 result for a page."""
         import json
         stage2_dir = self.get_stage2_dir(storage)
         input_file = stage2_dir / f"page_{page_num:04d}.json"
@@ -168,7 +151,6 @@ class LabelPagesStageStorage:
             return json.load(f)
 
     def list_stage2_completed_pages(self, storage: BookStorage) -> List[int]:
-        """List pages that have Stage 2 results (final output)."""
         stage2_dir = self.get_stage2_dir(storage)
         stage2_files = sorted(stage2_dir.glob("page_*.json"))
         page_nums = [int(p.stem.split('_')[1]) for p in stage2_files]

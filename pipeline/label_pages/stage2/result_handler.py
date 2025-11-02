@@ -1,40 +1,33 @@
-"""Stage 2 result handler - merges Stage 1 + Stage 2, saves final output"""
+from datetime import datetime, timezone
 
 from infra.llm.batch_client import LLMResult
 from infra.llm.metrics import llm_result_to_metrics
 
 
 def create_stage2_handler(storage, stage_storage, logger, model, output_schema, ocr_pages, stage_name):
-    """Create Stage 2 result handler (merges Stage 1 + Stage 2, saves final output)."""
-
     def on_result(result: LLMResult):
         if result.success:
             page_num = result.request.metadata['page_num']
             ocr_page = ocr_pages[page_num]
             label_data = result.parsed_json
 
-            # Load Stage 1 results for merging
-            # Stage 1 is the authoritative source for page-level metadata
+            # Stage 1 is authoritative for page-level metadata
             stage1_results = stage_storage.load_stage1_result(storage, page_num)
 
-            # Build final output combining Stage 1 + Stage 2
-            from datetime import datetime, timezone
-
-            # Extract Stage 1 data (page-level metadata)
             page_number_data = stage1_results.get('page_number', {})
             page_region_data = stage1_results.get('page_region', {})
             sequence_validation = page_number_data.get('sequence_validation', {})
 
             page_output = {
                 "page_number": page_num,
-                # Page-level metadata from Stage 1 (3-image structural analysis)
+                # From Stage 1
                 "printed_page_number": page_number_data.get('printed_number'),
                 "numbering_style": page_number_data.get('numbering_style'),
                 "page_number_location": page_number_data.get('location'),
                 "page_number_confidence": sequence_validation.get('confidence', 1.0),
                 "page_region": page_region_data.get('region'),
                 "page_region_confidence": page_region_data.get('confidence'),
-                # Block-level classifications from Stage 2 (focused block analysis)
+                # From Stage 2
                 "blocks": label_data.get('blocks', []),
                 "model_used": model,
                 "processing_cost": result.cost_usd or 0.0,
@@ -45,7 +38,6 @@ def create_stage2_handler(storage, stage_storage, logger, model, output_schema, 
                 ) / max(len(label_data.get('blocks', [])), 1),
             }
 
-            # Build metrics
             metrics_data = llm_result_to_metrics(
                 result=result,
                 page_num=page_num,
@@ -73,7 +65,6 @@ def create_stage2_handler(storage, stage_storage, logger, model, output_schema, 
                 }
             )
 
-            # Save final output with metrics
             stage_storage.save_stage2_result(
                 storage=storage,
                 page_num=page_num,

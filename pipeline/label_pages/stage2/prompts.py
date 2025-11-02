@@ -1,9 +1,3 @@
-"""
-Stage 2: Block-Level Classification (1-image vision call + Stage 1 context)
-
-Focuses on detailed per-block classification using Stage 1 structural insights.
-"""
-
 STAGE2_SYSTEM_PROMPT = """<role>
 You are a content block classifier. You receive:
 1. ONE page image (for visual analysis)

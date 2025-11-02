@@ -1,5 +1,3 @@
-"""Stage 1: Page-level structural analysis with 3-image context."""
-
 from typing import Optional
 from PIL import Image
 
@@ -17,26 +15,12 @@ def prepare_stage1_request(
     model: str,
     total_pages: int,
 ) -> Optional[LLMRequest]:
-    """
-    Prepare Stage 1 vision request with 3-image context (prev, current, next).
-
-    Args:
-        page_num: Current page number to analyze
-        storage: Book storage
-        model: Vision model to use
-        total_pages: Total pages in book
-
-    Returns:
-        LLMRequest with 3 images or None if images unavailable
-    """
     source_stage = storage.stage('source')
 
-    # Determine prev/next page numbers (handle boundaries)
     prev_page_num = max(1, page_num - 1) if page_num > 1 else page_num
     next_page_num = min(total_pages, page_num + 1) if page_num < total_pages else page_num
 
-    # Load three images
-    # Reduce max_payload_kb since we're sending 3 images (3 * 300KB ~= 900KB total)
+    # 3 * 300KB ~= 900KB total
     images = []
     for p in [prev_page_num, page_num, next_page_num]:
         image_file = source_stage.output_page(p, extension='png')
@@ -47,7 +31,6 @@ def prepare_stage1_request(
         page_image = downsample_for_vision(page_image, max_payload_kb=300)
         images.append(page_image)
 
-    # Build response schema from Stage1LLMResponse
     response_schema = {
         "type": "json_schema",
         "json_schema": {
@@ -64,19 +47,17 @@ def prepare_stage1_request(
         total_pages=total_pages,
     )
 
-    request = LLMRequest(
+    return LLMRequest(
         id=f"stage1_page_{page_num:04d}",
         model=model,
         messages=[
             {"role": "system", "content": STAGE1_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ],
-        images=images,  # 3 images: [prev, current, next]
+        images=images,
         response_format=response_schema,
         metadata={
             'page_num': page_num,
             'stage': 'stage1',
         }
     )
-
-    return request
