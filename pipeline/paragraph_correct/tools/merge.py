@@ -2,8 +2,16 @@ from infra.storage.book_storage import BookStorage
 
 
 def get_merged_page_text(storage: BookStorage, page_num: int) -> str:
-    ocr_stage = storage.stage("ocr")
-    ocr_page = ocr_stage.load_page(page_num)
+    from pipeline.ocr.storage import OCRStageStorage
+
+    ocr_storage = OCRStageStorage(stage_name="ocr")
+    ocr_page_dict = ocr_storage.load_selected_page(storage, page_num, include_line_word_data=False)
+
+    if not ocr_page_dict:
+        raise FileNotFoundError(f"Page {page_num} not found in OCR selection_map")
+
+    from pipeline.ocr.schemas import OCRPageOutput
+    ocr_page = OCRPageOutput(**ocr_page_dict)
 
     para_correct_stage = storage.stage("paragraph_correct")
     para_correct_page = para_correct_stage.load_page(page_num)
