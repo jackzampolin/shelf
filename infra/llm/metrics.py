@@ -42,14 +42,14 @@ def llm_result_to_metrics(
         >>> validated = ParagraphCorrectPageMetrics(**metrics)
     """
     metrics = {
-        # Base fields
+        # Base fields (match MetricsManager standard names)
         "page_num": page_num,
-        "processing_time_seconds": result.total_time_seconds,
         "cost_usd": result.cost_usd,
+        "time_seconds": result.total_time_seconds,
+        "tokens": result.tokens_received,
 
         # LLM-specific fields
         "attempts": result.attempts,
-        "tokens_total": result.tokens_received,
         "tokens_per_second": result.tokens_per_second,
         "model_used": result.model_used,
         "provider": result.provider,
@@ -57,7 +57,6 @@ def llm_result_to_metrics(
         # Timing breakdown
         "queue_time_seconds": result.queue_time_seconds,
         "execution_time_seconds": result.execution_time_seconds,
-        "total_time_seconds": result.total_time_seconds,
         "ttft_seconds": result.ttft_seconds,
 
         # Raw usage data

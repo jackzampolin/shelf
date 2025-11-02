@@ -29,7 +29,21 @@ class MetricsManager:
         tokens: Optional[int] = None,
         custom_metrics: Optional[Dict[str, Any]] = None,
         accumulate: bool = False
-    ) -> None:        
+    ) -> None:
+        """
+        Record metrics for a key.
+
+        Note: Prefer passing everything in custom_metrics for consistency.
+        See issue #91 for schema validation work.
+
+        Args:
+            key: Metric key (e.g., "page_0001")
+            cost_usd: Cost in USD
+            time_seconds: Time in seconds
+            tokens: Token count
+            custom_metrics: Additional metrics dict
+            accumulate: If True, add to existing values; if False, replace
+        """
         with self._lock:
             metrics_entry = self._state["metrics"].get(key, {}) if accumulate else {}
 

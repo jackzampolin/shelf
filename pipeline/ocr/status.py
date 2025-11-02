@@ -6,7 +6,6 @@ from typing import Dict, Any, List, Set
 from enum import Enum
 
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 
 from .storage import OCRStageStorage
@@ -63,7 +62,6 @@ class OCRStatusTracker:
     def get_progress(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger
     ) -> Dict[str, Any]:
         source_stage = storage.stage("source")
@@ -81,13 +79,13 @@ class OCRStatusTracker:
         provider_remaining = self._get_provider_remaining(storage, all_pages)
 
         pages_needing_agreement = self._get_pages_needing_agreement(
-            all_pages, provider_remaining, checkpoint, selected_pages
+            storage, all_pages, provider_remaining, selected_pages
         )
         pages_for_auto_select = self._get_pages_for_auto_select(
-            checkpoint, selected_pages
+            storage, selected_pages
         )
         pages_needing_vision = self._get_pages_needing_vision(
-            checkpoint, selected_pages
+            storage, selected_pages
         )
 
         auto_selected, vision_selected = self._count_selection_methods(selection_map)
@@ -99,8 +97,8 @@ class OCRStatusTracker:
         metadata = storage.load_metadata()
         metadata_confidence = metadata.get("metadata_extraction_confidence", 0.0)
 
-        status = self._determine_status(selected_pages, total_pages, checkpoint)
-        metrics = self._aggregate_metrics(checkpoint)
+        status = self._determine_status(selected_pages, total_pages, storage)
+        metrics = self._aggregate_metrics(storage)
 
         return {
             "total_pages": total_pages,
@@ -186,21 +184,23 @@ class OCRStatusTracker:
 
     def _get_pages_needing_agreement(
         self,
+        storage: BookStorage,
         all_pages: Set[int],
         provider_remaining: Dict[str, List[int]],
-        checkpoint: CheckpointManager,
         selected_pages: Set[int]
     ) -> List[int]:
         pages_with_all_providers = all_pages.copy()
         for remaining in provider_remaining.values():
             pages_with_all_providers -= set(remaining)
 
+        stage_storage = storage.stage(self.stage_name)
+
         pages_needing_agreement = []
         for page_num in pages_with_all_providers:
             if page_num in selected_pages:
                 continue
 
-            metrics = checkpoint.get_page_metrics(page_num)
+            metrics = stage_storage.metrics_manager.get(f"page_{page_num:04d}")
             has_agreement = metrics and "provider_agreement" in metrics
 
             if not has_agreement:
@@ -210,48 +210,56 @@ class OCRStatusTracker:
 
     def _get_pages_for_auto_select(
         self,
-        checkpoint: CheckpointManager,
+        storage: BookStorage,
         selected_pages: Set[int]
     ) -> List[int]:
         pages_for_auto_select = []
 
-        checkpoint_state = checkpoint.get_status()
-        page_metrics = checkpoint_state.get("page_metrics", {})
+        stage_storage = storage.stage(self.stage_name)
+        all_metrics = stage_storage.metrics_manager.get_all()
 
-        for page_num_str, metrics in page_metrics.items():
-            page_num = int(page_num_str)
+        for page_key, metrics in all_metrics.items():
+            # Extract page number from key (e.g., "page_0001" -> 1)
+            try:
+                page_num = int(page_key.split('_')[1])
+            except (IndexError, ValueError):
+                continue
 
             if page_num in selected_pages:
                 continue
 
             agreement = metrics.get("provider_agreement")
-            has_selection = "selected_provider" in metrics
 
-            if agreement is not None and agreement >= 0.95 and not has_selection:
+            # Has agreement >= 0.95 but not yet selected -> auto-select candidate
+            if agreement is not None and agreement >= 0.95:
                 pages_for_auto_select.append(page_num)
 
         return sorted(pages_for_auto_select)
 
     def _get_pages_needing_vision(
         self,
-        checkpoint: CheckpointManager,
+        storage: BookStorage,
         selected_pages: Set[int]
     ) -> List[int]:
         pages_needing_vision = []
 
-        checkpoint_state = checkpoint.get_status()
-        page_metrics = checkpoint_state.get("page_metrics", {})
+        stage_storage = storage.stage(self.stage_name)
+        all_metrics = stage_storage.metrics_manager.get_all()
 
-        for page_num_str, metrics in page_metrics.items():
-            page_num = int(page_num_str)
+        for page_key, metrics in all_metrics.items():
+            # Extract page number from key (e.g., "page_0001" -> 1)
+            try:
+                page_num = int(page_key.split('_')[1])
+            except (IndexError, ValueError):
+                continue
 
             if page_num in selected_pages:
                 continue
 
             agreement = metrics.get("provider_agreement")
-            has_selection = "selected_provider" in metrics
 
-            if agreement is not None and agreement < 0.95 and not has_selection:
+            # Has agreement < 0.95 but not yet selected -> vision selection needed
+            if agreement is not None and agreement < 0.95:
                 pages_needing_vision.append(page_num)
 
         return sorted(pages_needing_vision)
@@ -286,45 +294,35 @@ class OCRStatusTracker:
         self,
         selected_pages: Set[int],
         total_pages: int,
-        checkpoint: CheckpointManager
+        storage: BookStorage
     ) -> str:
         if len(selected_pages) == 0:
             return OCRStageStatus.NOT_STARTED.value
         elif len(selected_pages) == total_pages:
             return OCRStageStatus.COMPLETED.value
         else:
-            checkpoint_state = checkpoint.get_status()
-            phase = checkpoint_state.get("phase", "in_progress")
+            # Derive status from file state (ground truth)
+            # If we have selections but not all pages, we're in progress
+            return "in_progress"
 
-            try:
-                OCRStageStatus(phase)
-                return phase
-            except ValueError:
-                return "in_progress"
+    def _aggregate_metrics(self, storage: BookStorage) -> Dict[str, Any]:
+        stage_storage = storage.stage(self.stage_name)
 
-    def _aggregate_metrics(self, checkpoint: CheckpointManager) -> Dict[str, Any]:
-        checkpoint_state = checkpoint.get_status()
+        total_cost = stage_storage.metrics_manager.get_total_cost()
+        total_time = stage_storage.metrics_manager.get_total_time()
+        total_tokens = stage_storage.metrics_manager.get_total_tokens()
 
-        total_cost = 0.0
-        total_tokens = 0
+        # Calculate vision-specific metrics
         vision_cost = 0.0
         vision_tokens = 0
 
-        page_metrics = checkpoint_state.get("page_metrics", {})
-        for metrics in page_metrics.values():
-            cost = metrics.get("cost_usd", 0.0)
-            total_cost += cost
-
-            usage = metrics.get("usage", {})
-            if usage:
-                tokens = usage.get("completion_tokens", 0)
-                total_tokens += tokens
-
-                if metrics.get("selection_method") == "vision":
-                    vision_cost += cost
-                    vision_tokens += tokens
-
-        total_time = checkpoint_state.get("elapsed_time", 0.0)
+        selection_map = self.storage.load_selection_map(storage)
+        for page_key, selection in selection_map.items():
+            if selection.get("method") == "vision":
+                page_num = int(page_key)
+                metrics = stage_storage.metrics_manager.get(f"page_{page_num:04d}") or {}
+                vision_cost += metrics.get("cost_usd", 0.0)
+                vision_tokens += metrics.get("tokens", 0)
 
         return {
             "total_cost_usd": total_cost,

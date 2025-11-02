@@ -2,9 +2,7 @@ from pydantic import BaseModel, Field
 
 
 class VisionSelectionMetrics(BaseModel):
-    """Checkpoint metrics for vision selection processing."""
 
-    # Standard LLM metrics
     page_num: int
     processing_time_seconds: float
     cost_usd: float
@@ -19,7 +17,6 @@ class VisionSelectionMetrics(BaseModel):
     ttft_seconds: float
     usage: dict
 
-    # Vision selection specific
     selected_psm: int = Field(description="PSM mode selected by LLM (3, 4, or 6)")
     confidence: float = Field(description="LLM confidence in selection")
     reason: str = Field(description="LLM's explanation for selecting this PSM")

@@ -1,21 +1,20 @@
 import json
 from typing import Optional
+from datetime import datetime, timezone
 
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 from infra.llm.batch_client import LLMBatchClient, LLMRequest, LLMResult
 from infra.config import Config
 
 from ..storage import OCRStageStorage
-from ..status import OCRStageStatus
 
 
 def extract_metadata(
     storage: BookStorage,
-    checkpoint: CheckpointManager,
     logger: PipelineLogger,
     ocr_storage: OCRStageStorage,
+    stage_name: str,
     num_pages: int = 15,
 ) -> bool:
     logger.info(f"Extracting book metadata from first {num_pages} pages...")
@@ -139,6 +138,8 @@ Extract the following metadata fields:
         log_dir=log_dir
     )
 
+    stage_storage = storage.stage(stage_name)
+
     try:
         results = batch_client.process_batch(
             [request],
@@ -157,8 +158,36 @@ Extract the following metadata fields:
 
         logger.info(f"Metadata extracted with confidence {confidence:.2f}")
 
+        # Save extraction result to ocr/metadata_extraction.json
+        extraction_output = {
+            "extracted_metadata": metadata,
+            "confidence": confidence,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "num_pages_analyzed": num_pages,
+            "model_used": Config.vision_model_primary,
+        }
+
+        extraction_file = storage.book_dir / stage_name / "metadata_extraction.json"
+        with open(extraction_file, 'w') as f:
+            json.dump(extraction_output, f, indent=2)
+
+        # Update metrics for this LLM call
+        # Note: We don't use llm_result_to_metrics() here because this isn't page-based
+        stage_storage.metrics_manager.record(
+            key="metadata_extraction",
+            custom_metrics={
+                "cost_usd": result.cost_usd or 0.0,
+                "time_seconds": result.total_time_seconds,
+                "tokens": result.tokens_received,
+                "confidence": confidence,
+                "num_pages_analyzed": num_pages,
+                "model_used": Config.vision_model_primary,
+            }
+        )
+
+        # Update top-level metadata.json if confidence is acceptable
         if confidence < 0.5:
-            logger.warning("Metadata confidence too low, not updating")
+            logger.warning("Metadata confidence too low, not updating metadata.json")
             return False
 
         current_metadata = storage.load_metadata()

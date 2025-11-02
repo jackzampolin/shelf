@@ -3,19 +3,16 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import List
 
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.rich_progress import RichProgressBar
 
 from ..providers import OCRProvider, TesseractProvider
 from .worker import process_ocr_task
 from ..storage import OCRStageStorage
-from ..status import OCRStageStatus
 
 
 def run_parallel_ocr(
     storage: BookStorage,
-    checkpoint: CheckpointManager,
     logger: PipelineLogger,
     ocr_storage: OCRStageStorage,
     providers: List[OCRProvider],
@@ -24,13 +21,12 @@ def run_parallel_ocr(
     max_workers: int,
     stage_name: str,
 ):
+    # Build task list by checking file existence (ground truth from disk)
     tasks = []
     for page_num in range(1, total_pages + 1):
-        page_metrics = checkpoint.get_page_metrics(page_num)
-        providers_complete = page_metrics.get("providers_complete", []) if page_metrics else []
-
         for provider_idx, provider in enumerate(providers):
-            if provider.config.name not in providers_complete:
+            # Check if provider output already exists on disk
+            if not ocr_storage.provider_page_exists(storage, provider.config.name, page_num):
                 tasks.append((page_num, provider_idx))
 
     if not tasks:
@@ -89,29 +85,15 @@ def run_parallel_ocr(
                 if error:
                     logger.page_error(f"OCR failed for {provider_name}", page=page_num, error=error)
                 elif result is not None:
+                    # Save provider output (file on disk = ground truth)
                     ocr_storage.save_provider_output(
                         storage, page_num, provider_name, result, output_schema
                     )
-
-                    with lock:
-                        page_metrics = checkpoint.get_page_metrics(page_num) or {}
-                        providers_complete = list(page_metrics.get("providers_complete", []))  # Copy list
-
-                        if provider_name not in providers_complete:
-                            providers_complete.append(provider_name)
-
-                            checkpoint.update_page_metrics(page_num, {
-                                "page_num": page_num,
-                                "providers_complete": providers_complete,
-                                "processing_time_seconds": page_metrics.get("processing_time_seconds", 0.0) + result.metadata.get("processing_time_seconds", 0.0),
-                            })
+                    # Note: No metrics needed - provider completion is derivable from file existence
 
                 with lock:
                     completed += 1
                     progress.update(completed, suffix=f"{completed}/{len(tasks)}")
-
-                    if completed % 10 == 0 or completed == len(tasks):
-                        checkpoint.set_phase(OCRStageStatus.RUNNING_OCR.value, f"{completed}/{len(tasks)} tasks")
 
             except Exception as e:
                 logger.error(f"Error processing future result: {e}")

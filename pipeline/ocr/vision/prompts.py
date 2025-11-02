@@ -96,18 +96,12 @@ def build_user_prompt(
         ""
     ])
 
-    # Note: We intentionally do NOT include agreement_metrics here
-    # The LLM should make decisions based purely on visual inspection,
-    # not be biased by knowing these pages "disagreed"
-
-    # Add each PSM output with summary
     for psm_mode in [3, 4, 6]:
         if psm_mode not in psm_outputs:
             continue
 
         ocr_data = psm_outputs[psm_mode]
 
-        # Calculate summary stats using utility function
         stats = calculate_ocr_summary_stats(ocr_data)
 
         prompt_parts.append(f"### PSM {psm_mode}")

@@ -59,7 +59,7 @@ class OCRStage(BaseStage):
         self.ocr_storage = OCRStageStorage(stage_name=self.name)
 
     def get_progress(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger) -> Dict[str, Any]:
-        return self.status_tracker.get_progress(storage, checkpoint, logger)
+        return self.status_tracker.get_progress(storage, logger)
 
     def before(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger):
         logger.info(f"OCR with {len(self.providers)} providers:")
@@ -92,10 +92,9 @@ class OCRStage(BaseStage):
 
             if has_ocr_work:
                 logger.info("=== Phase 1: Parallel OCR Extraction ===")
-                checkpoint.set_phase(OCRStageStatus.RUNNING_OCR.value, f"0/{total_pages} pages")
                 from .tools.parallel_ocr import run_parallel_ocr
                 run_parallel_ocr(
-                    storage, checkpoint, logger, self.ocr_storage,
+                    storage, logger, self.ocr_storage,
                     self.providers, self.output_schema, total_pages,
                     self.max_workers, self.name
                 )
@@ -105,11 +104,10 @@ class OCRStage(BaseStage):
         pages_needing_agreement = progress["selection"]["pages_needing_agreement"]
         if len(pages_needing_agreement) > 0:
             logger.info("=== Phase 2a: Calculate Provider Agreement ===")
-            checkpoint.set_phase(OCRStageStatus.CALCULATING_AGREEMENT.value)
             from .tools.agreement import calculate_agreements
             calculate_agreements(
-                storage, checkpoint, logger, self.ocr_storage,
-                self.providers, pages_needing_agreement
+                storage, logger, self.ocr_storage,
+                self.providers, pages_needing_agreement, self.name
             )
             progress = self.get_progress(storage, checkpoint, logger)
 
@@ -117,11 +115,10 @@ class OCRStage(BaseStage):
         pages_for_auto_select = progress["selection"]["pages_for_auto_select"]
         if len(pages_for_auto_select) > 0:
             logger.info("=== Phase 2b: Auto-Select High Agreement Pages ===")
-            checkpoint.set_phase(OCRStageStatus.AUTO_SELECTING.value)
             from .tools.auto_selector import auto_select_pages
             auto_select_pages(
-                storage, checkpoint, logger, self.ocr_storage,
-                self.providers, pages_for_auto_select
+                storage, logger, self.ocr_storage,
+                self.providers, pages_for_auto_select, self.name
             )
             progress = self.get_progress(storage, checkpoint, logger)
 
@@ -129,11 +126,10 @@ class OCRStage(BaseStage):
         pages_needing_vision = progress["selection"]["pages_needing_vision"]
         if len(pages_needing_vision) > 0:
             logger.info("=== Phase 2c: Vision-Select Low Agreement Pages ===")
-            checkpoint.set_phase(OCRStageStatus.RUNNING_VISION.value)
             from .vision.selector import vision_select_pages
             vision_select_pages(
-                storage, checkpoint, logger, self.ocr_storage,
-                self.providers, pages_needing_vision, total_pages
+                storage, logger, self.ocr_storage,
+                self.providers, pages_needing_vision, total_pages, self.name
             )
             progress = self.get_progress(storage, checkpoint, logger)
         else:
@@ -144,10 +140,9 @@ class OCRStage(BaseStage):
             needs_metadata = progress["metadata"]["needs_extraction"]
             if needs_metadata:
                 logger.info("=== Phase 3: Extract Book Metadata ===")
-                checkpoint.set_phase(OCRStageStatus.EXTRACTING_METADATA.value)
                 from .tools.metadata_extractor import extract_metadata
                 extract_metadata(
-                    storage, checkpoint, logger, self.ocr_storage
+                    storage, logger, self.ocr_storage, self.name
                 )
                 progress = self.get_progress(storage, checkpoint, logger)
 
@@ -156,20 +151,11 @@ class OCRStage(BaseStage):
             needs_report = not progress["artifacts"]["report_exists"]
             if needs_report:
                 logger.info("=== Phase 4: Generate Report ===")
-                checkpoint.set_phase(OCRStageStatus.GENERATING_REPORT.value)
                 from .tools.report_generator import generate_report
                 generate_report(
-                    storage, checkpoint, logger, self.ocr_storage, self.report_schema
+                    storage, logger, self.ocr_storage, self.report_schema, self.name
                 )
                 progress = self.get_progress(storage, checkpoint, logger)
-
-        all_complete = (
-            len(progress["remaining_pages"]) == 0
-            and not progress["metadata"]["needs_extraction"]
-            and progress["artifacts"]["report_exists"]
-        )
-        if all_complete:
-            checkpoint.set_phase(OCRStageStatus.COMPLETED.value)
 
         completed_pages = total_pages - len(progress["remaining_pages"])
         total_cost = progress["metrics"]["total_cost_usd"]

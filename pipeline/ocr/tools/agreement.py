@@ -2,7 +2,6 @@ import difflib
 from typing import List, Dict, Any
 
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.rich_progress import RichProgressBar
 
@@ -12,15 +11,17 @@ from ..storage import OCRStageStorage
 
 def calculate_agreements(
     storage: BookStorage,
-    checkpoint: CheckpointManager,
     logger: PipelineLogger,
     ocr_storage: OCRStageStorage,
     providers: List[OCRProvider],
     page_numbers: List[int],
+    stage_name: str,
 ):
 
     if not page_numbers:
         return
+
+    stage_storage = storage.stage(stage_name)
 
     logger.info(f"Calculating provider agreement for {len(page_numbers)} pages...")
     progress = RichProgressBar(
@@ -43,9 +44,11 @@ def calculate_agreements(
 
             agreement = _calculate_text_agreement(provider_outputs)
 
-            page_metrics = checkpoint.get_page_metrics(page_num) or {}
-            page_metrics["provider_agreement"] = agreement
-            checkpoint.update_page_metrics(page_num, page_metrics)
+            stage_storage.metrics_manager.record(
+                key=f"page_{page_num:04d}",
+                custom_metrics={"provider_agreement": agreement},
+                accumulate=True  # Preserve existing metrics
+            )
 
             calculated += 1
             progress.update(idx + 1, suffix=f"{calculated}/{len(page_numbers)}")

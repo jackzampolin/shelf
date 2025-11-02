@@ -1,181 +1,64 @@
 from typing import List
-from PIL import Image
 
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
-from infra.llm.batch_client import LLMRequest, LLMResult
-from infra.llm.batch_processor import LLMBatchProcessor
-from infra.llm.metrics import llm_result_to_metrics
-from infra.utils.pdf import downsample_for_vision
+from infra.llm.batch_processor import LLMBatchProcessor, LLMBatchConfig, batch_process_with_preparation
 from infra.config import Config
 
 from ..providers import OCRProvider
 from ..storage import OCRStageStorage
-from ..status import OCRStageStatus
-from ..tools.agreement import _load_provider_outputs
-from .prompts import SYSTEM_PROMPT, build_user_prompt
-from .schemas import VisionSelectionResponse
+from .request_builder import prepare_vision_request
+from .result_handler import create_vision_handler
 
 
 def vision_select_pages(
     storage: BookStorage,
-    checkpoint: CheckpointManager,
     logger: PipelineLogger,
     ocr_storage: OCRStageStorage,
     providers: List[OCRProvider],
     page_numbers: List[int],
     total_pages: int,
+    stage_name: str,
 ):
     if not page_numbers:
         return
 
     logger.info(f"Running vision selection on {len(page_numbers)} low-agreement pages...")
 
-    # Build vision requests (metadata not needed - fetched later in after() hook)
-    requests = _build_vision_requests(
-        storage, ocr_storage, logger, providers, page_numbers, total_pages
-    )
-
-    if not requests:
-        logger.info("No vision requests built (all pages failed to load)")
-        return
-
-    # Create batch processor
-    processor = LLMBatchProcessor(
-        checkpoint=checkpoint,
-        logger=logger,
+    config = LLMBatchConfig(
         model=Config.vision_model_primary,
-        log_dir=storage.book_dir / ocr_storage.stage_name / "vision_logs",
+        max_workers=Config.max_workers,
         max_retries=3,
     )
 
-    # Track selections
-    selections = 0
-
-    def handle_vision_result(result: LLMResult):
-        nonlocal selections
-
-        if not result.success:
-            page_num = result.request.metadata.get("page_num", "unknown")
-            logger.page_error("Vision selection failed", page=page_num, error=result.error_message)
-            return
-
-        try:
-            page_num = result.request.metadata["page_num"]
-            provider_outputs = result.request.metadata["provider_outputs"]
-
-            validated = VisionSelectionResponse(**result.parsed_json)
-
-            provider_index = validated.selected_psm - 3
-            provider_names = list(provider_outputs.keys())
-
-            if not (0 <= provider_index < len(provider_names)):
-                raise ValueError(f"Invalid provider index {provider_index}")
-
-            selected_provider = provider_names[provider_index]
-            selected_data = provider_outputs[selected_provider]["data"]
-
-            page_metrics = checkpoint.get_page_metrics(page_num) or {}
-            agreement = page_metrics.get("provider_agreement", 0.0)
-
-            llm_metrics = llm_result_to_metrics(
-                result=result,
-                page_num=page_num,
-                extra_fields={
-                    "selected_provider": selected_provider,
-                    "selection_method": "vision",
-                    "confidence": validated.confidence,
-                    "reason": validated.reason,
-                    "blocks_detected": len(selected_data.get("blocks", [])),
-                }
-            )
-            page_metrics.update(llm_metrics)
-            checkpoint.update_page_metrics(page_num, page_metrics)
-
-            ocr_storage.update_selection(storage, page_num, {
-                "provider": selected_provider,
-                "method": "vision",
-                "agreement": agreement,
-                "confidence": validated.confidence,
-            })
-
-            selections += 1
-
-        except Exception as e:
-            page_num = result.request.metadata.get("page_num", "unknown")
-            logger.page_error("Failed to process vision result", page=page_num, error=str(e))
-
-    stats = processor.process_batch(
-        requests=requests,
-        on_result=handle_vision_result,
+    log_dir = storage.book_dir / stage_name / "vision_logs"
+    processor = LLMBatchProcessor(
+        checkpoint=None,
+        logger=logger,
+        log_dir=log_dir,
+        config=config,
     )
 
-    logger.info(f"   ✓ Vision-selected {selections} pages, ${stats['total_cost_usd']:.4f}")
+    handler = create_vision_handler(
+        storage=storage,
+        ocr_storage=ocr_storage,
+        logger=logger,
+        providers=providers,
+        stage_name=stage_name,
+    )
 
+    stats = batch_process_with_preparation(
+        stage_name="Vision Selection",
+        pages=page_numbers,
+        request_builder=prepare_vision_request,
+        result_handler=handler,
+        processor=processor,
+        logger=logger,
+        storage=storage,
+        model=config.model,
+        total_pages=total_pages,
+        ocr_storage=ocr_storage,
+        providers=providers,
+    )
 
-def _build_vision_requests(
-    storage: BookStorage,
-    ocr_storage: OCRStageStorage,
-    logger: PipelineLogger,
-    providers: List[OCRProvider],
-    page_numbers: List[int],
-    total_pages: int,
-) -> List[LLMRequest]:
-    """Build LLM requests for vision-based provider selection"""
-    requests = []
-
-    for page_num in page_numbers:
-        try:
-            provider_outputs = _load_provider_outputs(
-                storage, ocr_storage, providers, page_num
-            )
-
-            if len(provider_outputs) < len(providers):
-                logger.warning(
-                    f"Page {page_num} missing some provider outputs, skipping vision"
-                )
-                continue
-
-            source_file = storage.stage("source").output_page(page_num, extension="png")
-            if not source_file.exists():
-                logger.warning(f"Page {page_num} source image missing, skipping vision")
-                continue
-
-            pil_image = Image.open(source_file)
-            downsampled = downsample_for_vision(pil_image)
-
-            user_prompt = build_user_prompt(
-                page_num=page_num,
-                total_pages=total_pages,
-                psm_outputs=provider_outputs,
-            )
-
-            request = LLMRequest(
-                id=f"page_{page_num:04d}_vision",
-                model=Config.vision_model_primary,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                images=[downsampled],
-                temperature=0.0,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "vision_selection",
-                        "schema": VisionSelectionResponse.model_json_schema()
-                    }
-                },
-                metadata={
-                    "page_num": page_num,
-                    "provider_outputs": provider_outputs,
-                },
-            )
-
-            requests.append(request)
-
-        except Exception as e:
-            logger.page_error("Failed to build vision request", page=page_num, error=str(e))
-
-    return requests
+    logger.info(f"   ✓ Vision selection complete: ${stats['total_cost_usd']:.4f}")
