@@ -68,19 +68,6 @@ class ExtractTocStage(BaseStage):
         logger.info("Starting extract-toc", model=self.model)
 
         start_time = time.time()
-        total_cost = 0.0
-
-        if progress["artifacts"]["finder_result_exists"]:
-            finder_result = self.stage_storage.load_finder_result(storage)
-            total_cost += finder_result.get("search_cost_usd", 0.0)
-
-        if progress["artifacts"]["structure_exists"]:
-            structure_data = self.stage_storage.load_structure(storage)
-            total_cost += structure_data.get("structure_cost_usd", 0.0)
-
-        if progress["artifacts"]["toc_unchecked_exists"]:
-            toc_unchecked = self.stage_storage.load_toc_unchecked(storage)
-            total_cost += toc_unchecked.get("extraction_cost_usd", 0.0)
 
         # Phase 1: Find ToC pages (grep + vision agent)
         if not progress["artifacts"]["finder_result_exists"]:
@@ -95,15 +82,20 @@ class ExtractTocStage(BaseStage):
                 verbose=True
             )
 
-            total_cost += phase1_cost
-
             finder_result = {
                 "toc_found": toc_range is not None,
                 "toc_page_range": toc_range.model_dump() if toc_range else None,
-                "search_cost_usd": phase1_cost
             }
 
             self.stage_storage.save_finder_result(storage, finder_result)
+
+            stage_storage_obj = storage.stage(self.name)
+            stage_storage_obj.metrics_manager.record(
+                key="phase1_finding",
+                cost_usd=phase1_cost,
+                time_seconds=0.0,
+                custom_metrics={"phase": "finding"}
+            )
 
             if not toc_range:
                 logger.info("No ToC found by agent")
@@ -111,6 +103,9 @@ class ExtractTocStage(BaseStage):
                 elapsed_time = time.time() - start_time
 
                 self.stage_storage.save_toc_final(storage, {"toc": None, "search_strategy": "not_found"})
+
+                stage_storage_obj = storage.stage(self.name)
+                total_cost = sum(m.get('cost_usd', 0.0) for m in stage_storage_obj.metrics_manager.get_all().values())
 
                 return {
                     "status": "success",
@@ -143,14 +138,19 @@ class ExtractTocStage(BaseStage):
                 log_dir=log_dir
             )
 
-            total_cost += phase2_cost
-
             structure_data = {
                 "observations": observations,
-                "structure_cost_usd": phase2_cost
             }
 
             self.stage_storage.save_structure(storage, structure_data)
+
+            stage_storage_obj = storage.stage(self.name)
+            stage_storage_obj.metrics_manager.record(
+                key="phase2_structure",
+                cost_usd=phase2_cost,
+                time_seconds=0.0,
+                custom_metrics={"phase": "structure"}
+            )
             progress = self.get_progress(storage, logger)
 
         # Phase 3: Generate ToC draft (unchecked)
@@ -181,14 +181,19 @@ class ExtractTocStage(BaseStage):
                 log_dir=log_dir
             )
 
-            total_cost += phase3_cost
-
             toc_unchecked = {
                 "toc": toc.model_dump(),
-                "extraction_cost_usd": phase3_cost
             }
 
             self.stage_storage.save_toc_unchecked(storage, toc_unchecked)
+
+            stage_storage_obj = storage.stage(self.name)
+            stage_storage_obj.metrics_manager.record(
+                key="phase3_extraction",
+                cost_usd=phase3_cost,
+                time_seconds=0.0,
+                custom_metrics={"phase": "extraction", "entries": len(toc.entries)}
+            )
             logger.info("Saved toc_unchecked.json", entries=len(toc.entries))
             progress = self.get_progress(storage, logger)
 
@@ -231,6 +236,9 @@ class ExtractTocStage(BaseStage):
             toc_final = self.stage_storage.load_toc_final(storage)
             toc_found = toc_final.get("toc") is not None
             toc_entries = len(toc_final["toc"]["entries"]) if toc_found else 0
+
+            stage_storage_obj = storage.stage(self.name)
+            total_cost = sum(m.get('cost_usd', 0.0) for m in stage_storage_obj.metrics_manager.get_all().values())
 
             logger.info(
                 "Extract-ToC complete",

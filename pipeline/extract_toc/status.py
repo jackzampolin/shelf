@@ -49,21 +49,17 @@ class ExtractTocStatusTracker:
         else:
             status = ExtractTocStatus.COMPLETED.value
 
-        total_cost = 0.0
-        if finder_result_exists:
-            finder_data = self.storage.load_finder_result(storage)
-            total_cost += finder_data.get("search_cost_usd", 0.0)
-        if structure_exists:
-            structure_data = self.storage.load_structure(storage)
-            total_cost += structure_data.get("structure_cost_usd", 0.0)
-        if toc_unchecked_exists:
-            toc_unchecked = self.storage.load_toc_unchecked(storage)
-            total_cost += toc_unchecked.get("extraction_cost_usd", 0.0)
+        stage_storage_obj = storage.stage(self.stage_name)
+        all_metrics = stage_storage_obj.metrics_manager.get_all()
+
+        total_cost = sum(m.get('cost_usd', 0.0) for m in all_metrics.values())
+        total_time = stage_storage_obj.metrics_manager.get_total_time()
 
         return {
             "status": status,
             "metrics": {
-                "total_cost_usd": total_cost
+                "total_cost_usd": total_cost,
+                "total_time_seconds": total_time,
             },
             "artifacts": {
                 "finder_result_exists": finder_result_exists,
