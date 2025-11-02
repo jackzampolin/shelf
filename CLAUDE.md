@@ -4,13 +4,13 @@
 **This pipeline costs real money via OpenRouter API calls.**
 
 NEVER run these operations without explicit user approval:
-- `shelf.py process <scan-id>` - Full pipeline processing
-- `shelf.py process <scan-id> --stage <stage>` - Single stage processing
-- `shelf.py sweep <stage>` - Library-wide stage processing
-- Any command that spawns LLM API calls (correction, labels, merge, structure)
+- `shelf.py book <scan-id> process` - Full pipeline processing
+- `shelf.py book <scan-id> run-stage <stage>` - Single stage processing
+- `shelf.py batch <stage>` - Library-wide batch stage processing
+- Any command that spawns LLM API calls (paragraph-correct, label-pages, extract_toc)
 
 Safe operations (can run freely):
-- `shelf.py list`, `shelf.py status <scan-id>`, `pytest tests/`
+- `shelf.py library list`, `shelf.py book <scan-id> info`, `pytest tests/`
 - Reading files, grepping, analyzing code
 
 **Always ask first**
@@ -51,9 +51,9 @@ Read `pipeline/ocr/` and `docs/guides/implementing-a-stage.md` for full details.
 
 **Core principles:**
 1. **One schema per file** - Easy to find, easy to modify
-2. **Ground truth from disk** - Files are reality, not checkpoint state
+2. **Ground truth from disk** - Files are reality, not metrics state
 3. **If-gates for resume** - Each phase checks progress, refreshes, continues
-4. **Incremental checkpoints** - `mark_completed()` after each page
+4. **Incremental progress** - Metrics recorded after each page via MetricsManager
 5. **Stage independence** - Communicate through files, not imports
 
 **Structure:**
@@ -68,18 +68,17 @@ pipeline/your_stage/
 
 **Key pattern (if-gates):**
 ```python
-def run(self, storage, checkpoint, logger):
-    progress = self.get_progress(...)
+def run(self, storage, logger):
+    progress = self.get_status(storage, logger)
 
     if progress["remaining_pages"]:
         process_pages()
-        progress = self.get_progress(...)  # Refresh
+        progress = self.get_status(storage, logger)  # Refresh
 
     if not progress["artifacts"]["report_exists"]:
         generate_report()
 
-    if all_done(progress):
-        checkpoint.set_phase("completed")
+    # Completion determined by status tracker checking disk state
 ```
 </stage_implementation>
 
@@ -128,7 +127,7 @@ uv run python -m pytest tests/
 **1. COST AWARENESS**
 - ALWAYS ask before running expensive operations
 - Test on samples, not full books
-- Check costs: `shelf.py status <scan-id>`
+- Check costs: `shelf.py book <scan-id> info`
 
 **2. GIT WORKFLOW**
 - One source of truth: main branch
@@ -138,13 +137,13 @@ uv run python -m pytest tests/
 **3. STAGE IMPLEMENTATION**
 - **OCR is the reference** - read `pipeline/ocr/` when stuck
 - One schema per file
-- Ground truth from disk (not checkpoint state)
+- Ground truth from disk (not metrics state)
 - If-gates for resume (check progress, refresh, continue)
-- Incremental checkpoints (`mark_completed` after each page)
-- Metrics tracked for cost and time records
+- Incremental metrics (record after each page via MetricsManager)
+- Metrics tracked for cost, time, and progress
 
 **4. SCHEMAS**
-- Three schemas: output, checkpoint, report
+- Three schemas: output, metrics, report
 - Always validate: pass schema to `save_page`/`load_page`
 - Never skip validation
 

@@ -1,5 +1,6 @@
 import json
 from ..tools.downsample import downsample_ocr_for_vision, calculate_ocr_summary_stats
+from ..constants import SUPPORTED_PSM_MODES
 
 SYSTEM_PROMPT = """<role>
 You are an OCR quality evaluator for book digitization. Your job is to select the best OCR output for a book page by comparing multiple page segmentation modes against the original image.
@@ -96,7 +97,7 @@ def build_user_prompt(
         ""
     ])
 
-    for psm_mode in [3, 4, 6]:
+    for psm_mode in SUPPORTED_PSM_MODES:
         if psm_mode not in psm_outputs:
             continue
 
@@ -110,8 +111,6 @@ def build_user_prompt(
         prompt_parts.append(f"- Mean confidence: {stats['mean_confidence']:.3f}")
         prompt_parts.append("")
 
-        # Include structural summary (NO TEXT - just metadata for layout evaluation)
-        # This keeps prompts small and focuses LLM on visual structure vs text comparison
         structure_summary = downsample_ocr_for_vision(ocr_data, text_preview_chars=100)
 
         prompt_parts.append("```json")

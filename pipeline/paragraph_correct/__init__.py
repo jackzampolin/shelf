@@ -131,12 +131,13 @@ class ParagraphCorrectStage(BaseStage):
                     max_retries=self.max_retries,
                 )
 
-                log_dir = storage.stage(self.name).output_dir / "logs"
+                stage_storage_dir = storage.stage(self.name)
+                log_dir = stage_storage_dir.output_dir / "logs"
                 processor = LLMBatchProcessor(
-                    checkpoint=None,
                     logger=logger,
                     log_dir=log_dir,
                     config=config,
+                    metrics_manager=stage_storage_dir.metrics_manager,
                 )
 
                 # Create handler with page data map

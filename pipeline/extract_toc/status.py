@@ -24,10 +24,9 @@ class ExtractTocStatusTracker:
         self.stage_name = stage_name
         self.storage = ExtractTocStageStorage(stage_name=stage_name)
 
-    def get_progress(
+    def get_status(
         self,
-        storage: BookStorage,
-        logger: PipelineLogger
+        storage: BookStorage
     ) -> Dict[str, Any]:
 
         finder_result_exists = self.storage.finder_result_exists(storage)

@@ -1,5 +1,3 @@
-"""Image region schema for detected images."""
-
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 

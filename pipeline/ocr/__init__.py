@@ -1,12 +1,3 @@
-"""
-OCR Stage: Parallel provider execution with vision-based selection.
-
-Architecture:
-- All providers run in parallel per page (Tesseract PSM 3/4/6 by default)
-- Vision LLM selects best provider output for low-agreement pages
-- Multi-phase resume support with incremental checkpointing
-"""
-
 import multiprocessing
 from typing import List, Dict, Any, Optional
 
@@ -19,6 +10,7 @@ from .providers.schemas import OCRPageMetrics
 from .providers import OCRProvider, TesseractProvider, OCRProviderConfig
 from .status import OCRStatusTracker, OCRStageStatus
 from .storage import OCRStageStorage
+from .constants import SUPPORTED_PSM_MODES
 
 
 class OCRStage(BaseStage):
@@ -43,7 +35,7 @@ class OCRStage(BaseStage):
                     OCRProviderConfig(name=f"tesseract-psm{psm}"),
                     psm_mode=psm,
                 )
-                for psm in [3, 4, 6]
+                for psm in SUPPORTED_PSM_MODES
             ]
         else:
             self.providers = providers
@@ -61,10 +53,8 @@ class OCRStage(BaseStage):
         return self.status_tracker.get_status(storage)
 
     def pretty_print_status(self, status: Dict[str, Any]) -> str:
-        """Return formatted OCR status with provider and selection details."""
         lines = [super().pretty_print_status(status)]
 
-        # OCR-specific: Provider status
         providers = status.get('providers', {})
         if providers:
             lines.append("   Providers:")
@@ -73,7 +63,6 @@ class OCRStage(BaseStage):
                 pcompleted = total - len(premaining)
                 lines.append(f"      {pname}: {pcompleted}/{total} ({len(premaining)} remaining)")
 
-        # OCR-specific: Selection info
         selection = status.get('selection', {})
         auto = selection.get('auto_selected', 0)
         vision = selection.get('vision_selected', 0)

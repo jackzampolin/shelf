@@ -27,12 +27,41 @@ class ExtractTocStage(BaseStage):
         self.status_tracker = ExtractTocStatusTracker(stage_name=self.name)
         self.stage_storage = ExtractTocStageStorage(stage_name=self.name)
 
-    def get_progress(
+    def get_status(
         self,
         storage: BookStorage,
         logger: PipelineLogger
     ) -> Dict[str, Any]:
-        return self.status_tracker.get_progress(storage, logger)
+        return self.status_tracker.get_status(storage)
+
+    def pretty_print_status(self, status: Dict[str, Any]) -> str:
+        lines = []
+
+        # Extract-toc specific: Phase-based status (not page-based)
+        stage_status = status.get('status', 'unknown')
+        lines.append(f"   Status: {stage_status}")
+
+        # Cost and time metrics
+        metrics = status.get('metrics', {})
+        if metrics.get('total_cost_usd', 0) > 0:
+            lines.append(f"   Cost:   ${metrics['total_cost_usd']:.4f}")
+        if metrics.get('total_time_seconds', 0) > 0:
+            mins = metrics['total_time_seconds'] / 60
+            lines.append(f"   Time:   {mins:.1f}m")
+
+        # Extract-toc specific: Phase completion
+        artifacts = status.get('artifacts', {})
+        phases_completed = sum([
+            artifacts.get('finder_result_exists', False),
+            artifacts.get('structure_exists', False),
+            artifacts.get('toc_unchecked_exists', False),
+            artifacts.get('toc_diff_exists', False),
+            artifacts.get('toc_final_exists', False),
+        ])
+        total_phases = 5
+        lines.append(f"   Phases: {phases_completed}/{total_phases} completed")
+
+        return '\n'.join(lines)
 
     def before(
         self,
@@ -43,7 +72,7 @@ class ExtractTocStage(BaseStage):
 
         from pipeline.paragraph_correct import ParagraphCorrectStage
         para_correct_stage = ParagraphCorrectStage()
-        para_correct_progress = para_correct_stage.get_progress(storage, logger)
+        para_correct_progress = para_correct_stage.get_status(storage, logger)
 
         if para_correct_progress['status'] != 'completed':
             raise RuntimeError(
@@ -59,7 +88,7 @@ class ExtractTocStage(BaseStage):
         logger: PipelineLogger,
     ) -> Dict[str, Any]:
 
-        progress = self.get_progress(storage, logger)
+        progress = self.get_status(storage, logger)
 
         if progress["status"] == ExtractTocStatus.COMPLETED.value:
             logger.info("Extract-ToC already completed (skipping)")
@@ -115,7 +144,7 @@ class ExtractTocStage(BaseStage):
                 }
 
             logger.info("Found ToC pages", start=toc_range.start_page, end=toc_range.end_page)
-            progress = self.get_progress(storage, logger)
+            progress = self.get_status(storage, logger)
 
         # Phase 2: Extract structure observations
         if not progress["artifacts"]["structure_exists"]:
@@ -151,7 +180,7 @@ class ExtractTocStage(BaseStage):
                 time_seconds=0.0,
                 custom_metrics={"phase": "structure"}
             )
-            progress = self.get_progress(storage, logger)
+            progress = self.get_status(storage, logger)
 
         # Phase 3: Generate ToC draft (unchecked)
         if not progress["artifacts"]["toc_unchecked_exists"]:
@@ -195,7 +224,7 @@ class ExtractTocStage(BaseStage):
                 custom_metrics={"phase": "extraction", "entries": len(toc.entries)}
             )
             logger.info("Saved toc_unchecked.json", entries=len(toc.entries))
-            progress = self.get_progress(storage, logger)
+            progress = self.get_status(storage, logger)
 
         # Phase 4: Check ToC for issues (validation)
         if not progress["artifacts"]["toc_diff_exists"]:
@@ -209,7 +238,7 @@ class ExtractTocStage(BaseStage):
 
             self.stage_storage.save_toc_diff(storage, toc_diff)
             logger.info("Saved toc_diff.json (no issues found)")
-            progress = self.get_progress(storage, logger)
+            progress = self.get_status(storage, logger)
 
         # Phase 5: Merge ToC (draft + corrections)
         if not progress["artifacts"]["toc_final_exists"]:
@@ -229,7 +258,7 @@ class ExtractTocStage(BaseStage):
             elapsed_time = time.time() - start_time
 
             logger.info("Saved toc.json (final)")
-            progress = self.get_progress(storage, logger)
+            progress = self.get_status(storage, logger)
 
         if progress["status"] == ExtractTocStatus.COMPLETED.value:
             elapsed_time = time.time() - start_time

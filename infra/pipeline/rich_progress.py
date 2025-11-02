@@ -16,6 +16,7 @@ from rich.progress import (
 from rich.live import Live
 from rich.console import Console, Group
 from rich.tree import Tree
+from rich.padding import Padding
 import threading
 from typing import Dict, List
 
@@ -134,9 +135,15 @@ class RichProgressBarHierarchical:
 
         # Main progress bar
         self._progress = Progress(
-            TextColumn(f"{prefix}{{task.description}}"),
-            BarColumn(bar_width=width),
-            TaskProgressColumn(),
+            TextColumn(f"[bold cyan]{prefix}[/bold cyan]{{task.description}}"),
+            BarColumn(
+                bar_width=width,
+                style="grey23",              # Unfilled background
+                complete_style="green",       # Filled portion
+                finished_style="bold green",  # Completed
+            ),
+            TaskProgressColumn(style="bold cyan"),
+            TextColumn("[dim]•[/dim]"),
             TextColumn("{task.fields[suffix]}", justify="right"),
             transient=True
         )
@@ -187,19 +194,26 @@ class RichProgressBarHierarchical:
                     title = section_data["title"]
                     items = section_data["items"]
 
-                    section_node = tree.add(f"[bold]{title}[/bold]")
+                    # Color-code section headers
+                    if section_id == "rollups":
+                        section_node = tree.add(f"[bold bright_cyan]{title}[/bold bright_cyan]")
+                    elif section_id == "recent":
+                        section_node = tree.add(f"[bold bright_yellow]{title}[/bold bright_yellow]")
+                    else:
+                        section_node = tree.add(f"[bold]{title}[/bold]")
 
                     # Add items that have messages
                     valid_items = [item_id for item_id in items if item_id in self._sub_lines]
 
                     if not valid_items:
-                        section_node.add("[dim](none)[/dim]")
+                        section_node.add("[dim italic](none)[/dim italic]")
                     else:
                         for item_id in valid_items:
                             msg = self._sub_lines[item_id]
                             section_node.add(msg)
 
-                components.append(tree)
+                # Add indentation to the tree
+                components.append(Padding(tree, (0, 0, 0, 3)))
 
             return Group(*components)
 
@@ -304,7 +318,7 @@ class RichProgressBarHierarchical:
             print(message)
 
     def create_llm_event_handler(self, batch_client, start_time: float, model: str,
-                                  total_requests: int, checkpoint=None, extract_error_code=None):
+                                  total_requests: int, metrics_manager=None, extract_error_code=None):
         """Create a standard LLM event handler for batch processing.
 
         Returns a configured event handler that displays:
@@ -318,7 +332,7 @@ class RichProgressBarHierarchical:
             start_time: Start time of the batch process (for elapsed calculation)
             model: Primary model name (for showing model suffix when different)
             total_requests: Total number of requests in batch
-            checkpoint: Optional CheckpointManager for querying detailed metrics
+            metrics_manager: Optional MetricsManager for querying detailed metrics
             extract_error_code: Optional function to format error messages (defaults to simple formatter)
 
         Returns:
@@ -433,11 +447,11 @@ class RichProgressBarHierarchical:
                     total_reasoning_tokens = 0
                     token_count = 0
 
-                    if checkpoint:
+                    if metrics_manager:
                         # Get all completed page metrics for session-wide statistics
-                        all_metrics = checkpoint.get_all_metrics()
+                        all_metrics = metrics_manager.get_all()
 
-                        for page_num, metrics in all_metrics.items():
+                        for key, metrics in all_metrics.items():
                             # TTFT values
                             if metrics.get('ttft_seconds') is not None:
                                 ttfts.append(metrics['ttft_seconds'])
@@ -448,12 +462,11 @@ class RichProgressBarHierarchical:
                                 if streaming_time > 0:
                                     streaming_times.append(streaming_time)
 
-                            # Token counts
-                            if 'usage' in metrics:
-                                usage = metrics['usage']
-                                total_input_tokens += usage.get('prompt_tokens', 0)
-                                total_output_tokens += usage.get('completion_tokens', 0)
-                                total_reasoning_tokens += usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+                            # Token counts (now broken out in metrics)
+                            if metrics.get('prompt_tokens') is not None:
+                                total_input_tokens += metrics.get('prompt_tokens', 0)
+                                total_output_tokens += metrics.get('completion_tokens', 0)
+                                total_reasoning_tokens += metrics.get('reasoning_tokens', 0)
                                 token_count += 1
 
                     # Helper function to calculate percentiles
@@ -482,13 +495,15 @@ class RichProgressBarHierarchical:
 
                     # Throughput (pages/sec)
                     if batch_stats.requests_per_second > 0:
-                        self.add_sub_line("rollup_throughput", f"Throughput: {batch_stats.requests_per_second:.1f} pages/sec")
+                        self.add_sub_line("rollup_throughput",
+                            f"[cyan]Throughput:[/cyan] [bold]{batch_stats.requests_per_second:.1f}[/bold] [dim]pages/sec[/dim]")
                         rollup_ids.append("rollup_throughput")
 
                     # Average cost per request
                     if batch_stats.completed > 0:
                         avg_cost_cents = (batch_stats.total_cost_usd / batch_stats.completed) * 100
-                        self.add_sub_line("rollup_avg_cost", f"Avg cost: {avg_cost_cents:.2f}¢/page")
+                        self.add_sub_line("rollup_avg_cost",
+                            f"[cyan]Avg cost:[/cyan] [bold yellow]{avg_cost_cents:.2f}¢[/bold yellow][dim]/page[/dim]")
                         rollup_ids.append("rollup_avg_cost")
 
                     # Active requests breakdown (waiting vs streaming)
@@ -499,34 +514,36 @@ class RichProgressBarHierarchical:
                             parts.append(f"{waiting_count} waiting")
                         if streaming_count > 0:
                             parts.append(f"{streaming_count} streaming")
-                        active_line = f"Active: {' + '.join(parts)}" if parts else f"Active: {active_count}"
+                        active_line = f"[cyan]Active:[/cyan] [bold]{' + '.join(parts)}[/bold]" if parts else f"[cyan]Active:[/cyan] [bold]{active_count}[/bold]"
                         self.add_sub_line("rollup_active", active_line)
                         rollup_ids.append("rollup_active")
 
                     # TTFT stats (avg with p10/p90 band)
                     if avg_ttft is not None:
                         if p10_ttft is not None and p90_ttft is not None and len(ttfts) > 1:
-                            self.add_sub_line("rollup_ttft", f"TTFT: {avg_ttft:.1f}s avg (p10-p90: {p10_ttft:.1f}s-{p90_ttft:.1f}s)")
+                            self.add_sub_line("rollup_ttft",
+                                f"[cyan]TTFT:[/cyan] [bold]{avg_ttft:.1f}s[/bold] avg [dim](p10-p90: {p10_ttft:.1f}s-{p90_ttft:.1f}s)[/dim]")
                         else:
-                            self.add_sub_line("rollup_ttft", f"TTFT: {avg_ttft:.1f}s avg")
+                            self.add_sub_line("rollup_ttft", f"[cyan]TTFT:[/cyan] [bold]{avg_ttft:.1f}s[/bold] avg")
                         rollup_ids.append("rollup_ttft")
 
                     # Streaming time (execution - ttft) with p10/p90 band
                     if avg_streaming is not None:
                         if p10_streaming is not None and p90_streaming is not None and len(streaming_times) > 1:
-                            self.add_sub_line("rollup_streaming", f"Streaming: {avg_streaming:.1f}s avg (p10-p90: {p10_streaming:.1f}s-{p90_streaming:.1f}s)")
+                            self.add_sub_line("rollup_streaming",
+                                f"[cyan]Streaming:[/cyan] [bold]{avg_streaming:.1f}s[/bold] avg [dim](p10-p90: {p10_streaming:.1f}s-{p90_streaming:.1f}s)[/dim]")
                         else:
-                            self.add_sub_line("rollup_streaming", f"Streaming: {avg_streaming:.1f}s avg")
+                            self.add_sub_line("rollup_streaming", f"[cyan]Streaming:[/cyan] [bold]{avg_streaming:.1f}s[/bold] avg")
                         rollup_ids.append("rollup_streaming")
 
                     # Token throughput (recent window)
                     if token_count > 0:
                         avg_input = total_input_tokens / token_count
                         avg_output = total_output_tokens / token_count
-                        token_line = f"Tokens: {avg_input:.0f} in → {avg_output:.0f} out"
+                        token_line = f"[cyan]Tokens:[/cyan] [green]{avg_input:.0f}[/green] in → [blue]{avg_output:.0f}[/blue] out"
                         if total_reasoning_tokens > 0:
                             avg_reasoning = total_reasoning_tokens / token_count
-                            token_line += f" (+{avg_reasoning:.0f} reasoning)"
+                            token_line += f" [dim](+[magenta]{avg_reasoning:.0f}[/magenta] reasoning)[/dim]"
                         self.add_sub_line("rollup_tokens", token_line)
                         rollup_ids.append("rollup_tokens")
 
@@ -542,13 +559,20 @@ class RichProgressBarHierarchical:
                         page_id = req_id.replace('page_', 'p')
 
                         if comp.success:
-                            # Query checkpoint for detailed metrics if available
+                            # Query metrics_manager for detailed metrics if available
                             metrics = None
-                            if checkpoint:
+                            if metrics_manager:
                                 try:
-                                    # Extract page number from request ID (e.g., "page_0042" -> 42)
-                                    page_num = int(req_id.split('_')[1])
-                                    metrics = checkpoint.get_page_metrics(page_num)
+                                    # Extract simple page key from request ID
+                                    # Handles formats: "page_0042", "page_0042_vision", "stage1_page_0042", etc.
+                                    # All store metrics under "page_XXXX"
+                                    import re
+                                    match = re.search(r'page_(\d{4})', req_id)
+                                    if match:
+                                        metrics_key = f"page_{match.group(1)}"
+                                    else:
+                                        metrics_key = req_id
+                                    metrics = metrics_manager.get(metrics_key)
                                 except:
                                     pass  # Fall back to basic display if metrics unavailable
 
@@ -561,37 +585,36 @@ class RichProgressBarHierarchical:
                                 if metrics.get('execution_time_seconds'):
                                     parts.append(f"Exec {metrics['execution_time_seconds']:.1f}s")
                                 # Show input→output token format with reasoning tokens if available
-                                usage = metrics.get('usage', {})
-                                if usage.get('prompt_tokens') is not None and usage.get('completion_tokens') is not None:
-                                    tok_str = f"{usage['prompt_tokens']}→{usage['completion_tokens']}"
+                                if metrics.get('prompt_tokens') is not None and metrics.get('completion_tokens') is not None:
+                                    tok_str = f"{metrics['prompt_tokens']}→{metrics['completion_tokens']}"
                                     # Add reasoning tokens if present
-                                    reasoning_tokens = usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+                                    reasoning_tokens = metrics.get('reasoning_tokens', 0)
                                     if reasoning_tokens > 0:
                                         tok_str += f"+{reasoning_tokens}r"
                                     parts.append(f"{tok_str} tok")
-                                elif metrics.get('tokens_total'):
-                                    parts.append(f"{metrics['tokens_total']} tok")
+                                elif metrics.get('tokens'):
+                                    parts.append(f"{metrics['tokens']} tok")
                                 cost_cents = metrics.get('cost_usd', 0) * 100
                                 parts.append(f"{cost_cents:.2f}¢")
 
                                 # Model suffix if different
                                 model_suffix = ""
                                 if metrics.get('model_used') and metrics['model_used'] != model:
-                                    model_suffix = f" [{metrics['model_used'].split('/')[-1]}]"
+                                    model_suffix = f" [dim][{metrics['model_used'].split('/')[-1]}][/dim]"
 
-                                msg = f"{page_id}: ✓ ({', '.join(parts)}){model_suffix}"
+                                msg = f"{page_id}: [bold green]✓[/bold green] [dim]({', '.join(parts)}){model_suffix}[/dim]"
                             else:
                                 # Fallback to basic display without checkpoint metrics
                                 ttft_str = f", TTFT {comp.ttft_seconds:.2f}s" if comp.ttft_seconds else ""
-                                model_suffix = f" [{comp.model_used.split('/')[-1]}]" if comp.model_used and comp.model_used != model else ""
+                                model_suffix = f" [dim][{comp.model_used.split('/')[-1]}][/dim]" if comp.model_used and comp.model_used != model else ""
                                 cost_cents = comp.cost_usd * 100
-                                msg = f"{page_id}: ✓ ({comp.execution_time_seconds:.1f}s{ttft_str}, {cost_cents:.2f}¢){model_suffix}"
+                                msg = f"{page_id}: [bold green]✓[/bold green] [dim]({comp.execution_time_seconds:.1f}s{ttft_str}, {cost_cents:.2f}¢){model_suffix}[/dim]"
                         else:
                             error_code = extract_error_code(comp.error_message)
                             # Show execution time, retry count and model if available
                             retry_suffix = f", retry {comp.retry_count}" if comp.retry_count > 0 else ""
-                            model_suffix = f" [{comp.model_used.split('/')[-1]}]" if comp.model_used else ""
-                            msg = f"{page_id}: ✗ ({comp.execution_time_seconds:.1f}s{retry_suffix}) - {error_code}{model_suffix}"
+                            model_suffix = f" [dim][{comp.model_used.split('/')[-1]}][/dim]" if comp.model_used else ""
+                            msg = f"{page_id}: [bold red]✗[/bold red] [dim]({comp.execution_time_seconds:.1f}s{retry_suffix})[/dim] - [yellow]{error_code}[/yellow]{model_suffix}"
 
                         self.add_sub_line(req_id, msg)
                         recent_ids.append(req_id)

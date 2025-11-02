@@ -1,11 +1,11 @@
 """
 LLM Metrics Utilities
 
-Helper functions for converting LLM results to checkpoint metrics.
-Eliminates duplicate metrics mapping code across stages.
+Helper functions for converting LLM results to metrics.
+Provides clean abstraction for recording LLM metrics to MetricsManager.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .models import LLMResult
 
@@ -59,7 +59,12 @@ def llm_result_to_metrics(
         "execution_time_seconds": result.execution_time_seconds,
         "ttft_seconds": result.ttft_seconds,
 
-        # Raw usage data
+        # Token breakdown (extracted from usage dict for easy access)
+        "prompt_tokens": result.usage.get("prompt_tokens", 0),
+        "completion_tokens": result.usage.get("completion_tokens", 0),
+        "reasoning_tokens": result.usage.get("completion_tokens_details", {}).get("reasoning_tokens", 0),
+
+        # Raw usage data (kept for compatibility)
         "usage": result.usage,
     }
 
@@ -68,3 +73,64 @@ def llm_result_to_metrics(
         metrics.update(extra_fields)
 
     return metrics
+
+
+def record_llm_result(
+    metrics_manager,
+    key: str,
+    result: LLMResult,
+    page_num: int,
+    extra_fields: Optional[Dict[str, Any]] = None,
+    accumulate: bool = False
+):
+    """
+    Record LLMResult directly to MetricsManager with proper field mapping.
+
+    Encapsulates the entire conversion from LLMResult → metrics dict → MetricsManager.
+    Stages don't need to know about field name mapping or what goes into custom_metrics.
+
+    Args:
+        metrics_manager: MetricsManager instance to record to
+        key: Metric key (e.g., "page_0042")
+        result: LLMResult from batch processor
+        page_num: Page number being processed
+        extra_fields: Optional stage-specific fields to include in custom_metrics
+        accumulate: Whether to accumulate costs/times (default: False)
+
+    Example:
+        >>> from infra.llm.metrics import record_llm_result
+        >>>
+        >>> # In stage result handler:
+        >>> record_llm_result(
+        ...     metrics_manager=stage_storage.metrics_manager,
+        ...     key=f"page_{page_num:04d}",
+        ...     result=result,
+        ...     page_num=page_num,
+        ...     extra_fields={'stage': 'stage1', 'corrections': 5}
+        ... )
+    """
+    # Convert LLMResult to metrics dict (includes all LLM fields)
+    metrics = llm_result_to_metrics(result, page_num, extra_fields)
+
+    # Extract top-level fields for MetricsManager
+    cost_usd = metrics.pop('cost_usd', 0.0)
+    time_seconds = metrics.pop('time_seconds', 0.0)
+    tokens = metrics.pop('tokens', 0)
+
+    # Remove page_num from custom_metrics (it's not custom, it's standard)
+    metrics.pop('page_num', None)
+
+    # Everything else goes to custom_metrics:
+    # - prompt_tokens, completion_tokens, reasoning_tokens
+    # - ttft_seconds, execution_time_seconds, queue_time_seconds
+    # - model_used, provider, attempts, tokens_per_second
+    # - usage dict (raw API response)
+    # - Any extra_fields provided by stage
+    metrics_manager.record(
+        key=key,
+        cost_usd=cost_usd,
+        time_seconds=time_seconds,
+        tokens=tokens,
+        custom_metrics=metrics,
+        accumulate=accumulate
+    )

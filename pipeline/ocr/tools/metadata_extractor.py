@@ -127,7 +127,6 @@ Extract the following metadata fields:
         response_format=response_format
     )
 
-    # Execute with batch client (single request)
     log_dir = storage.book_dir / ocr_storage.stage_name / "metadata_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -158,7 +157,6 @@ Extract the following metadata fields:
 
         logger.info(f"Metadata extracted with confidence {confidence:.2f}")
 
-        # Save extraction result to ocr/metadata_extraction.json
         extraction_output = {
             "extracted_metadata": metadata,
             "confidence": confidence,
@@ -171,8 +169,6 @@ Extract the following metadata fields:
         with open(extraction_file, 'w') as f:
             json.dump(extraction_output, f, indent=2)
 
-        # Update metrics for this LLM call
-        # Note: We don't use llm_result_to_metrics() here because this isn't page-based
         stage_storage.metrics_manager.record(
             key="metadata_extraction",
             custom_metrics={
@@ -185,7 +181,6 @@ Extract the following metadata fields:
             }
         )
 
-        # Update top-level metadata.json if confidence is acceptable
         if confidence < 0.5:
             logger.warning("Metadata confidence too low, not updating metadata.json")
             return False

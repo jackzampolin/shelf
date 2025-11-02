@@ -6,7 +6,6 @@ class OCRPageMetrics(BaseModel):
     processing_time_seconds: float = Field(..., ge=0.0, description="Tesseract processing time")
     cost_usd: float = Field(0.0, ge=0.0, description="Cost (always 0 for Tesseract)")
 
-    # OCR-specific metrics
     psm_mode: int = Field(..., ge=0, le=13, description="Tesseract PSM mode used")
     tesseract_version: str = Field(..., description="Tesseract version used")
     confidence_mean: float = Field(..., ge=0.0, le=1.0, description="Mean OCR confidence across page")

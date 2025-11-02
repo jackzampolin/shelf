@@ -30,82 +30,80 @@ uv run python shelf.py --help
 ### Library Management
 
 ```bash
-# Shelve books into the library
-uv run python shelf.py shelve ~/Documents/Scans/book-*.pdf
-uv run python shelf.py shelve ~/Documents/Scans/book.pdf --run-ocr
+# Add books to the library
+uv run python shelf.py library add ~/Documents/Scans/book-*.pdf
+uv run python shelf.py library add ~/Documents/Scans/book.pdf --run-ocr
 
 # View all books
-uv run python shelf.py list
-
-# Show detailed book information
-uv run python shelf.py show <scan-id>
-
-# Check processing status
-uv run python shelf.py status <scan-id>
+uv run python shelf.py library list
+uv run python shelf.py library list --json
 
 # View library statistics
-uv run python shelf.py stats
+uv run python shelf.py library stats
 
 # Delete a book
-uv run python shelf.py delete <scan-id>
+uv run python shelf.py library delete <scan-id>
+uv run python shelf.py library delete <scan-id> --yes  # Skip confirmation
 ```
 
-### Processing Pipeline
+### Single Book Processing
 
-The pipeline processes books through these stages (auto-resumes from checkpoints):
+Process individual books through pipeline stages:
 
 ```bash
-# Run full pipeline (OCR → Correction → Label → Merge)
-uv run python shelf.py process <scan-id>
+# View book status and pipeline progress
+uv run python shelf.py book <scan-id> info
+uv run python shelf.py book <scan-id> info --stage ocr
+uv run python shelf.py book <scan-id> info --json
+
+# Run full pipeline (OCR → Paragraph-Correct → Label-Pages → Extract-ToC)
+uv run python shelf.py book <scan-id> process
+uv run python shelf.py book <scan-id> process --clean  # Clean all stages first
 
 # Run single stage
-uv run python shelf.py process <scan-id> --stage ocr
-uv run python shelf.py process <scan-id> --stage corrected
-uv run python shelf.py process <scan-id> --stage labels
-uv run python shelf.py process <scan-id> --stage merged
+uv run python shelf.py book <scan-id> run-stage ocr
+uv run python shelf.py book <scan-id> run-stage paragraph-correct --model gpt-4o
+uv run python shelf.py book <scan-id> run-stage label-pages --workers 30
 
-# Run multiple stages
-uv run python shelf.py process <scan-id> --stages ocr,corrected
-
-# Customize workers and model
-uv run python shelf.py process <scan-id> --workers 30 --model gpt-4o
+# View stage reports (CSV with quality metrics)
+uv run python shelf.py book <scan-id> report --stage paragraph-correct
+uv run python shelf.py book <scan-id> report --stage label-pages --filter "printed_page_number="
 ```
 
 **Stages:**
-- **ocr** - Extract text and images via Tesseract
-- **corrected** - Vision-based OCR error correction
-- **labels** - Extract page numbers and classify content blocks
-- **merged** - Combine OCR, corrections, and labels
+- **ocr** - Extract text and images via Tesseract (3 providers with vision selection)
+- **paragraph-correct** - Vision-based OCR error correction with confidence scoring
+- **label-pages** - Extract page numbers and classify content blocks (two-stage process)
+- **extract_toc** - Find and extract table of contents (phase-based, not page-based)
 
-**Note:** Pipeline automatically resumes from checkpoints if interrupted. Quality reports are generated automatically in each stage's `after()` hook.
+**Note:** All stages auto-resume from progress if interrupted. Metrics tracked for cost and time.
 
 ### Stage Cleanup
 
 ```bash
 # Clean a stage to restart from scratch
-uv run python shelf.py clean <scan-id> --stage ocr
-uv run python shelf.py clean <scan-id> --stage corrected -y  # Skip confirmation
+uv run python shelf.py book <scan-id> clean --stage ocr
+uv run python shelf.py book <scan-id> clean --stage paragraph-correct --yes  # Skip confirmation
 ```
 
-### Library-wide Sweeps
+### Library-wide Batch Processing
 
-Run stages or regenerate reports across all books in your library:
+Run stages across all books in your library:
 
 ```bash
-# Sweep a stage across all books (persistent random order)
-uv run python shelf.py sweep labels
-uv run python shelf.py sweep corrected --model x-ai/grok-vision-beta
+# Run a stage across all books (persistent random order)
+uv run python shelf.py batch paragraph-correct
+uv run python shelf.py batch label-pages --model x-ai/grok-vision-beta
 
-# Control shuffle order
-uv run python shelf.py sweep labels --reshuffle     # Create new random order
-uv run python shelf.py sweep labels --force         # Regenerate completed books
+# Control processing order
+uv run python shelf.py batch paragraph-correct --reshuffle  # Create new random order
+uv run python shelf.py batch paragraph-correct --force      # Regenerate completed books
 
-# Regenerate reports from checkpoints (no LLM calls)
-uv run python shelf.py sweep reports                # All stages
-uv run python shelf.py sweep reports --stage-filter labels  # Just labels
+# Customize workers for parallel processing
+uv run python shelf.py batch ocr --workers 10
 ```
 
-**Sweep features:**
+**Batch features:**
 - **Persistent shuffle** - Order saved to `.library.json`, reused across restarts
 - **Smart resume** - Skips already-completed books
 - **Auto-sync** - Adding/deleting books automatically updates shuffle orders
@@ -137,14 +135,14 @@ python tools/shelf_viewer.py
 
 ## Current Status
 
-- ✅ **OCR Stage:** Complete - Tesseract extraction with image detection
-- ✅ **Correction Stage:** Complete - Vision-based OCR error correction
-- ✅ **Label Stage:** Complete - Page numbers & block classification
-- ✅ **Merge Stage:** Complete - Three-way merge (OCR + Corrections + Labels)
-- 🚧 **CLI Refactor:** New `shelf.py` using BaseStage abstraction and runner.py
-- ❌ **Structure Stage:** Not yet implemented - will use merged outputs
+- ✅ **OCR Stage:** Complete - Tesseract extraction with 3-provider vision selection
+- ✅ **Paragraph-Correct Stage:** Complete - Vision-based OCR error correction with confidence scoring
+- ✅ **Label-Pages Stage:** Complete - Two-stage page numbers & block classification
+- ✅ **Extract-ToC Stage:** Complete - Phase-based table of contents extraction
+- ✅ **CLI Refactor:** Complete - Namespace structure (library/book/batch) with BaseStage abstraction
+- ❌ **Structure Stage:** Not yet implemented - will use corrected text + labels
 
-**Current Focus:** Testing new CLI and preparing for structure stage design
+**Current Focus:** Testing pipeline on diverse books and improving extraction quality
 
 ---
 
@@ -178,10 +176,10 @@ uv run python -m pytest tests/tools/ -v
 - [Troubleshooting](docs/guides/troubleshooting.md) - Common issues and recovery
 
 ### Stage Documentation
-- [OCR Stage](pipeline/ocr/README.md) - Tesseract-based text extraction
-- [Correction Stage](pipeline/correction/README.md) - Vision-based error correction
-- [Label Stage](pipeline/label/README.md) - Page numbers and block classification
-- [Merge Stage](pipeline/merged/README.md) - Three-way data merge
+- [OCR Stage](pipeline/ocr/README.md) - Tesseract-based text extraction with vision selection
+- [Paragraph-Correct Stage](pipeline/paragraph_correct/README.md) - Vision-based error correction
+- [Label-Pages Stage](pipeline/label_pages/README.md) - Page numbers and block classification
+- [Extract-ToC Stage](pipeline/extract_toc/README.md) - Table of contents extraction
 
 ---
 
@@ -194,13 +192,13 @@ Scanshelf uses a **Stage abstraction pattern** for composable, resumable, testab
 **Core Components:**
 1. **BaseStage** - Three-hook lifecycle (before/run/after) with schema-driven validation
 2. **Storage System** - Three-tier hierarchy (Library → Book → Stage)
-3. **CheckpointManager** - Atomic progress tracking with filesystem synchronization
+3. **MetricsManager** - Atomic progress tracking and cost/time metrics
 4. **PipelineLogger** - Dual-output logging (JSON + human-readable)
 
 **Key Properties:**
-- **Resumable** - Checkpoint-based resume from exact point of interruption
+- **Resumable** - Metrics-based progress tracking resumes from exact point of interruption
 - **Type-safe** - Pydantic schemas validate data at boundaries
-- **Cost-aware** - Track every LLM API call financially
+- **Cost-aware** - Track every LLM API call financially via MetricsManager
 - **Independent** - Stages evolve separately, communicate via files
 - **Testable** - Test stages in isolation with mock data
 
@@ -209,22 +207,22 @@ See [Stage Abstraction](docs/architecture/stage-abstraction.md) for detailed des
 ### Pipeline Flow
 
 ```
-PDF → Split Pages → OCR → Correction → Label → Merge → Structure (TBD)
+PDF → Split Pages → OCR → Paragraph-Correct → Label-Pages → Extract-ToC → Structure (TBD)
 ```
 
 **Stages:**
-- **OCR** - Tesseract extraction (CPU-parallel) → `ocr/page_*.json`
-- **Correction** - Vision LLM error fixing (I/O-parallel) → `corrected/page_*.json`
-- **Label** - Page numbers + block classification → `labels/page_*.json`
-- **Merge** - Three-way deterministic merge → `merged/page_*.json`
-- **Structure** (planned) - Chapter/section extraction
+- **OCR** - Tesseract extraction (3 providers, vision selection) → `ocr/page_*.json`
+- **Paragraph-Correct** - Vision LLM error correction (I/O-parallel) → `paragraph-correct/page_*.json`
+- **Label-Pages** - Page numbers + block classification (two-stage) → `label-pages/page_*.json`
+- **Extract-ToC** - Table of contents finder and extractor (phase-based) → `extract_toc/toc.json`
+- **Structure** (planned) - Chapter/section extraction using labels + ToC
 
 Each stage:
 - Validates inputs in `before()` hook
 - Processes pages in `run()` hook (controls own parallelization)
-- Generates quality reports in `after()` hook
-- Tracks costs, timing, and metrics per page
-- Resumes automatically from checkpoint if interrupted
+- Generates quality reports (CSV) automatically
+- Tracks costs, timing, and metrics via MetricsManager
+- Resumes automatically from progress if interrupted
 
 ### Storage Structure
 
@@ -237,32 +235,39 @@ Each stage:
 │   ├── ocr/                  # OCR stage outputs
 │   │   ├── page_NNNN.json    # OCRPageOutput schema
 │   │   ├── report.csv        # Quality metrics (confidence, blocks)
-│   │   ├── .checkpoint       # Progress state (page_metrics source of truth)
+│   │   ├── .metrics          # Progress tracking (page_metrics source of truth)
 │   │   └── logs/
 │   │       └── ocr_{timestamp}.jsonl
-│   ├── corrected/            # Correction stage outputs
-│   │   ├── page_NNNN.json    # CorrectionPageOutput schema
+│   ├── paragraph-correct/    # Paragraph correction stage outputs
+│   │   ├── page_NNNN.json    # ParagraphCorrectPageOutput schema
 │   │   ├── report.csv        # Quality metrics (corrections, similarity)
-│   │   ├── .checkpoint
+│   │   ├── .metrics
 │   │   └── logs/
-│   ├── labels/               # Label stage outputs
-│   │   ├── page_NNNN.json    # LabelPageOutput schema
+│   ├── label-pages/          # Label-pages stage outputs
+│   │   ├── stage1/           # Stage 1: structural analysis outputs
+│   │   ├── stage2/           # Stage 2: block classification outputs
+│   │   │   └── page_NNNN.json # LabelPagesPageOutput schema
 │   │   ├── report.csv        # Quality metrics (classifications)
-│   │   ├── .checkpoint
+│   │   ├── .metrics
 │   │   └── logs/
-│   ├── merged/               # Merge stage outputs
-│   │   ├── page_NNNN.json    # MergedPageOutput schema
-│   │   ├── .checkpoint
+│   ├── extract_toc/          # Extract-ToC stage outputs
+│   │   ├── finder_result.json # ToC page range detection
+│   │   ├── structure.json    # ToC structure observations
+│   │   ├── toc_unchecked.json # Raw ToC entries
+│   │   ├── toc_diff.json     # Validation and corrections
+│   │   ├── toc.json          # Final ToC output
+│   │   ├── .metrics
 │   │   └── logs/
 │   └── images/               # Extracted image regions (from OCR)
 ```
 
 **Key points:**
 - Filesystem is source of truth for books (LibraryStorage scans directories)
-- `.library.json` stores operational state (shuffle orders for sweep command)
-- Each stage has independent checkpoint (`.checkpoint`) and logs
-- Quality reports (CSV) generated automatically in `after()` hook
-- Schemas enforce type safety at boundaries (input/output/checkpoint/report)
+- `.library.json` stores operational state (shuffle orders for batch command)
+- Each stage has independent metrics (`.metrics`) and logs
+- Quality reports (CSV) generated automatically during stage execution
+- Schemas enforce type safety at boundaries (output/metrics/report)
+- MetricsManager replaced CheckpointManager for progress tracking
 
 See [Storage System](docs/architecture/storage-system.md) for three-tier design details.
 

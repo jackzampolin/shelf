@@ -18,7 +18,6 @@ def generate_report(
 ) -> Optional[Path]:
     logger.info("Generating report.csv from metrics...")
 
-    # Ground truth: Iterate over selection_map (all selected pages)
     selection_map = ocr_storage.load_selection_map(storage)
 
     if not selection_map:
@@ -32,20 +31,17 @@ def generate_report(
         try:
             page_num = int(page_key)
 
-            # From selection_map.json (ground truth)
             provider_name = selection.get("provider")
             selection_method = selection.get("method")
             selection_agreement = selection.get("agreement", 0.0)
             selection_confidence = selection.get("confidence", 0.0)
 
-            # From files: Count blocks in the selected provider output
             blocks_detected = 0
             if provider_name:
                 provider_data = ocr_storage.load_provider_page(storage, provider_name, page_num)
                 if provider_data:
                     blocks_detected = len(provider_data.get("blocks", []))
 
-            # From metrics: Get vision-specific data (only exists for vision-selected pages)
             metrics = stage_storage.metrics_manager.get(f"page_{page_num:04d}") or {}
             provider_agreement = metrics.get("provider_agreement", selection_agreement)
             vision_reason = metrics.get("reason") if selection_method == "vision" else None

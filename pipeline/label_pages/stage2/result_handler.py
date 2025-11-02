@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 
 from infra.llm.batch_client import LLMResult
-from infra.llm.metrics import llm_result_to_metrics
 
 
 def create_stage2_handler(storage, stage_storage, logger, model, output_schema, ocr_pages, stage_name):
@@ -38,32 +37,29 @@ def create_stage2_handler(storage, stage_storage, logger, model, output_schema, 
                 ) / max(len(label_data.get('blocks', [])), 1),
             }
 
-            metrics_data = llm_result_to_metrics(
-                result=result,
-                page_num=page_num,
-                extra_fields={
-                    'total_blocks_classified': len(label_data.get('blocks', [])),
-                    'avg_classification_confidence': page_output['avg_classification_confidence'],
-                    'page_number_extracted': stage1_results.get('page_number', {}).get('printed_number') is not None,
-                    'page_region_classified': True,
-                    'printed_page_number': stage1_results.get('page_number', {}).get('printed_number'),
-                    'numbering_style': page_number_data.get('numbering_style'),
-                    'page_region': page_region_data.get('region'),
-                    'has_chapter_heading': any(
-                        b.get('classification') in ['CHAPTER_HEADING', 'PART_HEADING']
-                        for b in label_data.get('blocks', [])
-                    ),
-                    'has_section_heading': any(
-                        b.get('classification') in ['SECTION_HEADING', 'SUBSECTION_HEADING', 'SUBSUBSECTION_HEADING']
-                        for b in label_data.get('blocks', [])
-                    ),
-                    'chapter_heading_text': next(
-                        (b.get('text') for b in label_data.get('blocks', [])
-                         if b.get('classification') in ['CHAPTER_HEADING', 'PART_HEADING']),
-                        None
-                    ),
-                }
-            )
+            # Stage-specific metrics for analysis
+            extra_metrics = {
+                'total_blocks_classified': len(label_data.get('blocks', [])),
+                'avg_classification_confidence': page_output['avg_classification_confidence'],
+                'page_number_extracted': stage1_results.get('page_number', {}).get('printed_number') is not None,
+                'page_region_classified': True,
+                'printed_page_number': stage1_results.get('page_number', {}).get('printed_number'),
+                'numbering_style': page_number_data.get('numbering_style'),
+                'page_region': page_region_data.get('region'),
+                'has_chapter_heading': any(
+                    b.get('classification') in ['CHAPTER_HEADING', 'PART_HEADING']
+                    for b in label_data.get('blocks', [])
+                ),
+                'has_section_heading': any(
+                    b.get('classification') in ['SECTION_HEADING', 'SUBSECTION_HEADING', 'SUBSUBSECTION_HEADING']
+                    for b in label_data.get('blocks', [])
+                ),
+                'chapter_heading_text': next(
+                    (b.get('text') for b in label_data.get('blocks', [])
+                     if b.get('classification') in ['CHAPTER_HEADING', 'PART_HEADING']),
+                    None
+                ),
+            }
 
             stage_storage.save_stage2_result(
                 storage=storage,
@@ -71,7 +67,8 @@ def create_stage2_handler(storage, stage_storage, logger, model, output_schema, 
                 data=page_output,
                 schema=output_schema,
                 cost_usd=result.cost_usd or 0.0,
-                metrics=metrics_data,
+                result=result,
+                extra_fields=extra_metrics,
             )
 
             logger.info(f"✓ Stage 2 complete: page {page_num}")

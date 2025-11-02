@@ -10,7 +10,7 @@ Provides:
 
 Callers handle:
 - Result parsing
-- Persistence (files, checkpoint, etc.)
+- Persistence (files, etc.)
 - Schema validation
 - Error recovery
 
@@ -24,7 +24,6 @@ from typing import List, Dict, Any, Callable, Optional
 from dataclasses import dataclass
 
 from infra.llm.batch_client import LLMBatchClient, LLMRequest, LLMResult
-from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.rich_progress import RichProgressBarHierarchical
 from infra.config import Config
@@ -57,23 +56,22 @@ class LLMBatchProcessor:
 
     Caller responsibilities:
     - Parse and validate results
-    - Persist outputs (files, checkpoint, database, etc.)
+    - Persist outputs (files, database, etc.)
     - Handle errors and retries
     - Update application state
 
     Usage:
+        config = LLMBatchConfig(model="grok-4-fast")
         processor = LLMBatchProcessor(
-            checkpoint=checkpoint,
             logger=logger,
-            model="grok-4-fast",
             log_dir=Path("logs/"),
+            config=config,
         )
 
         def handle_result(result: LLMResult):
             if result.success:
                 data = parse_my_data(result.parsed_json)
                 save_to_disk(data)
-                checkpoint.update_page_metrics(...)
             else:
                 logger.error(f"Failed: {result.error_message}")
 
@@ -87,10 +85,11 @@ class LLMBatchProcessor:
 
     def __init__(
         self,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger,
         log_dir: Path,
         config: Optional[LLMBatchConfig] = None,
+        metrics_manager=None,  # Optional MetricsManager for progress bar display
+        checkpoint=None,  # Deprecated, ignored
         # Legacy parameters (for backward compatibility)
         model: Optional[str] = None,
         max_workers: Optional[int] = None,
@@ -106,28 +105,29 @@ class LLMBatchProcessor:
         1. **New (recommended):** Use LLMBatchConfig
            ```python
            config = LLMBatchConfig(model="grok-4-fast", max_workers=10)
-           processor = LLMBatchProcessor(checkpoint, logger, log_dir, config=config)
+           processor = LLMBatchProcessor(logger, log_dir, config=config)
            ```
 
         2. **Legacy:** Pass parameters directly (for backward compatibility)
            ```python
-           processor = LLMBatchProcessor(checkpoint, logger, log_dir, model="grok-4-fast")
+           processor = LLMBatchProcessor(logger, log_dir, model="grok-4-fast")
            ```
 
         Args:
-            checkpoint: CheckpointManager for progress bar metrics display
             logger: PipelineLogger instance
             log_dir: Directory for LLM request/response logs
             config: LLMBatchConfig instance (recommended)
+            metrics_manager: Optional MetricsManager for real-time progress display
+            checkpoint: Deprecated, no longer used
             model: OpenRouter model name (legacy, use config instead)
             max_workers: Thread pool size (legacy, use config instead)
             max_retries: Max retry attempts (legacy, use config instead)
             retry_jitter: Retry delay range (legacy, use config instead)
             verbose: Enable verbose logging (legacy, use config instead)
         """
-        self.checkpoint = checkpoint
         self.logger = logger
         self.log_dir = log_dir
+        self.metrics_manager = metrics_manager
 
         # Handle both config-based and legacy parameter-based initialization
         if config is not None:
@@ -212,7 +212,7 @@ class LLMBatchProcessor:
             start_time=start_time,
             model=self.model,
             total_requests=len(requests),
-            checkpoint=self.checkpoint,
+            metrics_manager=self.metrics_manager,
         )
 
         # Execute batch (caller's on_result handles everything)

@@ -85,13 +85,15 @@ class StageStorage:
         if not metrics:
             return
 
+        # Extract standard fields (matches llm_result_to_metrics output)
         cost_usd = metrics.get('cost_usd', 0.0)
-        time_seconds = metrics.get('total_time_seconds', 0.0)
-        tokens = metrics.get('tokens_total')
+        time_seconds = metrics.get('time_seconds', 0.0)
+        tokens = metrics.get('tokens')
 
+        # Remove standard fields + page_num from custom_metrics
         custom = {
             k: v for k, v in metrics.items()
-            if k not in ['cost_usd', 'total_time_seconds', 'tokens_total']
+            if k not in ['cost_usd', 'time_seconds', 'tokens', 'page_num']
         }
 
         self.metrics_manager.record(

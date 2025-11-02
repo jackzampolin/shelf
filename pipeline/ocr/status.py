@@ -150,7 +150,6 @@ class OCRStatusTracker:
         storage: BookStorage,
         all_pages: Set[int]
     ) -> Dict[str, List[int]]:
-        # Batch directory listings: 3 globs vs 1164 existence checks
         provider_remaining = {}
 
         for provider_name in self.provider_names:
@@ -212,7 +211,6 @@ class OCRStatusTracker:
         all_metrics = stage_storage.metrics_manager.get_all()
 
         for page_key, metrics in all_metrics.items():
-            # Extract page number from key (e.g., "page_0001" -> 1)
             try:
                 page_num = int(page_key.split('_')[1])
             except (IndexError, ValueError):
@@ -223,7 +221,6 @@ class OCRStatusTracker:
 
             agreement = metrics.get("provider_agreement")
 
-            # Has agreement >= 0.95 but not yet selected -> auto-select candidate
             if agreement is not None and agreement >= 0.95:
                 pages_for_auto_select.append(page_num)
 
@@ -240,7 +237,6 @@ class OCRStatusTracker:
         all_metrics = stage_storage.metrics_manager.get_all()
 
         for page_key, metrics in all_metrics.items():
-            # Extract page number from key (e.g., "page_0001" -> 1)
             try:
                 page_num = int(page_key.split('_')[1])
             except (IndexError, ValueError):
@@ -251,7 +247,6 @@ class OCRStatusTracker:
 
             agreement = metrics.get("provider_agreement")
 
-            # Has agreement < 0.95 but not yet selected -> vision selection needed
             if agreement is not None and agreement < 0.95:
                 pages_needing_vision.append(page_num)
 
@@ -294,8 +289,6 @@ class OCRStatusTracker:
         elif len(selected_pages) == total_pages:
             return OCRStageStatus.COMPLETED.value
         else:
-            # Derive status from file state (ground truth)
-            # If we have selections but not all pages, we're in progress
             return "in_progress"
 
     def _aggregate_metrics(self, storage: BookStorage) -> Dict[str, Any]:
@@ -305,7 +298,6 @@ class OCRStatusTracker:
         total_time = stage_storage.metrics_manager.get_total_time()
         total_tokens = stage_storage.metrics_manager.get_total_tokens()
 
-        # Calculate vision-specific metrics
         vision_cost = 0.0
         vision_tokens = 0
 

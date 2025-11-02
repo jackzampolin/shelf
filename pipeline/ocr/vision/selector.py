@@ -31,12 +31,13 @@ def vision_select_pages(
         max_retries=3,
     )
 
+    stage_storage = storage.stage(stage_name)
     log_dir = storage.book_dir / stage_name / "vision_logs"
     processor = LLMBatchProcessor(
-        checkpoint=None,
         logger=logger,
         log_dir=log_dir,
         config=config,
+        metrics_manager=stage_storage.metrics_manager,
     )
 
     handler = create_vision_handler(

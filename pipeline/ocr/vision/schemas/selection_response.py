@@ -3,7 +3,6 @@ from pydantic import BaseModel, Field
 
 
 class VisionSelectionResponse(BaseModel):
-
     selected_psm: Literal[3, 4, 6] = Field(
         description="Selected PSM mode (3=auto, 4=single column, 6=uniform block)"
     )

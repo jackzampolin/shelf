@@ -21,11 +21,9 @@ def run_parallel_ocr(
     max_workers: int,
     stage_name: str,
 ):
-    # Build task list by checking file existence (ground truth from disk)
     tasks = []
     for page_num in range(1, total_pages + 1):
         for provider_idx, provider in enumerate(providers):
-            # Check if provider output already exists on disk
             if not ocr_storage.provider_page_exists(storage, provider.config.name, page_num):
                 tasks.append((page_num, provider_idx))
 
@@ -85,11 +83,9 @@ def run_parallel_ocr(
                 if error:
                     logger.error(f"OCR failed for {provider_name}", page=page_num, error=error)
                 elif result is not None:
-                    # Save provider output (file on disk = ground truth)
                     ocr_storage.save_provider_output(
                         storage, page_num, provider_name, result, output_schema
                     )
-                    # Note: No metrics needed - provider completion is derivable from file existence
 
                 with lock:
                     completed += 1

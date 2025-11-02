@@ -114,7 +114,6 @@ def _calculate_text_agreement(provider_outputs: Dict[str, Dict]) -> float:
     if len(texts) < 2:
         return 1.0
 
-    # Pairwise similarities
     similarities = []
     for i in range(len(texts)):
         for j in range(i + 1, len(texts)):

@@ -46,9 +46,11 @@ class LabelPagesStageStorage:
         page_num: int,
         stage1_data: dict,
         cost_usd: float,
-        metrics: dict = None,
+        result = None,
     ):
         import json
+        from infra.llm.metrics import record_llm_result
+
         stage1_dir = self.get_stage1_dir(storage)
         output_file = stage1_dir / f"page_{page_num:04d}.json"
 
@@ -61,17 +63,14 @@ class LabelPagesStageStorage:
         with open(output_file, 'w') as f:
             json.dump(stage1_data_with_meta, f, indent=2)
 
-        if metrics:
+        if result:
             stage_storage = storage.stage(self.stage_name)
-            key = f"page_{page_num:04d}"
-            stage_storage.metrics_manager.record(
-                key=key,
-                cost_usd=metrics.get('cost_usd', 0.0),
-                time_seconds=metrics.get('total_time_seconds', 0.0),
-                tokens=metrics.get('tokens_total'),
-                custom_metrics={k: v for k, v in metrics.items()
-                               if k not in ['cost_usd', 'total_time_seconds', 'tokens_total']},
-                accumulate=False
+            record_llm_result(
+                metrics_manager=stage_storage.metrics_manager,
+                key=f"page_{page_num:04d}",
+                result=result,
+                page_num=page_num,
+                extra_fields={'stage': 'stage1'}
             )
 
     def load_stage1_result(self, storage: BookStorage, page_num: int) -> Optional[dict]:
@@ -104,9 +103,12 @@ class LabelPagesStageStorage:
         data: dict,
         schema,
         cost_usd: float,
-        metrics: dict = None,
+        result = None,
+        extra_fields: dict = None,
     ):
         import json
+        from infra.llm.metrics import record_llm_result
+
         stage2_dir = self.get_stage2_dir(storage)
         output_file = stage2_dir / f"page_{page_num:04d}.json"
 
@@ -126,17 +128,19 @@ class LabelPagesStageStorage:
                 temp_file.unlink()
             raise e
 
-        if metrics:
+        if result:
             stage_storage = storage.stage(self.stage_name)
-            key = f"page_{page_num:04d}"
-            stage_storage.metrics_manager.record(
-                key=key,
-                cost_usd=metrics.get('cost_usd', 0.0),
-                time_seconds=metrics.get('total_time_seconds', 0.0),
-                tokens=metrics.get('tokens_total'),
-                custom_metrics={k: v for k, v in metrics.items()
-                               if k not in ['cost_usd', 'total_time_seconds', 'tokens_total']},
-                accumulate=False
+            # Merge stage identifier with any extra fields from caller
+            all_extra_fields = {'stage': 'stage2'}
+            if extra_fields:
+                all_extra_fields.update(extra_fields)
+
+            record_llm_result(
+                metrics_manager=stage_storage.metrics_manager,
+                key=f"page_{page_num:04d}",
+                result=result,
+                page_num=page_num,
+                extra_fields=all_extra_fields
             )
 
     def load_stage2_result(self, storage: BookStorage, page_num: int) -> Optional[dict]:

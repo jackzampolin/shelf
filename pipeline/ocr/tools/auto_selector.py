@@ -46,8 +46,6 @@ def auto_select_pages(
                 provider_outputs.items(), key=lambda x: x[1]["confidence"]
             )[0]
 
-            # Update selection_map.json (ground truth for selections)
-            # No metrics needed - selection is stored in selection_map, agreement already in metrics
             ocr_storage.update_selection(storage, page_num, {
                 "provider": best_provider,
                 "method": "automatic",

@@ -121,7 +121,7 @@ def cmd_list(args):
                 else:
                     stage_symbols.append('⏳')
 
-            status_str = f"OCR:{stage_symbols[0]} COR:{stage_symbols[1]} LAB:{stage_symbols[2]} MRG:{stage_symbols[3]}"
+            status_str = f"OCR:{stage_symbols[0]} PAR:{stage_symbols[1]} LAB:{stage_symbols[2]} TOC:{stage_symbols[3]}"
             cost_str = f"${total_cost:.4f}" if total_cost > 0 else "-"
         except Exception:
             status_str = "ERROR"

@@ -22,6 +22,13 @@ def cmd_info(args):
 
     storage = library.get_book_storage(args.scan_id)
 
+    stage_labels = {
+        'ocr': 'OCR',
+        'paragraph-correct': 'Paragraph-Correct',
+        'label-pages': 'Label-Pages',
+        'extract_toc': 'Extract-ToC',
+    }
+
     if args.json:
         if args.stage:
             status = get_stage_status(storage, args.stage)
@@ -39,15 +46,32 @@ def cmd_info(args):
         return
 
     if args.stage:
-        status = get_stage_status(storage, args.stage)
+        stage, status = get_stage_and_status(storage, args.stage)
         if status is None:
             print(f"❌ Unknown stage: {args.stage}")
             print(f"Available stages: {', '.join(CORE_STAGES)}")
             sys.exit(1)
 
-        print(f"\n📊 Stage Status: {args.scan_id} / {args.stage}")
-        print("=" * 80)
-        print(json.dumps(status, indent=2))
+        stage_labels = {
+            'ocr': 'OCR',
+            'paragraph-correct': 'Paragraph-Correct',
+            'label-pages': 'Label-Pages',
+            'extract_toc': 'Extract-ToC',
+        }
+        stage_label = stage_labels.get(args.stage, args.stage.title())
+
+        stage_status = status.get('status', 'unknown')
+        if stage_status == 'completed':
+            symbol = '✅'
+        elif stage_status in ['not_started']:
+            symbol = '○'
+        elif stage_status == 'failed':
+            symbol = '❌'
+        else:
+            symbol = '⏳'
+
+        print(f"\n{symbol} {stage_label} ({args.stage})")
+        print(stage.pretty_print_status(status))
         print()
         return
 
@@ -70,7 +94,7 @@ def cmd_info(args):
         'ocr': 'OCR',
         'paragraph-correct': 'Paragraph-Correct',
         'label-pages': 'Label-Pages',
-        'merged': 'Merge'
+        'extract_toc': 'Extract-ToC'
     }
 
     total_cost = 0.0

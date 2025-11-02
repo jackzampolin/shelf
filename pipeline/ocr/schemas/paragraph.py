@@ -12,7 +12,6 @@ class Paragraph(BaseModel):
     lines: List[Line] = Field(default_factory=list, description="Lines in this paragraph")
     avg_confidence: float = Field(..., ge=0.0, le=1.0, description="Average OCR confidence (0.0-1.0)")
 
-    # Source tracking for recovered text
     source: Literal["primary_ocr", "recovered_from_image"] = Field(
         "primary_ocr",
         description="Whether text came from normal OCR or was recovered from misclassified image"

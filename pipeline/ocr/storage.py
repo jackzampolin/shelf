@@ -1,5 +1,3 @@
-"""OCR stage file I/O operations using thread-safe StageStorage APIs."""
-
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -49,18 +47,6 @@ class OCRStageStorage:
         page_num: int,
         include_line_word_data: bool = True
     ) -> Optional[Dict[str, Any]]:
-        """
-        Load the selected OCR output for a page.
-
-        Args:
-            storage: BookStorage instance
-            page_num: Page number to load
-            include_line_word_data: If False, strips line/word nested data to reduce size
-                                   (useful for correction stages that only need paragraph text)
-
-        Returns:
-            Selected OCR output dict, or None if not found
-        """
         selection_map = self.load_selection_map(storage)
 
         page_key = str(page_num)
@@ -70,25 +56,12 @@ class OCRStageStorage:
         provider_name = selection_map[page_key]["provider"]
         ocr_data = self.load_provider_page(storage, provider_name, page_num)
 
-        # Strip line/word data if requested (reduces token cost)
         if ocr_data and not include_line_word_data:
             ocr_data = self._strip_line_word_data(ocr_data)
 
         return ocr_data
 
     def _strip_line_word_data(self, ocr_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Remove line and word-level data from OCR output.
-
-        Keeps only paragraph-level text, bounding boxes, and metadata.
-        Reduces token usage for downstream stages that only need paragraph text.
-
-        Args:
-            ocr_data: Full OCR output dict
-
-        Returns:
-            Filtered OCR output with lines/words removed
-        """
         filtered = ocr_data.copy()
 
         if 'blocks' in filtered:
@@ -103,7 +76,6 @@ class OCRStageStorage:
                             'text': para.get('text'),
                             'avg_confidence': para.get('avg_confidence'),
                             'source': para.get('source', 'primary_ocr'),
-                            # lines field removed - not needed for correction
                         }
                         for para in block.get('paragraphs', [])
                     ]

@@ -42,6 +42,46 @@ class LabelPagesStage(BaseStage):
     ) -> Dict[str, Any]:
         return self.status_tracker.get_status(storage)
 
+    def pretty_print_status(self, status: Dict[str, Any]) -> str:
+        """Return formatted label-pages status with two-stage progress and classification details."""
+        lines = [super().pretty_print_status(status)]
+
+        # Label-pages specific: two-stage processing
+        stage1_remaining = len(status.get('stage1_remaining', []))
+        stage2_remaining = len(status.get('stage2_remaining', []))
+        total = status.get('total_pages', 0)
+
+        if stage1_remaining < total or stage2_remaining < total:
+            stage1_complete = total - stage1_remaining
+            stage2_complete = total - stage2_remaining
+            lines.append(f"   Stage 1: {stage1_complete}/{total} ({stage1_remaining} remaining)")
+            lines.append(f"   Stage 2: {stage2_complete}/{total} ({stage2_remaining} remaining)")
+
+        # Label-pages specific: classification metrics
+        metrics = status.get('metrics', {})
+        total_blocks = metrics.get('total_blocks_classified', 0)
+        avg_conf = metrics.get('avg_classification_confidence', 0.0)
+        pages_with_numbers = metrics.get('pages_with_numbers', 0)
+        pages_with_regions = metrics.get('pages_with_regions', 0)
+
+        if total_blocks > 0:
+            lines.append(f"   Blocks Classified: {total_blocks}")
+        if avg_conf > 0:
+            lines.append(f"   Avg Confidence: {avg_conf:.2%}")
+        if pages_with_numbers > 0:
+            lines.append(f"   Pages w/ Numbers: {pages_with_numbers}")
+        if pages_with_regions > 0:
+            lines.append(f"   Pages w/ Regions: {pages_with_regions}")
+
+        # Label-pages specific: stage costs breakdown
+        stage1_cost = metrics.get('stage1_cost_usd', 0)
+        stage2_cost = metrics.get('stage2_cost_usd', 0)
+        if stage1_cost > 0 or stage2_cost > 0:
+            lines.append(f"   Stage 1 Cost: ${stage1_cost:.4f}")
+            lines.append(f"   Stage 2 Cost: ${stage2_cost:.4f}")
+
+        return '\n'.join(lines)
+
     def before(
         self,
         storage: BookStorage,
@@ -79,7 +119,7 @@ class LabelPagesStage(BaseStage):
         logger.info(f"Progress: {total_pages - len(progress['remaining_pages'])}/{total_pages} pages complete")
 
         # Phase 1: Two-stage vision processing
-        if status in [LabelPagesStatus.NOT_STARTED.value, LabelPagesStatus.LABELING.value]:
+        if status in [LabelPagesStatus.NOT_STARTED.value, LabelPagesStatus.LABELING_STAGE1.value, LabelPagesStatus.LABELING_STAGE2.value]:
             from infra.llm.batch_processor import LLMBatchProcessor, LLMBatchConfig, batch_process_with_preparation
             from .stage1.request_builder import prepare_stage1_request
             from .stage1.result_handler import create_stage1_handler
@@ -98,7 +138,12 @@ class LabelPagesStage(BaseStage):
                 stage_storage_dir = storage.stage(self.stage_storage.stage_name)
                 log_dir = stage_storage_dir.output_dir / "logs" / "stage1"
                 config = LLMBatchConfig(model=self.model, max_workers=self.max_workers, max_retries=self.max_retries)
-                processor = LLMBatchProcessor(checkpoint=None, logger=logger, log_dir=log_dir, config=config)
+                processor = LLMBatchProcessor(
+                    logger=logger,
+                    log_dir=log_dir,
+                    config=config,
+                    metrics_manager=stage_storage_dir.metrics_manager,
+                )
                 handler = create_stage1_handler(storage, self.stage_storage, logger, self.name)
 
                 # Process batch
@@ -134,7 +179,12 @@ class LabelPagesStage(BaseStage):
                 # Setup processor and handler
                 log_dir = stage_storage_dir.output_dir / "logs" / "stage2"
                 config = LLMBatchConfig(model=self.model, max_workers=self.max_workers, max_retries=self.max_retries)
-                processor = LLMBatchProcessor(checkpoint=None, logger=logger, log_dir=log_dir, config=config)
+                processor = LLMBatchProcessor(
+                    logger=logger,
+                    log_dir=log_dir,
+                    config=config,
+                    metrics_manager=stage_storage_dir.metrics_manager,
+                )
                 handler = create_stage2_handler(storage, self.stage_storage, logger, self.model, self.output_schema, ocr_pages, self.name)
 
                 # Process batch
