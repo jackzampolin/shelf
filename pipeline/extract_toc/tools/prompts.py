@@ -1,11 +1,3 @@
-"""
-Table of Contents parsing prompts - Two-stage approach.
-
-Phase 2: Pure Observation (describe what you see)
-Phase 3: Extraction + Self-Verification (extract, then verify)
-"""
-
-# Phase 2: Pure observation of document structure
 TOC_STRUCTURE_DETECTION_PROMPT = """<role>
 You are a document observer. Describe what you SEE in these ToC pages WITHOUT reasoning or making predictions.
 </role>

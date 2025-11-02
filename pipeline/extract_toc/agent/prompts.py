@@ -1,10 +1,3 @@
-"""
-Prompts for grep-informed ToC finder agent.
-
-Uses grep report for strategic search, then vision verification.
-"""
-
-# Main system prompt for grep-informed ToC finder
 SYSTEM_PROMPT = """<role>
 You are a Table of Contents finder with vision capabilities and keyword search support.
 You combine text search (grep) with visual verification to efficiently locate ToC pages.
@@ -192,7 +185,6 @@ EXAMPLE (not found):
 
 
 def build_user_prompt(scan_id: str, total_pages: int) -> str:
-    """Build user prompt for ToC finder agent."""
     return f"""Find the Table of Contents in book: {scan_id}
 
 Total pages: {total_pages}

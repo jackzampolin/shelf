@@ -1,9 +1,3 @@
-"""
-Tools for grep-informed ToC finder agent.
-
-Provides grep report + vision verification for efficient ToC discovery.
-"""
-
 import json
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -19,34 +13,24 @@ from ..tools.grep_report import generate_grep_report, summarize_grep_report
 
 
 class TocFinderResult(BaseModel):
-    """Result from ToC finder agent."""
     toc_found: bool
     toc_page_range: Optional[PageRange] = None
     confidence: float = Field(ge=0.0, le=1.0)
     search_strategy_used: str
-    pages_checked: int = 0  # Number of pages examined (populated by agent)
-    total_cost_usd: float = 0.0  # Total cost (populated by agent)
+    pages_checked: int = 0
+    total_cost_usd: float = 0.0
     reasoning: str
 
 
 class TocFinderTools:
-    """Tool suite for grep-informed ToC finder agent."""
 
     def __init__(self, storage: BookStorage, agent_client: AgentClient):
-        """
-        Initialize tools.
-
-        Args:
-            storage: BookStorage instance for accessing book data
-            agent_client: AgentClient instance (for accessing images list)
-        """
         self.storage = storage
         self.agent_client = agent_client
         self._pending_result: Optional[TocFinderResult] = None
         self._grep_report_cache: Optional[Dict] = None
 
     def get_tools(self) -> List[Dict]:
-        """Return tool definitions for LLM."""
         return [
             {
                 "type": "function",
@@ -121,7 +105,6 @@ class TocFinderTools:
         ]
 
     def execute_tool(self, tool_name: str, arguments: Dict) -> str:
-        """Execute a tool and return result string."""
         if tool_name == "get_frontmatter_grep_report":
             return self.get_frontmatter_grep_report()
         elif tool_name == "add_page_images_to_context":
@@ -138,14 +121,7 @@ class TocFinderTools:
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
     def get_frontmatter_grep_report(self) -> str:
-        """
-        Get keyword search report for ToC and front matter.
-
-        Returns:
-            JSON with grep report + human-readable summary
-        """
         try:
-            # Generate report (cache it)
             if self._grep_report_cache is None:
                 self._grep_report_cache = generate_grep_report(self.storage, max_pages=50)
 
@@ -163,17 +139,6 @@ class TocFinderTools:
             return json.dumps({"error": f"Failed to generate grep report: {str(e)}"})
 
     def add_page_images_to_context(self, page_nums: List[int]) -> str:
-        """
-        Load page images and REPLACE current images in context.
-
-        This replaces any previously loaded images. The images will be visible in your next LLM call.
-
-        Args:
-            page_nums: List of page numbers to load
-
-        Returns:
-            JSON confirmation: {"loaded": [4, 5], "message": "Now viewing 2 pages"}
-        """
         try:
             source_stage = self.storage.stage('source')
             loaded_pages = []
@@ -212,23 +177,7 @@ class TocFinderTools:
         search_strategy_used: str,
         reasoning: str
     ) -> str:
-        """
-        Write final ToC search result.
-
-        This completes the agent task.
-
-        Args:
-            toc_found: Whether ToC was found
-            toc_page_range: Dict with start_page and end_page (or None)
-            confidence: Confidence score 0.0-1.0
-            search_strategy_used: Strategy used
-            reasoning: Explanation
-
-        Returns:
-            JSON confirmation
-        """
         try:
-            # Convert dict to PageRange if provided
             page_range = None
             if toc_page_range:
                 page_range = PageRange(

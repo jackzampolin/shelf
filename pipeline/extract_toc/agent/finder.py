@@ -1,9 +1,3 @@
-"""
-Grep-informed ToC finder agent.
-
-Uses keyword search (grep) to guide vision-based ToC discovery.
-"""
-
 import json
 import time
 from typing import Optional, Tuple
@@ -20,17 +14,6 @@ from .prompts import SYSTEM_PROMPT, build_user_prompt
 
 
 class TocFinderAgent:
-    """
-    Grep-informed ToC finder that combines text search with vision.
-
-    Strategy:
-    1. Grep paragraph_correct outputs for ToC keywords (FREE)
-    2. Load grep-suggested pages for vision verification (~$0.01 per page)
-    3. Fallback to sequential scan if needed
-
-    Average cost: $0.05-0.10 per book (vs $0.10-0.15 without grep)
-    Success rate: ~95%
-    """
 
     def __init__(
         self,
@@ -39,29 +22,17 @@ class TocFinderAgent:
         max_iterations: int = 15,
         verbose: bool = True
     ):
-        """
-        Initialize ToC finder agent.
-
-        Args:
-            storage: BookStorage instance
-            logger: Optional pipeline logger
-            max_iterations: Max tool-calling iterations (default: 15)
-            verbose: Show progress output (default: True)
-        """
         self.storage = storage
         self.logger = logger
         self.max_iterations = max_iterations
         self.verbose = verbose
 
-        # Initialize components
         self.llm_client = LLMClient()
 
-        # Get book metadata
         self.metadata = storage.load_metadata()
         self.scan_id = storage.scan_id
         self.total_pages = self.metadata.get('total_pages', 0)
 
-        # Log directory for agent
         log_dir = storage.stage('extract_toc').output_dir / 'logs' / 'toc_finder'
         self.agent_client = AgentClient(
             max_iterations=max_iterations,
@@ -70,16 +41,9 @@ class TocFinderAgent:
             verbose=verbose
         )
 
-        # Initialize tools (needs agent_client for image context)
         self.tools = TocFinderTools(storage=storage, agent_client=self.agent_client)
 
     def search(self) -> TocFinderResult:
-        """
-        Execute ToC search using grep + vision.
-
-        Returns:
-            TocFinderResult with search outcome
-        """
         start_time = time.time()
 
         if self.verbose:
@@ -90,18 +54,14 @@ class TocFinderAgent:
                            scan_id=self.scan_id,
                            total_pages=self.total_pages)
 
-        # Build prompts
         initial_messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": build_user_prompt(self.scan_id, self.total_pages)}
         ]
 
-        # Define completion check
         def is_complete(messages):
-            """Check if write_toc_result was called."""
             return self.tools._pending_result is not None
 
-        # Define event handler for progress
         def on_event(event: AgentEvent):
             if not self.verbose:
                 return
@@ -114,7 +74,6 @@ class TocFinderAgent:
                 args = event.data['arguments']
                 exec_time = event.data['execution_time']
 
-                # Show tool calls with args
                 if tool_name == "get_frontmatter_grep_report":
                     print(f"   🔧 {tool_name}() - generating keyword search report")
                 elif tool_name == "add_page_images_to_context":
@@ -126,11 +85,9 @@ class TocFinderAgent:
                     args_str = json.dumps(args) if args else "(no args)"
                     print(f"   🔧 {tool_name}({args_str})")
 
-                # Don't show result preview for write_toc_result
                 if tool_name != "write_toc_result":
                     print(f"      (executed in {exec_time:.1f}s)")
 
-        # Run agent with expensive text model for tool calling
         agent_result = self.agent_client.run(
             llm_client=self.llm_client,
             model=Config.text_model_expensive,
@@ -142,14 +99,11 @@ class TocFinderAgent:
             temperature=0.0
         )
 
-        # Extract ToC result from tools
         if agent_result.success and self.tools._pending_result:
             final_result = self.tools._pending_result
-            # Update costs (include vision costs from tools)
             final_result.total_cost_usd = agent_result.total_cost_usd
-            final_result.pages_checked = len(self.agent_client.images)  # Number of images loaded
+            final_result.pages_checked = len(self.agent_client.images)
         else:
-            # Agent failed or max iterations
             final_result = TocFinderResult(
                 toc_found=False,
                 toc_page_range=None,
@@ -160,7 +114,6 @@ class TocFinderAgent:
                 reasoning=agent_result.error_message or "Search incomplete"
             )
 
-        # Show final summary
         elapsed = time.time() - start_time
 
         if self.verbose:
@@ -197,18 +150,6 @@ def find_toc_pages(
     max_iterations: int = 15,
     verbose: bool = True
 ) -> Tuple[Optional[PageRange], float]:
-    """
-    Find ToC pages using grep-informed agentic search.
-
-    Args:
-        storage: BookStorage instance
-        logger: Optional pipeline logger
-        max_iterations: Max agent iterations (default: 15)
-        verbose: Show progress output (default: True)
-
-    Returns:
-        Tuple of (PageRange or None, cost_usd)
-    """
     agent = TocFinderAgent(
         storage=storage,
         logger=logger,

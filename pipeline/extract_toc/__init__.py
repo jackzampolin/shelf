@@ -3,7 +3,6 @@ from typing import Dict, Any
 
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 from infra.config import Config
 
@@ -31,28 +30,20 @@ class ExtractTocStage(BaseStage):
     def get_progress(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger
     ) -> Dict[str, Any]:
-        return self.status_tracker.get_progress(storage, checkpoint, logger)
+        return self.status_tracker.get_progress(storage, logger)
 
     def before(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger
     ):
         logger.info(f"Extract-ToC with {self.model}")
 
         from pipeline.paragraph_correct import ParagraphCorrectStage
         para_correct_stage = ParagraphCorrectStage()
-        para_correct_checkpoint = CheckpointManager(
-            scan_id=storage.scan_id,
-            stage='paragraph_correct'
-        )
-        para_correct_progress = para_correct_stage.get_progress(
-            storage, para_correct_checkpoint, logger
-        )
+        para_correct_progress = para_correct_stage.get_progress(storage, logger)
 
         if para_correct_progress['status'] != 'completed':
             raise RuntimeError(
@@ -65,11 +56,10 @@ class ExtractTocStage(BaseStage):
     def run(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger,
     ) -> Dict[str, Any]:
 
-        progress = self.get_progress(storage, checkpoint, logger)
+        progress = self.get_progress(storage, logger)
 
         if progress["status"] == ExtractTocStatus.COMPLETED.value:
             logger.info("Extract-ToC already completed (skipping)")
@@ -95,7 +85,6 @@ class ExtractTocStage(BaseStage):
         # Phase 1: Find ToC pages (grep + vision agent)
         if not progress["artifacts"]["finder_result_exists"]:
             logger.info("=== Phase 1: Finding ToC Pages ===")
-            checkpoint.set_phase(ExtractTocStatus.FINDING_TOC.value)
 
             from .agent.finder import find_toc_pages
 
@@ -122,7 +111,6 @@ class ExtractTocStage(BaseStage):
                 elapsed_time = time.time() - start_time
 
                 self.stage_storage.save_toc_final(storage, {"toc": None, "search_strategy": "not_found"})
-                checkpoint.set_phase(ExtractTocStatus.COMPLETED.value)
 
                 return {
                     "status": "success",
@@ -132,12 +120,11 @@ class ExtractTocStage(BaseStage):
                 }
 
             logger.info("Found ToC pages", start=toc_range.start_page, end=toc_range.end_page)
-            progress = self.get_progress(storage, checkpoint, logger)
+            progress = self.get_progress(storage, logger)
 
         # Phase 2: Extract structure observations
         if not progress["artifacts"]["structure_exists"]:
             logger.info("=== Phase 2: Detecting ToC Structure ===")
-            checkpoint.set_phase(ExtractTocStatus.EXTRACTING_STRUCTURE.value)
 
             finder_result = self.stage_storage.load_finder_result(storage)
             from .schemas import PageRange
@@ -164,12 +151,11 @@ class ExtractTocStage(BaseStage):
             }
 
             self.stage_storage.save_structure(storage, structure_data)
-            progress = self.get_progress(storage, checkpoint, logger)
+            progress = self.get_progress(storage, logger)
 
         # Phase 3: Generate ToC draft (unchecked)
         if not progress["artifacts"]["toc_unchecked_exists"]:
             logger.info("=== Phase 3: Generating ToC Draft ===")
-            checkpoint.set_phase(ExtractTocStatus.GENERATING_TOC_DRAFT.value)
 
             finder_result = self.stage_storage.load_finder_result(storage)
             structure_data = self.stage_storage.load_structure(storage)
@@ -204,12 +190,11 @@ class ExtractTocStage(BaseStage):
 
             self.stage_storage.save_toc_unchecked(storage, toc_unchecked)
             logger.info("Saved toc_unchecked.json", entries=len(toc.entries))
-            progress = self.get_progress(storage, checkpoint, logger)
+            progress = self.get_progress(storage, logger)
 
         # Phase 4: Check ToC for issues (validation)
         if not progress["artifacts"]["toc_diff_exists"]:
             logger.info("=== Phase 4: Checking ToC ===")
-            checkpoint.set_phase(ExtractTocStatus.CHECKING_TOC.value)
 
             toc_diff = {
                 "issues": [],
@@ -219,12 +204,11 @@ class ExtractTocStage(BaseStage):
 
             self.stage_storage.save_toc_diff(storage, toc_diff)
             logger.info("Saved toc_diff.json (no issues found)")
-            progress = self.get_progress(storage, checkpoint, logger)
+            progress = self.get_progress(storage, logger)
 
         # Phase 5: Merge ToC (draft + corrections)
         if not progress["artifacts"]["toc_final_exists"]:
             logger.info("=== Phase 5: Merging ToC ===")
-            checkpoint.set_phase(ExtractTocStatus.MERGING_TOC.value)
 
             toc_unchecked = self.stage_storage.load_toc_unchecked(storage)
             toc_diff = self.stage_storage.load_toc_diff(storage)
@@ -238,10 +222,9 @@ class ExtractTocStage(BaseStage):
             self.stage_storage.save_toc_final(storage, toc_final)
 
             elapsed_time = time.time() - start_time
-            checkpoint.set_phase(ExtractTocStatus.COMPLETED.value)
 
             logger.info("Saved toc.json (final)")
-            progress = self.get_progress(storage, checkpoint, logger)
+            progress = self.get_progress(storage, logger)
 
         if progress["status"] == ExtractTocStatus.COMPLETED.value:
             elapsed_time = time.time() - start_time

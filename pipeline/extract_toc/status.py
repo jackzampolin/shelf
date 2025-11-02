@@ -3,7 +3,6 @@ from enum import Enum
 from typing import Dict, Any
 
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 
 from .storage import ExtractTocStageStorage
@@ -28,7 +27,6 @@ class ExtractTocStatusTracker:
     def get_progress(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger
     ) -> Dict[str, Any]:
 

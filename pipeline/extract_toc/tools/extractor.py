@@ -1,10 +1,3 @@
-"""
-ToC extraction tools (Phase 2 & 3).
-
-Phase 2: Detect document structure from images
-Phase 3: Extract entries using structure + OCR text
-"""
-
 import json
 from pathlib import Path
 from typing import Tuple, List
@@ -21,16 +14,6 @@ from .prompts import TOC_STRUCTURE_DETECTION_PROMPT, build_detail_extraction_pro
 
 
 def load_toc_images(storage: BookStorage, toc_range: PageRange) -> List[Image.Image]:
-    """
-    Load ToC page images for vision-based parsing.
-
-    Args:
-        storage: BookStorage instance
-        toc_range: Page range for ToC
-
-    Returns:
-        List of downsampled PIL Images
-    """
     source_storage = storage.stage("source")
     toc_images = []
 
@@ -45,17 +28,6 @@ def load_toc_images(storage: BookStorage, toc_range: PageRange) -> List[Image.Im
 
 
 def extract_toc_text(storage: BookStorage, toc_range: PageRange, stage_storage) -> str:
-    """
-    Extract text from ToC pages (paragraph_correct outputs).
-
-    Args:
-        storage: BookStorage instance
-        toc_range: Page range for ToC
-        stage_storage: ExtractTocStageStorage instance
-
-    Returns:
-        Combined text from all ToC pages
-    """
     toc_text_parts = []
     for page_num in range(toc_range.start_page, toc_range.end_page + 1):
         page_text = stage_storage.get_merged_page_text(storage, page_num)
@@ -71,22 +43,9 @@ def detect_toc_structure(
     logger: PipelineLogger,
     log_dir: Path,
 ) -> Tuple[dict, float]:
-    """
-    Phase 2: Detect document-level ToC structure.
-
-    Args:
-        toc_images: List of ToC page images
-        model: LLM model to use
-        logger: Pipeline logger
-        log_dir: Directory for logging
-
-    Returns:
-        Tuple of (structure_overview dict, detection cost)
-    """
     logger.info("Phase 2: Detecting ToC structure (document-level)", toc_pages=len(toc_images))
     print(f"   🔍 Phase 2: Analyzing document structure...")
 
-    # Simple schema for observation output
     structure_schema = {
         "type": "object",
         "properties": {
@@ -129,7 +88,6 @@ def detect_toc_structure(
         response_format=response_format
     )
 
-    # Make LLM call
     batch_client = LLMBatchClient(
         max_workers=1,
         max_retries=5,
@@ -139,7 +97,6 @@ def detect_toc_structure(
 
     results = batch_client.process_batch([request])
 
-    # Extract result
     result = results[0]
     if not result.success:
         raise ValueError(f"Structure detection failed: {result.error_message}")
@@ -148,7 +105,6 @@ def detect_toc_structure(
     observations = structure_data["visual_observations"]
     detection_cost = result.cost_usd
 
-    # Log structure findings
     logger.info(
         "Structure observed",
         approx_entries=observations["approximate_entry_count"],
@@ -174,28 +130,11 @@ def extract_toc_entries(
     logger: PipelineLogger,
     log_dir: Path,
 ) -> Tuple[TableOfContents, float]:
-    """
-    Phase 3: Extract ToC entries using structure context.
-
-    Args:
-        toc_images: List of ToC page images
-        toc_text: OCR text from paragraph_correct
-        toc_range: Page range where ToC appears
-        observations: Structure observations from Phase 2
-        model: LLM model to use
-        logger: Pipeline logger
-        log_dir: Directory for logging
-
-    Returns:
-        Tuple of (TableOfContents, extraction cost)
-    """
     logger.info("Phase 3: Extracting ToC entries (structure-guided)", model=model)
     print(f"   📝 Phase 3: Extracting entries with structure guidance...")
 
-    # Build Phase 3 prompt with structure context
     detail_prompt = build_detail_extraction_prompt(observations)
 
-    # Build JSON schema for structured output
     response_format = {
         "type": "json_schema",
         "json_schema": {
@@ -204,7 +143,6 @@ def extract_toc_entries(
         }
     }
 
-    # Create detail extraction request (vision for structure, OCR for titles)
     user_message = f"""Extract ALL entries from this Table of Contents.
 
 **ToC page range (scan pages):** {toc_range.start_page}-{toc_range.end_page}
@@ -225,13 +163,12 @@ Remember to:
             {"role": "system", "content": detail_prompt},
             {"role": "user", "content": user_message}
         ],
-        images=toc_images,  # Vision for structure
+        images=toc_images,
         temperature=0.0,
         max_tokens=4000,
         response_format=response_format
     )
 
-    # Make LLM call
     batch_client = LLMBatchClient(
         max_workers=1,
         max_retries=5,
@@ -241,7 +178,6 @@ Remember to:
 
     results = batch_client.process_batch([request])
 
-    # Extract result
     result = results[0]
     if not result.success:
         raise ValueError(f"Detail extraction failed: {result.error_message}")
