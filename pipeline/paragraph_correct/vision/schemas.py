@@ -1,8 +1,24 @@
 import copy
-from typing import Dict, Any
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field
 
 from pipeline.ocr.schemas import OCRPageOutput
-from .correction_llm_response import CorrectionLLMResponse
+
+
+class ParagraphCorrection(BaseModel):
+    par_num: int = Field(..., ge=1, description="Paragraph number within block (matches OCR)")
+    text: Optional[str] = Field(None, description="Full corrected paragraph text (omit if no errors found)")
+    notes: Optional[str] = Field(None, description="Brief explanation of changes made (e.g., 'Fixed hyphenation, 2 OCR errors')")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in text quality")
+
+
+class BlockCorrection(BaseModel):
+    block_num: int = Field(..., ge=1, description="Block number (matches OCR)")
+    paragraphs: List[ParagraphCorrection] = Field(..., description="Paragraph-level corrections")
+
+
+class CorrectionLLMResponse(BaseModel):
+    blocks: List[BlockCorrection] = Field(..., description="Block corrections")
 
 
 def build_page_specific_schema(ocr_page: OCRPageOutput) -> Dict[str, Any]:

@@ -2,7 +2,6 @@ from typing import Dict, Any
 
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 
 from .schemas import ParagraphCorrectPageOutput, ParagraphCorrectPageMetrics, ParagraphCorrectPageReport
@@ -37,34 +36,25 @@ class ParagraphCorrectStage(BaseStage):
         self.status_tracker = ParagraphCorrectStatusTracker(stage_name=self.name)
         self.stage_storage = ParagraphCorrectStageStorage(stage_name=self.name)
 
-    def get_progress(
+    def get_status(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger
     ) -> Dict[str, Any]:
-        return self.status_tracker.get_progress(storage, checkpoint, logger)
+        return self.status_tracker.get_status(storage)
 
     def before(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger
     ):
         logger.info(f"Paragraph-Correct with {self.model}")
         logger.info(f"Max workers: {self.max_workers}")
 
-        # Check OCR stage status
         from pipeline.ocr import OCRStage
         ocr_stage = OCRStage()
 
-        # Get OCR checkpoint for status check
-        ocr_checkpoint = CheckpointManager(
-            scan_id=storage.scan_id,
-            stage='ocr'
-        )
-
-        ocr_progress = ocr_stage.get_progress(storage, ocr_checkpoint, logger)
+        ocr_progress = ocr_stage.get_status(storage, logger)
 
         if ocr_progress['status'] != 'completed':
             raise RuntimeError(
@@ -77,11 +67,10 @@ class ParagraphCorrectStage(BaseStage):
     def run(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger,
     ) -> Dict[str, Any]:
 
-        progress = self.get_progress(storage, checkpoint, logger)
+        progress = self.get_status(storage, logger)
         total_pages = progress["total_pages"]
         status = progress["status"]
 
@@ -96,46 +85,80 @@ class ParagraphCorrectStage(BaseStage):
 
             if len(remaining_pages) > 0:
                 logger.info("=== Phase 1: Vision-Based Correction ===")
-                checkpoint.set_phase(ParagraphCorrectStatus.CORRECTING.value, f"0/{total_pages} pages")
 
-                from .tools.processor import correct_pages
-                correct_pages(
-                    storage=storage,
-                    checkpoint=checkpoint,
-                    logger=logger,
-                    stage_storage=self.stage_storage,
+                from infra.llm.batch_processor import LLMBatchProcessor, LLMBatchConfig, batch_process_with_preparation
+                from .vision.request_builder import prepare_correction_request
+                from .vision.result_handler import create_correction_handler
+
+                # Build requests and collect page data map
+                logger.info(f"Loading {len(remaining_pages)} pages...")
+                page_data_map = {}
+
+                def build_request(page_num: int):
+                    try:
+                        request, ocr_page = prepare_correction_request(
+                            page_num=page_num,
+                            storage=storage,
+                            model=self.model,
+                            total_pages=total_pages,
+                        )
+                        page_data_map[page_num] = ocr_page
+                        return request
+                    except Exception as e:
+                        logger.error(f"Failed to prepare page {page_num}", page=page_num, error=str(e))
+                        return None
+
+                # Configure processor
+                config = LLMBatchConfig(
                     model=self.model,
                     max_workers=self.max_workers,
                     max_retries=self.max_retries,
-                    remaining_pages=remaining_pages,
-                    total_pages=total_pages,
-                    output_schema=self.output_schema,
                 )
 
-                progress = self.get_progress(storage, checkpoint, logger)
+                log_dir = storage.stage(self.name).output_dir / "logs"
+                processor = LLMBatchProcessor(
+                    checkpoint=None,
+                    logger=logger,
+                    log_dir=log_dir,
+                    config=config,
+                )
+
+                # Create handler with page data map
+                handler = create_correction_handler(
+                    storage=storage,
+                    stage_storage=self.stage_storage,
+                    logger=logger,
+                    output_schema=self.output_schema,
+                    stage_name=self.name,
+                    page_data_map=page_data_map,
+                )
+
+                # Process batch
+                batch_process_with_preparation(
+                    stage_name="Paragraph Correction",
+                    pages=remaining_pages,
+                    request_builder=build_request,
+                    result_handler=handler,
+                    processor=processor,
+                    logger=logger,
+                )
+
+                progress = self.get_status(storage, logger)
 
         # Phase 2: Generate quality report (CSV with similarity metrics)
         if not progress["artifacts"]["report_exists"]:
                 logger.info("=== Phase 2: Generate Report ===")
-                checkpoint.set_phase(ParagraphCorrectStatus.GENERATING_REPORT.value)
 
                 from .tools.report_generator import generate_report
                 generate_report(
                     storage=storage,
-                    checkpoint=checkpoint,
                     logger=logger,
                     stage_storage=self.stage_storage,
                     report_schema=self.report_schema,
+                    stage_name=self.name,
                 )
 
-                progress = self.get_progress(storage, checkpoint, logger)
-
-        all_complete = (
-            len(progress["remaining_pages"]) == 0
-            and progress["artifacts"]["report_exists"]
-        )
-        if all_complete:
-            checkpoint.set_phase(ParagraphCorrectStatus.COMPLETED.value)
+                progress = self.get_status(storage, logger)
 
         completed_pages = total_pages - len(progress["remaining_pages"])
         total_cost = progress["metrics"]["total_cost_usd"]

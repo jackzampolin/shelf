@@ -12,7 +12,6 @@ from typing import List, Dict, Any, Optional
 
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 
 from .schemas import OCRPageOutput, OCRPageReport
@@ -58,10 +57,10 @@ class OCRStage(BaseStage):
         )
         self.ocr_storage = OCRStageStorage(stage_name=self.name)
 
-    def get_progress(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger) -> Dict[str, Any]:
-        return self.status_tracker.get_progress(storage, logger)
+    def get_status(self, storage: BookStorage, logger: PipelineLogger) -> Dict[str, Any]:
+        return self.status_tracker.get_status(storage)
 
-    def before(self, storage: BookStorage, checkpoint: CheckpointManager, logger: PipelineLogger):
+    def before(self, storage: BookStorage, logger: PipelineLogger):
         logger.info(f"OCR with {len(self.providers)} providers:")
         for provider in self.providers:
             logger.info(f"  - {provider.provider_name}")
@@ -76,10 +75,9 @@ class OCRStage(BaseStage):
     def run(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
         logger: PipelineLogger,
     ) -> Dict[str, Any]:
-        progress = self.get_progress(storage, checkpoint, logger)
+        progress = self.get_status(storage, logger)
         total_pages = progress["total_pages"]
         status = progress["status"]
 
@@ -98,7 +96,7 @@ class OCRStage(BaseStage):
                     self.providers, self.output_schema, total_pages,
                     self.max_workers, self.name
                 )
-                progress = self.get_progress(storage, checkpoint, logger)
+                progress = self.get_status(storage, logger)
 
         # Phase 2a: Calculate provider agreement
         pages_needing_agreement = progress["selection"]["pages_needing_agreement"]
@@ -109,7 +107,7 @@ class OCRStage(BaseStage):
                 storage, logger, self.ocr_storage,
                 self.providers, pages_needing_agreement, self.name
             )
-            progress = self.get_progress(storage, checkpoint, logger)
+            progress = self.get_status(storage, logger)
 
         # Phase 2b: Auto-select high agreement pages
         pages_for_auto_select = progress["selection"]["pages_for_auto_select"]
@@ -120,7 +118,7 @@ class OCRStage(BaseStage):
                 storage, logger, self.ocr_storage,
                 self.providers, pages_for_auto_select, self.name
             )
-            progress = self.get_progress(storage, checkpoint, logger)
+            progress = self.get_status(storage, logger)
 
         # Phase 2c: Vision-select low agreement pages
         pages_needing_vision = progress["selection"]["pages_needing_vision"]
@@ -131,7 +129,7 @@ class OCRStage(BaseStage):
                 storage, logger, self.ocr_storage,
                 self.providers, pages_needing_vision, total_pages, self.name
             )
-            progress = self.get_progress(storage, checkpoint, logger)
+            progress = self.get_status(storage, logger)
         else:
             logger.info("No pages need vision selection (all pages have high agreement)")
 
@@ -144,7 +142,7 @@ class OCRStage(BaseStage):
                 extract_metadata(
                     storage, logger, self.ocr_storage, self.name
                 )
-                progress = self.get_progress(storage, checkpoint, logger)
+                progress = self.get_status(storage, logger)
 
         # Phase 4: Generate report
         if len(progress["remaining_pages"]) == 0 and not progress["metadata"]["needs_extraction"]:
@@ -155,7 +153,7 @@ class OCRStage(BaseStage):
                 generate_report(
                     storage, logger, self.ocr_storage, self.report_schema, self.name
                 )
-                progress = self.get_progress(storage, checkpoint, logger)
+                progress = self.get_status(storage, logger)
 
         completed_pages = total_pages - len(progress["remaining_pages"])
         total_cost = progress["metrics"]["total_cost_usd"]

@@ -83,7 +83,7 @@ def run_parallel_ocr(
                 page_num, provider_name, result, error = future.result()
 
                 if error:
-                    logger.page_error(f"OCR failed for {provider_name}", page=page_num, error=error)
+                    logger.error(f"OCR failed for {provider_name}", page=page_num, error=error)
                 elif result is not None:
                     # Save provider output (file on disk = ground truth)
                     ocr_storage.save_provider_output(

@@ -1,7 +1,3 @@
-"""OCR stage status tracking via ground truth (files on disk)."""
-
-import json
-from pathlib import Path
 from typing import Dict, Any, List, Set
 from enum import Enum
 
@@ -52,17 +48,14 @@ class OCRStageStatus(str, Enum):
 
 
 class OCRStatusTracker:
-    """Ground truth: A page is complete when it appears in selection_map.json."""
-
     def __init__(self, stage_name: str, provider_names: List[str]):
         self.stage_name = stage_name
         self.provider_names = provider_names
         self.storage = OCRStageStorage(stage_name=stage_name)
 
-    def get_progress(
+    def get_status(
         self,
         storage: BookStorage,
-        logger: PipelineLogger
     ) -> Dict[str, Any]:
         source_stage = storage.stage("source")
         source_pages = source_stage.list_output_pages(extension="png")

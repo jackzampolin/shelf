@@ -1,140 +1,46 @@
-"""
-Stage orchestration and execution.
-
-Provides functions to run individual stages or entire pipelines with
-consistent logging, error handling, and checkpoint management.
-
-Modern stages handle all processing (including reports) in run().
-Legacy after() hook removed - stages must be self-contained.
-"""
-
-from typing import List, Optional
-from pathlib import Path
+from typing import List
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
-from infra.pipeline.logger import create_logger, PipelineLogger
+from infra.pipeline.logger import create_logger
 
 
 def run_stage(
     stage: BaseStage,
-    storage: BookStorage,
-    resume: bool = False
-) -> dict:
-    """
-    Run a single stage with modern lifecycle (before/run).
-
-    Handles:
-    - Checkpoint initialization
-    - Logger creation
-    - Before/run orchestration
-    - Error handling
-    - Checkpoint finalization
-
-    Args:
-        stage: Stage instance to run
-        storage: BookStorage for this book
-        resume: Resume from checkpoint if True
-
-    Returns:
-        Stats dict from stage.run()
-
-    Raises:
-        ValueError: If stage.name or stage.dependencies not set
-        Exception: Any exception from stage execution
-
-    Example:
-        >>> storage = BookStorage("test-book")
-        >>> stage = MergeStage()
-        >>> stats = run_stage(stage, storage, resume=True)
-        >>> print(stats)
-        {'pages_merged': 100, 'total_cost_usd': 0.0}
-    """
-    # Validate stage configuration
+    storage: BookStorage
+) -> None:
     if not stage.name:
         raise ValueError(f"{stage.__class__.__name__}.name is not set")
 
     if not isinstance(stage.dependencies, list):
         raise ValueError(f"{stage.__class__.__name__}.dependencies must be a list")
 
-    # Initialize infrastructure for this stage
     stage_storage = storage.stage(stage.name)
-    checkpoint = CheckpointManager(
-        scan_id=storage.scan_id,
-        stage=stage.name
-    )
 
-    # Create logger in stage-specific logs directory
     logs_dir = stage_storage.output_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     logger = create_logger(storage.scan_id, stage.name, log_dir=logs_dir)
 
     try:
-        # Log stage start
-        logger.start_stage()
         logger.info(
             f"Starting stage: {stage.name}",
-            dependencies=stage.dependencies,
-            resume=resume
+            dependencies=stage.dependencies
         )
 
-        # Reset checkpoint if not resuming
-        if not resume:
-            if not checkpoint.reset(confirm=True):
-                logger.info("Stage cancelled by user")
-                return {}
+        status = stage.get_status(storage, logger)
+        if status["status"] == "completed":
+            logger.info("Stage already complete, skipping")
+            return
 
-        # Check if already complete
-        status = checkpoint.get_status()
-        if status.get('status') == 'completed':
-            # Self-validating stages manage their own completion status
-            if stage.self_validating:
-                print(f"   Stage already complete (self-validating)")
-                logger.info("Stage already complete (self-validating), skipping")
-                return status.get('metadata', {})
-
-            # For non-self-validating stages, validate outputs exist
-            metadata = storage.load_metadata()
-            total_pages = metadata.get('total_pages', 0)
-
-            if total_pages > 0:
-                is_valid = checkpoint.validate_completed_status(total_pages)
-                if not is_valid:
-                    # Checkpoint was invalidated, log and continue processing
-                    validation_info = checkpoint.get_status().get('validation', {})
-                    missing_count = validation_info.get('total_missing', 0)
-                    logger.warning(
-                        f"Checkpoint validation failed: {missing_count} outputs missing",
-                        missing_pages=validation_info.get('missing_outputs', [])
-                    )
-                    logger.info("Re-running stage to process missing pages")
-                else:
-                    print(f"   Stage already complete")
-                    logger.info("Stage already complete (validated), skipping")
-                    return status.get('metadata', {})
-            else:
-                print(f"   Stage already complete")
-                logger.info("Stage already complete, skipping")
-                return status.get('metadata', {})
-
-        # Run lifecycle hooks
         logger.info("Running before() hook")
-        stage.before(storage, checkpoint, logger)
+        stage.before(storage, logger)
 
         logger.info("Running run() hook")
-        stats = stage.run(storage, checkpoint, logger)
-
-        # Mark stage complete (stage handles its own completion in run())
-        # Modern stages call checkpoint.set_phase("completed") internally
-        if not stage.self_validating:
-            checkpoint.mark_stage_complete(metadata=stats)
+        stats = stage.run(storage, logger)
 
         logger.info(f"✅ Stage complete: {stage.name}", **stats)
         return stats
 
     except Exception as e:
-        # Mark stage failed
-        checkpoint.mark_stage_failed(error=str(e))
         logger.error(f"❌ Stage failed: {stage.name}", error=str(e))
         raise
 
@@ -146,50 +52,19 @@ def run_stage(
 def run_pipeline(
     stages: List[BaseStage],
     storage: BookStorage,
-    resume: bool = False,
     stop_on_error: bool = True
 ) -> dict:
-    """
-    Run multiple stages in sequence.
-
-    Each stage runs with modern lifecycle (before/run).
-    Logs overall pipeline progress.
-
-    Args:
-        stages: List of stage instances to run in order
-        storage: BookStorage for this book
-        resume: Resume each stage from checkpoint if True
-        stop_on_error: Stop pipeline on first error if True
-
-    Returns:
-        Dict mapping stage names to their stats:
-        {
-            "ocr": {"pages_processed": 100},
-            "correction": {"pages_processed": 100, "cost_usd": 5.23},
-            ...
-        }
-
-    Raises:
-        Exception: First stage error if stop_on_error=True
-
-    Example:
-        >>> stages = [OCRStage(), CorrectionStage(), LabelStage(), MergeStage()]
-        >>> storage = BookStorage("test-book")
-        >>> results = run_pipeline(stages, storage, resume=True)
-        >>> print(f"Processed {len(results)} stages")
-    """
     results = {}
 
     print(f"\n📚 Running pipeline: {storage.scan_id}")
     print(f"   Stages: {', '.join(s.name for s in stages)}")
-    print(f"   Resume: {resume}")
     print()
 
     for i, stage in enumerate(stages, 1):
         print(f"[{i}/{len(stages)}] Running stage: {stage.name}")
 
         try:
-            stats = run_stage(stage, storage, resume=resume)
+            stats = run_stage(stage, storage)
             results[stage.name] = stats
             print(f"✅ {stage.name} complete")
 
@@ -206,42 +81,3 @@ def run_pipeline(
 
     print(f"\n✅ Pipeline complete: {len(results)} stages run")
     return results
-
-
-def validate_dependencies(
-    stage: BaseStage,
-    storage: BookStorage
-) -> bool:
-    """
-    Validate that all stage dependencies exist.
-
-    Checks that each dependency stage has outputs.
-
-    Args:
-        stage: Stage to validate
-        storage: BookStorage for this book
-
-    Returns:
-        True if all dependencies satisfied
-
-    Raises:
-        FileNotFoundError: If any dependency missing
-
-    Example:
-        >>> merge_stage = MergeStage()  # dependencies = ["ocr", "corrected", "labels"]
-        >>> validate_dependencies(merge_stage, storage)
-        True
-    """
-    for dep in stage.dependencies:
-        dep_storage = storage.stage(dep)
-
-        # Check if dependency stage has any outputs
-        output_pages = dep_storage.list_output_pages()
-
-        if not output_pages:
-            raise FileNotFoundError(
-                f"Stage '{stage.name}' depends on '{dep}', but '{dep}' has no outputs. "
-                f"Run '{dep}' stage first."
-            )
-
-    return True

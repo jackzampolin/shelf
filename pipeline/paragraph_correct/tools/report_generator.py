@@ -2,29 +2,31 @@ import csv
 from pathlib import Path
 
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
 from infra.pipeline.logger import PipelineLogger
 
 
 def generate_report(
     storage: BookStorage,
-    checkpoint: CheckpointManager,
     logger: PipelineLogger,
     stage_storage,
     report_schema,
+    stage_name: str,
 ):
-    logger.info("Generating report.csv from checkpoint metrics")
+    logger.info("Generating report.csv from metrics")
 
-    checkpoint_state = checkpoint.get_status()
-    page_metrics = checkpoint_state.get('page_metrics', {})
+    stage_storage_obj = storage.stage(stage_name)
+    all_metrics = stage_storage_obj.metrics_manager.get_all()
 
-    if not page_metrics:
-        logger.warning("No page metrics found in checkpoint")
+    if not all_metrics:
+        logger.warning("No page metrics found")
         return
 
     report_rows = []
-    for page_num_str, metrics in sorted(page_metrics.items(), key=lambda x: int(x[0])):
-        page_num = int(page_num_str)
+    for page_key, metrics in sorted(all_metrics.items(), key=lambda x: int(x[0].split('_')[1]) if '_' in x[0] else 0):
+        try:
+            page_num = int(page_key.split('_')[1])
+        except (IndexError, ValueError):
+            continue
 
         try:
             report_row = report_schema(

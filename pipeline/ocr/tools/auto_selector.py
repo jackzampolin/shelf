@@ -59,6 +59,6 @@ def auto_select_pages(
             progress.update(idx + 1, suffix=f"{selected_count}/{len(page_numbers)}")
 
         except Exception as e:
-            logger.page_error("Failed to auto-select", page=page_num, error=str(e))
+            logger.error("Failed to auto-select", page=page_num, error=str(e))
 
     progress.finish(f"   ✓ Auto-selected {selected_count} pages")

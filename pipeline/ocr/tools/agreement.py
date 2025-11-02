@@ -54,7 +54,7 @@ def calculate_agreements(
             progress.update(idx + 1, suffix=f"{calculated}/{len(page_numbers)}")
 
         except Exception as e:
-            logger.page_error("Failed to calculate agreement", page=page_num, error=str(e))
+            logger.error("Failed to calculate agreement", page=page_num, error=str(e))
 
     progress.finish(f"   ✓ Calculated agreement for {calculated} pages")
 

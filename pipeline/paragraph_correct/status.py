@@ -2,8 +2,6 @@ from enum import Enum
 from typing import Dict, Any
 
 from infra.storage.book_storage import BookStorage
-from infra.storage.checkpoint import CheckpointManager
-from infra.pipeline.logger import PipelineLogger
 
 from .storage import ParagraphCorrectStageStorage
 
@@ -21,11 +19,9 @@ class ParagraphCorrectStatusTracker:
         self.stage_name = stage_name
         self.storage = ParagraphCorrectStageStorage(stage_name=stage_name)
 
-    def get_progress(
+    def get_status(
         self,
         storage: BookStorage,
-        checkpoint: CheckpointManager,
-        logger: PipelineLogger
     ) -> Dict[str, Any]:
 
         metadata = storage.load_metadata()
@@ -50,22 +46,17 @@ class ParagraphCorrectStatusTracker:
         else:
             status = ParagraphCorrectStatus.COMPLETED.value
 
-        checkpoint_state = checkpoint.get_status()
-        page_metrics = checkpoint_state.get('page_metrics', {})
+        stage_storage = storage.stage(self.stage_name)
 
-        total_cost = 0.0
-        total_tokens = 0
+        total_cost = stage_storage.metrics_manager.get_total_cost()
+        total_time = stage_storage.metrics_manager.get_total_time()
+        total_tokens = stage_storage.metrics_manager.get_total_tokens()
+
+        all_metrics = stage_storage.metrics_manager.get_all()
         total_corrections = 0
         confidences = []
 
-        for metrics in page_metrics.values():
-            total_cost += metrics.get('cost_usd', 0.0)
-
-            usage = metrics.get('usage', {})
-            if usage:
-                total_tokens += usage.get('completion_tokens', 0)
-                total_tokens += usage.get('prompt_tokens', 0)
-
+        for metrics in all_metrics.values():
             total_corrections += metrics.get('total_corrections', 0)
 
             conf = metrics.get('avg_confidence')
@@ -73,8 +64,6 @@ class ParagraphCorrectStatusTracker:
                 confidences.append(conf)
 
         avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
-
-        total_time = checkpoint_state.get('elapsed_time', 0.0)
 
         return {
             "status": status,

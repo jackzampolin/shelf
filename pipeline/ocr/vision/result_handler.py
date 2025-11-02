@@ -22,7 +22,7 @@ def create_vision_handler(
     def on_result(result: LLMResult):
         if not result.success:
             page_num = result.request.metadata.get("page_num", "unknown")
-            logger.page_error("Vision selection failed", page=page_num, error=result.error_message)
+            logger.error("Vision selection failed", page=page_num, error=result.error_message)
             return
 
         try:
@@ -69,6 +69,6 @@ def create_vision_handler(
 
         except Exception as e:
             page_num = result.request.metadata.get("page_num", "unknown")
-            logger.page_error("Failed to process vision result", page=page_num, error=str(e))
+            logger.error("Failed to process vision result", page=page_num, error=str(e))
 
     return on_result

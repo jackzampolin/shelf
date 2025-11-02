@@ -13,7 +13,6 @@ class ParagraphCorrectStageStorage:
     def list_completed_pages(self, storage: BookStorage) -> List[int]:
         stage_storage = storage.stage(self.stage_name)
         output_pages = stage_storage.list_output_pages(extension='json')
-        # Extract page numbers from paths: page_0001.json -> 1
         page_nums = [int(p.stem.split('_')[1]) for p in output_pages]
         return sorted(page_nums)
 

@@ -116,8 +116,7 @@ class MergeStage(BaseStage):
         if total_pages == 0:
             raise ValueError("total_pages not set in metadata")
 
-        logger.start_stage(total_pages=total_pages, max_workers=self.max_workers)
-        logger.info(f"Merge Stage - Three-way merge (OCR + Correction + Label, $0 cost)")
+        logger.info("Starting merge stage", total_pages=total_pages, max_workers=self.max_workers)
 
         # Get pages to process
         pages = checkpoint.get_remaining_pages(total_pages=total_pages, resume=True)
