@@ -207,6 +207,7 @@ def cmd_run_stage(args):
     from pipeline.ocr import OCRStage
     from pipeline.paragraph_correct import ParagraphCorrectStage
     from pipeline.label_pages import LabelPagesStage
+    from pipeline.extract_toc import ExtractTocStage
 
     library = Library(storage_root=Config.book_storage_root)
     scan = library.get_scan_info(args.scan_id)
@@ -228,7 +229,8 @@ def cmd_run_stage(args):
             model=args.model,
             max_workers=args.workers if args.workers else 30,
             max_retries=3
-        )
+        ),
+        'extract-toc': ExtractTocStage(model=args.model)
     }
 
     if args.stage not in stage_map:
@@ -256,6 +258,7 @@ def cmd_process(args):
     from pipeline.ocr import OCRStage
     from pipeline.paragraph_correct import ParagraphCorrectStage
     from pipeline.label_pages import LabelPagesStage
+    from pipeline.extract_toc import ExtractTocStage
 
     library = Library(storage_root=Config.book_storage_root)
     scan = library.get_scan_info(args.scan_id)
@@ -277,7 +280,8 @@ def cmd_process(args):
             model=args.model,
             max_workers=args.workers if args.workers else 30,
             max_retries=3
-        )
+        ),
+        ExtractTocStage(model=args.model)
     ]
 
     if args.clean:
