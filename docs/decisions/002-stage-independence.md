@@ -25,49 +25,21 @@ Dependencies flow through the filesystem, not through Python method calls.
 
 ## Why Independence Enables Rapid Iteration
 
-**The learning loop:**
-1. Try new approach in one stage
-2. Run just that stage
-3. Inspect output files
-4. Iterate
+**The learning loop:** Try approach → Run stage → Inspect files → Iterate
 
-If stages were coupled, this loop breaks. You'd need to:
-- Understand other stage internals
-- Worry about breaking other stages
-- Run entire pipeline to test
-- Debug across multiple stages
+If coupled: must understand all stages, run entire pipeline, debug across boundaries.
 
-**Independence enables:**
-- Change one stage without touching others
-- Test stages in isolation
-- Run stages independently during development
-- Debug by inspecting files between stages
+If independent: change one, test alone, inspect outputs, iterate fast.
 
-This is why we could evolve from initial experiments to current architecture - **loose coupling enabled learning**.
+**Loose coupling enabled learning** - we evolved from simple to current architecture.
 
 ## The Four "-ables"
 
-Stage independence makes each stage:
-
-**1. Testable:**
-- Mock filesystem, test stage logic
-- No need to instantiate other stages
-- Fast unit tests (no pipeline execution)
-
-**2. Runnable:**
-- `shelf.py book <id> run-stage ocr`
-- Run one stage during development
-- No need to run full pipeline
-
-**3. Attributable:**
-- Each stage records its own metrics
-- Cost/time tracked per stage
-- Clear ownership of outputs
-
-**4. Debuggable:**
-- Files between stages are inspection points
-- Standard tools work (`cat`, `jq`, image viewers)
-- Can see exactly what each stage produced
+Independence makes stages:
+1. **Testable:** Mock filesystem, no other stage instantiation
+2. **Runnable:** `shelf.py book <id> run-stage ocr` works alone
+3. **Attributable:** Each stage owns its metrics/logs/outputs
+4. **Debuggable:** Files = inspection points, standard tools work
 
 ## Unix Philosophy Applied to Python
 
@@ -134,67 +106,18 @@ This pattern ties to **ADR 001 (Ground Truth from Disk)**:
 
 ## Consequences
 
-**Enables rapid iteration:**
-- Changed OCR from single-PSM → multi-PSM → vision-selection
-- Removed entire stages (merged, build_structure)
-- Added new stages (extract-toc)
-- Never broke downstream stages
+**Enabled evolution:** Single-PSM → multi-PSM → vision-selection OCR. Removed stages (merged, build_structure). Added stages (extract-toc). Never broke downstream.
 
-**Enables granular tracking:**
-- Each stage has own metrics, logs, reports
-- Can see cost/time breakdown per stage
-- Clear attribution of errors
-
-**Enables standards:**
-- Each stage has own schemas (input/output contracts)
-- Clear boundaries enforce discipline
-- BaseStage interface provides consistency
-
-**Enables debugging:**
-- Inspect files between stages
-- Run single stage repeatedly
-- Compare outputs across iterations
-- Use standard tools (no custom clients)
-
-## What We Learned Through Iteration
-
-The stage abstraction **emerged**, it wasn't designed upfront:
-- Started simpler (fewer stages)
-- Split stages when boundaries became clear
-- Merged stages when separation added no value
-- Removed stages when approach changed
-
-**Independence made this evolution possible.** With tight coupling, we'd have ossified around the first design and missed better architectures.
+**Enables:** Granular tracking (metrics/logs/reports per stage), clear standards (schemas, BaseStage interface), easy debugging (inspect files, standard tools).
 
 ## Alternatives Considered
 
-**Shared state objects passed between stages:**
-- Problem: All stages must run together
-- Problem: Can't test in isolation
-- Problem: Changes cascade across stages
-- Rejected: Prevents rapid iteration
+- **Shared state objects:** Can't test/run in isolation. Rejected.
+- **Direct stage imports:** (`ocr = OCRStage(); ocr.process()`) Creates coupling. Rejected.
+- **Dependency injection:** Over-engineering. Rejected (YAGNI).
 
-**Direct imports of other stage classes:**
-```python
-from pipeline.ocr import OCRStage  # DON'T DO THIS
-ocr = OCRStage()
-result = ocr.process(page)  # Tight coupling
-```
-- Problem: Stages become interdependent
-- Problem: Changes break imports
-- Problem: Can't evolve independently
-- Rejected: Creates coupling we want to avoid
+## Core Principle
 
-**Dependency injection container:**
-- Problem: Adds complexity for no benefit
-- Problem: Over-engineering at this scale
-- Rejected: YAGNI (You Ain't Gonna Need It)
+Independence enables the learning loop: Experiment → Observe → Iterate → Improve.
 
-## The Real Benefit
-
-Independence enables the **learning loop**:
-- Experiment → Observe → Iterate → Improve
-
-Fast iteration → More learning → Better architecture
-
-**The stages you see today emerged through this process.** The independence property is what made that emergence possible.
+**The stages you see today emerged through iteration.** Tight coupling would have ossified the first design.

@@ -1,4 +1,4 @@
-# 1. Ground Truth from Disk (Not Metrics State)
+# 1. Think Data First (Ground Truth from Disk)
 
 **Date:** 2025-10-30
 
