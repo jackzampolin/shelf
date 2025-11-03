@@ -27,8 +27,18 @@ def cmd_batch(args):
     books_to_process = []
     skipped_count = 0
 
-    if args.force:
-        print("Phase 1: Checking status and cleaning...")
+    if args.delete_outputs:
+        print(f"⚠️  WARNING: --delete-outputs will DELETE all existing outputs for {len(scan_ids)} books")
+        if not args.yes:
+            try:
+                response = input("   Are you sure? (yes/no): ").strip().lower()
+                if response not in ['yes', 'y']:
+                    print("Cancelled.")
+                    sys.exit(0)
+            except (EOFError, KeyboardInterrupt):
+                print("\nCancelled.")
+                sys.exit(0)
+        print("\nPhase 1: Checking status and cleaning...")
     else:
         print("Phase 1: Checking status (resume mode)...")
 
@@ -36,7 +46,7 @@ def cmd_batch(args):
         try:
             storage = library.get_book_storage(scan_id)
 
-            if args.force:
+            if args.delete_outputs:
                 print(f"  [{idx}/{len(scan_ids)}] 🧹 {scan_id}: Cleaning {args.stage} stage...")
                 clean_stage_directory(storage, args.stage)
             else:
@@ -59,14 +69,14 @@ def cmd_batch(args):
         except KeyboardInterrupt:
             print(f"\n\n⚠️  Interrupted during Phase 1")
             print(f"   Queued: {len(books_to_process)}, Skipped: {skipped_count}, Remaining: {len(scan_ids) - idx}")
-            if args.force:
+            if args.delete_outputs:
                 print(f"   Note: {len(books_to_process)} books were cleaned and need processing")
             sys.exit(0)
         except Exception as e:
             print(f"  [{idx}/{len(scan_ids)}] ❌ {scan_id}: Error during Phase 1: {e}")
             continue
 
-    if args.force:
+    if args.delete_outputs:
         print(f"\nPhase 1 complete: Cleaned {len(books_to_process)} books, skipped {skipped_count}")
     else:
         print(f"\nPhase 1 complete: {len(books_to_process)} books to process, {skipped_count} skipped")
@@ -105,7 +115,7 @@ def cmd_batch(args):
         except KeyboardInterrupt:
             print(f"\n\n⚠️  Interrupted by user. Stopping...")
             print(f"   Processed: {processed_count}, Skipped: {skipped_count}, Remaining: {len(books_to_process) - idx}")
-            print(f"   Note: Run without --force to continue from where you left off")
+            print(f"   Note: Run without --delete-outputs to continue from where you left off")
             sys.exit(0)
         except Exception as e:
             print(f"  ❌ Error processing {scan_id}: {e}")
@@ -124,5 +134,6 @@ def setup_batch_parser(subparsers):
     batch_parser.add_argument('--model', help='Vision model (for correction/label stages)')
     batch_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
     batch_parser.add_argument('--reshuffle', action='store_true', help='Create new random order')
-    batch_parser.add_argument('--force', action='store_true', help='Regenerate even if completed')
+    batch_parser.add_argument('--delete-outputs', action='store_true', help='DELETE all existing outputs before processing (WARNING: irreversible)')
+    batch_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompt')
     batch_parser.set_defaults(func=cmd_batch)

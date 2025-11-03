@@ -342,20 +342,20 @@ def setup_book_parser(subparsers):
     report_parser.add_argument('--stage', required=True, choices=REPORT_STAGES, help='Stage to show report for')
     report_parser.add_argument('--limit', type=int, help='Number of rows to show (default: 20)')
     report_parser.add_argument('--all', '-a', action='store_true', help='Show all rows')
-    report_parser.add_argument('--filter', help='Filter rows (e.g., "total_corrections>0")')
+    report_parser.add_argument('--filter', help='Filter rows (e.g., "page_num=5" or "total_corrections>10"). Operators: = > < >= <=')
     report_parser.set_defaults(func=cmd_report)
 
     run_stage_parser = book_subparsers.add_parser('run-stage', help='Run a single pipeline stage')
     run_stage_parser.add_argument('stage', choices=CORE_STAGES, help='Stage to run')
     run_stage_parser.add_argument('--model', help='Vision model (for correction/label stages)')
     run_stage_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
-    run_stage_parser.add_argument('--clean', action='store_true', help='Clean stage before processing')
+    run_stage_parser.add_argument('--clean', action='store_true', help='DELETE stage outputs before processing (WARNING: irreversible)')
     run_stage_parser.set_defaults(func=cmd_run_stage)
 
     process_parser = book_subparsers.add_parser('process', help='Run all pipeline stages')
     process_parser.add_argument('--model', help='Vision model (for correction/label stages)')
     process_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
-    process_parser.add_argument('--clean', action='store_true', help='Clean all stages before processing')
+    process_parser.add_argument('--clean', action='store_true', help='DELETE all stage outputs before processing (WARNING: irreversible)')
     process_parser.set_defaults(func=cmd_process)
 
     clean_parser = book_subparsers.add_parser('clean', help='Clean stage outputs')
