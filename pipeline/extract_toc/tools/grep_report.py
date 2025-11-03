@@ -158,7 +158,7 @@ def generate_grep_report(storage: BookStorage, max_pages: int = 50) -> Dict:
             "total_pages_searched": 50
         }
     """
-    para_correct_stage = storage.stage("paragraph_correct")
+    para_correct_stage = storage.stage("paragraph-correct")
     metadata = storage.load_metadata()
     total_pages = metadata.get("total_pages", 0)
 

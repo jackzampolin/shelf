@@ -121,18 +121,22 @@ The grep report shows keyword matches across the book:
 - If found: Check these pages first
 - Usually accurate (90%+ precision)
 
+**structure**: Chapter/Part clustering (STRONG signal in front matter!)
+- If many Chapter/Part mentions cluster on 1-2 pages in pages 1-30: LIKELY THE TOC
+- Example: page 6 shows [Chapter 1, Chapter 2, Chapter 3, Part I, Part II] → ToC page
+- Ignore structure beyond page 30 (those are actual chapter starts, not ToC)
+- PATTERN: Dense clustering = ToC listing chapters; Sparse mentions = body text
+
 **front_matter**: Pages with preface/introduction/etc.
 - Use for context: ToC often appears before/after these
-- If no toc_candidates: Check pages around front_matter
-
-**structure**: Chapter/Part mentions
-- Helps validate ToC completeness later
-- Don't load these now (too many false positives)
+- If no toc_candidates and no structure clustering: Check pages around front_matter
 
 **Typical patterns:**
-- toc_candidates=[5,6], front_matter={preface:[9,10]} → Load pages 5-6
-- toc_candidates=[], front_matter={preface:[3,4]} → Load pages 1-5
-- toc_candidates=[], front_matter={} → Sequential scan pages 1-5, 6-10
+- toc_candidates=[6], structure={chapter:[6]} → Load page 6 (very high confidence)
+- toc_candidates=[], structure={chapter:[5,6]} → Load pages 5-6 (clustering signal)
+- toc_candidates=[], structure={chapter:[5,12,28,40]} → Load page 5 only (cluster at 5, rest are body)
+- toc_candidates=[], front_matter={preface:[3,4]}, structure={} → Load pages 1-5
+- toc_candidates=[], front_matter={}, structure={} → Sequential scan pages 1-5, 6-10
 </grep_report_interpretation>
 
 <cost_awareness>

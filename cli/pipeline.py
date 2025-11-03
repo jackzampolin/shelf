@@ -3,13 +3,10 @@ import sys
 from infra.storage.library import Library
 from infra.pipeline.runner import run_stage, run_pipeline
 from infra.config import Config
-from cli.constants import CORE_STAGES
 
 
 def cmd_process(args):
-    from pipeline.ocr import OCRStage
-    from pipeline.paragraph_correct import ParagraphCorrectStage
-    from pipeline.label_pages import LabelPagesStage
+    from cli.constants import get_stage_map, STAGE_NAMES
 
     library = Library(storage_root=Config.book_storage_root)
     scan = library.get_scan_info(args.scan_id)
@@ -25,21 +22,13 @@ def cmd_process(args):
     elif args.stages:
         stages_to_run = [s.strip() for s in args.stages.split(',')]
     else:
-        stages_to_run = CORE_STAGES
+        stages_to_run = STAGE_NAMES
 
-    stage_map = {
-        'ocr': OCRStage(max_workers=args.workers if args.workers else None),
-        'paragraph-correct': ParagraphCorrectStage(
-            model=args.model,
-            max_workers=args.workers if args.workers else 30,
-            max_retries=3
-        ),
-        'label-pages': LabelPagesStage(
-            model=args.model,
-            max_workers=args.workers if args.workers else 30,
-            max_retries=3
-        )
-    }
+    stage_map = get_stage_map(
+        model=args.model,
+        workers=args.workers,
+        max_retries=3
+    )
 
     for stage_name in stages_to_run:
         if stage_name not in stage_map:

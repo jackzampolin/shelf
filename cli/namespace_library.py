@@ -7,7 +7,7 @@ from pathlib import Path
 from infra.storage.library import Library
 from infra.config import Config
 from cli.helpers import get_stage_status
-from cli.constants import CORE_STAGES
+from cli.constants import STAGE_NAMES, STAGE_ABBRS
 
 
 def cmd_add(args):
@@ -63,7 +63,7 @@ def cmd_list(args):
 
             stage_status = {}
             total_cost = 0.0
-            for stage_name in CORE_STAGES:
+            for stage_name in STAGE_NAMES:
                 status = get_stage_status(storage, stage_name)
                 if status:
                     stage_status[stage_name] = status.get('status', 'unknown')
@@ -98,7 +98,7 @@ def cmd_list(args):
             stage_symbols = []
             total_cost = 0.0
 
-            for stage_name in CORE_STAGES:
+            for stage_name in STAGE_NAMES:
                 status = get_stage_status(storage, stage_name)
 
                 if status is None:
@@ -121,7 +121,13 @@ def cmd_list(args):
                 else:
                     stage_symbols.append('⏳')
 
-            status_str = f"OCR:{stage_symbols[0]} PAR:{stage_symbols[1]} LAB:{stage_symbols[2]} TOC:{stage_symbols[3]}"
+            # Build status string dynamically from STAGE_ABBRS
+            status_parts = []
+            for i, stage_name in enumerate(STAGE_NAMES):
+                abbr = STAGE_ABBRS[stage_name]
+                symbol = stage_symbols[i] if i < len(stage_symbols) else '?'
+                status_parts.append(f"{abbr}:{symbol}")
+            status_str = " ".join(status_parts)
             cost_str = f"${total_cost:.4f}" if total_cost > 0 else "-"
         except Exception:
             status_str = "ERROR"

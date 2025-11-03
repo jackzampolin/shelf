@@ -33,7 +33,7 @@ class TocFinderAgent:
         self.scan_id = storage.scan_id
         self.total_pages = self.metadata.get('total_pages', 0)
 
-        log_dir = storage.stage('extract_toc').output_dir / 'logs' / 'toc_finder'
+        log_dir = storage.stage('extract-toc').output_dir / 'logs' / 'toc_finder'
         self.agent_client = AgentClient(
             max_iterations=max_iterations,
             log_dir=log_dir,

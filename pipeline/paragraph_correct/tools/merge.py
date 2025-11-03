@@ -13,11 +13,14 @@ def get_merged_page_text(storage: BookStorage, page_num: int) -> str:
     from pipeline.ocr.schemas import OCRPageOutput
     ocr_page = OCRPageOutput(**ocr_page_dict)
 
-    para_correct_stage = storage.stage("paragraph_correct")
-    para_correct_page = para_correct_stage.load_page(page_num)
+    para_correct_stage = storage.stage("paragraph-correct")
+    para_correct_page_dict = para_correct_stage.load_page(page_num)
 
-    if not para_correct_page:
+    if not para_correct_page_dict:
         return ocr_page.get_all_text()
+
+    from pipeline.paragraph_correct.vision.schemas import ParagraphCorrectPageOutput
+    para_correct_page = ParagraphCorrectPageOutput(**para_correct_page_dict)
 
     correction_map = {}
     for block_correction in para_correct_page.blocks:

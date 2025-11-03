@@ -24,6 +24,7 @@ def cmd_info(args):
 
     stage_labels = {
         'ocr': 'OCR',
+        'chandra-ocr': 'Chandra-OCR',
         'paragraph-correct': 'Paragraph-Correct',
         'label-pages': 'Label-Pages',
         'extract-toc': 'Extract-ToC',
@@ -54,6 +55,7 @@ def cmd_info(args):
 
         stage_labels = {
             'ocr': 'OCR',
+            'chandra-ocr': 'Chandra-OCR',
             'paragraph-correct': 'Paragraph-Correct',
             'label-pages': 'Label-Pages',
             'extract-toc': 'Extract-ToC',
@@ -92,6 +94,7 @@ def cmd_info(args):
 
     stage_labels = {
         'ocr': 'OCR',
+        'chandra-ocr': 'Chandra-OCR',
         'paragraph-correct': 'Paragraph-Correct',
         'label-pages': 'Label-Pages',
         'extract-toc': 'Extract-ToC'
@@ -204,10 +207,7 @@ def cmd_report(args):
 
 
 def cmd_run_stage(args):
-    from pipeline.ocr import OCRStage
-    from pipeline.paragraph_correct import ParagraphCorrectStage
-    from pipeline.label_pages import LabelPagesStage
-    from pipeline.extract_toc import ExtractTocStage
+    from cli.constants import get_stage_map
 
     library = Library(storage_root=Config.book_storage_root)
     scan = library.get_scan_info(args.scan_id)
@@ -218,20 +218,11 @@ def cmd_run_stage(args):
 
     storage = library.get_book_storage(args.scan_id)
 
-    stage_map = {
-        'ocr': OCRStage(max_workers=args.workers if args.workers else None),
-        'paragraph-correct': ParagraphCorrectStage(
-            model=args.model,
-            max_workers=args.workers if args.workers else 30,
-            max_retries=3
-        ),
-        'label-pages': LabelPagesStage(
-            model=args.model,
-            max_workers=args.workers if args.workers else 30,
-            max_retries=3
-        ),
-        'extract-toc': ExtractTocStage(model=args.model)
-    }
+    stage_map = get_stage_map(
+        model=args.model,
+        workers=args.workers,
+        max_retries=3
+    )
 
     if args.stage not in stage_map:
         print(f"❌ Unknown stage: {args.stage}")
