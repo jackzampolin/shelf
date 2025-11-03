@@ -19,28 +19,80 @@ Safe operations (can run freely):
 <git_workflow>
 ## Git Workflow
 
-**Work progression:**
+**Current practice (solo + AI pair programming):**
+```
+Code → Test → Commit with detailed message → Push to main
+```
+
+**Future collaborative workflow:**
 ```
 Issue → Branch → Code → Test → Doc → Commit → PR → Merge
 ```
 
-**Branching:**
+**When to branch:**
+- Major refactoring (>1000 lines changed)
+- Experimental features that might be abandoned
+- Breaking changes requiring review
+- When you want to compare approaches (PR to self)
+
+**When to commit directly to main:**
+- Bug fixes
+- Documentation updates
+- Small refactorings
+- Incremental feature development (solo work)
+
+**Commit message structure:**
 ```bash
-git checkout main && git pull
-git checkout -b <type>/<description>
-# Types: feature/, fix/, docs/, refactor/
+<type>: <imperative summary (50 chars)>
+
+<markdown-formatted body>
+
+**Problem:** What issue was being solved
+**Solution:** How it was solved
+**Changes:** File-level summary with bullet points
+**Impact:** User-facing or architectural effects
+**Why these changes:** Decision rationale
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Commits:**
-```bash
-git commit -m "<type>: <present-tense-description>"
-# Types: feat, fix, docs, refactor, test, chore
-```
+**Commit types:**
+- `feat`: New feature
+- `fix`: Bug fix
+- `refactor`: Code restructuring (no behavior change)
+- `docs`: Documentation changes
+- `chore`: Maintenance tasks (deps, config)
+- `test`: Test additions/changes
+- `debug`: Debugging commits (use sparingly)
+- `wip`: Work in progress (use sparingly)
 
-**PRs:**
-- Link issue: "Fixes #123"
-- Confirm tests pass
-- Confirm docs updated
+**Commit atomicity:**
+- One **logical** change per commit (not necessarily one file)
+- System-wide refactorings can touch many files in one commit
+- Each commit should be independently understandable
+- Large commits OK if they represent ONE architectural decision
+
+**Examples:**
+- ✅ `refactor: replace CheckpointManager with MetricsManager` (30 files)
+- ✅ `fix: correct import path for llm_result_to_metrics` (1 file)
+- ❌ `update: multiple unrelated things` (any file count)
+
+**AI collaboration attribution (REQUIRED):**
+All commits co-authored with Claude Code must include:
+```
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+This provides attribution and tracks AI-assisted development.
+
+**History management:**
+- Prefer linear history (rebase over merge)
+- Preserve work history (don't squash unless duplicative)
+- Informal commits (`wip:`, debugging commits) OK if they provide context
+- NEVER force-push to main
 </git_workflow>
 
 <stage_implementation>
@@ -213,9 +265,11 @@ uv run python -m pytest tests/
 - Check costs: `shelf.py book <scan-id> info`
 
 **2. GIT WORKFLOW**
-- One source of truth: main branch
-- Issue → Branch → Code → Test → Doc → Commit → PR
-- Commit format: `<type>: <description>` (feat/fix/docs/refactor/test/chore)
+- Direct to main for solo work; branch for major refactors
+- Commit format: `<type>: <imperative summary>` + markdown body
+- One logical change per commit (may touch many files)
+- ALWAYS include AI collaboration attribution
+- Detailed commit messages with **Problem/Solution/Impact** sections
 
 **3. STAGE IMPLEMENTATION**
 - **OCR is the reference** - read `pipeline/ocr/` when stuck
