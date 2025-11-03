@@ -5,24 +5,15 @@ from infra.pipeline.logger import PipelineLogger
 
 def clean_stage_directory(storage: BookStorage, stage_name: str):
     """
-    Remove all stage outputs while preserving .gitkeep files.
-
-    Recursively deletes all files and subdirectories in the stage output directory
-    except for .gitkeep files (which maintain empty directories in git).
-    Also resets the stage's metrics state.
+    Completely remove stage output directory and reset metrics.
 
     Warning: This operation cannot be undone.
     """
     stage_storage = storage.stage(stage_name)
 
     if stage_storage.output_dir.exists():
-        for item in stage_storage.output_dir.iterdir():
-            if item.name == '.gitkeep':
-                continue
-            if item.is_file():
-                item.unlink()
-            elif item.is_dir():
-                shutil.rmtree(item)
+        shutil.rmtree(stage_storage.output_dir)
+        stage_storage.output_dir.mkdir(parents=True)
 
     stage_storage.metrics_manager.reset()
 
