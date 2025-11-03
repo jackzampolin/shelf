@@ -153,6 +153,8 @@ def sweep_reports(library, args):
             stage_storage = storage.stage(stage_name)
 
             if stage_name == 'ocr':
+                # OCR stage uses multiple PSM (Page Segmentation Mode) configurations.
+                # Only regenerate report if at least one PSM checkpoint exists.
                 ocr_dir = stage_storage.output_dir
                 has_psm_data = False
                 for psm in [3, 4, 6]:

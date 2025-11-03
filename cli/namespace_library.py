@@ -121,7 +121,6 @@ def cmd_list(args):
                 else:
                     stage_symbols.append('⏳')
 
-            # Build status string dynamically from STAGE_ABBRS
             status_parts = []
             for i, stage_name in enumerate(STAGE_NAMES):
                 abbr = STAGE_ABBRS[stage_name]

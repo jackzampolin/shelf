@@ -4,6 +4,15 @@ from infra.pipeline.logger import PipelineLogger
 
 
 def clean_stage_directory(storage: BookStorage, stage_name: str):
+    """
+    Remove all stage outputs while preserving .gitkeep files.
+
+    Recursively deletes all files and subdirectories in the stage output directory
+    except for .gitkeep files (which maintain empty directories in git).
+    Also resets the stage's metrics state.
+
+    Warning: This operation cannot be undone.
+    """
     stage_storage = storage.stage(stage_name)
 
     if stage_storage.output_dir.exists():
@@ -19,11 +28,13 @@ def clean_stage_directory(storage: BookStorage, stage_name: str):
 
 
 def get_stage_instance(stage_name: str):
-    """Get stage instance for given stage name."""
     try:
         if stage_name == 'ocr':
             from pipeline.ocr import OCRStage
             return OCRStage()
+        elif stage_name == 'chandra-ocr':
+            from pipeline.chandra_ocr import ChandraOCRStage
+            return ChandraOCRStage()
         elif stage_name == 'paragraph-correct':
             from pipeline.paragraph_correct import ParagraphCorrectStage
             return ParagraphCorrectStage()
@@ -39,7 +50,6 @@ def get_stage_instance(stage_name: str):
 
 
 def get_stage_status(storage: BookStorage, stage_name: str):
-    """Get status dict for given stage."""
     stage = get_stage_instance(stage_name)
     if stage is None:
         return None
@@ -52,7 +62,6 @@ def get_stage_status(storage: BookStorage, stage_name: str):
 
 
 def get_stage_and_status(storage: BookStorage, stage_name: str):
-    """Get both stage instance and status dict for given stage."""
     stage = get_stage_instance(stage_name)
     if stage is None:
         return None, None
