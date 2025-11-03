@@ -1,0 +1,31 @@
+{#
+Progress bar component
+
+Parameters:
+- progress: float (0-100) - Progress percentage
+- show_text: bool (default: true) - Show percentage text
+- color: str (optional) - Override color (hex or CSS var)
+#}
+
+{% set show_text = show_text if show_text is defined else true %}
+
+{% if progress >= 80 %}
+    {% set bar_color = '#2ecc71' %}
+{% elif progress >= 50 %}
+    {% set bar_color = '#3498db' %}
+{% elif progress >= 25 %}
+    {% set bar_color = '#f39c12' %}
+{% else %}
+    {% set bar_color = '#e74c3c' %}
+{% endif %}
+
+{% if color is defined %}
+    {% set bar_color = color %}
+{% endif %}
+
+<div class="progress-bar">
+    <div class="progress-fill" style="width: {{ progress }}%; background: {{ bar_color }};"></div>
+    {% if show_text %}
+    <span class="progress-text">{{ progress }}%</span>
+    {% endif %}
+</div>

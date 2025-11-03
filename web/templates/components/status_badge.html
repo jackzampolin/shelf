@@ -1,0 +1,54 @@
+{#
+Status badge component
+
+Shows stage status as colored badge with time + cost metrics.
+
+Parameters:
+- status: str - Status type (complete, in_progress, not_started)
+- cost_usd: float - Stage cost in USD
+- runtime_seconds: float - Stage runtime in seconds
+- link: str (optional) - Make badge clickable
+#}
+
+{# Format time helper #}
+{% if runtime_seconds is defined and runtime_seconds > 0 %}
+    {% if runtime_seconds < 60 %}
+        {% set time_str = "%.1fs"|format(runtime_seconds) %}
+    {% elif runtime_seconds < 3600 %}
+        {% set time_str = "%.1fm"|format(runtime_seconds / 60) %}
+    {% else %}
+        {% set time_str = "%.1fh"|format(runtime_seconds / 3600) %}
+    {% endif %}
+{% else %}
+    {% set time_str = "-" %}
+{% endif %}
+
+{# Format cost helper #}
+{% if cost_usd is defined and cost_usd > 0 %}
+    {% set cost_str = "$%.2f"|format(cost_usd) %}
+{% else %}
+    {% set cost_str = "-" %}
+{% endif %}
+
+{% set badge_content %}
+    <span class="status-badge status-{{ status }}">
+        <span class="badge-icon">
+            {% if status == 'completed' %}✓
+            {% elif status == 'in_progress' %}⚙
+            {% else %}○{% endif %}
+        </span>
+        <span class="badge-metrics">
+            <span class="badge-time">{{ time_str }}</span>
+            <span class="badge-separator">|</span>
+            <span class="badge-cost">{{ cost_str }}</span>
+        </span>
+    </span>
+{% endset %}
+
+{% if link is defined %}
+<a href="{{ link }}" class="status-link">
+    {{ badge_content }}
+</a>
+{% else %}
+    {{ badge_content }}
+{% endif %}

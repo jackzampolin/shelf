@@ -1,0 +1,80 @@
+/* Scanshelf Web - Library List Page */
+
+.library-header {
+    margin-bottom: 30px;
+}
+
+.library-header h2 {
+    margin-bottom: 10px;
+    color: var(--dark);
+}
+
+.library-stats {
+    display: flex;
+    gap: 20px;
+    margin-top: 15px;
+    font-size: 0.9em;
+    color: var(--text-secondary);
+}
+
+.stat-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Status Table */
+.status-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.status-table thead {
+    background: var(--dark);
+    color: white;
+}
+
+.status-table th {
+    padding: 15px 12px;
+    text-align: left;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.status-table td {
+    padding: 12px;
+    border-bottom: 1px solid var(--light);
+}
+
+.status-table tbody tr:hover {
+    background: #f8f9fa;
+}
+
+/* Book Name */
+.book-name {
+    font-weight: 500;
+    color: var(--dark);
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+/* Progress Cell */
+.progress-cell {
+    min-width: 150px;
+}
+
+/* Status Link */
+.status-link {
+    text-decoration: none;
+}
+
+.status-link:hover .status-badge {
+    transform: scale(1.05);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}

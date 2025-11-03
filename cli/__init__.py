@@ -2,6 +2,7 @@ import argparse
 from cli.namespace_library import setup_library_parser
 from cli.namespace_book import setup_book_parser
 from cli.namespace_batch import setup_batch_parser
+from cli.namespace_serve import setup_serve_parser
 
 
 def create_parser():
@@ -35,6 +36,10 @@ Examples:
   shelf batch label-pages
   shelf batch label-pages --reshuffle
   shelf batch paragraph-correct --force
+
+  # Web frontend
+  shelf serve
+  shelf serve --port 8080 --host 0.0.0.0
 """
     )
 
@@ -44,6 +49,7 @@ Examples:
     setup_library_parser(subparsers)
     setup_book_parser(subparsers)
     setup_batch_parser(subparsers)
+    setup_serve_parser(subparsers)
 
     return parser
 

@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}{{ scan_id }} - Extract ToC{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/stage.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container-wide">
+    <!-- Header -->
+    <div class="stage-header">
+        <div class="breadcrumb">
+            <a href="/">← Library</a>
+            <span class="separator">/</span>
+            <span>{{ scan_id }}</span>
+            <span class="separator">/</span>
+            <span class="current">extract-toc</span>
+        </div>
+
+        <h2>📑 Table of Contents</h2>
+
+        <div class="book-info">
+            <strong>{{ metadata.title }}</strong>
+            {% if metadata.author %}
+                <span class="author">by {{ metadata.author }}</span>
+            {% endif %}
+            {% if metadata.year %}
+                <span class="year">({{ metadata.year }})</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Main Content: Side-by-side -->
+    <div class="split-view">
+        <!-- Left: Source Page Images -->
+        <div class="split-panel source-panel">
+            <h3>Source Pages ({{ page_numbers|length }} page{% if page_numbers|length != 1 %}s{% endif %})</h3>
+
+            {% if page_numbers %}
+                <div class="page-images">
+                    {% for page_num in page_numbers %}
+                    <div class="page-image-container">
+                        <div class="page-number-label">Page {{ page_num }}</div>
+                        <img
+                            src="{{ url_for('stage.serve_source_image', scan_id=scan_id, page_num=page_num) }}"
+                            alt="Page {{ page_num }}"
+                            class="page-image"
+                            loading="lazy"
+                        >
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <p>No TOC pages found.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Right: Rendered TOC -->
+        <div class="split-panel toc-panel">
+            <h3>Extracted Structure</h3>
+
+            {% if toc_data.toc_entries %}
+                <!-- Metadata Summary -->
+                {% if toc_data.toc_metadata %}
+                <div class="toc-metadata">
+                    <div class="metadata-item">
+                        <strong>Chapters:</strong> {{ toc_data.toc_metadata.total_chapters }}
+                    </div>
+                    <div class="metadata-item">
+                        <strong>Sections:</strong> {{ toc_data.toc_metadata.total_sections }}
+                    </div>
+                    <div class="metadata-item">
+                        <strong>Confidence:</strong>
+                        <span class="confidence-value">
+                            {{ "%.0f"|format(toc_data.toc_metadata.parsing_confidence * 100) }}%
+                        </span>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- TOC Entries -->
+                <div class="toc-entries">
+                    {% for entry in toc_data.toc_entries %}
+                    <div class="toc-entry level-{{ entry.level }}">
+                        <div class="entry-content">
+                            <span class="level-badge">L{{ entry.level }}</span>
+                            {% if entry.chapter_number %}
+                                <span class="chapter-number">{{ entry.chapter_number }}.</span>
+                            {% endif %}
+                            <span class="entry-title">{{ entry.title }}</span>
+                        </div>
+                        <div class="entry-meta">
+                            {% if entry.printed_page_number %}
+                                <span class="page-number">p. {{ entry.printed_page_number }}</span>
+                            {% else %}
+                                <span class="page-number no-page">no page</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Parsing Notes -->
+                {% if toc_data.toc_metadata and toc_data.toc_metadata.notes %}
+                <div class="toc-notes">
+                    <h4>Parsing Notes</h4>
+                    <ul>
+                        {% for note in toc_data.toc_metadata.notes %}
+                        <li>{{ note }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            {% else %}
+                <div class="empty-state">
+                    <p>TOC extraction not yet completed.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

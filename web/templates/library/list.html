@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Scanshelf - Library{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/library.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container-wide">
+    <div class="library-header">
+        <h2>📚 Library Status</h2>
+        <div class="library-stats">
+            <div class="stat-item">
+                <strong>{{ books|length }}</strong> books in library
+            </div>
+        </div>
+    </div>
+
+    {% if books %}
+    <table class="status-table">
+        <thead>
+            <tr>
+                <th style="width: 25%;">Book</th>
+                <th style="width: 18%;">OCR</th>
+                <th style="width: 18%;">Paragraph Correct</th>
+                <th style="width: 18%;">Label Pages</th>
+                <th style="width: 18%;">Extract ToC</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for book in books %}
+            <tr>
+                <!-- Book Name -->
+                <td>
+                    <div class="book-name">{{ book.scan_id }}</div>
+                </td>
+
+                <!-- OCR Status -->
+                <td>
+                    {% set stage_data = book.stages.get('ocr', {}) %}
+                    {% set status = stage_data.get('status', 'not_started') %}
+                    {% set cost_usd = stage_data.get('cost_usd', 0.0) %}
+                    {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
+                    {% if status in ['completed', 'in_progress'] %}
+                        {% set link = '/stage/' ~ book.scan_id ~ '/ocr' %}
+                    {% endif %}
+                    {% include 'components/status_badge.html' %}
+                </td>
+
+                <!-- Paragraph Correct Status -->
+                <td>
+                    {% set stage_data = book.stages.get('paragraph-correct', {}) %}
+                    {% set status = stage_data.get('status', 'not_started') %}
+                    {% set cost_usd = stage_data.get('cost_usd', 0.0) %}
+                    {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
+                    {% if status in ['completed', 'in_progress'] %}
+                        {% set link = '/stage/' ~ book.scan_id ~ '/paragraph-correct' %}
+                    {% endif %}
+                    {% include 'components/status_badge.html' %}
+                </td>
+
+                <!-- Label Pages Status -->
+                <td>
+                    {% set stage_data = book.stages.get('label-pages', {}) %}
+                    {% set status = stage_data.get('status', 'not_started') %}
+                    {% set cost_usd = stage_data.get('cost_usd', 0.0) %}
+                    {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
+                    {% if status in ['completed', 'in_progress'] %}
+                        {% set link = '/stage/' ~ book.scan_id ~ '/label-pages' %}
+                    {% endif %}
+                    {% include 'components/status_badge.html' %}
+                </td>
+
+                <!-- Extract ToC Status -->
+                <td>
+                    {% set stage_data = book.stages.get('extract-toc', {}) %}
+                    {% set status = stage_data.get('status', 'not_started') %}
+                    {% set cost_usd = stage_data.get('cost_usd', 0.0) %}
+                    {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
+                    {% if status in ['completed', 'in_progress'] %}
+                        {% set link = '/stage/' ~ book.scan_id ~ '/extract-toc' %}
+                    {% endif %}
+                    {% include 'components/status_badge.html' %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <h3>No books in library</h3>
+        <p>Use <code>shelf library add &lt;pdf&gt;</code> to add books to your library.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
