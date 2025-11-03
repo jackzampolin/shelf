@@ -147,7 +147,7 @@ class LabelPagesStage(BaseStage):
                 handler = create_stage1_handler(storage, self.stage_storage, logger, self.name)
 
                 # Process batch
-                batch_process_with_preparation(
+                stage1_stats = batch_process_with_preparation(
                     stage_name="Stage 1",
                     pages=stage1_remaining,
                     request_builder=prepare_stage1_request,
@@ -158,6 +158,14 @@ class LabelPagesStage(BaseStage):
                     model=self.model,
                     total_pages=total_pages,
                 )
+
+                # Store actual runtime for stage 1
+                if stage1_stats.get("elapsed_seconds"):
+                    stage_storage_dir.metrics_manager.record(
+                        key="stage_runtime",
+                        time_seconds=stage1_stats["elapsed_seconds"],
+                        accumulate=True
+                    )
 
             # Phase 1b: Stage 2 - Block classification (1 image + Stage 1 context)
             remaining_pages = progress["remaining_pages"]
@@ -188,7 +196,7 @@ class LabelPagesStage(BaseStage):
                 handler = create_stage2_handler(storage, self.stage_storage, logger, self.model, self.output_schema, ocr_pages, self.name)
 
                 # Process batch
-                batch_process_with_preparation(
+                stage2_stats = batch_process_with_preparation(
                     stage_name="Stage 2",
                     pages=remaining_pages,
                     request_builder=prepare_stage2_request,
@@ -200,6 +208,14 @@ class LabelPagesStage(BaseStage):
                     total_pages=total_pages,
                     stage1_results=None,  # Loaded inside prepare_stage2_request
                 )
+
+                # Store actual runtime for stage 2
+                if stage2_stats.get("elapsed_seconds"):
+                    stage_storage_dir.metrics_manager.record(
+                        key="stage_runtime",
+                        time_seconds=stage2_stats["elapsed_seconds"],
+                        accumulate=True
+                    )
 
                 progress = self.get_status(storage, logger)
 

@@ -105,6 +105,12 @@ class LabelPagesStatusTracker:
 
         total_time = stage_storage.metrics_manager.get_total_time()
 
+        # Get stored runtime from stage execution (actual wall-clock processing time)
+        # This is the actual time spent processing, excluding gaps/interruptions
+        # Shows 0.0 until the stage has been run with runtime tracking enabled
+        runtime_metrics = stage_storage.metrics_manager.get("stage_runtime")
+        stage_runtime = runtime_metrics.get("time_seconds", 0.0) if runtime_metrics else 0.0
+
         return {
             "status": status,
             "total_pages": total_pages,
@@ -119,6 +125,7 @@ class LabelPagesStatusTracker:
                 "total_cost_usd": total_cost,
                 "total_tokens": total_tokens,
                 "total_time_seconds": total_time,
+                "stage_runtime_seconds": stage_runtime,
                 "total_blocks_classified": total_blocks_classified,
                 "avg_classification_confidence": avg_classification_confidence,
                 "pages_with_numbers": pages_with_numbers,

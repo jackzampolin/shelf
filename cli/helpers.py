@@ -23,9 +23,6 @@ def get_stage_instance(stage_name: str):
         if stage_name == 'ocr':
             from pipeline.ocr import OCRStage
             return OCRStage()
-        elif stage_name == 'chandra-ocr':
-            from pipeline.chandra_ocr import ChandraOCRStage
-            return ChandraOCRStage()
         elif stage_name == 'paragraph-correct':
             from pipeline.paragraph_correct import ParagraphCorrectStage
             return ParagraphCorrectStage()

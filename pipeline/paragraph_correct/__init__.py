@@ -151,7 +151,7 @@ class ParagraphCorrectStage(BaseStage):
                 )
 
                 # Process batch
-                batch_process_with_preparation(
+                batch_stats = batch_process_with_preparation(
                     stage_name="Paragraph Correction",
                     pages=remaining_pages,
                     request_builder=build_request,
@@ -159,6 +159,14 @@ class ParagraphCorrectStage(BaseStage):
                     processor=processor,
                     logger=logger,
                 )
+
+                # Store actual runtime for this batch
+                if batch_stats.get("elapsed_seconds"):
+                    stage_storage_dir.metrics_manager.record(
+                        key="stage_runtime",
+                        time_seconds=batch_stats["elapsed_seconds"],
+                        accumulate=True  # Add to existing if we resume
+                    )
 
                 progress = self.get_status(storage, logger)
 

@@ -24,7 +24,6 @@ def cmd_info(args):
 
     stage_labels = {
         'ocr': 'OCR',
-        'chandra-ocr': 'Chandra-OCR',
         'paragraph-correct': 'Paragraph-Correct',
         'label-pages': 'Label-Pages',
         'extract-toc': 'Extract-ToC',
@@ -55,7 +54,6 @@ def cmd_info(args):
 
         stage_labels = {
             'ocr': 'OCR',
-            'chandra-ocr': 'Chandra-OCR',
             'paragraph-correct': 'Paragraph-Correct',
             'label-pages': 'Label-Pages',
             'extract-toc': 'Extract-ToC',
@@ -94,7 +92,6 @@ def cmd_info(args):
 
     stage_labels = {
         'ocr': 'OCR',
-        'chandra-ocr': 'Chandra-OCR',
         'paragraph-correct': 'Paragraph-Correct',
         'label-pages': 'Label-Pages',
         'extract-toc': 'Extract-ToC'
@@ -130,7 +127,7 @@ def cmd_info(args):
         total_cost += stage_cost
 
     if total_cost > 0:
-        print(f"\n💰 Total Pipeline Cost: ${total_cost:.4f}")
+        print(f"\n💰 Total Pipeline Cost: ${total_cost:.2f}")
     print()
 
 

@@ -54,11 +54,16 @@ class ExtractTocStatusTracker:
         total_cost = sum(m.get('cost_usd', 0.0) for m in all_metrics.values())
         total_time = stage_storage_obj.metrics_manager.get_total_time()
 
+        # Get stored runtime (extract-toc doesn't use batch processor, so may be 0)
+        runtime_metrics = stage_storage_obj.metrics_manager.get("stage_runtime")
+        stage_runtime = runtime_metrics.get("time_seconds", 0.0) if runtime_metrics else 0.0
+
         return {
             "status": status,
             "metrics": {
                 "total_cost_usd": total_cost,
                 "total_time_seconds": total_time,
+                "stage_runtime_seconds": stage_runtime,
             },
             "artifacts": {
                 "finder_result_exists": finder_result_exists,

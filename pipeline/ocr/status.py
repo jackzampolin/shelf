@@ -137,6 +137,7 @@ class OCRStatusTracker:
                 "total_cost_usd": 0.0,
                 "total_tokens": 0,
                 "total_time_seconds": 0.0,
+                "stage_runtime_seconds": 0.0,
                 "vision_cost_usd": 0.0,
                 "vision_tokens": 0,
             },
@@ -298,6 +299,12 @@ class OCRStatusTracker:
         total_time = stage_storage.metrics_manager.get_total_time()
         total_tokens = stage_storage.metrics_manager.get_total_tokens()
 
+        # Get stored runtime from stage execution (actual wall-clock processing time)
+        # This is the actual time spent processing, excluding gaps/interruptions
+        # Shows 0.0 until the stage has been run with runtime tracking enabled
+        runtime_metrics = stage_storage.metrics_manager.get("stage_runtime")
+        stage_runtime = runtime_metrics.get("time_seconds", 0.0) if runtime_metrics else 0.0
+
         vision_cost = 0.0
         vision_tokens = 0
 
@@ -313,6 +320,7 @@ class OCRStatusTracker:
             "total_cost_usd": total_cost,
             "total_tokens": total_tokens,
             "total_time_seconds": total_time,
+            "stage_runtime_seconds": stage_runtime,
             "vision_cost_usd": vision_cost,
             "vision_tokens": vision_tokens,
         }

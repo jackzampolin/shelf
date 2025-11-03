@@ -1,6 +1,5 @@
 STAGE_DEFINITIONS = [
     {'name': 'ocr', 'abbr': 'OCR', 'class': 'pipeline.ocr.OCRStage'},
-    {'name': 'chandra-ocr', 'abbr': 'CHA', 'class': 'pipeline.chandra_ocr.ChandraOCRStage'},
     {'name': 'paragraph-correct', 'abbr': 'PAR', 'class': 'pipeline.paragraph_correct.ParagraphCorrectStage'},
     {'name': 'label-pages', 'abbr': 'LAB', 'class': 'pipeline.label_pages.LabelPagesStage'},
     {'name': 'extract-toc', 'abbr': 'TOC', 'class': 'pipeline.extract_toc.ExtractTocStage'},
@@ -10,7 +9,7 @@ STAGE_NAMES = [s['name'] for s in STAGE_DEFINITIONS]
 STAGE_ABBRS = {s['name']: s['abbr'] for s in STAGE_DEFINITIONS}
 
 CORE_STAGES = STAGE_NAMES
-REPORT_STAGES = ['ocr', 'chandra-ocr', 'paragraph-correct', 'label-pages']
+REPORT_STAGES = ['ocr', 'paragraph-correct', 'label-pages']
 
 
 def get_stage_map(model=None, workers=None, max_retries=3):
@@ -33,7 +32,7 @@ def get_stage_map(model=None, workers=None, max_retries=3):
 
         kwargs = {}
 
-        if stage_def['name'] in ['ocr', 'chandra-ocr']:
+        if stage_def['name'] == 'ocr':
             if workers:
                 kwargs['max_workers'] = workers
 

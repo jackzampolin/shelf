@@ -52,6 +52,12 @@ class ParagraphCorrectStatusTracker:
         total_time = stage_storage.metrics_manager.get_total_time()
         total_tokens = stage_storage.metrics_manager.get_total_tokens()
 
+        # Get stored runtime from stage execution (actual wall-clock processing time)
+        # This is the actual time spent processing, excluding gaps/interruptions
+        # Shows 0.0 until the stage has been run with runtime tracking enabled
+        runtime_metrics = stage_storage.metrics_manager.get("stage_runtime")
+        stage_runtime = runtime_metrics.get("time_seconds", 0.0) if runtime_metrics else 0.0
+
         all_metrics = stage_storage.metrics_manager.get_all()
         total_corrections = 0
         confidences = []
@@ -73,6 +79,7 @@ class ParagraphCorrectStatusTracker:
                 "total_cost_usd": total_cost,
                 "total_tokens": total_tokens,
                 "total_time_seconds": total_time,
+                "stage_runtime_seconds": stage_runtime,
                 "total_corrections": total_corrections,
                 "avg_confidence": avg_confidence,
             },

@@ -62,4 +62,13 @@ def vision_select_pages(
         providers=providers,
     )
 
+    # Store actual runtime for vision selection
+    if stats.get("elapsed_seconds"):
+        stage_storage = storage.stage(stage_name)
+        stage_storage.metrics_manager.record(
+            key="stage_runtime",
+            time_seconds=stats["elapsed_seconds"],
+            accumulate=True
+        )
+
     logger.info(f"   ✓ Vision selection complete: ${stats['total_cost_usd']:.4f}")
