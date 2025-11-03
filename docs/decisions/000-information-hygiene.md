@@ -25,94 +25,15 @@ This principle informs ADR 001 (Think Data First), ADR 002 (Stage Independence),
 
 ## The Practices
 
-### Small Files, Clear Purpose
+This principle manifests in specific practices (each documented in detail):
 
-One concept per file. Easy to find > fewer total lines.
+- **ADR 005: Clean Working Tree** - Ideas in GitHub, not TODO comments
+- **ADR 006: File Organization** - Small files, clear purpose (one concept per file)
+- **ADR 007: Naming Conventions** - Filenames teach before you open them
+- **Comments policy** - Minimal (~10 in entire codebase), only for non-obvious WHY
+- **Abstraction boundaries** - See ADR 002 (Stage Independence)
 
-**Example:**
-```
-pipeline/ocr/schemas/
-  ├── page_output.py    # One schema
-  ├── metrics.py        # One schema
-  └── report.py         # One schema
-```
-
-"Where's the OCR output schema?" → `ocr/schemas/page_output.py`
-
-Trade-off: Slight duplication accepted for discoverability.
-
-### Naming Conveys Meaning
-
-Filenames teach before you open them.
-
-```bash
-$ ls docs/decisions/
-000-information-hygiene.md      # Foundational principle
-001-think-data-first.md         # Data-centric thinking
-002-stage-independence.md       # Unix philosophy
-```
-
-**Conventions:**
-- Stage names: `paragraph-correct` (hyphens)
-- Schema files: `page_output.py` (concept_type)
-- ADRs: `NNN-descriptive-name.md`
-
-Avoid: `utils.py`, `misc/`, `pc_stage.py`
-
-Test: Can you understand the file tree without opening files?
-
-### Comments Only When Critical
-
-Code explains WHAT, comments explain WHY (only when non-obvious).
-
-**Current count:** ~10 comments in entire codebase (complex locking, stage headers, warnings).
-
-**Why minimal:**
-- Comments are noise in context window
-- They lie when code changes
-- Well-named code self-documents
-
-**Good comment:**
-```python
-# Use gpt-4o-mini for 80% quality at 10% cost (see ADR 003)
-model = "openai/gpt-4o-mini"
-```
-
-**Bad comment:**
-```python
-# Get the page number from the file
-page_num = extract_page_number(filename)  # Obvious from code
-```
-
-**Alternatives:** Better naming, extract functions, ADRs for decisions, git commits for context.
-
-### Clean Working Tree
-
-Ideas in GitHub, history in git, working tree stays clean.
-
-**Where things live:**
-- Ideas/TODOs: GitHub issues
-- History/context: Git commits
-- Current state: Working tree (only active code)
-- Decisions: ADRs
-
-New contributors see only what IS, not what WAS or MIGHT BE.
-
-**Avoid:**
-```python
-# TODO: Refactor later
-# FIXME: This is broken
-```
-
-**Instead:** GitHub issue or fix it now.
-
-Exception: Critical warnings (`# CRITICAL: Never call this without...`)
-
-### Abstraction Boundaries
-
-Clear units = clear understanding. One stage = one responsibility, one schema = one data contract, one file = one concept.
-
-See ADR 002 (Stage Independence) for Unix philosophy application.
+Together, these create an environment optimized for rapid context acquisition.
 
 ## Why This Matters: AI-Human Pair Programming
 
@@ -140,6 +61,9 @@ See ADR 002 (Stage Independence) for Unix philosophy application.
 - **ADR 001:** Files on disk = ground truth = transparent
 - **ADR 002:** Clear boundaries = small composable units
 - **ADR 003:** Separate MetricsManager = visible costs
+- **ADR 005:** Working tree cleanliness
+- **ADR 006:** File splitting decisions
+- **ADR 007:** Naming consistency
 
 ## Consequences
 
