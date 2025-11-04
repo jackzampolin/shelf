@@ -1,12 +1,22 @@
 """Prompts for Phase 3: Element Identification"""
 
-SYSTEM_PROMPT = """You are a Table of Contents structure analyzer.
+SYSTEM_PROMPT = """<role>
+You are a Table of Contents structure analyzer.
+Your task is to identify individual structural elements (entries) in ToC pages.
+</role>
 
-Your task is to identify individual structural elements (entries) in ToC pages using both:
-1. Visual layout from the image
-2. Clean OCR text from OlmOCR
+<critical_instructions>
+You have TWO sources of information:
+1. **VISUAL LAYOUT** (image): Shows hierarchy, indentation, styling
+2. **CLEAN OCR TEXT**: Accurate text extraction (use this for content)
 
-Each element represents ONE distinct item in the table of contents."""
+POSITION TELLS YOU EVERYTHING:
+- Y-coordinate = which row (elements on same line group together)
+- X-coordinate = indentation level (hierarchy)
+- Visual styling = type (bold/large = chapter, indented = section)
+
+Use OCR for WHAT (the text), use IMAGE for WHERE (the structure).
+</critical_instructions>"""
 
 
 def build_user_prompt(
@@ -50,26 +60,65 @@ You have TWO sources of information:
     prompt += """
 </task>
 
-<element_definition>
-A "structural element" is ONE of:
-- **Chapter/Part title** (often without page number, larger/bold)
-- **Section heading** (hierarchical grouping)
-- **Entry with page number** (title + page number)
-- **Continued entry** (continuation from previous page)
+<visual_detection>
+WHAT TO IDENTIFY:
+✓ Entry numbers (chapter/part numbers: "1.", "Chapter 5", "Part II")
+✓ Entry titles (chapter/section names, may span multiple lines)
+✓ Page numbers (usually right-aligned: "127", "ix", "xii")
+✓ Hierarchical elements (indented sub-entries)
 
-Each element should capture:
-- The full text (from OCR)
-- Visual position (x, y coordinates on image for reference)
-- Indentation level (0=top-level, 1=indented once, 2=indented twice, etc.)
-- Type (chapter/section/entry/continuation)
-</element_definition>
+HOW INDENTATION DETERMINES HIERARCHY:
+- Flush left (0 indent) = Top-level chapter/part
+- Small indent (~20-40px) = Section under chapter
+- Larger indent (~40-80px) = Subsection
+
+VISUAL SIGNS OF STRUCTURE:
+- **Bold/Large text** = Chapter/Part heading
+- **Aligned vertically** = Same hierarchy level
+- **Indented** = Child of previous un-indented entry
+- **Right-aligned numbers** = Page numbers
+- **No page number** = Parent entry (has children below)
+</visual_detection>
+
+<pattern_examples>
+# Generic patterns (NOT from any specific book)
+
+Pattern 1: Flat list
+```
+0px indent: "Introduction" → page "ix"
+0px indent: "Chapter 1" → page "1"
+0px indent: "Chapter 2" → page "25"
+```
+All indentation_level=0, all type="entry"
+
+Pattern 2: Hierarchy with parent entries
+```
+0px indent: "Part I" (NO page number) → parent
+  20px indent: "Early Period" → page "1"
+  20px indent: "Middle Era" → page "45"
+0px indent: "Part II" (NO page number) → parent
+  20px indent: "Modern Times" → page "90"
+```
+Part I/II: indentation_level=0, type="section", has_page_number=false
+Children: indentation_level=1, type="entry", has_page_number=true
+
+Pattern 3: Deep nesting
+```
+0px indent: "Section A"
+  20px indent: "Topic 1" → page "10"
+    40px indent: "Subtopic 1a" → page "12"
+    40px indent: "Subtopic 1b" → page "18"
+  20px indent: "Topic 2" → page "25"
+```
+Levels: 0 (Section A), 1 (Topics), 2 (Subtopics)
+</pattern_examples>
 
 <instructions>
-1. **Use OCR text for accuracy** - Don't re-read the text from the image
-2. **Use image for structure** - Visual layout shows hierarchy better than text alone
-3. **Match OCR lines to visual positions** - Map each OCR line to its position on the page
-4. **Preserve hierarchy** - Indentation level determines parent-child relationships
-5. **Handle continuations** - Note when entries span multiple lines or pages
+1. **Match OCR text to visual position** - Find each OCR line on the image
+2. **Measure indentation** - How far from left edge? (visual_x value)
+3. **Determine hierarchy** - Compare indentations to assign levels (0, 1, 2)
+4. **Identify type** - Based on styling, indentation, presence of page number
+5. **Extract page numbers** - Right-side text that looks like a page number
 </instructions>
 
 <output_requirements>
