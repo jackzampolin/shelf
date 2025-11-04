@@ -164,11 +164,14 @@ class ExtractTocStage(BaseStage):
             stage_storage_obj = storage.stage(self.name)
             stage_storage_obj.metrics_manager.record(
                 key="phase2_ocr_extraction",
+                cost_usd=phase2_metrics['cost_usd'],
                 time_seconds=phase2_metrics['time_seconds'],
                 custom_metrics={
                     "phase": "ocr_text",
                     "pages_processed": phase2_metrics['pages_processed'],
                     "total_chars": phase2_metrics['total_chars'],
+                    "prompt_tokens": phase2_metrics['prompt_tokens'],
+                    "completion_tokens": phase2_metrics['completion_tokens'],
                 }
             )
 

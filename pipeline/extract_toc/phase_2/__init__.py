@@ -46,6 +46,9 @@ def extract_ocr_text(
 
     start_time = time.time()
     total_pages = toc_range.end_page - toc_range.start_page + 1
+    total_cost = 0.0
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
 
     logger.info(f"OCR processing {total_pages} ToC pages with OlmOCR")
 
@@ -67,7 +70,7 @@ def extract_ocr_text(
 
         prompt = "Extract all text from this Table of Contents page. Format the output as markdown, preserving the hierarchical structure and indentation."
 
-        ocr_text = ocr_provider.extract_text(image, prompt=prompt)
+        ocr_text, usage, cost = ocr_provider.extract_text(image, prompt=prompt)
 
         md_filename = f"page_{page_num:04d}.md"
         stage_storage_obj = storage.stage('extract-toc')
@@ -84,17 +87,25 @@ def extract_ocr_text(
             "char_count": len(ocr_text)
         })
 
+        # Accumulate costs and tokens
+        total_cost += cost
+        total_prompt_tokens += usage.get("prompt_tokens", 0)
+        total_completion_tokens += usage.get("completion_tokens", 0)
+
         stage_storage_obj.metrics_manager.record(
             key=f"phase2_page_{page_num:04d}",
+            cost_usd=cost,
             time_seconds=page_time,
             custom_metrics={
                 "phase": "ocr_text",
                 "page": page_num,
                 "char_count": len(ocr_text),
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
             }
         )
 
-        logger.info(f"  Page {page_num}: Saved {md_filename} ({len(ocr_text)} chars, {page_time:.1f}s)")
+        logger.info(f"  Page {page_num}: Saved {md_filename} ({len(ocr_text)} chars, {page_time:.1f}s, ${cost:.4f})")
 
     elapsed_time = time.time() - start_time
 
@@ -104,10 +115,12 @@ def extract_ocr_text(
     }
 
     metrics = {
-        "cost_usd": 0.0,
+        "cost_usd": total_cost,
         "time_seconds": elapsed_time,
         "pages_processed": len(page_results),
         "total_chars": sum(p["char_count"] for p in page_results),
+        "prompt_tokens": total_prompt_tokens,
+        "completion_tokens": total_completion_tokens,
     }
 
     return results_data, metrics
