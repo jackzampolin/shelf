@@ -108,6 +108,8 @@ class LabelPagesStage(BaseStage):
         storage: BookStorage,
         logger: PipelineLogger,
     ) -> Dict[str, Any]:
+        import time
+        start_time = time.time()
 
         progress = self.get_status(storage, logger)
         total_pages = progress["total_pages"]
@@ -159,14 +161,6 @@ class LabelPagesStage(BaseStage):
                     total_pages=total_pages,
                 )
 
-                # Store actual runtime for stage 1
-                if stage1_stats.get("elapsed_seconds"):
-                    stage_storage_dir.metrics_manager.record(
-                        key="stage_runtime",
-                        time_seconds=stage1_stats["elapsed_seconds"],
-                        accumulate=True
-                    )
-
             # Phase 1b: Stage 2 - Block classification (1 image + Stage 1 context)
             remaining_pages = progress["remaining_pages"]
 
@@ -209,14 +203,6 @@ class LabelPagesStage(BaseStage):
                     stage1_results=None,  # Loaded inside prepare_stage2_request
                 )
 
-                # Store actual runtime for stage 2
-                if stage2_stats.get("elapsed_seconds"):
-                    stage_storage_dir.metrics_manager.record(
-                        key="stage_runtime",
-                        time_seconds=stage2_stats["elapsed_seconds"],
-                        accumulate=True
-                    )
-
                 progress = self.get_status(storage, logger)
 
         # Phase 2: Generate classification report (CSV with page numbers and block types)
@@ -236,6 +222,15 @@ class LabelPagesStage(BaseStage):
 
         completed_pages = total_pages - len(progress["remaining_pages"])
         total_cost = progress["metrics"]["total_cost_usd"]
+
+        # Record total stage runtime (includes prep, stage1, stage2, and report generation)
+        elapsed_time = time.time() - start_time
+        stage_storage_dir = storage.stage(self.name)
+        stage_storage_dir.metrics_manager.record(
+            key="stage_runtime",
+            time_seconds=elapsed_time,
+            accumulate=True  # Add to existing if we resume
+        )
 
         return {
             "pages_processed": completed_pages,

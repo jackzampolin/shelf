@@ -12,6 +12,7 @@ from pathlib import Path
 from web.config import Config
 from infra.storage.library import Library
 from web.data.extract_toc_data import get_extract_toc_data, get_toc_page_numbers
+from web.data.bbox_data import get_bbox_phases
 
 stage_bp = Blueprint('stage', __name__)
 
@@ -43,12 +44,16 @@ def extract_toc_view(scan_id: str):
     # Get page numbers for images
     page_numbers = get_toc_page_numbers(storage)
 
+    # Load bbox phase data for visualization
+    bbox_phases = get_bbox_phases(storage)
+
     return render_template(
         'stage/extract_toc.html',
         scan_id=scan_id,
         metadata=metadata,
         toc_data=toc_data,
         page_numbers=page_numbers,
+        bbox_phases=bbox_phases,
     )
 
 

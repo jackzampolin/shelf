@@ -4,6 +4,126 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/stage.css') }}">
+<style>
+    /* Tab Navigation */
+    .tabs-container {
+        display: flex;
+        border-bottom: 2px solid #e0e0e0;
+        margin-bottom: 2rem;
+        gap: 0.5rem;
+    }
+
+    .tab-button {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        background: none;
+        cursor: pointer;
+        font-size: 1rem;
+        color: #666;
+        border-bottom: 3px solid transparent;
+        transition: all 0.3s ease;
+        font-weight: 500;
+    }
+
+    .tab-button:hover {
+        color: #333;
+        background-color: #f5f5f5;
+    }
+
+    .tab-button:focus {
+        outline: 2px solid #0066cc;
+        outline-offset: -2px;
+    }
+
+    .tab-button--active {
+        color: #0066cc;
+        border-bottom-color: #0066cc;
+    }
+
+    /* Tab Panels */
+    .tab-panels {
+        padding: 1rem 0;
+    }
+
+    .tab-panel {
+        display: none;
+    }
+
+    .tab-panel--active {
+        display: block;
+    }
+
+    [hidden] {
+        display: none !important;
+    }
+
+    /* Image Viewer with Canvas Overlay */
+    .image-viewer {
+        position: relative;
+        display: block;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .page-image-container {
+        margin-bottom: 3rem;
+        background: #f9f9f9;
+        padding: 1rem;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+    }
+
+    .page-number-label {
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+        color: #333;
+        font-size: 1.1rem;
+    }
+
+    .image-wrapper {
+        position: relative;
+        display: inline-block;
+        width: 100%;
+        background: white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .base-image {
+        width: 100%;
+        height: auto;
+        display: block;
+    }
+
+    .bbox-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+    }
+
+    /* TOC Structure Display */
+    .toc-entries {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+
+    .toc-metadata {
+        background: #f5f5f5;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+        display: flex;
+        gap: 2rem;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 3rem;
+        color: #999;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -31,37 +151,169 @@
         </div>
     </div>
 
-    <!-- Main Content: Side-by-side -->
-    <div class="split-view">
-        <!-- Left: Source Page Images -->
-        <div class="split-panel source-panel">
-            <h3>Source Pages ({{ page_numbers|length }} page{% if page_numbers|length != 1 %}s{% endif %})</h3>
+    <!-- Tab Navigation -->
+    <div role="tablist" aria-orientation="horizontal" class="tabs-container">
+        <button
+            role="tab"
+            id="tab-raw-bboxes"
+            aria-selected="true"
+            aria-controls="panel-raw-bboxes"
+            class="tab-button tab-button--active">
+            Raw Bboxes
+        </button>
 
-            {% if page_numbers %}
-                <div class="page-images">
+        <button
+            role="tab"
+            id="tab-verified-bboxes"
+            aria-selected="false"
+            aria-controls="panel-verified-bboxes"
+            class="tab-button">
+            Verified Bboxes
+        </button>
+
+        <button
+            role="tab"
+            id="tab-ocr-text"
+            aria-selected="false"
+            aria-controls="panel-ocr-text"
+            class="tab-button">
+            OCR Text
+        </button>
+
+        <button
+            role="tab"
+            id="tab-final-toc"
+            aria-selected="false"
+            aria-controls="panel-final-toc"
+            class="tab-button">
+            Final TOC Structure
+        </button>
+    </div>
+
+    <!-- Tab Panels -->
+    <div class="tab-panels">
+        <!-- Panel 1: Raw Bboxes (Phase 2) -->
+        <div
+            role="tabpanel"
+            id="panel-raw-bboxes"
+            aria-labelledby="tab-raw-bboxes"
+            class="tab-panel tab-panel--active">
+
+            <h3>Phase 2: Raw Bounding Boxes</h3>
+            {% if bbox_phases.extracted %}
+                <p>Vision model extracted {{ bbox_phases.extracted|length }} page(s) with bounding boxes.</p>
+                <div class="image-viewer">
                     {% for page_num in page_numbers %}
-                    <div class="page-image-container">
-                        <div class="page-number-label">Page {{ page_num }}</div>
-                        <img
-                            src="{{ url_for('stage.serve_source_image', scan_id=scan_id, page_num=page_num) }}"
-                            alt="Page {{ page_num }}"
-                            class="page-image"
-                            loading="lazy"
-                        >
-                    </div>
+                        <div class="page-image-container">
+                            <div class="page-number-label">Page {{ page_num }}</div>
+                            <div class="image-wrapper">
+                                <img
+                                    src="{{ url_for('stage.serve_source_image', scan_id=scan_id, page_num=page_num) }}"
+                                    alt="Page {{ page_num }}"
+                                    class="base-image"
+                                    data-page="{{ page_num }}"
+                                    data-phase="extracted"
+                                >
+                                <canvas
+                                    class="bbox-canvas"
+                                    data-page="{{ page_num }}"
+                                    data-phase="extracted"></canvas>
+                            </div>
+                        </div>
                     {% endfor %}
                 </div>
             {% else %}
                 <div class="empty-state">
-                    <p>No TOC pages found.</p>
+                    <p>Raw bboxes not yet extracted.</p>
                 </div>
             {% endif %}
         </div>
 
-        <!-- Right: Rendered TOC -->
-        <div class="split-panel toc-panel">
-            <h3>Extracted Structure</h3>
+        <!-- Panel 2: Verified Bboxes (Phase 3) -->
+        <div
+            role="tabpanel"
+            id="panel-verified-bboxes"
+            aria-labelledby="tab-verified-bboxes"
+            class="tab-panel"
+            hidden>
 
+            <h3>Phase 3: Verified Bounding Boxes</h3>
+            {% if bbox_phases.verified %}
+                <p>Self-verified {{ bbox_phases.verified|length }} page(s).</p>
+                <div class="image-viewer">
+                    {% for page_num in page_numbers %}
+                        <div class="page-image-container">
+                            <div class="page-number-label">Page {{ page_num }}</div>
+                            <div class="image-wrapper">
+                                <img
+                                    src="{{ url_for('stage.serve_source_image', scan_id=scan_id, page_num=page_num) }}"
+                                    alt="Page {{ page_num }}"
+                                    class="base-image"
+                                    data-page="{{ page_num }}"
+                                    data-phase="verified"
+                                >
+                                <canvas
+                                    class="bbox-canvas"
+                                    data-page="{{ page_num }}"
+                                    data-phase="verified"></canvas>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <p>Verified bboxes not yet available.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Panel 3: OCR Text (Phase 4) -->
+        <div
+            role="tabpanel"
+            id="panel-ocr-text"
+            aria-labelledby="tab-ocr-text"
+            class="tab-panel"
+            hidden>
+
+            <h3>Phase 4: OCR Text Results</h3>
+            {% if bbox_phases.ocr %}
+                <p>OCR completed for {{ bbox_phases.ocr|length }} page(s).</p>
+                <div class="image-viewer">
+                    {% for page_num in page_numbers %}
+                        <div class="page-image-container">
+                            <div class="page-number-label">Page {{ page_num }}</div>
+                            <div class="image-wrapper">
+                                <img
+                                    src="{{ url_for('stage.serve_source_image', scan_id=scan_id, page_num=page_num) }}"
+                                    alt="Page {{ page_num }}"
+                                    class="base-image"
+                                    data-page="{{ page_num }}"
+                                    data-phase="ocr"
+                                >
+                                <canvas
+                                    class="bbox-canvas"
+                                    data-page="{{ page_num }}"
+                                    data-phase="ocr"></canvas>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <p>OCR text not yet extracted.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Panel 4: Final TOC Structure -->
+        <div
+            role="tabpanel"
+            id="panel-final-toc"
+            aria-labelledby="tab-final-toc"
+            class="tab-panel"
+            hidden>
+
+            <h3>Final TOC Structure</h3>
             {% if toc_data.toc_entries %}
                 <!-- Metadata Summary -->
                 {% if toc_data.toc_metadata %}
@@ -122,4 +374,235 @@
         </div>
     </div>
 </div>
+
+<script>
+// Bbox data from Flask (embedded as JSON)
+const bboxPhases = {{ bbox_phases | tojson | safe }};
+
+// Tab switching logic
+document.addEventListener('DOMContentLoaded', function() {
+    const tabs = document.querySelectorAll('[role="tab"]');
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => activateTab(tab));
+        tab.addEventListener('keydown', handleTabKeydown);
+    });
+
+    // Restore from hash
+    if (location.hash) {
+        const tab = document.querySelector(location.hash);
+        if (tab) activateTab(tab);
+    }
+
+    window.addEventListener('hashchange', () => {
+        const tab = document.querySelector(location.hash);
+        if (tab) activateTab(tab);
+    });
+
+    // Initialize bbox rendering for first tab
+    initializeBboxRendering();
+});
+
+function activateTab(tabElement) {
+    const tablist = tabElement.closest('[role="tablist"]');
+    const panelId = tabElement.getAttribute('aria-controls');
+    const panel = document.getElementById(panelId);
+
+    // Deactivate all tabs
+    tablist.querySelectorAll('[role="tab"]').forEach(t => {
+        t.setAttribute('aria-selected', 'false');
+        t.classList.remove('tab-button--active');
+    });
+
+    // Deactivate all panels
+    document.querySelectorAll('[role="tabpanel"]').forEach(p => {
+        p.classList.remove('tab-panel--active');
+        p.setAttribute('hidden', '');
+    });
+
+    // Activate selected tab and panel
+    tabElement.setAttribute('aria-selected', 'true');
+    tabElement.classList.add('tab-button--active');
+    panel.classList.add('tab-panel--active');
+    panel.removeAttribute('hidden');
+
+    // Update URL hash
+    window.location.hash = tabElement.id;
+
+    // Render bboxes for this panel
+    renderBboxesForPanel(panel);
+}
+
+function handleTabKeydown(e) {
+    const tablist = e.currentTarget.closest('[role="tablist"]');
+    const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
+    const current = tabs.indexOf(e.currentTarget);
+    let next;
+
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        next = (current - 1 + tabs.length) % tabs.length;
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        next = (current + 1) % tabs.length;
+    } else if (e.key === 'Home') {
+        next = 0;
+    } else if (e.key === 'End') {
+        next = tabs.length - 1;
+    }
+
+    if (next !== undefined) {
+        e.preventDefault();
+        tabs[next].focus();
+        activateTab(tabs[next]);
+    }
+}
+
+// Bbox rendering logic
+function initializeBboxRendering() {
+    const activePanel = document.querySelector('.tab-panel--active');
+    if (activePanel) {
+        renderBboxesForPanel(activePanel);
+    }
+}
+
+function renderBboxesForPanel(panel) {
+    const canvases = panel.querySelectorAll('.bbox-canvas');
+
+    canvases.forEach(canvas => {
+        // Skip if already rendered
+        if (canvas.hasAttribute('data-rendered')) {
+            return;
+        }
+
+        const pageNum = parseInt(canvas.getAttribute('data-page'));
+        const phase = canvas.getAttribute('data-phase');
+        const img = canvas.previousElementSibling;
+
+        if (img && img.tagName === 'IMG') {
+            renderBboxes(img, canvas, pageNum, phase);
+        }
+    });
+}
+
+function renderBboxes(img, canvas, pageNum, phase) {
+    // Wait for image to load
+    if (img.complete) {
+        drawBboxes(img, canvas, pageNum, phase);
+    } else {
+        img.onload = () => drawBboxes(img, canvas, pageNum, phase);
+    }
+}
+
+function drawBboxes(img, canvas, pageNum, phase) {
+    // Get displayed dimensions (after CSS scaling)
+    const displayWidth = img.clientWidth;
+    const displayHeight = img.clientHeight;
+
+    console.log(`=== Page ${pageNum}, Phase ${phase} ===`);
+    console.log(`Natural dimensions: ${img.naturalWidth} x ${img.naturalHeight}`);
+    console.log(`Display dimensions: ${displayWidth} x ${displayHeight}`);
+
+    // CRITICAL: Set canvas internal dimensions to match DISPLAYED size
+    canvas.width = displayWidth;
+    canvas.height = displayHeight;
+
+    const ctx = canvas.getContext('2d');
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Get bbox data for this page and phase
+    const phaseData = bboxPhases[phase];
+    if (!phaseData || !phaseData[pageNum]) {
+        console.log(`No bbox data for page ${pageNum}, phase ${phase}`);
+        console.log('Available pages:', Object.keys(phaseData || {}));
+        canvas.setAttribute('data-rendered', 'true');
+        return;
+    }
+
+    const pageData = phaseData[pageNum];
+    let bboxes = [];
+
+    // Extract bboxes based on phase structure
+    if (phase === 'extracted' || phase === 'verified') {
+        bboxes = pageData.bboxes || [];
+    } else if (phase === 'ocr') {
+        // OCR phase has different structure: ocr_results array with bbox + text
+        const ocrResults = pageData.ocr_results || [];
+        bboxes = ocrResults.map(result => result.bbox);
+    }
+
+    console.log(`Found ${bboxes.length} bboxes`);
+    if (bboxes.length > 0) {
+        console.log('First bbox:', bboxes[0]);
+        console.log(`  x=${bboxes[0].x}, y=${bboxes[0].y}, width=${bboxes[0].width}, height=${bboxes[0].height}`);
+    }
+
+    // CRITICAL: Bbox coords are from downsampled vision image (300 DPI)
+    // Source images are at 600 DPI, so vision model saw a 0.5x downsampled version
+    // The bbox coordinates need to be scaled to the SOURCE image first (multiply by 2)
+    // Then scaled down to display size
+
+    // Step 1: Calculate what the vision model dimensions were
+    const visionWidth = img.naturalWidth * 0.5;  // Vision model saw half-resolution
+    const visionHeight = img.naturalHeight * 0.5;
+
+    console.log(`Vision model saw: ${visionWidth.toFixed(0)} x ${visionHeight.toFixed(0)}`);
+
+    // Step 2: Scale from vision coords to display coords
+    // Note: Using 2.5x multiplier for old bbox data (vision model wasn't told image dims)
+    // After re-running extract-toc with updated prompt, this multiplier can be removed
+    const legacyMultiplier = 2.5;  // Compensates for vision model using unknown coordinate system
+    const scaleX = (displayWidth / visionWidth) * legacyMultiplier;
+    const scaleY = (displayHeight / visionHeight) * legacyMultiplier;
+
+    console.log(`Vision→Display scale (with ${legacyMultiplier}x legacy fix): scaleX=${scaleX.toFixed(3)}, scaleY=${scaleY.toFixed(3)}`);
+
+    // Draw each bbox
+    bboxes.forEach((bbox, index) => {
+        // Scale bbox coordinates to displayed size
+        const x = bbox.x * scaleX;
+        const y = bbox.y * scaleY;
+        const width = bbox.width * scaleX;
+        const height = bbox.height * scaleY;
+
+        if (index === 0) {
+            console.log(`First bbox scaled: x=${x.toFixed(1)}, y=${y.toFixed(1)}, w=${width.toFixed(1)}, h=${height.toFixed(1)}`);
+        }
+
+        // Draw rectangle
+        ctx.strokeStyle = getPhaseColor(phase);
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, width, height);
+
+        // Optional: Draw index label
+        ctx.fillStyle = getPhaseColor(phase);
+        ctx.font = '14px Arial';
+        ctx.fillText(`#${index + 1}`, x + 5, y + 18);
+
+        // For OCR phase, also show text
+        if (phase === 'ocr' && pageData.ocr_results && pageData.ocr_results[index]) {
+            const text = pageData.ocr_results[index].text;
+            if (text) {
+                // Draw text below bbox (truncate if too long)
+                const displayText = text.length > 30 ? text.substring(0, 30) + '...' : text;
+                ctx.fillStyle = '#333';
+                ctx.font = '12px Arial';
+                ctx.fillText(displayText, x, y + height + 15);
+            }
+        }
+    });
+
+    canvas.setAttribute('data-rendered', 'true');
+    console.log(`Rendered ${bboxes.length} bboxes for page ${pageNum}, phase ${phase}`);
+}
+
+function getPhaseColor(phase) {
+    const colors = {
+        'extracted': '#ff0000',  // Red for raw extraction
+        'verified': '#00aa00',   // Green for verified
+        'ocr': '#0066cc'         // Blue for OCR
+    };
+    return colors[phase] || '#ff0000';
+}
+</script>
 {% endblock %}

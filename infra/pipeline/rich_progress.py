@@ -22,37 +22,22 @@ from typing import Dict, List
 
 
 class RichProgressBar:
-    """Simple progress bar using Rich library.
-
-    Drop-in replacement for ProgressBar that uses Rich internally.
-    Handles sequential progress bars cleanly with transient mode.
-    """
-
     def __init__(self, total: int, prefix: str = "", width: int = 40, unit: str = "items"):
-        """Initialize progress bar.
-
-        Args:
-            total: Total number of items to process
-            prefix: Text to show before the progress bar
-            width: Width of the progress bar in characters
-            unit: Unit name for rate display (default: "items")
-        """
         self.total = total
         self.prefix = prefix
         self.unit = unit
 
-        # Create custom columns to match current format
         self._progress = Progress(
-            TextColumn(f"{prefix}{{task.description}}"),  # Prefix + description
+            TextColumn(f"{prefix}{{task.description}}"),
             BarColumn(bar_width=width),
-            TaskProgressColumn(),  # Shows "X/Y"
+            TaskProgressColumn(),
             TextColumn("•"),
             TextColumn("{task.fields[rate]}", justify="right"),
             TextColumn("•"),
             TimeRemainingColumn(),
             TextColumn("•"),
             TextColumn("{task.fields[suffix]}", justify="right"),
-            transient=True,  # Disappears when context exits
+            transient=True,
         )
 
         self._task_id = None
@@ -73,17 +58,9 @@ class RichProgressBar:
         return self._progress.__exit__(*args)
 
     def update(self, current: int, suffix: str = ""):
-        """Update progress bar.
-
-        Args:
-            current: Current number of items processed
-            suffix: Optional suffix text to append
-        """
         if not self._started:
-            # Auto-start if used without context manager
             self.__enter__()
 
-        # Calculate rate
         elapsed = self._progress.tasks[self._task_id].elapsed or 0.01
         rate = f"{current / elapsed:.1f} {self.unit}/sec" if elapsed > 0 else ""
 
@@ -95,11 +72,6 @@ class RichProgressBar:
         )
 
     def finish(self, message: str = ""):
-        """Finish progress and print message.
-
-        Args:
-            message: Optional completion message to display
-        """
         if self._started:
             self.__exit__(None, None, None)
             self._started = False
@@ -110,16 +82,6 @@ class RichProgressBar:
 
 
 class RichProgressBarHierarchical:
-    """Progress bar with hierarchical sections support using Rich library.
-
-    Supports:
-    - Main progress bar
-    - Hierarchical sections (e.g., "Running (3)", "Recent (5)")
-    - Dynamic sub-items within sections
-    - Thread-safe updates
-    - Transient mode for clean sequential display
-    """
-
     def __init__(self, total: int, prefix: str = "", width: int = 40, unit: str = "items"):
         """Initialize hierarchical progress bar.
 

@@ -85,6 +85,8 @@ class ParagraphCorrectStage(BaseStage):
         storage: BookStorage,
         logger: PipelineLogger,
     ) -> Dict[str, Any]:
+        import time
+        start_time = time.time()
 
         progress = self.get_status(storage, logger)
         total_pages = progress["total_pages"]
@@ -160,14 +162,6 @@ class ParagraphCorrectStage(BaseStage):
                     logger=logger,
                 )
 
-                # Store actual runtime for this batch
-                if batch_stats.get("elapsed_seconds"):
-                    stage_storage_dir.metrics_manager.record(
-                        key="stage_runtime",
-                        time_seconds=batch_stats["elapsed_seconds"],
-                        accumulate=True  # Add to existing if we resume
-                    )
-
                 progress = self.get_status(storage, logger)
 
         # Phase 2: Generate quality report (CSV with similarity metrics)
@@ -187,6 +181,15 @@ class ParagraphCorrectStage(BaseStage):
 
         completed_pages = total_pages - len(progress["remaining_pages"])
         total_cost = progress["metrics"]["total_cost_usd"]
+
+        # Record total stage runtime (includes prep, processing, and report generation)
+        elapsed_time = time.time() - start_time
+        stage_storage_dir = storage.stage(self.name)
+        stage_storage_dir.metrics_manager.record(
+            key="stage_runtime",
+            time_seconds=elapsed_time,
+            accumulate=True  # Add to existing if we resume
+        )
 
         return {
             "pages_processed": completed_pages,

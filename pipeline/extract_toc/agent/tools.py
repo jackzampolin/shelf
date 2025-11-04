@@ -6,7 +6,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from infra.storage.book_storage import BookStorage
-from infra.llm.agent_client import AgentClient
+from infra.llm.agent import AgentClient
 from infra.utils.pdf import downsample_for_vision
 from ..schemas import PageRange
 from ..tools.grep_report import generate_grep_report, summarize_grep_report
@@ -19,16 +19,25 @@ class TocFinderResult(BaseModel):
     search_strategy_used: str
     pages_checked: int = 0
     total_cost_usd: float = 0.0
+    execution_time_seconds: float = 0.0
+    iterations: int = 0
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_reasoning_tokens: int = 0
     reasoning: str
+    structure_notes: Optional[Dict[int, str]] = None
 
 
 class TocFinderTools:
 
-    def __init__(self, storage: BookStorage, agent_client: AgentClient):
+    def __init__(self, storage: BookStorage, agent_client: AgentClient, stage_storage):
         self.storage = storage
         self.agent_client = agent_client
+        self.stage_storage = stage_storage
         self._pending_result: Optional[TocFinderResult] = None
         self._grep_report_cache: Optional[Dict] = None
+        self._current_page_num: Optional[int] = None
+        self._page_observations: List[Dict[str, str]] = []
 
     def get_tools(self) -> List[Dict]:
         return [
@@ -47,18 +56,21 @@ class TocFinderTools:
             {
                 "type": "function",
                 "function": {
-                    "name": "add_page_images_to_context",
-                    "description": "Load page images to see them visually. REPLACES any previously loaded images (doesn't accumulate). Load 1-2 pages at a time to avoid payload limits. Images are downsampled for efficient transmission.",
+                    "name": "load_page_image",
+                    "description": "Load a SINGLE page image to see it visually. WORKFLOW: Document what you see in the CURRENT page, THEN specify which page to load next. One page at a time - when you load a new page, the previous page is automatically removed from context. This forces you to record findings before moving on. First call doesn't need observations (nothing loaded yet).",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "page_nums": {
-                                "type": "array",
-                                "items": {"type": "integer"},
-                                "description": "List of page numbers to load (e.g., [4, 5]). IMPORTANT: Limit to 1-2 pages max to avoid 422/413 errors."
+                            "page_num": {
+                                "type": "integer",
+                                "description": "Page number to load NEXT (e.g., 6)"
+                            },
+                            "current_page_observations": {
+                                "type": "string",
+                                "description": "What do you see on the page that's CURRENTLY loaded in context? REQUIRED if a page is already in context. Document: Is it ToC? Part of ToC? Not ToC? What visual markers? Be specific about what you SEE right now before swapping to the next page."
                             }
                         },
-                        "required": ["page_nums"]
+                        "required": ["page_num"]
                     }
                 }
             },
@@ -66,7 +78,7 @@ class TocFinderTools:
                 "type": "function",
                 "function": {
                     "name": "write_toc_result",
-                    "description": "Write final ToC search result and complete the task. Call this when you've determined the ToC location or confirmed none exists.",
+                    "description": "Write final ToC search result and complete the task. Your page observations will be automatically compiled into structure_notes to guide Phase 2 extraction.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -107,8 +119,11 @@ class TocFinderTools:
     def execute_tool(self, tool_name: str, arguments: Dict) -> str:
         if tool_name == "get_frontmatter_grep_report":
             return self.get_frontmatter_grep_report()
-        elif tool_name == "add_page_images_to_context":
-            return self.add_page_images_to_context(arguments["page_nums"])
+        elif tool_name == "load_page_image":
+            return self.load_page_image(
+                page_num=arguments["page_num"],
+                current_page_observations=arguments.get("current_page_observations")
+            )
         elif tool_name == "write_toc_result":
             return self.write_toc_result(
                 toc_found=arguments["toc_found"],
@@ -124,6 +139,7 @@ class TocFinderTools:
         try:
             if self._grep_report_cache is None:
                 self._grep_report_cache = generate_grep_report(self.storage, max_pages=50)
+                self.stage_storage.save_grep_report(self.storage, self._grep_report_cache)
 
             report = self._grep_report_cache
             summary = summarize_grep_report(report)
@@ -138,36 +154,49 @@ class TocFinderTools:
         except Exception as e:
             return json.dumps({"error": f"Failed to generate grep report: {str(e)}"})
 
-    def add_page_images_to_context(self, page_nums: List[int]) -> str:
+    def load_page_image(self, page_num: int, current_page_observations: Optional[str] = None) -> str:
         try:
+            if self._current_page_num is not None:
+                if not current_page_observations:
+                    return json.dumps({
+                        "error": f"You are currently viewing page {self._current_page_num}. You must provide 'current_page_observations' documenting what you SEE on this page before loading page {page_num}."
+                    })
+
+                self._page_observations.append({
+                    "page_num": self._current_page_num,
+                    "observations": current_page_observations
+                })
+
             source_stage = self.storage.stage('source')
-            loaded_pages = []
-            new_images = []
+            page_image_path = source_stage.output_page(page_num, extension='png')
 
-            for page_num in page_nums:
-                page_image_path = source_stage.output_page(page_num, extension='png')
+            if not page_image_path.exists():
+                return json.dumps({
+                    "error": f"Page {page_num} image not found at {page_image_path}"
+                })
 
-                if not page_image_path.exists():
-                    continue
+            image = Image.open(page_image_path)
+            downsampled_image = downsample_for_vision(image, max_payload_kb=250)
 
-                # Load and downsample image (avoid 413 Payload Too Large)
-                image = Image.open(page_image_path)
-                downsampled_image = downsample_for_vision(image, max_payload_kb=400)
+            self.agent_client.images = [downsampled_image]
 
-                new_images.append(downsampled_image)
-                loaded_pages.append(page_num)
+            previous_page = self._current_page_num
+            self._current_page_num = page_num
 
-            # REPLACE images (don't accumulate) to avoid 413 Payload Too Large
-            self.agent_client.images = new_images
+            message_parts = [f"Now viewing page {page_num}."]
+            if previous_page is not None:
+                message_parts.append(f"Page {previous_page} observations recorded and removed from context.")
 
             return json.dumps({
-                "loaded": loaded_pages,
-                "count": len(loaded_pages),
-                "message": f"Now viewing pages {loaded_pages}. Previous images were cleared."
+                "success": True,
+                "current_page": page_num,
+                "previous_page": previous_page,
+                "observations_count": len(self._page_observations),
+                "message": " ".join(message_parts)
             })
 
         except Exception as e:
-            return json.dumps({"error": f"Failed to load images: {str(e)}"})
+            return json.dumps({"error": f"Failed to load page image: {str(e)}"})
 
     def write_toc_result(
         self,
@@ -178,6 +207,13 @@ class TocFinderTools:
         reasoning: str
     ) -> str:
         try:
+            structure_notes = None
+            if toc_found and self._page_observations:
+                structure_notes = {
+                    obs['page_num']: obs['observations']
+                    for obs in self._page_observations
+                }
+
             page_range = None
             if toc_page_range:
                 page_range = PageRange(
@@ -185,23 +221,28 @@ class TocFinderTools:
                     end_page=toc_page_range["end_page"]
                 )
 
-            # Create result
             self._pending_result = TocFinderResult(
                 toc_found=toc_found,
                 toc_page_range=page_range,
                 confidence=confidence,
                 search_strategy_used=search_strategy_used,
-                reasoning=reasoning
+                reasoning=reasoning,
+                structure_notes=structure_notes
             )
+
+            result_summary = {
+                "toc_found": toc_found,
+                "toc_page_range": f"{page_range.start_page}-{page_range.end_page}" if page_range else None,
+                "confidence": confidence
+            }
+
+            if structure_notes:
+                result_summary["structure_notes_compiled"] = f"from {len(self._page_observations)} page observations"
 
             return json.dumps({
                 "success": True,
                 "message": "ToC search complete",
-                "result": {
-                    "toc_found": toc_found,
-                    "toc_page_range": f"{page_range.start_page}-{page_range.end_page}" if page_range else None,
-                    "confidence": confidence
-                }
+                "result": result_summary
             })
 
         except Exception as e:

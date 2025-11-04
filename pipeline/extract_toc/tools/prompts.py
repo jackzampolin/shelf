@@ -146,13 +146,15 @@ The Political Education .......... 39
 Extraction:
 ```json
 [
-  {{"chapter_number": null, "title": "Part I: April 12, 1945", "printed_page_number": "1", "level": 1}},
+  {{"chapter_number": null, "title": "Part I", "printed_page_number": null, "level": 1}},
+  {{"chapter_number": null, "title": "April 12, 1945", "printed_page_number": "1", "level": 2}},
   {{"chapter_number": null, "title": "The First Days", "printed_page_number": "15", "level": 2}},
-  {{"chapter_number": null, "title": "Part II: The Political Education", "printed_page_number": "39", "level": 1}}
+  {{"chapter_number": null, "title": "Part II", "printed_page_number": null, "level": 1}},
+  {{"chapter_number": null, "title": "The Political Education", "printed_page_number": "39", "level": 2}}
 ]
 ```
 
-**CRITICAL:** Merge parent header with first child's title. Use child's page number.
+**CRITICAL:** Keep parent headers as SEPARATE entries with null page numbers. They provide structure.
 
 **PATTERN 2: Standalone complete entries (one line, has page number)**
 
@@ -220,13 +222,15 @@ Part II
 Extraction:
 ```json
 [
-  {{"chapter_number": 1, "title": "Part I: April 12, 1945", "printed_page_number": "1", "level": 1}},
+  {{"chapter_number": null, "title": "Part I", "printed_page_number": null, "level": 1}},
+  {{"chapter_number": 1, "title": "April 12, 1945", "printed_page_number": "1", "level": 2}},
   {{"chapter_number": 2, "title": "The First Days", "printed_page_number": "15", "level": 2}},
-  {{"chapter_number": 3, "title": "Part II: The Political Education", "printed_page_number": "39", "level": 1}}
+  {{"chapter_number": null, "title": "Part II", "printed_page_number": null, "level": 1}},
+  {{"chapter_number": 3, "title": "The Political Education", "printed_page_number": "39", "level": 2}}
 ]
 ```
 
-**CRITICAL:** Part number goes in title, Chapter number in chapter_number field.
+**CRITICAL:** Keep Parts separate with null page numbers. Chapter numbers go in chapter_number field.
 
 **HOW TO DISTINGUISH PATTERNS:**
 
@@ -238,9 +242,9 @@ Key signal: **PAGE NUMBERS indicate complete entries**
    - Title continuation (if next line completes the thought) → Pattern 3
    - Standalone rare case (decorative headers, skip these)
 
-3. Use context:
-   - If "Part I" followed by titled entries → Pattern 1 or 4 (merge part into first child title)
-   - If partial sentence followed by completion → Pattern 3 (merge lines)
+3. Use visual context from images:
+   - If "Part I" followed by indented entries → Pattern 1 or 4 (keep Part separate)
+   - If incomplete sentence followed by continuation → Pattern 3 (merge lines)
    - If standalone entry with page number → Pattern 2 (keep as-is)
 </pattern_recognition>
 
@@ -252,70 +256,63 @@ For numbering style "{numbering_style}":
 - "Chapter 5: Title" → chapter_number=5, title="Title"
 - "I. Title" (if Roman = chapters) → chapter_number=1, title="Title"
 
-**Part numbering (goes in title field):**
-- "Part I" + "Title .... 1" → title="Part I: Title", chapter_number=null
-- "I" + "Title .... 1" (if Roman = parts) → title="Part I: Title", chapter_number=null
+**Part numbering (separate entries, goes in title field):**
+- "Part I" (no page number) → separate entry: title="Part I", chapter_number=null, printed_page_number=null
+- "I" (if Roman = parts) → title="Part I" (spell out), chapter_number=null, printed_page_number=null
 
 **How to tell Part vs Chapter Roman numerals:**
 - Context: If followed by indented numbered items (1, 2, 3), it's a Part
 - Context: If standalone with page number, it's a Chapter
-- Visual: Parts usually larger/bolder, no indentation
+- Visual: Parts usually larger/bolder, flush left
 - Semantic: "Part I" is explicit, lone "I" requires context
 
 **Title cleanup:**
 - NEVER put Part numbers in chapter_number field
 - ALWAYS remove chapter prefixes from title ("Chapter 5: Title" → "Title")
-- MERGE parent labels into child titles ("Part I" + "April 12" → "Part I: April 12")
+- Keep Parts as SEPARATE entries (don't merge with following chapters)
 
 **Page numbers (from OCR):**
 - Roman numerals: "ix", "xiv" (strings, not integers)
 - Arabic numerals: "15", "203" (strings, not integers)
-- Missing: null (for parent entries if not merged)
+- Missing: null (for structural parent entries like Parts)
 </numbering_extraction>
 
 <hierarchy_detection>
-**Level assignment uses BOTH visual indentation AND semantics:**
+**Level assignment based on visual indentation in images:**
 
-- Level 1: Top-level entries (Parts, main chapters, front/back matter)
-  - Flush left OR merged parent+child
-  - Semantic: Major divisions
+- Level 1: Flush left entries
+  - Parts, main chapters, front/back matter
+  - No indentation visible
 
-- Level 2: Sections/sub-chapters
-  - Indented once
-  - OR children under merged parts
-  - Semantic: Subdivisions of level 1
+- Level 2: First level of indentation
+  - Sections/sub-chapters under Parts
+  - Clearly indented from left margin
 
-- Level 3: Subsections
-  - Indented twice
-  - Semantic: Subdivisions of level 2
-
-**When merging parent+child (Pattern 1/4):**
-- Use child's visual indentation for level
-- If children are flush left, merged entry = level 1
-- If children are indented, merged entry = their level
+- Level 3: Second level of indentation
+  - Subsections under sections
+  - Indented further than level 2
 
 
 <self_verification>
 **CRITICAL: After extraction, verify BEFORE returning:**
 
 1. **Pattern application check:**
-   - Did I find any lines WITHOUT page numbers?
-   - If yes, did I apply Pattern 1/3/4 (merge with following lines)?
-   - Or did I incorrectly create standalone entries with null page numbers?
-   - RULE: Every final entry should have a page number (except rare decorative headers to skip)
+   - Did I find multi-line titles (Pattern 3)?
+   - If yes, did I merge continuation lines into single entries?
+   - Did I keep structural parents (Parts, Sections) as separate entries?
+   - RULE: Entries have page numbers UNLESS they are structural parents (Parts/Sections)
 
 2. **Part/Chapter distinction check:**
-   - Do I have entries like: chapter_number=1, title="Part"?
-   - This is WRONG! Part numbers go in title field
-   - CORRECT: chapter_number=null, title="Part I: [subtitle]"
+   - Do I have entries like: chapter_number=1, title="Part I"?
+   - This is WRONG! Part numbers go in title field, chapter_number should be null
+   - CORRECT for Parts: chapter_number=null, title="Part I", printed_page_number=null
+   - CORRECT for Chapters: chapter_number=1, title="Chapter Title", printed_page_number="10"
 
 3. **Count check:**
    - Phase 2 observed {approx_count}
    - How many did I extract? ___
-   - If significantly different (off by 3+), did I:
-     * Over-merge? (Pattern 1/4 applied too aggressively)
-     * Under-merge? (Missed parent-child relationships)
-   - LOOK AGAIN at images to verify
+   - If significantly different (off by 5+), LOOK AGAIN at images to verify
+   - Check if I missed entries or incorrectly merged multi-line titles
 
 4. **Sequence check (if numbered chapters):**
    - List my chapter numbers: [1, 2, 3, ...]
@@ -323,15 +320,16 @@ For numbering style "{numbering_style}":
    - If gaps exist, LOOK AGAIN at images/OCR to find missing entries
 
 5. **Title cleanup check:**
-   - Do any titles still have chapter number prefixes? ("1.", "Chapter 5:")
+   - Do any chapter titles still have number prefixes? ("1.", "Chapter 5:")
    - If yes, remove them (they should be in chapter_number field)
-   - Do merged Part titles include the part label? ("Part I: Title")
-   - If no, add it
+   - Are Part titles clean? (e.g., "Part I", "Part II")
+   - If Part has subtitle on same line, include it (e.g., "Part I: Introduction")
 
 6. **Page number check:**
    - Are ALL page numbers strings (not integers)?
    - Did I extract them from OCR text accurately?
-   - Are there entries with null page numbers that should have been merged?
+   - Do structural parents (Parts/Sections) correctly have null page numbers?
+   - Do content entries (Chapters) have page numbers?
 
 7. **Boundary check:**
    - Did I check FIRST page for any entries?
@@ -354,14 +352,14 @@ Return JSON with all entries:
     }},
     {{
       "chapter_number": null,
-      "title": "Part I: The Ancient World",
-      "printed_page_number": "3",
+      "title": "Part I",
+      "printed_page_number": null,
       "level": 1
     }},
     {{
       "chapter_number": 1,
       "title": "Early Civilizations",
-      "printed_page_number": "12",
+      "printed_page_number": "3",
       "level": 2
     }},
     {{
@@ -372,14 +370,14 @@ Return JSON with all entries:
     }},
     {{
       "chapter_number": null,
-      "title": "Part II: Medieval Period",
-      "printed_page_number": "89",
+      "title": "Part II",
+      "printed_page_number": null,
       "level": 1
     }},
     {{
       "chapter_number": 3,
       "title": "Feudal Systems",
-      "printed_page_number": "95",
+      "printed_page_number": "89",
       "level": 2
     }},
     {{
@@ -390,27 +388,26 @@ Return JSON with all entries:
     }}
   ],
   "toc_page_range": {{"start_page": 5, "end_page": 6}},
-  "total_chapters": 4,
+  "total_chapters": 5,
   "total_sections": 3,
   "parsing_confidence": 0.95,
   "notes": [
-    "Extracted 7 entries (Phase 2 estimated X-Y entries)",
-    "Applied Pattern 1: Merged 'Part I' header with 'The Ancient World' subtitle",
-    "Applied Pattern 1: Merged 'Part II' header with 'Medieval Period' subtitle",
-    "Pattern 2: Standalone entries for Foreword, Bibliography (have page numbers)",
-    "Found numbered chapters (1-3) under parts, preserved numbering",
-    "Verified all entries have page numbers (no orphaned parents)"
+    "Extracted 9 entries (Phase 2 estimated X-Y entries)",
+    "Pattern 1: Kept Parts (I, II) as separate structural entries with null page numbers",
+    "Pattern 2: Standalone entries for Foreword, Bibliography, and numbered chapters",
+    "Found 3 numbered chapters (1-3) under parts, preserved numbering",
+    "Verified structural parents have null page numbers, content entries have page numbers"
   ]
 }}
 
 **FIELD RULES:**
-- entries: ALL entries you found after pattern-based merging
+- entries: ALL entries you found (Parts kept separate from chapters)
 - chapter_number: Integer for numbered chapters, null for parts/front matter/back matter
 - title: Clean title
-  * For merged patterns: Include part label ("Part I: Title")
-  * For chapters: Remove number prefix
-- printed_page_number: String from OCR (NEVER null after proper merging)
-- level: 1/2/3 from visual indentation + semantic hierarchy
+  * For Parts: "Part I", "Part II" (keep simple unless subtitle on same line)
+  * For chapters: Remove number prefix ("Chapter 5: Title" → "Title")
+- printed_page_number: String from OCR, null for structural parents (Parts/Sections)
+- level: 1/2/3 from visual indentation in images
 - toc_page_range: Scan page numbers provided in user message
 - total_chapters: Count of level=1 entries
 - total_sections: Count of level=2+ entries

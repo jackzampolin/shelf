@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Tuple, List
+from typing import Tuple, List, Dict, Any, Optional
 from PIL import Image
 
 from infra.llm.batch_client import LLMBatchClient
@@ -42,7 +42,19 @@ def detect_toc_structure(
     model: str,
     logger: PipelineLogger,
     log_dir: Path,
-) -> Tuple[dict, float]:
+    structure_notes_from_finder: Optional[Dict[int, str]] = None,
+) -> Tuple[dict, Dict[str, Any]]:
+    """
+    Detect ToC structure from images.
+
+    Returns:
+        Tuple of (observations, metrics) where metrics contains:
+        - cost_usd: LLM call cost
+        - time_seconds: Execution time
+        - completion_tokens: Output tokens
+        - prompt_tokens: Input tokens
+        - reasoning_tokens: Reasoning tokens (Grok only)
+    """
     logger.info("Phase 2: Detecting ToC structure (document-level)", toc_pages=len(toc_images))
     print(f"   🔍 Phase 2: Analyzing document structure...")
 
@@ -74,13 +86,21 @@ def detect_toc_structure(
         }
     }
 
-    # Create structure detection request (vision-only, no text)
+    # Create structure detection request
+    user_content = "Analyze these ToC pages and identify the overall document structure."
+    if structure_notes_from_finder:
+        notes_text = "\n\n".join([
+            f"Page {page_num}: {observations}"
+            for page_num, observations in sorted(structure_notes_from_finder.items())
+        ])
+        user_content += f"\n\nFinder agent observations (use as guidance):\n{notes_text}"
+
     request = LLMRequest(
         id="detect_structure",
         model=model,
         messages=[
             {"role": "system", "content": TOC_STRUCTURE_DETECTION_PROMPT},
-            {"role": "user", "content": "Analyze these ToC pages and identify the overall document structure."}
+            {"role": "user", "content": user_content}
         ],
         images=toc_images,
         temperature=0.0,
@@ -103,7 +123,15 @@ def detect_toc_structure(
 
     structure_data = result.parsed_json
     observations = structure_data["visual_observations"]
-    detection_cost = result.cost_usd
+
+    # Extract full metrics from LLMResult
+    metrics = {
+        'cost_usd': result.cost_usd,
+        'time_seconds': result.execution_time_seconds,
+        'completion_tokens': result.usage.get('completion_tokens', 0),
+        'prompt_tokens': result.usage.get('prompt_tokens', 0),
+        'reasoning_tokens': result.usage.get('reasoning_tokens', 0),
+    }
 
     logger.info(
         "Structure observed",
@@ -111,14 +139,14 @@ def detect_toc_structure(
         numbering=observations["numbering_style"],
         levels=observations["indentation_levels"],
         confidence=structure_data.get("confidence", 0.0),
-        cost=f"${detection_cost:.4f}"
+        cost=f"${metrics['cost_usd']:.4f}"
     )
 
     print(f"   ✓ Observations: {observations['approximate_entry_count']}, "
           f"numbering={observations['numbering_style']}, "
           f"levels={observations['indentation_levels']}")
 
-    return observations, detection_cost
+    return observations, metrics
 
 
 def extract_toc_entries(
@@ -129,7 +157,18 @@ def extract_toc_entries(
     model: str,
     logger: PipelineLogger,
     log_dir: Path,
-) -> Tuple[TableOfContents, float]:
+) -> Tuple[TableOfContents, Dict[str, Any]]:
+    """
+    Extract ToC entries from images and text.
+
+    Returns:
+        Tuple of (toc, metrics) where metrics contains:
+        - cost_usd: LLM call cost
+        - time_seconds: Execution time
+        - completion_tokens: Output tokens
+        - prompt_tokens: Input tokens
+        - reasoning_tokens: Reasoning tokens (Grok only)
+    """
     logger.info("Phase 3: Extracting ToC entries (structure-guided)", model=model)
     print(f"   📝 Phase 3: Extracting entries with structure guidance...")
 
@@ -184,7 +223,15 @@ Remember to:
 
     # Parse response as TableOfContents
     toc = TableOfContents(**result.parsed_json)
-    extraction_cost = result.cost_usd
+
+    # Extract full metrics from LLMResult
+    metrics = {
+        'cost_usd': result.cost_usd,
+        'time_seconds': result.execution_time_seconds,
+        'completion_tokens': result.usage.get('completion_tokens', 0),
+        'prompt_tokens': result.usage.get('prompt_tokens', 0),
+        'reasoning_tokens': result.usage.get('reasoning_tokens', 0),
+    }
 
     print(f"   ✓ Extracted: {len(toc.entries)} entries ({toc.total_chapters} chapters, {toc.total_sections} sections)")
 
@@ -194,7 +241,7 @@ Remember to:
         chapters=toc.total_chapters,
         sections=toc.total_sections,
         confidence=f"{toc.parsing_confidence:.2f}",
-        cost=f"${extraction_cost:.4f}",
+        cost=f"${metrics['cost_usd']:.4f}",
     )
 
-    return toc, extraction_cost
+    return toc, metrics

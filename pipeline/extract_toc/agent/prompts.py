@@ -9,15 +9,15 @@ DETECT ToC BY COMBINING TEXT HINTS + VISUAL STRUCTURE.
 STRATEGY:
 1. Use grep report to find pages with ToC keywords ("Table of Contents", "Contents", etc.)
 2. Visually verify candidates to confirm ToC structure
-3. If no keywords found, search front matter strategically (pages 1-30)
+3. If no keywords found, search front matter region strategically
 
 TOC VISUAL MARKERS (what you see in images):
-- Vertical list of entries (10+ lines)
+- Vertical list of entries (many lines forming a list structure)
 - Right-aligned column of numbers (page references)
 - Leader dots or whitespace connecting titles to numbers
-- Hierarchical indentation (chapters vs sections)
+- Hierarchical indentation (parent/child relationships visible)
 - May have non-standard titles: "ORDER OF BATTLE", "LIST OF CHAPTERS", graphical/stylized "CONTENTS"
-- Usually in pages 1-30 (94% are in pages 1-10)
+- Typically appears in front matter (early pages of the book)
 
 NOT A TOC:
 - Dense paragraph text
@@ -27,37 +27,52 @@ NOT A TOC:
 </detection_philosophy>
 
 <tool_workflow>
-You have 3 tools. Use them strategically:
+You have 3 tools. Use them strategically in this workflow:
 
-STEP 1: Get Grep Report
+STEP 1: Get Grep Report (FREE - no cost)
 → Call get_frontmatter_grep_report()
 → Returns pages where keywords appear:
   - toc_candidates: Pages with "Table of Contents", "Contents", etc.
   - front_matter: Pages with "Preface", "Introduction", etc.
   - structure: Pages with "Chapter", "Part" patterns
-→ FREE operation (no LLM cost)
 
-STEP 2: Verify Top Candidates
-→ If toc_candidates found: Load those pages with add_page_images_to_context()
-→ LOOK AT THE IMAGES in the conversation
-→ Determine if they show ToC structure
-→ If yes: Check if ToC continues beyond detected pages
-  - Load neighboring pages (before/after)
-  - Find exact start and end of ToC
-→ If no: Try front_matter hints (preface/introduction pages)
+STEP 2: DISCOVER ToC Range AND OBSERVE Structure (one page at a time)
+→ Use load_page_image() to explore candidates one by one
+→ WORKFLOW: See → Document BOTH discovery AND structure → Load next → Repeat
+→ CRITICAL: In your observations, document:
+  - Discovery: "Is this ToC? Does it continue? Where does it end?"
+  - VISUAL STRUCTURE (not content): Alignment, indentation, leader dots, hierarchy, numbering patterns
+  - AVOID specific entry content (chapter titles, "Chapter 1: The Beginning") - Phase 2 will extract that!
+  - DO NOTE numbering structure (types used, ranges observed) - Phase 2 needs this!
+→ Pattern-focused observation approach:
+  - First page: Identify IF it's ToC (heading, list structure, page numbers)
+  - Subsequent pages: Document STRUCTURE patterns you observe:
+    * Alignment pattern (left, right, centered)
+    * Connection method (leader dots, whitespace, tabs)
+    * Indentation levels (flat list vs hierarchical)
+    * Numbering schemes (what types you see: Roman numerals, Arabic numerals, letters, etc.)
+    * Numbering ranges (document the actual ranges observed on these pages)
+  - Final page: Confirm boundary (where ToC ends, body begins)
+→ Your observations teach Phase 2 HOW this specific book's ToC is structured!
 
-STEP 3: Strategic Scan (if grep found nothing helpful)
-→ Front matter context from grep report shows book structure
-→ Load pages strategically:
-  - If front_matter detected: Check pages around those locations
-  - Otherwise: Sequential scan pages 1-5, then 6-10, etc.
-→ LOOK AT THE IMAGES
-→ If ToC found: Expand to find full range
+STEP 3: Write Result
+→ Call write_toc_result() with:
+  - toc_found, toc_page_range, confidence, strategy, reasoning
+→ Your page observations are automatically compiled into structure_notes for Phase 2
+→ NO need to repeat structure - it's captured in your observations!
 
-STEP 4: Write Result
-→ Call write_toc_result() with your findings
-→ Include exact page range if found
-→ Explain your reasoning (grep hints + what you saw in images)
+WHAT MAKES GOOD STRUCTURE OBSERVATIONS:
+✓ "Right-aligned page numbers with leader dots"
+✓ "Two indentation levels: parent entries without page numbers, children with page numbers"
+✓ "Hierarchical numbering observed: parent level uses [describe type], child level uses [describe type]"
+✓ "Sequential numbering visible across pages (note the type and range observed)"
+✓ "Multi-line entries use hanging indent"
+✓ "Consistent spacing and alignment across all pages"
+
+✗ "Chapter 1: The Beginning on page 5"
+✗ "Chapter titled 'The War Begins'"
+✗ "Part II is called 'Inheriting a Different World'"
+(Phase 2 will extract titles - document numbering/structure only!)
 </tool_workflow>
 
 <visual_detection_guide>
@@ -66,7 +81,7 @@ When you SEE page images, look for these patterns:
 STRONG TOC SIGNALS (confidence 0.85-1.0):
 ✓ Clear right-aligned number column
 ✓ Leader dots (.....) connecting text to numbers
-✓ Vertical list with 10+ entries
+✓ Vertical list with many entries (forming a list structure)
 ✓ Hierarchical indentation visible
 ✓ Heading says "Contents", "Table of Contents", "ORDER OF BATTLE", etc.
 ✓ Graphical/decorative title (even if text is stylized)
@@ -96,22 +111,22 @@ When you find ToC pages, determine the COMPLETE ToC range:
 → You're done! Write the result.
 
 **Only check adjacent pages if:**
-- ToC starts mid-chapter (e.g., "Chapter 18" on first page)
+- ToC starts mid-sequence (no heading visible, appears to be continuation)
 - ToC ends abruptly without clear finale
 - No clear heading/boundary markers
 
-EXAMPLE (confident):
-- Grep found pages [5, 6]
-- Page 5: "CONTENTS" heading, chapters 1-15
-- Page 6: Chapters 16-30, ends with clear layout break
-→ Result: pages 5-6 (DON'T check pages 4 or 7)
+WORKFLOW PATTERN (confident case):
+- Grep identifies candidate pages
+- Load first candidate page → Document: heading present, structure pattern, numbering range
+- Load next page → Document: continuation pattern, structure consistency, completion markers
+- Load boundary page → Confirm: ToC ends, body text begins
+→ Result: Complete range with structure patterns documented throughout
 
-EXAMPLE (uncertain):
-- Grep found page 5
-- Page 5: Starts with "Chapter 18" (no heading, mid-content)
-→ Check page 4 to find the beginning
-- Page 4: Shows "Contents" heading + Chapters 1-17
-→ Result: pages 4-5
+WORKFLOW PATTERN (uncertain case):
+- Grep identifies single candidate
+- Load candidate → Document: No heading, mid-sequence numbering, structure pattern visible
+- Load previous page → Document: Heading found, earlier numbering, same structure
+→ Result: Complete range discovered by working backward
 </finding_full_range>
 
 <grep_report_interpretation>
@@ -119,33 +134,34 @@ The grep report shows keyword matches across the book:
 
 **toc_candidates**: Direct ToC keyword matches (highest priority)
 - If found: Check these pages first
-- Usually accurate (90%+ precision)
+- Usually accurate (high precision signal)
 
 **structure**: Chapter/Part clustering (STRONG signal in front matter!)
-- If many Chapter/Part mentions cluster on 1-2 pages in pages 1-30: LIKELY THE TOC
-- Example: page 6 shows [Chapter 1, Chapter 2, Chapter 3, Part I, Part II] → ToC page
-- Ignore structure beyond page 30 (those are actual chapter starts, not ToC)
-- PATTERN: Dense clustering = ToC listing chapters; Sparse mentions = body text
+- If many Chapter/Part mentions cluster on 1-2 consecutive pages in front matter: LIKELY THE TOC
+- Pattern recognition: Dense clustering of structural keywords = ToC listing chapters
+- Clustering example: One page shows multiple sequential chapter/part keywords → ToC candidate
+- Ignore structure keywords in later pages (those are actual chapter starts, not ToC)
+- PATTERN: Dense clustering = ToC listing; Sparse scattered mentions = body text
 
 **front_matter**: Pages with preface/introduction/etc.
-- Use for context: ToC often appears before/after these
-- If no toc_candidates and no structure clustering: Check pages around front_matter
+- Use for context: ToC often appears before/after these sections
+- If no toc_candidates and no structure clustering: Check pages around front_matter markers
 
-**Typical patterns:**
-- toc_candidates=[6], structure={chapter:[6]} → Load page 6 (very high confidence)
-- toc_candidates=[], structure={chapter:[5,6]} → Load pages 5-6 (clustering signal)
-- toc_candidates=[], structure={chapter:[5,12,28,40]} → Load page 5 only (cluster at 5, rest are body)
-- toc_candidates=[], front_matter={preface:[3,4]}, structure={} → Load pages 1-5
-- toc_candidates=[], front_matter={}, structure={} → Sequential scan pages 1-5, 6-10
+**Decision patterns:**
+- toc_candidates present + structure clustering at same page → Load that page (very high confidence)
+- toc_candidates absent + structure clustering on consecutive pages → Load clustered pages
+- toc_candidates absent + structure scattered widely → Load only front matter cluster, rest are body pages
+- toc_candidates absent + front_matter present + no structure → Load pages around front matter
+- All signals absent → Sequential scan of front matter region
 </grep_report_interpretation>
 
 <cost_awareness>
-Each batch of images costs ~$0.0005 per page (vision model).
-- Grep report: FREE (no LLM)
-- Verifying 2-3 pages: ~$0.0015
-- Typical book: $0.05-0.10 total (vs $0.10-0.15 without grep)
+Vision model calls have real cost (grep is FREE).
+- Strategy: Use grep to narrow candidates, then visually verify
+- Grep-guided search significantly reduces total pages loaded
+- STOP as soon as you're confident - don't over-verify
 
-STOP as soon as you're confident. Grep report guides you to right pages.
+The grep report guides you to high-probability pages, minimizing unnecessary image loads.
 </cost_awareness>
 
 <output_requirements>
@@ -161,19 +177,19 @@ REQUIRED FIELDS:
 EXAMPLE (found via grep):
 {
   "toc_found": true,
-  "toc_page_range": {"start_page": 4, "end_page": 6},
+  "toc_page_range": {"start_page": X, "end_page": Y},
   "confidence": 0.95,
   "search_strategy_used": "grep_report",
-  "reasoning": "Grep found ToC keywords on pages 4-6. Visually confirmed all three pages show clear ToC structure with chapter titles and right-aligned page numbers. Checked page 7 which is body text."
+  "reasoning": "Grep found ToC keywords on candidate pages. Visually confirmed all pages show clear ToC structure with chapter titles and right-aligned page numbers. Checked boundary page which is body text."
 }
 
 EXAMPLE (found after scan):
 {
   "toc_found": true,
-  "toc_page_range": {"start_page": 8, "end_page": 9},
+  "toc_page_range": {"start_page": X, "end_page": Y},
   "confidence": 0.90,
   "search_strategy_used": "grep_with_scan",
-  "reasoning": "Grep found no ToC keywords but detected preface on page 12. Scanned pages 1-10 and found ToC on pages 8-9 with graphical title (no text keyword). Confirmed by visual structure."
+  "reasoning": "Grep found no ToC keywords but detected front matter markers. Scanned front matter region and found ToC with graphical title (no text keyword). Confirmed by visual structure."
 }
 
 EXAMPLE (not found):
@@ -182,7 +198,7 @@ EXAMPLE (not found):
   "toc_page_range": null,
   "confidence": 0.85,
   "search_strategy_used": "not_found",
-  "reasoning": "Grep found no ToC keywords in first 50 pages. Visually scanned pages 1-30. No pages show ToC structure. Book appears to lack formal table of contents."
+  "reasoning": "Grep found no ToC keywords in scanned pages. Visually scanned front matter region. No pages show ToC structure. Book appears to lack formal table of contents."
 }
 </output_requirements>
 """
@@ -193,7 +209,15 @@ def build_user_prompt(scan_id: str, total_pages: int) -> str:
 
 Total pages: {total_pages}
 
-Start by calling get_frontmatter_grep_report() to see where ToC keywords appear.
-Use add_page_images_to_context() to visually verify candidates.
-When search complete, call write_toc_result() with your findings.
+WORKFLOW:
+1. get_frontmatter_grep_report() - Find keyword hints (FREE)
+2. load_page_image() - Discover ToC range one page at a time
+   CRITICAL: Document VISUAL STRUCTURE in your observations:
+   - Discovery: "Is this ToC? Does it continue? Where does it end?"
+   - STRUCTURE: Alignment, indentation levels, leader dots, hierarchy
+   - NUMBERING: Document numbering patterns observed (Roman vs Arabic, sequential ranges)
+   - AVOID chapter titles: Don't write specific chapter names/titles
+3. write_toc_result() - Write findings (structure auto-compiled from your observations)
+
+Your observations guide Phase 2 extraction. Document HOW entries are formatted (structure/numbering), NOT the actual titles (content). Phase 2 extracts titles.
 """

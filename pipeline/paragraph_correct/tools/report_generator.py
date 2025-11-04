@@ -21,8 +21,11 @@ def generate_report(
         logger.warning("No page metrics found")
         return
 
+    # Filter to only page-based metrics (exclude stage_runtime and other special keys)
+    page_metrics = {k: v for k, v in all_metrics.items() if k.startswith('page_')}
+
     report_rows = []
-    for page_key, metrics in sorted(all_metrics.items(), key=lambda x: int(x[0].split('_')[1]) if '_' in x[0] else 0):
+    for page_key, metrics in sorted(page_metrics.items(), key=lambda x: int(x[0].split('_')[1])):
         try:
             page_num = int(page_key.split('_')[1])
         except (IndexError, ValueError):

@@ -444,11 +444,7 @@ class LLMClient:
 
         # Handle vision models with images
         if images:
-            logger.warning(f"call_with_tools: received {len(images)} images, adding to messages")
             messages = self._add_images_to_messages(messages, images)
-            logger.warning(f"call_with_tools: after _add_images_to_messages, last message content type: {type(messages[-1].get('content'))}")
-        else:
-            logger.warning("call_with_tools: no images provided")
 
         # Build request payload
         headers = {

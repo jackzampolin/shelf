@@ -25,69 +25,97 @@ class ExtractTocStageStorage:
         stage_storage = storage.stage(self.stage_name)
         stage_storage.save_file("finder_result.json", finder_data)
 
-    def structure_exists(self, storage: BookStorage) -> bool:
+    def grep_report_exists(self, storage: BookStorage) -> bool:
         stage_storage = storage.stage(self.stage_name)
-        return (stage_storage.output_dir / "structure.json").exists()
+        return (stage_storage.output_dir / "grep_report.json").exists()
 
-    def load_structure(self, storage: BookStorage) -> Optional[dict]:
-        if not self.structure_exists(storage):
+    def load_grep_report(self, storage: BookStorage) -> Optional[dict]:
+        if not self.grep_report_exists(storage):
             return None
         stage_storage = storage.stage(self.stage_name)
-        return stage_storage.load_file("structure.json")
+        return stage_storage.load_file("grep_report.json")
 
-    def save_structure(self, storage: BookStorage, structure_data: dict):
+    def save_grep_report(self, storage: BookStorage, grep_data: dict):
         stage_storage = storage.stage(self.stage_name)
-        stage_storage.save_file("structure.json", structure_data)
+        stage_storage.save_file("grep_report.json", grep_data)
 
-    def toc_unchecked_exists(self, storage: BookStorage) -> bool:
+    def bboxes_extracted_exists(self, storage: BookStorage) -> bool:
         stage_storage = storage.stage(self.stage_name)
-        return (stage_storage.output_dir / "toc_unchecked.json").exists()
+        return (stage_storage.output_dir / "bboxes_extracted.json").exists()
 
-    def load_toc_unchecked(self, storage: BookStorage) -> Optional[dict]:
-        if not self.toc_unchecked_exists(storage):
+    def load_bboxes_extracted(self, storage: BookStorage) -> Optional[dict]:
+        if not self.bboxes_extracted_exists(storage):
             return None
         stage_storage = storage.stage(self.stage_name)
-        return stage_storage.load_file("toc_unchecked.json")
+        return stage_storage.load_file("bboxes_extracted.json")
 
-    def save_toc_unchecked(self, storage: BookStorage, toc_data: dict):
+    def save_bboxes_extracted(self, storage: BookStorage, bboxes_data: dict):
         stage_storage = storage.stage(self.stage_name)
-        stage_storage.save_file("toc_unchecked.json", toc_data)
+        stage_storage.save_file("bboxes_extracted.json", bboxes_data)
 
-    def toc_diff_exists(self, storage: BookStorage) -> bool:
+    def bboxes_verified_exists(self, storage: BookStorage) -> bool:
         stage_storage = storage.stage(self.stage_name)
-        return (stage_storage.output_dir / "toc_diff.json").exists()
+        return (stage_storage.output_dir / "bboxes_verified.json").exists()
 
-    def load_toc_diff(self, storage: BookStorage) -> Optional[dict]:
-        if not self.toc_diff_exists(storage):
+    def load_bboxes_verified(self, storage: BookStorage) -> Optional[dict]:
+        if not self.bboxes_verified_exists(storage):
             return None
         stage_storage = storage.stage(self.stage_name)
-        return stage_storage.load_file("toc_diff.json")
+        return stage_storage.load_file("bboxes_verified.json")
 
-    def save_toc_diff(self, storage: BookStorage, diff_data: dict):
+    def save_bboxes_verified(self, storage: BookStorage, bboxes_data: dict):
         stage_storage = storage.stage(self.stage_name)
-        stage_storage.save_file("toc_diff.json", diff_data)
+        stage_storage.save_file("bboxes_verified.json", bboxes_data)
 
-    def toc_final_exists(self, storage: BookStorage) -> bool:
+    def bboxes_ocr_exists(self, storage: BookStorage) -> bool:
+        stage_storage = storage.stage(self.stage_name)
+        return (stage_storage.output_dir / "bboxes_ocr.json").exists()
+
+    def load_bboxes_ocr(self, storage: BookStorage) -> Optional[dict]:
+        if not self.bboxes_ocr_exists(storage):
+            return None
+        stage_storage = storage.stage(self.stage_name)
+        return stage_storage.load_file("bboxes_ocr.json")
+
+    def save_bboxes_ocr(self, storage: BookStorage, ocr_data: dict):
+        stage_storage = storage.stage(self.stage_name)
+        stage_storage.save_file("bboxes_ocr.json", ocr_data)
+
+    def toc_assembled_exists(self, storage: BookStorage) -> bool:
+        stage_storage = storage.stage(self.stage_name)
+        return (stage_storage.output_dir / "toc_assembled.json").exists()
+
+    def load_toc_assembled(self, storage: BookStorage) -> Optional[dict]:
+        if not self.toc_assembled_exists(storage):
+            return None
+        stage_storage = storage.stage(self.stage_name)
+        return stage_storage.load_file("toc_assembled.json")
+
+    def save_toc_assembled(self, storage: BookStorage, toc_data: dict):
+        stage_storage = storage.stage(self.stage_name)
+        stage_storage.save_file("toc_assembled.json", toc_data)
+
+    def toc_validated_exists(self, storage: BookStorage) -> bool:
         stage_storage = storage.stage(self.stage_name)
         return (stage_storage.output_dir / "toc.json").exists()
 
-    def load_toc_final(self, storage: BookStorage) -> Optional[dict]:
-        if not self.toc_final_exists(storage):
+    def load_toc_validated(self, storage: BookStorage) -> Optional[dict]:
+        if not self.toc_validated_exists(storage):
             return None
         stage_storage = storage.stage(self.stage_name)
         return stage_storage.load_file("toc.json")
 
-    def save_toc_final(self, storage: BookStorage, toc_data: dict):
+    def save_toc_validated(self, storage: BookStorage, toc_data: dict):
         from .schemas import ExtractTocBookOutput
         validated = ExtractTocBookOutput(**toc_data)
         stage_storage = storage.stage(self.stage_name)
         stage_storage.save_file("toc.json", validated.model_dump())
 
     def toc_output_exists(self, storage: BookStorage) -> bool:
-        return self.toc_final_exists(storage)
+        return self.toc_validated_exists(storage)
 
     def load_toc(self, storage: BookStorage) -> Optional[dict]:
-        return self.load_toc_final(storage)
+        return self.load_toc_validated(storage)
 
     def save_toc(self, storage: BookStorage, toc_data: dict):
-        self.save_toc_final(storage, toc_data)
+        self.save_toc_validated(storage, toc_data)

@@ -11,10 +11,11 @@ from .storage import ExtractTocStageStorage
 class ExtractTocStatus(str, Enum):
     NOT_STARTED = "not_started"
     FINDING_TOC = "finding_toc"
-    EXTRACTING_STRUCTURE = "extracting_structure"
-    GENERATING_TOC_DRAFT = "generating_toc_draft"
-    CHECKING_TOC = "checking_toc"
-    MERGING_TOC = "merging_toc"
+    EXTRACTING_BBOXES = "extracting_bboxes"
+    VERIFYING_BBOXES = "verifying_bboxes"
+    OCR_BBOXES = "ocr_bboxes"
+    ASSEMBLING_TOC = "assembling_toc"
+    VALIDATING_TOC = "validating_toc"
     COMPLETED = "completed"
 
 
@@ -30,21 +31,24 @@ class ExtractTocStatusTracker:
     ) -> Dict[str, Any]:
 
         finder_result_exists = self.storage.finder_result_exists(storage)
-        structure_exists = self.storage.structure_exists(storage)
-        toc_unchecked_exists = self.storage.toc_unchecked_exists(storage)
-        toc_diff_exists = self.storage.toc_diff_exists(storage)
-        toc_final_exists = self.storage.toc_final_exists(storage)
+        bboxes_extracted_exists = self.storage.bboxes_extracted_exists(storage)
+        bboxes_verified_exists = self.storage.bboxes_verified_exists(storage)
+        bboxes_ocr_exists = self.storage.bboxes_ocr_exists(storage)
+        toc_assembled_exists = self.storage.toc_assembled_exists(storage)
+        toc_validated_exists = self.storage.toc_validated_exists(storage)
 
         if not finder_result_exists:
             status = ExtractTocStatus.FINDING_TOC.value
-        elif not structure_exists:
-            status = ExtractTocStatus.EXTRACTING_STRUCTURE.value
-        elif not toc_unchecked_exists:
-            status = ExtractTocStatus.GENERATING_TOC_DRAFT.value
-        elif not toc_diff_exists:
-            status = ExtractTocStatus.CHECKING_TOC.value
-        elif not toc_final_exists:
-            status = ExtractTocStatus.MERGING_TOC.value
+        elif not bboxes_extracted_exists:
+            status = ExtractTocStatus.EXTRACTING_BBOXES.value
+        elif not bboxes_verified_exists:
+            status = ExtractTocStatus.VERIFYING_BBOXES.value
+        elif not bboxes_ocr_exists:
+            status = ExtractTocStatus.OCR_BBOXES.value
+        elif not toc_assembled_exists:
+            status = ExtractTocStatus.ASSEMBLING_TOC.value
+        elif not toc_validated_exists:
+            status = ExtractTocStatus.VALIDATING_TOC.value
         else:
             status = ExtractTocStatus.COMPLETED.value
 
@@ -54,7 +58,6 @@ class ExtractTocStatusTracker:
         total_cost = sum(m.get('cost_usd', 0.0) for m in all_metrics.values())
         total_time = stage_storage_obj.metrics_manager.get_total_time()
 
-        # Get stored runtime (extract-toc doesn't use batch processor, so may be 0)
         runtime_metrics = stage_storage_obj.metrics_manager.get("stage_runtime")
         stage_runtime = runtime_metrics.get("time_seconds", 0.0) if runtime_metrics else 0.0
 
@@ -67,9 +70,10 @@ class ExtractTocStatusTracker:
             },
             "artifacts": {
                 "finder_result_exists": finder_result_exists,
-                "structure_exists": structure_exists,
-                "toc_unchecked_exists": toc_unchecked_exists,
-                "toc_diff_exists": toc_diff_exists,
-                "toc_final_exists": toc_final_exists,
+                "bboxes_extracted_exists": bboxes_extracted_exists,
+                "bboxes_verified_exists": bboxes_verified_exists,
+                "bboxes_ocr_exists": bboxes_ocr_exists,
+                "toc_assembled_exists": toc_assembled_exists,
+                "toc_validated_exists": toc_validated_exists,
             }
         }

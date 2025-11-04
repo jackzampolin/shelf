@@ -91,6 +91,9 @@ class OCRStage(BaseStage):
         storage: BookStorage,
         logger: PipelineLogger,
     ) -> Dict[str, Any]:
+        import time
+        start_time = time.time()
+
         progress = self.get_status(storage, logger)
         total_pages = progress["total_pages"]
         status = progress["status"]
@@ -171,6 +174,18 @@ class OCRStage(BaseStage):
 
         completed_pages = total_pages - len(progress["remaining_pages"])
         total_cost = progress["metrics"]["total_cost_usd"]
+
+        # Record total stage runtime (includes all phases: OCR extraction, selection, metadata, report)
+        elapsed_time = time.time() - start_time
+        stage_storage_obj = storage.stage(self.name)
+
+        # Only record if not already recorded (resume safety)
+        runtime_metrics = stage_storage_obj.metrics_manager.get("stage_runtime")
+        if not runtime_metrics:
+            stage_storage_obj.metrics_manager.record(
+                key="stage_runtime",
+                time_seconds=elapsed_time
+            )
 
         return {
             "pages_processed": completed_pages,
