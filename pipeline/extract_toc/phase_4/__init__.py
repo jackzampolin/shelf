@@ -58,13 +58,83 @@ def validate_and_assemble(
         {"role": "user", "content": user_prompt}
     ]
 
-    logger.info("  Calling LLM for validation and assembly...")
+    # Build structured output schema from our Pydantic models
+    from ..schemas import TableOfContents, ToCEntry, PageRange
+
+    toc_entry_schema = {
+        "type": "object",
+        "properties": {
+            "chapter_number": {"type": ["integer", "null"], "minimum": 1},
+            "title": {"type": "string", "minLength": 1},
+            "printed_page_number": {"type": ["string", "null"]},
+            "level": {"type": "integer", "minimum": 1, "maximum": 3}
+        },
+        "required": ["title", "level"],
+        "additionalProperties": False
+    }
+
+    toc_schema = {
+        "type": "object",
+        "properties": {
+            "entries": {
+                "type": "array",
+                "items": toc_entry_schema
+            },
+            "toc_page_range": {
+                "type": "object",
+                "properties": {
+                    "start_page": {"type": "integer", "minimum": 1},
+                    "end_page": {"type": "integer", "minimum": 1}
+                },
+                "required": ["start_page", "end_page"],
+                "additionalProperties": False
+            },
+            "total_chapters": {"type": "integer", "minimum": 0},
+            "total_sections": {"type": "integer", "minimum": 0},
+            "parsing_confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "notes": {
+                "type": "array",
+                "items": {"type": "string"}
+            }
+        },
+        "required": ["entries", "toc_page_range", "total_chapters", "total_sections", "parsing_confidence"],
+        "additionalProperties": False
+    }
+
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "toc_validation",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "toc": toc_schema,
+                    "validation": {
+                        "type": "object",
+                        "properties": {
+                            "issues_found": {"type": "array", "items": {"type": "string"}},
+                            "continuations_resolved": {"type": "integer"},
+                            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+                        },
+                        "required": ["issues_found", "continuations_resolved", "confidence"],
+                        "additionalProperties": False
+                    },
+                    "notes": {"type": "string"}
+                },
+                "required": ["toc", "validation", "notes"],
+                "additionalProperties": False
+            }
+        }
+    }
+
+    logger.info("  Calling LLM for validation and assembly (structured output)...")
 
     response_text, usage, cost = llm_client.call(
         model=model,
         messages=messages,
         temperature=0.0,
-        response_format={"type": "json_object"},
+        response_format=response_format,
         timeout=300
     )
 

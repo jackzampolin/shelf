@@ -70,34 +70,40 @@ Your job is to:
 </validation_checks>
 
 <output_requirements>
-Return JSON with this structure:
+Return JSON matching this schema (structured output enforced):
+
 {
     "toc": {
         "entries": [
             {
+                "chapter_number": 1 or null,
                 "title": "Chapter 1: Introduction",
-                "page_number": "1",
-                "level": 0,
-                "type": "chapter",
-                "children": [
-                    {
-                        "title": "Section 1.1: Background",
-                        "page_number": "3",
-                        "level": 1,
-                        "type": "section"
-                    }
-                ]
+                "printed_page_number": "1" or null,
+                "level": 1 (MUST be 1, 2, or 3)
             }
-        ]
+        ],
+        "toc_page_range": {
+            "start_page": 6,
+            "end_page": 7
+        },
+        "total_chapters": 15,
+        "total_sections": 42,
+        "parsing_confidence": 0.95,
+        "notes": ["Any parsing notes"]
     },
     "validation": {
-        "issues_found": ["minor page number gap between entries 5-6"],
+        "issues_found": ["minor page number gap"],
         "continuations_resolved": 3,
-        "total_entries": 42,
         "confidence": 0.95
     },
-    "notes": "Overall assessment of ToC quality and structure"
+    "notes": "Overall assessment"
 }
+
+CRITICAL REQUIREMENTS:
+- "level" MUST be 1, 2, or 3 (NOT 0!)
+- "toc_page_range" MUST be provided
+- "total_chapters" and "total_sections" MUST be provided
+- All "required" fields must be present
 </output_requirements>
 
 Begin validation and assembly."""
