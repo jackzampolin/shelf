@@ -39,61 +39,33 @@ class ExtractTocStageStorage:
         stage_storage = storage.stage(self.stage_name)
         stage_storage.save_file("grep_report.json", grep_data)
 
-    def bboxes_extracted_exists(self, storage: BookStorage) -> bool:
+    def ocr_text_exists(self, storage: BookStorage) -> bool:
         stage_storage = storage.stage(self.stage_name)
-        return (stage_storage.output_dir / "bboxes_extracted.json").exists()
+        return (stage_storage.output_dir / "ocr_text.json").exists()
 
-    def load_bboxes_extracted(self, storage: BookStorage) -> Optional[dict]:
-        if not self.bboxes_extracted_exists(storage):
+    def load_ocr_text(self, storage: BookStorage) -> Optional[dict]:
+        if not self.ocr_text_exists(storage):
             return None
         stage_storage = storage.stage(self.stage_name)
-        return stage_storage.load_file("bboxes_extracted.json")
+        return stage_storage.load_file("ocr_text.json")
 
-    def save_bboxes_extracted(self, storage: BookStorage, bboxes_data: dict):
+    def save_ocr_text(self, storage: BookStorage, ocr_data: dict):
         stage_storage = storage.stage(self.stage_name)
-        stage_storage.save_file("bboxes_extracted.json", bboxes_data)
+        stage_storage.save_file("ocr_text.json", ocr_data)
 
-    def bboxes_verified_exists(self, storage: BookStorage) -> bool:
+    def elements_identified_exists(self, storage: BookStorage) -> bool:
         stage_storage = storage.stage(self.stage_name)
-        return (stage_storage.output_dir / "bboxes_verified.json").exists()
+        return (stage_storage.output_dir / "elements_identified.json").exists()
 
-    def load_bboxes_verified(self, storage: BookStorage) -> Optional[dict]:
-        if not self.bboxes_verified_exists(storage):
+    def load_elements_identified(self, storage: BookStorage) -> Optional[dict]:
+        if not self.elements_identified_exists(storage):
             return None
         stage_storage = storage.stage(self.stage_name)
-        return stage_storage.load_file("bboxes_verified.json")
+        return stage_storage.load_file("elements_identified.json")
 
-    def save_bboxes_verified(self, storage: BookStorage, bboxes_data: dict):
+    def save_elements_identified(self, storage: BookStorage, elements_data: dict):
         stage_storage = storage.stage(self.stage_name)
-        stage_storage.save_file("bboxes_verified.json", bboxes_data)
-
-    def bboxes_ocr_exists(self, storage: BookStorage) -> bool:
-        stage_storage = storage.stage(self.stage_name)
-        return (stage_storage.output_dir / "bboxes_ocr.json").exists()
-
-    def load_bboxes_ocr(self, storage: BookStorage) -> Optional[dict]:
-        if not self.bboxes_ocr_exists(storage):
-            return None
-        stage_storage = storage.stage(self.stage_name)
-        return stage_storage.load_file("bboxes_ocr.json")
-
-    def save_bboxes_ocr(self, storage: BookStorage, ocr_data: dict):
-        stage_storage = storage.stage(self.stage_name)
-        stage_storage.save_file("bboxes_ocr.json", ocr_data)
-
-    def toc_assembled_exists(self, storage: BookStorage) -> bool:
-        stage_storage = storage.stage(self.stage_name)
-        return (stage_storage.output_dir / "toc_assembled.json").exists()
-
-    def load_toc_assembled(self, storage: BookStorage) -> Optional[dict]:
-        if not self.toc_assembled_exists(storage):
-            return None
-        stage_storage = storage.stage(self.stage_name)
-        return stage_storage.load_file("toc_assembled.json")
-
-    def save_toc_assembled(self, storage: BookStorage, toc_data: dict):
-        stage_storage = storage.stage(self.stage_name)
-        stage_storage.save_file("toc_assembled.json", toc_data)
+        stage_storage.save_file("elements_identified.json", elements_data)
 
     def toc_validated_exists(self, storage: BookStorage) -> bool:
         stage_storage = storage.stage(self.stage_name)
@@ -110,6 +82,9 @@ class ExtractTocStageStorage:
         validated = ExtractTocBookOutput(**toc_data)
         stage_storage = storage.stage(self.stage_name)
         stage_storage.save_file("toc.json", validated.model_dump())
+
+    def save_toc_final(self, storage: BookStorage, toc_data: dict):
+        self.save_toc_validated(storage, toc_data)
 
     def toc_output_exists(self, storage: BookStorage) -> bool:
         return self.toc_validated_exists(storage)

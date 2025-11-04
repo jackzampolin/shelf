@@ -1,140 +1,103 @@
-"""
-Phase 3: Bounding Box Verification Prompts
+"""Prompts for Phase 3: Element Identification"""
 
-Self-verification without confirmation bias.
-Model checks its own bbox placement through objective counting tasks.
-"""
+SYSTEM_PROMPT = """You are a Table of Contents structure analyzer.
 
-SYSTEM_PROMPT = """<role>
-You are a quality control checker for bounding box extraction.
-Your job is to count, compare, and report differences objectively.
-</role>
+Your task is to identify individual structural elements (entries) in ToC pages using both:
+1. Visual layout from the image
+2. Clean OCR text from OlmOCR
 
-<critical_instructions>
-DO NOT ask yourself "are these boxes correct?"
-INSTEAD: Count boxes. Count visible elements. Report differences.
-
-Your task is COUNTING and COMPARISON, not validation.
-</critical_instructions>
-
-<task>
-You will see:
-1. A ToC page image
-2. Bounding boxes that were placed on this page
-3. Notes about what was observed
-
-Your job:
-1. COUNT how many ToC structural elements you see in the image
-2. COUNT how many bounding boxes were placed
-3. COMPARE the counts
-4. If different: identify what's missing or extra
-5. If same: check that each box contains one element
-
-<counting_guidelines>
-WHAT TO COUNT AS SEPARATE ELEMENTS:
-- Entry number (if separate from title)
-- Entry title text (may be multi-line - still ONE element)
-- Page number (if present)
-
-Example entry might have:
-- "5." (number) → 1 element
-- "Chapter Title Here" (title) → 1 element
-- "127" (page num) → 1 element
-= 3 elements total = should have 3 boxes
-
-Count carefully:
-- Multi-line titles are ONE element (one box)
-- Separate numbers are separate elements
-- Page numbers are separate elements
-</counting_guidelines>
-
-<checking_process>
-STEP 1: Count visible ToC elements in the image
-- Go line by line, top to bottom
-- Count each discrete piece (number, title, page number)
-
-STEP 2: Count bounding boxes provided
-- How many boxes total?
-
-STEP 3: Compare counts
-- Same number? Proceed to STEP 4
-- Different number? Identify what's missing/extra
-
-STEP 4: Check one-to-one mapping
-- Does each box contain exactly one element?
-- Are any elements split across multiple boxes?
-- Are any boxes empty or contain multiple elements?
-
-STEP 5: List corrections needed
-- Add box at position [x,y] for missed element
-- Remove box at [x,y] (covers nothing)
-- Merge boxes [x1,y1] and [x2,y2] (same element)
-- Split box [x,y] (contains multiple elements)
-</checking_process>
-</task>
-
-<output_requirements>
-Return a JSON object:
-{
-  "elements_counted": N,
-  "boxes_counted": M,
-  "count_match": true/false,
-  "issues_found": [
-    "Missing box for entry at line X",
-    "Box at [x,y] covers two elements",
-    ...
-  ],
-  "corrections": [
-    {"action": "add", "bbox": {"x": 100, "y": 50, "width": 300, "height": 20}, "reason": "Missing title at line 3"},
-    {"action": "remove", "bbox_index": 5, "reason": "Box covers empty space"},
-    ...
-  ],
-  "verification_passed": true/false,
-  "notes": "Brief summary of what you found"
-}
-
-Actions: "add" (new box), "remove" (by index), "adjust" (modify existing)
-
-If verification_passed=true: corrections should be empty
-If verification_passed=false: corrections should explain fixes
-</output_requirements>
-"""
+Each element represents ONE distinct item in the table of contents."""
 
 
 def build_user_prompt(
     page_num: int,
     total_toc_pages: int,
-    bboxes_count: int,
-    extraction_notes: str
+    ocr_text: str,
+    structure_notes: str = None
 ) -> str:
     """
-    Build user prompt for bbox verification.
+    Build user prompt for element identification.
 
     Args:
         page_num: Current page number
         total_toc_pages: Total number of ToC pages
-        bboxes_count: Number of boxes that were extracted
-        extraction_notes: Notes from Phase 2 extraction
+        ocr_text: Clean OCR text from Phase 2
+        structure_notes: Optional notes from Phase 1 finder
 
     Returns:
-        User prompt string
+        Formatted prompt string
     """
-    prompt_parts = [
-        f"Check bounding boxes for ToC page {page_num} (page {page_num} of {total_toc_pages} ToC pages).",
-        "",
-        f"EXTRACTED BOXES: {bboxes_count} boxes were placed",
-        "",
-        "EXTRACTION NOTES:",
-        extraction_notes,
-        "",
-        "YOUR TASK:",
-        "1. Count ToC structural elements you see in the image",
-        "2. Count the bounding boxes provided",
-        "3. Compare: do the counts match?",
-        "4. Check: does each box contain exactly one element?",
-        "5. Report: list any issues and needed corrections",
-        "",
-        "Remember: Count objectively. Report differences. Don't validate - just count and compare."
-    ]
 
-    return "\n".join(prompt_parts)
+    prompt = f"""<task>
+Analyze this Table of Contents page (page {page_num} of {total_toc_pages}) and identify ALL structural elements.
+
+You have TWO sources of information:
+1. **The IMAGE**: Shows visual layout, indentation, hierarchy, styling
+2. **OCR TEXT**: Clean text extraction (more accurate than reading image directly)
+
+<ocr_text>
+{ocr_text}
+</ocr_text>
+"""
+
+    if structure_notes:
+        prompt += f"""
+<structure_notes>
+{structure_notes}
+</structure_notes>
+"""
+
+    prompt += """
+</task>
+
+<element_definition>
+A "structural element" is ONE of:
+- **Chapter/Part title** (often without page number, larger/bold)
+- **Section heading** (hierarchical grouping)
+- **Entry with page number** (title + page number)
+- **Continued entry** (continuation from previous page)
+
+Each element should capture:
+- The full text (from OCR)
+- Visual position (x, y coordinates on image for reference)
+- Indentation level (0=top-level, 1=indented once, 2=indented twice, etc.)
+- Type (chapter/section/entry/continuation)
+</element_definition>
+
+<instructions>
+1. **Use OCR text for accuracy** - Don't re-read the text from the image
+2. **Use image for structure** - Visual layout shows hierarchy better than text alone
+3. **Match OCR lines to visual positions** - Map each OCR line to its position on the page
+4. **Preserve hierarchy** - Indentation level determines parent-child relationships
+5. **Handle continuations** - Note when entries span multiple lines or pages
+</instructions>
+
+<output_requirements>
+Return JSON with this structure:
+{
+    "elements": [
+        {
+            "text": "exact text from OCR",
+            "visual_x": 100,
+            "visual_y": 50,
+            "indentation_level": 0,
+            "type": "chapter|section|entry|continuation",
+            "has_page_number": true,
+            "page_number": "123",
+            "notes": "any structural observations"
+        }
+    ],
+    "page_structure": {
+        "columns": 1,
+        "has_parent_entries": true,
+        "continuation_from_previous": false,
+        "continues_to_next": true
+    },
+    "confidence": 0.95,
+    "notes": "overall observations about this page's structure"
+}
+</output_requirements>
+
+Begin analysis."""
+
+    return prompt

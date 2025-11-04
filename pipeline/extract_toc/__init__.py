@@ -37,11 +37,9 @@ class ExtractTocStage(BaseStage):
     def pretty_print_status(self, status: Dict[str, Any]) -> str:
         lines = []
 
-        # Extract-toc specific: Phase-based status (not page-based)
         stage_status = status.get('status', 'unknown')
         lines.append(f"   Status: {stage_status}")
 
-        # Cost and time metrics
         metrics = status.get('metrics', {})
         if metrics.get('total_cost_usd', 0) > 0:
             lines.append(f"   Cost:   ${metrics['total_cost_usd']:.4f}")
@@ -49,17 +47,14 @@ class ExtractTocStage(BaseStage):
             mins = metrics['total_time_seconds'] / 60
             lines.append(f"   Time:   {mins:.1f}m")
 
-        # Extract-toc specific: Phase completion
         artifacts = status.get('artifacts', {})
         phases_completed = sum([
             artifacts.get('finder_result_exists', False),
-            artifacts.get('bboxes_extracted_exists', False),
-            artifacts.get('bboxes_verified_exists', False),
-            artifacts.get('bboxes_ocr_exists', False),
-            artifacts.get('toc_assembled_exists', False),
+            artifacts.get('ocr_text_exists', False),
+            artifacts.get('elements_identified_exists', False),
             artifacts.get('toc_validated_exists', False),
         ])
-        total_phases = 6
+        total_phases = 4
         lines.append(f"   Phases: {phases_completed}/{total_phases} completed")
 
         return '\n'.join(lines)
@@ -133,7 +128,6 @@ class ExtractTocStage(BaseStage):
                 stage_storage_obj = storage.stage(self.name)
                 total_cost = sum(m.get('cost_usd', 0.0) for m in stage_storage_obj.metrics_manager.get_all().values())
 
-                # Record stage runtime
                 stage_storage_obj.metrics_manager.record(
                     key="stage_runtime",
                     time_seconds=elapsed_time
@@ -149,18 +143,50 @@ class ExtractTocStage(BaseStage):
             logger.info("Found ToC pages", start=toc_range.start_page, end=toc_range.end_page)
             progress = self.get_status(storage, logger)
 
-        # Phase 2: Extract bboxes (vision model places boxes)
-        if not progress["artifacts"]["bboxes_extracted_exists"]:
-            logger.info("=== Phase 2: Extracting Bounding Boxes ===")
+        # Phase 2: OCR text extraction with OlmOCR
+        if not progress["artifacts"]["ocr_text_exists"]:
+            logger.info("=== Phase 2: OCR Text Extraction ===")
 
             finder_result = self.stage_storage.load_finder_result(storage)
             from .schemas import PageRange
             toc_range = PageRange(**finder_result["toc_page_range"])
-            structure_notes_from_finder = finder_result.get("structure_notes")
 
-            from .phase_2 import extract_bboxes
+            from .phase_2 import extract_ocr_text
 
-            bboxes_data, phase2_metrics = extract_bboxes(
+            ocr_data, phase2_metrics = extract_ocr_text(
+                storage=storage,
+                toc_range=toc_range,
+                logger=logger
+            )
+
+            self.stage_storage.save_ocr_text(storage, ocr_data)
+
+            stage_storage_obj = storage.stage(self.name)
+            stage_storage_obj.metrics_manager.record(
+                key="phase2_ocr_extraction",
+                time_seconds=phase2_metrics['time_seconds'],
+                custom_metrics={
+                    "phase": "ocr_text",
+                    "pages_processed": phase2_metrics['pages_processed'],
+                    "total_chars": phase2_metrics['total_chars'],
+                }
+            )
+
+            logger.info(f"Saved ocr_text.json + {phase2_metrics['pages_processed']} markdown files")
+            progress = self.get_status(storage, logger)
+
+        # Phase 3: Identify structural elements (vision + OCR text)
+        if not progress["artifacts"]["elements_identified_exists"]:
+            logger.info("=== Phase 3: Identify Structural Elements ===")
+
+            finder_result = self.stage_storage.load_finder_result(storage)
+            from .schemas import PageRange
+            toc_range = PageRange(**finder_result["toc_page_range"])
+            structure_notes_from_finder = finder_result.get("structure_notes", {})
+
+            from .phase_3 import identify_elements
+
+            elements_data, phase3_metrics = identify_elements(
                 storage=storage,
                 toc_range=toc_range,
                 structure_notes_from_finder=structure_notes_from_finder,
@@ -168,164 +194,62 @@ class ExtractTocStage(BaseStage):
                 model=self.model
             )
 
-            self.stage_storage.save_bboxes_extracted(storage, bboxes_data)
+            self.stage_storage.save_elements_identified(storage, elements_data)
 
             stage_storage_obj = storage.stage(self.name)
             stage_storage_obj.metrics_manager.record(
-                key="phase2_bbox_extraction",
-                cost_usd=phase2_metrics['cost_usd'],
-                time_seconds=phase2_metrics['time_seconds'],
-                custom_metrics={
-                    "phase": "bbox_extraction",
-                    "pages_processed": phase2_metrics['pages_processed'],
-                    "completion_tokens": phase2_metrics['completion_tokens'],
-                    "prompt_tokens": phase2_metrics['prompt_tokens'],
-                    "reasoning_tokens": phase2_metrics['reasoning_tokens'],
-                }
-            )
-
-            logger.info(f"Saved bboxes_extracted.json ({phase2_metrics['pages_processed']} pages)")
-            progress = self.get_status(storage, logger)
-
-        # Phase 3: Verify bboxes (self-check)
-        if not progress["artifacts"]["bboxes_verified_exists"]:
-            logger.info("=== Phase 3: Verifying Bounding Boxes ===")
-
-            finder_result = self.stage_storage.load_finder_result(storage)
-            from .schemas import PageRange
-            toc_range = PageRange(**finder_result["toc_page_range"])
-
-            from .phase_3 import verify_bboxes
-
-            verified_data, phase3_metrics = verify_bboxes(
-                storage=storage,
-                toc_range=toc_range,
-                logger=logger,
-                model=self.model
-            )
-
-            self.stage_storage.save_bboxes_verified(storage, verified_data)
-
-            stage_storage_obj = storage.stage(self.name)
-            stage_storage_obj.metrics_manager.record(
-                key="phase3_bbox_verification",
+                key="phase3_element_identification",
                 cost_usd=phase3_metrics['cost_usd'],
                 time_seconds=phase3_metrics['time_seconds'],
                 custom_metrics={
-                    "phase": "bbox_verification",
+                    "phase": "identify_elements",
                     "pages_processed": phase3_metrics['pages_processed'],
-                    "total_corrections": phase3_metrics['total_corrections'],
+                    "total_elements": phase3_metrics['total_elements'],
                     "completion_tokens": phase3_metrics['completion_tokens'],
                     "prompt_tokens": phase3_metrics['prompt_tokens'],
                     "reasoning_tokens": phase3_metrics['reasoning_tokens'],
                 }
             )
 
-            logger.info(f"Saved bboxes_verified.json ({phase3_metrics['total_corrections']} corrections applied)")
+            logger.info(f"Saved elements_identified.json ({phase3_metrics['total_elements']} elements from {phase3_metrics['pages_processed']} pages)")
             progress = self.get_status(storage, logger)
 
-        # Phase 4: OCR bboxes (Tesseract extracts text)
-        if not progress["artifacts"]["bboxes_ocr_exists"]:
-            logger.info("=== Phase 4: OCR Bounding Boxes ===")
+        # Phase 4: Validate and assemble ToC
+        if not progress["artifacts"]["toc_validated_exists"]:
+            logger.info("=== Phase 4: Validate and Assemble ToC ===")
 
             finder_result = self.stage_storage.load_finder_result(storage)
             from .schemas import PageRange
             toc_range = PageRange(**finder_result["toc_page_range"])
 
-            from .phase_4 import ocr_bboxes
+            from .phase_4 import validate_and_assemble
 
-            ocr_data, phase4_metrics = ocr_bboxes(
-                storage=storage,
-                toc_range=toc_range,
-                logger=logger
-            )
-
-            self.stage_storage.save_bboxes_ocr(storage, ocr_data)
-
-            stage_storage_obj = storage.stage(self.name)
-            stage_storage_obj.metrics_manager.record(
-                key="phase4_bbox_ocr",
-                time_seconds=phase4_metrics['time_seconds'],
-                custom_metrics={
-                    "phase": "bbox_ocr",
-                    "pages_processed": phase4_metrics['pages_processed'],
-                    "total_bboxes": phase4_metrics['total_bboxes'],
-                    "avg_confidence": phase4_metrics['avg_confidence'],
-                }
-            )
-
-            logger.info(f"Saved bboxes_ocr.json ({phase4_metrics['total_bboxes']} boxes, {phase4_metrics['avg_confidence']:.1f}% avg conf)")
-            progress = self.get_status(storage, logger)
-
-        # Phase 5: Assemble ToC (page-by-page with prior context)
-        if not progress["artifacts"]["toc_assembled_exists"]:
-            logger.info("=== Phase 5: Assembling ToC ===")
-
-            finder_result = self.stage_storage.load_finder_result(storage)
-            from .schemas import PageRange
-            toc_range = PageRange(**finder_result["toc_page_range"])
-
-            from .phase_5 import assemble_toc
-
-            assembly_data, phase5_metrics = assemble_toc(
+            toc_data, phase4_metrics = validate_and_assemble(
                 storage=storage,
                 toc_range=toc_range,
                 logger=logger,
                 model=self.model
             )
 
-            self.stage_storage.save_toc_assembled(storage, assembly_data)
+            self.stage_storage.save_toc_validated(storage, toc_data)
 
             stage_storage_obj = storage.stage(self.name)
             stage_storage_obj.metrics_manager.record(
-                key="phase5_toc_assembly",
-                cost_usd=phase5_metrics['cost_usd'],
-                time_seconds=phase5_metrics['time_seconds'],
+                key="phase4_validation",
+                cost_usd=phase4_metrics['cost_usd'],
+                time_seconds=phase4_metrics['time_seconds'],
                 custom_metrics={
-                    "phase": "toc_assembly",
-                    "pages_processed": phase5_metrics['pages_processed'],
-                    "total_entries": phase5_metrics['total_entries'],
-                    "completion_tokens": phase5_metrics['completion_tokens'],
-                    "prompt_tokens": phase5_metrics['prompt_tokens'],
-                    "reasoning_tokens": phase5_metrics['reasoning_tokens'],
+                    "phase": "validation",
+                    "total_entries": phase4_metrics['total_entries'],
+                    "confidence": phase4_metrics['confidence'],
+                    "issues_found": phase4_metrics['issues_found'],
+                    "completion_tokens": phase4_metrics['completion_tokens'],
+                    "prompt_tokens": phase4_metrics['prompt_tokens'],
+                    "reasoning_tokens": phase4_metrics['reasoning_tokens'],
                 }
             )
 
-            logger.info(f"Saved toc_assembled.json ({phase5_metrics['total_entries']} entries from {phase5_metrics['pages_processed']} pages)")
-            progress = self.get_status(storage, logger)
-
-        # Phase 6: Validate ToC (final consistency check)
-        if not progress["artifacts"]["toc_validated_exists"]:
-            logger.info("=== Phase 6: Validating ToC ===")
-
-            finder_result = self.stage_storage.load_finder_result(storage)
-            from .schemas import PageRange
-            toc_range = PageRange(**finder_result["toc_page_range"])
-
-            from .phase_6 import validate_toc
-
-            validation_data, phase6_metrics = validate_toc(
-                storage=storage,
-                toc_range=toc_range,
-                logger=logger
-            )
-
-            self.stage_storage.save_toc_validated(storage, validation_data)
-
-            stage_storage_obj = storage.stage(self.name)
-            stage_storage_obj.metrics_manager.record(
-                key="phase6_toc_validation",
-                time_seconds=phase6_metrics['time_seconds'],
-                custom_metrics={
-                    "phase": "toc_validation",
-                    "total_entries": phase6_metrics['total_entries'],
-                    "total_chapters": phase6_metrics['total_chapters'],
-                    "total_sections": phase6_metrics['total_sections'],
-                    "validation_issues": phase6_metrics['validation_issues'],
-                }
-            )
-
-            logger.info(f"Saved toc_validated.json ({phase6_metrics['total_entries']} entries, {phase6_metrics['validation_issues']} issues)")
+            logger.info(f"Saved toc.json ({phase4_metrics['total_entries']} entries, confidence={phase4_metrics['confidence']:.2f})")
             progress = self.get_status(storage, logger)
 
         if progress["status"] == ExtractTocStatus.COMPLETED.value:
@@ -337,7 +261,6 @@ class ExtractTocStage(BaseStage):
             stage_storage_obj = storage.stage(self.name)
             total_cost = sum(m.get('cost_usd', 0.0) for m in stage_storage_obj.metrics_manager.get_all().values())
 
-            # Record stage runtime (only if not already recorded)
             runtime_metrics = stage_storage_obj.metrics_manager.get("stage_runtime")
             if not runtime_metrics:
                 stage_storage_obj.metrics_manager.record(
@@ -360,3 +283,10 @@ class ExtractTocStage(BaseStage):
                 "cost_usd": total_cost,
                 "time_seconds": elapsed_time
             }
+
+        return {
+            "status": "incomplete",
+            "phase_completed": 4,
+            "cost_usd": 0.0,
+            "time_seconds": 0.0
+        }
