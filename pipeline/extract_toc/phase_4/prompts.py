@@ -104,6 +104,19 @@ CRITICAL REQUIREMENTS:
 - "toc_page_range" MUST be provided
 - "total_chapters" and "total_sections" MUST be provided
 - All "required" fields must be present
+
+TEXT NORMALIZATION:
+- **Strip chapter numbers from titles**: If title is "1. Introduction", store title="Introduction", chapter_number=1
+- **Normalize capitalization**: Convert ALL CAPS titles to Title Case
+  - "FOREWORD" → "Foreword"
+  - "ELLIS ISLAND AND A TRAGEDY IN TEXAS" → "Ellis Island and a Tragedy in Texas"
+  - Keep proper nouns capitalized: "Part I", "Book II"
+- **Preserve printed_page_number exactly**: "ix", "XII", "23" as shown
+
+Examples:
+- Input: "1. INTRODUCTION" → Output: title="Introduction", chapter_number=1
+- Input: "PROLOGUE: A RITE OF SUCCESSION" → Output: title="Prologue: A Rite of Succession"
+- Input: "Part I" → Output: title="Part I" (already proper case)
 </output_requirements>
 
 Begin validation and assembly."""
