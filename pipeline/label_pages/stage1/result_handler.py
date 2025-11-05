@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from infra.llm.batch_client import LLMResult
+from infra.llm.models import LLMResult
 
 
 def create_stage1_handler(storage, stage_storage, logger, stage_name, output_schema, model):

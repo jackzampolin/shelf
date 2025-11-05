@@ -11,7 +11,7 @@ Provides:
 """
 
 from infra.llm.client import LLMClient
-from infra.llm.batch_client import LLMBatchClient
+from infra.llm.batch import LLMBatchClient
 from infra.llm.models import (
     LLMRequest,
     LLMResult,

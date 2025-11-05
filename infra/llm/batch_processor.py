@@ -23,7 +23,8 @@ from pathlib import Path
 from typing import List, Dict, Any, Callable, Optional
 from dataclasses import dataclass
 
-from infra.llm.batch_client import LLMBatchClient, LLMRequest, LLMResult
+from infra.llm.batch import LLMBatchClient
+from infra.llm.models import LLMRequest, LLMResult
 from infra.llm.display_format import format_batch_summary
 from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.rich_progress import RichProgressBarHierarchical
