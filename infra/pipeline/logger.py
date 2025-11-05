@@ -36,7 +36,7 @@ class PipelineLogger:
         self,
         scan_id: str,
         stage: str,
-        log_dir: Optional[Path] = None,
+        log_dir: Path,
         console_output: bool = False,
         json_output: bool = True,
         level: str = "INFO"
@@ -44,8 +44,6 @@ class PipelineLogger:
         self.scan_id = scan_id
         self.stage = stage
 
-        if log_dir is None:
-            log_dir = Path.home() / "Documents" / "book_scans" / scan_id / "logs"
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -56,7 +54,7 @@ class PipelineLogger:
 
         if console_output:
             console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setFormatter(HumanFormatter())
+            console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
             self.logger.addHandler(console_handler)
 
         if json_output:

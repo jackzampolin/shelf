@@ -127,7 +127,7 @@ class LabelPagesStage(BaseStage):
 
         # Setup processor and handler
         stage_storage_dir = storage.stage(self.stage_storage.stage_name)
-        log_dir = stage_storage_dir.output_dir / "logs"
+        log_dir = stage_storage_dir.output_dir / "logs" / "llmbatch"
         config = LLMBatchConfig(model=self.model, max_workers=self.max_workers, max_retries=self.max_retries)
         processor = LLMBatchProcessor(
             logger=logger,
