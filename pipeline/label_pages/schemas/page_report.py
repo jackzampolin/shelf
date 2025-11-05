@@ -1,27 +1,22 @@
-from typing import Optional
 from pydantic import BaseModel, Field
 
 
 class LabelPagesPageReport(BaseModel):
-    """Simplified report schema for label-pages output - human-readable summary."""
+    """Report schema for label-pages output - human-readable summary for CSV."""
 
     page_num: int = Field(..., ge=1, description="Scan page number")
 
-    # BOUNDARY DETECTION (primary signal)
+    # BOUNDARY DETECTION
     is_boundary: bool = Field(..., description="Is this a structural boundary?")
     boundary_conf: float = Field(..., ge=0.0, le=1.0, description="Boundary confidence")
-
-    # HEADING INFO (if boundary detected)
-    heading_text: Optional[str] = Field(None, description="Extracted heading text")
-    heading_type: Optional[str] = Field(None, description="Suggested type (chapter/part/section/etc)")
-    type_conf: float = Field(0.0, ge=0.0, le=1.0, description="Type confidence")
+    boundary_position: str = Field(..., description="Position: top/middle/bottom/none")
 
     # VISUAL SIGNALS
-    whitespace: str = Field(..., description="Whitespace amount (minimal/moderate/extensive)")
-    heading_size: str = Field(..., description="Heading size (none/small/medium/large/very_large)")
-    heading_visible: bool = Field(..., description="Is heading visible?")
+    whitespace: str = Field(..., description="Whitespace amount at top (minimal/moderate/extensive)")
+    page_density: str = Field(..., description="Overall density (sparse/moderate/dense)")
 
     # TEXTUAL SIGNALS
-    starts_with_heading: bool = Field(..., description="OCR starts with heading?")
+    starts_mid_sentence: bool = Field(..., description="Starts mid-sentence (clear continuation)?")
     appears_to_continue: bool = Field(..., description="Text continues from previous page?")
-    first_line: str = Field(..., description="First line of OCR text (preview)")
+    has_boundary_marker: bool = Field(..., description="Has chapter/section number or marker?")
+    boundary_marker_text: str = Field(default="", description="The marker text if present")

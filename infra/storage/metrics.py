@@ -103,6 +103,36 @@ class MetricsManager:
                 for entry in self._state["metrics"].values()
             )
 
+    def get_cumulative_metrics(self) -> Dict[str, Any]:
+        """
+        Get cumulative metrics across all recorded entries.
+
+        Returns:
+            Dict with:
+            - total_requests: Count of metric entries (excluding 'stage_runtime')
+            - total_cost_usd: Sum of all costs
+            - total_time_seconds: Sum of all times
+            - total_prompt_tokens: Sum of all prompt tokens
+            - total_completion_tokens: Sum of all completion tokens
+            - total_reasoning_tokens: Sum of all reasoning tokens
+        """
+        with self._lock:
+            # Filter out stage_runtime and other non-page metrics
+            page_metrics = {
+                key: entry
+                for key, entry in self._state["metrics"].items()
+                if key.startswith("page_")
+            }
+
+            return {
+                "total_requests": len(page_metrics),
+                "total_cost_usd": sum(entry.get("cost_usd", 0.0) for entry in page_metrics.values()),
+                "total_time_seconds": sum(entry.get("time_seconds", 0.0) for entry in page_metrics.values()),
+                "total_prompt_tokens": sum(entry.get("prompt_tokens", 0) for entry in page_metrics.values()),
+                "total_completion_tokens": sum(entry.get("completion_tokens", 0) for entry in page_metrics.values()),
+                "total_reasoning_tokens": sum(entry.get("reasoning_tokens", 0) for entry in page_metrics.values()),
+            }
+
     def keys(self) -> list:
         with self._lock:
             return list(self._state["metrics"].keys())

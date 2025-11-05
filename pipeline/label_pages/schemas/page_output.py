@@ -1,22 +1,22 @@
-from typing import Optional
+from typing import Literal
 from pydantic import BaseModel, Field
 
-from ..stage1.schemas import VisualSignals, TextualSignals, HeadingInfo
+from ..stage1.schemas import VisualSignals, TextualSignals
 
 
 class LabelPagesPageOutput(BaseModel):
-    """Simplified page-level structural metadata.
+    """Page-level structural boundary detection.
 
-    Focus: Is this page a structural boundary (chapter/part/section start)?
-    Uses vision + OCR text for accurate detection.
+    Focus: Is this page a structural boundary (new chapter/section starts)?
+    Uses visual layout and textual flow analysis, NOT header text content.
     """
 
     page_number: int = Field(..., ge=1, description="Scan page number")
 
-    # BOUNDARY DETECTION (simplified)
+    # BOUNDARY DETECTION
     is_boundary: bool = Field(
         ...,
-        description="Is this page a structural boundary (chapter/part/section start)?"
+        description="Is this page a structural boundary (new chapter/section starts)?"
     )
 
     boundary_confidence: float = Field(
@@ -24,6 +24,11 @@ class LabelPagesPageOutput(BaseModel):
         ge=0.0,
         le=1.0,
         description="Overall confidence in boundary detection"
+    )
+
+    boundary_position: Literal["top", "middle", "bottom", "none"] = Field(
+        ...,
+        description="Where on the page does the boundary occur? 'none' if not a boundary"
     )
 
     # SIGNALS (for debugging/verification)
@@ -37,15 +42,9 @@ class LabelPagesPageOutput(BaseModel):
         description="Textual indicators from OCR extraction"
     )
 
-    # HEADING INFO (if boundary detected)
-    heading_info: Optional[HeadingInfo] = Field(
-        None,
-        description="Heading information if is_boundary=true"
-    )
-
     reasoning: str = Field(
         ...,
-        description="Brief explanation of the boundary detection decision"
+        description="Brief explanation focusing on layout and flow, not header content"
     )
 
     # METADATA

@@ -16,18 +16,15 @@ def get_label_pages_report(storage: BookStorage) -> Optional[List[Dict[str, Any]
 
     Returns list of dicts with columns:
     - page_num: int
-    - printed_page_number: str (or empty)
-    - numbering_style: str (none, roman, arabic)
-    - page_number_location: str (none, header, footer)
-    - page_region: str (front_matter, body, back_matter)
     - is_boundary: bool
-    - boundary_type: str (or empty)
-    - whitespace: str
-    - heading_size: str
-    - has_toc: bool
-    - page_num_conf: float
-    - region_conf: float
     - boundary_conf: float
+    - boundary_position: str
+    - whitespace: str
+    - page_density: str
+    - starts_mid_sentence: bool
+    - appears_to_continue: bool
+    - has_boundary_marker: bool
+    - boundary_marker_text: str
 
     Returns None if report.csv doesn't exist (stage not run yet).
     """
@@ -46,11 +43,11 @@ def get_label_pages_report(storage: BookStorage) -> Optional[List[Dict[str, Any]
 
             # Convert booleans
             row['is_boundary'] = row['is_boundary'].lower() == 'true'
-            row['has_toc'] = row['has_toc'].lower() == 'true'
+            row['starts_mid_sentence'] = row['starts_mid_sentence'].lower() == 'true'
+            row['appears_to_continue'] = row['appears_to_continue'].lower() == 'true'
+            row['has_boundary_marker'] = row['has_boundary_marker'].lower() == 'true'
 
-            # Convert confidence scores to floats
-            row['page_num_conf'] = float(row['page_num_conf']) if row['page_num_conf'] else 0.0
-            row['region_conf'] = float(row['region_conf']) if row['region_conf'] else 0.0
+            # Convert confidence score to float
             row['boundary_conf'] = float(row['boundary_conf']) if row['boundary_conf'] else 0.0
 
             rows.append(row)

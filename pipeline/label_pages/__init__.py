@@ -12,7 +12,7 @@ from .storage import LabelPagesStageStorage
 class LabelPagesStage(BaseStage):
 
     name = "label-pages"
-    dependencies = ["tesseract", "source"]
+    dependencies = ["ocr-pages", "source"]
 
     output_schema = LabelPagesPageOutput
     checkpoint_schema = None  # No checkpoints needed (single-stage)
@@ -71,18 +71,18 @@ class LabelPagesStage(BaseStage):
         logger.info(f"Label-Pages with {self.model}")
         logger.info(f"Max workers: {self.max_workers}")
 
-        from pipeline.tesseract import TesseractStage
-        tesseract_stage = TesseractStage()
+        from pipeline.ocr_pages import OcrPagesStage
+        ocr_pages_stage = OcrPagesStage()
 
-        tesseract_progress = tesseract_stage.get_status(storage, logger)
+        ocr_progress = ocr_pages_stage.get_status(storage, logger)
 
-        if tesseract_progress['status'] != 'completed':
+        if ocr_progress['status'] != 'completed':
             raise RuntimeError(
-                f"Tesseract stage status is '{tesseract_progress['status']}', not 'completed'. "
-                f"Run tesseract stage to completion first."
+                f"OCR-Pages stage status is '{ocr_progress['status']}', not 'completed'. "
+                f"Run ocr-pages stage to completion first."
             )
 
-        logger.info(f"Tesseract completed: {tesseract_progress['total_pages']} pages ready for labeling")
+        logger.info(f"OCR-Pages completed: {ocr_progress['total_pages']} pages ready for labeling")
 
     def run(
         self,
@@ -177,14 +177,13 @@ class LabelPagesStage(BaseStage):
         completed_pages = total_pages - len(progress["remaining_pages"])
         total_cost = progress["metrics"]["total_cost_usd"]
 
-        # Record total stage runtime
+        # Record total stage runtime (accumulate across runs for resume support)
         elapsed_time = time.time() - start_time
-        runtime_metrics = stage_storage_dir.metrics_manager.get("stage_runtime")
-        if not runtime_metrics:
-            stage_storage_dir.metrics_manager.record(
-                key="stage_runtime",
-                time_seconds=elapsed_time
-            )
+        stage_storage_dir.metrics_manager.record(
+            key="stage_runtime",
+            time_seconds=elapsed_time,
+            accumulate=True
+        )
 
         logger.info(
             "Label-pages complete",

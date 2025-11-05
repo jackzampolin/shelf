@@ -16,7 +16,7 @@ def prepare_stage1_request(
     total_pages: int,
 ) -> Optional[LLMRequest]:
     source_stage = storage.stage('source')
-    tesseract_stage = storage.stage('tesseract')
+    ocr_pages_stage = storage.stage('ocr-pages')
 
     # Load page image
     image_file = source_stage.output_page(page_num, extension='png')
@@ -26,18 +26,18 @@ def prepare_stage1_request(
     page_image = Image.open(image_file)
     page_image = downsample_for_vision(page_image, max_payload_kb=300)
 
-    # Load OCR text from tesseract output
+    # Load OCR text from ocr-pages output
     ocr_text = ""
-    tesseract_output_file = tesseract_stage.output_page(page_num, extension='json')
-    if tesseract_output_file.exists():
-        from infra.storage.schemas import load_page
-        from pipeline.tesseract.schemas import TesseractPageOutput
+    try:
+        from pipeline.ocr_pages.schemas import OcrPagesPageOutput
 
-        tesseract_data = load_page(tesseract_output_file, TesseractPageOutput)
-        ocr_text = tesseract_data.full_text
-    else:
-        # Tesseract should have been validated in before(), but handle gracefully
-        ocr_text = "(Tesseract output not found for this page)"
+        ocr_data = ocr_pages_stage.load_page(page_num, schema=OcrPagesPageOutput)
+        ocr_text = ocr_data.get('text', '')
+    except FileNotFoundError:
+        # OCR-Pages should have been validated in before(), but handle gracefully
+        ocr_text = "(OCR-Pages output not found for this page)"
+    except Exception as e:
+        ocr_text = f"(Error loading OCR text: {str(e)})"
 
     response_schema = {
         "type": "json_schema",

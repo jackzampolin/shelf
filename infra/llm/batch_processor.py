@@ -231,15 +231,41 @@ class LLMBatchProcessor:
             elapsed = time.time() - start_time
             batch_stats = self.batch_client.get_batch_stats(total_requests=len(requests))
 
+            # Use cumulative metrics from MetricsManager if available (for stages with resume)
+            # This ensures the display shows total cost/tokens across ALL batches,
+            # not just the current batch (which may be a small resume).
+            # For time: Use wall-clock stage_runtime if available, else fall back to current batch elapsed.
+            # Otherwise fall back to batch_stats (for standalone LLM calls).
+            if self.metrics_manager:
+                cumulative = self.metrics_manager.get_cumulative_metrics()
+                display_completed = cumulative.get('total_requests', batch_stats.completed)
+                display_total = cumulative.get('total_requests', batch_stats.completed)  # After batch complete, completed == total
+                display_prompt_tokens = cumulative.get('total_prompt_tokens', batch_stats.total_prompt_tokens)
+                display_completion_tokens = cumulative.get('total_completion_tokens', batch_stats.total_tokens)
+                display_reasoning_tokens = cumulative.get('total_reasoning_tokens', batch_stats.total_reasoning_tokens)
+                display_cost = cumulative.get('total_cost_usd', batch_stats.total_cost_usd)
+
+                # Use wall-clock stage_runtime (not sum of individual request times)
+                runtime_metrics = self.metrics_manager.get("stage_runtime")
+                display_time = runtime_metrics.get("time_seconds", elapsed) if runtime_metrics else elapsed
+            else:
+                display_completed = batch_stats.completed
+                display_total = len(requests)
+                display_prompt_tokens = batch_stats.total_prompt_tokens
+                display_completion_tokens = batch_stats.total_tokens
+                display_reasoning_tokens = batch_stats.total_reasoning_tokens
+                display_cost = batch_stats.total_cost_usd
+                display_time = elapsed
+
             summary_text = format_batch_summary(
                 batch_name=self.batch_name,
-                completed=batch_stats.completed,
-                total=len(requests),
-                time_seconds=elapsed,
-                prompt_tokens=batch_stats.total_prompt_tokens,
-                completion_tokens=batch_stats.total_tokens,
-                reasoning_tokens=batch_stats.total_reasoning_tokens,
-                cost_usd=batch_stats.total_cost_usd,
+                completed=display_completed,
+                total=display_total,
+                time_seconds=display_time,
+                prompt_tokens=display_prompt_tokens,
+                completion_tokens=display_completion_tokens,
+                reasoning_tokens=display_reasoning_tokens,
+                cost_usd=display_cost,
                 unit="requests"
             )
             # RichProgressBarHierarchical.finish() needs a string, so convert
@@ -250,10 +276,10 @@ class LLMBatchProcessor:
             progress.finish(capture.get().rstrip())
 
             self.logger.info(
-                f"Batch complete: {batch_stats.completed} completed, "
+                f"Batch complete: {display_completed} completed, "
                 f"{batch_stats.failed} failed, "
-                f"${batch_stats.total_cost_usd:.4f}, "
-                f"{batch_stats.total_tokens} tokens"
+                f"${display_cost:.4f}, "
+                f"{display_completion_tokens} tokens"
             )
 
         return {

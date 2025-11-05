@@ -150,13 +150,12 @@
         <thead>
             <tr>
                 <th>Page</th>
-                <th>Printed #</th>
-                <th>Style</th>
-                <th>Location</th>
-                <th>Region</th>
                 <th>Boundary</th>
+                <th>Conf</th>
+                <th>Position</th>
+                <th>Marker</th>
                 <th>Whitespace</th>
-                <th>Heading</th>
+                <th>Density</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -166,56 +165,39 @@
                 <!-- Page Number -->
                 <td>{{ row.page_num }}</td>
 
-                <!-- Printed Page Number -->
+                <!-- Boundary -->
                 <td>
-                    {% if row.printed_page_number %}
-                        <span class="numbering-style">{{ row.printed_page_number }}</span>
+                    {% if row.is_boundary %}
+                        <span class="badge badge-boundary">Yes</span>
                     {% else %}
                         <span class="text-muted">—</span>
                     {% endif %}
                 </td>
 
-                <!-- Numbering Style -->
+                <!-- Boundary Confidence -->
                 <td>
-                    {% if row.numbering_style != 'none' %}
-                        <span class="numbering-style">{{ row.numbering_style }}</span>
+                    {% if row.boundary_conf >= 0.9 %}
+                        <span class="confidence-high">{{ "%.0f"|format(row.boundary_conf * 100) }}%</span>
+                    {% elif row.boundary_conf >= 0.7 %}
+                        <span class="confidence-med">{{ "%.0f"|format(row.boundary_conf * 100) }}%</span>
                     {% else %}
-                        <span class="text-muted">none</span>
+                        <span class="confidence-low">{{ "%.0f"|format(row.boundary_conf * 100) }}%</span>
                     {% endif %}
                 </td>
 
-                <!-- Page Number Location -->
+                <!-- Boundary Position -->
                 <td>
-                    {% if row.page_number_location != 'none' %}
-                        {{ row.page_number_location }}
+                    {% if row.boundary_position and row.boundary_position != 'none' %}
+                        <span class="badge badge-region-body">{{ row.boundary_position }}</span>
                     {% else %}
-                        <span class="text-muted">none</span>
+                        <span class="text-muted">—</span>
                     {% endif %}
                 </td>
 
-                <!-- Page Region -->
+                <!-- Boundary Marker -->
                 <td>
-                    {% if row.page_region == 'front_matter' %}
-                        <span class="badge badge-region-front">Front</span>
-                    {% elif row.page_region == 'body' %}
-                        <span class="badge badge-region-body">Body</span>
-                    {% elif row.page_region == 'back_matter' %}
-                        <span class="badge badge-region-back">Back</span>
-                    {% endif %}
-
-                    {% if row.has_toc %}
-                        <span class="badge badge-toc">TOC</span>
-                    {% endif %}
-                </td>
-
-                <!-- Boundary -->
-                <td>
-                    {% if row.is_boundary %}
-                        {% if row.boundary_type %}
-                            <span class="badge badge-boundary">{{ row.boundary_type }}</span>
-                        {% else %}
-                            <span class="badge badge-boundary">boundary</span>
-                        {% endif %}
+                    {% if row.has_boundary_marker and row.boundary_marker_text %}
+                        {{ row.boundary_marker_text|truncate(30) }}
                     {% else %}
                         <span class="text-muted">—</span>
                     {% endif %}
@@ -224,8 +206,8 @@
                 <!-- Whitespace -->
                 <td>{{ row.whitespace }}</td>
 
-                <!-- Heading Size -->
-                <td>{{ row.heading_size }}</td>
+                <!-- Page Density -->
+                <td>{{ row.page_density }}</td>
 
                 <!-- Actions -->
                 <td>

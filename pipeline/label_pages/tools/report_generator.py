@@ -38,22 +38,19 @@ def generate_report(
             # Extract signals
             visual = page_data.get('visual_signals', {})
             textual = page_data.get('textual_signals', {})
-            heading = page_data.get('heading_info') or {}
 
             # Build report row
             report_row = report_schema(
                 page_num=page_num,
                 is_boundary=page_data.get('is_boundary', False),
                 boundary_conf=page_data.get('boundary_confidence', 0.0),
-                heading_text=heading.get('heading_text'),
-                heading_type=heading.get('suggested_type'),
-                type_conf=heading.get('type_confidence', 0.0),
+                boundary_position=page_data.get('boundary_position', 'none'),
                 whitespace=visual.get('whitespace_amount', 'minimal'),
-                heading_size=visual.get('heading_size', 'none'),
-                heading_visible=visual.get('heading_visible', False),
-                starts_with_heading=textual.get('starts_with_heading', False),
+                page_density=visual.get('page_density', 'moderate'),
+                starts_mid_sentence=textual.get('starts_mid_sentence', False),
                 appears_to_continue=textual.get('appears_to_continue', False),
-                first_line=textual.get('first_line_preview', '')[:50],  # Truncate for CSV
+                has_boundary_marker=textual.get('has_boundary_marker', False),
+                boundary_marker_text=textual.get('boundary_marker_text', ''),
             )
             report_rows.append(report_row.model_dump())
         except Exception as e:

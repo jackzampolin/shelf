@@ -173,12 +173,11 @@ class OcrPagesStage(BaseStage):
 
         elapsed_time = time.time() - start_time
 
-        runtime_metrics = stage_storage_obj.metrics_manager.get("stage_runtime")
-        if not runtime_metrics:
-            stage_storage_obj.metrics_manager.record(
-                key="stage_runtime",
-                time_seconds=elapsed_time
-            )
+        stage_storage_obj.metrics_manager.record(
+            key="stage_runtime",
+            time_seconds=elapsed_time,
+            accumulate=True
+        )
 
         logger.info(
             "OCR-Pages complete",

@@ -233,67 +233,7 @@
             <h3>Extracted Labels</h3>
 
             <div class="labels-grid">
-                <!-- Page Number Information -->
-                <div class="label-section">
-                    <h4>Page Number</h4>
-                    <div class="label-item">
-                        <span class="label-key">Printed Number:</span>
-                        <span class="label-value">
-                            {% if labels.printed_page_number %}
-                                {{ labels.printed_page_number }}
-                            {% else %}
-                                <span class="text-muted">None detected</span>
-                            {% endif %}
-                        </span>
-                    </div>
-                    <div class="label-item">
-                        <span class="label-key">Numbering Style:</span>
-                        <span class="label-value">{{ labels.numbering_style }}</span>
-                    </div>
-                    <div class="label-item">
-                        <span class="label-key">Location:</span>
-                        <span class="label-value">{{ labels.page_number_location }}</span>
-                    </div>
-                    <div class="label-item">
-                        <span class="label-key">Confidence:</span>
-                        <span class="label-value">
-                            <span class="confidence-bar">
-                                <span class="confidence-fill {% if labels.page_num_conf >= 0.9 %}confidence-high{% elif labels.page_num_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
-                                      style="width: {{ (labels.page_num_conf * 100)|int }}%"></span>
-                            </span>
-                            {{ "%.0f"|format(labels.page_num_conf * 100) }}%
-                        </span>
-                    </div>
-                </div>
-
-                <!-- Page Region -->
-                <div class="label-section">
-                    <h4>Page Region</h4>
-                    <div class="label-item">
-                        <span class="label-key">Region Type:</span>
-                        <span class="label-value">
-                            {% if labels.page_region == 'front_matter' %}
-                                <span class="badge badge-region-front">Front Matter</span>
-                            {% elif labels.page_region == 'body' %}
-                                <span class="badge badge-region-body">Body</span>
-                            {% elif labels.page_region == 'back_matter' %}
-                                <span class="badge badge-region-back">Back Matter</span>
-                            {% endif %}
-                        </span>
-                    </div>
-                    <div class="label-item">
-                        <span class="label-key">Confidence:</span>
-                        <span class="label-value">
-                            <span class="confidence-bar">
-                                <span class="confidence-fill {% if labels.region_conf >= 0.9 %}confidence-high{% elif labels.region_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
-                                      style="width: {{ (labels.region_conf * 100)|int }}%"></span>
-                            </span>
-                            {{ "%.0f"|format(labels.region_conf * 100) }}%
-                        </span>
-                    </div>
-                </div>
-
-                <!-- Boundary Information -->
+                <!-- Boundary Detection -->
                 <div class="label-section">
                     <h4>Boundary Detection</h4>
                     <div class="label-item">
@@ -306,12 +246,6 @@
                             {% endif %}
                         </span>
                     </div>
-                    {% if labels.is_boundary and labels.boundary_type %}
-                    <div class="label-item">
-                        <span class="label-key">Boundary Type:</span>
-                        <span class="label-value">{{ labels.boundary_type }}</span>
-                    </div>
-                    {% endif %}
                     <div class="label-item">
                         <span class="label-key">Confidence:</span>
                         <span class="label-value">
@@ -322,29 +256,70 @@
                             {{ "%.0f"|format(labels.boundary_conf * 100) }}%
                         </span>
                     </div>
+                    <div class="label-item">
+                        <span class="label-key">Position:</span>
+                        <span class="label-value">
+                            {% if labels.boundary_position and labels.boundary_position != 'none' %}
+                                <span class="badge badge-region-body">{{ labels.boundary_position }}</span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </span>
+                    </div>
                 </div>
 
-                <!-- Page Characteristics -->
+                <!-- Visual Signals -->
                 <div class="label-section">
-                    <h4>Page Characteristics</h4>
+                    <h4>Visual Signals</h4>
                     <div class="label-item">
                         <span class="label-key">Whitespace:</span>
                         <span class="label-value">{{ labels.whitespace }}</span>
                     </div>
                     <div class="label-item">
-                        <span class="label-key">Heading Size:</span>
-                        <span class="label-value">{{ labels.heading_size }}</span>
+                        <span class="label-key">Page Density:</span>
+                        <span class="label-value">{{ labels.page_density }}</span>
                     </div>
+                </div>
+
+                <!-- Textual Signals -->
+                <div class="label-section">
+                    <h4>Textual Signals</h4>
                     <div class="label-item">
-                        <span class="label-key">Has TOC:</span>
+                        <span class="label-key">Starts Mid-Sentence:</span>
                         <span class="label-value">
-                            {% if labels.has_toc %}
+                            {% if labels.starts_mid_sentence %}
                                 <span class="badge badge-yes">Yes</span>
                             {% else %}
                                 <span class="badge badge-no">No</span>
                             {% endif %}
                         </span>
                     </div>
+                    <div class="label-item">
+                        <span class="label-key">Appears to Continue:</span>
+                        <span class="label-value">
+                            {% if labels.appears_to_continue %}
+                                <span class="badge badge-yes">Yes</span>
+                            {% else %}
+                                <span class="badge badge-no">No</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="label-item">
+                        <span class="label-key">Has Boundary Marker:</span>
+                        <span class="label-value">
+                            {% if labels.has_boundary_marker %}
+                                <span class="badge badge-yes">Yes</span>
+                            {% else %}
+                                <span class="badge badge-no">No</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% if labels.has_boundary_marker and labels.boundary_marker_text %}
+                    <div class="label-item">
+                        <span class="label-key">Marker Text:</span>
+                        <span class="label-value">{{ labels.boundary_marker_text }}</span>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
 

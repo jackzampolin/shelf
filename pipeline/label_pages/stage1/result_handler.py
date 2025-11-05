@@ -3,7 +3,7 @@ from infra.llm.batch_client import LLMResult
 
 
 def create_stage1_handler(storage, stage_storage, logger, stage_name, output_schema, model):
-    """Create handler that maps simplified Stage 1 LLM response to LabelPagesPageOutput."""
+    """Create handler that maps Stage 1 LLM response to LabelPagesPageOutput."""
 
     def on_result(result: LLMResult):
         if result.success:
@@ -15,9 +15,9 @@ def create_stage1_handler(storage, stage_storage, logger, stage_name, output_sch
                 "page_number": page_num,
                 "is_boundary": stage1_data.get('is_boundary', False),
                 "boundary_confidence": stage1_data.get('boundary_confidence', 0.0),
+                "boundary_position": stage1_data.get('boundary_position', 'none'),
                 "visual_signals": stage1_data.get('visual_signals', {}),
                 "textual_signals": stage1_data.get('textual_signals', {}),
-                "heading_info": stage1_data.get('heading_info'),
                 "reasoning": stage1_data.get('reasoning', ''),
                 "model_used": model,
                 "processing_cost": result.cost_usd or 0.0,
@@ -36,9 +36,10 @@ def create_stage1_handler(storage, stage_storage, logger, stage_name, output_sch
 
             boundary_status = "BOUNDARY" if page_output["is_boundary"] else "continuation"
             confidence = page_output["boundary_confidence"]
-            logger.info(f"✓ Label-pages complete: page {page_num} [{boundary_status}, conf={confidence:.2f}]")
+            position = page_output["boundary_position"]
+            logger.info(f"✓ Label-pages complete: page {page_num} [{boundary_status} @ {position}, conf={confidence:.2f}]")
         else:
             page_num = result.request.metadata.get('page_num', 'unknown')
-            logger.error(f"✗ Label-pages failed: page {page_num}", error=result.error)
+            logger.error(f"✗ Label-pages failed: page {page_num}", error=result.error_message)
 
     return on_result

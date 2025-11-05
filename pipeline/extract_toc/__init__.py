@@ -251,12 +251,12 @@ class ExtractTocStage(BaseStage):
             print()  # Blank line before final summary
             Console().print(summary)
 
-            runtime_metrics = stage_storage_obj.metrics_manager.get("stage_runtime")
-            if not runtime_metrics:
-                stage_storage_obj.metrics_manager.record(
-                    key="stage_runtime",
-                    time_seconds=elapsed_time
-                )
+            # Record stage runtime (accumulate across runs for resume support)
+            stage_storage_obj.metrics_manager.record(
+                key="stage_runtime",
+                time_seconds=elapsed_time,
+                accumulate=True
+            )
 
             logger.info(
                 "Extract-ToC complete",
