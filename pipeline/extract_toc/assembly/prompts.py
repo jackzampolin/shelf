@@ -101,36 +101,36 @@ DO NOT infer missing page numbers—preserve exactly as extracted.
 <output_requirements>
 Return JSON matching this schema (structured output enforced):
 
-{
-    "toc": {
+{{
+    "toc": {{
         "entries": [
-            {
+            {{
                 "entry_number": "5" or "II" or null,
                 "title": "Introduction",
                 "level": 1,
                 "level_name": "chapter" or null,
                 "printed_page_number": "1" or null
-            }
+            }}
         ],
-        "toc_page_range": {
+        "toc_page_range": {{
             "start_page": {toc_range.start_page},
             "end_page": {toc_range.end_page}
-        },
-        "entries_by_level": {
+        }},
+        "entries_by_level": {{
             "1": 15,
             "2": 42,
             "3": 8
-        },
+        }},
         "parsing_confidence": 0.95,
         "notes": ["Any assembly notes"]
-    },
-    "validation": {
+    }},
+    "validation": {{
         "issues_found": ["minor page number gap at entry 15"],
         "continuations_resolved": 3,
         "confidence": 0.95
-    },
+    }},
     "notes": "Overall assessment of assembly quality"
-}
+}}
 
 CRITICAL REQUIREMENTS:
 - "level" MUST match what Phase 1 extracted (1, 2, or 3)
