@@ -14,7 +14,7 @@ from .storage import ExtractTocStageStorage
 class ExtractTocStage(BaseStage):
 
     name = "extract-toc"
-    dependencies = ["find-toc", "paragraph-correct", "source"]
+    dependencies = ["source", "find-toc", "ocr-pages"]
 
     output_schema = ExtractTocBookOutput
     checkpoint_schema = None
@@ -49,11 +49,10 @@ class ExtractTocStage(BaseStage):
 
         artifacts = status.get('artifacts', {})
         phases_completed = sum([
-            artifacts.get('ocr_text_exists', False),
-            artifacts.get('elements_identified_exists', False),
+            artifacts.get('entries_extracted_exists', False),
             artifacts.get('toc_validated_exists', False),
         ])
-        total_phases = 3
+        total_phases = 2
         lines.append(f"   Phases: {phases_completed}/{total_phases} completed")
 
         return '\n'.join(lines)
@@ -64,6 +63,13 @@ class ExtractTocStage(BaseStage):
         logger: PipelineLogger
     ):
         logger.info(f"Extract-ToC with {self.model}")
+
+        # Check source dependency
+        source_storage = storage.stage("source")
+        source_pages = source_storage.list_output_pages(extension="png")
+        if len(source_pages) == 0:
+            raise RuntimeError("Source stage has no pages. Run source stage first.")
+        logger.info(f"Source stage: {len(source_pages)} pages available")
 
         # Check find-toc dependency
         from pipeline.find_toc import FindTocStage
@@ -90,18 +96,18 @@ class ExtractTocStage(BaseStage):
         toc_range = finder_result.get('toc_page_range')
         logger.info(f"Find-toc found ToC: pages {toc_range['start_page']}-{toc_range['end_page']}")
 
-        # Check paragraph-correct dependency
-        from pipeline.paragraph_correct import ParagraphCorrectStage
-        para_correct_stage = ParagraphCorrectStage()
-        para_correct_progress = para_correct_stage.get_status(storage, logger)
+        # Check ocr-pages dependency
+        from pipeline.ocr_pages import OcrPagesStage
+        ocr_pages_stage = OcrPagesStage()
+        ocr_pages_progress = ocr_pages_stage.get_status(storage, logger)
 
-        if para_correct_progress['status'] != 'completed':
+        if ocr_pages_progress['status'] != 'completed':
             raise RuntimeError(
-                f"Paragraph-correct stage status is '{para_correct_progress['status']}', not 'completed'. "
-                f"Run paragraph-correct stage to completion first."
+                f"OCR-pages stage status is '{ocr_pages_progress['status']}', not 'completed'. "
+                f"Run ocr-pages stage to completion first."
             )
 
-        logger.info(f"Paragraph-correct completed: {para_correct_progress['total_pages']} pages ready")
+        logger.info(f"OCR-pages completed: {ocr_pages_progress['completed_pages']} pages ready")
 
     def run(
         self,
@@ -129,46 +135,14 @@ class ExtractTocStage(BaseStage):
 
         logger.info("Using ToC range from find-toc", start=toc_range.start_page, end=toc_range.end_page)
 
-        # Phase 1: OCR text extraction with OlmOCR
-        if not progress["artifacts"]["ocr_text_exists"]:
-            logger.info("=== Phase 1: OCR Text Extraction ===")
-            print("🔍 Phase 1: OCR ToC pages")
+        # Phase 1: Extract ToC entries directly (vision + OCR from ocr-pages)
+        if not progress["artifacts"]["entries_extracted_exists"]:
+            logger.info("=== Phase 1: Extract ToC Entries ===")
+            print("👁️  Phase 1: Extract ToC entries")
 
-            from .phase_2 import extract_ocr_text
+            from .phase_2 import extract_toc_entries
 
-            ocr_data, phase2_metrics = extract_ocr_text(
-                storage=storage,
-                toc_range=toc_range,
-                logger=logger
-            )
-
-            self.stage_storage.save_ocr_text(storage, ocr_data)
-
-            stage_storage_obj = storage.stage(self.name)
-            stage_storage_obj.metrics_manager.record(
-                key="phase2_ocr_extraction",
-                cost_usd=phase2_metrics['cost_usd'],
-                time_seconds=phase2_metrics['time_seconds'],
-                custom_metrics={
-                    "phase": "ocr_text",
-                    "pages_processed": phase2_metrics['pages_processed'],
-                    "total_chars": phase2_metrics['total_chars'],
-                    "prompt_tokens": phase2_metrics['prompt_tokens'],
-                    "completion_tokens": phase2_metrics['completion_tokens'],
-                }
-            )
-
-            logger.info(f"Saved ocr_text.json + {phase2_metrics['pages_processed']} markdown files")
-            progress = self.get_status(storage, logger)
-
-        # Phase 2: Identify structural elements (vision + OCR text)
-        if not progress["artifacts"]["elements_identified_exists"]:
-            logger.info("=== Phase 2: Identify Structural Elements ===")
-            print("👁️  Phase 2: Element identification")
-
-            from .phase_3 import identify_elements
-
-            elements_data, phase3_metrics = identify_elements(
+            entries_data, phase1_metrics = extract_toc_entries(
                 storage=storage,
                 toc_range=toc_range,
                 structure_notes_from_finder=structure_notes_from_finder,
@@ -176,34 +150,34 @@ class ExtractTocStage(BaseStage):
                 model=self.model
             )
 
-            self.stage_storage.save_elements_identified(storage, elements_data)
+            self.stage_storage.save_entries_extracted(storage, entries_data)
 
             stage_storage_obj = storage.stage(self.name)
             stage_storage_obj.metrics_manager.record(
-                key="phase3_element_identification",
-                cost_usd=phase3_metrics['cost_usd'],
-                time_seconds=phase3_metrics['time_seconds'],
+                key="phase1_entry_extraction",
+                cost_usd=phase1_metrics['cost_usd'],
+                time_seconds=phase1_metrics['time_seconds'],
                 custom_metrics={
-                    "phase": "identify_elements",
-                    "pages_processed": phase3_metrics['pages_processed'],
-                    "total_elements": phase3_metrics['total_elements'],
-                    "completion_tokens": phase3_metrics['completion_tokens'],
-                    "prompt_tokens": phase3_metrics['prompt_tokens'],
-                    "reasoning_tokens": phase3_metrics['reasoning_tokens'],
+                    "phase": "extract_entries",
+                    "pages_processed": phase1_metrics['pages_processed'],
+                    "total_entries": phase1_metrics['total_entries'],
+                    "completion_tokens": phase1_metrics['completion_tokens'],
+                    "prompt_tokens": phase1_metrics['prompt_tokens'],
+                    "reasoning_tokens": phase1_metrics['reasoning_tokens'],
                 }
             )
 
-            logger.info(f"Saved elements_identified.json ({phase3_metrics['total_elements']} elements from {phase3_metrics['pages_processed']} pages)")
+            logger.info(f"Saved entries.json ({phase1_metrics['total_entries']} entries from {phase1_metrics['pages_processed']} pages)")
             progress = self.get_status(storage, logger)
 
-        # Phase 3: Validate and assemble ToC
+        # Phase 2: Assemble ToC (lightweight merge & validation)
         if not progress["artifacts"]["toc_validated_exists"]:
-            logger.info("=== Phase 3: Validate and Assemble ToC ===")
-            print("📝 Phase 3: Validate and assemble ToC")
+            logger.info("=== Phase 2: Assemble ToC ===")
+            print("📝 Phase 2: Assemble and validate ToC")
 
-            from .phase_4 import validate_and_assemble
+            from .phase_3 import assemble_toc
 
-            toc_data, phase4_metrics = validate_and_assemble(
+            toc_data, phase2_metrics = assemble_toc(
                 storage=storage,
                 toc_range=toc_range,
                 logger=logger,
@@ -214,21 +188,21 @@ class ExtractTocStage(BaseStage):
 
             stage_storage_obj = storage.stage(self.name)
             stage_storage_obj.metrics_manager.record(
-                key="phase4_validation",
-                cost_usd=phase4_metrics['cost_usd'],
-                time_seconds=phase4_metrics['time_seconds'],
+                key="phase2_assembly",
+                cost_usd=phase2_metrics['cost_usd'],
+                time_seconds=phase2_metrics['time_seconds'],
                 custom_metrics={
-                    "phase": "validation",
-                    "total_entries": phase4_metrics['total_entries'],
-                    "confidence": phase4_metrics['confidence'],
-                    "issues_found": phase4_metrics['issues_found'],
-                    "completion_tokens": phase4_metrics['completion_tokens'],
-                    "prompt_tokens": phase4_metrics['prompt_tokens'],
-                    "reasoning_tokens": phase4_metrics['reasoning_tokens'],
+                    "phase": "assembly",
+                    "total_entries": phase2_metrics['total_entries'],
+                    "confidence": phase2_metrics['confidence'],
+                    "issues_found": phase2_metrics['issues_found'],
+                    "completion_tokens": phase2_metrics['completion_tokens'],
+                    "prompt_tokens": phase2_metrics['prompt_tokens'],
+                    "reasoning_tokens": phase2_metrics['reasoning_tokens'],
                 }
             )
 
-            logger.info(f"Saved toc.json ({phase4_metrics['total_entries']} entries, confidence={phase4_metrics['confidence']:.2f})")
+            logger.info(f"Saved toc.json ({phase2_metrics['total_entries']} entries, confidence={phase2_metrics['confidence']:.2f})")
             progress = self.get_status(storage, logger)
 
         if progress["status"] == ExtractTocStatus.COMPLETED.value:

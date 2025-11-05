@@ -7,37 +7,19 @@ class ExtractTocStageStorage:
     def __init__(self, stage_name: str):
         self.stage_name = stage_name
 
-    def get_merged_page_text(self, storage: BookStorage, page_num: int) -> str:
-        from pipeline.paragraph_correct.tools import get_merged_page_text
-        return get_merged_page_text(storage, page_num)
-
-    def ocr_text_exists(self, storage: BookStorage) -> bool:
+    def entries_extracted_exists(self, storage: BookStorage) -> bool:
         stage_storage = storage.stage(self.stage_name)
-        return (stage_storage.output_dir / "ocr_text.json").exists()
+        return (stage_storage.output_dir / "entries.json").exists()
 
-    def load_ocr_text(self, storage: BookStorage) -> Optional[dict]:
-        if not self.ocr_text_exists(storage):
+    def load_entries_extracted(self, storage: BookStorage) -> Optional[dict]:
+        if not self.entries_extracted_exists(storage):
             return None
         stage_storage = storage.stage(self.stage_name)
-        return stage_storage.load_file("ocr_text.json")
+        return stage_storage.load_file("entries.json")
 
-    def save_ocr_text(self, storage: BookStorage, ocr_data: dict):
+    def save_entries_extracted(self, storage: BookStorage, entries_data: dict):
         stage_storage = storage.stage(self.stage_name)
-        stage_storage.save_file("ocr_text.json", ocr_data)
-
-    def elements_identified_exists(self, storage: BookStorage) -> bool:
-        stage_storage = storage.stage(self.stage_name)
-        return (stage_storage.output_dir / "elements_identified.json").exists()
-
-    def load_elements_identified(self, storage: BookStorage) -> Optional[dict]:
-        if not self.elements_identified_exists(storage):
-            return None
-        stage_storage = storage.stage(self.stage_name)
-        return stage_storage.load_file("elements_identified.json")
-
-    def save_elements_identified(self, storage: BookStorage, elements_data: dict):
-        stage_storage = storage.stage(self.stage_name)
-        stage_storage.save_file("elements_identified.json", elements_data)
+        stage_storage.save_file("entries.json", entries_data)
 
     def toc_validated_exists(self, storage: BookStorage) -> bool:
         stage_storage = storage.stage(self.stage_name)

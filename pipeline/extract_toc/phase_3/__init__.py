@@ -1,20 +1,16 @@
 """
-Phase 3: Element Identification
+Phase 2: Lightweight ToC Assembly
 
-Vision model identifies structural elements using image + OCR text.
+Merges ToC entries from multiple pages, handles continuations, validates sequence.
 """
 
 import json
 import time
 from typing import Dict, Tuple
-from pathlib import Path
-from PIL import Image
 
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
-from infra.llm.batch_processor import LLMBatchProcessor, LLMBatchConfig
-from infra.llm.models import LLMRequest, LLMResult
-from infra.utils.pdf import downsample_for_vision
+from infra.llm.client import LLMClient
 from infra.config import Config
 
 from ..schemas import PageRange
@@ -22,173 +18,188 @@ from ..storage import ExtractTocStageStorage
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 
 
-def identify_elements(
+def assemble_toc(
     storage: BookStorage,
     toc_range: PageRange,
-    structure_notes_from_finder: Dict[int, str],
     logger: PipelineLogger,
     model: str = None
 ) -> Tuple[Dict[str, any], Dict[str, any]]:
     """
-    Identify structural elements using vision model + OCR text.
+    Assemble final ToC from extracted entries across pages.
 
-    For each page:
-    - Load OCR text from Phase 2
-    - Load source image
-    - Call vision model with both image and OCR text
-    - Save element identification results
+    This is a lightweight operation that:
+    - Merges continuation entries across pages
+    - Validates entry sequence
+    - Counts chapters and sections
+    - Trusts Phase 1's hierarchy determination
 
     Args:
         storage: Book storage
         toc_range: Range of ToC pages
-        structure_notes_from_finder: Map of page_num -> structure observations
         logger: Pipeline logger
-        model: Vision model to use (default: Config.vision_model_primary)
+        model: Text model to use (default: Config.text_model_expensive)
 
     Returns:
         Tuple of (results_data, metrics)
-        - results_data: {"pages": [{"page_num": N, "elements": [...], ...}, ...]}
+        - results_data: {"toc": {...}, "validation": {...}, "notes": "..."}
         - metrics: {"cost_usd": float, "time_seconds": float, ...}
     """
-    model = model or Config.vision_model_primary
+    model = model or Config.text_model_expensive
+    llm_client = LLMClient()
     stage_storage = ExtractTocStageStorage(stage_name='extract-toc')
-    stage_storage_obj = storage.stage('extract-toc')
+
+    logger.info("Assembling ToC from extracted entries")
 
     start_time = time.time()
-    total_toc_pages = toc_range.end_page - toc_range.start_page + 1
 
-    logger.info(f"Identifying elements from {total_toc_pages} ToC pages (parallel)")
+    # Load entries from Phase 1
+    entries_data = stage_storage.load_entries_extracted(storage)
+    pages_data = entries_data.get("pages", [])
 
-    # Build LLM requests for all pages
-    requests = []
-    source_storage = storage.stage("source")
+    entries_by_page = {p["page_num"]: p for p in pages_data}
 
-    for page_num in range(toc_range.start_page, toc_range.end_page + 1):
-        md_path = stage_storage_obj.output_dir / f"page_{page_num:04d}.md"
+    user_prompt = build_user_prompt(entries_by_page, toc_range)
 
-        if not md_path.exists():
-            logger.error(f"  Page {page_num}: OCR markdown not found: {md_path}")
-            continue
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt}
+    ]
 
-        with open(md_path, 'r', encoding='utf-8') as f:
-            ocr_text = f.read()
+    # Build structured output schema from our Pydantic models
+    from ..schemas import TableOfContents, ToCEntry, PageRange
 
-        page_file = source_storage.output_dir / f"page_{page_num:04d}.png"
+    toc_entry_schema = {
+        "type": "object",
+        "properties": {
+            "chapter_number": {"type": ["integer", "null"], "minimum": 1},
+            "title": {"type": "string", "minLength": 1},
+            "printed_page_number": {"type": ["string", "null"]},
+            "level": {"type": "integer", "minimum": 1, "maximum": 3}
+        },
+        "required": ["title", "level"],
+        "additionalProperties": False
+    }
 
-        if not page_file.exists():
-            logger.error(f"  Page {page_num}: Source image not found: {page_file}")
-            continue
+    toc_schema = {
+        "type": "object",
+        "properties": {
+            "entries": {
+                "type": "array",
+                "items": toc_entry_schema
+            },
+            "toc_page_range": {
+                "type": "object",
+                "properties": {
+                    "start_page": {"type": "integer", "minimum": 1},
+                    "end_page": {"type": "integer", "minimum": 1}
+                },
+                "required": ["start_page", "end_page"],
+                "additionalProperties": False
+            },
+            "total_chapters": {"type": "integer", "minimum": 0},
+            "total_sections": {"type": "integer", "minimum": 0},
+            "parsing_confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "notes": {
+                "type": "array",
+                "items": {"type": "string"}
+            }
+        },
+        "required": ["entries", "toc_page_range", "total_chapters", "total_sections", "parsing_confidence"],
+        "additionalProperties": False
+    }
 
-        image = Image.open(page_file)
-        image = downsample_for_vision(image)
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "toc_assembly",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "toc": toc_schema,
+                    "validation": {
+                        "type": "object",
+                        "properties": {
+                            "issues_found": {"type": "array", "items": {"type": "string"}},
+                            "continuations_resolved": {"type": "integer"},
+                            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+                        },
+                        "required": ["issues_found", "continuations_resolved", "confidence"],
+                        "additionalProperties": False
+                    },
+                    "notes": {"type": "string"}
+                },
+                "required": ["toc", "validation", "notes"],
+                "additionalProperties": False
+            }
+        }
+    }
 
-        page_structure_notes = structure_notes_from_finder.get(page_num, "No specific structure notes for this page.")
-
-        user_prompt = build_user_prompt(
-            page_num=page_num,
-            total_toc_pages=total_toc_pages,
-            ocr_text=ocr_text,
-            structure_notes=page_structure_notes
-        )
-
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt}
-        ]
-
-        requests.append(LLMRequest(
-            id=f"page_{page_num:04d}",
-            model=model,
-            messages=messages,
-            images=[image],
-            temperature=0.0,
-            response_format={"type": "json_object"},
-            timeout=300,
-            metadata={"page_num": page_num}
-        ))
-
-    # Process batch with LLMBatchProcessor
-    page_results = []
-
-    def handle_result(result: LLMResult):
-        """Handle completed element identification result."""
-        if result.success:
-            page_num = result.request.metadata["page_num"]
-
-            try:
-                response_data = json.loads(result.response)
-
-                page_results.append({
-                    "page_num": page_num,
-                    "elements": response_data.get("elements", []),
-                    "page_structure": response_data.get("page_structure", {}),
-                    "confidence": response_data.get("confidence", 0.0),
-                    "notes": response_data.get("notes", "")
-                })
-
-                # Metrics already recorded by batch processor's MetricsManager integration
-                stage_storage_obj.metrics_manager.record(
-                    key=f"phase3_page_{page_num:04d}",
-                    cost_usd=result.cost_usd,
-                    time_seconds=result.execution_time_seconds,
-                    custom_metrics={
-                        "phase": "identify_elements",
-                        "page": page_num,
-                        "elements_found": len(response_data.get("elements", [])),
-                        "confidence": response_data.get("confidence", 0.0),
-                        "prompt_tokens": result.prompt_tokens,
-                        "completion_tokens": result.completion_tokens,
-                        "reasoning_tokens": result.reasoning_tokens,
-                    }
-                )
-
-            except Exception as e:
-                logger.error(f"  Page {page_num}: Failed to parse element identification: {e}")
-        else:
-            page_num = result.request.metadata["page_num"]
-            logger.error(f"  Page {page_num}: Failed to identify elements: {result.error_message}")
-
-    # Create batch processor and run
-    config = LLMBatchConfig(
+    # Single LLM call - lightweight assembly
+    response_text, usage, cost = llm_client.call(
         model=model,
-        max_workers=4,  # Process 4 pages concurrently
-        max_retries=3,
-        verbose=True,
-        batch_name="Element identification"
-    )
-
-    processor = LLMBatchProcessor(
-        logger=logger,
-        log_dir=stage_storage_obj.output_dir / "logs" / "phase3",
-        config=config,
-        metrics_manager=stage_storage_obj.metrics_manager
-    )
-
-    batch_stats = processor.process_batch(
-        requests=requests,
-        on_result=handle_result
+        messages=messages,
+        temperature=0.0,
+        response_format=response_format,
+        timeout=300
     )
 
     elapsed_time = time.time() - start_time
 
-    # Sort page_results by page_num
-    page_results.sort(key=lambda p: p["page_num"])
+    # Print summary line after completion
+    from infra.llm.display_format import format_batch_summary
+    reasoning_details = usage.get("completion_tokens_details", {})
+    reasoning_tokens = reasoning_details.get("reasoning_tokens", 0)
 
-    results_data = {
-        "pages": page_results,
-        "toc_range": toc_range.model_dump(),
-    }
+    summary = format_batch_summary(
+        batch_name="ToC assembly",
+        completed=1,
+        total=1,
+        time_seconds=elapsed_time,
+        prompt_tokens=usage.get("prompt_tokens", 0),
+        completion_tokens=usage.get("completion_tokens", 0),
+        reasoning_tokens=reasoning_tokens,
+        cost_usd=cost,
+        unit="call"
+    )
+    from rich.console import Console
+    Console().print(summary)
 
-    total_elements = sum(len(p["elements"]) for p in page_results)
+    try:
+        response_data = json.loads(response_text)
 
-    metrics = {
-        "cost_usd": batch_stats["total_cost_usd"],
-        "time_seconds": elapsed_time,
-        "prompt_tokens": 0,  # Not tracked separately by batch client
-        "completion_tokens": batch_stats["total_tokens"],  # batch_stats.total_tokens = completion_tokens
-        "reasoning_tokens": batch_stats["total_reasoning_tokens"],
-        "pages_processed": len(page_results),
-        "total_elements": total_elements,
-    }
+        toc_data = response_data.get("toc", {})
+        validation_data = response_data.get("validation", {})
+        notes = response_data.get("notes", "")
 
-    return results_data, metrics
+        total_entries = len(toc_data.get("entries", []))
+        confidence = validation_data.get("confidence", 0.0)
+        issues = validation_data.get("issues_found", [])
+
+        logger.info(f"  Assembled ToC: {total_entries} entries, confidence={confidence:.2f}, {len(issues)} issues")
+
+        results_data = {
+            "toc": toc_data,
+            "validation": validation_data,
+            "notes": notes,
+            "search_strategy": "vision_agent_with_ocr"
+        }
+
+        reasoning_details = usage.get("completion_tokens_details", {})
+
+        metrics = {
+            "cost_usd": cost,
+            "time_seconds": elapsed_time,
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "reasoning_tokens": reasoning_details.get("reasoning_tokens", 0),
+            "total_entries": total_entries,
+            "confidence": confidence,
+            "issues_found": len(issues),
+        }
+
+        return results_data, metrics
+
+    except Exception as e:
+        logger.error(f"  Failed to parse assembly response: {e}")
+        raise

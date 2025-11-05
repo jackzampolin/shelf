@@ -1,152 +1,140 @@
-"""Prompts for Phase 3: Element Identification"""
+"""Prompts for Phase 2: Lightweight ToC Assembly"""
 
-SYSTEM_PROMPT = """<role>
-You are a Table of Contents structure analyzer.
-Your task is to identify individual structural elements (entries) in ToC pages.
-</role>
+SYSTEM_PROMPT = """You are a Table of Contents assembly specialist.
 
-<critical_instructions>
-You have TWO sources of information:
-1. **VISUAL LAYOUT** (image): Shows hierarchy, indentation, styling
-2. **CLEAN OCR TEXT**: Accurate text extraction (use this for content)
+Your task is to merge ToC entries from multiple pages into a final, complete ToC structure.
 
-POSITION TELLS YOU EVERYTHING:
-- Y-coordinate = which row (elements on same line group together)
-- X-coordinate = indentation level (hierarchy)
-- Visual styling = type (bold/large = chapter, indented = section)
+Phase 1 has already extracted individual ToC entries from each page. Your job is simple:
+1. Merge continuation entries (entries that span multiple pages)
+2. Validate the sequence makes sense
+3. Count chapters and sections
+4. Assemble the final ToC
 
-Use OCR for WHAT (the text), use IMAGE for WHERE (the structure).
-</critical_instructions>"""
+DO NOT re-interpret hierarchy or structure—trust Phase 1's extraction."""
 
 
-def build_user_prompt(
-    page_num: int,
-    total_toc_pages: int,
-    ocr_text: str,
-    structure_notes: str = None
-) -> str:
+def build_user_prompt(entries_by_page: dict, toc_range) -> str:
     """
-    Build user prompt for element identification.
+    Build user prompt for lightweight assembly.
 
     Args:
-        page_num: Current page number
-        total_toc_pages: Total number of ToC pages
-        ocr_text: Clean OCR text from Phase 2
-        structure_notes: Optional notes from Phase 1 finder
+        entries_by_page: Dict mapping page_num -> entries data
+        toc_range: PageRange object
 
     Returns:
         Formatted prompt string
     """
 
     prompt = f"""<task>
-Analyze this Table of Contents page (page {page_num} of {total_toc_pages}) and identify ALL structural elements.
+Assemble the final Table of Contents from entries extracted across {len(entries_by_page)} pages (pages {toc_range.start_page}-{toc_range.end_page}).
 
-You have TWO sources of information:
-1. **The IMAGE**: Shows visual layout, indentation, hierarchy, styling
-2. **OCR TEXT**: Clean text extraction (more accurate than reading image directly)
+Your job is SIMPLE:
+1. **Merge continuations** - If an entry continues across pages, merge it
+2. **Validate sequence** - Check that entries make sense in order
+3. **Count entries** - Total chapters (Level 1) and sections (Level 2+3)
+4. **Assemble final ToC** - Create the complete, ordered list
 
-<ocr_text>
-{ocr_text}
-</ocr_text>
-"""
-
-    if structure_notes:
-        prompt += f"""
-<structure_notes>
-{structure_notes}
-</structure_notes>
-"""
-
-    prompt += """
+DO NOT re-interpret hierarchy or indentation. Phase 1 already determined hierarchy levels—trust those assignments.
 </task>
 
-<visual_detection>
-WHAT TO IDENTIFY:
-✓ Entry numbers (chapter/part numbers: "1.", "Chapter 5", "Part II")
-✓ Entry titles (chapter/section names, may span multiple lines)
-✓ Page numbers (usually right-aligned: "127", "ix", "xii")
-✓ Hierarchical elements (indented sub-entries)
+<extracted_entries>
+"""
 
-HOW INDENTATION DETERMINES HIERARCHY:
-- Flush left (0 indent) = Top-level chapter/part
-- Small indent (~20-40px) = Section under chapter
-- Larger indent (~40-80px) = Subsection
+    total_entries = 0
+    for page_num in sorted(entries_by_page.keys()):
+        page_data = entries_by_page[page_num]
+        entries = page_data.get("entries", [])
+        page_notes = page_data.get("notes", "")
 
-VISUAL SIGNS OF STRUCTURE:
-- **Bold/Large text** = Chapter/Part heading
-- **Aligned vertically** = Same hierarchy level
-- **Indented** = Child of previous un-indented entry
-- **Right-aligned numbers** = Page numbers
-- **No page number** = Parent entry (has children below)
-</visual_detection>
+        prompt += f"\n## Page {page_num}\n"
+        if page_notes:
+            prompt += f"Notes: {page_notes}\n"
 
-<pattern_examples>
-# Generic patterns (NOT from any specific book)
+        for entry in entries:
+            chapter_num = entry.get("chapter_number")
+            title = entry.get("title", "")
+            page_ref = entry.get("printed_page_number", "N/A")
+            level = entry.get("level", 1)
 
-Pattern 1: Flat list
+            chapter_str = f"Ch {chapter_num}" if chapter_num else "---"
+            prompt += f"  [L{level}] {chapter_str}: \"{title}\" → {page_ref}\n"
+            total_entries += 1
+
+    prompt += f"""
+</extracted_entries>
+
+Total extracted entries: {total_entries}
+
+<assembly_instructions>
+
+**CONTINUATION HANDLING**:
+If an entry's metadata indicates `continues_to_next: true` or `continuation_from_previous: true`, check if the next page has a related entry that should be merged.
+
+Example:
 ```
-0px indent: "Introduction" → page "ix"
-0px indent: "Chapter 1" → page "1"
-0px indent: "Chapter 2" → page "25"
+Page 5: "Chapter 1: An Incredibly Long Title That" (continues_to_next=true)
+Page 6: "Continues on This Line" (continuation_from_previous=true)
 ```
-All indentation_level=0, all type="entry"
+Merge into: "Chapter 1: An Incredibly Long Title That Continues on This Line"
 
-Pattern 2: Hierarchy with parent entries
-```
-0px indent: "Part I" (NO page number) → parent
-  20px indent: "Early Period" → page "1"
-  20px indent: "Middle Era" → page "45"
-0px indent: "Part II" (NO page number) → parent
-  20px indent: "Modern Times" → page "90"
-```
-Part I/II: indentation_level=0, type="section", has_page_number=false
-Children: indentation_level=1, type="entry", has_page_number=true
+**VALIDATION CHECKS**:
+1. Are entries in a logical order?
+2. Are there obvious gaps or duplicates?
+3. Do page numbers generally ascend (with allowances for roman numerals)?
+4. Does the hierarchy structure make sense (no Level 3 without a Level 2 parent)?
 
-Pattern 3: Deep nesting
-```
-0px indent: "Section A"
-  20px indent: "Topic 1" → page "10"
-    40px indent: "Subtopic 1a" → page "12"
-    40px indent: "Subtopic 1b" → page "18"
-  20px indent: "Topic 2" → page "25"
-```
-Levels: 0 (Section A), 1 (Topics), 2 (Subtopics)
-</pattern_examples>
+**COUNTING**:
+- Total chapters = entries with level=1
+- Total sections = entries with level=2 or level=3
 
-<instructions>
-1. **Match OCR text to visual position** - Find each OCR line on the image
-2. **Measure indentation** - How far from left edge? (visual_x value)
-3. **Determine hierarchy** - Compare indentations to assign levels (0, 1, 2)
-4. **Identify type** - Based on styling, indentation, presence of page number
-5. **Extract page numbers** - Right-side text that looks like a page number
-</instructions>
+**TRUST PHASE 1**:
+DO NOT change hierarchy levels. If Phase 1 said an entry is Level 2, keep it Level 2.
+DO NOT re-capitalize or reformat titles beyond merging continuations.
+DO NOT infer missing page numbers—preserve exactly as extracted.
+
+</assembly_instructions>
 
 <output_requirements>
-Return JSON with this structure:
+Return JSON matching this schema (structured output enforced):
+
 {
-    "elements": [
-        {
-            "text": "exact text from OCR",
-            "visual_x": 100,
-            "visual_y": 50,
-            "indentation_level": 0,
-            "type": "chapter|section|entry|continuation",
-            "has_page_number": true,
-            "page_number": "123",
-            "notes": "any structural observations"
-        }
-    ],
-    "page_structure": {
-        "columns": 1,
-        "has_parent_entries": true,
-        "continuation_from_previous": false,
-        "continues_to_next": true
+    "toc": {
+        "entries": [
+            {
+                "chapter_number": 1 or null,
+                "title": "Introduction",
+                "printed_page_number": "1" or null,
+                "level": 1
+            }
+        ],
+        "toc_page_range": {
+            "start_page": {toc_range.start_page},
+            "end_page": {toc_range.end_page}
+        },
+        "total_chapters": 0,
+        "total_sections": 0,
+        "parsing_confidence": 0.95,
+        "notes": ["Any assembly notes"]
     },
-    "confidence": 0.95,
-    "notes": "overall observations about this page's structure"
+    "validation": {
+        "issues_found": ["minor page number gap at entry 15"],
+        "continuations_resolved": 3,
+        "confidence": 0.95
+    },
+    "notes": "Overall assessment of assembly quality"
 }
+
+CRITICAL REQUIREMENTS:
+- "level" MUST match what Phase 1 extracted (1, 2, or 3)
+- "toc_page_range" MUST be provided with start_page={toc_range.start_page}, end_page={toc_range.end_page}
+- "total_chapters" = count of Level 1 entries
+- "total_sections" = count of Level 2 + Level 3 entries
+- "parsing_confidence" should reflect overall confidence in the assembled ToC
+- "continuations_resolved" = number of entries merged across pages
+- Entries MUST be in the order they appear across pages (Page 1 entries, then Page 2, etc.)
+
 </output_requirements>
 
-Begin analysis."""
+Begin assembly."""
 
     return prompt

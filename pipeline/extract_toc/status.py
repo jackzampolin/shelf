@@ -10,9 +10,8 @@ from .storage import ExtractTocStageStorage
 
 class ExtractTocStatus(str, Enum):
     NOT_STARTED = "not_started"
-    OCR_TEXT = "ocr_text"
-    IDENTIFY_ELEMENTS = "identify_elements"
-    VALIDATING = "validating"
+    EXTRACTING_ENTRIES = "extracting_entries"
+    ASSEMBLING = "assembling"
     COMPLETED = "completed"
 
 
@@ -27,16 +26,13 @@ class ExtractTocStatusTracker:
         storage: BookStorage
     ) -> Dict[str, Any]:
 
-        ocr_text_exists = self.storage.ocr_text_exists(storage)
-        elements_identified_exists = self.storage.elements_identified_exists(storage)
+        entries_extracted_exists = self.storage.entries_extracted_exists(storage)
         toc_validated_exists = self.storage.toc_validated_exists(storage)
 
-        if not ocr_text_exists:
-            status = ExtractTocStatus.OCR_TEXT.value
-        elif not elements_identified_exists:
-            status = ExtractTocStatus.IDENTIFY_ELEMENTS.value
+        if not entries_extracted_exists:
+            status = ExtractTocStatus.EXTRACTING_ENTRIES.value
         elif not toc_validated_exists:
-            status = ExtractTocStatus.VALIDATING.value
+            status = ExtractTocStatus.ASSEMBLING.value
         else:
             status = ExtractTocStatus.COMPLETED.value
 
@@ -57,8 +53,7 @@ class ExtractTocStatusTracker:
                 "stage_runtime_seconds": stage_runtime,
             },
             "artifacts": {
-                "ocr_text_exists": ocr_text_exists,
-                "elements_identified_exists": elements_identified_exists,
+                "entries_extracted_exists": entries_extracted_exists,
                 "toc_validated_exists": toc_validated_exists,
             }
         }

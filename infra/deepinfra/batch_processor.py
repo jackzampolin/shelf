@@ -173,8 +173,12 @@ class DeepInfraOCRBatchProcessor:
             "failed": 0,
             "total_cost_usd": 0.0,
             "total_prompt_tokens": 0,
-            "total_completion_tokens": 0
+            "total_completion_tokens": 0,
+            "total_execution_time": 0.0  # Sum of individual request times
         }
+
+        # Track recent completions (last 5) for display
+        recent_completions = []  # List of request IDs in completion order
 
         # Create hierarchical progress bar (thread-safe for concurrent updates)
         progress = RichProgressBarHierarchical(
@@ -211,13 +215,75 @@ class DeepInfraOCRBatchProcessor:
                     stats["total_cost_usd"] += cost
                     stats["total_prompt_tokens"] += prompt_tokens
                     stats["total_completion_tokens"] += completion_tokens
+                    stats["total_execution_time"] += req_time
                     completed_count = stats["completed"]
 
                 # Update progress bar (thread-safe)
                 if progress:
                     cost_cents = cost * 100
-                    page_info = request.metadata.get('page_num', request.id)
-                    suffix = f"page {page_info} ({req_time:.1f}s, {cost_cents:.2f}¢)"
+                    page_num = request.metadata.get('page_num', request.id)
+                    page_id = f"p{page_num}" if isinstance(page_num, int) else str(page_num)
+
+                    # Add detailed line for this page
+                    msg = f"{page_id}: [bold green]✓[/bold green] [dim]({req_time:.1f}s, {prompt_tokens}→{completion_tokens} tok, {cost_cents:.2f}¢)[/dim]"
+
+                    with stats_lock:
+                        progress.add_sub_line(request.id, msg)
+                        # Track recent completions (keep last 5)
+                        recent_completions.append(request.id)
+                        if len(recent_completions) > 5:
+                            recent_completions.pop(0)
+
+                        # Update rollup metrics
+                        elapsed = time.time() - start_time
+                        pages_per_sec = completed_count / elapsed if elapsed > 0 else 0
+                        avg_cost_cents = (stats['total_cost_usd'] / completed_count * 100) if completed_count > 0 else 0
+                        avg_time = stats['total_execution_time'] / completed_count if completed_count > 0 else 0
+                        avg_input = stats['total_prompt_tokens'] / completed_count if completed_count > 0 else 0
+                        avg_output = stats['total_completion_tokens'] / completed_count if completed_count > 0 else 0
+
+                        rollup_ids = []
+                        if pages_per_sec > 0:
+                            progress.add_sub_line("rollup_throughput",
+                                f"[cyan]Throughput:[/cyan] [bold]{pages_per_sec:.1f}[/bold] [dim]pages/sec[/dim]")
+                            rollup_ids.append("rollup_throughput")
+
+                        if avg_cost_cents > 0:
+                            progress.add_sub_line("rollup_avg_cost",
+                                f"[cyan]Avg cost:[/cyan] [bold yellow]{avg_cost_cents:.2f}¢[/bold yellow][dim]/page[/dim]")
+                            rollup_ids.append("rollup_avg_cost")
+
+                        if avg_time > 0:
+                            progress.add_sub_line("rollup_avg_time",
+                                f"[cyan]Avg time:[/cyan] [bold]{avg_time:.1f}s[/bold][dim]/page[/dim]")
+                            rollup_ids.append("rollup_avg_time")
+
+                        if avg_input > 0:
+                            progress.add_sub_line("rollup_tokens",
+                                f"[cyan]Tokens:[/cyan] [green]{avg_input:.0f}[/green] in → [blue]{avg_output:.0f}[/blue] out")
+                            rollup_ids.append("rollup_tokens")
+
+                        # Set sections (rollups first, then recent)
+                        if rollup_ids:
+                            progress.set_section("rollups", "Metrics:", rollup_ids)
+                        progress.set_section("recent", f"Recent ({len(recent_completions)}):", recent_completions[:])
+
+                    # Update summary suffix (matches LLM batch processor format)
+                    elapsed_mins = int(elapsed // 60)
+                    elapsed_secs = int(elapsed % 60)
+                    elapsed_str = f"{elapsed_mins}:{elapsed_secs:02d}"
+
+                    # Calculate ETA
+                    remaining = len(requests) - completed_count
+                    if pages_per_sec > 0 and remaining > 0:
+                        eta_seconds = remaining / pages_per_sec
+                        eta_mins = int(eta_seconds // 60)
+                        eta_secs = int(eta_seconds % 60)
+                        eta_str = f"ETA {eta_mins}:{eta_secs:02d}"
+                        suffix = f"{completed_count}/{len(requests)} • {elapsed_str} • {eta_str} • ${stats['total_cost_usd']:.2f}"
+                    else:
+                        suffix = f"{completed_count}/{len(requests)} • {elapsed_str} • ${stats['total_cost_usd']:.2f}"
+
                     progress.update(completed_count, suffix=suffix)
 
                 return OCRResult(
@@ -236,11 +302,75 @@ class DeepInfraOCRBatchProcessor:
 
                 with stats_lock:
                     stats["failed"] += 1
+                    stats["total_execution_time"] += req_time
                     completed_count = stats["completed"] + stats["failed"]
 
                 if progress:
-                    page_info = request.metadata.get('page_num', request.id)
-                    suffix = f"page {page_info} FAILED"
+                    page_num = request.metadata.get('page_num', request.id)
+                    page_id = f"p{page_num}" if isinstance(page_num, int) else str(page_num)
+
+                    # Add detailed line for this page
+                    error_msg = str(e)[:30]
+                    msg = f"{page_id}: [bold red]✗[/bold red] [dim]({req_time:.1f}s)[/dim] - [yellow]{error_msg}[/yellow]"
+
+                    with stats_lock:
+                        progress.add_sub_line(request.id, msg)
+                        # Track recent completions (keep last 5)
+                        recent_completions.append(request.id)
+                        if len(recent_completions) > 5:
+                            recent_completions.pop(0)
+
+                        # Update rollup metrics
+                        elapsed = time.time() - start_time
+                        total_processed = stats['completed'] + stats['failed']
+                        pages_per_sec = total_processed / elapsed if elapsed > 0 else 0
+                        avg_cost_cents = (stats['total_cost_usd'] / stats['completed'] * 100) if stats['completed'] > 0 else 0
+                        avg_time = stats['total_execution_time'] / total_processed if total_processed > 0 else 0
+                        avg_input = stats['total_prompt_tokens'] / stats['completed'] if stats['completed'] > 0 else 0
+                        avg_output = stats['total_completion_tokens'] / stats['completed'] if stats['completed'] > 0 else 0
+
+                        rollup_ids = []
+                        if pages_per_sec > 0:
+                            progress.add_sub_line("rollup_throughput",
+                                f"[cyan]Throughput:[/cyan] [bold]{pages_per_sec:.1f}[/bold] [dim]pages/sec[/dim]")
+                            rollup_ids.append("rollup_throughput")
+
+                        if avg_cost_cents > 0:
+                            progress.add_sub_line("rollup_avg_cost",
+                                f"[cyan]Avg cost:[/cyan] [bold yellow]{avg_cost_cents:.2f}¢[/bold yellow][dim]/page[/dim]")
+                            rollup_ids.append("rollup_avg_cost")
+
+                        if avg_time > 0:
+                            progress.add_sub_line("rollup_avg_time",
+                                f"[cyan]Avg time:[/cyan] [bold]{avg_time:.1f}s[/bold][dim]/page[/dim]")
+                            rollup_ids.append("rollup_avg_time")
+
+                        if avg_input > 0:
+                            progress.add_sub_line("rollup_tokens",
+                                f"[cyan]Tokens:[/cyan] [green]{avg_input:.0f}[/green] in → [blue]{avg_output:.0f}[/blue] out")
+                            rollup_ids.append("rollup_tokens")
+
+                        # Set sections (rollups first, then recent)
+                        if rollup_ids:
+                            progress.set_section("rollups", "Metrics:", rollup_ids)
+                        progress.set_section("recent", f"Recent ({len(recent_completions)}):", recent_completions[:])
+
+                    # Update summary suffix (matches LLM batch processor format)
+                    elapsed_mins = int(elapsed // 60)
+                    elapsed_secs = int(elapsed % 60)
+                    elapsed_str = f"{elapsed_mins}:{elapsed_secs:02d}"
+
+                    # Calculate ETA
+                    remaining = len(requests) - completed_count
+                    if pages_per_sec > 0 and remaining > 0:
+                        eta_seconds = remaining / pages_per_sec
+                        eta_mins = int(eta_seconds // 60)
+                        eta_secs = int(eta_seconds % 60)
+                        eta_str = f"ETA {eta_mins}:{eta_secs:02d}"
+                        suffix = f"{stats['completed']}/{len(requests)} • {elapsed_str} • {eta_str} • ${stats['total_cost_usd']:.2f}"
+                    else:
+                        suffix = f"{stats['completed']}/{len(requests)} • {elapsed_str} • ${stats['total_cost_usd']:.2f}"
+
                     progress.update(completed_count, suffix=suffix)
 
                 return OCRResult(
