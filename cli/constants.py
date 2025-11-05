@@ -1,4 +1,5 @@
 STAGE_DEFINITIONS = [
+    {'name': 'tesseract', 'abbr': 'TES', 'class': 'pipeline.tesseract.TesseractStage'},
     {'name': 'ocr', 'abbr': 'OCR', 'class': 'pipeline.ocr.OCRStage'},
     {'name': 'ocr-pages', 'abbr': 'OPG', 'class': 'pipeline.ocr_pages.OcrPagesStage'},
     {'name': 'paragraph-correct', 'abbr': 'PAR', 'class': 'pipeline.paragraph_correct.ParagraphCorrectStage'},
@@ -34,7 +35,13 @@ def get_stage_map(model=None, workers=None, max_retries=3):
 
         kwargs = {}
 
-        if stage_def['name'] == 'ocr':
+        if stage_def['name'] == 'tesseract':
+            # CPU-bound Tesseract stage (default PSM 3, cpu_count workers)
+            if workers:
+                kwargs['max_workers'] = workers
+            kwargs['psm_mode'] = 3
+
+        elif stage_def['name'] == 'ocr':
             if workers:
                 kwargs['max_workers'] = workers
 

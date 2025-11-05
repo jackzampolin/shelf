@@ -23,7 +23,9 @@ def cmd_info(args):
     storage = library.get_book_storage(args.scan_id)
 
     stage_labels = {
+        'tesseract': 'Tesseract',
         'ocr': 'OCR',
+        'ocr-pages': 'OCR-Pages',
         'paragraph-correct': 'Paragraph-Correct',
         'label-pages': 'Label-Pages',
         'extract-toc': 'Extract-ToC',
@@ -53,6 +55,7 @@ def cmd_info(args):
             sys.exit(1)
 
         stage_labels = {
+            'tesseract': 'Tesseract',
             'ocr': 'OCR',
             'paragraph-correct': 'Paragraph-Correct',
             'label-pages': 'Label-Pages',
@@ -91,9 +94,12 @@ def cmd_info(args):
     print("=" * 80)
 
     stage_labels = {
+        'tesseract': 'Tesseract',
         'ocr': 'OCR',
+        'ocr-pages': 'OCR-Pages',
         'paragraph-correct': 'Paragraph-Correct',
         'label-pages': 'Label-Pages',
+        'find-toc': 'Find-ToC',
         'extract-toc': 'Extract-ToC'
     }
 
