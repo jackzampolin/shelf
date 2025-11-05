@@ -7,10 +7,11 @@ NEVER run these operations without explicit user approval:
 - `shelf.py book <scan-id> process` - Full pipeline processing
 - `shelf.py book <scan-id> run-stage <stage>` - Single stage processing
 - `shelf.py batch <stage>` - Library-wide batch stage processing
-- Any command that spawns LLM API calls (paragraph-correct, label-pages, extract_toc)
+- Any command that spawns LLM API calls (ocr-pages, find-toc, extract-toc)
 
 Safe operations (can run freely):
 - `shelf.py library list`, `shelf.py book <scan-id> info`, `pytest tests/`
+- `shelf.py book <scan-id> run-stage tesseract` (local, no API calls)
 - Reading files, grepping, analyzing code
 
 **Always ask first**
@@ -98,8 +99,8 @@ This provides attribution and tracks AI-assisted development.
 <stage_implementation>
 ## Stage Implementation
 
-**OCR is the reference implementation.**
-Read `pipeline/ocr/` and `docs/guides/implementing-a-stage.md` for full details.
+**Tesseract and ocr-pages are reference implementations.**
+Read `pipeline/tesseract/` or `pipeline/ocr_pages/` and `docs/guides/implementing-a-stage.md` for full details.
 
 **Core principles:**
 1. **One schema per file** - Easy to find, easy to modify
@@ -134,9 +135,10 @@ def run(self, storage, logger):
 ```
 
 **Naming conventions (CRITICAL):**
-- Stage names ALWAYS use hyphens: `paragraph-correct`, `label-pages`, `extract-toc`
+- Stage names ALWAYS use hyphens: `ocr-pages`, `find-toc`, `extract-toc`
 - NEVER use underscores in stage names (causes lookup failures)
 - Use `storage.stage("stage-name")` - exact string, no manipulation
+- Exception: `tesseract` (single word, no hyphen needed)
 - Why: Consistency between CLI args, directory names, and storage lookups
 - Violation causes: "Page not found" errors, empty grep results, wrong log directories
 </stage_implementation>
@@ -241,7 +243,7 @@ uv run python -m pytest tests/
 
 **Comments explain WHY, not WHAT:**
 - WRONG: `# Build kwargs for stage initialization`
-- RIGHT: `# OCR stages need worker control for CPU-bound parallelism`
+- RIGHT: `# Tesseract stage needs worker control for CPU-bound parallelism`
 - WRONG: `# Single source of truth for stage definitions`
 - RIGHT: (no comment - code structure makes this obvious)
 
@@ -272,8 +274,8 @@ uv run python -m pytest tests/
 - Detailed commit messages with **Problem/Solution/Impact** sections
 
 **3. STAGE IMPLEMENTATION**
-- **OCR is the reference** - read `pipeline/ocr/` when stuck
-- Stage names use HYPHENS: `paragraph-correct` not `paragraph_correct`
+- **Tesseract/ocr-pages are references** - read `pipeline/tesseract/` or `pipeline/ocr_pages/` when stuck
+- Stage names use HYPHENS: `ocr-pages` not `ocr_pages` (exception: single-word `tesseract`)
 - One schema per file
 - Ground truth from disk (not metrics state)
 - If-gates for resume (check progress, refresh, continue)

@@ -24,10 +24,8 @@ def cmd_info(args):
 
     stage_labels = {
         'tesseract': 'Tesseract',
-        'ocr': 'OCR',
         'ocr-pages': 'OCR-Pages',
-        'paragraph-correct': 'Paragraph-Correct',
-        'label-pages': 'Label-Pages',
+        'find-toc': 'Find-ToC',
         'extract-toc': 'Extract-ToC',
     }
 
@@ -56,9 +54,8 @@ def cmd_info(args):
 
         stage_labels = {
             'tesseract': 'Tesseract',
-            'ocr': 'OCR',
-            'paragraph-correct': 'Paragraph-Correct',
-            'label-pages': 'Label-Pages',
+            'ocr-pages': 'OCR-Pages',
+            'find-toc': 'Find-ToC',
             'extract-toc': 'Extract-ToC',
         }
         stage_label = stage_labels.get(args.stage, args.stage.title())
@@ -95,10 +92,7 @@ def cmd_info(args):
 
     stage_labels = {
         'tesseract': 'Tesseract',
-        'ocr': 'OCR',
         'ocr-pages': 'OCR-Pages',
-        'paragraph-correct': 'Paragraph-Correct',
-        'label-pages': 'Label-Pages',
         'find-toc': 'Find-ToC',
         'extract-toc': 'Extract-ToC'
     }

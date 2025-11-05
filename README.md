@@ -1,6 +1,6 @@
 # Scanshelf - Turn Physical Books into Digital Libraries
 
-A vision-powered OCR pipeline that transforms scanned books into structured, high-quality digital text using Tesseract and multimodal LLMs.
+A vision-powered pipeline that transforms scanned books into structured digital text using local OCR and multimodal LLMs.
 
 ---
 
@@ -53,28 +53,34 @@ Process individual books through pipeline stages:
 ```bash
 # View book status and pipeline progress
 uv run python shelf.py book <scan-id> info
-uv run python shelf.py book <scan-id> info --stage ocr
+uv run python shelf.py book <scan-id> info --stage ocr-pages
 uv run python shelf.py book <scan-id> info --json
 
-# Run full pipeline (OCR → Paragraph-Correct → Label-Pages → Extract-ToC)
+# Run full pipeline
 uv run python shelf.py book <scan-id> process
 uv run python shelf.py book <scan-id> process --clean  # Clean all stages first
 
 # Run single stage
-uv run python shelf.py book <scan-id> run-stage ocr
-uv run python shelf.py book <scan-id> run-stage paragraph-correct --model gpt-4o
-uv run python shelf.py book <scan-id> run-stage label-pages --workers 30
-
-# View stage reports (CSV with quality metrics)
-uv run python shelf.py book <scan-id> report --stage paragraph-correct
-uv run python shelf.py book <scan-id> report --stage label-pages --filter "printed_page_number="
+uv run python shelf.py book <scan-id> run-stage tesseract
+uv run python shelf.py book <scan-id> run-stage ocr-pages --workers 30
+uv run python shelf.py book <scan-id> run-stage find-toc --model gpt-4o
+uv run python shelf.py book <scan-id> run-stage extract-toc
 ```
 
-**Stages:**
-- **ocr** - Extract text and images via Tesseract (3 providers with vision selection)
-- **paragraph-correct** - Vision-based OCR error correction with confidence scoring
-- **label-pages** - Extract page numbers and classify content blocks (two-stage process)
-- **extract_toc** - Find and extract table of contents (phase-based, not page-based)
+**Modern Pipeline:**
+1. **tesseract** - Fast, free OCR with paragraph-level output (PSM 3, local processing)
+2. **ocr-pages** - High-quality vision OCR using OlmOCR (paid API, better accuracy)
+3. **find-toc** - Locate table of contents pages using vision analysis
+4. **extract-toc** - Extract structured ToC entries from identified pages
+
+**Pipeline Flow:**
+```
+PDF → Split Pages → [tesseract OR ocr-pages] → find-toc → extract-toc
+```
+
+**Choose your OCR:**
+- **tesseract**: Free, fast (~1min for 500 pages), good for basic scans
+- **ocr-pages**: Paid (~$0.20/book), slow (~10min for 500 pages), excellent accuracy
 
 **Note:** All stages auto-resume from progress if interrupted. Metrics tracked for cost and time.
 
@@ -82,8 +88,8 @@ uv run python shelf.py book <scan-id> report --stage label-pages --filter "print
 
 ```bash
 # Clean a stage to restart from scratch
-uv run python shelf.py book <scan-id> clean --stage ocr
-uv run python shelf.py book <scan-id> clean --stage paragraph-correct --yes  # Skip confirmation
+uv run python shelf.py book <scan-id> clean --stage ocr-pages
+uv run python shelf.py book <scan-id> clean --stage tesseract --yes  # Skip confirmation
 ```
 
 ### Library-wide Batch Processing
@@ -92,15 +98,15 @@ Run stages across all books in your library:
 
 ```bash
 # Run a stage across all books (persistent random order)
-uv run python shelf.py batch paragraph-correct
-uv run python shelf.py batch label-pages --model x-ai/grok-vision-beta
+uv run python shelf.py batch ocr-pages
+uv run python shelf.py batch find-toc --model x-ai/grok-vision-beta
 
 # Control processing order
-uv run python shelf.py batch paragraph-correct --reshuffle  # Create new random order
-uv run python shelf.py batch paragraph-correct --force      # Regenerate completed books
+uv run python shelf.py batch ocr-pages --reshuffle  # Create new random order
+uv run python shelf.py batch ocr-pages --force      # Regenerate completed books
 
 # Customize workers for parallel processing
-uv run python shelf.py batch ocr --workers 10
+uv run python shelf.py batch tesseract --workers 10
 ```
 
 **Batch features:**
@@ -121,13 +127,10 @@ python tools/shelf_viewer.py
 
 **Available viewers:**
 - **📖 ToC Viewer** - Review table of contents extraction with page images
-- **✏️ Corrections Viewer** - Compare OCR output vs corrected text side-by-side
-- **🏷️ Labels Viewer** - View page labels with visual bounding box overlays
-- **📊 Stats Viewer** - Aggregate label statistics and confidence metrics
+- **📊 Stats Viewer** - Aggregate statistics and confidence metrics
 
 **Features:**
 - Side-by-side image and data comparison
-- Canvas overlays for bounding boxes with color-coded block types
 - HTMX-powered smooth navigation (no full page reloads)
 - Responsive design with proper template inheritance
 
@@ -135,12 +138,11 @@ python tools/shelf_viewer.py
 
 ## Current Status
 
-- ✅ **OCR Stage:** Complete - Tesseract extraction with 3-provider vision selection
-- ✅ **Paragraph-Correct Stage:** Complete - Vision-based OCR error correction with confidence scoring
-- ✅ **Label-Pages Stage:** Complete - Two-stage page numbers & block classification
-- ✅ **Extract-ToC Stage:** Complete - Phase-based table of contents extraction
-- ✅ **CLI Refactor:** Complete - Namespace structure (library/book/batch) with BaseStage abstraction
-- ❌ **Structure Stage:** Not yet implemented - will use corrected text + labels
+✅ **Modern Pipeline (ADR-compliant):**
+- **tesseract** - Simple, fast, free local OCR
+- **ocr-pages** - High-quality vision OCR via OlmOCR
+- **find-toc** - Vision-based ToC page detection
+- **extract-toc** - Phase-based ToC extraction
 
 **Current Focus:** Testing pipeline on diverse books and improving extraction quality
 
@@ -175,11 +177,13 @@ uv run python -m pytest tests/tools/ -v
 - [Implementing a Stage](docs/guides/implementing-a-stage.md) - Step-by-step guide for new stages
 - [Troubleshooting](docs/guides/troubleshooting.md) - Common issues and recovery
 
-### Stage Documentation
-- [OCR Stage](pipeline/ocr/README.md) - Tesseract-based text extraction with vision selection
-- [Paragraph-Correct Stage](pipeline/paragraph_correct/README.md) - Vision-based error correction
-- [Label-Pages Stage](pipeline/label_pages/README.md) - Page numbers and block classification
-- [Extract-ToC Stage](pipeline/extract_toc/README.md) - Table of contents extraction
+### Architectural Decision Records (ADRs)
+- [ADR 000: Information Hygiene](docs/decisions/000-information-hygiene.md) - Context clarity as first principle
+- [ADR 001: Think Data First](docs/decisions/001-think-data-first.md) - Ground truth from disk
+- [ADR 002: Stage Independence](docs/decisions/002-stage-independence.md) - Unix philosophy applied
+- [ADR 003: Cost Tracking](docs/decisions/003-cost-tracking-first-class.md) - Economics shape architecture
+- [ADR 006: File Organization](docs/decisions/006-file-organization.md) - Small files, clear purpose
+- [ADR 007: Naming Conventions](docs/decisions/007-naming-conventions.md) - Consistency prevents bugs
 
 ---
 
@@ -196,33 +200,31 @@ Scanshelf uses a **Stage abstraction pattern** for composable, resumable, testab
 4. **PipelineLogger** - Dual-output logging (JSON + human-readable)
 
 **Key Properties:**
-- **Resumable** - Metrics-based progress tracking resumes from exact point of interruption
+- **Resumable** - Ground truth from disk, resume from exact point of interruption
 - **Type-safe** - Pydantic schemas validate data at boundaries
-- **Cost-aware** - Track every LLM API call financially via MetricsManager
-- **Independent** - Stages evolve separately, communicate via files
+- **Cost-aware** - Track every API call financially via MetricsManager
+- **Independent** - Stages evolve separately, communicate via files (ADR 002)
 - **Testable** - Test stages in isolation with mock data
 
-See [Stage Abstraction](docs/architecture/stage-abstraction.md) for detailed design philosophy.
+See [Stage Abstraction](docs/architecture/stage-abstraction.md) and ADRs for detailed design philosophy.
 
 ### Pipeline Flow
 
 ```
-PDF → Split Pages → OCR → Paragraph-Correct → Label-Pages → Extract-ToC → Structure (TBD)
+PDF → Split Pages → [Tesseract OR OlmOCR] → Find ToC → Extract ToC
 ```
 
 **Stages:**
-- **OCR** - Tesseract extraction (3 providers, vision selection) → `ocr/page_*.json`
-- **Paragraph-Correct** - Vision LLM error correction (I/O-parallel) → `paragraph-correct/page_*.json`
-- **Label-Pages** - Page numbers + block classification (two-stage) → `label-pages/page_*.json`
-- **Extract-ToC** - Table of contents finder and extractor (phase-based) → `extract_toc/toc.json`
-- **Structure** (planned) - Chapter/section extraction using labels + ToC
+- **tesseract** - Local Tesseract OCR (free, fast, paragraph-level) → `tesseract/page_*.json`
+- **ocr-pages** - OlmOCR vision API (paid, accurate, paragraph-level) → `ocr-pages/page_*.json`
+- **find-toc** - Vision LLM locates ToC pages → `find-toc/finder_result.json`
+- **extract-toc** - Multi-phase ToC extraction → `extract-toc/toc.json`
 
 Each stage:
 - Validates inputs in `before()` hook
 - Processes pages in `run()` hook (controls own parallelization)
-- Generates quality reports (CSV) automatically
 - Tracks costs, timing, and metrics via MetricsManager
-- Resumes automatically from progress if interrupted
+- Resumes automatically from progress if interrupted (ADR 001)
 
 ### Storage Structure
 
@@ -232,45 +234,36 @@ Each stage:
 ├── {scan-id}/                # Per-book directory (BookStorage)
 │   ├── metadata.json         # Book metadata (title, author, year, etc.)
 │   ├── source/               # Original page images
-│   ├── ocr/                  # OCR stage outputs
-│   │   ├── page_NNNN.json    # OCRPageOutput schema
-│   │   ├── report.csv        # Quality metrics (confidence, blocks)
-│   │   ├── .metrics          # Progress tracking (page_metrics source of truth)
+│   ├── tesseract/            # Tesseract OCR outputs
+│   │   ├── page_NNNN.json    # TesseractPageOutput schema
+│   │   ├── metrics.json      # Progress tracking and timing
 │   │   └── logs/
-│   │       └── ocr_{timestamp}.jsonl
-│   ├── paragraph-correct/    # Paragraph correction stage outputs
-│   │   ├── page_NNNN.json    # ParagraphCorrectPageOutput schema
-│   │   ├── report.csv        # Quality metrics (corrections, similarity)
-│   │   ├── .metrics
+│   ├── ocr-pages/            # OlmOCR outputs
+│   │   ├── page_NNNN.json    # OcrPagesPageOutput schema
+│   │   ├── metrics.json      # Progress tracking, cost, timing
 │   │   └── logs/
-│   ├── label-pages/          # Label-pages stage outputs
-│   │   ├── stage1/           # Stage 1: structural analysis outputs
-│   │   ├── stage2/           # Stage 2: block classification outputs
-│   │   │   └── page_NNNN.json # LabelPagesPageOutput schema
-│   │   ├── report.csv        # Quality metrics (classifications)
-│   │   ├── .metrics
-│   │   └── logs/
-│   ├── extract_toc/          # Extract-ToC stage outputs
+│   ├── find-toc/             # ToC finder outputs
 │   │   ├── finder_result.json # ToC page range detection
-│   │   ├── structure.json    # ToC structure observations
-│   │   ├── toc_unchecked.json # Raw ToC entries
-│   │   ├── toc_diff.json     # Validation and corrections
-│   │   ├── toc.json          # Final ToC output
-│   │   ├── .metrics
+│   │   ├── metrics.json
 │   │   └── logs/
-│   └── images/               # Extracted image regions (from OCR)
+│   └── extract-toc/          # ToC extractor outputs
+│       ├── structure.json    # ToC structure observations
+│       ├── toc_unchecked.json # Raw ToC entries
+│       ├── toc_diff.json     # Validation and corrections
+│       ├── toc.json          # Final ToC output
+│       ├── metrics.json
+│       └── logs/
 ```
 
 **Key points:**
-- Filesystem is source of truth for books (LibraryStorage scans directories)
-- `.library.json` stores operational state (shuffle orders for batch command)
-- Each stage has independent metrics (`.metrics`) and logs
-- Quality reports (CSV) generated automatically during stage execution
-- Schemas enforce type safety at boundaries (output/metrics/report)
-- MetricsManager replaced CheckpointManager for progress tracking
+- Filesystem is source of truth (ADR 001)
+- Each stage has independent metrics and logs
+- Schemas enforce type safety at boundaries
+- MetricsManager provides atomic progress tracking
+- Resume from disk state, not in-memory state
 
 See [Storage System](docs/architecture/storage-system.md) for three-tier design details.
 
 ---
 
-**Powered by Claude Sonnet 4.5 and Tesseract OCR**
+**Powered by Claude Sonnet 4.5, Tesseract OCR, and OlmOCR**
