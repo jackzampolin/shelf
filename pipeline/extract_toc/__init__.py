@@ -14,7 +14,7 @@ from .storage import ExtractTocStageStorage
 class ExtractTocStage(BaseStage):
 
     name = "extract-toc"
-    dependencies = ["paragraph-correct", "source"]
+    dependencies = ["find-toc", "paragraph-correct", "source"]
 
     output_schema = ExtractTocBookOutput
     checkpoint_schema = None
@@ -49,12 +49,11 @@ class ExtractTocStage(BaseStage):
 
         artifacts = status.get('artifacts', {})
         phases_completed = sum([
-            artifacts.get('finder_result_exists', False),
             artifacts.get('ocr_text_exists', False),
             artifacts.get('elements_identified_exists', False),
             artifacts.get('toc_validated_exists', False),
         ])
-        total_phases = 4
+        total_phases = 3
         lines.append(f"   Phases: {phases_completed}/{total_phases} completed")
 
         return '\n'.join(lines)
@@ -66,6 +65,32 @@ class ExtractTocStage(BaseStage):
     ):
         logger.info(f"Extract-ToC with {self.model}")
 
+        # Check find-toc dependency
+        from pipeline.find_toc import FindTocStage
+        find_toc_stage = FindTocStage()
+        find_toc_progress = find_toc_stage.get_status(storage, logger)
+
+        if find_toc_progress['status'] != 'completed':
+            raise RuntimeError(
+                f"Find-toc stage status is '{find_toc_progress['status']}', not 'completed'. "
+                f"Run find-toc stage to completion first."
+            )
+
+        # Load finder result to check if ToC was found
+        from pipeline.find_toc.storage import FindTocStageStorage
+        find_toc_storage = FindTocStageStorage(stage_name='find-toc')
+        finder_result = find_toc_storage.load_finder_result(storage)
+
+        if not finder_result or not finder_result.get('toc_found'):
+            raise RuntimeError(
+                f"Find-toc stage completed but no ToC was found. "
+                f"Cannot proceed with ToC extraction."
+            )
+
+        toc_range = finder_result.get('toc_page_range')
+        logger.info(f"Find-toc found ToC: pages {toc_range['start_page']}-{toc_range['end_page']}")
+
+        # Check paragraph-correct dependency
         from pipeline.paragraph_correct import ParagraphCorrectStage
         para_correct_stage = ParagraphCorrectStage()
         para_correct_progress = para_correct_stage.get_status(storage, logger)
@@ -94,64 +119,20 @@ class ExtractTocStage(BaseStage):
 
         start_time = time.time()
 
-        # Phase 1: Find ToC pages (grep + vision agent)
-        if not progress["artifacts"]["finder_result_exists"]:
-            logger.info("=== Phase 1: Finding ToC Pages ===")
-            print("\n🤖 Phase 1: Agent search for ToC")
+        # Load finder result from find-toc stage
+        from pipeline.find_toc.storage import FindTocStageStorage
+        find_toc_storage = FindTocStageStorage(stage_name='find-toc')
+        finder_result = find_toc_storage.load_finder_result(storage)
+        from .schemas import PageRange
+        toc_range = PageRange(**finder_result["toc_page_range"])
+        structure_notes_from_finder = finder_result.get("structure_notes") or {}
 
-            from .agent.finder import TocFinderAgent
+        logger.info("Using ToC range from find-toc", start=toc_range.start_page, end=toc_range.end_page)
 
-            agent = TocFinderAgent(
-                storage=storage,
-                logger=logger,
-                max_iterations=15,
-                verbose=True
-            )
-
-            result = agent.search()
-
-            finder_result = {
-                "toc_found": result.toc_found,
-                "toc_page_range": result.toc_page_range.model_dump() if result.toc_page_range else None,
-                "structure_notes": result.structure_notes,
-            }
-
-            self.stage_storage.save_finder_result(storage, finder_result)
-            toc_range = result.toc_page_range
-
-            if not toc_range:
-                logger.info("No ToC found by agent")
-
-                elapsed_time = time.time() - start_time
-
-                self.stage_storage.save_toc_final(storage, {"toc": None, "search_strategy": "not_found"})
-
-                stage_storage_obj = storage.stage(self.name)
-                total_cost = sum(m.get('cost_usd', 0.0) for m in stage_storage_obj.metrics_manager.get_all().values())
-
-                stage_storage_obj.metrics_manager.record(
-                    key="stage_runtime",
-                    time_seconds=elapsed_time
-                )
-
-                return {
-                    "status": "success",
-                    "toc_found": False,
-                    "cost_usd": total_cost,
-                    "time_seconds": elapsed_time
-                }
-
-            logger.info("Found ToC pages", start=toc_range.start_page, end=toc_range.end_page)
-            progress = self.get_status(storage, logger)
-
-        # Phase 2: OCR text extraction with OlmOCR
+        # Phase 1: OCR text extraction with OlmOCR
         if not progress["artifacts"]["ocr_text_exists"]:
-            logger.info("=== Phase 2: OCR Text Extraction ===")
-            print("🔍 Phase 2: OCR ToC pages")
-
-            finder_result = self.stage_storage.load_finder_result(storage)
-            from .schemas import PageRange
-            toc_range = PageRange(**finder_result["toc_page_range"])
+            logger.info("=== Phase 1: OCR Text Extraction ===")
+            print("🔍 Phase 1: OCR ToC pages")
 
             from .phase_2 import extract_ocr_text
 
@@ -180,15 +161,10 @@ class ExtractTocStage(BaseStage):
             logger.info(f"Saved ocr_text.json + {phase2_metrics['pages_processed']} markdown files")
             progress = self.get_status(storage, logger)
 
-        # Phase 3: Identify structural elements (vision + OCR text)
+        # Phase 2: Identify structural elements (vision + OCR text)
         if not progress["artifacts"]["elements_identified_exists"]:
-            logger.info("=== Phase 3: Identify Structural Elements ===")
-            print("👁️  Phase 3: Element identification")
-
-            finder_result = self.stage_storage.load_finder_result(storage)
-            from .schemas import PageRange
-            toc_range = PageRange(**finder_result["toc_page_range"])
-            structure_notes_from_finder = finder_result.get("structure_notes") or {}
+            logger.info("=== Phase 2: Identify Structural Elements ===")
+            print("👁️  Phase 2: Element identification")
 
             from .phase_3 import identify_elements
 
@@ -220,14 +196,10 @@ class ExtractTocStage(BaseStage):
             logger.info(f"Saved elements_identified.json ({phase3_metrics['total_elements']} elements from {phase3_metrics['pages_processed']} pages)")
             progress = self.get_status(storage, logger)
 
-        # Phase 4: Validate and assemble ToC
+        # Phase 3: Validate and assemble ToC
         if not progress["artifacts"]["toc_validated_exists"]:
-            logger.info("=== Phase 4: Validate and Assemble ToC ===")
-            print("📝 Phase 4: Validate and assemble ToC")
-
-            finder_result = self.stage_storage.load_finder_result(storage)
-            from .schemas import PageRange
-            toc_range = PageRange(**finder_result["toc_page_range"])
+            logger.info("=== Phase 3: Validate and Assemble ToC ===")
+            print("📝 Phase 3: Validate and assemble ToC")
 
             from .phase_4 import validate_and_assemble
 

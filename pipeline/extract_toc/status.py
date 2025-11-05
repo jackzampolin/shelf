@@ -10,7 +10,6 @@ from .storage import ExtractTocStageStorage
 
 class ExtractTocStatus(str, Enum):
     NOT_STARTED = "not_started"
-    FINDING_TOC = "finding_toc"
     OCR_TEXT = "ocr_text"
     IDENTIFY_ELEMENTS = "identify_elements"
     VALIDATING = "validating"
@@ -28,14 +27,11 @@ class ExtractTocStatusTracker:
         storage: BookStorage
     ) -> Dict[str, Any]:
 
-        finder_result_exists = self.storage.finder_result_exists(storage)
         ocr_text_exists = self.storage.ocr_text_exists(storage)
         elements_identified_exists = self.storage.elements_identified_exists(storage)
         toc_validated_exists = self.storage.toc_validated_exists(storage)
 
-        if not finder_result_exists:
-            status = ExtractTocStatus.FINDING_TOC.value
-        elif not ocr_text_exists:
+        if not ocr_text_exists:
             status = ExtractTocStatus.OCR_TEXT.value
         elif not elements_identified_exists:
             status = ExtractTocStatus.IDENTIFY_ELEMENTS.value
@@ -61,7 +57,6 @@ class ExtractTocStatusTracker:
                 "stage_runtime_seconds": stage_runtime,
             },
             "artifacts": {
-                "finder_result_exists": finder_result_exists,
                 "ocr_text_exists": ocr_text_exists,
                 "elements_identified_exists": elements_identified_exists,
                 "toc_validated_exists": toc_validated_exists,
