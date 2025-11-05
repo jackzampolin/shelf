@@ -12,12 +12,6 @@ from .storage import FindTocStageStorage
 
 
 class FindTocStage(BaseStage):
-    """
-    Find ToC stage - Phase 1 of ToC extraction.
-
-    Uses grep-informed vision agent to locate Table of Contents pages.
-    Outputs finder_result.json with page range and structure notes.
-    """
 
     name = "find-toc"
     dependencies = ["paragraph-correct", "source"]
@@ -98,7 +92,6 @@ class FindTocStage(BaseStage):
 
         start_time = time.time()
 
-        # Run ToC finder agent
         logger.info("Running ToC finder agent")
         print("\n🤖 Find-ToC: Searching for Table of Contents")
 
@@ -113,7 +106,6 @@ class FindTocStage(BaseStage):
 
         result = agent.search()
 
-        # Save finder_result.json
         finder_result = {
             "toc_found": result.toc_found,
             "toc_page_range": result.toc_page_range.model_dump() if result.toc_page_range else None,
@@ -129,17 +121,14 @@ class FindTocStage(BaseStage):
 
         elapsed_time = time.time() - start_time
 
-        # Record stage runtime
         stage_storage_obj = storage.stage(self.name)
         stage_storage_obj.metrics_manager.record(
             key="stage_runtime",
             time_seconds=elapsed_time
         )
 
-        # Get total cost from metrics
         total_cost = sum(m.get('cost_usd', 0.0) for m in stage_storage_obj.metrics_manager.get_all().values())
 
-        # Log completion (summary already shown by agent progress display)
         if result.toc_found:
             logger.info(
                 "Find-ToC complete: ToC found",

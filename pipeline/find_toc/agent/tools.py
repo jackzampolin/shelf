@@ -249,5 +249,4 @@ class TocFinderTools:
             return json.dumps({"error": f"Failed to write result: {str(e)}"})
 
     def get_pending_result(self) -> Optional[TocFinderResult]:
-        """Get the pending result (set by write_toc_result)."""
         return self._pending_result

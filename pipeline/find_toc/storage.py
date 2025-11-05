@@ -18,6 +18,7 @@ class FindTocStageStorage:
         if not self.finder_result_exists(storage):
             return None
         stage_storage = storage.stage(self.stage_name)
+        return stage_storage.load_file("finder_result.json")
 
     def save_finder_result(self, storage: BookStorage, finder_data: dict):
         from .schemas import FinderResult
