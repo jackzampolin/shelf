@@ -93,6 +93,7 @@ def cmd_info(args):
     stage_labels = {
         'tesseract': 'Tesseract',
         'ocr-pages': 'OCR-Pages',
+        'label-pages': 'Label-Pages',
         'find-toc': 'Find-ToC',
         'extract-toc': 'Extract-ToC'
     }
