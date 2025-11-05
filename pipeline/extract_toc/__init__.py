@@ -140,7 +140,7 @@ class ExtractTocStage(BaseStage):
             logger.info("=== Phase 1: Extract ToC Entries ===")
             print("👁️  Phase 1: Extract ToC entries")
 
-            from .phase_2 import extract_toc_entries
+            from .detection import extract_toc_entries
 
             entries_data, phase1_metrics = extract_toc_entries(
                 storage=storage,
@@ -175,7 +175,7 @@ class ExtractTocStage(BaseStage):
             logger.info("=== Phase 2: Assemble ToC ===")
             print("📝 Phase 2: Assemble and validate ToC")
 
-            from .phase_3 import assemble_toc
+            from .assembly import assemble_toc
 
             toc_data, phase2_metrics = assemble_toc(
                 storage=storage,

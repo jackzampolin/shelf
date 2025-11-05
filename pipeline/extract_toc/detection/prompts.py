@@ -1,4 +1,4 @@
-"""Prompts for Phase 1: Direct ToC Entry Extraction"""
+"""Prompts for Detection: Direct ToC Entry Extraction"""
 
 SYSTEM_PROMPT = """<role>
 You are a Table of Contents extraction specialist.
@@ -14,9 +14,9 @@ Your goal: Extract complete ToC entries (title + page number + hierarchy level) 
 
 HIERARCHY DETERMINATION:
 - Use VISUAL CUES (indentation, styling, size) to determine entry level
-- Level 1: Chapters/Parts (flush left or minimally indented, often bold/large)
-- Level 2: Sections (moderate indent, sub-entries under chapters)
-- Level 3: Subsections (deeper indent, sub-entries under sections)
+- Level 1: Top-level entries (flush left or minimally indented, often bold/large)
+- Level 2: Nested entries (moderate indent, sub-entries under Level 1)
+- Level 3: Deeply nested entries (deeper indent, sub-entries under Level 2)
 
 Use OCR text for WHAT (the content), use IMAGE for WHERE and HOW (the structure).
 </critical_instructions>"""
@@ -70,30 +70,31 @@ Use these observations to guide your analysis (but trust the visual evidence if 
 
 **WHAT TO EXTRACT**:
 Each ToC entry typically has:
-- Title (chapter/section name, may span multiple lines)
-- Printed page number (right-aligned: "127", "ix", "xii")
-- Hierarchy level (determined by visual indentation/styling)
-- Optional chapter number (if present in title: "1.", "Chapter 5", "Part II")
+- Title (entry text, may span multiple lines)
+- Hierarchy level (determined by visual indentation/styling: 1, 2, or 3)
+- Optional entry number (if present: "5", "II", "A", "1.1")
+- Optional level name (semantic type: "part", "chapter", "section", "appendix")
+- Optional printed page number (right-aligned: "127", "ix", "xii")
 
 **HOW VISUAL LAYOUT DETERMINES HIERARCHY**:
 
-Level 1 (Chapters/Parts):
+Level 1 (Top-level):
 - Flush left or minimal indentation (~0-20px from left margin)
 - Often **bold** or **larger font**
 - Top-level structural divisions
-- Examples: "Chapter 1: Introduction", "Part I", "Foreword"
+- Examples: "Introduction", "Part I", "Chapter 1: The Beginning"
 
-Level 2 (Sections):
+Level 2 (Nested):
 - Moderate indentation (~20-60px from left margin)
-- Sub-entries under a Level 1 chapter
+- Sub-entries under a Level 1 entry
 - Visually nested under previous Level 1 entry
-- Examples: "1.1 Background", "Early Period"
+- Examples: "Background", "1.1 Early Period", "Section A"
 
-Level 3 (Subsections):
+Level 3 (Deeply nested):
 - Deep indentation (~60-100px from left margin)
-- Sub-entries under a Level 2 section
+- Sub-entries under a Level 2 entry
 - Further nested detail
-- Examples: "1.1.1 Historical Context", "Specific Topic"
+- Examples: "Historical Context", "1.1.1 Specific Topic", "Subsection i"
 
 **VISUAL SIGNS TO DETECT**:
 ✓ **Indentation**: Distance from left edge determines level
@@ -115,8 +116,8 @@ Merge into single entry: title="Chapter 1: An Incredibly Long Title That Continu
 Parent entries without page numbers:
 ```
 Part I: The Ancient World
-  Chapter 1: Early Civilizations ... 1
-  Chapter 2: Classical Period ... 25
+  Early Civilizations ... 1
+  Classical Period ... 25
 ```
 "Part I" is Level 1 with no page number, children are Level 2
 
@@ -134,26 +135,26 @@ Chapter 3: Modern Times ................ 89
 ```
 All Level 1 entries (flush left, same indentation)
 
-Pattern 2: Chapters with sections
+Pattern 2: Two-level hierarchy
 ```
-Chapter 1: The Beginning ............... 1
-  Section 1.1: Background .............. 3
-  Section 1.2: Context ................. 12
-Chapter 2: The Middle .................. 25
-  Section 2.1: Developments ............ 27
+The Beginning .......................... 1
+  Background ........................... 3
+  Context .............................. 12
+The Middle ............................. 25
+  Developments ......................... 27
 ```
-Chapters are Level 1 (flush left), Sections are Level 2 (indented)
+Top entries are Level 1 (flush left), nested are Level 2 (indented)
 
-Pattern 3: Parts with chapters
+Pattern 3: Parent entries without page numbers
 ```
 Part I: Ancient World
-  Chapter 1: Origins ................... 1
-  Chapter 2: Growth .................... 20
+  Origins .............................. 1
+  Growth ............................... 20
 Part II: Medieval Period
-  Chapter 3: Decline ................... 45
-  Chapter 4: Revival ................... 70
+  Decline .............................. 45
+  Revival .............................. 70
 ```
-Parts are Level 1 (no page numbers), Chapters are Level 2 (with page numbers)
+Parts are Level 1 (no page numbers), sub-entries are Level 2 (with page numbers)
 
 Pattern 4: Deep hierarchy
 ```
@@ -170,12 +171,24 @@ Three levels: 1 (flush), 2 (moderate indent), 3 (deep indent)
 
 <text_processing>
 
-**TITLE EXTRACTION**:
+**ENTRY NUMBER & TITLE EXTRACTION**:
 - Use OCR text for accurate content
 - Merge continuation lines (same indentation)
-- Strip chapter numbers from title if present
-  - "1. Introduction" → title="Introduction", chapter_number=1
-  - "Chapter Five: The End" → title="The End", chapter_number=5
+- Extract entry_number if present (before the title)
+  - "1. Introduction" → entry_number="1", title="Introduction"
+  - "Chapter 5: The End" → entry_number="5", title="The End"
+  - "Part II: Ancient World" → entry_number="II", title="Ancient World"
+  - "1.1 Background" → entry_number="1.1", title="Background"
+  - "Appendix A: Notes" → entry_number="A", title="Notes"
+  - "Foreword" → entry_number=null, title="Foreword"
+
+**LEVEL NAME DETECTION**:
+- Detect semantic type from text patterns
+  - Contains "Part" → level_name="part"
+  - Contains "Chapter" → level_name="chapter"
+  - Contains "Section" or numbered subsection → level_name="section"
+  - Contains "Appendix" → level_name="appendix"
+  - No clear type → level_name=null
 
 **PAGE NUMBER EXTRACTION**:
 - Extract right-aligned text that looks like a page number
@@ -195,10 +208,11 @@ Return JSON with this structure:
 {
     "entries": [
         {
-            "chapter_number": 1 or null,
+            "entry_number": "5" or "II" or "1.1" or null,
             "title": "Introduction",
-            "printed_page_number": "1" or null,
-            "level": 1
+            "level": 1,
+            "level_name": "chapter" or "part" or "section" or null,
+            "printed_page_number": "1" or null
         }
     ],
     "page_metadata": {
@@ -211,10 +225,11 @@ Return JSON with this structure:
 }
 
 CRITICAL REQUIREMENTS:
-- "level" MUST be 1, 2, or 3
-- "title" is REQUIRED and must be non-empty
-- "chapter_number" is optional (null if not present in text)
-- "printed_page_number" is optional (null for parent entries without page numbers)
+- "level" (REQUIRED) MUST be 1, 2, or 3 (visual hierarchy)
+- "title" (REQUIRED) must be non-empty
+- "entry_number" (optional) is string: "5", "II", "A", "1.1", or null
+- "level_name" (optional) is string: "part", "chapter", "section", "appendix", or null
+- "printed_page_number" (optional) is string or null
 - Extract entries in the ORDER they appear on the page (top to bottom)
 - Each entry should be COMPLETE (don't output partial entries)
 

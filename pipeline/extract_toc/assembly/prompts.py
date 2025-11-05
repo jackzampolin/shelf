@@ -1,4 +1,4 @@
-"""Prompts for Phase 2: Lightweight ToC Assembly"""
+"""Prompts for Assembly: Lightweight ToC Assembly"""
 
 SYSTEM_PROMPT = """You are a Table of Contents assembly specialist.
 
@@ -51,13 +51,15 @@ DO NOT re-interpret hierarchy or indentation. Phase 1 already determined hierarc
             prompt += f"Notes: {page_notes}\n"
 
         for entry in entries:
-            chapter_num = entry.get("chapter_number")
+            entry_num = entry.get("entry_number")
             title = entry.get("title", "")
-            page_ref = entry.get("printed_page_number", "N/A")
             level = entry.get("level", 1)
+            level_name = entry.get("level_name")
+            page_ref = entry.get("printed_page_number", "N/A")
 
-            chapter_str = f"Ch {chapter_num}" if chapter_num else "---"
-            prompt += f"  [L{level}] {chapter_str}: \"{title}\" → {page_ref}\n"
+            num_str = f"#{entry_num}" if entry_num else "---"
+            type_str = f"[{level_name}]" if level_name else ""
+            prompt += f"  [L{level}] {num_str} {type_str}: \"{title}\" → {page_ref}\n"
             total_entries += 1
 
     prompt += f"""
@@ -83,9 +85,11 @@ Merge into: "Chapter 1: An Incredibly Long Title That Continues on This Line"
 3. Do page numbers generally ascend (with allowances for roman numerals)?
 4. Does the hierarchy structure make sense (no Level 3 without a Level 2 parent)?
 
-**COUNTING**:
-- Total chapters = entries with level=1
-- Total sections = entries with level=2 or level=3
+**COUNTING BY LEVEL**:
+- Count entries at each hierarchy level separately
+- entries_by_level = {"1": <count of level 1>, "2": <count of level 2>, "3": <count of level 3>}
+- Only include levels that actually have entries
+- Example: If ToC only has Level 1 and 2, result is {"1": 15, "2": 42}
 
 **TRUST PHASE 1**:
 DO NOT change hierarchy levels. If Phase 1 said an entry is Level 2, keep it Level 2.
@@ -101,18 +105,22 @@ Return JSON matching this schema (structured output enforced):
     "toc": {
         "entries": [
             {
-                "chapter_number": 1 or null,
+                "entry_number": "5" or "II" or null,
                 "title": "Introduction",
-                "printed_page_number": "1" or null,
-                "level": 1
+                "level": 1,
+                "level_name": "chapter" or null,
+                "printed_page_number": "1" or null
             }
         ],
         "toc_page_range": {
             "start_page": {toc_range.start_page},
             "end_page": {toc_range.end_page}
         },
-        "total_chapters": 0,
-        "total_sections": 0,
+        "entries_by_level": {
+            "1": 15,
+            "2": 42,
+            "3": 8
+        },
         "parsing_confidence": 0.95,
         "notes": ["Any assembly notes"]
     },
@@ -126,9 +134,11 @@ Return JSON matching this schema (structured output enforced):
 
 CRITICAL REQUIREMENTS:
 - "level" MUST match what Phase 1 extracted (1, 2, or 3)
+- "entry_number" is string or null
+- "level_name" is string or null
 - "toc_page_range" MUST be provided with start_page={toc_range.start_page}, end_page={toc_range.end_page}
-- "total_chapters" = count of Level 1 entries
-- "total_sections" = count of Level 2 + Level 3 entries
+- "entries_by_level" is object with string keys: {{"1": count, "2": count, "3": count}}
+- Only include levels in entries_by_level that actually exist
 - "parsing_confidence" should reflect overall confidence in the assembled ToC
 - "continuations_resolved" = number of entries merged across pages
 - Entries MUST be in the order they appear across pages (Page 1 entries, then Page 2, etc.)

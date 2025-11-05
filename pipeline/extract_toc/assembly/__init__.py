@@ -1,5 +1,5 @@
 """
-Phase 2: Lightweight ToC Assembly
+Assembly: Lightweight ToC Assembly
 
 Merges ToC entries from multiple pages, handles continuations, validates sequence.
 """
@@ -71,10 +71,11 @@ def assemble_toc(
     toc_entry_schema = {
         "type": "object",
         "properties": {
-            "chapter_number": {"type": ["integer", "null"], "minimum": 1},
+            "entry_number": {"type": ["string", "null"]},
             "title": {"type": "string", "minLength": 1},
-            "printed_page_number": {"type": ["string", "null"]},
-            "level": {"type": "integer", "minimum": 1, "maximum": 3}
+            "level": {"type": "integer", "minimum": 1, "maximum": 3},
+            "level_name": {"type": ["string", "null"]},
+            "printed_page_number": {"type": ["string", "null"]}
         },
         "required": ["title", "level"],
         "additionalProperties": False
@@ -96,15 +97,17 @@ def assemble_toc(
                 "required": ["start_page", "end_page"],
                 "additionalProperties": False
             },
-            "total_chapters": {"type": "integer", "minimum": 0},
-            "total_sections": {"type": "integer", "minimum": 0},
+            "entries_by_level": {
+                "type": "object",
+                "additionalProperties": {"type": "integer", "minimum": 0}
+            },
             "parsing_confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "notes": {
                 "type": "array",
                 "items": {"type": "string"}
             }
         },
-        "required": ["entries", "toc_page_range", "total_chapters", "total_sections", "parsing_confidence"],
+        "required": ["entries", "toc_page_range", "entries_by_level", "parsing_confidence"],
         "additionalProperties": False
     }
 

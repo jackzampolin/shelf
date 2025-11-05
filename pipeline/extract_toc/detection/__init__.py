@@ -1,5 +1,5 @@
 """
-Phase 1: Direct ToC Entry Extraction
+Detection: Direct ToC Entry Extraction
 
 Vision model extracts complete ToC entries (title + page number + hierarchy) in a single pass.
 Loads OCR text directly from ocr-pages stage (no intermediate storage needed).
