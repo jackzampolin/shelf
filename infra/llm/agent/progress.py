@@ -7,14 +7,16 @@ from rich.tree import Tree
 from rich.padding import Padding
 import threading
 
+from infra.llm.display_format import format_token_string, format_batch_summary
 from .schemas import AgentEvent
 
 
 class AgentProgressDisplay:
 
-    def __init__(self, max_iterations: int, console: Console = None):
+    def __init__(self, max_iterations: int, console: Console = None, agent_name: str = "Agent search"):
         self.console = console or Console()
         self.max_iterations = max_iterations
+        self.agent_name = agent_name
 
         self.progress = Progress(
             TextColumn("[bold blue]{task.description}"),
@@ -32,14 +34,32 @@ class AgentProgressDisplay:
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
         self.total_reasoning_tokens = 0
+        self.execution_time = 0.0
+        self.total_iterations = 0
 
         self.iteration_lines = []
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()  # Reentrant lock to allow nested acquisition
+        self.collapsed = False
 
     def _render(self):
         with self.lock:
-            components = [self.progress]
+            # If collapsed, show only summary line (no progress bar)
+            if self.collapsed:
+                summary = format_batch_summary(
+                    batch_name=self.agent_name,
+                    completed=self.total_iterations,
+                    total=self.total_iterations,
+                    time_seconds=self.execution_time,
+                    prompt_tokens=self.total_prompt_tokens,
+                    completion_tokens=self.total_completion_tokens,
+                    reasoning_tokens=self.total_reasoning_tokens,
+                    cost_usd=self.total_cost,
+                    unit="iterations"
+                )
+                return summary
 
+            # While running, show progress bar and tool calls
+            components = [self.progress]
             if self.iteration_lines:
                 from rich.text import Text
                 lines_group = []
@@ -99,9 +119,12 @@ class AgentProgressDisplay:
                 tool_time = event.data.get("tool_time", 0)
                 llm_time = iteration_time - tool_time
 
-                token_str = f"{prompt_tokens}in→{completion_tokens}out"
-                if reasoning_tokens > 0:
-                    token_str += f"+{reasoning_tokens}r"
+                # Accumulate tokens for final summary
+                self.total_prompt_tokens += prompt_tokens
+                self.total_completion_tokens += completion_tokens
+                self.total_reasoning_tokens += reasoning_tokens
+
+                token_str = format_token_string(prompt_tokens, completion_tokens, reasoning_tokens)
 
                 time_str = f"({llm_time:4.1f}s)"
                 cost_str = f"{cost_cents:5.2f}¢"
@@ -117,14 +140,27 @@ class AgentProgressDisplay:
 
             elif event.event_type == "agent_complete":
                 self.total_cost = event.data.get("total_cost", 0)
+                self.execution_time = event.data.get("execution_time", 0)
+                self.total_iterations = event.data.get("iterations", 0)
+
+                # Collapse into summary line
+                self.collapsed = True
+
                 self.progress.update(
                     self.main_task,
                     completed=self.max_iterations,
-                    description=f"[bold green]Agent Complete ({event.data.get('iterations', 0)}/{self.max_iterations})[/bold green]"
+                    description=f"[bold green]Agent Complete ({self.total_iterations}/{self.max_iterations})[/bold green]"
                 )
 
         if self.live:
             self.live.update(self._render())
+
+    def set_result_name(self, result_name: str):
+        """Update the agent name for the collapsed summary (e.g., 'ToC found: pages 4-7')."""
+        with self.lock:
+            self.agent_name = result_name
+            if self.live and self.collapsed:
+                self.live.update(self._render())
 
     def render_summary(self, execution_time: float) -> Panel:
         summary_text = Text()

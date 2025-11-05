@@ -118,7 +118,8 @@ class LLMBatchClient:
         self.stats_lock = threading.Lock()
         self.stats = {
             'total_cost_usd': 0.0,
-            'total_tokens': 0,
+            'total_prompt_tokens': 0,  # Input tokens
+            'total_tokens': 0,  # Completion tokens (kept for backward compat)
             'total_reasoning_tokens': 0,  # Track reasoning tokens separately (for supported models)
             'requests_completed': 0,
             'requests_failed': 0,
@@ -335,8 +336,10 @@ class LLMBatchClient:
                     with self.stats_lock:
                         self.stats['requests_completed'] += 1
                         self.stats['total_cost_usd'] += result.cost_usd
+                        self.stats['total_prompt_tokens'] += result.usage.get('prompt_tokens', 0)
                         self.stats['total_tokens'] += result.usage.get('completion_tokens', 0)
-                        self.stats['total_reasoning_tokens'] += result.usage.get('reasoning_tokens', 0)
+                        completion_details = result.usage.get('completion_tokens_details', {})
+                        self.stats['total_reasoning_tokens'] += completion_details.get('reasoning_tokens', 0)
 
                 else:
                     # Failure - check for fallback or retry
@@ -1267,7 +1270,8 @@ class LLMBatchClient:
             queued = 0
 
         # Calculate token stats
-        total_tokens = stats.get('total_tokens', 0)
+        total_prompt_tokens = stats.get('total_prompt_tokens', 0)
+        total_tokens = stats.get('total_tokens', 0)  # completion tokens
         total_reasoning_tokens = stats.get('total_reasoning_tokens', 0)
         avg_tokens = total_tokens / completed_count if completed_count > 0 else 0.0
 
@@ -1282,6 +1286,7 @@ class LLMBatchClient:
             max_time=max_time,
             total_cost_usd=stats['total_cost_usd'],
             avg_cost_per_request=avg_cost,
+            total_prompt_tokens=total_prompt_tokens,
             total_tokens=total_tokens,
             total_reasoning_tokens=total_reasoning_tokens,
             avg_tokens_per_request=avg_tokens,

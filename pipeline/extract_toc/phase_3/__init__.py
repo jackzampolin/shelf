@@ -12,7 +12,8 @@ from PIL import Image
 
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
-from infra.llm.client import LLMClient
+from infra.llm.batch_processor import LLMBatchProcessor, LLMBatchConfig
+from infra.llm.models import LLMRequest, LLMResult
 from infra.utils.pdf import downsample_for_vision
 from infra.config import Config
 
@@ -50,24 +51,19 @@ def identify_elements(
         - metrics: {"cost_usd": float, "time_seconds": float, ...}
     """
     model = model or Config.vision_model_primary
-    llm_client = LLMClient()
     stage_storage = ExtractTocStageStorage(stage_name='extract-toc')
+    stage_storage_obj = storage.stage('extract-toc')
 
     start_time = time.time()
-    total_cost = 0.0
-    total_prompt_tokens = 0
-    total_completion_tokens = 0
-    total_reasoning_tokens = 0
-
-    page_results = []
     total_toc_pages = toc_range.end_page - toc_range.start_page + 1
 
-    logger.info(f"Identifying elements from {total_toc_pages} ToC pages")
+    logger.info(f"Identifying elements from {total_toc_pages} ToC pages (parallel)")
+
+    # Build LLM requests for all pages
+    requests = []
+    source_storage = storage.stage("source")
 
     for page_num in range(toc_range.start_page, toc_range.end_page + 1):
-        page_start = time.time()
-
-        stage_storage_obj = storage.stage('extract-toc')
         md_path = stage_storage_obj.output_dir / f"page_{page_num:04d}.md"
 
         if not md_path.exists():
@@ -77,7 +73,6 @@ def identify_elements(
         with open(md_path, 'r', encoding='utf-8') as f:
             ocr_text = f.read()
 
-        source_storage = storage.stage("source")
         page_file = source_storage.output_dir / f"page_{page_num:04d}.png"
 
         if not page_file.exists():
@@ -101,59 +96,83 @@ def identify_elements(
             {"role": "user", "content": user_prompt}
         ]
 
-        logger.info(f"  Page {page_num}: Calling vision model...")
-
-        response_text, usage, cost = llm_client.call(
+        requests.append(LLMRequest(
+            id=f"page_{page_num:04d}",
             model=model,
             messages=messages,
             images=[image],
             temperature=0.0,
             response_format={"type": "json_object"},
-            timeout=300
-        )
+            timeout=300,
+            metadata={"page_num": page_num}
+        ))
 
-        page_time = time.time() - page_start
+    # Process batch with LLMBatchProcessor
+    page_results = []
 
-        try:
-            response_data = json.loads(response_text)
+    def handle_result(result: LLMResult):
+        """Handle completed element identification result."""
+        if result.success:
+            page_num = result.request.metadata["page_num"]
 
-            page_results.append({
-                "page_num": page_num,
-                "elements": response_data.get("elements", []),
-                "page_structure": response_data.get("page_structure", {}),
-                "confidence": response_data.get("confidence", 0.0),
-                "notes": response_data.get("notes", "")
-            })
+            try:
+                response_data = json.loads(result.response)
 
-            total_cost += cost
-            total_prompt_tokens += usage.get("prompt_tokens", 0)
-            total_completion_tokens += usage.get("completion_tokens", 0)
-            reasoning_details = usage.get("completion_tokens_details", {})
-            total_reasoning_tokens += reasoning_details.get("reasoning_tokens", 0)
-
-            stage_storage_obj.metrics_manager.record(
-                key=f"phase3_page_{page_num:04d}",
-                cost_usd=cost,
-                time_seconds=page_time,
-                custom_metrics={
-                    "phase": "identify_elements",
-                    "page": page_num,
-                    "elements_found": len(response_data.get("elements", [])),
+                page_results.append({
+                    "page_num": page_num,
+                    "elements": response_data.get("elements", []),
+                    "page_structure": response_data.get("page_structure", {}),
                     "confidence": response_data.get("confidence", 0.0),
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "reasoning_tokens": reasoning_details.get("reasoning_tokens", 0),
-                }
-            )
+                    "notes": response_data.get("notes", "")
+                })
 
-            elements_count = len(response_data.get("elements", []))
-            logger.info(f"  Page {page_num}: Found {elements_count} elements ({page_time:.1f}s, ${cost:.4f})")
+                # Metrics already recorded by batch processor's MetricsManager integration
+                stage_storage_obj.metrics_manager.record(
+                    key=f"phase3_page_{page_num:04d}",
+                    cost_usd=result.cost_usd,
+                    time_seconds=result.execution_time_seconds,
+                    custom_metrics={
+                        "phase": "identify_elements",
+                        "page": page_num,
+                        "elements_found": len(response_data.get("elements", [])),
+                        "confidence": response_data.get("confidence", 0.0),
+                        "prompt_tokens": result.prompt_tokens,
+                        "completion_tokens": result.completion_tokens,
+                        "reasoning_tokens": result.reasoning_tokens,
+                    }
+                )
 
-        except Exception as e:
-            logger.error(f"  Page {page_num}: Failed to parse element identification: {e}")
-            raise
+            except Exception as e:
+                logger.error(f"  Page {page_num}: Failed to parse element identification: {e}")
+        else:
+            page_num = result.request.metadata["page_num"]
+            logger.error(f"  Page {page_num}: Failed to identify elements: {result.error_message}")
+
+    # Create batch processor and run
+    config = LLMBatchConfig(
+        model=model,
+        max_workers=4,  # Process 4 pages concurrently
+        max_retries=3,
+        verbose=True,
+        batch_name="Element identification"
+    )
+
+    processor = LLMBatchProcessor(
+        logger=logger,
+        log_dir=stage_storage_obj.output_dir / "logs" / "phase3",
+        config=config,
+        metrics_manager=stage_storage_obj.metrics_manager
+    )
+
+    batch_stats = processor.process_batch(
+        requests=requests,
+        on_result=handle_result
+    )
 
     elapsed_time = time.time() - start_time
+
+    # Sort page_results by page_num
+    page_results.sort(key=lambda p: p["page_num"])
 
     results_data = {
         "pages": page_results,
@@ -163,11 +182,11 @@ def identify_elements(
     total_elements = sum(len(p["elements"]) for p in page_results)
 
     metrics = {
-        "cost_usd": total_cost,
+        "cost_usd": batch_stats["total_cost_usd"],
         "time_seconds": elapsed_time,
-        "prompt_tokens": total_prompt_tokens,
-        "completion_tokens": total_completion_tokens,
-        "reasoning_tokens": total_reasoning_tokens,
+        "prompt_tokens": 0,  # Not tracked separately by batch client
+        "completion_tokens": batch_stats["total_tokens"],  # batch_stats.total_tokens = completion_tokens
+        "reasoning_tokens": batch_stats["total_reasoning_tokens"],
         "pages_processed": len(page_results),
         "total_elements": total_elements,
     }

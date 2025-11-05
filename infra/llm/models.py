@@ -147,6 +147,22 @@ class LLMResult:
     # Original request (for metadata access)
     request: Optional['LLMRequest'] = field(default=None, repr=False)
 
+    @property
+    def prompt_tokens(self) -> int:
+        """Extract prompt tokens from usage dict."""
+        return self.usage.get('prompt_tokens', 0)
+
+    @property
+    def completion_tokens(self) -> int:
+        """Extract completion tokens from usage dict."""
+        return self.usage.get('completion_tokens', 0)
+
+    @property
+    def reasoning_tokens(self) -> int:
+        """Extract reasoning tokens from usage dict."""
+        completion_details = self.usage.get('completion_tokens_details', {})
+        return completion_details.get('reasoning_tokens', 0)
+
 
 @dataclass
 class EventData:
@@ -288,7 +304,8 @@ class BatchStats:
     avg_cost_per_request: float
 
     # Tokens
-    total_tokens: int
+    total_prompt_tokens: int
+    total_tokens: int  # Completion tokens
     total_reasoning_tokens: int
     avg_tokens_per_request: float
 

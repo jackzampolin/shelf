@@ -97,6 +97,7 @@ class ExtractTocStage(BaseStage):
         # Phase 1: Find ToC pages (grep + vision agent)
         if not progress["artifacts"]["finder_result_exists"]:
             logger.info("=== Phase 1: Finding ToC Pages ===")
+            print("\n🤖 Phase 1: Agent search for ToC")
 
             from .agent.finder import TocFinderAgent
 
@@ -146,6 +147,7 @@ class ExtractTocStage(BaseStage):
         # Phase 2: OCR text extraction with OlmOCR
         if not progress["artifacts"]["ocr_text_exists"]:
             logger.info("=== Phase 2: OCR Text Extraction ===")
+            print("🔍 Phase 2: OCR ToC pages")
 
             finder_result = self.stage_storage.load_finder_result(storage)
             from .schemas import PageRange
@@ -181,11 +183,12 @@ class ExtractTocStage(BaseStage):
         # Phase 3: Identify structural elements (vision + OCR text)
         if not progress["artifacts"]["elements_identified_exists"]:
             logger.info("=== Phase 3: Identify Structural Elements ===")
+            print("👁️  Phase 3: Element identification")
 
             finder_result = self.stage_storage.load_finder_result(storage)
             from .schemas import PageRange
             toc_range = PageRange(**finder_result["toc_page_range"])
-            structure_notes_from_finder = finder_result.get("structure_notes", {})
+            structure_notes_from_finder = finder_result.get("structure_notes") or {}
 
             from .phase_3 import identify_elements
 
@@ -220,6 +223,7 @@ class ExtractTocStage(BaseStage):
         # Phase 4: Validate and assemble ToC
         if not progress["artifacts"]["toc_validated_exists"]:
             logger.info("=== Phase 4: Validate and Assemble ToC ===")
+            print("📝 Phase 4: Validate and assemble ToC")
 
             finder_result = self.stage_storage.load_finder_result(storage)
             from .schemas import PageRange
@@ -263,6 +267,36 @@ class ExtractTocStage(BaseStage):
 
             stage_storage_obj = storage.stage(self.name)
             total_cost = sum(m.get('cost_usd', 0.0) for m in stage_storage_obj.metrics_manager.get_all().values())
+
+            # Calculate total tokens across all phases
+            all_metrics = stage_storage_obj.metrics_manager.get_all()
+            total_prompt_tokens = 0
+            total_completion_tokens = 0
+            total_reasoning_tokens = 0
+
+            for metric in all_metrics.values():
+                custom = metric.get('custom_metrics', {})
+                total_prompt_tokens += custom.get('prompt_tokens', 0)
+                total_completion_tokens += custom.get('completion_tokens', 0)
+                total_reasoning_tokens += custom.get('reasoning_tokens', 0)
+
+            # Print final summary line
+            from infra.llm.display_format import format_batch_summary
+            from rich.console import Console
+
+            summary = format_batch_summary(
+                batch_name="Extract-ToC complete",
+                completed=toc_entries,
+                total=toc_entries,
+                time_seconds=elapsed_time,
+                prompt_tokens=total_prompt_tokens,
+                completion_tokens=total_completion_tokens,
+                reasoning_tokens=total_reasoning_tokens,
+                cost_usd=total_cost,
+                unit="entries"
+            )
+            print()  # Blank line before final summary
+            Console().print(summary)
 
             runtime_metrics = stage_storage_obj.metrics_manager.get("stage_runtime")
             if not runtime_metrics:

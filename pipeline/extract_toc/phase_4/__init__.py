@@ -128,8 +128,7 @@ def validate_and_assemble(
         }
     }
 
-    logger.info("  Calling LLM for validation and assembly (structured output)...")
-
+    # Single LLM call - no progress display needed (phase header already shown)
     response_text, usage, cost = llm_client.call(
         model=model,
         messages=messages,
@@ -139,6 +138,25 @@ def validate_and_assemble(
     )
 
     elapsed_time = time.time() - start_time
+
+    # Print summary line after completion
+    from infra.llm.display_format import format_batch_summary
+    reasoning_details = usage.get("completion_tokens_details", {})
+    reasoning_tokens = reasoning_details.get("reasoning_tokens", 0)
+
+    summary = format_batch_summary(
+        batch_name="ToC validation",
+        completed=1,
+        total=1,
+        time_seconds=elapsed_time,
+        prompt_tokens=usage.get("prompt_tokens", 0),
+        completion_tokens=usage.get("completion_tokens", 0),
+        reasoning_tokens=reasoning_tokens,
+        cost_usd=cost,
+        unit="call"
+    )
+    from rich.console import Console
+    Console().print(summary)
 
     try:
         response_data = json.loads(response_text)

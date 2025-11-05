@@ -24,6 +24,7 @@ from typing import List, Dict, Any, Callable, Optional
 from dataclasses import dataclass
 
 from infra.llm.batch_client import LLMBatchClient, LLMRequest, LLMResult
+from infra.llm.display_format import format_batch_summary
 from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.rich_progress import RichProgressBarHierarchical
 from infra.config import Config
@@ -43,6 +44,7 @@ class LLMBatchConfig:
     max_retries: int = 3
     retry_jitter: tuple = (1.0, 3.0)
     verbose: bool = True
+    batch_name: str = "LLM"  # Display name for progress/summary
 
 
 class LLMBatchProcessor:
@@ -137,6 +139,7 @@ class LLMBatchProcessor:
             self.max_retries = config.max_retries
             self.retry_jitter = config.retry_jitter
             self.verbose = config.verbose
+            self.batch_name = config.batch_name
         else:
             # Legacy pattern: Use individual parameters
             if model is None:
@@ -146,6 +149,7 @@ class LLMBatchProcessor:
             self.max_retries = max_retries if max_retries is not None else 3
             self.retry_jitter = retry_jitter if retry_jitter is not None else (1.0, 3.0)
             self.verbose = verbose if verbose is not None else True
+            self.batch_name = "LLM"  # Default for legacy usage
 
         # Create log directory
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -227,9 +231,23 @@ class LLMBatchProcessor:
             elapsed = time.time() - start_time
             batch_stats = self.batch_client.get_batch_stats(total_requests=len(requests))
 
-            progress.finish(
-                f"   ✓ {batch_stats.completed}/{len(requests)} requests in {elapsed:.1f}s"
+            summary_text = format_batch_summary(
+                batch_name=self.batch_name,
+                completed=batch_stats.completed,
+                total=len(requests),
+                time_seconds=elapsed,
+                prompt_tokens=batch_stats.total_prompt_tokens,
+                completion_tokens=batch_stats.total_tokens,
+                reasoning_tokens=batch_stats.total_reasoning_tokens,
+                cost_usd=batch_stats.total_cost_usd,
+                unit="requests"
             )
+            # RichProgressBarHierarchical.finish() needs a string, so convert
+            from rich.console import Console
+            console = Console()
+            with console.capture() as capture:
+                console.print(summary_text)
+            progress.finish(capture.get().rstrip())
 
             self.logger.info(
                 f"Batch complete: {batch_stats.completed} completed, "
