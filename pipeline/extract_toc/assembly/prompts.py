@@ -87,9 +87,9 @@ Merge into: "Chapter 1: An Incredibly Long Title That Continues on This Line"
 
 **COUNTING BY LEVEL**:
 - Count entries at each hierarchy level separately
-- entries_by_level = {"1": <count of level 1>, "2": <count of level 2>, "3": <count of level 3>}
+- entries_by_level = {{"1": (count of level 1), "2": (count of level 2), "3": (count of level 3)}}
 - Only include levels that actually have entries
-- Example: If ToC only has Level 1 and 2, result is {"1": 15, "2": 42}
+- Example: If ToC only has Level 1 and 2, result is {{"1": 15, "2": 42}}
 
 **TRUST PHASE 1**:
 DO NOT change hierarchy levels. If Phase 1 said an entry is Level 2, keep it Level 2.
