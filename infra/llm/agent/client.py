@@ -130,9 +130,11 @@ class AgentClient:
                 messages.append(assistant_msg)
                 if not tool_calls:
                     if is_complete(messages):
+                        elapsed = time.time() - self.start_time
                         self._emit_event(on_event, "agent_complete", iteration, {
                             "total_cost": self.total_cost,
-                            "iterations": iteration
+                            "iterations": iteration,
+                            "execution_time": elapsed
                         })
                         return self._create_success_result(messages)
                     else:
@@ -200,9 +202,11 @@ class AgentClient:
                     "tool_time": iteration_tool_time
                 })
                 if is_complete(messages):
+                    elapsed = time.time() - self.start_time
                     self._emit_event(on_event, "agent_complete", iteration, {
                         "total_cost": self.total_cost,
-                        "iterations": iteration
+                        "iterations": iteration,
+                        "execution_time": elapsed
                     })
                     return self._create_success_result(messages)
             return self._create_error_result(

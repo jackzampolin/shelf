@@ -1,7 +1,9 @@
 STAGE_DEFINITIONS = [
     {'name': 'ocr', 'abbr': 'OCR', 'class': 'pipeline.ocr.OCRStage'},
+    {'name': 'ocr-pages', 'abbr': 'OPG', 'class': 'pipeline.ocr_pages.OcrPagesStage'},
     {'name': 'paragraph-correct', 'abbr': 'PAR', 'class': 'pipeline.paragraph_correct.ParagraphCorrectStage'},
     {'name': 'label-pages', 'abbr': 'LAB', 'class': 'pipeline.label_pages.LabelPagesStage'},
+    {'name': 'find-toc', 'abbr': 'FTO', 'class': 'pipeline.find_toc.FindTocStage'},
     {'name': 'extract-toc', 'abbr': 'TOC', 'class': 'pipeline.extract_toc.ExtractTocStage'},
 ]
 
@@ -17,7 +19,7 @@ def get_stage_map(model=None, workers=None, max_retries=3):
     Instantiate pipeline stages with appropriate parameters.
 
     Different stage types require different initialization:
-    - OCR stages: CPU-bound, worker count controls parallelism
+    - OCR stages: CPU-bound (ocr) or API-bound (ocr-pages), worker count controls parallelism
     - LLM stages: API-bound, higher worker default (30) for better throughput
     - extract-toc: Single-pass operation, no worker control needed
 
@@ -36,6 +38,13 @@ def get_stage_map(model=None, workers=None, max_retries=3):
             if workers:
                 kwargs['max_workers'] = workers
 
+        elif stage_def['name'] == 'ocr-pages':
+            # API-bound OCR stage with default 30 workers (DeepInfra rate limits allow high concurrency)
+            if workers:
+                kwargs['max_workers'] = workers
+            else:
+                kwargs['max_workers'] = 30
+
         elif stage_def['name'] in ['paragraph-correct', 'label-pages']:
             if model:
                 kwargs['model'] = model
@@ -45,7 +54,7 @@ def get_stage_map(model=None, workers=None, max_retries=3):
                 kwargs['max_workers'] = 30
             kwargs['max_retries'] = max_retries
 
-        elif stage_def['name'] == 'extract-toc':
+        elif stage_def['name'] in ['find-toc', 'extract-toc']:
             if model:
                 kwargs['model'] = model
 
