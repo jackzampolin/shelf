@@ -9,6 +9,7 @@ from .storage import LabelPagesStageStorage
 class LabelPagesStatus(str, Enum):
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
+    GENERATING_REPORT = "generating_report"
     COMPLETED = "completed"
 
 
@@ -35,11 +36,15 @@ class LabelPagesStatusTracker:
             if p not in completed_pages
         ]
 
+        report_exists = self.storage.report_exists(storage)
+
         # Determine status
         if len(completed_pages) == 0:
             status = LabelPagesStatus.NOT_STARTED.value
         elif len(remaining_pages) > 0:
             status = LabelPagesStatus.IN_PROGRESS.value
+        elif not report_exists:
+            status = LabelPagesStatus.GENERATING_REPORT.value
         else:
             status = LabelPagesStatus.COMPLETED.value
 
@@ -73,5 +78,7 @@ class LabelPagesStatusTracker:
                 "total_time_seconds": total_time,
                 "stage_runtime_seconds": stage_runtime,
             },
-            "artifacts": {},
+            "artifacts": {
+                "report_exists": report_exists,
+            },
         }

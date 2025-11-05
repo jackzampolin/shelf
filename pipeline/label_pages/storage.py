@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import List
 from infra.storage.book_storage import BookStorage
 
@@ -53,4 +54,13 @@ class LabelPagesStageStorage:
                 page_num=page_num,
                 extra_fields={'stage': 'label-pages'}
             )
+
+    def get_report_path(self, storage: BookStorage) -> Path:
+        """Get path to report CSV file."""
+        stage_storage = storage.stage(self.stage_name)
+        return stage_storage.output_dir / "report.csv"
+
+    def report_exists(self, storage: BookStorage) -> bool:
+        """Check if report CSV exists."""
+        return self.get_report_path(storage).exists()
 

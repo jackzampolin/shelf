@@ -4,7 +4,7 @@ from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 
-from .schemas import LabelPagesPageOutput
+from .schemas import LabelPagesPageOutput, LabelPagesPageReport
 from .status import LabelPagesStatusTracker, LabelPagesStatus
 from .storage import LabelPagesStageStorage
 
@@ -16,7 +16,7 @@ class LabelPagesStage(BaseStage):
 
     output_schema = LabelPagesPageOutput
     checkpoint_schema = None  # No checkpoints needed (single-stage)
-    report_schema = None  # No reports generated
+    report_schema = LabelPagesPageReport
     self_validating = True
 
     def __init__(
@@ -158,6 +158,22 @@ class LabelPagesStage(BaseStage):
         )
 
         progress = self.get_status(storage, logger)
+
+        # Generate report if not exists
+        if not progress["artifacts"]["report_exists"]:
+            logger.info("=== Generating Report ===")
+
+            from .tools.report_generator import generate_report
+            generate_report(
+                storage=storage,
+                logger=logger,
+                stage_storage=self.stage_storage,
+                report_schema=self.report_schema,
+                stage_name=self.name,
+            )
+
+            progress = self.get_status(storage, logger)
+
         completed_pages = total_pages - len(progress["remaining_pages"])
         total_cost = progress["metrics"]["total_cost_usd"]
 
