@@ -197,12 +197,15 @@ def extract_toc_entries(
 
     total_entries = sum(len(p["entries"]) for p in page_results)
 
+    # Access BatchStats from batch_stats dict
+    batch_stats_obj = batch_stats["batch_stats"]
+
     metrics = {
         "cost_usd": batch_stats["total_cost_usd"],
         "time_seconds": elapsed_time,
-        "prompt_tokens": 0,  # Not tracked separately by batch client
-        "completion_tokens": batch_stats["total_tokens"],  # batch_stats.total_tokens = completion_tokens
-        "reasoning_tokens": batch_stats["total_reasoning_tokens"],
+        "prompt_tokens": batch_stats_obj.total_prompt_tokens,
+        "completion_tokens": batch_stats_obj.total_tokens,  # batch_stats.total_tokens = completion_tokens
+        "reasoning_tokens": batch_stats_obj.total_reasoning_tokens,
         "pages_processed": len(page_results),
         "total_entries": total_entries,
     }
