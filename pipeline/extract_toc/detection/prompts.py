@@ -26,7 +26,8 @@ def build_user_prompt(
     page_num: int,
     total_toc_pages: int,
     ocr_text: str,
-    structure_notes: str = None
+    structure_notes: str = None,
+    global_structure: dict = None
 ) -> str:
     """
     Build user prompt for direct ToC entry extraction.
@@ -35,7 +36,8 @@ def build_user_prompt(
         page_num: Current page number
         total_toc_pages: Total number of ToC pages
         ocr_text: Clean OCR text from ocr-pages stage
-        structure_notes: Optional structural observations from find-toc stage
+        structure_notes: Optional page-specific structural observations from find-toc stage
+        global_structure: Optional global structure summary from find-toc stage
 
     Returns:
         Formatted prompt string
@@ -53,14 +55,47 @@ You have TWO sources of information:
 </ocr_text>
 """
 
+    if global_structure:
+        prompt += f"""
+<global_structure>
+The find-toc agent analyzed the ENTIRE ToC and identified this global hierarchy:
+
+Total levels: {global_structure.get('total_levels', 'unknown')}
+
+"""
+        level_patterns = global_structure.get('level_patterns', {})
+        for level, pattern in sorted(level_patterns.items()):
+            prompt += f"""Level {level}:
+  - Visual: {pattern.get('visual', 'N/A')}
+  - Numbering: {pattern.get('numbering') or 'None'}
+  - Has page numbers: {pattern.get('has_page_numbers')}
+  - Semantic type: {pattern.get('semantic_type') or 'N/A'}
+
+"""
+        consistency_notes = global_structure.get('consistency_notes', [])
+        if consistency_notes:
+            prompt += "Consistency notes:\n"
+            for note in consistency_notes:
+                prompt += f"  - {note}\n"
+
+        prompt += """
+CRITICAL: Use this global structure to determine hierarchy levels consistently.
+- Match visual characteristics (indentation, styling) to the level patterns above
+- Verify numbering schemes match expected patterns per level
+- Check if page numbers are present/absent as expected per level
+
+This ensures consistent level assignment even if this page only shows a subset of levels.
+</global_structure>
+"""
+
     if structure_notes:
         prompt += f"""
-<structure_observations>
-The find-toc agent observed these structural patterns in the ToC:
+<page_specific_notes>
+Find-toc observations for this specific page:
 {structure_notes}
 
-Use these observations to guide your analysis (but trust the visual evidence if patterns vary by page).
-</structure_observations>
+These page-specific notes complement the global structure above.
+</page_specific_notes>
 """
 
     prompt += """
@@ -184,9 +219,15 @@ Three levels: 1 (flush), 2 (moderate indent), 3 (deep indent)
 
 **LEVEL NAME DETECTION**:
 - Detect semantic type from text patterns
+  - Contains "Volume" → level_name="volume"
+  - Contains "Book" (as division) → level_name="book"
   - Contains "Part" → level_name="part"
+  - Contains "Unit" → level_name="unit"
   - Contains "Chapter" → level_name="chapter"
-  - Contains "Section" or numbered subsection → level_name="section"
+  - Contains "Section" → level_name="section"
+  - Contains "Subsection" → level_name="subsection"
+  - Contains "Act" → level_name="act"
+  - Contains "Scene" → level_name="scene"
   - Contains "Appendix" → level_name="appendix"
   - No clear type → level_name=null
 
@@ -211,7 +252,7 @@ Return JSON with this structure:
             "entry_number": "5" or "II" or "1.1" or null,
             "title": "Introduction",
             "level": 1,
-            "level_name": "chapter" or "part" or "section" or null,
+            "level_name": "volume" or "book" or "part" or "unit" or "chapter" or "section" or "subsection" or "act" or "scene" or "appendix" or null,
             "printed_page_number": "1" or null
         }
     ],
@@ -228,7 +269,7 @@ CRITICAL REQUIREMENTS:
 - "level" (REQUIRED) MUST be 1, 2, or 3 (visual hierarchy)
 - "title" (REQUIRED) must be non-empty
 - "entry_number" (optional) is string: "5", "II", "A", "1.1", or null
-- "level_name" (optional) is string: "part", "chapter", "section", "appendix", or null
+- "level_name" (optional) is string: "volume", "book", "part", "unit", "chapter", "section", "subsection", "act", "scene", "appendix", or null
 - "printed_page_number" (optional) is string or null
 - Extract entries in the ORDER they appear on the page (top to bottom)
 - Each entry should be COMPLETE (don't output partial entries)

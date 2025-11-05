@@ -21,11 +21,12 @@
     <table class="status-table">
         <thead>
             <tr>
-                <th style="width: 25%;">Book</th>
-                <th style="width: 18%;">OCR</th>
-                <th style="width: 18%;">Paragraph Correct</th>
-                <th style="width: 18%;">Label Pages</th>
-                <th style="width: 18%;">Extract ToC</th>
+                <th style="width: 20%;">Book</th>
+                <th style="width: 12%;">Tesseract</th>
+                <th style="width: 12%;">OCR Pages</th>
+                <th style="width: 12%;">Find ToC</th>
+                <th style="width: 12%;">Extract ToC</th>
+                <th style="width: 12%;">Label Pages</th>
             </tr>
         </thead>
         <tbody>
@@ -36,38 +37,38 @@
                     <div class="book-name">{{ book.scan_id }}</div>
                 </td>
 
-                <!-- OCR Status -->
+                <!-- Tesseract Status -->
                 <td>
-                    {% set stage_data = book.stages.get('ocr', {}) %}
+                    {% set stage_data = book.stages.get('tesseract', {}) %}
                     {% set status = stage_data.get('status', 'not_started') %}
                     {% set cost_usd = stage_data.get('cost_usd', 0.0) %}
                     {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
                     {% if status in ['completed', 'in_progress'] %}
-                        {% set link = '/stage/' ~ book.scan_id ~ '/ocr' %}
+                        {% set link = '/stage/' ~ book.scan_id ~ '/tesseract' %}
                     {% endif %}
                     {% include 'components/status_badge.html' %}
                 </td>
 
-                <!-- Paragraph Correct Status -->
+                <!-- OCR Pages Status -->
                 <td>
-                    {% set stage_data = book.stages.get('paragraph-correct', {}) %}
+                    {% set stage_data = book.stages.get('ocr-pages', {}) %}
                     {% set status = stage_data.get('status', 'not_started') %}
                     {% set cost_usd = stage_data.get('cost_usd', 0.0) %}
                     {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
                     {% if status in ['completed', 'in_progress'] %}
-                        {% set link = '/stage/' ~ book.scan_id ~ '/paragraph-correct' %}
+                        {% set link = '/stage/' ~ book.scan_id ~ '/ocr-pages' %}
                     {% endif %}
                     {% include 'components/status_badge.html' %}
                 </td>
 
-                <!-- Label Pages Status -->
+                <!-- Find ToC Status -->
                 <td>
-                    {% set stage_data = book.stages.get('label-pages', {}) %}
+                    {% set stage_data = book.stages.get('find-toc', {}) %}
                     {% set status = stage_data.get('status', 'not_started') %}
                     {% set cost_usd = stage_data.get('cost_usd', 0.0) %}
                     {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
                     {% if status in ['completed', 'in_progress'] %}
-                        {% set link = '/stage/' ~ book.scan_id ~ '/label-pages' %}
+                        {% set link = '/stage/' ~ book.scan_id ~ '/find-toc' %}
                     {% endif %}
                     {% include 'components/status_badge.html' %}
                 </td>
@@ -80,6 +81,18 @@
                     {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
                     {% if status in ['completed', 'in_progress'] %}
                         {% set link = '/stage/' ~ book.scan_id ~ '/extract-toc' %}
+                    {% endif %}
+                    {% include 'components/status_badge.html' %}
+                </td>
+
+                <!-- Label Pages Status -->
+                <td>
+                    {% set stage_data = book.stages.get('label-pages', {}) %}
+                    {% set status = stage_data.get('status', 'not_started') %}
+                    {% set cost_usd = stage_data.get('cost_usd', 0.0) %}
+                    {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
+                    {% if status in ['completed', 'in_progress'] %}
+                        {% set link = '/stage/' ~ book.scan_id ~ '/label-pages' %}
                     {% endif %}
                     {% include 'components/status_badge.html' %}
                 </td>

@@ -48,8 +48,13 @@ SEARCH_PATTERNS = [
 
 
 def extract_text_from_page(storage: BookStorage, page_num: int) -> str:
-    from pipeline.paragraph_correct.tools import get_merged_page_text
-    return get_merged_page_text(storage, page_num)
+    """Extract OCR text from ocr-pages stage."""
+    from pipeline.ocr_pages.storage import OcrPagesStageStorage
+    ocr_pages_storage = OcrPagesStageStorage(stage_name='ocr-pages')
+    page_data = ocr_pages_storage.load_page(storage, page_num)
+    if not page_data:
+        raise FileNotFoundError(f"OCR data for page {page_num} not found")
+    return page_data.get("text", "")
 
 
 def extract_context(text: str, match: str, match_pos: int, context_chars: int = 100) -> str:

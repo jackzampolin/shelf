@@ -105,8 +105,8 @@ Provide a structured audit report:
 
 ## Special Considerations for This Project
 
-- Stage names MUST use hyphens (paragraph-correct, not paragraph_correct)
-- Stage implementations should mirror pipeline/ocr/ structure
+- Stage names MUST use hyphens (label-pages, ocr-pages, not label_pages)
+- Stage implementations should mirror pipeline/tesseract/ or pipeline/ocr_pages/ structure
 - Single source of truth: cli/constants.py::STAGE_DEFINITIONS
 - Ground truth from disk, not metrics state
 - One schema per file, always validated

@@ -17,14 +17,15 @@ Inconsistent naming caused real bugs: `paragraph_correct` vs `paragraph-correct`
 **Format:** `lowercase-with-hyphens`
 
 **Examples:**
-- `ocr`
-- `paragraph-correct`
+- `tesseract` (single word, no hyphen needed)
+- `ocr-pages`
 - `label-pages`
+- `find-toc`
 - `extract-toc`
 
 **Why hyphens:** Consistency across CLI args, directory names, file references, log paths.
 
-**The bug we fixed:** Using underscores (`paragraph_correct`) broke lookups. See commit 7675466.
+**Why this matters:** Inconsistency between stage names (hyphens vs underscores) causes lookup failures between CLI, storage, and logs.
 
 ## Schema Files
 
@@ -53,7 +54,7 @@ Inconsistent naming caused real bugs: `paragraph_correct` vs `paragraph-correct`
 **Format:** Hierarchy shows relationships
 
 ```
-pipeline/ocr/
+pipeline/tesseract/
   ├── schemas/          # Group by function
   ├── tools/            # Group by function
   └── __init__.py       # Stage entry point
@@ -64,7 +65,7 @@ pipeline/ocr/
 ## General Guidelines
 
 **Files:** `lowercase_with_underscores.py`, descriptive (`page_processor.py` not `proc.py`)
-**Classes:** `PascalCase`, descriptive (`ParagraphCorrectStage` not `PCStage`)
+**Classes:** `PascalCase`, descriptive (`LabelPagesStage` not `LPStage`)
 **Functions:** `snake_case`, verb-first (`process_page`, `get_status`)
 **Constants:** `UPPER_SNAKE_CASE` for true constants only
 

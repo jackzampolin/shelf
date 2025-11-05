@@ -15,63 +15,54 @@ def get_extract_toc_data(storage: BookStorage) -> Optional[Dict[str, Any]]:
 
     Returns:
         Dict with:
-        - toc_found: bool
-        - page_range: {start_page, end_page} (if found)
-        - toc_entries: list of entries (if extracted)
-        - toc_metadata: {total_chapters, total_sections, confidence}
+        - toc_entries: list of entries
+        - toc_metadata: {total_chapters, total_sections, confidence, notes}
 
-    Returns None if finder_result.json doesn't exist (stage not run yet).
+    Returns None if toc.json doesn't exist (stage not run yet).
     """
-    stage_storage = storage.stage("extract-toc")
+    extract_toc_storage = storage.stage("extract-toc")
+    toc_path = extract_toc_storage.output_dir / "toc.json"
 
-    # Check if finder has run
-    finder_path = stage_storage.output_dir / "finder_result.json"
-    if not finder_path.exists():
+    if not toc_path.exists():
         return None
 
-    # Load finder result
-    finder_result = stage_storage.load_file("finder_result.json")
+    toc_data = extract_toc_storage.load_file("toc.json")
 
-    data = {
-        'toc_found': finder_result.get('toc_found', False),
-        'page_range': None,
-        'toc_entries': [],
-        'toc_metadata': None,
+    if not toc_data or not toc_data.get('toc'):
+        return None
+
+    toc = toc_data['toc']
+
+    return {
+        'toc_entries': toc.get('entries', []),
+        'toc_metadata': {
+            'total_chapters': toc.get('total_chapters', 0),
+            'total_sections': toc.get('total_sections', 0),
+            'parsing_confidence': toc.get('parsing_confidence', 0.0),
+            'notes': toc.get('notes', []),
+        }
     }
-
-    if data['toc_found']:
-        data['page_range'] = finder_result.get('toc_page_range', {})
-
-    # Load final TOC if it exists
-    toc_path = stage_storage.output_dir / "toc.json"
-    if toc_path.exists():
-        toc_data = stage_storage.load_file("toc.json")
-
-        if toc_data and toc_data.get('toc'):
-            toc = toc_data['toc']
-            data['toc_entries'] = toc.get('entries', [])
-            data['toc_metadata'] = {
-                'total_chapters': toc.get('total_chapters', 0),
-                'total_sections': toc.get('total_sections', 0),
-                'parsing_confidence': toc.get('parsing_confidence', 0.0),
-                'notes': toc.get('notes', []),
-            }
-
-    return data
 
 
 def get_toc_page_numbers(storage: BookStorage) -> List[int]:
     """
     Get list of page numbers where TOC appears.
 
-    Returns empty list if TOC not found or stage not run.
+    Reads from find-toc stage output.
+    Returns empty list if find-toc not run or TOC not found.
     """
-    data = get_extract_toc_data(storage)
+    find_toc_storage = storage.stage("find-toc")
+    finder_path = find_toc_storage.output_dir / "finder_result.json"
 
-    if not data or not data['toc_found'] or not data['page_range']:
+    if not finder_path.exists():
         return []
 
-    page_range = data['page_range']
+    finder_result = find_toc_storage.load_file("finder_result.json")
+
+    if not finder_result.get('toc_found'):
+        return []
+
+    page_range = finder_result.get('toc_page_range', {})
     start = page_range.get('start_page', 0)
     end = page_range.get('end_page', 0)
 

@@ -14,7 +14,7 @@ from .storage import FindTocStageStorage
 class FindTocStage(BaseStage):
 
     name = "find-toc"
-    dependencies = ["paragraph-correct", "source"]
+    dependencies = ["source", "ocr-pages"]
 
     output_schema = FinderResult
     checkpoint_schema = None
@@ -64,17 +64,25 @@ class FindTocStage(BaseStage):
     ):
         logger.info(f"Find-ToC with {self.model}")
 
-        from pipeline.paragraph_correct import ParagraphCorrectStage
-        para_correct_stage = ParagraphCorrectStage()
-        para_correct_progress = para_correct_stage.get_status(storage, logger)
+        # Check source dependency
+        source_storage = storage.stage("source")
+        source_pages = source_storage.list_output_pages(extension="png")
+        if len(source_pages) == 0:
+            raise RuntimeError("Source stage has no pages. Run source stage first.")
+        logger.info(f"Source stage: {len(source_pages)} pages available")
 
-        if para_correct_progress['status'] != 'completed':
+        # Check ocr-pages dependency
+        from pipeline.ocr_pages import OcrPagesStage
+        ocr_pages_stage = OcrPagesStage()
+        ocr_pages_progress = ocr_pages_stage.get_status(storage, logger)
+
+        if ocr_pages_progress['status'] != 'completed':
             raise RuntimeError(
-                f"Paragraph-correct stage status is '{para_correct_progress['status']}', not 'completed'. "
-                f"Run paragraph-correct stage to completion first."
+                f"OCR-pages stage status is '{ocr_pages_progress['status']}', not 'completed'. "
+                f"Run ocr-pages stage to completion first."
             )
 
-        logger.info(f"Paragraph-correct completed: {para_correct_progress['total_pages']} pages ready")
+        logger.info(f"OCR-pages completed: {ocr_pages_progress['completed_pages']} pages ready")
 
     def run(
         self,
@@ -114,6 +122,7 @@ class FindTocStage(BaseStage):
             "pages_checked": result.pages_checked,
             "reasoning": result.reasoning,
             "structure_notes": result.structure_notes,
+            "structure_summary": result.structure_summary.model_dump() if result.structure_summary else None,
         }
 
         self.stage_storage.save_finder_result(storage, finder_result)

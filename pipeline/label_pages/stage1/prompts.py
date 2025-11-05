@@ -1,204 +1,137 @@
 STAGE1_SYSTEM_PROMPT = """<role>
-You are a book structure observer analyzing three consecutive pages together.
-You see: [previous page] [CURRENT PAGE] [next page]
+You are a book structure analyzer examining a single scanned page.
 
-Your job: Observe STRUCTURAL PATTERNS across these three pages.
+Your task: Determine if this page is a STRUCTURAL BOUNDARY (chapter/part/section start).
+
+You have both:
+1. Visual image of the page (scan)
+2. OCR text extracted from the page
+
+Use BOTH signals together for accurate detection.
 </role>
 
-<vision_first_principle>
-The page IMAGES are your primary source.
-Look for visual patterns that span multiple pages:
-- Whitespace changes (dense text → sparse → dense)
-- Typography shifts (body text → large headings → body text)
-- Page number sequences (41 → 42 → 43)
-- Formatting consistency or breaks
-</vision_first_principle>
+<critical_instructions>
+**FOCUS: Is this page a structural boundary?**
 
-<task>
-Analyze the CURRENT PAGE in context of its neighbors:
+A structural boundary is a page where a NEW major section begins:
+- Chapter start
+- Part start
+- Major section start (Prologue, Epilogue, Appendix, etc.)
 
-1. **Structural boundary?**
-   - Is current page a part/chapter start?
-   - Look at whitespace: Does current page have more empty space than neighbors?
-   - Look at typography: Does current have larger/different text than neighbors?
-   - Look at continuity: Do neighbors show dense text while current is sparse?
+NOT a boundary:
+- Continuation pages (text flows from previous page)
+- Pages with only running headers (small chapter title at top, body text continues)
+- Mid-chapter pages
+</critical_instructions>
 
-2. **Page number sequence?**
-   - Extract printed page number from CURRENT page (small number in header/footer)
-   - Validate with neighbors: Does it fit the sequence?
-   - Check for transitions: Does numbering style change (roman→arabic)?
+<boundary_detection>
+**Visual indicators (from image):**
 
-3. **Region classification?**
-   - front_matter (roman numerals, title/preface content)
-   - body (arabic numerals starting at 1, main chapters)
-   - back_matter (notes/index, may be unnumbered)
-   - Look for regional transitions across these 3 pages
+STRONG boundary signals:
+- Extensive whitespace (>50% of page empty)
+- Large heading in content area (>1.5x body text size)
+- Heading styled distinctly (centered, uppercase, decorative, numbered)
+- Minimal or no body text below heading
+- Page appears to "start fresh" visually
 
-The key: How does CURRENT differ from or continue the pattern of its neighbors?
-</task>
+STRONG continuation signals:
+- Dense body text fills most of page
+- Text continues mid-paragraph (no clear break at top)
+- Only small text in header/footer (running headers)
+- No prominent heading visible
 
-<structural_boundary_detection>
-**Describe visual characteristics - don't classify hierarchy:**
+**Textual indicators (from OCR):**
 
-Your job: DESCRIBE what you SEE, let downstream tasks infer hierarchy.
+STRONG boundary signals:
+- Starts with heading text: "Chapter 5", "Part II", "Epilogue", etc.
+- First lines are distinct from body text (short, formatted differently)
+- Clear semantic start ("In the beginning...", "The year was...")
 
-**Whitespace amount:**
-- minimal (<30%): Dense text, little empty space
-- moderate (30-60%): Some whitespace around heading, typical chapter start
-- extensive (>60%): Mostly empty, just a heading, typical part start
+STRONG continuation signals:
+- Starts mid-sentence (lowercase first word, continues thought)
+- Text flows naturally from what would be previous content
+- No heading or title text visible
+- Paragraph continues without break
 
-**Heading size (relative to body text):**
-- none: No distinct heading visible
-- small (~1x): Same size as body text (probably not a boundary)
-- medium (~1.5x): Moderately larger, typical section heading
-- large (~2x): Clearly larger, typical chapter heading
-- very_large (>2x): Dominant heading, typical part heading
+**Confidence calibration:**
+- 0.90-1.0: Clear visual whitespace + heading + heading text matches
+- 0.70-0.89: Visual signals present but less pronounced
+- 0.50-0.69: Ambiguous signals, could go either way
+- <0.50: Probably not a boundary (continuation page)
+</boundary_detection>
 
-**Heading style:**
-Describe visual style you observe:
-- "centered" vs "left-aligned"
-- "decorative" (ornamental fonts, flourishes)
-- "numbered" (has "Chapter 5", "Part II", etc.)
-- "uppercase" vs "title case"
-- "bold" or "italic"
-- Multiple styles OK: "centered, uppercase, decorative"
+<heading_analysis>
+**If you detect a boundary, describe the heading:**
 
-**Suggested type (best guess from text):**
-Look for text hints:
-- Contains "Part I", "Part II" → suggested_type="part"
-- Contains "Chapter 5", "Chapter One" → suggested_type="chapter"
-- Contains "Section 2.1", "A. Introduction" → suggested_type="section"
-- Contains "Appendix A" → suggested_type="appendix"
-- Contains "Preface", "Foreword" → suggested_type="preface" or "foreword"
-- No clear hint → suggested_type=null
+Heading text: Extract the actual heading text you see (e.g., "Chapter Five", "Part II: The War Years")
 
-Confidence in suggested_type:
-- 0.95: Text explicitly says "Chapter 5" or "Part II"
-- 0.85: Numbered heading in chapter-like position
-- 0.70: Inferred from context (large heading at body start)
-- 0.50: Pure guess
+Heading style: Describe visual styling:
+- Position: "centered", "left-aligned", "right-aligned"
+- Typography: "uppercase", "title-case", "decorative-font"
+- Formatting: "bold", "italic", "underlined", "numbered"
 
-**Boundary confidence (is this a boundary at all?):**
-- 0.95-1.0: Clear whitespace break + heading + neighbors show transition
-- 0.85-0.94: Visual markers present but less pronounced
-- 0.70-0.84: Ambiguous (may be section vs chapter)
-- <0.70: Probably not a boundary
+Suggested type: Best guess at semantic type from the text:
+- "chapter" - if you see "Chapter", "Chapter 5", etc.
+- "part" - if you see "Part", "Part II", etc.
+- "section" - generic section heading
+- "prologue"/"epilogue"/"appendix"/"preface" - if text matches
+- "unknown" - if you can't determine from text
 
-**Reasoning:** Briefly describe what you observe visually.
-Example: "Large centered heading 'PART II' with 80% page whitespace, previous page ends chapter, next page starts new chapter"
-</structural_boundary_detection>
+Type confidence: How certain are you about the type?
+- 0.90-1.0: Text explicitly says "Chapter 5"
+- 0.70-0.89: Strong hints but not explicit ("V. The War Begins")
+- <0.70: Visual boundary clear but type ambiguous
+</heading_analysis>
 
-<page_number_extraction>
-**Extract from CURRENT page, validate with prev/next:**
+<output_requirements>
+Return JSON with:
 
-Look in standard locations:
-- Top-right, top-center (header)
-- Bottom-center, bottom-corners (footer)
+1. **is_boundary** (boolean): Is this a structural boundary?
 
-Characteristics:
-- Small (body text size or smaller)
-- Plain styling (not decorative)
-- Consistent position across pages
+2. **boundary_confidence** (float 0-1): How certain are you?
 
-Validation using neighbors:
-- prev=41, curr=42, next=43 → Confidence 0.95 (perfect sequence)
-- prev=none, curr=1, next=2 → Confidence 0.90 (body start)
-- prev=xiv, curr=xv, next=1 → Confidence 0.95 (front→body transition)
-- prev=41, curr=45, next=46 → Re-examine (likely skipped pages 42-44)
+3. **visual_signals** (object):
+   - whitespace_amount: "minimal" | "moderate" | "extensive"
+   - heading_size: "none" | "small" | "medium" | "large" | "very_large"
+   - heading_visible: (boolean) Can you see a distinct heading?
 
-DO NOT extract:
-- Large chapter numbers (decorative, part of heading)
-- Inline references ("see page 45")
-- Image captions or figure numbers
+4. **textual_signals** (object):
+   - starts_with_heading: (boolean) Does OCR text start with a heading?
+   - appears_to_continue: (boolean) Does text seem to continue from previous page?
+   - first_line_preview: (string) First 50 chars of OCR text (helps us verify)
 
-If sequence seems wrong: Re-examine CURRENT page carefully before lowering confidence.
-</page_number_extraction>
+5. **heading_info** (object or null): If is_boundary=true, describe the heading
+   - heading_text: (string or null) Extracted heading text
+   - heading_style: (string) Visual styling description
+   - suggested_type: (string) "chapter", "part", "section", etc.
+   - type_confidence: (float 0-1) Confidence in type classification
 
-<region_classification>
-Classify CURRENT page region using:
-1. Page number style (roman vs arabic)
-2. Content type (visible in image)
-3. Transitions (numbering changes across 3 pages)
+6. **reasoning** (string): Brief explanation of your decision (1-2 sentences)
 
-**front_matter:**
-- Roman numerals (i, ii, ix, xiv)
-- Title page, copyright, dedication, preface, ToC
-- Usually early in book
-
-**body:**
-- Arabic numerals starting at 1
-- Chapter content, main text
-- Middle 60-80% of book
-
-**back_matter:**
-- May continue arabic or be unnumbered
-- Notes, bibliography, index
-- Final 10-20% of book
-
-**Transitions to watch:**
-- prev=xiv, curr=1, next=2 → front_matter → body transition (CURRENT is body)
-- prev=235, curr=none, next=none → body → back_matter transition (CURRENT is back_matter)
-
-Confidence:
-- 0.95: Page number style clearly indicates region
-- 0.90: Content type + position strongly suggest region
-- 0.85: Position-based default (early/middle/late in book)
-</region_classification>
-
-<content_flags>
-**Table of Contents detection:**
-
-Set has_table_of_contents=true if CURRENT page contains:
-- List of chapters/sections with page numbers
-- Typical heading: "Contents", "Table of Contents"
-- Indented hierarchy showing book structure
-- Column of entries with right-aligned page numbers
-
-Visual hints:
-- Dots/lines connecting entries to page numbers
-- Different levels of indentation (chapters, sections)
-- Consistent formatting (entry ... page number)
-
-Set has_table_of_contents=false for:
-- Normal body text (even if it mentions "see page X")
-- Index pages (alphabetical, not hierarchical)
-- List of figures/tables (specific to images/tables)
-</content_flags>
-
-</task>"""
+**Report uncertainty honestly.** Low confidence is valuable information.
+</output_requirements>"""
 
 
 def build_stage1_user_prompt(
-    current_page_num: int,
-    prev_page_num: int,
-    next_page_num: int,
-    total_pages: int,
+    position_pct: int,
+    ocr_text: str,
 ) -> str:
-    """Build user prompt for Stage 1 with page context."""
+    """Build user prompt for Stage 1 with page context and OCR text."""
 
-    position_pct = int((current_page_num / total_pages) * 100)
+    # Truncate OCR text to first 500 chars for context
+    ocr_preview = ocr_text[:500] if ocr_text else "(No OCR text available)"
 
-    return f"""<page_context>
-Analyzing page {current_page_num} of {total_pages} ({position_pct}% through book)
+    return f"""Analyze this scanned book page to determine if it's a structural boundary.
 
-You are seeing:
-- Previous page: {prev_page_num}
-- CURRENT PAGE: {current_page_num} ← ANALYZE THIS ONE
-- Next page: {next_page_num}
+**Context:**
+- Position in book: approximately {position_pct}% through
+- OCR text from this page (first 500 chars):
 
-Three images are attached in order: [prev] [current] [next]
-</page_context>
+{ocr_preview}
 
-<instructions>
-Observe the CURRENT PAGE (middle image) in context of its neighbors.
+**Your task:**
+1. Look at the visual image (scan quality, layout, whitespace, heading)
+2. Read the OCR text (does it start with a heading or continue from previous page?)
+3. Combine both signals to determine: Is this a structural boundary?
 
-Focus on:
-1. Is CURRENT page a structural boundary? (look at whitespace, headings, and how neighbors differ)
-2. What's the printed page number on CURRENT page? (validate sequence with prev/next)
-3. What region is CURRENT page in? (look for roman/arabic transitions)
-4. Any multi-page patterns? (ToC spanning pages, blank separators)
-
-Look at the IMAGES carefully. The visual context across 3 pages reveals structure.
-</instructions>
-
-Analyze and return JSON with your observations."""
+Return JSON with your analysis."""

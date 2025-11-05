@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+
+{% block title %}{{ scan_id }} - Page {{ page_num }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/stage.css') }}">
+<style>
+    /* Two-column layout: page image left, labels right */
+    .page-viewer-layout {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        margin-top: 2rem;
+    }
+
+    /* Left column: Page image */
+    .page-image-column {
+        border-right: 2px solid #e0e0e0;
+        padding-right: 2rem;
+    }
+
+    .page-image-column h3 {
+        margin-top: 0;
+        margin-bottom: 1.5rem;
+        color: #333;
+    }
+
+    .page-image-container {
+        background: #f9f9f9;
+        padding: 1rem;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+    }
+
+    .page-image {
+        width: 100%;
+        height: auto;
+        display: block;
+        background: white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        border-radius: 4px;
+    }
+
+    /* Right column: Labels */
+    .labels-column {
+        padding-left: 2rem;
+    }
+
+    .labels-column h3 {
+        margin-top: 0;
+        margin-bottom: 1.5rem;
+        color: #333;
+    }
+
+    .labels-grid {
+        display: grid;
+        gap: 1.5rem;
+    }
+
+    .label-section {
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 1.5rem;
+    }
+
+    .label-section h4 {
+        margin: 0 0 1rem 0;
+        color: #0066cc;
+        font-size: 1rem;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 0.5rem;
+    }
+
+    .label-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #f5f5f5;
+    }
+
+    .label-item:last-child {
+        border-bottom: none;
+    }
+
+    .label-key {
+        font-weight: 600;
+        color: #666;
+        font-size: 0.9rem;
+    }
+
+    .label-value {
+        color: #333;
+        font-weight: 500;
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 0.25rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    .badge-region-front {
+        background: #e3f2fd;
+        color: #1976d2;
+    }
+
+    .badge-region-body {
+        background: #f3e5f5;
+        color: #7b1fa2;
+    }
+
+    .badge-region-back {
+        background: #fff3e0;
+        color: #f57c00;
+    }
+
+    .badge-yes {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .badge-no {
+        background: #ffebee;
+        color: #c62828;
+    }
+
+    .confidence-bar {
+        display: inline-block;
+        height: 8px;
+        background: #e0e0e0;
+        border-radius: 4px;
+        overflow: hidden;
+        width: 100px;
+        vertical-align: middle;
+    }
+
+    .confidence-fill {
+        height: 100%;
+        transition: width 0.3s;
+    }
+
+    .confidence-high {
+        background: #2e7d32;
+    }
+
+    .confidence-med {
+        background: #f57c00;
+    }
+
+    .confidence-low {
+        background: #c62828;
+    }
+
+    .text-muted {
+        color: #999;
+        font-style: italic;
+    }
+
+    .navigation {
+        margin-top: 2rem;
+        padding-top: 1rem;
+        border-top: 2px solid #e0e0e0;
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .nav-button {
+        padding: 0.5rem 1rem;
+        background: #0066cc;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+        font-weight: 500;
+        transition: background-color 0.2s;
+    }
+
+    .nav-button:hover {
+        background: #0052a3;
+    }
+
+    .nav-button:disabled,
+    .nav-button.disabled {
+        background: #ccc;
+        pointer-events: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-wide">
+    <!-- Header -->
+    <div class="stage-header">
+        <div class="breadcrumb">
+            <a href="/">← Library</a>
+            <span class="separator">/</span>
+            <span>{{ scan_id }}</span>
+            <span class="separator">/</span>
+            <a href="{{ url_for('stage.label_pages_view', scan_id=scan_id) }}">label-pages</a>
+            <span class="separator">/</span>
+            <span class="current">Page {{ page_num }}</span>
+        </div>
+
+        <h2>📄 Page {{ page_num }} Labels</h2>
+
+        <div class="book-info">
+            <strong>{{ metadata.title }}</strong>
+            {% if metadata.author %}
+                <span class="author">by {{ metadata.author }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Two-column layout: page image left, labels right -->
+    <div class="page-viewer-layout">
+        <!-- Left Column: Page Image -->
+        <div class="page-image-column">
+            <h3>Page Image</h3>
+            <div class="page-image-container">
+                <img
+                    src="{{ url_for('stage.serve_source_image', scan_id=scan_id, page_num=page_num) }}"
+                    alt="Page {{ page_num }}"
+                    class="page-image"
+                >
+            </div>
+        </div>
+
+        <!-- Right Column: Labels -->
+        <div class="labels-column">
+            <h3>Extracted Labels</h3>
+
+            <div class="labels-grid">
+                <!-- Page Number Information -->
+                <div class="label-section">
+                    <h4>Page Number</h4>
+                    <div class="label-item">
+                        <span class="label-key">Printed Number:</span>
+                        <span class="label-value">
+                            {% if labels.printed_page_number %}
+                                {{ labels.printed_page_number }}
+                            {% else %}
+                                <span class="text-muted">None detected</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="label-item">
+                        <span class="label-key">Numbering Style:</span>
+                        <span class="label-value">{{ labels.numbering_style }}</span>
+                    </div>
+                    <div class="label-item">
+                        <span class="label-key">Location:</span>
+                        <span class="label-value">{{ labels.page_number_location }}</span>
+                    </div>
+                    <div class="label-item">
+                        <span class="label-key">Confidence:</span>
+                        <span class="label-value">
+                            <span class="confidence-bar">
+                                <span class="confidence-fill {% if labels.page_num_conf >= 0.9 %}confidence-high{% elif labels.page_num_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
+                                      style="width: {{ (labels.page_num_conf * 100)|int }}%"></span>
+                            </span>
+                            {{ "%.0f"|format(labels.page_num_conf * 100) }}%
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Page Region -->
+                <div class="label-section">
+                    <h4>Page Region</h4>
+                    <div class="label-item">
+                        <span class="label-key">Region Type:</span>
+                        <span class="label-value">
+                            {% if labels.page_region == 'front_matter' %}
+                                <span class="badge badge-region-front">Front Matter</span>
+                            {% elif labels.page_region == 'body' %}
+                                <span class="badge badge-region-body">Body</span>
+                            {% elif labels.page_region == 'back_matter' %}
+                                <span class="badge badge-region-back">Back Matter</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="label-item">
+                        <span class="label-key">Confidence:</span>
+                        <span class="label-value">
+                            <span class="confidence-bar">
+                                <span class="confidence-fill {% if labels.region_conf >= 0.9 %}confidence-high{% elif labels.region_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
+                                      style="width: {{ (labels.region_conf * 100)|int }}%"></span>
+                            </span>
+                            {{ "%.0f"|format(labels.region_conf * 100) }}%
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Boundary Information -->
+                <div class="label-section">
+                    <h4>Boundary Detection</h4>
+                    <div class="label-item">
+                        <span class="label-key">Is Boundary:</span>
+                        <span class="label-value">
+                            {% if labels.is_boundary %}
+                                <span class="badge badge-yes">Yes</span>
+                            {% else %}
+                                <span class="badge badge-no">No</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% if labels.is_boundary and labels.boundary_type %}
+                    <div class="label-item">
+                        <span class="label-key">Boundary Type:</span>
+                        <span class="label-value">{{ labels.boundary_type }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="label-item">
+                        <span class="label-key">Confidence:</span>
+                        <span class="label-value">
+                            <span class="confidence-bar">
+                                <span class="confidence-fill {% if labels.boundary_conf >= 0.9 %}confidence-high{% elif labels.boundary_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
+                                      style="width: {{ (labels.boundary_conf * 100)|int }}%"></span>
+                            </span>
+                            {{ "%.0f"|format(labels.boundary_conf * 100) }}%
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Page Characteristics -->
+                <div class="label-section">
+                    <h4>Page Characteristics</h4>
+                    <div class="label-item">
+                        <span class="label-key">Whitespace:</span>
+                        <span class="label-value">{{ labels.whitespace }}</span>
+                    </div>
+                    <div class="label-item">
+                        <span class="label-key">Heading Size:</span>
+                        <span class="label-value">{{ labels.heading_size }}</span>
+                    </div>
+                    <div class="label-item">
+                        <span class="label-key">Has TOC:</span>
+                        <span class="label-value">
+                            {% if labels.has_toc %}
+                                <span class="badge badge-yes">Yes</span>
+                            {% else %}
+                                <span class="badge badge-no">No</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <div class="navigation">
+                {% if page_num > 1 %}
+                    <a href="{{ url_for('stage.label_pages_page_view', scan_id=scan_id, page_num=page_num-1) }}" class="nav-button">
+                        ← Previous
+                    </a>
+                {% else %}
+                    <span class="nav-button disabled">← Previous</span>
+                {% endif %}
+
+                <a href="{{ url_for('stage.label_pages_view', scan_id=scan_id) }}" class="nav-button">
+                    Back to Report
+                </a>
+
+                {% if page_num < metadata.scan.pages %}
+                    <a href="{{ url_for('stage.label_pages_page_view', scan_id=scan_id, page_num=page_num+1) }}" class="nav-button">
+                        Next →
+                    </a>
+                {% else %}
+                    <span class="nav-button disabled">Next →</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

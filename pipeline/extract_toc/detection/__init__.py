@@ -28,6 +28,7 @@ def extract_toc_entries(
     toc_range: PageRange,
     structure_notes_from_finder: Dict[int, str],
     logger: PipelineLogger,
+    global_structure_from_finder: dict = None,
     model: str = None
 ) -> Tuple[Dict[str, any], Dict[str, any]]:
     """
@@ -43,6 +44,7 @@ def extract_toc_entries(
         storage: Book storage
         toc_range: Range of ToC pages
         structure_notes_from_finder: Map of page_num -> structure observations
+        global_structure_from_finder: Global structure summary from find-toc (total_levels, level_patterns)
         logger: Pipeline logger
         model: Vision model to use (default: Config.vision_model_primary)
 
@@ -93,7 +95,8 @@ def extract_toc_entries(
             page_num=page_num,
             total_toc_pages=total_toc_pages,
             ocr_text=ocr_text,
-            structure_notes=page_structure_notes
+            structure_notes=page_structure_notes,
+            global_structure=global_structure_from_finder
         )
 
         messages = [

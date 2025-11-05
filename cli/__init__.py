@@ -23,19 +23,18 @@ Examples:
   # Single book operations
   shelf book modest-lovelace info
   shelf book modest-lovelace info --json
-  shelf book modest-lovelace info --stage ocr
-  shelf book modest-lovelace report --stage paragraph-correct
+  shelf book modest-lovelace info --stage tesseract
   shelf book modest-lovelace report --stage label-pages --filter "printed_page_number="
-  shelf book modest-lovelace run-stage ocr
-  shelf book modest-lovelace run-stage paragraph-correct --workers 20
+  shelf book modest-lovelace run-stage tesseract
+  shelf book modest-lovelace run-stage ocr-pages --workers 20
   shelf book modest-lovelace process
   shelf book modest-lovelace process --clean
-  shelf book modest-lovelace clean --stage ocr
+  shelf book modest-lovelace clean --stage tesseract
 
   # Library-wide batch operations
   shelf batch label-pages
   shelf batch label-pages --reshuffle
-  shelf batch paragraph-correct --force
+  shelf batch ocr-pages --force
 
   # Web frontend
   shelf serve

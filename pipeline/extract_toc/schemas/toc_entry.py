@@ -11,7 +11,7 @@ class ToCEntry(BaseModel):
     level: int = Field(1, ge=1, le=3, description="Visual hierarchy level (1=top-level, 2=nested, 3=deeply nested)")
     level_name: Optional[str] = Field(
         None,
-        description="Semantic type of entry (e.g., 'part', 'chapter', 'section', 'appendix') if detectable"
+        description="Semantic type of entry: 'volume', 'book', 'part', 'unit', 'chapter', 'section', 'subsection', 'act', 'scene', 'appendix'"
     )
     printed_page_number: Optional[str] = Field(
         None,

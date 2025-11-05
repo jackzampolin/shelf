@@ -16,35 +16,44 @@ def prepare_stage1_request(
     total_pages: int,
 ) -> Optional[LLMRequest]:
     source_stage = storage.stage('source')
+    tesseract_stage = storage.stage('tesseract')
 
-    prev_page_num = max(1, page_num - 1) if page_num > 1 else page_num
-    next_page_num = min(total_pages, page_num + 1) if page_num < total_pages else page_num
+    # Load page image
+    image_file = source_stage.output_page(page_num, extension='png')
+    if not image_file.exists():
+        raise FileNotFoundError(f"Source image not found for page {page_num}")
 
-    # 3 * 300KB ~= 900KB total
-    images = []
-    for p in [prev_page_num, page_num, next_page_num]:
-        image_file = source_stage.output_page(p, extension='png')
-        if not image_file.exists():
-            raise FileNotFoundError(f"Source image not found for page {p}")
+    page_image = Image.open(image_file)
+    page_image = downsample_for_vision(page_image, max_payload_kb=300)
 
-        page_image = Image.open(image_file)
-        page_image = downsample_for_vision(page_image, max_payload_kb=300)
-        images.append(page_image)
+    # Load OCR text from tesseract output
+    ocr_text = ""
+    tesseract_output_file = tesseract_stage.output_page(page_num, extension='json')
+    if tesseract_output_file.exists():
+        from infra.storage.schemas import load_page
+        from pipeline.tesseract.schemas import TesseractPageOutput
+
+        tesseract_data = load_page(tesseract_output_file, TesseractPageOutput)
+        ocr_text = tesseract_data.full_text
+    else:
+        # Tesseract should have been validated in before(), but handle gracefully
+        ocr_text = "(Tesseract output not found for this page)"
 
     response_schema = {
         "type": "json_schema",
         "json_schema": {
-            "name": "stage1_structural_analysis",
+            "name": "stage1_boundary_detection",
             "strict": True,
             "schema": Stage1LLMResponse.model_json_schema()
         }
     }
 
+    # Calculate position percentage
+    position_pct = int((page_num / total_pages) * 100)
+
     user_prompt = build_stage1_user_prompt(
-        current_page_num=page_num,
-        prev_page_num=prev_page_num,
-        next_page_num=next_page_num,
-        total_pages=total_pages,
+        position_pct=position_pct,
+        ocr_text=ocr_text,
     )
 
     return LLMRequest(
@@ -54,7 +63,7 @@ def prepare_stage1_request(
             {"role": "system", "content": STAGE1_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ],
-        images=images,
+        images=[page_image],
         response_format=response_schema,
         metadata={
             'page_num': page_num,

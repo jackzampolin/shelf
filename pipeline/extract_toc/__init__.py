@@ -133,6 +133,12 @@ class ExtractTocStage(BaseStage):
         toc_range = PageRange(**finder_result["toc_page_range"])
         structure_notes_from_finder = finder_result.get("structure_notes") or {}
 
+        # Load global structure summary if available
+        global_structure_from_finder = None
+        if finder_result.get("structure_summary"):
+            global_structure_from_finder = finder_result["structure_summary"]
+            logger.info(f"Using global structure from find-toc: {global_structure_from_finder.get('total_levels')} levels")
+
         logger.info("Using ToC range from find-toc", start=toc_range.start_page, end=toc_range.end_page)
 
         # Phase 1: Extract ToC entries directly (vision + OCR from ocr-pages)
@@ -147,6 +153,7 @@ class ExtractTocStage(BaseStage):
                 toc_range=toc_range,
                 structure_notes_from_finder=structure_notes_from_finder,
                 logger=logger,
+                global_structure_from_finder=global_structure_from_finder,
                 model=self.model
             )
 

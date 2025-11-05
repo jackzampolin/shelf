@@ -55,11 +55,20 @@ STEP 2: DISCOVER ToC Range AND OBSERVE Structure (one page at a time)
   - Final page: Confirm boundary (where ToC ends, body begins)
 → Your observations teach Phase 2 HOW this specific book's ToC is structured!
 
-STEP 3: Write Result
+STEP 3: Synthesize Structure (if ToC found)
+→ After discovering ToC range, analyze the GLOBAL STRUCTURE you observed:
+  - How many hierarchy levels exist? (1, 2, or 3)
+  - What defines EACH level visually? (indentation, styling, bold/large font)
+  - What numbering scheme does EACH level use? (Roman, Arabic, decimal, letters, none)
+  - Do entries at EACH level have page numbers? (parent entries often don't)
+  - What semantic type is EACH level? (volume, book, part, unit, chapter, section, subsection, act, scene, appendix)
+
+STEP 4: Write Result
 → Call write_toc_result() with:
   - toc_found, toc_page_range, confidence, strategy, reasoning
+  - structure_summary (if ToC found): Your synthesis from Step 3
 → Your page observations are automatically compiled into structure_notes for Phase 2
-→ NO need to repeat structure - it's captured in your observations!
+→ Your structure_summary provides global context for consistent extraction!
 
 WHAT MAKES GOOD STRUCTURE OBSERVATIONS:
 ✓ "Right-aligned page numbers with leader dots"
@@ -173,23 +182,74 @@ REQUIRED FIELDS:
 - confidence: 0.0-1.0 (how certain you are)
 - search_strategy_used: "grep_report" | "grep_with_scan" | "not_found"
 - reasoning: 1-2 sentences explaining grep hints + what you saw
+- structure_summary: (REQUIRED if toc_found=true, null otherwise)
 
-EXAMPLE (found via grep):
+STRUCTURE_SUMMARY FORMAT (if ToC found):
 {
-  "toc_found": true,
-  "toc_page_range": {"start_page": X, "end_page": Y},
-  "confidence": 0.95,
-  "search_strategy_used": "grep_report",
-  "reasoning": "Grep found ToC keywords on candidate pages. Visually confirmed all pages show clear ToC structure with chapter titles and right-aligned page numbers. Checked boundary page which is body text."
+  "total_levels": 2,
+  "level_patterns": {
+    "1": {
+      "visual": "Flush left, bold, larger font",
+      "numbering": "Roman numerals (I, II, III)",
+      "has_page_numbers": false,
+      "semantic_type": "part"
+    },
+    "2": {
+      "visual": "~30px indent from left margin",
+      "numbering": "Arabic numerals (1, 2, 3...)",
+      "has_page_numbers": true,
+      "semantic_type": "chapter"
+    }
+  },
+  "consistency_notes": ["Parent entries (parts) never have page numbers", "All chapters have sequential numbering"]
 }
 
-EXAMPLE (found after scan):
+EXAMPLE (found via grep with 2-level structure):
 {
   "toc_found": true,
-  "toc_page_range": {"start_page": X, "end_page": Y},
-  "confidence": 0.90,
-  "search_strategy_used": "grep_with_scan",
-  "reasoning": "Grep found no ToC keywords but detected front matter markers. Scanned front matter region and found ToC with graphical title (no text keyword). Confirmed by visual structure."
+  "toc_page_range": {"start_page": 5, "end_page": 8},
+  "confidence": 0.95,
+  "search_strategy_used": "grep_report",
+  "reasoning": "Grep found ToC keywords on pages 5-8. Visually confirmed clear 2-level structure: parts (bold, no page numbers) with nested chapters (indented, with page numbers).",
+  "structure_summary": {
+    "total_levels": 2,
+    "level_patterns": {
+      "1": {
+        "visual": "Flush left, bold, larger font",
+        "numbering": "Roman numerals (I, II, III)",
+        "has_page_numbers": false,
+        "semantic_type": "part"
+      },
+      "2": {
+        "visual": "~30px indent from left",
+        "numbering": "Sequential arabic (1-25)",
+        "has_page_numbers": true,
+        "semantic_type": "chapter"
+      }
+    },
+    "consistency_notes": ["Parts span multiple pages with nested chapters"]
+  }
+}
+
+EXAMPLE (found with flat structure):
+{
+  "toc_found": true,
+  "toc_page_range": {"start_page": 3, "end_page": 4},
+  "confidence": 0.92,
+  "search_strategy_used": "grep_report",
+  "reasoning": "Grep found ToC keywords. Visual confirmation shows flat chapter list, all entries at same indentation level with page numbers.",
+  "structure_summary": {
+    "total_levels": 1,
+    "level_patterns": {
+      "1": {
+        "visual": "Flush left, consistent spacing",
+        "numbering": "Sequential arabic (1-12)",
+        "has_page_numbers": true,
+        "semantic_type": "chapter"
+      }
+    },
+    "consistency_notes": ["Simple flat structure, no hierarchy"]
+  }
 }
 
 EXAMPLE (not found):
@@ -198,7 +258,8 @@ EXAMPLE (not found):
   "toc_page_range": null,
   "confidence": 0.85,
   "search_strategy_used": "not_found",
-  "reasoning": "Grep found no ToC keywords in scanned pages. Visually scanned front matter region. No pages show ToC structure. Book appears to lack formal table of contents."
+  "reasoning": "Grep found no ToC keywords. Visually scanned front matter. No ToC structure detected.",
+  "structure_summary": null
 }
 </output_requirements>
 """
@@ -217,7 +278,11 @@ WORKFLOW:
    - STRUCTURE: Alignment, indentation levels, leader dots, hierarchy
    - NUMBERING: Document numbering patterns observed (Roman vs Arabic, sequential ranges)
    - AVOID chapter titles: Don't write specific chapter names/titles
-3. write_toc_result() - Write findings (structure auto-compiled from your observations)
+3. Synthesize GLOBAL STRUCTURE - After finding ToC range:
+   - How many hierarchy levels? (1, 2, or 3)
+   - What defines each level? (visual, numbering, page numbers, semantic type)
+   - Build structure_summary for Phase 2
+4. write_toc_result() - Write findings with structure_summary
 
-Your observations guide Phase 2 extraction. Document HOW entries are formatted (structure/numbering), NOT the actual titles (content). Phase 2 extracts titles.
+Your page observations capture page-specific details. Your structure_summary provides global context for Phase 2 to extract entries consistently across all pages.
 """

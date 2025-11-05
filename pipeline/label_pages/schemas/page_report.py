@@ -3,28 +3,25 @@ from pydantic import BaseModel, Field
 
 
 class LabelPagesPageReport(BaseModel):
-    """Report schema for label-pages output - human-readable summary."""
+    """Simplified report schema for label-pages output - human-readable summary."""
 
     page_num: int = Field(..., ge=1, description="Scan page number")
 
-    # Page number metadata
-    printed_page_number: Optional[str] = Field(None, description="Printed page number ('ix', '45', None)")
-    numbering_style: str = Field(..., description="Numbering style (roman/arabic/none)")
-    page_number_location: str = Field(..., description="Location (header/footer/none)")
-
-    # Page region
-    page_region: str = Field(..., description="Book region (front_matter/body/back_matter)")
-
-    # Structural boundary
+    # BOUNDARY DETECTION (primary signal)
     is_boundary: bool = Field(..., description="Is this a structural boundary?")
-    boundary_type: Optional[str] = Field(None, description="Suggested type (part/chapter/section)")
+    boundary_conf: float = Field(..., ge=0.0, le=1.0, description="Boundary confidence")
+
+    # HEADING INFO (if boundary detected)
+    heading_text: Optional[str] = Field(None, description="Extracted heading text")
+    heading_type: Optional[str] = Field(None, description="Suggested type (chapter/part/section/etc)")
+    type_conf: float = Field(0.0, ge=0.0, le=1.0, description="Type confidence")
+
+    # VISUAL SIGNALS
     whitespace: str = Field(..., description="Whitespace amount (minimal/moderate/extensive)")
     heading_size: str = Field(..., description="Heading size (none/small/medium/large/very_large)")
+    heading_visible: bool = Field(..., description="Is heading visible?")
 
-    # Content flags
-    has_toc: bool = Field(..., description="Contains table of contents?")
-
-    # Confidence indicators
-    page_num_conf: float = Field(..., ge=0.0, le=1.0, description="Page number confidence")
-    region_conf: float = Field(..., ge=0.0, le=1.0, description="Region confidence")
-    boundary_conf: float = Field(..., ge=0.0, le=1.0, description="Boundary confidence")
+    # TEXTUAL SIGNALS
+    starts_with_heading: bool = Field(..., description="OCR starts with heading?")
+    appears_to_continue: bool = Field(..., description="Text continues from previous page?")
+    first_line: str = Field(..., description="First line of OCR text (preview)")

@@ -350,43 +350,6 @@ class BookStorage:
             metadata.update(updates)
             self._save_metadata_unsafe(metadata)
 
-    def load_selected_ocr(self, page_num: int):
-
-        from pipeline.ocr.schemas import OCRPageOutput
-
-        selection_file = self.stage('ocr').output_dir / 'psm_selection.json'
-
-        if not selection_file.exists():
-            raise FileNotFoundError(
-                f"PSM selection file not found: {selection_file}. "
-                f"OCR stage must complete vision selection first."
-            )
-
-        with open(selection_file) as f:
-            selection_data = json.load(f)
-
-        page_selections = selection_data.get('page_selections', {})
-        selected_psm = page_selections.get(str(page_num))
-
-        if selected_psm is None:
-            raise ValueError(
-                f"No PSM selection found for page {page_num}. "
-                f"Available pages: {sorted([int(p) for p in page_selections.keys()])[:10]}"
-            )
-
-        ocr_file = self.stage('ocr').output_dir / f'psm{selected_psm}' / f'page_{page_num:04d}.json'
-
-        if not ocr_file.exists():
-            raise FileNotFoundError(
-                f"OCR file not found: {ocr_file}. "
-                f"PSM {selected_psm} was selected but file is missing."
-            )
-
-        with open(ocr_file) as f:
-            ocr_data = json.load(f)
-
-        return OCRPageOutput(**ocr_data)
-
     def validate_book(self) -> Dict[str, bool]:
 
         source_stage = self.stage('source')

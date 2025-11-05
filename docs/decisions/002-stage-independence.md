@@ -49,9 +49,9 @@ Small tools that:
 - Work together naturally
 
 ```
-source → OCR → paragraph-correct → label-pages → extract-toc
-        ↓     ↓                   ↓               ↓
-      files files               files          files
+source → tesseract → ocr-pages → label-pages → find-toc → extract-toc
+        ↓           ↓            ↓              ↓          ↓
+      files       files        files          files      files
 ```
 
 Each arrow is the filesystem. Each stage is a tool.
@@ -60,38 +60,38 @@ Each arrow is the filesystem. Each stage is a tool.
 
 **Read from dependencies:**
 ```python
-# In paragraph_correct/storage.py
+# In label_pages/storage.py
 def load_ocr_page(self, storage: BookStorage, page_num: int):
-    from pipeline.ocr.storage import OCRStageStorage
-    ocr_storage = OCRStageStorage(stage_name='ocr')
-    return ocr_storage.load_selected_page(storage, page_num)
+    from pipeline.ocr_pages.storage import OcrPagesStorage
+    ocr_storage = OcrPagesStorage(stage_name='ocr-pages')
+    return ocr_storage.load_page(storage, page_num)
 ```
 
 **Declare dependencies:**
 ```python
-# In paragraph_correct/__init__.py
-class ParagraphCorrectStage(BaseStage):
-    name = "paragraph-correct"
-    dependencies = ["ocr", "source"]  # Explicit declaration
+# In label_pages/__init__.py
+class LabelPagesStage(BaseStage):
+    name = "label-pages"
+    dependencies = ["ocr-pages", "source"]  # Explicit declaration
 ```
 
 **Write to own directory:**
 ```python
 # Each stage writes to storage.stage(self.name).output_dir
-stage_storage = storage.stage("paragraph-correct")
-stage_storage.save_page(page_num, corrected_data, schema=PageOutput)
+stage_storage = storage.stage("label-pages")
+stage_storage.save_page(page_num, labeled_data, schema=PageOutput)
 ```
 
 **Check dependency status before running:**
 ```python
 # In extract_toc/__init__.py run() method
-from pipeline.paragraph_correct import ParagraphCorrectStage
+from pipeline.label_pages import LabelPagesStage
 
-para_correct_stage = ParagraphCorrectStage()
-para_status = para_correct_stage.get_status(storage, logger)
+label_stage = LabelPagesStage()
+label_status = label_stage.get_status(storage, logger)
 
-if para_status["status"] != "completed":
-    raise RuntimeError("paragraph-correct must complete before extract-toc")
+if label_status["status"] != "completed":
+    raise RuntimeError("label-pages must complete before extract-toc")
 ```
 
 This pattern ties to **ADR 001 (Ground Truth from Disk)**:

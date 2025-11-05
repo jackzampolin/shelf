@@ -52,26 +52,84 @@ class LibraryStorage:
             return None
 
     def _get_pipeline_status(self, scan_id: str) -> Dict[str, str]:
+        """
+        Scan book directory for stage outputs and determine status.
 
-        status = {}
-        for stage_name in ['ocr', 'corrected', 'labels', 'merged']:
-            status[stage_name] = 'not_started'
-        return status
-
-    def _calculate_book_cost(self, scan_id: str) -> float:
-
+        Returns status dict by discovering existing stage directories
+        rather than hardcoding stage names.
+        """
         from infra.storage.book_storage import BookStorage
 
         storage = self.get_book_storage(scan_id)
+        book_dir = self.storage_root / scan_id
+        status = {}
+
+        if not book_dir.exists():
+            return status
+
+        # Scan for stage directories (any dir except source, logs, etc.)
+        for item in book_dir.iterdir():
+            if not item.is_dir():
+                continue
+            if item.name in ['source', 'logs', '.git']:
+                continue
+            if item.name.startswith('.'):
+                continue
+
+            # This is a stage directory
+            stage_name = item.name
+
+            # Check if it has outputs (not just empty or logs-only)
+            has_output = False
+            if item.exists():
+                contents = [
+                    p for p in item.iterdir()
+                    if p.name != 'logs' and p.name != '.gitkeep'
+                ]
+                has_output = len(contents) > 0
+
+            status[stage_name] = 'in_progress' if has_output else 'not_started'
+
+        return status
+
+    def _calculate_book_cost(self, scan_id: str) -> float:
+        """
+        Calculate total cost by scanning book directory for stage metrics.
+
+        Discovers stages dynamically rather than hardcoding stage names.
+        """
+        book_dir = self.storage_root / scan_id
         total_cost = 0.0
 
-        for stage_name in ['ocr', 'corrected', 'labels', 'merged']:
-            stage_storage = storage.stage(stage_name)
-            metrics_file = stage_storage.output_dir / 'metrics.json'
+        if not book_dir.exists():
+            return total_cost
 
+        # Scan for stage directories (any dir except source, logs, etc.)
+        for item in book_dir.iterdir():
+            if not item.is_dir():
+                continue
+            if item.name in ['source', 'logs', '.git']:
+                continue
+            if item.name.startswith('.'):
+                continue
+
+            # Check if this stage has metrics
+            metrics_file = item / 'metrics.json'
             if metrics_file.exists():
-                stage_cost = stage_storage.metrics_manager.get_total_cost()
-                total_cost += stage_cost
+                try:
+                    # Read metrics directly without creating StageStorage
+                    # (avoid creating directories via storage.stage())
+                    import json
+                    with open(metrics_file) as f:
+                        metrics_data = json.load(f)
+
+                    # Sum all cost_usd values from metrics
+                    for key, data in metrics_data.items():
+                        if isinstance(data, dict):
+                            total_cost += data.get('cost_usd', 0.0)
+                except Exception:
+                    # Skip malformed metrics files
+                    pass
 
         return total_cost
 

@@ -1,62 +1,51 @@
-from typing import Optional, Literal
+from typing import Optional
 from pydantic import BaseModel, Field
 
-from ..stage1.schemas import StructuralBoundary
-
-PageRegion = Literal["front_matter", "body", "back_matter"]
+from ..stage1.schemas import VisualSignals, TextualSignals, HeadingInfo
 
 
 class LabelPagesPageOutput(BaseModel):
-    """Page-level structural metadata for ToC validation.
+    """Simplified page-level structural metadata.
 
-    Focus: Structural information (page numbers, regions, boundaries)
-    not block-level content classification.
+    Focus: Is this page a structural boundary (chapter/part/section start)?
+    Uses vision + OCR text for accurate detection.
     """
 
     page_number: int = Field(..., ge=1, description="Scan page number")
 
-    # PAGE NUMBER METADATA
-    printed_page_number: Optional[str] = Field(
+    # BOUNDARY DETECTION (simplified)
+    is_boundary: bool = Field(
+        ...,
+        description="Is this page a structural boundary (chapter/part/section start)?"
+    )
+
+    boundary_confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Overall confidence in boundary detection"
+    )
+
+    # SIGNALS (for debugging/verification)
+    visual_signals: VisualSignals = Field(
+        ...,
+        description="Visual indicators from the scanned image"
+    )
+
+    textual_signals: TextualSignals = Field(
+        ...,
+        description="Textual indicators from OCR extraction"
+    )
+
+    # HEADING INFO (if boundary detected)
+    heading_info: Optional[HeadingInfo] = Field(
         None,
-        description="Printed page number as shown on page (e.g., 'ix', '45', None if unnumbered)"
-    )
-    numbering_style: Literal["roman", "arabic", "none"] = Field(
-        ...,
-        description="Style of page numbering detected"
-    )
-    page_number_location: Literal["header", "footer", "none"] = Field(
-        ...,
-        description="Where the page number appears on the page"
-    )
-    page_number_confidence: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Confidence in page number extraction"
+        description="Heading information if is_boundary=true"
     )
 
-    # PAGE REGION
-    page_region: PageRegion = Field(
+    reasoning: str = Field(
         ...,
-        description="Book region: front_matter, body, or back_matter"
-    )
-    page_region_confidence: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Confidence in region classification"
-    )
-
-    # STRUCTURAL BOUNDARY (descriptive, not hierarchical)
-    structural_boundary: StructuralBoundary = Field(
-        ...,
-        description="Visual and semantic description of structural boundaries"
-    )
-
-    # CONTENT FLAGS
-    has_table_of_contents: bool = Field(
-        ...,
-        description="True if this page contains table of contents"
+        description="Brief explanation of the boundary detection decision"
     )
 
     # METADATA

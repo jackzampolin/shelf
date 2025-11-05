@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from infra.storage.book_storage import BookStorage
 from infra.llm.agent import AgentClient
 from infra.utils.pdf import downsample_for_vision
-from ..schemas import PageRange
+from ..schemas import PageRange, StructureSummary
 from ..tools.grep_report import generate_grep_report, summarize_grep_report
 
 
@@ -26,6 +26,7 @@ class TocFinderResult(BaseModel):
     total_reasoning_tokens: int = 0
     reasoning: str
     structure_notes: Optional[Dict[int, str]] = None
+    structure_summary: Optional[StructureSummary] = None
 
 
 class TocFinderTools:
@@ -78,7 +79,7 @@ class TocFinderTools:
                 "type": "function",
                 "function": {
                     "name": "write_toc_result",
-                    "description": "Write final ToC search result and complete the task. Your page observations will be automatically compiled into structure_notes to guide Phase 2 extraction.",
+                    "description": "Write final ToC search result and complete the task. Your page observations will be automatically compiled into structure_notes. If ToC found, provide structure_summary with global hierarchy analysis.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -108,6 +109,38 @@ class TocFinderTools:
                             "reasoning": {
                                 "type": "string",
                                 "description": "1-2 sentence explanation of grep hints + what you saw in images"
+                            },
+                            "structure_summary": {
+                                "type": "object",
+                                "description": "Global structure analysis (REQUIRED if toc_found=true, null otherwise)",
+                                "properties": {
+                                    "total_levels": {
+                                        "type": "integer",
+                                        "description": "Total hierarchy levels (1, 2, or 3)",
+                                        "minimum": 1,
+                                        "maximum": 3
+                                    },
+                                    "level_patterns": {
+                                        "type": "object",
+                                        "description": "Visual/structural patterns for each level (keys: '1', '2', '3')",
+                                        "additionalProperties": {
+                                            "type": "object",
+                                            "properties": {
+                                                "visual": {"type": "string", "description": "Visual characteristics (indentation, styling)"},
+                                                "numbering": {"type": "string", "description": "Numbering scheme (Roman, Arabic, decimal, letters, or null)"},
+                                                "has_page_numbers": {"type": "boolean", "description": "Whether entries at this level have page numbers"},
+                                                "semantic_type": {"type": "string", "description": "Semantic type: volume, book, part, unit, chapter, section, subsection, act, scene, appendix, or null"}
+                                            },
+                                            "required": ["visual", "has_page_numbers"]
+                                        }
+                                    },
+                                    "consistency_notes": {
+                                        "type": "array",
+                                        "description": "Notes about structural consistency or variations",
+                                        "items": {"type": "string"}
+                                    }
+                                },
+                                "required": ["total_levels", "level_patterns"]
                             }
                         },
                         "required": ["toc_found", "confidence", "search_strategy_used", "reasoning"]
@@ -130,7 +163,8 @@ class TocFinderTools:
                 toc_page_range=arguments.get("toc_page_range"),
                 confidence=arguments["confidence"],
                 search_strategy_used=arguments["search_strategy_used"],
-                reasoning=arguments["reasoning"]
+                reasoning=arguments["reasoning"],
+                structure_summary=arguments.get("structure_summary")
             )
         else:
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
@@ -204,7 +238,8 @@ class TocFinderTools:
         toc_page_range: Optional[Dict],
         confidence: float,
         search_strategy_used: str,
-        reasoning: str
+        reasoning: str,
+        structure_summary: Optional[Dict] = None
     ) -> str:
         try:
             structure_notes = None
@@ -221,13 +256,34 @@ class TocFinderTools:
                     end_page=toc_page_range["end_page"]
                 )
 
+            # Validate and construct structure_summary if provided
+            from ..schemas import StructureSummary, LevelPattern
+            structure_summary_obj = None
+            if structure_summary:
+                try:
+                    # Convert level_patterns dict with string keys to proper structure
+                    level_patterns_dict = {}
+                    for level_key, pattern_data in structure_summary.get("level_patterns", {}).items():
+                        level_patterns_dict[int(level_key)] = LevelPattern(**pattern_data)
+
+                    structure_summary_obj = StructureSummary(
+                        total_levels=structure_summary["total_levels"],
+                        level_patterns=level_patterns_dict,
+                        consistency_notes=structure_summary.get("consistency_notes", [])
+                    )
+                except Exception as e:
+                    return json.dumps({
+                        "error": f"Invalid structure_summary format: {str(e)}. Please provide total_levels, level_patterns with visual, has_page_numbers, and optional numbering/semantic_type for each level."
+                    })
+
             self._pending_result = TocFinderResult(
                 toc_found=toc_found,
                 toc_page_range=page_range,
                 confidence=confidence,
                 search_strategy_used=search_strategy_used,
                 reasoning=reasoning,
-                structure_notes=structure_notes
+                structure_notes=structure_notes,
+                structure_summary=structure_summary_obj
             )
 
             result_summary = {
@@ -238,6 +294,9 @@ class TocFinderTools:
 
             if structure_notes:
                 result_summary["structure_notes_compiled"] = f"from {len(self._page_observations)} page observations"
+
+            if structure_summary_obj:
+                result_summary["structure_summary_compiled"] = f"{structure_summary_obj.total_levels} levels analyzed"
 
             return json.dumps({
                 "success": True,

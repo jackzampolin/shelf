@@ -13,6 +13,70 @@ from pathlib import Path
 from infra.storage.book_storage import BookStorage
 
 
+def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) -> bool:
+    """
+    Check if a stage is completed based on its specific completion markers.
+
+    Each stage has different completion criteria:
+    - tesseract: All source pages have corresponding output files
+    - ocr-pages: All source pages have corresponding output files
+    - find-toc: finder_result.json exists
+    - extract-toc: toc_validated.json exists
+    - label-pages: report.csv exists
+    """
+    if stage_name == 'tesseract':
+        # Check if all source pages have tesseract outputs
+        source_stage = storage.stage("source")
+        source_pages = source_stage.list_output_pages(extension="png")
+        total_pages = len(source_pages)
+
+        if total_pages == 0:
+            return False
+
+        # Count completed pages
+        completed = 0
+        for page_num in range(1, total_pages + 1):
+            page_path = stage_storage.output_dir / f"page_{page_num:04d}.json"
+            if page_path.exists():
+                completed += 1
+
+        return completed == total_pages
+
+    elif stage_name == 'ocr-pages':
+        # Check if all source pages have ocr-pages outputs
+        source_stage = storage.stage("source")
+        source_pages = source_stage.list_output_pages(extension="png")
+        total_pages = len(source_pages)
+
+        if total_pages == 0:
+            return False
+
+        # Count completed pages
+        completed = 0
+        for page_num in range(1, total_pages + 1):
+            page_path = stage_storage.output_dir / f"page_{page_num:04d}.json"
+            if page_path.exists():
+                completed += 1
+
+        return completed == total_pages
+
+    elif stage_name == 'find-toc':
+        # Complete when finder_result.json exists
+        return (stage_storage.output_dir / 'finder_result.json').exists()
+
+    elif stage_name == 'extract-toc':
+        # Complete when toc.json exists
+        return (stage_storage.output_dir / 'toc.json').exists()
+
+    elif stage_name == 'label-pages':
+        # Complete when report.csv exists
+        return (stage_storage.output_dir / 'report.csv').exists()
+
+    else:
+        # Unknown stage - check for report.csv as fallback
+        return (stage_storage.output_dir / 'report.csv').exists()
+
+
 def get_stage_status_from_disk(storage: BookStorage, stage_name: str) -> Optional[Dict[str, Any]]:
     """
     Read stage status directly from MetricsManager without instantiating Stage.
@@ -32,14 +96,8 @@ def get_stage_status_from_disk(storage: BookStorage, stage_name: str) -> Optiona
     if not stage_storage.output_dir.exists():
         return None
 
-    # Check for completion markers first
-    completed = False
-    if stage_name == 'ocr':
-        # OCR is complete when selection_map.json exists
-        completed = (stage_storage.output_dir / 'selection_map.json').exists()
-    else:
-        # Other stages complete when report.csv exists
-        completed = (stage_storage.output_dir / 'report.csv').exists()
+    # Check for completion markers (each stage has different markers)
+    completed = _is_stage_completed(storage, stage_name, stage_storage)
 
     # Try to get metrics from MetricsManager
     total_cost = 0.0

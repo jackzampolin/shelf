@@ -11,10 +11,10 @@ def generate_report(
     report_schema,
     stage_name: str,
 ):
-    """Generate CSV report summarizing page-level structural metadata.
+    """Generate CSV report summarizing structural boundary detection.
 
-    Shows: page numbers, regions, boundaries, confidence scores.
-    Useful for: validating ToC, checking page number sequences, spotting issues.
+    Shows: boundary status, confidence, visual/textual signals, heading info.
+    Useful for: validating ToC entries, checking boundary detection accuracy.
     """
     logger.info("Generating report.csv from page outputs")
 
@@ -35,24 +35,25 @@ def generate_report(
             if not page_data:
                 continue
 
-            # Extract structural boundary data
-            boundary = page_data.get('structural_boundary', {})
+            # Extract signals
+            visual = page_data.get('visual_signals', {})
+            textual = page_data.get('textual_signals', {})
+            heading = page_data.get('heading_info') or {}
 
             # Build report row
             report_row = report_schema(
                 page_num=page_num,
-                printed_page_number=page_data.get('printed_page_number'),
-                numbering_style=page_data.get('numbering_style', 'none'),
-                page_number_location=page_data.get('page_number_location', 'none'),
-                page_region=page_data.get('page_region', 'body'),
-                is_boundary=boundary.get('is_boundary', False),
-                boundary_type=boundary.get('suggested_type'),
-                whitespace=boundary.get('whitespace_amount', 'minimal'),
-                heading_size=boundary.get('heading_size', 'none'),
-                has_toc=page_data.get('has_table_of_contents', False),
-                page_num_conf=page_data.get('page_number_confidence', 1.0),
-                region_conf=page_data.get('page_region_confidence', 0.5),
-                boundary_conf=boundary.get('boundary_confidence', 0.0),
+                is_boundary=page_data.get('is_boundary', False),
+                boundary_conf=page_data.get('boundary_confidence', 0.0),
+                heading_text=heading.get('heading_text'),
+                heading_type=heading.get('suggested_type'),
+                type_conf=heading.get('type_confidence', 0.0),
+                whitespace=visual.get('whitespace_amount', 'minimal'),
+                heading_size=visual.get('heading_size', 'none'),
+                heading_visible=visual.get('heading_visible', False),
+                starts_with_heading=textual.get('starts_with_heading', False),
+                appears_to_continue=textual.get('appears_to_continue', False),
+                first_line=textual.get('first_line_preview', '')[:50],  # Truncate for CSV
             )
             report_rows.append(report_row.model_dump())
         except Exception as e:

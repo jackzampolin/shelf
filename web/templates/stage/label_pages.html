@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}{{ scan_id }} - Label Pages{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/stage.css') }}">
+<style>
+    .report-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 2rem;
+        background: white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .report-table thead {
+        background: #f5f5f5;
+        border-bottom: 2px solid #e0e0e0;
+    }
+
+    .report-table th {
+        padding: 0.75rem;
+        text-align: left;
+        font-weight: 600;
+        color: #333;
+        font-size: 0.9rem;
+        border-right: 1px solid #e0e0e0;
+    }
+
+    .report-table th:last-child {
+        border-right: none;
+    }
+
+    .report-table tbody tr {
+        border-bottom: 1px solid #e0e0e0;
+        transition: background-color 0.2s;
+    }
+
+    .report-table tbody tr:hover {
+        background-color: #f9f9f9;
+    }
+
+    .report-table td {
+        padding: 0.75rem;
+        font-size: 0.9rem;
+        border-right: 1px solid #f0f0f0;
+    }
+
+    .report-table td:last-child {
+        border-right: none;
+    }
+
+    .page-link {
+        color: #0066cc;
+        text-decoration: none;
+        font-weight: 600;
+    }
+
+    .page-link:hover {
+        text-decoration: underline;
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 500;
+    }
+
+    .badge-region-front {
+        background: #e3f2fd;
+        color: #1976d2;
+    }
+
+    .badge-region-body {
+        background: #f3e5f5;
+        color: #7b1fa2;
+    }
+
+    .badge-region-back {
+        background: #fff3e0;
+        color: #f57c00;
+    }
+
+    .badge-boundary {
+        background: #ffebee;
+        color: #c62828;
+        margin-left: 0.25rem;
+    }
+
+    .badge-toc {
+        background: #e8f5e9;
+        color: #2e7d32;
+        margin-left: 0.25rem;
+    }
+
+    .numbering-style {
+        font-family: monospace;
+        color: #666;
+    }
+
+    .confidence-high {
+        color: #2e7d32;
+        font-weight: 600;
+    }
+
+    .confidence-med {
+        color: #f57c00;
+    }
+
+    .confidence-low {
+        color: #c62828;
+    }
+
+    .text-muted {
+        color: #999;
+        font-style: italic;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-wide">
+    <!-- Header -->
+    <div class="stage-header">
+        <div class="breadcrumb">
+            <a href="/">← Library</a>
+            <span class="separator">/</span>
+            <span>{{ scan_id }}</span>
+            <span class="separator">/</span>
+            <span class="current">label-pages</span>
+        </div>
+
+        <h2>📋 Page Labels</h2>
+
+        <div class="book-info">
+            <strong>{{ metadata.title }}</strong>
+            {% if metadata.author %}
+                <span class="author">by {{ metadata.author }}</span>
+            {% endif %}
+            {% if metadata.year %}
+                <span class="year">({{ metadata.year }})</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Report Table -->
+    <table class="report-table">
+        <thead>
+            <tr>
+                <th>Page</th>
+                <th>Printed #</th>
+                <th>Style</th>
+                <th>Location</th>
+                <th>Region</th>
+                <th>Boundary</th>
+                <th>Whitespace</th>
+                <th>Heading</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in report %}
+            <tr>
+                <!-- Page Number -->
+                <td>{{ row.page_num }}</td>
+
+                <!-- Printed Page Number -->
+                <td>
+                    {% if row.printed_page_number %}
+                        <span class="numbering-style">{{ row.printed_page_number }}</span>
+                    {% else %}
+                        <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+
+                <!-- Numbering Style -->
+                <td>
+                    {% if row.numbering_style != 'none' %}
+                        <span class="numbering-style">{{ row.numbering_style }}</span>
+                    {% else %}
+                        <span class="text-muted">none</span>
+                    {% endif %}
+                </td>
+
+                <!-- Page Number Location -->
+                <td>
+                    {% if row.page_number_location != 'none' %}
+                        {{ row.page_number_location }}
+                    {% else %}
+                        <span class="text-muted">none</span>
+                    {% endif %}
+                </td>
+
+                <!-- Page Region -->
+                <td>
+                    {% if row.page_region == 'front_matter' %}
+                        <span class="badge badge-region-front">Front</span>
+                    {% elif row.page_region == 'body' %}
+                        <span class="badge badge-region-body">Body</span>
+                    {% elif row.page_region == 'back_matter' %}
+                        <span class="badge badge-region-back">Back</span>
+                    {% endif %}
+
+                    {% if row.has_toc %}
+                        <span class="badge badge-toc">TOC</span>
+                    {% endif %}
+                </td>
+
+                <!-- Boundary -->
+                <td>
+                    {% if row.is_boundary %}
+                        {% if row.boundary_type %}
+                            <span class="badge badge-boundary">{{ row.boundary_type }}</span>
+                        {% else %}
+                            <span class="badge badge-boundary">boundary</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+
+                <!-- Whitespace -->
+                <td>{{ row.whitespace }}</td>
+
+                <!-- Heading Size -->
+                <td>{{ row.heading_size }}</td>
+
+                <!-- Actions -->
+                <td>
+                    <a href="{{ url_for('stage.label_pages_page_view', scan_id=scan_id, page_num=row.page_num) }}" class="page-link">
+                        View →
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
