@@ -92,6 +92,8 @@ class RequestExecutor:
             )
 
         except json.JSONDecodeError as e:
+            execution_time = time.time() - start_time
+
             will_retry = request._retry_count < self.max_retries
             log_message = f"JSON parsing failed: {request.id}"
             if will_retry:
@@ -118,8 +120,6 @@ class RequestExecutor:
                     queue_time_seconds=queue_time,
                     execution_time_seconds=execution_time
                 )
-
-            execution_time = time.time() - start_time
             return LLMResult(
                 request_id=request.id,
                 success=False,
