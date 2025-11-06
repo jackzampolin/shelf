@@ -10,11 +10,24 @@ from .schemas import Stage1LLMResponse
 
 
 def prepare_stage1_request(
-    page_num: int,
+    item: int,
     storage: BookStorage,
     model: str,
     total_pages: int,
 ) -> Optional[LLMRequest]:
+    """
+    Build LLMRequest for one page.
+
+    Args:
+        item: Page number to process
+        storage: BookStorage (from closure)
+        model: Model name
+        total_pages: Total page count for position calculation
+
+    Returns:
+        LLMRequest for this page
+    """
+    page_num = item  # 'item' is page number for this stage
     source_stage = storage.stage('source')
     ocr_pages_stage = storage.stage('ocr-pages')
 

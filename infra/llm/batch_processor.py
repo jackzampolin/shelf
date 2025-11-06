@@ -1,33 +1,45 @@
 #!/usr/bin/env python3
 """
-Simplified LLM batch processor - pure orchestration layer.
+Clean LLM batch processor with integrated request preparation.
 
-Provides:
-- Parallel LLM execution with retries
-- Progress bar with token/cost tracking
-- Event callbacks for result handling
-- Aggregate batch statistics
+Interface:
+    processor = LLMBatchProcessor(
+        storage=storage,           # Single source of truth
+        stage_name="label-pages",  # For log directory
+        logger=logger,
+        config=LLMBatchConfig(
+            model="grok-4-fast",
+            max_workers=10,
+            max_retries=3,
+            batch_name="Stage 1"   # For display (useful with multi-processor stages)
+        )
+    )
 
-Callers handle:
-- Result parsing
-- Persistence (files, etc.)
-- Schema validation
-- Error recovery
+    stats = processor.process(
+        items=remaining_pages,           # Generic: pages, chunks, docs
+        request_builder=build_request,   # (item, **kwargs) -> LLMRequest
+        result_handler=handle_result,    # (result: LLMResult) -> None
+        # kwargs passed to request_builder:
+        model=self.model,
+        total_items=total_pages
+    )
 
-This separation makes the processor reusable across any LLM batch workflow,
-not just page-based pipeline stages.
+Request builder gets storage from closure (doesn't need to be passed).
 """
 
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Callable, Optional
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from rich.console import Console
 
 from infra.llm.batch import LLMBatchClient
 from infra.llm.models import LLMRequest, LLMResult
 from infra.llm.display_format import format_batch_summary
 from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.rich_progress import RichProgressBarHierarchical
+from infra.storage.book_storage import BookStorage
 from infra.config import Config
 
 
@@ -36,121 +48,73 @@ class LLMBatchConfig:
     """
     Configuration for LLM batch processing.
 
-    Encapsulates all settings needed to configure an LLMBatchProcessor instance.
-    This makes it easy to see what parameters are required and provides a clean
-    interface for stage implementations.
+    Attributes:
+        model: OpenRouter model name (e.g., "grok-4-fast")
+        max_workers: Thread pool size (default: Config.max_workers)
+        max_retries: Max retry attempts per request
+        retry_jitter: (min, max) seconds between retries
+        verbose: Enable per-request streaming events
+        batch_name: Display name for progress (useful for multi-processor stages)
     """
     model: str
-    max_workers: Optional[int] = None  # Default: Config.max_workers
+    max_workers: Optional[int] = None
     max_retries: int = 3
     retry_jitter: tuple = (1.0, 3.0)
     verbose: bool = True
-    batch_name: str = "LLM"  # Display name for progress/summary
+    batch_name: str = "LLM Batch"
 
 
 class LLMBatchProcessor:
     """
-    Simplified LLM batch processor - pure orchestration.
+    Clean LLM batch processor with integrated request preparation.
 
     Responsibilities:
-    - Parallel LLM execution with retries
-    - Progress tracking with token/cost display
-    - Event callbacks for lifecycle hooks
+    - Parallel request preparation (load data for all items concurrently)
+    - Parallel LLM execution with retries and rate limiting
+    - Progress tracking with cost/token/throughput display
+    - Metrics recording to storage
 
     Caller responsibilities:
-    - Parse and validate results
-    - Persist outputs (files, database, etc.)
-    - Handle errors and retries
-    - Update application state
+    - Build LLMRequest for each item (request_builder)
+    - Handle results: parse, validate, persist (result_handler)
 
-    Usage:
-        config = LLMBatchConfig(model="grok-4-fast")
-        processor = LLMBatchProcessor(
-            logger=logger,
-            log_dir=Path("logs/"),
-            config=config,
-        )
-
-        def handle_result(result: LLMResult):
-            if result.success:
-                data = parse_my_data(result.parsed_json)
-                save_to_disk(data)
-            else:
-                logger.error(f"Failed: {result.error_message}")
-
-        stats = processor.process_batch(
-            requests=requests,
-            on_result=handle_result,
-        )
-
-        # stats contains: completed, failed, total_cost_usd, total_tokens, etc.
+    Thread Safety:
+    All state managed by LLMBatchClient (thread-safe).
     """
 
     def __init__(
         self,
+        storage: BookStorage,
+        stage_name: str,
         logger: PipelineLogger,
-        log_dir: Path,
-        config: Optional[LLMBatchConfig] = None,
-        metrics_manager=None,  # Optional MetricsManager for progress bar display
-        checkpoint=None,  # Deprecated, ignored
-        # Legacy parameters (for backward compatibility)
-        model: Optional[str] = None,
-        max_workers: Optional[int] = None,
-        max_retries: Optional[int] = None,
-        retry_jitter: Optional[tuple] = None,
-        verbose: Optional[bool] = None,
+        config: LLMBatchConfig,
     ):
         """
-        Initialize LLMBatchProcessor.
-
-        Supports two initialization patterns:
-
-        1. **New (recommended):** Use LLMBatchConfig
-           ```python
-           config = LLMBatchConfig(model="grok-4-fast", max_workers=10)
-           processor = LLMBatchProcessor(logger, log_dir, config=config)
-           ```
-
-        2. **Legacy:** Pass parameters directly (for backward compatibility)
-           ```python
-           processor = LLMBatchProcessor(logger, log_dir, model="grok-4-fast")
-           ```
+        Initialize batch processor.
 
         Args:
-            logger: PipelineLogger instance
-            log_dir: Directory for LLM request/response logs
-            config: LLMBatchConfig instance (recommended)
-            metrics_manager: Optional MetricsManager for real-time progress display
-            checkpoint: Deprecated, no longer used
-            model: OpenRouter model name (legacy, use config instead)
-            max_workers: Thread pool size (legacy, use config instead)
-            max_retries: Max retry attempts (legacy, use config instead)
-            retry_jitter: Retry delay range (legacy, use config instead)
-            verbose: Enable verbose logging (legacy, use config instead)
+            storage: BookStorage (single source of truth for metrics + logs)
+            stage_name: Stage name for log directory (e.g., "label-pages")
+            logger: Pipeline logger
+            config: Batch configuration
         """
+        self.storage = storage
+        self.stage_name = stage_name
         self.logger = logger
-        self.log_dir = log_dir
-        self.metrics_manager = metrics_manager
+        self.config = config
 
-        # Handle both config-based and legacy parameter-based initialization
-        if config is not None:
-            # New pattern: Use config object
-            self.model = config.model
-            self.max_workers = config.max_workers or Config.max_workers
-            self.max_retries = config.max_retries
-            self.retry_jitter = config.retry_jitter
-            self.verbose = config.verbose
-            self.batch_name = config.batch_name
-        else:
-            # Legacy pattern: Use individual parameters
-            if model is None:
-                raise ValueError("Either 'config' or 'model' must be provided")
-            self.model = model
-            self.max_workers = max_workers or Config.max_workers
-            self.max_retries = max_retries if max_retries is not None else 3
-            self.retry_jitter = retry_jitter if retry_jitter is not None else (1.0, 3.0)
-            self.verbose = verbose if verbose is not None else True
-            self.batch_name = "LLM"  # Default for legacy usage
+        # Extract config
+        self.model = config.model
+        self.max_workers = config.max_workers or Config.max_workers
+        self.max_retries = config.max_retries
+        self.retry_jitter = config.retry_jitter
+        self.verbose = config.verbose
+        self.batch_name = config.batch_name
+
+        # Derive from storage (single source of truth)
+        stage_storage = storage.stage(stage_name)
+        self.log_dir = stage_storage.output_dir / "logs" / "llmbatch"
+        self.metrics_manager = stage_storage.metrics_manager
 
         # Create log directory
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -164,45 +128,150 @@ class LLMBatchProcessor:
             log_dir=self.log_dir,
         )
 
-    def process_batch(
+    def process(
         self,
-        requests: List[LLMRequest],
-        on_result: Callable[[LLMResult], None],
+        items: List,
+        request_builder: Callable,
+        result_handler: Callable[[LLMResult], None],
+        **request_builder_kwargs
     ) -> Dict[str, Any]:
         """
-        Process a batch of LLM requests with progress tracking.
+        Process batch: prepare requests in parallel, execute with progress.
+
+        Two phases:
+        1. Preparation: Call request_builder for each item in parallel
+        2. Execution: Send prepared requests to LLM with retries
 
         Args:
-            requests: List of LLM requests to process
-            on_result: Callback for each completed request
-                      Signature: (result: LLMResult) -> None
-                      Caller handles parsing, validation, persistence
+            items: List of items to process (page numbers, chunk IDs, etc.)
+            request_builder: Build LLMRequest for one item
+                Signature: (item, **kwargs) -> LLMRequest or (LLMRequest, extra_data)
+                Gets storage from closure (no need to pass)
+            result_handler: Handle each completed request
+                Signature: (result: LLMResult) -> None
+                Caller handles: parsing, validation, persistence
+            **request_builder_kwargs: Passed to request_builder
+                Common: model, total_items, etc.
 
         Returns:
-            Stats dict with:
-            - completed: Number of successful requests
-            - failed: Number of failed requests
-            - total_cost_usd: Total cost in USD
-            - total_tokens: Total tokens processed
+            Stats dict:
+            - completed: Successful requests
+            - failed: Failed requests (after all retries)
+            - total_cost_usd: Total cost
+            - total_tokens: Total completion tokens
             - total_reasoning_tokens: Total reasoning tokens
-            - elapsed_seconds: Total elapsed time
+            - elapsed_seconds: Wall-clock time
             - batch_stats: Full BatchStats object
         """
-        if not requests:
-            return {
-                "completed": 0,
-                "failed": 0,
-                "total_cost_usd": 0.0,
-                "total_tokens": 0,
-                "total_reasoning_tokens": 0,
-                "elapsed_seconds": 0.0,
-                "batch_stats": None,
-            }
+        if not items:
+            self.logger.info(f"{self.batch_name}: No items to process")
+            return self._empty_stats()
 
-        self.logger.info(f"Processing {len(requests)} LLM requests...")
+        self.logger.info(f"{self.batch_name}: Processing {len(items)} items...")
         start_time = time.time()
 
-        # Create hierarchical progress bar
+        # Phase 1: Prepare requests in parallel
+        requests, extra_data = self._prepare_requests(
+            items, request_builder, **request_builder_kwargs
+        )
+
+        if not requests:
+            self.logger.error(f"{self.batch_name}: No valid requests prepared")
+            return self._empty_stats()
+
+        # Wrap result_handler to inject extra_data if present
+        wrapped_handler = self._wrap_handler(result_handler, extra_data)
+
+        # Phase 2: Execute batch with progress tracking
+        return self._execute_batch(requests, wrapped_handler, start_time, len(items))
+
+    def _prepare_requests(
+        self,
+        items: List,
+        request_builder: Callable,
+        **kwargs
+    ) -> tuple:
+        """
+        Prepare LLMRequests in parallel.
+
+        Returns:
+            Tuple of (requests, extra_data)
+        """
+        self.logger.info(f"{self.batch_name}: Preparing {len(items)} requests...")
+
+        prep_start = time.time()
+        prep_progress = RichProgressBarHierarchical(
+            total=len(items),
+            prefix="   ",
+            width=40,
+            unit="requests"
+        )
+        prep_progress.update(0, suffix="loading data...")
+
+        requests = []
+        extra_data = {}
+
+        def prepare_single(item):
+            """Prepare one request (called in parallel)."""
+            try:
+                result = request_builder(item=item, **kwargs)
+                # Handle both single return and tuple return
+                if isinstance(result, tuple):
+                    return result
+                return (result, None)
+            except Exception as e:
+                self.logger.warning(f"Failed to prepare item {item}", error=str(e))
+                return (None, None)
+
+        # Parallel preparation
+        prepared = 0
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = {executor.submit(prepare_single, item): item for item in items}
+            for future in as_completed(futures):
+                request, extra = future.result()
+                if request:
+                    requests.append(request)
+                    if extra:
+                        # Store by item identifier
+                        item_id = request.metadata.get('page_num') or request.metadata.get('item')
+                        if item_id:
+                            extra_data[item_id] = extra
+
+                prepared += 1
+                prep_progress.update(prepared, suffix=f"{prepared}/{len(items)} prepared")
+
+        prep_elapsed = time.time() - prep_start
+        prep_progress.finish(f"   ✓ Prepared {len(requests)} requests in {prep_elapsed:.1f}s")
+        self.logger.info(f"{self.batch_name}: Prepared {len(requests)}/{len(items)} requests")
+
+        return requests, extra_data
+
+    def _wrap_handler(
+        self,
+        result_handler: Callable,
+        extra_data: Dict
+    ) -> Callable:
+        """Wrap result_handler to inject extra_data if present."""
+        if not extra_data:
+            return result_handler
+
+        def wrapped(result: LLMResult):
+            item = result.request.metadata.get('page_num') or result.request.metadata.get('item')
+            if item and item in extra_data:
+                result.request.metadata['extra_data'] = extra_data[item]
+            result_handler(result)
+
+        return wrapped
+
+    def _execute_batch(
+        self,
+        requests: List[LLMRequest],
+        result_handler: Callable,
+        start_time: float,
+        total_items: int
+    ) -> Dict[str, Any]:
+        """Execute batch with progress tracking."""
+        # Create progress bar
         progress = RichProgressBarHierarchical(
             total=len(requests),
             prefix="   ",
@@ -220,67 +289,25 @@ class LLMBatchProcessor:
             metrics_manager=self.metrics_manager,
         )
 
-        # Execute batch (caller's on_result handles everything)
+        # Execute
         try:
             self.batch_client.process_batch(
                 requests,
                 on_event=on_event,
-                on_result=on_result,  # Caller handles parsing, validation, persistence
+                on_result=result_handler,
             )
         finally:
             # Get final stats
             elapsed = time.time() - start_time
             batch_stats = self.batch_client.get_batch_stats(total_requests=len(requests))
 
-            # Use cumulative metrics from MetricsManager if available (for stages with resume)
-            # This ensures the display shows total cost/tokens across ALL batches,
-            # not just the current batch (which may be a small resume).
-            # For time: Use wall-clock stage_runtime if available, else fall back to current batch elapsed.
-            # Otherwise fall back to batch_stats (for standalone LLM calls).
-            if self.metrics_manager:
-                cumulative = self.metrics_manager.get_cumulative_metrics()
-                display_completed = cumulative.get('total_requests', batch_stats.completed)
-                display_total = cumulative.get('total_requests', batch_stats.completed)  # After batch complete, completed == total
-                display_prompt_tokens = cumulative.get('total_prompt_tokens', batch_stats.total_prompt_tokens)
-                display_completion_tokens = cumulative.get('total_completion_tokens', batch_stats.total_tokens)
-                display_reasoning_tokens = cumulative.get('total_reasoning_tokens', batch_stats.total_reasoning_tokens)
-                display_cost = cumulative.get('total_cost_usd', batch_stats.total_cost_usd)
-
-                # Use wall-clock stage_runtime (not sum of individual request times)
-                runtime_metrics = self.metrics_manager.get("stage_runtime")
-                display_time = runtime_metrics.get("time_seconds", elapsed) if runtime_metrics else elapsed
-            else:
-                display_completed = batch_stats.completed
-                display_total = len(requests)
-                display_prompt_tokens = batch_stats.total_prompt_tokens
-                display_completion_tokens = batch_stats.total_tokens
-                display_reasoning_tokens = batch_stats.total_reasoning_tokens
-                display_cost = batch_stats.total_cost_usd
-                display_time = elapsed
-
-            summary_text = format_batch_summary(
-                batch_name=self.batch_name,
-                completed=display_completed,
-                total=display_total,
-                time_seconds=display_time,
-                prompt_tokens=display_prompt_tokens,
-                completion_tokens=display_completion_tokens,
-                reasoning_tokens=display_reasoning_tokens,
-                cost_usd=display_cost,
-                unit="requests"
-            )
-            # RichProgressBarHierarchical.finish() needs a string, so convert
-            from rich.console import Console
-            console = Console()
-            with console.capture() as capture:
-                console.print(summary_text)
-            progress.finish(capture.get().rstrip())
+            # Display summary (use cumulative metrics if available)
+            self._display_summary(progress, batch_stats, elapsed, total_items)
 
             self.logger.info(
-                f"Batch complete: {display_completed} completed, "
+                f"{self.batch_name} complete: {batch_stats.completed} completed, "
                 f"{batch_stats.failed} failed, "
-                f"${display_cost:.4f}, "
-                f"{display_completion_tokens} tokens"
+                f"${batch_stats.total_cost_usd:.4f}"
             )
 
         return {
@@ -293,8 +320,65 @@ class LLMBatchProcessor:
             "batch_stats": batch_stats,
         }
 
+    def _display_summary(
+        self,
+        progress: RichProgressBarHierarchical,
+        batch_stats,
+        elapsed: float,
+        total_items: int
+    ):
+        """Display final summary using cumulative metrics if available."""
+        # Use cumulative metrics from MetricsManager if available (for resume)
+        if self.metrics_manager:
+            cumulative = self.metrics_manager.get_cumulative_metrics()
+            display_completed = cumulative.get('total_requests', batch_stats.completed)
+            display_total = cumulative.get('total_requests', batch_stats.completed)
+            display_prompt_tokens = cumulative.get('total_prompt_tokens', batch_stats.total_prompt_tokens)
+            display_completion_tokens = cumulative.get('total_completion_tokens', batch_stats.total_tokens)
+            display_reasoning_tokens = cumulative.get('total_reasoning_tokens', batch_stats.total_reasoning_tokens)
+            display_cost = cumulative.get('total_cost_usd', batch_stats.total_cost_usd)
 
-# Re-export for backward compatibility
-from infra.llm.request_preparation import batch_process_with_preparation
+            # Use wall-clock stage_runtime (not sum of request times)
+            runtime_metrics = self.metrics_manager.get("stage_runtime")
+            display_time = runtime_metrics.get("time_seconds", elapsed) if runtime_metrics else elapsed
+        else:
+            display_completed = batch_stats.completed
+            display_total = len(total_items) if total_items else batch_stats.completed
+            display_prompt_tokens = batch_stats.total_prompt_tokens
+            display_completion_tokens = batch_stats.total_tokens
+            display_reasoning_tokens = batch_stats.total_reasoning_tokens
+            display_cost = batch_stats.total_cost_usd
+            display_time = elapsed
 
-__all__ = ['LLMBatchProcessor', 'LLMBatchConfig', 'batch_process_with_preparation']
+        summary_text = format_batch_summary(
+            batch_name=self.batch_name,
+            completed=display_completed,
+            total=display_total,
+            time_seconds=display_time,
+            prompt_tokens=display_prompt_tokens,
+            completion_tokens=display_completion_tokens,
+            reasoning_tokens=display_reasoning_tokens,
+            cost_usd=display_cost,
+            unit="requests"
+        )
+
+        # Convert Rich text to string for progress bar
+        console = Console()
+        with console.capture() as capture:
+            console.print(summary_text)
+        progress.finish(capture.get().rstrip())
+
+    def _empty_stats(self) -> Dict[str, Any]:
+        """Return empty stats dict."""
+        return {
+            "completed": 0,
+            "failed": 0,
+            "total_cost_usd": 0.0,
+            "total_tokens": 0,
+            "total_reasoning_tokens": 0,
+            "elapsed_seconds": 0.0,
+            "batch_stats": None,
+        }
+
+
+__all__ = ['LLMBatchProcessor', 'LLMBatchConfig']

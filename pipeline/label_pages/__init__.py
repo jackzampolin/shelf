@@ -121,19 +121,22 @@ class LabelPagesStage(BaseStage):
         logger.info(f"=== Label-Pages: Structural Analysis (3 images per page) ===")
         logger.info(f"Remaining: {len(remaining_pages)}/{total_pages} pages")
 
-        from infra.llm.batch_processor import LLMBatchProcessor, LLMBatchConfig, batch_process_with_preparation
+        from infra.llm.batch_processor import LLMBatchProcessor, LLMBatchConfig
         from .stage1.request_builder import prepare_stage1_request
         from .stage1.result_handler import create_stage1_handler
 
         # Setup processor and handler
-        stage_storage_dir = storage.stage(self.stage_storage.stage_name)
-        log_dir = stage_storage_dir.output_dir / "logs" / "llmbatch"
-        config = LLMBatchConfig(model=self.model, max_workers=self.max_workers, max_retries=self.max_retries)
+        config = LLMBatchConfig(
+            model=self.model,
+            max_workers=self.max_workers,
+            max_retries=self.max_retries,
+            batch_name="Label-Pages"
+        )
         processor = LLMBatchProcessor(
+            storage=storage,
+            stage_name=self.name,
             logger=logger,
-            log_dir=log_dir,
             config=config,
-            metrics_manager=stage_storage_dir.metrics_manager,
         )
         handler = create_stage1_handler(
             storage,
@@ -145,13 +148,10 @@ class LabelPagesStage(BaseStage):
         )
 
         # Process batch
-        batch_stats = batch_process_with_preparation(
-            stage_name="Label-Pages",
-            pages=remaining_pages,
+        batch_stats = processor.process(
+            items=remaining_pages,
             request_builder=prepare_stage1_request,
             result_handler=handler,
-            processor=processor,
-            logger=logger,
             storage=storage,
             model=self.model,
             total_pages=total_pages,
