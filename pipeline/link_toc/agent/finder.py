@@ -12,7 +12,6 @@ from .prompts import FINDER_SYSTEM_PROMPT, build_finder_user_prompt
 
 
 class TocEntryFinderAgent:
-    """Agent that searches for a single ToC entry in the book."""
 
     def __init__(
         self,
@@ -38,13 +37,18 @@ class TocEntryFinderAgent:
         self.total_pages = metadata.get('total_pages', 0)
 
         stage_storage = storage.stage('link-toc')
-        log_dir = stage_storage.output_dir / 'logs' / 'entry_finders'
+        log_dir = stage_storage.output_dir / 'logs'
+
+        # Agent ID matches log file: entry_013
+        self.agent_id = f"entry_{toc_entry_index:03d}"
+
         self.agent_client = AgentClient(
             max_iterations=max_iterations,
             log_dir=log_dir,
+            log_filename=f"{self.agent_id}.json",  # entry_013.json
             logger=logger,
             metrics_manager=stage_storage.metrics_manager,
-            metrics_key_prefix=f"entry_{toc_entry_index:03d}_",
+            metrics_key_prefix=f"{self.agent_id}_",
             verbose=verbose
         )
 
@@ -55,8 +59,7 @@ class TocEntryFinderAgent:
             total_pages=self.total_pages
         )
 
-    def search(self) -> AgentResult:
-        """Execute search for this ToC entry."""
+    def search(self, on_event=None) -> AgentResult:
         start_time = time.time()
 
         toc_title = self.toc_entry['title']
@@ -72,28 +75,10 @@ class TocEntryFinderAgent:
         def is_complete(messages):
             return self.tools._pending_result is not None
 
-        progress = AgentProgressDisplay(
-            max_iterations=self.max_iterations,
-            agent_name=f"Entry {self.toc_entry_index}"
-        ) if self.verbose else None
-
-        # Run agent
-        if progress:
-            progress.__enter__()
-            try:
-                agent_result = self.agent_client.run(
-                    llm_client=self.llm_client,
-                    model=self.model,
-                    initial_messages=initial_messages,
-                    tools=self.tools.get_tools(),
-                    execute_tool=self.tools.execute_tool,
-                    is_complete=is_complete,
-                    on_event=progress.on_event,
-                    temperature=0.0
-                )
-            finally:
-                pass
-        else:
+        # If custom on_event provided, use it (multi-agent mode)
+        # Otherwise, use single-agent progress display if verbose
+        progress = None
+        if on_event:
             agent_result = self.agent_client.run(
                 llm_client=self.llm_client,
                 model=self.model,
@@ -101,9 +86,42 @@ class TocEntryFinderAgent:
                 tools=self.tools.get_tools(),
                 execute_tool=self.tools.execute_tool,
                 is_complete=is_complete,
-                on_event=None,
+                on_event=on_event,
                 temperature=0.0
             )
+        else:
+            progress = AgentProgressDisplay(
+                max_iterations=self.max_iterations,
+                agent_name=f"Entry {self.toc_entry_index}"
+            ) if self.verbose else None
+
+            # Run agent
+            if progress:
+                progress.__enter__()
+                try:
+                    agent_result = self.agent_client.run(
+                        llm_client=self.llm_client,
+                        model=self.model,
+                        initial_messages=initial_messages,
+                        tools=self.tools.get_tools(),
+                        execute_tool=self.tools.execute_tool,
+                        is_complete=is_complete,
+                        on_event=progress.on_event,
+                        temperature=0.0
+                    )
+                finally:
+                    pass
+            else:
+                agent_result = self.agent_client.run(
+                    llm_client=self.llm_client,
+                    model=self.model,
+                    initial_messages=initial_messages,
+                    tools=self.tools.get_tools(),
+                    execute_tool=self.tools.execute_tool,
+                    is_complete=is_complete,
+                    on_event=None,
+                    temperature=0.0
+                )
 
         # Build AgentResult
         if agent_result.success and self.tools._pending_result:
@@ -145,7 +163,7 @@ class TocEntryFinderAgent:
                 notes=None
             )
 
-        # Update progress display
+        # Update progress display (only in single-agent mode)
         if progress:
             if final_result.found:
                 progress.set_result_name(f"Entry {self.toc_entry_index}: found at page {final_result.scan_page}")

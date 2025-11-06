@@ -38,12 +38,11 @@ class AgentProgressDisplay:
         self.total_iterations = 0
 
         self.iteration_lines = []
-        self.lock = threading.RLock()  # Reentrant lock to allow nested acquisition
+        self.lock = threading.RLock()
         self.collapsed = False
 
     def _render(self):
         with self.lock:
-            # If collapsed, show only summary line (no progress bar)
             if self.collapsed:
                 summary = format_batch_summary(
                     batch_name=self.agent_name,
@@ -58,7 +57,6 @@ class AgentProgressDisplay:
                 )
                 return summary
 
-            # While running, show progress bar and tool calls
             components = [self.progress]
             if self.iteration_lines:
                 from rich.text import Text
@@ -119,7 +117,6 @@ class AgentProgressDisplay:
                 tool_time = event.data.get("tool_time", 0)
                 llm_time = iteration_time - tool_time
 
-                # Accumulate tokens for final summary
                 self.total_prompt_tokens += prompt_tokens
                 self.total_completion_tokens += completion_tokens
                 self.total_reasoning_tokens += reasoning_tokens
@@ -143,7 +140,6 @@ class AgentProgressDisplay:
                 self.execution_time = event.data.get("execution_time", 0)
                 self.total_iterations = event.data.get("iterations", 0)
 
-                # Collapse into summary line
                 self.collapsed = True
 
                 self.progress.update(
@@ -156,7 +152,6 @@ class AgentProgressDisplay:
             self.live.update(self._render())
 
     def set_result_name(self, result_name: str):
-        """Update the agent name for the collapsed summary (e.g., 'ToC found: pages 4-7')."""
         with self.lock:
             self.agent_name = result_name
             if self.live and self.collapsed:

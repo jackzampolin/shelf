@@ -48,12 +48,16 @@ def clean_run_log(log: Dict) -> Dict:
     return cleaned
 
 
-def save_run_log(log: Dict, log_dir: Path, run_timestamp: str) -> Optional[Path]:
+def save_run_log(log: Dict, log_dir: Path, run_timestamp: str, log_filename: Optional[str] = None) -> Optional[Path]:
     if not log_dir:
         return None
     log_dir.mkdir(parents=True, exist_ok=True)
     cleaned_log = clean_run_log(log)
-    run_log_path = log_dir / f"run-{run_timestamp}.json"
+
+    if log_filename:
+        run_log_path = log_dir / log_filename
+    else:
+        run_log_path = log_dir / f"run-{run_timestamp}.json"
     with open(run_log_path, 'w') as f:
         json.dump(cleaned_log, f, indent=2)
     return run_log_path

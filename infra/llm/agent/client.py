@@ -15,6 +15,7 @@ class AgentClient:
         self,
         max_iterations: int = 25,
         log_dir: Optional[Path] = None,
+        log_filename: Optional[str] = None,
         logger: Optional[PipelineLogger] = None,
         metrics_manager = None,
         metrics_key_prefix: str = "",
@@ -22,6 +23,7 @@ class AgentClient:
     ):
         self.max_iterations = max_iterations
         self.log_dir = log_dir
+        self.log_filename = log_filename
         self.logger = logger
         self.metrics_manager = metrics_manager
         self.metrics_key_prefix = metrics_key_prefix
@@ -225,7 +227,7 @@ class AgentClient:
         self.run_log['metadata']['execution_time_seconds'] = time.time() - self.start_time if self.start_time else 0.0
         if error_message:
             self.run_log['metadata']['error_message'] = error_message
-        return save_run_log(self.run_log, self.log_dir, run_timestamp)
+        return save_run_log(self.run_log, self.log_dir, run_timestamp, self.log_filename)
     def _emit_event(
         self,
         on_event: Optional[Callable],
