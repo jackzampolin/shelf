@@ -14,6 +14,18 @@
             <div class="stat-item">
                 <strong>{{ books|length }}</strong> books in library
             </div>
+            <div class="stat-item">
+                {% if library_total_runtime < 60 %}
+                    <strong>{{ "%.1f"|format(library_total_runtime) }}s</strong> total time
+                {% elif library_total_runtime < 3600 %}
+                    <strong>{{ "%.1f"|format(library_total_runtime / 60) }}m</strong> total time
+                {% else %}
+                    <strong>{{ "%.1f"|format(library_total_runtime / 3600) }}h</strong> total time
+                {% endif %}
+            </div>
+            <div class="stat-item">
+                <strong>${{ "%.2f"|format(library_total_cost) }}</strong> total cost
+            </div>
         </div>
     </div>
 
@@ -21,12 +33,14 @@
     <table class="status-table">
         <thead>
             <tr>
-                <th style="width: 20%;">Book</th>
-                <th style="width: 12%;">Tesseract</th>
-                <th style="width: 12%;">OCR Pages</th>
-                <th style="width: 12%;">Find ToC</th>
-                <th style="width: 12%;">Extract ToC</th>
-                <th style="width: 12%;">Label Pages</th>
+                <th style="width: 15%;">Book</th>
+                <th style="width: 8%;">Total Time</th>
+                <th style="width: 8%;">Total Cost</th>
+                <th style="width: 10%;">OCR Pages</th>
+                <th style="width: 10%;">Find ToC</th>
+                <th style="width: 10%;">Extract ToC</th>
+                <th style="width: 10%;">Label Pages</th>
+                <th style="width: 10%;">Link ToC</th>
             </tr>
         </thead>
         <tbody>
@@ -37,16 +51,28 @@
                     <div class="book-name">{{ book.scan_id }}</div>
                 </td>
 
-                <!-- Tesseract Status -->
+                <!-- Total Time -->
                 <td>
-                    {% set stage_data = book.stages.get('tesseract', {}) %}
-                    {% set status = stage_data.get('status', 'not_started') %}
-                    {% set cost_usd = stage_data.get('cost_usd', 0.0) %}
-                    {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
-                    {% if status in ['completed', 'in_progress'] %}
-                        {% set link = '/stage/' ~ book.scan_id ~ '/tesseract' %}
+                    {% if book.total_runtime_seconds > 0 %}
+                        {% if book.total_runtime_seconds < 60 %}
+                            {{ "%.1fs"|format(book.total_runtime_seconds) }}
+                        {% elif book.total_runtime_seconds < 3600 %}
+                            {{ "%.1fm"|format(book.total_runtime_seconds / 60) }}
+                        {% else %}
+                            {{ "%.1fh"|format(book.total_runtime_seconds / 3600) }}
+                        {% endif %}
+                    {% else %}
+                        -
                     {% endif %}
-                    {% include 'components/status_badge.html' %}
+                </td>
+
+                <!-- Total Cost -->
+                <td>
+                    {% if book.total_cost_usd > 0 %}
+                        ${{ "%.2f"|format(book.total_cost_usd) }}
+                    {% else %}
+                        -
+                    {% endif %}
                 </td>
 
                 <!-- OCR Pages Status -->
@@ -93,6 +119,18 @@
                     {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
                     {% if status in ['completed', 'in_progress'] %}
                         {% set link = '/stage/' ~ book.scan_id ~ '/label-pages' %}
+                    {% endif %}
+                    {% include 'components/status_badge.html' %}
+                </td>
+
+                <!-- Link ToC Status -->
+                <td>
+                    {% set stage_data = book.stages.get('link-toc', {}) %}
+                    {% set status = stage_data.get('status', 'not_started') %}
+                    {% set cost_usd = stage_data.get('cost_usd', 0.0) %}
+                    {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
+                    {% if status in ['completed', 'in_progress'] %}
+                        {% set link = '/stage/' ~ book.scan_id ~ '/link-toc' %}
                     {% endif %}
                     {% include 'components/status_badge.html' %}
                 </td>

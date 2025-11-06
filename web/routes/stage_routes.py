@@ -14,6 +14,7 @@ from infra.storage.library import Library
 from web.data.extract_toc_data import get_extract_toc_data
 from web.data.find_toc_data import get_find_toc_data, get_toc_page_numbers
 from web.data.label_pages_data import get_label_pages_report, get_page_labels
+from web.data.link_toc_data import get_link_toc_data, get_linked_entries_tree
 
 stage_bp = Blueprint('stage', __name__)
 
@@ -87,6 +88,42 @@ def extract_toc_view(scan_id: str):
         metadata=metadata,
         toc_data=toc_data,
         page_numbers=page_numbers,
+    )
+
+
+@stage_bp.route('/stage/<scan_id>/link-toc')
+def link_toc_view(scan_id: str):
+    """
+    Link-toc stage detail view.
+
+    Shows:
+    - Linked TOC entries on the left (clickable sidebar)
+    - Page image on the right (when entry is clicked)
+    """
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    # Get book metadata
+    metadata = library.get_scan_info(scan_id)
+    if not metadata:
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+
+    # Load link-toc data from disk
+    toc_data = get_link_toc_data(storage)
+
+    if not toc_data:
+        abort(404, f"Link-toc stage not run for '{scan_id}'")
+
+    # Get linked entries
+    entries = get_linked_entries_tree(storage)
+
+    return render_template(
+        'stage/link_toc.html',
+        scan_id=scan_id,
+        metadata=metadata,
+        toc_data=toc_data,
+        entries=entries,
     )
 
 

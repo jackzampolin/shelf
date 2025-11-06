@@ -22,8 +22,14 @@ def library_list():
     """
     books = get_all_books(storage_root=Config.BOOK_STORAGE_ROOT)
 
+    # Calculate library-wide totals
+    library_total_cost = sum(book['total_cost_usd'] for book in books)
+    library_total_runtime = sum(book['total_runtime_seconds'] for book in books)
+
     return render_template(
         'library/list.html',
         books=books,
+        library_total_cost=library_total_cost,
+        library_total_runtime=library_total_runtime,
         active='library',
     )
