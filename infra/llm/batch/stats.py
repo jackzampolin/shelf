@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""Statistics tracking for batch LLM processing."""
-
 import time
 import threading
 from typing import Dict, Any, List
 from dataclasses import dataclass
-
 
 @dataclass
 class BatchStats:

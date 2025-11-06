@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 
-from .tools import AgentTools
+from ..tools import AgentTools
 
 
 @dataclass

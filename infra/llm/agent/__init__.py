@@ -1,13 +1,9 @@
 from .tools import AgentTools
-from .config import AgentConfig
-from .client import AgentClient
 from .schemas import AgentResult, AgentEvent
-from .batch_config import AgentBatchConfig
-from .batch_result import AgentBatchResult
-from .batch_client import AgentBatch
 from .metrics import agent_result_to_metrics, record_agent_result
-from .progress import AgentProgressDisplay
-from .multi_progress import MultiAgentProgressDisplay
+
+from .single import AgentConfig, AgentClient, AgentProgressDisplay
+from .batch import AgentBatchConfig, AgentBatchClient, AgentBatchResult, MultiAgentProgressDisplay
 
 __all__ = [
     'AgentTools',
@@ -16,8 +12,8 @@ __all__ = [
     'AgentResult',
     'AgentEvent',
     'AgentBatchConfig',
+    'AgentBatchClient',
     'AgentBatchResult',
-    'AgentBatch',
     'agent_result_to_metrics',
     'record_agent_result',
     'AgentProgressDisplay',

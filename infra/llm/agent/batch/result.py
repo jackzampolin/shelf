@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import List
 
-from .schemas import AgentResult
+from ..schemas import AgentResult
 
 
 @dataclass

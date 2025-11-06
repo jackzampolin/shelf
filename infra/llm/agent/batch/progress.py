@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from infra.llm.display_format import format_token_string
-from .schemas import AgentEvent
+from ..schemas import AgentEvent
 
 
 @dataclass

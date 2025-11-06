@@ -6,8 +6,8 @@ from pathlib import Path
 
 from infra.llm.client import LLMClient
 from .config import AgentConfig
-from .schemas import AgentResult, AgentEvent
-from .logging import save_run_log
+from ..schemas import AgentResult, AgentEvent
+from ..logging import save_run_log
 
 
 class AgentClient:

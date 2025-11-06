@@ -2,14 +2,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
 
-from .batch_config import AgentBatchConfig
-from .batch_result import AgentBatchResult
-from .client import AgentClient
-from .schemas import AgentResult, AgentEvent
-from .multi_progress import MultiAgentProgressDisplay
+from .config import AgentBatchConfig
+from .result import AgentBatchResult
+from ..single import AgentClient
+from ..schemas import AgentResult, AgentEvent
+from .progress import MultiAgentProgressDisplay
 
 
-class AgentBatch:
+class AgentBatchClient:
 
     def __init__(self, config: AgentBatchConfig):
         self.config = config

@@ -3,7 +3,7 @@ from typing import Tuple, Dict, List
 
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
-from infra.llm.agent import AgentConfig, AgentBatchConfig, AgentBatch
+from infra.llm.agent import AgentConfig, AgentBatchConfig, AgentBatchClient
 
 from .schemas import LinkedTableOfContents, LinkedToCEntry
 from .storage import LinkTocStageStorage
@@ -96,7 +96,7 @@ def find_all_toc_entries(
         max_workers=10
     )
 
-    batch = AgentBatch(batch_config)
+    batch = AgentBatchClient(batch_config)
     batch_result = batch.run()
 
     for agent_result, idx in zip(batch_result.results, remaining_indices):

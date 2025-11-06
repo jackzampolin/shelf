@@ -8,7 +8,7 @@ from rich.padding import Padding
 import threading
 
 from infra.llm.display_format import format_token_string, format_batch_summary
-from .schemas import AgentEvent
+from ..schemas import AgentEvent
 
 
 class AgentProgressDisplay:
