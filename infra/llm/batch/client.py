@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""
-Batch LLM client - main orchestrator.
-
-Wires together:
-- HTTP session management
-- Statistics tracking
-- Streaming execution
-- Request execution
-- Worker pool
-- Progress monitoring
-
-Provides high-level API for batch processing with retries, rate limiting,
-and comprehensive telemetry.
-"""
+"""Batch LLM client - main orchestrator."""
 
 import time
 from pathlib import Path
@@ -33,32 +20,8 @@ from .worker import WorkerPool
 
 class LLMBatchClient:
     """
-    Batch client for parallel LLM request processing.
-
-    Features:
-    - Queue-based architecture with priority support
-    - Rate limiting to prevent 429 errors
-    - Automatic retry with jitter (failed requests re-enqueue)
-    - Event-driven progress tracking
-    - Defensive cost tracking
-    - Thread-safe for concurrent execution
-
     Thread Safety:
-    -------------
     This class is thread-safe for concurrent execution across worker threads.
-
-    Usage:
-        client = LLMBatchClient(
-            max_workers=10,
-            rate_limit=60,
-            max_retries=5
-        )
-
-        results = client.process_batch(
-            requests,
-            on_event=event_handler,
-            on_result=result_handler
-        )
     """
 
     def __init__(
@@ -72,20 +35,6 @@ class LLMBatchClient:
         log_dir: Optional[Path] = None,
         log_timestamp: Optional[str] = None,
     ):
-        """
-        Initialize batch client.
-
-        Args:
-            max_workers: Thread pool size (default: Config.max_workers)
-            rate_limit: Max requests per minute (default: Config.rate_limit_requests_per_minute)
-            max_retries: Max attempts per request (failed requests re-queue)
-            retry_jitter: (min, max) seconds to wait before re-queue
-            verbose: Enable per-request progress events
-            progress_interval: How often to emit PROGRESS events (seconds)
-            log_dir: Optional directory to log failed LLM calls
-            log_timestamp: Optional timestamp string for log filenames
-        """
-        # Use Config defaults if not specified
         self.max_workers = max_workers if max_workers is not None else Config.max_workers
         self.rate_limit = rate_limit if rate_limit is not None else Config.rate_limit_requests_per_minute
         self.max_retries = max_retries

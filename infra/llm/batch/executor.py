@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""
-Single request execution with error handling and retries.
-
-Handles:
-- Model fallback routing
-- Request execution via streaming
-- JSON parsing and validation
-- Error classification (retryable vs permanent)
-- Result telemetry
-"""
+"""Single request execution with error handling and retries."""
 
 import time
 import json
@@ -22,30 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 class RequestExecutor:
-    """
-    Executes single LLM requests with telemetry and error handling.
-
-    Provides:
-    - Model fallback routing via ModelRouter
-    - Error classification and retry logic
-    - Comprehensive telemetry (queue time, execution time, TTFT, cost)
-    - JSON parsing and validation
-
-    All requests are streamed for full telemetry.
-    """
 
     def __init__(
         self,
         streaming_executor: StreamingExecutor,
         max_retries: int = 5
     ):
-        """
-        Initialize request executor.
-
-        Args:
-            streaming_executor: StreamingExecutor for making API calls
-            max_retries: Maximum retry attempts per request
-        """
         self.streaming_executor = streaming_executor
         self.max_retries = max_retries
 
@@ -54,29 +27,10 @@ class RequestExecutor:
         request: LLMRequest,
         on_event: Optional[Callable[[EventData], None]] = None
     ) -> LLMResult:
-        """
-        Execute single LLM request with telemetry.
-
-        All requests are streamed for full telemetry (TTFT, tokens/sec, progress).
-        All requests must have response_format for structured JSON output.
-
-        Manages:
-        - Model fallback routing via ModelRouter
-        - Error classification and retry logic
-        - Comprehensive telemetry (queue time, execution time, TTFT, cost)
-
-        Args:
-            request: LLM request to execute
-            on_event: Event callback for lifecycle events
-
-        Returns:
-            LLMResult with success/failure status and telemetry
-        """
         start_time = time.time()
         queue_time = start_time - request._queued_at
 
         try:
-            # Initialize router if fallback models configured
             if not hasattr(request, '_router') or request._router is None:
                 if request.fallback_models:
                     from infra.llm.router import ModelRouter
@@ -85,31 +39,24 @@ class RequestExecutor:
                         fallback_models=request.fallback_models
                     )
 
-            # Get current model from router (or use request.model if no router)
             current_model = request._router.get_current() if request._router else request.model
 
-            # Stream the request
             response_text, usage, cost, ttft = self.streaming_executor.execute_streaming_request(
                 request, current_model, on_event, start_time
             )
 
-            # Parse structured JSON response (OpenRouter guarantees valid JSON)
             parsed_json = json.loads(response_text)
 
-            # Mark success in router if present
             if request._router:
                 request._router.mark_success()
 
-            # Build success result
             execution_time = time.time() - start_time
 
-            # Calculate tokens per second
             tokens_per_second = 0.0
             completion_tokens = usage.get('completion_tokens', 0)
             if execution_time > 0 and completion_tokens > 0:
                 tokens_per_second = completion_tokens / execution_time
 
-            # Extract provider from model name (e.g., "anthropic/claude-sonnet-4" → "anthropic")
             provider = None
             if '/' in current_model:
                 provider = current_model.split('/')[0]
@@ -135,8 +82,6 @@ class RequestExecutor:
             )
 
         except json.JSONDecodeError as e:
-            # JSON parsing failed - this should never happen with structured responses
-            # Only log as warning if this is the final attempt
             will_retry = request._retry_count < self.max_retries
             log_level = logging.DEBUG if will_retry else logging.WARNING
             log_message = f"Structured JSON parsing failed for {request.id}"
@@ -145,7 +90,6 @@ class RequestExecutor:
             else:
                 log_message += f" (final attempt, giving up)"
 
-            # Truncate response for logging
             response_preview = response_text
             if len(response_text) > 1000:
                 response_preview = f"{response_text[:500]}...{response_text[-500:]}"
@@ -179,7 +123,6 @@ class RequestExecutor:
             )
 
         except Exception as e:
-            # Other errors (timeout, HTTP, etc.)
             execution_time = time.time() - start_time
             error_type = self.classify_error(e)
 
@@ -197,24 +140,6 @@ class RequestExecutor:
 
     @staticmethod
     def classify_error(error: Exception) -> str:
-        """
-        Classify error type for retry logic and error handling.
-
-        Error types (in priority order):
-        - 'timeout': Network timeouts (retryable)
-        - '5xx': Server errors 500-599 (retryable)
-        - '429_rate_limit': Rate limiting (retryable with backoff)
-        - '413_payload_too_large': Payload too large (retryable - may succeed on retry)
-        - '422_unprocessable': Unprocessable entity (retryable - often transient deserialization issues)
-        - '4xx': Other client errors 400-499 (non-retryable)
-        - 'unknown': Unclassified errors (retryable to be safe)
-
-        Args:
-            error: Exception raised during LLM request
-
-        Returns:
-            String error type for use in retry logic
-        """
         error_str = str(error).lower()
         if 'timeout' in error_str:
             return 'timeout'
@@ -233,27 +158,6 @@ class RequestExecutor:
 
     @staticmethod
     def is_retryable(error_type: Optional[str]) -> bool:
-        """
-        Check if error type is retryable.
-
-        Retryable errors (retry indefinitely):
-        - timeout: Network timeouts
-        - 5xx: Server errors (transient)
-        - 429_rate_limit: Rate limiting (will retry after wait)
-        - 413_payload_too_large: Payload too large (retry - may succeed on different attempt)
-        - 422_unprocessable: Provider deserialization issues (transient)
-        - json_parse: JSON parsing failures (fallback models may generate valid JSON)
-        - unknown: Unclassified errors (retry to be safe)
-
-        Non-retryable errors:
-        - 4xx: Client errors (bad request, auth, forbidden, etc.)
-
-        Args:
-            error_type: Error type from classify_error()
-
-        Returns:
-            True if error should be retried
-        """
         retryable = [
             'timeout',
             '5xx',
