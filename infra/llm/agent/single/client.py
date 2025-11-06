@@ -71,13 +71,14 @@ class AgentClient:
                 }
                 self._emit_event(on_event, "iteration_start", iteration, {})
                 try:
+                    images = self.config.tools.get_images()
                     content, usage, cost, tool_calls, reasoning_details = self.llm_client.call_with_tools(
                         model=self.config.model,
                         messages=messages,
                         tools=self.config.tools.get_tools(),
                         temperature=self.config.temperature,
                         max_tokens=self.config.max_tokens,
-                        images=None
+                        images=images
                     )
                     self.total_cost += cost
                     self.run_log['metadata']['total_cost_usd'] = self.total_cost

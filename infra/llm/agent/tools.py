@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 
 class AgentTools(ABC):
@@ -15,3 +15,6 @@ class AgentTools(ABC):
     @abstractmethod
     def is_complete(self) -> bool:
         pass
+
+    def get_images(self) -> Optional[List]:
+        return None

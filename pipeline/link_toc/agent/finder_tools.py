@@ -18,6 +18,7 @@ class TocEntryFinderTools(AgentTools):
         self._candidates_checked: List[int] = []
         self._current_page_num: Optional[int] = None
         self._page_observations: List[Dict[str, str]] = []
+        self._current_images: Optional[List] = None
 
     def get_tools(self) -> List[Dict]:
         """Return tool definitions for OpenRouter function calling."""
@@ -212,10 +213,8 @@ class TocEntryFinderTools(AgentTools):
             image = Image.open(page_image_path)
             downsampled_image = downsample_for_vision(image, max_payload_kb=250)
 
-            # Replace current image in context
-            self.agent_client.images = [downsampled_image]
+            self._current_images = [downsampled_image]
 
-            # Track page
             if page_num not in self._candidates_checked:
                 self._candidates_checked.append(page_num)
 
@@ -239,3 +238,6 @@ class TocEntryFinderTools(AgentTools):
 
     def is_complete(self) -> bool:
         return self._pending_result is not None
+
+    def get_images(self) -> Optional[List]:
+        return self._current_images

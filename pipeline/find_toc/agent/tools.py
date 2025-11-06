@@ -6,7 +6,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from infra.storage.book_storage import BookStorage
-from infra.llm.agent import AgentClient
+from infra.llm.agent import AgentTools
 from infra.utils.pdf import downsample_for_vision
 from ..schemas import PageRange, StructureSummary
 from ..tools.grep_report import generate_grep_report, summarize_grep_report
@@ -29,16 +29,16 @@ class TocFinderResult(BaseModel):
     structure_summary: Optional[StructureSummary] = None
 
 
-class TocFinderTools:
+class TocFinderTools(AgentTools):
 
-    def __init__(self, storage: BookStorage, agent_client: AgentClient, stage_storage):
+    def __init__(self, storage: BookStorage, stage_storage):
         self.storage = storage
-        self.agent_client = agent_client
         self.stage_storage = stage_storage
         self._pending_result: Optional[TocFinderResult] = None
         self._grep_report_cache: Optional[Dict] = None
         self._current_page_num: Optional[int] = None
         self._page_observations: List[Dict[str, str]] = []
+        self._current_images: Optional[List] = None
 
     def get_tools(self) -> List[Dict]:
         return [
@@ -149,7 +149,8 @@ class TocFinderTools:
             }
         ]
 
-    def execute_tool(self, tool_name: str, arguments: Dict) -> str:
+    def execute_tool(self, name: str, arguments: Dict) -> str:
+        tool_name = name
         if tool_name == "get_frontmatter_grep_report":
             return self.get_frontmatter_grep_report()
         elif tool_name == "load_page_image":
@@ -212,7 +213,7 @@ class TocFinderTools:
             image = Image.open(page_image_path)
             downsampled_image = downsample_for_vision(image, max_payload_kb=250)
 
-            self.agent_client.images = [downsampled_image]
+            self._current_images = [downsampled_image]
 
             previous_page = self._current_page_num
             self._current_page_num = page_num
@@ -309,3 +310,9 @@ class TocFinderTools:
 
     def get_pending_result(self) -> Optional[TocFinderResult]:
         return self._pending_result
+
+    def is_complete(self) -> bool:
+        return self._pending_result is not None
+
+    def get_images(self) -> Optional[List]:
+        return self._current_images
