@@ -24,20 +24,6 @@ class RequestStatus:
 
 
 @dataclass
-class CompletedStatus:
-    request_id: str
-    success: bool
-    total_time_seconds: float
-    execution_time_seconds: float = 0.0
-    ttft_seconds: Optional[float] = None
-    cost_usd: float = 0.0
-    error_message: Optional[str] = None
-    retry_count: int = 0
-    model_used: Optional[str] = None
-    cycles_remaining: int = 6
-
-
-@dataclass
 class BatchStats:
     total_requests: int
     completed: int

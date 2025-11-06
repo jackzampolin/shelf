@@ -7,7 +7,6 @@ from .progress import create_progress_handler
 from .schemas import (
     RequestPhase,
     RequestStatus,
-    CompletedStatus,
     BatchStats,
     LLMBatchConfig,
 )
@@ -20,6 +19,5 @@ __all__ = [
     'BatchStatsTracker',
     'RequestPhase',
     'RequestStatus',
-    'CompletedStatus',
     'create_progress_handler',
 ]

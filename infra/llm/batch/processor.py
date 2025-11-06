@@ -131,13 +131,28 @@ class LLMBatchProcessor:
         )
         progress.update(0, suffix="starting...")
 
-        on_event = progress.create_llm_event_handler(
+        # Create batch-specific event handlers
+        from .progress import create_progress_handler
+        from infra.llm.models import LLMEvent
+
+        progress_handler = create_progress_handler(
+            progress_bar=progress,
             batch_client=self.batch_client,
-            start_time=start_time,
+            metrics_manager=self.metrics_manager,
             model=self.model,
             total_requests=len(requests),
-            metrics_manager=self.metrics_manager,
+            start_time=start_time
         )
+
+        def on_event(event):
+            """Route events to appropriate handlers."""
+            if event.event_type == LLMEvent.PROGRESS:
+                progress_handler(event)
+            elif event.event_type == LLMEvent.FIRST_TOKEN:
+                if event.message:
+                    progress.add_sub_line(event.request_id, event.message)
+            elif event.event_type == LLMEvent.RATE_LIMITED:
+                progress.set_status(f"⏸️  Rate limited, resuming in {event.eta_seconds:.0f}s")
 
         try:
             self.batch_client.process_batch(

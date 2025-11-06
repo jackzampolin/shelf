@@ -253,38 +253,3 @@ class RequestStatus:
     def phase_elapsed(self) -> float:
         """Time in current phase."""
         return time.time() - self.phase_entered_at
-
-
-@dataclass
-class BatchStats:
-    """
-    Aggregate statistics for the entire batch.
-    """
-    # Counts
-    total_requests: int
-    completed: int
-    failed: int
-    in_progress: int
-    queued: int
-
-    # Timing
-    avg_time_per_request: float
-    min_time: float
-    max_time: float
-
-    # Cost
-    total_cost_usd: float
-    avg_cost_per_request: float
-
-    # Tokens
-    total_prompt_tokens: int
-    total_tokens: int  # Completion tokens
-    total_reasoning_tokens: int
-    avg_tokens_per_request: float
-
-    # Throughput
-    requests_per_second: float
-
-    # Rate limiting
-    rate_limit_utilization: float
-    rate_limit_tokens_available: int
