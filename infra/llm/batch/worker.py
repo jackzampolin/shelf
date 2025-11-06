@@ -91,18 +91,33 @@ class WorkerPool:
         on_result: Optional[Callable[[LLMResult], None]],
         expected_ids: Set[str]
     ):
+        import sys
+        worker_id = threading.current_thread().name
+        iterations = 0
         while True:
             try:
+                iterations += 1
+                if iterations <= 3:
+                    print(f"[DEBUG] Worker {worker_id} iteration {iterations}", file=sys.stderr, flush=True)
+
                 if self._all_done(expected_ids):
                     break
 
                 request = self._get_next_request(queue, expected_ids)
                 if request is None:
+                    if iterations <= 3:
+                        print(f"[DEBUG] Worker {worker_id} got None request", file=sys.stderr, flush=True)
                     continue
 
+                if iterations <= 3:
+                    print(f"[DEBUG] Worker {worker_id} checking rate limit for {request.id}", file=sys.stderr, flush=True)
                 if not self._check_rate_limit(request, queue, on_event):
+                    if iterations <= 3:
+                        print(f"[DEBUG] Worker {worker_id} rate limited", file=sys.stderr, flush=True)
                     continue
 
+                if iterations <= 3:
+                    print(f"[DEBUG] Worker {worker_id} consuming token", file=sys.stderr, flush=True)
                 self.rate_limiter.consume()
 
                 self._update_request_phase(request.id, RequestPhase.DEQUEUED)

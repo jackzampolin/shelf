@@ -39,7 +39,7 @@ class AgentBatchClient:
                 self.progress.on_event(agent_id, event)
 
             agent = AgentClient(agent_config)
-            result = agent.run(on_event=on_event)
+            result = agent.run(verbose=False, on_event=on_event)
 
             status = "found" if result.success else "not_found"
             self.progress.on_event(agent_id, AgentEvent(
