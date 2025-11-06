@@ -8,6 +8,7 @@ from infra.llm.client import LLMClient
 from .config import AgentConfig
 from ..schemas import AgentResult, AgentEvent
 from ..logging import save_run_log
+from .progress import AgentProgressDisplay
 
 
 class AgentClient:
@@ -15,7 +16,7 @@ class AgentClient:
         self.config = config
         self.llm_client = LLMClient()
 
-        self.log_dir = config.stage_storage.output_dir / 'logs'
+        self.log_dir = config.stage_storage.output_dir / 'logs' / 'agents' / config.agent_id
         self.log_filename = f"{config.agent_id}.json"
         self.metrics_manager = config.stage_storage.metrics_manager
         self.metrics_key_prefix = f"{config.agent_id}_"
@@ -28,6 +29,31 @@ class AgentClient:
         self.start_time = None
         self.run_log = None
     def run(
+        self,
+        verbose: bool = False,
+        on_event: Optional[Callable[[AgentEvent], None]] = None
+    ) -> AgentResult:
+        progress = None
+        if verbose:
+            progress = AgentProgressDisplay(
+                max_iterations=self.config.max_iterations,
+                agent_name=self.config.agent_id
+            )
+            progress.__enter__()
+
+        def combined_on_event(event: AgentEvent):
+            if progress:
+                progress.on_event(event)
+            if on_event:
+                on_event(event)
+
+        try:
+            return self._run_agent(combined_on_event if (progress or on_event) else None)
+        finally:
+            if progress:
+                progress.__exit__(None, None, None)
+
+    def _run_agent(
         self,
         on_event: Optional[Callable[[AgentEvent], None]] = None
     ) -> AgentResult:

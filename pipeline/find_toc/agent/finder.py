@@ -46,7 +46,7 @@ class TocFinderAgent:
             initial_messages=initial_messages,
             tools=self.tools,
             stage_storage=stage_storage,
-            agent_id="toc_finder",
+            agent_id="toc-finder",
             max_iterations=max_iterations,
             temperature=0.0
         )
@@ -61,22 +61,7 @@ class TocFinderAgent:
                            scan_id=self.scan_id,
                            total_pages=self.total_pages)
 
-        from infra.llm.agent import AgentProgressDisplay
-
-        progress = AgentProgressDisplay(
-            max_iterations=self.max_iterations,
-            agent_name="ToC finder"
-        ) if self.verbose else None
-
-        if progress:
-            progress.__enter__()
-
-        try:
-            agent_result = self.agent_client.run(
-                on_event=progress.on_event if progress else None
-            )
-        finally:
-            pass
+        agent_result = self.agent_client.run(verbose=self.verbose)
 
         if agent_result.success and self.tools._pending_result:
             final_result = self.tools._pending_result

@@ -179,7 +179,7 @@ class LabelPagesStage(BaseStage):
 
         # Record total stage runtime (accumulate across runs for resume support)
         elapsed_time = time.time() - start_time
-        stage_storage_dir.metrics_manager.record(
+        storage.stage(self.name).metrics_manager.record(
             key="stage_runtime",
             time_seconds=elapsed_time,
             accumulate=True
