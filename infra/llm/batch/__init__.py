@@ -1,8 +1,16 @@
 """Batch LLM processing infrastructure."""
 
 from .client import LLMBatchClient
-from .stats import BatchStats, BatchStatsTracker
-from .processor import LLMBatchProcessor, LLMBatchConfig
+from .stats import BatchStatsTracker
+from .processor import LLMBatchProcessor
+from .progress import create_progress_handler
+from .schemas import (
+    RequestPhase,
+    RequestStatus,
+    CompletedStatus,
+    BatchStats,
+    LLMBatchConfig,
+)
 
 __all__ = [
     'LLMBatchProcessor',
@@ -10,4 +18,8 @@ __all__ = [
     'LLMBatchClient',
     'BatchStats',
     'BatchStatsTracker',
+    'RequestPhase',
+    'RequestStatus',
+    'CompletedStatus',
+    'create_progress_handler',
 ]

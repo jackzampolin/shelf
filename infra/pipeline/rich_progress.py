@@ -314,7 +314,15 @@ class RichProgressBarHierarchical:
         import time
         import sys
         # Import here to avoid circular dependencies
-        from infra.llm.models import LLMEvent, RequestPhase
+        from infra.llm.models import LLMEvent
+        from infra.llm.batch.schemas import RequestPhase
+        from infra.llm.batch.progress import (
+            build_recent_completions,
+            calculate_rollup_metrics,
+            format_progress_suffix,
+            format_rollup_lines,
+            format_recent_completion_lines,
+        )
 
         # Default error code extractor
         if extract_error_code is None:

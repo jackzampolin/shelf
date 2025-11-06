@@ -11,16 +11,17 @@ Provides:
 """
 
 from infra.llm.client import LLMClient
-from infra.llm.batch import LLMBatchClient
+from infra.llm.batch import (
+    LLMBatchClient,
+    RequestPhase,
+    RequestStatus,
+    BatchStats,
+)
 from infra.llm.models import (
     LLMRequest,
     LLMResult,
     LLMEvent,
     EventData,
-    RequestPhase,
-    RequestStatus,
-    CompletedStatus,
-    BatchStats
 )
 from infra.llm.metrics import llm_result_to_metrics
 from infra.llm.pricing import PricingCache, CostCalculator, calculate_cost
@@ -35,7 +36,6 @@ __all__ = [
     "EventData",
     "RequestPhase",
     "RequestStatus",
-    "CompletedStatus",
     "BatchStats",
     "llm_result_to_metrics",
     "PricingCache",

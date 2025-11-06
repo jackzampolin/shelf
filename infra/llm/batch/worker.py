@@ -9,10 +9,8 @@ from queue import PriorityQueue, Empty
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Callable, Dict, Set
 
-from infra.llm.models import (
-    LLMRequest, LLMResult, LLMEvent, EventData,
-    RequestPhase, RequestStatus
-)
+from infra.llm.models import LLMRequest, LLMResult, LLMEvent, EventData
+from .schemas import RequestPhase, RequestStatus
 from infra.llm.rate_limiter import RateLimiter
 from .executor import RequestExecutor
 

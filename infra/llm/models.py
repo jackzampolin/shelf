@@ -256,33 +256,6 @@ class RequestStatus:
 
 
 @dataclass
-class CompletedStatus:
-    """
-    Status for recently completed/failed request (kept for TTL).
-    """
-    request_id: str
-    success: bool
-
-    # Timing
-    total_time_seconds: float  # Full time from queue to completion
-    execution_time_seconds: float = 0.0  # Time spent executing (excluding queue)
-    ttft_seconds: Optional[float] = None  # Time to first token (if streaming)
-
-    # Cost (if successful)
-    cost_usd: float = 0.0
-
-    # Error (if failed)
-    error_message: Optional[str] = None
-
-    # Retry tracking
-    retry_count: int = 0
-    model_used: Optional[str] = None
-
-    # TTL management
-    cycles_remaining: int = 6  # Decremented each PROGRESS event
-
-
-@dataclass
 class BatchStats:
     """
     Aggregate statistics for the entire batch.
