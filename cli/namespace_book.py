@@ -95,7 +95,8 @@ def cmd_info(args):
         'ocr-pages': 'OCR-Pages',
         'label-pages': 'Label-Pages',
         'find-toc': 'Find-ToC',
-        'extract-toc': 'Extract-ToC'
+        'extract-toc': 'Extract-ToC',
+        'link-toc': 'Link-ToC'
     }
 
     total_cost = 0.0

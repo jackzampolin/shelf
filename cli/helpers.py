@@ -26,12 +26,18 @@ def get_stage_instance(stage_name: str):
         elif stage_name == 'ocr-pages':
             from pipeline.ocr_pages import OcrPagesStage
             return OcrPagesStage()
+        elif stage_name == 'label-pages':
+            from pipeline.label_pages import LabelPagesStage
+            return LabelPagesStage()
         elif stage_name == 'find-toc':
             from pipeline.find_toc import FindTocStage
             return FindTocStage()
         elif stage_name == 'extract-toc':
             from pipeline.extract_toc import ExtractTocStage
             return ExtractTocStage()
+        elif stage_name == 'link-toc':
+            from pipeline.link_toc import LinkTocStage
+            return LinkTocStage()
     except ImportError:
         return None
     return None
