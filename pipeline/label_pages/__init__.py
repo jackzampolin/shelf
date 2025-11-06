@@ -121,7 +121,7 @@ class LabelPagesStage(BaseStage):
         logger.info(f"=== Label-Pages: Structural Analysis (3 images per page) ===")
         logger.info(f"Remaining: {len(remaining_pages)}/{total_pages} pages")
 
-        from infra.llm.batch_processor import LLMBatchProcessor, LLMBatchConfig
+        from infra.llm.batch import LLMBatchProcessor, LLMBatchConfig
         from .stage1.request_builder import prepare_stage1_request
         from .stage1.result_handler import create_stage1_handler
 

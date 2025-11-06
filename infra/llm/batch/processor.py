@@ -34,9 +34,9 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from rich.console import Console
 
-from infra.llm.batch import LLMBatchClient
-from infra.llm.models import LLMRequest, LLMResult
-from infra.llm.display_format import format_batch_summary
+from .client import LLMBatchClient
+from ..models import LLMRequest, LLMResult
+from ..display_format import format_batch_summary
 from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.rich_progress import RichProgressBarHierarchical
 from infra.storage.book_storage import BookStorage
