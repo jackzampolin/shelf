@@ -11,7 +11,6 @@ from infra.config import Config
 
 from .http_session import ThreadLocalSessionManager
 from .stats import BatchStatsTracker, BatchStats
-from .streaming import StreamingExecutor
 from .executor import RequestExecutor
 from .worker import WorkerPool
 from .callbacks import wrap_with_stats_tracking, wrap_with_progress_monitoring
@@ -44,19 +43,12 @@ class LLMBatchClient:
                 log_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             self.log_timestamp = log_timestamp
 
-        # Wire components
         self.llm_client = LLMClient()
         self.rate_limiter = RateLimiter(requests_per_minute=self.rate_limit)
         self.session_manager = ThreadLocalSessionManager()
 
-        self.streaming_executor = StreamingExecutor(
-            llm_client=self.llm_client,
-            session_manager=self.session_manager,
-            verbose=self.verbose
-        )
-
         self.request_executor = RequestExecutor(
-            streaming_executor=self.streaming_executor,
+            llm_client=self.llm_client,
             max_retries=self.max_retries
         )
 

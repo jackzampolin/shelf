@@ -7,19 +7,14 @@ import logging
 from typing import Optional, Callable
 
 from infra.llm.models import LLMRequest, LLMResult, LLMEvent, EventData
-from .streaming import StreamingExecutor
+from infra.llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
 
 
 class RequestExecutor:
-
-    def __init__(
-        self,
-        streaming_executor: StreamingExecutor,
-        max_retries: int = 5
-    ):
-        self.streaming_executor = streaming_executor
+    def __init__(self, llm_client: LLMClient, max_retries: int = 5):
+        self.llm_client = llm_client
         self.max_retries = max_retries
 
     def execute_request(
@@ -31,6 +26,7 @@ class RequestExecutor:
         queue_time = start_time - request._queued_at
 
         try:
+            # Initialize router if fallback models configured
             if not hasattr(request, '_router') or request._router is None:
                 if request.fallback_models:
                     from infra.llm.router import ModelRouter
@@ -41,22 +37,33 @@ class RequestExecutor:
 
             current_model = request._router.get_current() if request._router else request.model
 
-            response_text, usage, cost, ttft = self.streaming_executor.execute_streaming_request(
-                request, current_model, on_event, start_time
+            # Make LLM call (non-streaming)
+            response_text, usage, cost = self.llm_client._call_non_streaming(
+                model=current_model,
+                messages=request.messages,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                images=request.images,
+                response_format=request.response_format,
+                timeout=request.timeout
             )
 
+            # Parse structured JSON response
             parsed_json = json.loads(response_text)
 
+            # Mark success in router if present
             if request._router:
                 request._router.mark_success()
 
             execution_time = time.time() - start_time
 
+            # Calculate tokens per second
             tokens_per_second = 0.0
             completion_tokens = usage.get('completion_tokens', 0)
             if execution_time > 0 and completion_tokens > 0:
                 tokens_per_second = completion_tokens / execution_time
 
+            # Extract provider from model name
             provider = None
             if '/' in current_model:
                 provider = current_model.split('/')[0]
@@ -70,7 +77,7 @@ class RequestExecutor:
                 total_time_seconds=execution_time + queue_time,
                 queue_time_seconds=queue_time,
                 execution_time_seconds=execution_time,
-                ttft_seconds=ttft,
+                ttft_seconds=None,  # No TTFT without streaming
                 tokens_received=completion_tokens,
                 tokens_per_second=tokens_per_second,
                 usage=usage,
@@ -84,15 +91,13 @@ class RequestExecutor:
         except json.JSONDecodeError as e:
             will_retry = request._retry_count < self.max_retries
             log_level = logging.DEBUG if will_retry else logging.WARNING
-            log_message = f"Structured JSON parsing failed for {request.id}"
+            log_message = f"JSON parsing failed for {request.id}"
             if will_retry:
                 log_message += f" (will retry, attempt {request._retry_count + 1}/{self.max_retries})"
             else:
-                log_message += f" (final attempt, giving up)"
+                log_message += f" (final attempt)"
 
-            response_preview = response_text
-            if len(response_text) > 1000:
-                response_preview = f"{response_text[:500]}...{response_text[-500:]}"
+            response_preview = response_text if len(response_text) <= 1000 else f"{response_text[:500]}...{response_text[-500:]}"
 
             logger.log(
                 log_level,
@@ -114,7 +119,7 @@ class RequestExecutor:
                 request_id=request.id,
                 success=False,
                 error_type="json_parse",
-                error_message=f"Structured JSON parsing failed: {str(e)}",
+                error_message=f"JSON parsing failed: {str(e)}",
                 attempts=request._retry_count + 1,
                 total_time_seconds=execution_time + queue_time,
                 queue_time_seconds=queue_time,
