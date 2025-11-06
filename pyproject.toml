@@ -27,6 +27,7 @@ dependencies = [
     "datalab-python-sdk>=0.1.0",
     "surya-ocr>=0.17.0",
     "openai>=1.0.0",
+    "rapidfuzz>=3.0.0",
 ]
 
 [tool.setuptools.packages.find]

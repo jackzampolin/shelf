@@ -4,6 +4,7 @@ STAGE_DEFINITIONS = [
     {'name': 'label-pages', 'abbr': 'LBL', 'class': 'pipeline.label_pages.LabelPagesStage'},
     {'name': 'find-toc', 'abbr': 'FTO', 'class': 'pipeline.find_toc.FindTocStage'},
     {'name': 'extract-toc', 'abbr': 'TOC', 'class': 'pipeline.extract_toc.ExtractTocStage'},
+    {'name': 'link-toc', 'abbr': 'LNK', 'class': 'pipeline.link_toc.LinkTocStage'},
 ]
 
 STAGE_NAMES = [s['name'] for s in STAGE_DEFINITIONS]
@@ -22,6 +23,7 @@ def get_stage_map(model=None, workers=None, max_retries=3):
     - ocr-pages: API-bound, default 30 workers for throughput
     - label-pages: Vision-based page classification with retries
     - find-toc/extract-toc: Single-pass with vision models
+    - link-toc: Agent-based ToC-to-scan-page mapping
 
     max_retries applies only to stages making fallible API calls.
     """
@@ -58,6 +60,13 @@ def get_stage_map(model=None, workers=None, max_retries=3):
         elif stage_def['name'] in ['find-toc', 'extract-toc']:
             if model:
                 kwargs['model'] = model
+
+        elif stage_def['name'] == 'link-toc':
+            # Agent-based ToC entry finder with model selection
+            if model:
+                kwargs['model'] = model
+            kwargs['max_iterations'] = 15
+            kwargs['verbose'] = False
 
         stage_map[stage_def['name']] = stage_class(**kwargs)
 
