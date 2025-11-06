@@ -18,13 +18,14 @@ class LinkTocStage(BaseStage):
     to search the book and find where it appears.
 
     Dependencies:
+    - find-toc: Provides ToC page range to exclude from searches
     - extract-toc: Provides ToC entries to search for
     - label-pages: Provides boundary detection for efficient searching
     - ocr-pages: Provides OCR text for verification
     """
 
     name = "link-toc"
-    dependencies = ["extract-toc", "label-pages", "ocr-pages"]
+    dependencies = ["find-toc", "extract-toc", "label-pages", "ocr-pages"]
 
     output_schema = LinkedTableOfContents
     checkpoint_schema = None  # No checkpoints needed (single-phase)
@@ -93,6 +94,17 @@ class LinkTocStage(BaseStage):
         """Validate dependencies are complete."""
         logger.info(f"Link-ToC with {self.model}")
         logger.info(f"Max iterations per entry: {self.max_iterations}")
+
+        # Check find-toc completed
+        from pipeline.find_toc import FindTocStage
+        find_toc_stage = FindTocStage()
+        find_toc_progress = find_toc_stage.get_status(storage, logger)
+
+        if find_toc_progress['status'] != 'completed':
+            raise RuntimeError(
+                f"find-toc stage status is '{find_toc_progress['status']}', not 'completed'. "
+                f"Run find-toc stage to completion first."
+            )
 
         # Check extract-toc completed
         from pipeline.extract_toc import ExtractTocStage

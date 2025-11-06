@@ -15,6 +15,8 @@ def list_boundaries(
     Returns ALL boundaries by default (only 50-200 items, easy to scan).
     Optional range filtering for targeted searches.
 
+    Filters out TOC pages - they are not chapter boundaries.
+
     Args:
         storage: BookStorage instance
         start_page: Optional start of page range
@@ -25,6 +27,19 @@ def list_boundaries(
         Sorted by scan_page ascending
     """
     label_pages_stage = storage.stage("label-pages")
+
+    # Get TOC page range to exclude from boundaries
+    toc_pages = set()
+    find_toc_stage = storage.stage("find-toc")
+    finder_result_path = find_toc_stage.output_dir / "finder_result.json"
+    if finder_result_path.exists():
+        finder_data = find_toc_stage.load_file("finder_result.json")
+        if finder_data and finder_data.get("toc_found"):
+            page_range = finder_data.get("toc_page_range", {})
+            toc_start = page_range.get("start_page", 0)
+            toc_end = page_range.get("end_page", 0)
+            if toc_start > 0 and toc_end >= toc_start:
+                toc_pages = set(range(toc_start, toc_end + 1))
 
     # Find all boundary pages
     output_files = sorted(label_pages_stage.output_dir.glob("page_*.json"))
@@ -38,6 +53,10 @@ def list_boundaries(
             continue
 
         page_num = page_data["page_number"]
+
+        # Skip TOC pages
+        if page_num in toc_pages:
+            continue
 
         # Apply range filter if provided
         if start_page and page_num < start_page:
@@ -85,6 +104,8 @@ def grep_text(
 
         Agent sees: Dense region 45-62, boundary at page 45!
 
+    Filters out TOC pages - chapter titles in the TOC are not the actual chapters.
+
     Args:
         query: Text to search for (supports regex)
         storage: BookStorage instance
@@ -96,12 +117,28 @@ def grep_text(
     """
     from rapidfuzz import fuzz
 
+    # Get TOC page range to exclude from search results
+    toc_pages = set()
+    find_toc_stage = storage.stage("find-toc")
+    finder_result_path = find_toc_stage.output_dir / "finder_result.json"
+    if finder_result_path.exists():
+        finder_data = find_toc_stage.load_file("finder_result.json")
+        if finder_data and finder_data.get("toc_found"):
+            page_range = finder_data.get("toc_page_range", {})
+            toc_start = page_range.get("start_page", 0)
+            toc_end = page_range.get("end_page", 0)
+            if toc_start > 0 and toc_end >= toc_start:
+                toc_pages = set(range(toc_start, toc_end + 1))
+
     metadata = storage.load_metadata()
     total_pages = metadata.get('total_pages', 0)
 
     results = []
 
     for page_num in range(1, total_pages + 1):
+        # Skip TOC pages
+        if page_num in toc_pages:
+            continue
         try:
             ocr_text = get_page_ocr(page_num, storage)
 
