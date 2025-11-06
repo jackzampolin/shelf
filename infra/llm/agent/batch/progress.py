@@ -111,18 +111,23 @@ class MultiAgentProgressDisplay:
                 agent.total_reasoning_tokens += event.data.get("reasoning_tokens", 0)
 
             elif event.event_type == "agent_complete":
-                agent.status = event.data.get("status", "found")
+                agent.status = event.data.get("status", "searching")
                 agent.completion_time = time.time()
                 agent.elapsed_time = agent.completion_time - agent.start_time
                 agent.total_cost = event.data.get("total_cost", 0)
 
                 self.completed_count += 1
+                self.total_cost += agent.total_cost
+
+            elif event.event_type == "agent_status_final":
+                # Update final status without double-counting completion
+                agent.status = event.data.get("status", "found")
+                agent.total_cost = event.data.get("total_cost", 0)
+
                 if agent.status == "found":
                     self.found_count += 1
                 else:
                     self.not_found_count += 1
-
-                self.total_cost += agent.total_cost
 
         if self.live:
             self.live.update(self._render())
@@ -166,9 +171,9 @@ class MultiAgentProgressDisplay:
                     f"[dim]{avg_time:.1f}s[/dim]"
                 ))
 
-                found_pct = (self.found_count / self.completed_count) * 100
+                found_pct = (self.found_count / self.total_agents) * 100 if self.total_agents > 0 else 0.0
                 metrics_lines.append(Text.from_markup(
-                    f"  Found: [green]{self.found_count}/{self.completed_count}[/green] "
+                    f"  Found: [green]{self.found_count}/{self.total_agents}[/green] "
                     f"[dim]({found_pct:.1f}%)[/dim]"
                 ))
 

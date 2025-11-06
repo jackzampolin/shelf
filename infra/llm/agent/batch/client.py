@@ -36,14 +36,24 @@ class AgentBatchClient:
             agent_id = agent_config.agent_id
 
             def on_event(event: AgentEvent):
+                # Enrich agent_complete events with status for progress display
+                if event.event_type == "agent_complete":
+                    # Agent client fires agent_complete but doesn't include status
+                    # We'll determine status after agent.run() completes
+                    # For now, just mark it as "searching" which will be updated
+                    if "status" not in event.data:
+                        event.data["status"] = "searching"
                 self.progress.on_event(agent_id, event)
 
             agent = AgentClient(agent_config)
             result = agent.run(verbose=False, on_event=on_event)
 
+            # Agent already fired agent_complete event during run()
+            # Now update the agent's status based on the final result
+            # Use a separate event to avoid double-counting completions
             status = "found" if result.success else "not_found"
             self.progress.on_event(agent_id, AgentEvent(
-                event_type="agent_complete",
+                event_type="agent_status_final",
                 iteration=result.iterations,
                 timestamp=time.time(),
                 data={
