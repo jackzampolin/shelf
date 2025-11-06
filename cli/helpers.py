@@ -42,7 +42,8 @@ def get_stage_status(storage: BookStorage, stage_name: str):
     if stage is None:
         return None
 
-    logger = PipelineLogger(storage.scan_id, stage_name)
+    log_dir = storage.stage(stage_name).output_dir / 'logs'
+    logger = PipelineLogger(storage.scan_id, stage_name, log_dir)
     try:
         return stage.get_status(storage, logger)
     finally:
@@ -54,7 +55,8 @@ def get_stage_and_status(storage: BookStorage, stage_name: str):
     if stage is None:
         return None, None
 
-    logger = PipelineLogger(storage.scan_id, stage_name)
+    log_dir = storage.stage(stage_name).output_dir / 'logs'
+    logger = PipelineLogger(storage.scan_id, stage_name, log_dir)
     try:
         status = stage.get_status(storage, logger)
         return stage, status
