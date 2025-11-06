@@ -68,7 +68,7 @@ def find_all_toc_entries(
 
     for idx in remaining_indices:
         toc_entry = toc_entries[idx]
-        agent_id = f"entry_{idx:03d}"
+        agent_id = f"entry-{idx:03d}"
 
         tools = TocEntryFinderTools(
             storage=storage,

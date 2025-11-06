@@ -131,11 +131,17 @@ class RequestExecutor:
             execution_time = time.time() - start_time
             error_type = self.classify_error(e)
 
+            # Extract Retry-After header from 429 responses
+            retry_after = None
+            if error_type == '429_rate_limit':
+                retry_after = self.extract_retry_after(e)
+
             return LLMResult(
                 request_id=request.id,
                 success=False,
                 error_type=error_type,
                 error_message=str(e),
+                retry_after=retry_after,
                 attempts=request._retry_count + 1,
                 total_time_seconds=execution_time + queue_time,
                 queue_time_seconds=queue_time,
@@ -160,6 +166,31 @@ class RequestExecutor:
             return '4xx'
         else:
             return 'unknown'
+
+    @staticmethod
+    def extract_retry_after(error: Exception) -> Optional[int]:
+        """Extract Retry-After header value from HTTPError exception.
+
+        Returns:
+            Seconds to wait (int), or None if header not present
+        """
+        try:
+            import requests
+            if isinstance(error, requests.exceptions.HTTPError):
+                if hasattr(error, 'response') and error.response is not None:
+                    retry_after = error.response.headers.get('Retry-After')
+                    if retry_after:
+                        # Retry-After can be either seconds (int) or HTTP date
+                        # Try parsing as int first
+                        try:
+                            return int(retry_after)
+                        except ValueError:
+                            # Could be HTTP date format, but for now just return None
+                            # Most APIs use seconds
+                            return None
+        except:
+            pass
+        return None
 
     @staticmethod
     def is_retryable(error_type: Optional[str]) -> bool:

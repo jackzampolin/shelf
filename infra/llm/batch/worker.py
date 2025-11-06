@@ -155,7 +155,8 @@ class WorkerPool:
                 request_id=request.id,
                 eta_seconds=wait_time
             )
-            time.sleep(min(wait_time, 1.0))
+            # Sleep full wait_time (no busy-wait loop)
+            time.sleep(wait_time)
             queue.put(request)
             return False
 
@@ -207,6 +208,10 @@ class WorkerPool:
         queue: PriorityQueue,
         on_event: Optional[Callable]
     ):
+        # Record 429 rate limit in rate limiter
+        if result.error_type == '429_rate_limit':
+            self.rate_limiter.record_429(retry_after=result.retry_after)
+
         request._retry_count += 1
         jitter = random.uniform(*self.retry_jitter)
         time.sleep(jitter)

@@ -138,6 +138,7 @@ class LLMResult:
     # Error details
     error_type: Optional[str] = None
     error_message: Optional[str] = None
+    retry_after: Optional[int] = None  # Seconds to wait (from Retry-After header for 429s)
 
     # Provider info
     provider: Optional[str] = None
