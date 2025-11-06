@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Callback wrappers for stats tracking and progress monitoring."""
-
 import time
 from typing import Callable, Optional
 

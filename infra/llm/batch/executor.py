@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Single request execution with error handling and retries."""
-
 import time
 import json
 import logging
@@ -27,7 +25,6 @@ class RequestExecutor:
         queue_time = start_time - request._queued_at
 
         try:
-            # Initialize router if fallback models configured
             if not hasattr(request, '_router') or request._router is None:
                 if request.fallback_models:
                     from infra.llm.router import ModelRouter
@@ -38,7 +35,7 @@ class RequestExecutor:
 
             current_model = request._router.get_current() if request._router else request.model
 
-            # Make LLM call (non-streaming, no retries - we handle retries at executor level)
+            # No retries at client level - executor handles retries
             response_text, usage, cost = self.llm_client.call(
                 model=current_model,
                 messages=request.messages,
@@ -47,26 +44,22 @@ class RequestExecutor:
                 images=request.images,
                 response_format=request.response_format,
                 timeout=request.timeout,
-                max_retries=0,  # No retries - executor handles retries
+                max_retries=0,
                 stream=False
             )
 
-            # Parse structured JSON response
             parsed_json = json.loads(response_text)
 
-            # Mark success in router if present
             if request._router:
                 request._router.mark_success()
 
             execution_time = time.time() - start_time
 
-            # Calculate tokens per second
             tokens_per_second = 0.0
             completion_tokens = usage.get('completion_tokens', 0)
             if execution_time > 0 and completion_tokens > 0:
                 tokens_per_second = completion_tokens / execution_time
 
-            # Extract provider from model name
             provider = None
             if '/' in current_model:
                 provider = current_model.split('/')[0]
@@ -104,7 +97,6 @@ class RequestExecutor:
             response_preview = response_text if len(response_text) <= 1000 else f"{response_text[:500]}...{response_text[-500:]}"
 
             if self.logger:
-                # Log as ERROR since this is a final failure (non-retryable)
                 self.logger.error(
                     log_message,
                     request_id=request.id,
@@ -136,12 +128,10 @@ class RequestExecutor:
             execution_time = time.time() - start_time
             error_type = self.classify_error(e)
 
-            # Extract Retry-After header from 429 responses
             retry_after = None
             if error_type == '429_rate_limit':
                 retry_after = self.extract_retry_after(e)
 
-            # Log error with full request details
             if self.logger:
                 will_retry = request._retry_count < self.max_retries and self.is_retryable(error_type)
                 log_message = f"LLM request failed: {request.id}"
@@ -150,7 +140,6 @@ class RequestExecutor:
                 else:
                     log_message += f" (final attempt)"
 
-                # Build comprehensive error context
                 error_context = {
                     'request_id': request.id,
                     'error_type': error_type,
@@ -166,14 +155,12 @@ class RequestExecutor:
                     'execution_time_seconds': execution_time,
                 }
 
-                # Add message preview (first and last message)
                 if request.messages:
                     if len(request.messages) == 1:
                         error_context['messages_preview'] = f"[{request.messages[0]['role']}]"
                     else:
                         error_context['messages_preview'] = f"[{request.messages[0]['role']}] ... [{request.messages[-1]['role']}] ({len(request.messages)} total)"
 
-                # Add response format if present
                 if request.response_format:
                     error_context['response_format'] = request.response_format.get('type', 'unknown')
 

@@ -132,7 +132,6 @@ class LLMBatchProcessor:
         )
         progress.update(0, suffix="starting...")
 
-        # Create batch-specific event handlers
         from .progress import create_progress_handler
         from infra.llm.models import LLMEvent
 
