@@ -38,15 +38,17 @@ class RequestExecutor:
 
             current_model = request._router.get_current() if request._router else request.model
 
-            # Make LLM call (non-streaming)
-            response_text, usage, cost = self.llm_client._call_non_streaming(
+            # Make LLM call (non-streaming, no retries - we handle retries at executor level)
+            response_text, usage, cost = self.llm_client.call(
                 model=current_model,
                 messages=request.messages,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
                 images=request.images,
                 response_format=request.response_format,
-                timeout=request.timeout
+                timeout=request.timeout,
+                max_retries=0,  # No retries - executor handles retries
+                stream=False
             )
 
             # Parse structured JSON response
