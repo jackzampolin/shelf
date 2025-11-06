@@ -76,13 +76,13 @@ class AgentProgressDisplay:
             if event.event_type == "iteration_start":
                 if self.main_task is None:
                     self.main_task = self.progress.add_task(
-                        f"Agent Progress (0/{self.max_iterations})",
+                        f"{self.agent_name} (0/{self.max_iterations})",
                         total=self.max_iterations
                     )
                 self.progress.update(
                     self.main_task,
                     completed=event.iteration - 1,
-                    description=f"Agent Progress ({event.iteration}/{self.max_iterations})"
+                    description=f"{self.agent_name} ({event.iteration}/{self.max_iterations})"
                 )
 
             elif event.event_type == "tool_call":
@@ -132,7 +132,7 @@ class AgentProgressDisplay:
                 self.progress.update(
                     self.main_task,
                     completed=event.iteration,
-                    description=f"Agent Progress ({event.iteration}/{self.max_iterations})"
+                    description=f"{self.agent_name} ({event.iteration}/{self.max_iterations})"
                 )
 
             elif event.event_type == "agent_complete":
@@ -145,7 +145,7 @@ class AgentProgressDisplay:
                 self.progress.update(
                     self.main_task,
                     completed=self.max_iterations,
-                    description=f"[bold green]Agent Complete ({self.total_iterations}/{self.max_iterations})[/bold green]"
+                    description=f"[bold green]✅ {self.agent_name}[/bold green]"
                 )
 
         if self.live:
