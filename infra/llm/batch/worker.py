@@ -23,12 +23,14 @@ class WorkerPool:
         executor: RequestExecutor,
         rate_limiter: RateLimiter,
         max_workers: int,
+        logger=None,
         retry_jitter: tuple = (1.0, 3.0),
         progress_interval: float = 1.0,
     ):
         self.executor = executor
         self.rate_limiter = rate_limiter
         self.max_workers = max_workers
+        self.logger = logger
         self.retry_jitter = retry_jitter
         self.progress_interval = progress_interval
 
@@ -91,40 +93,37 @@ class WorkerPool:
         on_result: Optional[Callable[[LLMResult], None]],
         expected_ids: Set[str]
     ):
-        import sys
         worker_id = threading.current_thread().name
-        iterations = 0
+        if self.logger:
+            self.logger.debug(f"Worker {worker_id} started")
+
         while True:
             try:
-                iterations += 1
-                if iterations <= 3:
-                    print(f"[DEBUG] Worker {worker_id} iteration {iterations}", file=sys.stderr, flush=True)
-
                 if self._all_done(expected_ids):
+                    if self.logger:
+                        self.logger.debug(f"Worker {worker_id} exiting (all done)")
                     break
 
                 request = self._get_next_request(queue, expected_ids)
                 if request is None:
-                    if iterations <= 3:
-                        print(f"[DEBUG] Worker {worker_id} got None request", file=sys.stderr, flush=True)
                     continue
 
-                if iterations <= 3:
-                    print(f"[DEBUG] Worker {worker_id} checking rate limit for {request.id}", file=sys.stderr, flush=True)
                 if not self._check_rate_limit(request, queue, on_event):
-                    if iterations <= 3:
-                        print(f"[DEBUG] Worker {worker_id} rate limited", file=sys.stderr, flush=True)
                     continue
 
-                if iterations <= 3:
-                    print(f"[DEBUG] Worker {worker_id} consuming token", file=sys.stderr, flush=True)
                 self.rate_limiter.consume()
+                if self.logger:
+                    self.logger.debug(f"Worker {worker_id} executing {request.id}")
 
                 self._update_request_phase(request.id, RequestPhase.DEQUEUED)
 
                 self._emit_event(on_event, LLMEvent.DEQUEUED, request_id=request.id)
                 self._emit_event(on_event, LLMEvent.EXECUTING, request_id=request.id)
                 result = self.executor.execute_request(request, on_event)
+
+                if self.logger:
+                    status = "✓" if result.success else "✗"
+                    self.logger.debug(f"Worker {worker_id} {status} {request.id} ({result.execution_time_seconds:.1f}s)")
 
                 self._handle_result(result, request, queue, on_event, on_result)
 

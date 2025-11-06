@@ -35,6 +35,7 @@ class LLMBatchProcessor:
             max_workers=self.max_workers,
             max_retries=self.max_retries,
             retry_jitter=self.retry_jitter,
+            logger=self.logger,
         )
 
     def process(

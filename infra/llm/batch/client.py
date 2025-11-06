@@ -21,12 +21,14 @@ class LLMBatchClient:
         max_retries: int = 5,
         retry_jitter: tuple = (1.0, 3.0),
         progress_interval: float = 1.0,
+        logger=None,
     ):
         self.max_workers = max_workers if max_workers is not None else Config.max_workers
         self.rate_limit = rate_limit if rate_limit is not None else Config.rate_limit_requests_per_minute
         self.max_retries = max_retries
         self.retry_jitter = retry_jitter
         self.progress_interval = progress_interval
+        self.logger = logger
 
         self.llm_client = LLMClient()
         self.rate_limiter = RateLimiter(requests_per_minute=self.rate_limit)
@@ -40,6 +42,7 @@ class LLMBatchClient:
             executor=self.request_executor,
             rate_limiter=self.rate_limiter,
             max_workers=self.max_workers,
+            logger=self.logger,
             retry_jitter=self.retry_jitter,
             progress_interval=self.progress_interval,
         )

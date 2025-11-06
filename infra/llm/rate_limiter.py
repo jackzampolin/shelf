@@ -53,12 +53,7 @@ class RateLimiter:
         """
         with self.lock:
             self._refill_tokens()
-            result = self.tokens >= 1.0
-            # Debug: log when rate limited
-            if not result and self.total_consumed < 5:
-                import sys
-                print(f"[DEBUG] Rate limited: tokens={self.tokens:.4f}, rpm={self.requests_per_minute}, consumed={self.total_consumed}", file=sys.stderr, flush=True)
-            return result
+            return self.tokens >= 1.0
 
     def consume(self, count: int = 1) -> float:
         """
@@ -94,9 +89,6 @@ class RateLimiter:
                 # Race condition: another thread consumed tokens while we waited
                 # Consume anyway (may go negative) - better than deadlock
                 # This is rare and will self-correct as tokens refill
-                if self.total_consumed < 5:
-                    import sys
-                    print(f"[DEBUG] Consuming despite shortage: tokens={self.tokens:.4f}, count={count}, will go negative", file=sys.stderr, flush=True)
                 self.tokens -= count
                 self.total_consumed += count
 
