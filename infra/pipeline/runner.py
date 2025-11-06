@@ -1,3 +1,4 @@
+import os
 from typing import List
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
@@ -18,7 +19,10 @@ def run_stage(
 
     logs_dir = stage_storage.output_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
-    logger = create_logger(storage.scan_id, stage.name, log_dir=logs_dir)
+
+    # Check DEBUG environment variable for log level
+    log_level = "DEBUG" if os.environ.get("DEBUG", "").lower() in ("true", "1") else "INFO"
+    logger = create_logger(storage.scan_id, stage.name, log_dir=logs_dir, level=log_level)
 
     try:
         logger.info(

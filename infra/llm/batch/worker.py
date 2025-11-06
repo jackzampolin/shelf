@@ -122,8 +122,14 @@ class WorkerPool:
                 result = self.executor.execute_request(request, on_event)
 
                 if self.logger:
-                    status = "✓" if result.success else "✗"
-                    self.logger.debug(f"Worker {worker_id} {status} {request.id} ({result.execution_time_seconds:.1f}s)")
+                    if result.success:
+                        self.logger.debug(f"Worker {worker_id} ✓ {request.id} ({result.execution_time_seconds:.1f}s)")
+                    else:
+                        self.logger.debug(
+                            f"Worker {worker_id} ✗ {request.id} ({result.execution_time_seconds:.1f}s)",
+                            error_type=result.error_type,
+                            error=result.error_message
+                        )
 
                 self._handle_result(result, request, queue, on_event, on_result)
 

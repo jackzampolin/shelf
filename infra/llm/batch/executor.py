@@ -13,9 +13,10 @@ logger = logging.getLogger(__name__)
 
 
 class RequestExecutor:
-    def __init__(self, llm_client: LLMClient, max_retries: int = 5):
+    def __init__(self, llm_client: LLMClient, max_retries: int = 5, logger=None):
         self.llm_client = llm_client
         self.max_retries = max_retries
+        self.logger = logger
 
     def execute_request(
         self,
@@ -90,7 +91,6 @@ class RequestExecutor:
 
         except json.JSONDecodeError as e:
             will_retry = request._retry_count < self.max_retries
-            log_level = logging.DEBUG if will_retry else logging.WARNING
             log_message = f"JSON parsing failed for {request.id}"
             if will_retry:
                 log_message += f" (will retry, attempt {request._retry_count + 1}/{self.max_retries})"
@@ -99,20 +99,18 @@ class RequestExecutor:
 
             response_preview = response_text if len(response_text) <= 1000 else f"{response_text[:500]}...{response_text[-500:]}"
 
-            logger.log(
-                log_level,
-                log_message,
-                extra={
-                    'request_id': request.id,
-                    'model': current_model,
-                    'error': str(e),
-                    'response_length': len(response_text),
-                    'response_preview': response_preview,
-                    'response_format': request.response_format,
-                    'attempt': request._retry_count + 1,
-                    'max_retries': self.max_retries
-                }
-            )
+            if self.logger:
+                self.logger.warning(
+                    log_message,
+                    request_id=request.id,
+                    model=current_model,
+                    error=str(e),
+                    response_length=len(response_text),
+                    response_preview=response_preview,
+                    response_format=request.response_format,
+                    attempt=request._retry_count + 1,
+                    max_retries=self.max_retries
+                )
 
             execution_time = time.time() - start_time
             return LLMResult(
@@ -135,6 +133,24 @@ class RequestExecutor:
             retry_after = None
             if error_type == '429_rate_limit':
                 retry_after = self.extract_retry_after(e)
+
+            # Log error
+            if self.logger:
+                will_retry = request._retry_count < self.max_retries and self.is_retryable(error_type)
+                log_message = f"Request {request.id} failed with {error_type}"
+                if will_retry:
+                    log_message += f" (will retry, attempt {request._retry_count + 1}/{self.max_retries})"
+                else:
+                    log_message += f" (final attempt)"
+
+                self.logger.warning(
+                    log_message,
+                    request_id=request.id,
+                    error_type=error_type,
+                    error=str(e),
+                    attempt=request._retry_count + 1,
+                    max_retries=self.max_retries
+                )
 
             return LLMResult(
                 request_id=request.id,

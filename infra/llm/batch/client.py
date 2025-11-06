@@ -35,7 +35,8 @@ class LLMBatchClient:
 
         self.request_executor = RequestExecutor(
             llm_client=self.llm_client,
-            max_retries=self.max_retries
+            max_retries=self.max_retries,
+            logger=self.logger
         )
 
         self.worker_pool = WorkerPool(
