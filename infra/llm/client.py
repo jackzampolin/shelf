@@ -125,8 +125,8 @@ class LLMClient:
         if response_format:
             payload["response_format"] = response_format
 
-        # Retry loop for server errors
-        for attempt in range(max_retries):
+        # Retry loop for server errors (always try at least once)
+        for attempt in range(max(1, max_retries)):
             try:
                 if stream:
                     return self._call_streaming(headers, payload, model, images)
@@ -161,7 +161,7 @@ class LLMClient:
                     should_retry = True
                     error_type = "413 payload too large"
 
-                if should_retry and attempt < max_retries - 1:
+                if should_retry and attempt < max(1, max_retries) - 1:
                     delay = (2 ** attempt) * 2  # Exponential backoff: 2s, 4s, 8s
                     # Suppress retry messages - stage-level logging will show final errors
                     time.sleep(delay)
@@ -174,7 +174,7 @@ class LLMClient:
                     raise
 
             except requests.exceptions.Timeout:
-                if attempt < max_retries - 1:
+                if attempt < max(1, max_retries) - 1:
                     delay = (2 ** attempt) * 2  # Exponential backoff: 2s, 4s, 8s
                     # Suppress retry messages - stage-level logging will show final errors
                     time.sleep(delay)
