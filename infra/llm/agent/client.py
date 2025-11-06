@@ -5,57 +5,40 @@ from datetime import datetime
 from pathlib import Path
 
 from infra.llm.client import LLMClient
-from infra.pipeline.logger import PipelineLogger
+from .config import AgentConfig
 from .schemas import AgentResult, AgentEvent
 from .logging import save_run_log
 
 
 class AgentClient:
-    def __init__(
-        self,
-        max_iterations: int = 25,
-        log_dir: Optional[Path] = None,
-        log_filename: Optional[str] = None,
-        logger: Optional[PipelineLogger] = None,
-        metrics_manager = None,
-        metrics_key_prefix: str = "",
-        verbose: bool = True
-    ):
-        self.max_iterations = max_iterations
-        self.log_dir = log_dir
-        self.log_filename = log_filename
-        self.logger = logger
-        self.metrics_manager = metrics_manager
-        self.metrics_key_prefix = metrics_key_prefix
-        self.verbose = verbose
+    def __init__(self, config: AgentConfig):
+        self.config = config
+        self.llm_client = LLMClient()
+
+        self.log_dir = config.stage_storage.output_dir / 'logs'
+        self.log_filename = f"{config.agent_id}.json"
+        self.metrics_manager = config.stage_storage.metrics_manager
+        self.metrics_key_prefix = f"{config.agent_id}_"
+
         self.iteration_count = 0
         self.total_cost = 0.0
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
         self.total_reasoning_tokens = 0
         self.start_time = None
-        self.images = []
         self.run_log = None
     def run(
         self,
-        llm_client: LLMClient,
-        model: str,
-        initial_messages: List[Dict],
-        tools: List[Dict],
-        execute_tool: Callable[[str, Dict], str],
-        is_complete: Callable[[List[Dict]], bool],
-        on_event: Optional[Callable[[AgentEvent], None]] = None,
-        temperature: float = 0.0,
-        max_tokens: Optional[int] = None
+        on_event: Optional[Callable[[AgentEvent], None]] = None
     ) -> AgentResult:
         self.start_time = time.time()
-        messages = initial_messages.copy()
+        messages = self.config.initial_messages.copy()
         self.run_log = {
             'metadata': {
-                'model': model,
-                'temperature': temperature,
-                'max_tokens': max_tokens,
-                'max_iterations': self.max_iterations,
+                'model': self.config.model,
+                'temperature': self.config.temperature,
+                'max_tokens': self.config.max_tokens,
+                'max_iterations': self.config.max_iterations,
                 'start_time': datetime.now().isoformat(),
                 'end_time': None,
                 'success': None,
@@ -63,24 +46,24 @@ class AgentClient:
                 'total_cost_usd': 0.0,
                 'execution_time_seconds': 0.0
             },
-            'initial_messages': initial_messages.copy(),
+            'initial_messages': self.config.initial_messages.copy(),
             'iterations': []
         }
         self._emit_event(on_event, "agent_start", 0, {
-            "model": model,
-            "max_iterations": self.max_iterations
+            "model": self.config.model,
+            "max_iterations": self.config.max_iterations
         })
         try:
-            for iteration in range(1, self.max_iterations + 1):
+            for iteration in range(1, self.config.max_iterations + 1):
                 iteration_start_time = time.time()
                 iteration_tool_time = 0.0
                 self.iteration_count = iteration
                 iteration_log = {
                     'iteration': iteration,
                     'llm_request': {
-                        'model': model,
-                        'temperature': temperature,
-                        'max_tokens': max_tokens,
+                        'model': self.config.model,
+                        'temperature': self.config.temperature,
+                        'max_tokens': self.config.max_tokens,
                         'timestamp': datetime.now().isoformat()
                     },
                     'llm_response': None,
@@ -88,13 +71,13 @@ class AgentClient:
                 }
                 self._emit_event(on_event, "iteration_start", iteration, {})
                 try:
-                    content, usage, cost, tool_calls, reasoning_details = llm_client.call_with_tools(
-                        model=model,
+                    content, usage, cost, tool_calls, reasoning_details = self.llm_client.call_with_tools(
+                        model=self.config.model,
                         messages=messages,
-                        tools=tools,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                        images=self.images if self.images else None
+                        tools=self.config.tools.get_tools(),
+                        temperature=self.config.temperature,
+                        max_tokens=self.config.max_tokens,
+                        images=None
                     )
                     self.total_cost += cost
                     self.run_log['metadata']['total_cost_usd'] = self.total_cost
@@ -131,7 +114,7 @@ class AgentClient:
                     assistant_msg["reasoning_details"] = reasoning_details
                 messages.append(assistant_msg)
                 if not tool_calls:
-                    if is_complete(messages):
+                    if self.config.tools.is_complete():
                         elapsed = time.time() - self.start_time
                         self._emit_event(on_event, "agent_complete", iteration, {
                             "total_cost": self.total_cost,
@@ -153,7 +136,7 @@ class AgentClient:
                         arguments = {}
                     tool_start = time.time()
                     try:
-                        result = execute_tool(tool_name, arguments)
+                        result = self.config.tools.execute_tool(tool_name, arguments)
                     except Exception as e:
                         result = json.dumps({"error": f"Tool execution failed: {str(e)}"})
                     tool_time = time.time() - tool_start
@@ -203,7 +186,7 @@ class AgentClient:
                     "iteration_time": iteration_total_time,
                     "tool_time": iteration_tool_time
                 })
-                if is_complete(messages):
+                if self.config.tools.is_complete():
                     elapsed = time.time() - self.start_time
                     self._emit_event(on_event, "agent_complete", iteration, {
                         "total_cost": self.total_cost,
@@ -213,7 +196,7 @@ class AgentClient:
                     return self._create_success_result(messages)
             return self._create_error_result(
                 messages,
-                f"Agent did not complete within {self.max_iterations} iterations"
+                f"Agent did not complete within {self.config.max_iterations} iterations"
             )
         except Exception as e:
             return self._create_error_result(

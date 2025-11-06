@@ -2,18 +2,16 @@ from typing import Dict, List, Optional
 from PIL import Image
 
 from infra.storage.book_storage import BookStorage
-from infra.llm.agent import AgentClient
+from infra.llm.agent import AgentTools
 from infra.utils.pdf import downsample_for_vision
 
 from .tools import list_boundaries, grep_text, get_page_ocr
 
 
-class TocEntryFinderTools:
-    """Tools for TocEntryFinderAgent with vision support."""
+class TocEntryFinderTools(AgentTools):
 
-    def __init__(self, storage: BookStorage, agent_client: AgentClient, toc_entry: Dict, total_pages: int):
+    def __init__(self, storage: BookStorage, toc_entry: Dict, total_pages: int):
         self.storage = storage
-        self.agent_client = agent_client
         self.toc_entry = toc_entry
         self.total_pages = total_pages
         self._pending_result: Optional[Dict] = None
@@ -238,3 +236,6 @@ class TocEntryFinderTools:
 
         except Exception as e:
             return json.dumps({"error": f"Failed to load page image: {str(e)}"})
+
+    def is_complete(self) -> bool:
+        return self._pending_result is not None

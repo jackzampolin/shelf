@@ -1,14 +1,15 @@
 import time
 from typing import Tuple, Dict, List
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
-from infra.llm.agent import MultiAgentProgressDisplay
+from infra.llm.agent import AgentConfig, AgentBatchConfig, AgentBatch
 
-from .schemas import LinkedTableOfContents, LinkedToCEntry, AgentResult
+from .schemas import LinkedTableOfContents, LinkedToCEntry
 from .storage import LinkTocStageStorage
 from .agent.finder import TocEntryFinderAgent
+from .agent.finder_tools import TocEntryFinderTools
+from .agent.prompts import FINDER_SYSTEM_PROMPT, build_finder_user_prompt
 
 
 def find_all_toc_entries(
@@ -59,99 +60,78 @@ def find_all_toc_entries(
 
     logger.info(f"Processing {len(remaining_indices)} remaining ToC entries")
 
-    progress = MultiAgentProgressDisplay(
-        total_agents=total_entries,
-        max_visible_agents=10,
-        completed_agent_display_seconds=5.0
-    )
+    metadata = storage.load_metadata()
+    total_pages = metadata.get('total_pages', 0)
 
-    for idx in range(total_entries):
-        agent_id = f"entry_{idx:03d}"
-        progress.register_agent(
-            agent_id=agent_id,
-            entry_index=idx,
-            entry_title=toc_entries[idx]['title'],
-            max_iterations=max_iterations
-        )
+    configs = []
+    tools_by_idx = {}
 
-    for idx in completed_indices:
-        agent_id = f"entry_{idx:03d}"
-        linked_toc_partial = stage_storage.load_linked_toc(storage)
-        if linked_toc_partial and linked_toc_partial.entries and idx < len(linked_toc_partial.entries):
-            entry = linked_toc_partial.entries[idx]
-            status = "found" if entry and entry.scan_page else "not_found"
-        else:
-            status = "not_found"
-
-        progress.agents[agent_id].status = status
-        progress.agents[agent_id].completion_time = 0.0
-        progress.completed_count += 1
-        if status == "found":
-            progress.found_count += 1
-        else:
-            progress.not_found_count += 1
-
-    def process_entry(idx: int) -> AgentResult:
+    for idx in remaining_indices:
         toc_entry = toc_entries[idx]
         agent_id = f"entry_{idx:03d}"
 
-        def on_event(event):
-            progress.on_event(agent_id, event)
-
-        agent = TocEntryFinderAgent(
-            toc_entry=toc_entry,
-            toc_entry_index=idx,
+        tools = TocEntryFinderTools(
             storage=storage,
-            logger=None,
+            toc_entry=toc_entry,
+            total_pages=total_pages
+        )
+        tools_by_idx[idx] = tools
+
+        initial_messages = [
+            {"role": "system", "content": FINDER_SYSTEM_PROMPT},
+            {"role": "user", "content": build_finder_user_prompt(toc_entry, idx, total_pages)}
+        ]
+
+        configs.append(AgentConfig(
             model=model,
-            max_iterations=max_iterations,
-            verbose=False
-        )
-
-        result = agent.search(on_event=on_event)
-
-        linked_entry = LinkedToCEntry(
-            entry_number=toc_entry.get('entry_number'),
-            title=toc_entry['title'],
-            level=toc_entry.get('level', 1),
-            level_name=toc_entry.get('level_name'),
-            printed_page_number=toc_entry.get('printed_page_number'),
-            scan_page=result.scan_page,
-            link_confidence=result.confidence,
-            agent_reasoning=result.reasoning,
-            agent_iterations=result.iterations_used,
-            candidates_checked=result.candidates_checked,
-        )
-
-        stage_storage.update_linked_entry(storage, idx, linked_entry)
-
-        from infra.llm.agent import AgentEvent
-        progress.on_event(agent_id, AgentEvent(
-            event_type="agent_complete",
-            iteration=result.iterations_used,
-            timestamp=time.time(),
-            data={
-                "status": "found" if result.found else "not_found",
-                "total_cost": 0.0
-            }
+            initial_messages=initial_messages,
+            tools=tools,
+            stage_storage=storage.stage('link-toc'),
+            agent_id=agent_id,
+            max_iterations=max_iterations
         ))
 
-        return result
+    batch_config = AgentBatchConfig(
+        agent_configs=configs,
+        max_workers=10
+    )
 
-    progress.__enter__()
+    batch = AgentBatch(batch_config)
+    batch_result = batch.run()
 
-    try:
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {executor.submit(process_entry, idx): idx for idx in remaining_indices}
+    for agent_result, idx in zip(batch_result.results, remaining_indices):
+        toc_entry = toc_entries[idx]
+        tools = tools_by_idx[idx]
 
-            for future in as_completed(futures):
-                idx = futures[future]
-                try:
-                    future.result()
-                except Exception as e:
-                    logger.error(f"Agent {idx} failed: {str(e)}")
-    finally:
-        progress.__exit__(None, None, None)
+        if agent_result.success and tools._pending_result:
+            result_data = tools._pending_result
+            linked_entry = LinkedToCEntry(
+                entry_number=toc_entry.get('entry_number'),
+                title=toc_entry['title'],
+                level=toc_entry.get('level', 1),
+                level_name=toc_entry.get('level_name'),
+                printed_page_number=toc_entry.get('printed_page_number'),
+                scan_page=result_data["scan_page"],
+                link_confidence=result_data["confidence"],
+                agent_reasoning=result_data["reasoning"],
+                agent_iterations=agent_result.iterations,
+                candidates_checked=tools._candidates_checked,
+            )
+        else:
+            linked_entry = LinkedToCEntry(
+                entry_number=toc_entry.get('entry_number'),
+                title=toc_entry['title'],
+                level=toc_entry.get('level', 1),
+                level_name=toc_entry.get('level_name'),
+                printed_page_number=toc_entry.get('printed_page_number'),
+                scan_page=None,
+                link_confidence=0.0,
+                agent_reasoning=agent_result.error_message or "Agent failed",
+                agent_iterations=agent_result.iterations,
+                candidates_checked=tools._candidates_checked if tools else [],
+            )
+
+        stage_storage.update_linked_entry(storage, idx, linked_entry)
 
     linked_toc = stage_storage.load_linked_toc(storage)
 
