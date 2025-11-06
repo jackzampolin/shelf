@@ -47,13 +47,8 @@ class FindTocStage(BaseStage):
             mins = metrics['total_time_seconds'] / 60
             lines.append(f"   Time:   {mins:.1f}m")
 
-        artifacts = status.get('artifacts', {})
-        if artifacts.get('finder_result_exists', False):
-            finder_result = self.stage_storage.load_finder_result(storage)
-            if finder_result and finder_result.get('toc_found'):
-                toc_range = finder_result.get('toc_page_range')
-                if toc_range:
-                    lines.append(f"   Found:  pages {toc_range['start_page']}-{toc_range['end_page']}")
+        # Note: Additional details would require loading finder_result,
+        # but pretty_print_status only has access to status dict
 
         return '\n'.join(lines)
 
