@@ -50,7 +50,6 @@ def wrap_with_progress_monitoring(
                 total_requests
             )
             last_progress_time[0] = now
-            worker_pool.expire_old_completions()
 
         if original_callback:
             original_callback(event)

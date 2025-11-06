@@ -138,6 +138,3 @@ class LLMBatchClient:
 
     def get_active_requests(self) -> dict:
         return self.worker_pool.get_active_requests()
-
-    def get_recent_completions(self) -> dict:
-        return self.worker_pool.get_recent_completions()
