@@ -10,6 +10,7 @@ Handles:
 - Request tracking updates
 """
 
+import logging
 import time
 import random
 import threading
@@ -25,6 +26,8 @@ from infra.llm.models import (
 )
 from infra.llm.rate_limiter import RateLimiter
 from .executor import RequestExecutor
+
+logger = logging.getLogger(__name__)
 
 
 class WorkerPool:
@@ -338,13 +341,11 @@ class WorkerPool:
             time.sleep(jitter)
             queue.put(request)
 
-            import logging
-            logger = logging.getLogger(__name__)
             logger.info(
                 f"Falling back to {next_model} for {request.id}",
                 extra={
                     'request_id': request.id,
-                    'previous_model': router.models[router.current_index - 1],
+                    'previous_model': result.model_used,
                     'fallback_model': next_model,
                     'retry_count': request._retry_count,
                     'error': result.error_message
