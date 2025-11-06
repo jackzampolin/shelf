@@ -81,18 +81,28 @@ def format_rollup_lines(batch_stats, rollup_metrics: Dict) -> List[Tuple[str, st
             f"[cyan]Avg cost:[/cyan] [bold yellow]{avg_cost_cents:.2f}¢[/bold yellow][dim]/page[/dim]"
         ))
 
-    active_count = rollup_metrics['active_count']
-    waiting_count = rollup_metrics['waiting_count']
-    streaming_count = rollup_metrics['streaming_count']
-
-    if active_count > 0:
+    # Show total in-progress (all non-completed requests)
+    if batch_stats.in_progress > 0:
         parts = []
-        if waiting_count > 0:
-            parts.append(f"{waiting_count} waiting")
-        if streaming_count > 0:
-            parts.append(f"{streaming_count} streaming")
-        active_line = f"[cyan]Active:[/cyan] [bold]{' + '.join(parts)}[/bold]" if parts else f"[cyan]Active:[/cyan] [bold]{active_count}[/bold]"
-        lines.append(("rollup_active", active_line))
+        if batch_stats.queued > 0:
+            parts.append(f"{batch_stats.queued} queued")
+
+        active_count = rollup_metrics['active_count']
+        if active_count > 0:
+            waiting_count = rollup_metrics['waiting_count']
+            streaming_count = rollup_metrics['streaming_count']
+
+            if waiting_count > 0 and streaming_count > 0:
+                parts.append(f"{active_count} active ({waiting_count} waiting, {streaming_count} streaming)")
+            elif waiting_count > 0:
+                parts.append(f"{active_count} active (waiting)")
+            elif streaming_count > 0:
+                parts.append(f"{active_count} active (streaming)")
+            else:
+                parts.append(f"{active_count} active")
+
+        in_progress_line = f"[cyan]In progress:[/cyan] [bold]{batch_stats.in_progress}[/bold] [dim]({', '.join(parts)})[/dim]"
+        lines.append(("rollup_in_progress", in_progress_line))
 
     ttfts = rollup_metrics['ttfts']
     if ttfts:
