@@ -88,14 +88,6 @@ class TocFinderAgent:
                 reasoning=agent_result.error_message or "Search incomplete"
             )
 
-        if progress:
-            if final_result.toc_found:
-                range_str = f"{final_result.toc_page_range.start_page}-{final_result.toc_page_range.end_page}"
-                progress.set_result_name(f"ToC found: pages {range_str}")
-            else:
-                progress.set_result_name(f"ToC search failed")
-            progress.__exit__(None, None, None)
-
         if self.verbose and not final_result.toc_found:
             print(f"⊘ No ToC found: {final_result.reasoning}")
 
