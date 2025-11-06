@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 import time
-from pathlib import Path
 from typing import List, Optional, Callable
-from datetime import datetime
 
 from infra.llm.models import LLMRequest, LLMResult, LLMEvent, EventData
 from infra.llm.client import LLMClient
 from infra.llm.rate_limiter import RateLimiter
 from infra.config import Config
 
-from .http_session import ThreadLocalSessionManager
 from .stats import BatchStatsTracker, BatchStats
 from .executor import RequestExecutor
 from .worker import WorkerPool
@@ -23,29 +20,16 @@ class LLMBatchClient:
         rate_limit: Optional[int] = None,
         max_retries: int = 5,
         retry_jitter: tuple = (1.0, 3.0),
-        verbose: bool = False,
         progress_interval: float = 1.0,
-        log_dir: Optional[Path] = None,
-        log_timestamp: Optional[str] = None,
     ):
         self.max_workers = max_workers if max_workers is not None else Config.max_workers
         self.rate_limit = rate_limit if rate_limit is not None else Config.rate_limit_requests_per_minute
         self.max_retries = max_retries
         self.retry_jitter = retry_jitter
-        self.verbose = verbose
         self.progress_interval = progress_interval
-        self.log_dir = log_dir
-
-        if self.log_dir:
-            self.log_dir = Path(self.log_dir)
-            self.log_dir.mkdir(parents=True, exist_ok=True)
-            if not log_timestamp:
-                log_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            self.log_timestamp = log_timestamp
 
         self.llm_client = LLMClient()
         self.rate_limiter = RateLimiter(requests_per_minute=self.rate_limit)
-        self.session_manager = ThreadLocalSessionManager()
 
         self.request_executor = RequestExecutor(
             llm_client=self.llm_client,
@@ -58,7 +42,6 @@ class LLMBatchClient:
             max_workers=self.max_workers,
             retry_jitter=self.retry_jitter,
             progress_interval=self.progress_interval,
-            log_dir=self.log_dir
         )
 
         self.stats_tracker: Optional[BatchStatsTracker] = None

@@ -53,14 +53,12 @@ class LLMBatchConfig:
         max_workers: Thread pool size (default: Config.max_workers)
         max_retries: Max retry attempts per request
         retry_jitter: (min, max) seconds between retries
-        verbose: Enable per-request streaming events
         batch_name: Display name for progress (useful for multi-processor stages)
     """
     model: str
     max_workers: Optional[int] = None
     max_retries: int = 3
     retry_jitter: tuple = (1.0, 3.0)
-    verbose: bool = True
     batch_name: str = "LLM Batch"
 
 
@@ -108,24 +106,17 @@ class LLMBatchProcessor:
         self.max_workers = config.max_workers or Config.max_workers
         self.max_retries = config.max_retries
         self.retry_jitter = config.retry_jitter
-        self.verbose = config.verbose
         self.batch_name = config.batch_name
 
         # Derive from storage (single source of truth)
         stage_storage = storage.stage(stage_name)
-        self.log_dir = stage_storage.output_dir / "logs" / "llmbatch"
         self.metrics_manager = stage_storage.metrics_manager
-
-        # Create log directory
-        self.log_dir.mkdir(parents=True, exist_ok=True)
 
         # Create batch client
         self.batch_client = LLMBatchClient(
             max_workers=self.max_workers,
             max_retries=self.max_retries,
             retry_jitter=self.retry_jitter,
-            verbose=self.verbose,
-            log_dir=self.log_dir,
         )
 
     def process(

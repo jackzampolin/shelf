@@ -18,7 +18,6 @@ import traceback
 from queue import PriorityQueue, Empty
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Callable, Dict, Set
-from pathlib import Path
 
 from infra.llm.models import (
     LLMRequest, LLMResult, LLMEvent, EventData,
@@ -54,7 +53,6 @@ class WorkerPool:
         max_workers: int,
         retry_jitter: tuple = (1.0, 3.0),
         progress_interval: float = 1.0,
-        log_dir: Optional[Path] = None
     ):
         """
         Initialize worker pool.
@@ -65,14 +63,12 @@ class WorkerPool:
             max_workers: Number of worker threads
             retry_jitter: (min, max) seconds to wait before re-queue
             progress_interval: How often to emit PROGRESS events (seconds)
-            log_dir: Optional directory to log failures
         """
         self.executor = executor
         self.rate_limiter = rate_limiter
         self.max_workers = max_workers
         self.retry_jitter = retry_jitter
         self.progress_interval = progress_interval
-        self.log_dir = log_dir
 
         # Result storage (thread-safe)
         self.results: Dict[str, LLMResult] = {}
@@ -382,9 +378,6 @@ class WorkerPool:
                     cycles_remaining=self.completion_ttl_cycles
                 )
 
-        # Log retry (if logging configured)
-        self._log_retry(result, request._retry_count)
-
         self._emit_event(
             on_event,
             LLMEvent.RETRY_QUEUED,
@@ -415,9 +408,6 @@ class WorkerPool:
                     model_used=result.model_used,
                     cycles_remaining=self.completion_ttl_cycles
                 )
-
-        # Log failure to disk
-        self._log_failure(result)
 
         self._emit_event(on_event, LLMEvent.FAILED, request_id=request.id)
         self._store_result(result)
@@ -492,22 +482,6 @@ class WorkerPool:
             **kwargs
         )
         callback(event)
-
-    def _log_retry(self, result: LLMResult, retry_count: int):
-        """Log retryable failure (if logging configured)."""
-        if not self.log_dir:
-            return
-
-        # Implementation moved to separate logging module (future refactor)
-        pass
-
-    def _log_failure(self, result: LLMResult):
-        """Log permanent failure (if logging configured)."""
-        if not self.log_dir:
-            return
-
-        # Implementation moved to separate logging module (future refactor)
-        pass
 
     def get_active_requests(self) -> Dict[str, RequestStatus]:
         """Get all currently active requests."""
