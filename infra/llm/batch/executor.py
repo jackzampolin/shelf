@@ -93,7 +93,7 @@ class RequestExecutor:
 
         except json.JSONDecodeError as e:
             will_retry = request._retry_count < self.max_retries
-            log_message = f"JSON parsing failed for {request.id}"
+            log_message = f"JSON parsing failed: {request.id}"
             if will_retry:
                 log_message += f" (will retry, attempt {request._retry_count + 1}/{self.max_retries})"
             else:
@@ -102,16 +102,21 @@ class RequestExecutor:
             response_preview = response_text if len(response_text) <= 1000 else f"{response_text[:500]}...{response_text[-500:]}"
 
             if self.logger:
-                self.logger.warning(
+                # Log as ERROR since this is a final failure (non-retryable)
+                self.logger.error(
                     log_message,
                     request_id=request.id,
-                    model=current_model,
+                    error_type='json_parse',
                     error=str(e),
+                    model=current_model,
                     response_length=len(response_text),
                     response_preview=response_preview,
-                    response_format=request.response_format,
+                    response_format=str(request.response_format),
                     attempt=request._retry_count + 1,
-                    max_retries=self.max_retries
+                    max_retries=self.max_retries,
+                    has_images=len(request.images) if request.images else 0,
+                    queue_time_seconds=queue_time,
+                    execution_time_seconds=execution_time
                 )
 
             execution_time = time.time() - start_time
@@ -136,23 +141,43 @@ class RequestExecutor:
             if error_type == '429_rate_limit':
                 retry_after = self.extract_retry_after(e)
 
-            # Log error
+            # Log error with full request details
             if self.logger:
                 will_retry = request._retry_count < self.max_retries and self.is_retryable(error_type)
-                log_message = f"Request {request.id} failed with {error_type}"
+                log_message = f"LLM request failed: {request.id}"
                 if will_retry:
                     log_message += f" (will retry, attempt {request._retry_count + 1}/{self.max_retries})"
                 else:
                     log_message += f" (final attempt)"
 
-                self.logger.warning(
-                    log_message,
-                    request_id=request.id,
-                    error_type=error_type,
-                    error=str(e),
-                    attempt=request._retry_count + 1,
-                    max_retries=self.max_retries
-                )
+                # Build comprehensive error context
+                error_context = {
+                    'request_id': request.id,
+                    'error_type': error_type,
+                    'error': str(e),
+                    'attempt': request._retry_count + 1,
+                    'max_retries': self.max_retries,
+                    'model': current_model,
+                    'temperature': request.temperature,
+                    'max_tokens': request.max_tokens,
+                    'timeout': request.timeout,
+                    'has_images': len(request.images) if request.images else 0,
+                    'queue_time_seconds': queue_time,
+                    'execution_time_seconds': execution_time,
+                }
+
+                # Add message preview (first and last message)
+                if request.messages:
+                    if len(request.messages) == 1:
+                        error_context['messages_preview'] = f"[{request.messages[0]['role']}]"
+                    else:
+                        error_context['messages_preview'] = f"[{request.messages[0]['role']}] ... [{request.messages[-1]['role']}] ({len(request.messages)} total)"
+
+                # Add response format if present
+                if request.response_format:
+                    error_context['response_format'] = request.response_format.get('type', 'unknown')
+
+                self.logger.error(log_message, **error_context)
 
             return LLMResult(
                 request_id=request.id,
