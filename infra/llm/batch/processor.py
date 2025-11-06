@@ -223,8 +223,8 @@ class LLMBatchProcessor:
                 if request:
                     requests.append(request)
                     if extra:
-                        # Store by item identifier
-                        item_id = request.metadata.get('page_num') or request.metadata.get('item')
+                        # Store by item identifier (check 'item' first, 'page_num' for backward compat)
+                        item_id = request.metadata.get('item') or request.metadata.get('page_num')
                         if item_id:
                             extra_data[item_id] = extra
 
@@ -247,7 +247,7 @@ class LLMBatchProcessor:
             return result_handler
 
         def wrapped(result: LLMResult):
-            item = result.request.metadata.get('page_num') or result.request.metadata.get('item')
+            item = result.request.metadata.get('item') or result.request.metadata.get('page_num')
             if item and item in extra_data:
                 result.request.metadata['extra_data'] = extra_data[item]
             result_handler(result)
@@ -267,7 +267,7 @@ class LLMBatchProcessor:
             total=len(requests),
             prefix="   ",
             width=40,
-            unit="pages",
+            unit="items",
         )
         progress.update(0, suffix="starting...")
 
