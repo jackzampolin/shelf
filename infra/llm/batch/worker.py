@@ -142,21 +142,26 @@ class WorkerPool:
         if not self.rate_limiter.can_execute():
             wait_time = self.rate_limiter.time_until_token()
 
+            # Ensure we wait at least a minimum time to avoid tight loops
+            # This handles cases where time_until_token() returns very small values
+            min_wait = 0.1  # 100ms minimum
+            actual_wait = max(wait_time, min_wait)
+
             with self.request_tracking_lock:
                 if request.id in self.active_requests:
                     status = self.active_requests[request.id]
                     status.phase = RequestPhase.RATE_LIMITED
                     status.phase_entered_at = time.time()
-                    status.rate_limit_eta = wait_time
+                    status.rate_limit_eta = actual_wait
 
             self._emit_event(
                 on_event,
                 LLMEvent.RATE_LIMITED,
                 request_id=request.id,
-                eta_seconds=wait_time
+                eta_seconds=actual_wait
             )
             # Sleep full wait_time (no busy-wait loop)
-            time.sleep(wait_time)
+            time.sleep(actual_wait)
             queue.put(request)
             return False
 
