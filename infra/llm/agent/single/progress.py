@@ -24,6 +24,10 @@ class AgentProgressDisplay:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("•"),
             TimeElapsedColumn(),
+            TextColumn("•"),
+            TextColumn("{task.fields[iterations]}"),
+            TextColumn("•"),
+            TextColumn("[yellow]{task.fields[cost]}[/yellow]"),
             console=self.console,
             transient=False
         )
@@ -77,14 +81,16 @@ class AgentProgressDisplay:
                 if self.main_task is None:
                     self.main_task = self.progress.add_task(
                         f"{self.agent_name}",
-                        total=self.max_iterations
+                        total=self.max_iterations,
+                        iterations=f"(0/{self.max_iterations})",
+                        cost="0.00¢"
                     )
-                cost_str = f" • ${self.total_cost:.4f}" if self.total_cost > 0 else ""
-                desc = f"{self.agent_name} • ({event.iteration}/{self.max_iterations}){cost_str}"
+                cost_cents = self.total_cost * 100
                 self.progress.update(
                     self.main_task,
                     completed=event.iteration - 1,
-                    description=desc
+                    iterations=f"({event.iteration}/{self.max_iterations})",
+                    cost=f"{cost_cents:.2f}¢"
                 )
 
             elif event.event_type == "tool_call":
@@ -131,12 +137,13 @@ class AgentProgressDisplay:
                 if self.iteration_lines:
                     self.iteration_lines[-1] += f" [dim]{time_str:>7}[/dim] [cyan]{token_str:>18}[/cyan] [yellow]{cost_str:>7}[/yellow]"
 
-                cost_display = f" • ${self.total_cost:.4f}"
-                desc = f"{self.agent_name} • ({event.iteration}/{self.max_iterations}){cost_display}"
+                total_cost_cents = self.total_cost * 100
                 self.progress.update(
                     self.main_task,
                     completed=event.iteration,
-                    description=desc
+                    description=self.agent_name,
+                    iterations=f"({event.iteration}/{self.max_iterations})",
+                    cost=f"{total_cost_cents:.2f}¢"
                 )
 
             elif event.event_type == "agent_complete":
