@@ -7,7 +7,6 @@ from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.status import BatchBasedStatusTracker
 
 from .schemas import TesseractPageOutput
-from .storage import TesseractStageStorage
 from .tools.processor import process_batch
 
 
@@ -29,7 +28,6 @@ class TesseractStage(BaseStage):
             source_stage="source",
             item_pattern="page_{:04d}.json"
         )
-        self.stage_storage = TesseractStageStorage(stage_name=self.name)
 
 
     def before(
@@ -53,19 +51,10 @@ class TesseractStage(BaseStage):
         logger: PipelineLogger,
     ) -> Dict[str, Any]:
         if self.status_tracker.is_completed(storage, logger):
-            logger.info("Tesseract already completed (skipping)")
             return self.status_tracker.get_skip_response(storage, logger)
-
-        if not self.status_tracker.has_work(storage, logger):
-            logger.info("No pages remaining to process")
-            return self.status_tracker.get_no_work_response()
 
         status = self.get_status(storage, logger)
         remaining_pages = self.status_tracker.get_remaining_items(storage, logger)
-
-        logger.info(f"Tesseract Status: {status['status']}")
-        logger.info(f"Progress: {status['progress']['completed_items']}/{status['progress']['total_items']} pages complete")
-        logger.info(f"Processing {len(remaining_pages)} pages with Tesseract PSM {self.psm_mode}")
 
         return process_batch(
             storage,
