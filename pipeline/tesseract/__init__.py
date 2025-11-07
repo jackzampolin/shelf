@@ -8,9 +8,9 @@ from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.rich_progress import RichProgressBar
+from infra.pipeline.status import BatchBasedStatusTracker
 
 from .schemas import TesseractPageOutput
-from .status import TesseractStatusTracker, TesseractStatus
 from .storage import TesseractStageStorage
 from .tools.worker import process_page_with_tesseract
 
@@ -28,33 +28,13 @@ class TesseractStage(BaseStage):
         super().__init__()
         self.psm_mode = psm_mode
         self.max_workers = max_workers or multiprocessing.cpu_count()
-        self.status_tracker = TesseractStatusTracker(stage_name=self.name)
+        self.status_tracker = BatchBasedStatusTracker(
+            stage_name=self.name,
+            source_stage="source",
+            item_pattern="page_{:04d}.json"
+        )
         self.stage_storage = TesseractStageStorage(stage_name=self.name)
 
-    def get_status(
-        self,
-        storage: BookStorage,
-        logger: PipelineLogger
-    ) -> Dict[str, Any]:
-        return self.status_tracker.get_status(storage)
-
-    def pretty_print_status(self, status: Dict[str, Any]) -> str:
-        lines = []
-
-        stage_status = status.get('status', 'unknown')
-        lines.append(f"   Status: {stage_status}")
-
-        completed = status.get('completed_pages', 0)
-        total = status.get('total_pages', 0)
-        if total > 0:
-            lines.append(f"   Pages:  {completed}/{total} completed")
-
-        metrics = status.get('metrics', {})
-        if metrics.get('stage_runtime_seconds', 0) > 0:
-            mins = metrics['stage_runtime_seconds'] / 60
-            lines.append(f"   Time:   {mins:.1f}m")
-
-        return '\n'.join(lines)
 
     def before(
         self,
@@ -80,19 +60,19 @@ class TesseractStage(BaseStage):
 
         progress = self.get_status(storage, logger)
 
-        if progress["status"] == TesseractStatus.COMPLETED.value:
+        if progress["status"] == "completed":
             logger.info("Tesseract already completed (skipping)")
             return {
                 "status": "skipped",
                 "reason": "already completed",
-                "pages_processed": progress["completed_pages"]
+                "pages_processed": progress["progress"]["completed_items"]
             }
 
-        total_pages = progress["total_pages"]
-        remaining_pages = progress["remaining_pages"]
+        total_pages = progress["progress"]["total_items"]
+        remaining_pages = progress["progress"]["remaining_items"]
 
         logger.info(f"Tesseract Status: {progress['status']}")
-        logger.info(f"Progress: {progress['completed_pages']}/{total_pages} pages complete")
+        logger.info(f"Progress: {progress['progress']['completed_items']}/{total_pages} pages complete")
 
         if len(remaining_pages) == 0:
             logger.info("No pages remaining to process")
