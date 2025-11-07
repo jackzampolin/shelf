@@ -8,6 +8,8 @@ from pipeline.find_toc import FindTocStage
 from pipeline.extract_toc import ExtractTocStage
 from pipeline.label_pages import LabelPagesStage
 from pipeline.ocr_pages import OcrPagesStage
+from .orchestrator import find_all_toc_entries
+from .tools.report_generator import generate_report
 
 
 class LinkTocStage(BaseStage):
@@ -59,8 +61,6 @@ class LinkTocStage(BaseStage):
         # Phase 1: Find all ToC entries
         linked_toc_path = self.stage_storage.output_dir / "linked_toc.json"
         if not linked_toc_path.exists():
-            from .orchestrator import find_all_toc_entries
-
             find_all_toc_entries(
                 storage=self.storage,
                 logger=self.logger,
@@ -72,8 +72,6 @@ class LinkTocStage(BaseStage):
         # Phase 2: Generate report
         report_path = self.stage_storage.output_dir / "report.csv"
         if not report_path.exists():
-            from .tools.report_generator import generate_report
-
             generate_report(
                 storage=self.storage,
                 logger=self.logger,
