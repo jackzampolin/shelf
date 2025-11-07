@@ -78,13 +78,6 @@ class MetricsManager:
                 for entry in self._state["metrics"].values()
             )
 
-    def get_total_tokens(self) -> int:
-        with self._lock:
-            return sum(
-                entry.get("tokens", 0)
-                for entry in self._state["metrics"].values()
-            )
-
     def get_cumulative_metrics(self) -> Dict[str, Any]:
         with self._lock:
             page_metrics = {
@@ -128,10 +121,6 @@ class MetricsManager:
                 result["total_reasoning_tokens"] = total_reasoning
 
             return result
-
-    def keys(self) -> list:
-        with self._lock:
-            return list(self._state["metrics"].keys())
 
     def reset(self) -> None:
         with self._lock:
