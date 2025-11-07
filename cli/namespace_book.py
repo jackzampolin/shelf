@@ -9,7 +9,7 @@ from infra.storage.library import Library
 from infra.pipeline.runner import run_stage, run_pipeline
 from infra.config import Config
 from cli.helpers import get_stage_status, get_stage_and_status, clean_stage_directory
-from cli.constants import CORE_STAGES, REPORT_STAGES
+from cli.constants import CORE_STAGES, REPORT_STAGES, STAGE_DISPLAY_NAMES
 
 
 def cmd_info(args):
@@ -21,13 +21,6 @@ def cmd_info(args):
         sys.exit(1)
 
     storage = library.get_book_storage(args.scan_id)
-
-    stage_labels = {
-        'tesseract': 'Tesseract',
-        'ocr-pages': 'OCR-Pages',
-        'find-toc': 'Find-ToC',
-        'extract-toc': 'Extract-ToC',
-    }
 
     if args.json:
         if args.stage:
@@ -52,13 +45,7 @@ def cmd_info(args):
             print(f"Available stages: {', '.join(CORE_STAGES)}")
             sys.exit(1)
 
-        stage_labels = {
-            'tesseract': 'Tesseract',
-            'ocr-pages': 'OCR-Pages',
-            'find-toc': 'Find-ToC',
-            'extract-toc': 'Extract-ToC',
-        }
-        stage_label = stage_labels.get(args.stage, args.stage.title())
+        stage_label = STAGE_DISPLAY_NAMES.get(args.stage, args.stage.title())
 
         stage_status = status.get('status', 'unknown')
         if stage_status == 'completed':
@@ -90,19 +77,10 @@ def cmd_info(args):
     print(f"\n📊 Pipeline Status")
     print("=" * 80)
 
-    stage_labels = {
-        'tesseract': 'Tesseract',
-        'ocr-pages': 'OCR-Pages',
-        'label-pages': 'Label-Pages',
-        'find-toc': 'Find-ToC',
-        'extract-toc': 'Extract-ToC',
-        'link-toc': 'Link-ToC'
-    }
-
     total_cost = 0.0
 
     for stage_name in CORE_STAGES:
-        stage_label = stage_labels[stage_name]
+        stage_label = STAGE_DISPLAY_NAMES.get(stage_name, stage_name.title())
         stage, status = get_stage_and_status(storage, stage_name)
 
         if status is None:
