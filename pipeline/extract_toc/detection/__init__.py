@@ -14,6 +14,7 @@ from PIL import Image
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.llm.batch import LLMBatchProcessor, LLMBatchConfig
+from infra.llm.models import LLMRequest, LLMResult
 from infra.utils.pdf import downsample_for_vision
 from infra.config import Config
 
@@ -29,28 +30,6 @@ def extract_toc_entries(
     global_structure_from_finder: dict = None,
     model: str = None
 ) -> Tuple[Dict[str, any], Dict[str, any]]:
-    """
-    Extract complete ToC entries directly from each page using vision model.
-
-    For each page:
-    - Load OCR text from ocr-pages stage
-    - Load source image
-    - Call vision model to extract complete ToC entries (title, page number, hierarchy level)
-    - No intermediate storage or representation
-
-    Args:
-        storage: Book storage
-        toc_range: Range of ToC pages
-        structure_notes_from_finder: Map of page_num -> structure observations
-        global_structure_from_finder: Global structure summary from find-toc (total_levels, level_patterns)
-        logger: Pipeline logger
-        model: Vision model to use (default: Config.vision_model_primary)
-
-    Returns:
-        Tuple of (results_data, metrics)
-        - results_data: {"pages": [{"page_num": N, "entries": [...], ...}, ...]}
-        - metrics: {"cost_usd": float, "time_seconds": float, ...}
-    """
     model = model or Config.vision_model_primary
     stage_storage_obj = storage.stage('extract-toc')
 
@@ -59,7 +38,6 @@ def extract_toc_entries(
 
     logger.info(f"Extracting ToC entries from {total_toc_pages} pages (parallel)")
 
-    # Build LLM requests for all pages
     requests = []
     source_storage = storage.stage("source")
 
@@ -155,8 +133,7 @@ def extract_toc_entries(
         model=model,
         max_workers=4,  # Process 4 pages concurrently
         max_retries=3,
-        verbose=True,
-        batch_name="ToC entry extraction"
+        batch_name="toc-extract"
     )
 
     processor = LLMBatchProcessor(
