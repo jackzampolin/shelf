@@ -1,19 +1,22 @@
+import csv
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 
-from ..storage import LinkTocStageStorage
-from ..schemas import LinkTocReportEntry
+from ..schemas import LinkTocReportEntry, LinkedTableOfContents
 
 
 def generate_report(
     storage: BookStorage,
     logger: PipelineLogger,
-    stage_storage: LinkTocStageStorage
+    stage_name: str
 ):
     """Generate CSV report from linked_toc.json."""
 
+    stage_storage = storage.stage(stage_name)
+
     # Load linked ToC
-    linked_toc = stage_storage.load_linked_toc(storage)
+    data = stage_storage.load_file("linked_toc.json")
+    linked_toc = LinkedTableOfContents(**data) if data else None
 
     if not linked_toc:
         logger.warning("No linked ToC found to generate report from")
@@ -39,10 +42,19 @@ def generate_report(
 
         report_entries.append(report_entry)
 
-    # Save CSV using storage helper
-    stage_storage.save_report(storage, report_entries)
+    # Save CSV report
+    report_path = stage_storage.output_dir / "report.csv"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
 
-    report_path = stage_storage.get_report_path(storage)
+    with open(report_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            "toc_index", "toc_title", "printed_page", "scan_page",
+            "confidence", "search_strategy", "iterations", "reasoning"
+        ])
+        writer.writeheader()
+        for entry in report_entries:
+            writer.writerow(entry.model_dump())
+
     logger.info(f"Report generated: {report_path}")
     logger.info(f"  Total entries: {len(report_entries)}")
     logger.info(f"  Found: {sum(1 for e in report_entries if e.scan_page != 'NOT_FOUND')}")
