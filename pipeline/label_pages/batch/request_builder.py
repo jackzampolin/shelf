@@ -2,7 +2,7 @@ from typing import Optional
 from PIL import Image
 
 from infra.llm.models import LLMRequest
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.utils.pdf import downsample_for_vision
 
 from .prompts import STAGE1_SYSTEM_PROMPT, build_stage1_user_prompt

@@ -4,7 +4,7 @@ from typing import List, Dict, Callable
 from infra.llm.models import LLMResult
 from infra.llm.metrics import record_llm_result
 from infra.pipeline.logger import PipelineLogger
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 
 from ...schemas import ToCEntry
 

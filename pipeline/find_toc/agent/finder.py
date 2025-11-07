@@ -1,7 +1,7 @@
 import time
 from typing import Optional
 
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.llm.agent import AgentConfig, AgentClient
 from infra.pipeline.logger import PipelineLogger
 from infra.config import Config

@@ -1,7 +1,7 @@
 import sys
 import argparse
 
-from infra.storage.library import Library
+from infra.pipeline.storage.library import Library
 from infra.config import Config
 from cli.helpers import get_stage_status, clean_stage_directory
 from cli.constants import CORE_STAGES

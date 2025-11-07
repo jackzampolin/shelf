@@ -10,8 +10,8 @@ import threading
 import json
 import time
 from pathlib import Path
-from infra.storage.library_storage import LibraryStorage
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.library_storage import LibraryStorage
+from infra.pipeline.storage.book_storage import BookStorage
 
 
 class TestLibraryStorageConcurrency:

@@ -1,5 +1,5 @@
 import shutil
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.registry import get_stage_instance
 
 

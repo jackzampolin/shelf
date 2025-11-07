@@ -5,7 +5,7 @@ import json
 from rich.console import Console
 from rich.table import Table
 
-from infra.storage.library import Library
+from infra.pipeline.storage.library import Library
 from infra.pipeline.runner import run_stage, run_pipeline
 from infra.config import Config
 from cli.helpers import get_stage_status, get_stage_and_status, clean_stage_directory

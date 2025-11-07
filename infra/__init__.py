@@ -13,7 +13,7 @@ Organized into logical subsystems:
 from infra.config import Config
 
 # Storage subsystem
-from infra.storage import (
+from infra.pipeline.storage import (
     BookStorage,
     MetricsManager,
 )

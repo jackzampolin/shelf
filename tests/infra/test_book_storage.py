@@ -9,7 +9,7 @@ import json
 import pytest
 from pathlib import Path
 
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 
 
 # ===== Fixtures =====
@@ -788,7 +788,7 @@ def test_stage_view_save_page_large_batch(book_dir, tmp_path):
     assert checkpoint.checkpoint_file.exists()
 
     # Verify checkpoint can be reloaded
-    from infra.storage.checkpoint import CheckpointManager
+    from infra.pipeline.storage.checkpoint import CheckpointManager
     reloaded_checkpoint = CheckpointManager(
         scan_id="test-book",
         stage="correction",

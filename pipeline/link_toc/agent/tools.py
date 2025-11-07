@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional, Any
 import re
 
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 
 
 def list_boundaries(

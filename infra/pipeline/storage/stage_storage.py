@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, Type, TYPE_CHECKING
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from infra.storage.book_storage import BookStorage
+    from infra.pipeline.storage.book_storage import BookStorage
 
 class StageStorage:
     def __init__(self, storage: 'BookStorage', name: str):
@@ -13,7 +13,7 @@ class StageStorage:
         self.name = name
         self._lock = threading.RLock()
 
-        from infra.storage.metrics import MetricsManager
+        from infra.pipeline.storage.metrics import MetricsManager
         self.output_dir = storage.book_dir / name
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.metrics_manager = MetricsManager(self.output_dir / 'metrics.json')

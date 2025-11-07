@@ -8,7 +8,7 @@ import json
 import time
 from typing import Dict, Tuple
 
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.llm.client import LLMClient
 from infra.config import Config

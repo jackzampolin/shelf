@@ -10,7 +10,7 @@ from ..display_format import format_batch_summary
 from .schemas import BatchStats, LLMBatchConfig
 from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.rich_progress import RichProgressBarHierarchical
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.config import Config
 
 

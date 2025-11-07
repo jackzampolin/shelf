@@ -5,7 +5,7 @@ from PIL import Image
 
 from pydantic import BaseModel, Field
 
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.llm.agent import AgentTools
 from infra.utils.pdf import downsample_for_vision
 from ..schemas import PageRange, StructureSummary

@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from infra.storage.library_storage import LibraryStorage
+from infra.pipeline.storage.library_storage import LibraryStorage
 
 
 def test_library_creation(tmp_path):
@@ -206,7 +206,7 @@ def test_get_book_storage(tmp_path):
     storage = library.get_book_storage("test-scan")
 
     # Verify it's a BookStorage instance
-    from infra.storage.book_storage import BookStorage
+    from infra.pipeline.storage.book_storage import BookStorage
     assert isinstance(storage, BookStorage)
     assert storage.scan_id == "test-scan"
     assert storage.book_dir == scan_dir

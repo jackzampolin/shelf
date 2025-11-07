@@ -11,7 +11,7 @@ from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from infra.llm.batch import LLMBatchClient
-    from infra.storage.metrics_manager import MetricsManager
+    from infra.pipeline.storage.metrics_manager import MetricsManager
 
 from .rollups import calculate_rollups, format_rollup_lines
 from .recent import build_recent_lines

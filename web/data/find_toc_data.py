@@ -6,7 +6,7 @@ One concept per file (ADR 006).
 """
 
 from typing import Optional, Dict, Any, List
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 
 
 def get_find_toc_data(storage: BookStorage) -> Optional[Dict[str, Any]]:

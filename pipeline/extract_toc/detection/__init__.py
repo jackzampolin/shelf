@@ -7,7 +7,7 @@ Loads OCR text directly from ocr-pages stage (no intermediate storage needed).
 
 from typing import Dict
 
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.config import Config
 

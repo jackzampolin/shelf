@@ -10,7 +10,7 @@ from flask import Blueprint, render_template, send_file, abort
 from pathlib import Path
 
 from web.config import Config
-from infra.storage.library import Library
+from infra.pipeline.storage.library import Library
 from web.data.extract_toc_data import get_extract_toc_data
 from web.data.find_toc_data import get_find_toc_data, get_toc_page_numbers
 from web.data.label_pages_data import get_label_pages_report, get_page_labels

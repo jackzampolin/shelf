@@ -1,7 +1,7 @@
 from typing import Dict, Any
 
 from infra.pipeline.base_stage import BaseStage
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import BatchBasedStatusTracker
 from .tools.processor import process_batch
 

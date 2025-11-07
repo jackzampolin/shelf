@@ -2,7 +2,7 @@ from typing import Dict
 from PIL import Image
 
 from infra.llm.models import LLMRequest
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.utils.pdf import downsample_for_vision
 from pipeline.ocr_pages.schemas import OcrPagesPageOutput

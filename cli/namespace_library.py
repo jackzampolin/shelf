@@ -4,7 +4,7 @@ import glob
 import json
 from pathlib import Path
 
-from infra.storage.library import Library
+from infra.pipeline.storage.library import Library
 from infra.config import Config
 from cli.helpers import get_stage_status
 from cli.constants import STAGE_NAMES

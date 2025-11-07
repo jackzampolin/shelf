@@ -10,7 +10,7 @@ Ground truth from disk (ADR 001).
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 
 
 def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) -> bool:
@@ -27,7 +27,7 @@ def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) ->
     if stage_name == 'tesseract':
         # Check if all source pages have tesseract outputs
         source_stage = storage.stage("source")
-        source_pages = source_stage.list_output_pages(extension="png")
+        source_pages = source_stage.list_pages(extension="png")
         total_pages = len(source_pages)
 
         if total_pages == 0:
@@ -45,7 +45,7 @@ def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) ->
     elif stage_name == 'ocr-pages':
         # Check if all source pages have ocr-pages outputs
         source_stage = storage.stage("source")
-        source_pages = source_stage.list_output_pages(extension="png")
+        source_pages = source_stage.list_pages(extension="png")
         total_pages = len(source_pages)
 
         if total_pages == 0:

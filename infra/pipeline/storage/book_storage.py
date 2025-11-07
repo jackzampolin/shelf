@@ -3,7 +3,7 @@ import threading
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from infra.storage.stage_storage import StageStorage
+from infra.pipeline.storage.stage_storage import StageStorage
 
 class BookStorage:
     def __init__(self, scan_id: str, storage_root: Optional[Path] = None):

@@ -7,7 +7,7 @@ Ground truth from disk (ADR 001).
 import csv
 from typing import Optional, List, Dict, Any
 from pathlib import Path
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 
 
 def get_label_pages_report(storage: BookStorage) -> Optional[List[Dict[str, Any]]]:

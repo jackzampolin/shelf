@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional
 from PIL import Image
 
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.llm.agent import AgentTools
 from infra.utils.pdf import downsample_for_vision
 

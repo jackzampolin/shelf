@@ -8,8 +8,8 @@ Ground truth from disk (ADR 001).
 from typing import List, Dict, Any
 from pathlib import Path
 
-from infra.storage.library import Library
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.library import Library
+from infra.pipeline.storage.book_storage import BookStorage
 from cli.constants import STAGE_NAMES
 from web.data.status_reader import get_stage_status_from_disk
 

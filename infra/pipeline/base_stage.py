@@ -1,7 +1,7 @@
 import os
 from typing import Dict, List, Any
 
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import create_logger
 from infra.pipeline.registry import get_stage_class
 

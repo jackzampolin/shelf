@@ -2,7 +2,7 @@ from typing import Dict, Any
 
 from infra.config import Config
 from infra.pipeline.base_stage import BaseStage
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import BatchBasedStatusTracker, MultiPhaseStatusTracker
 from .tools.report_generator import generate_report
 from .batch.processor import process_pages

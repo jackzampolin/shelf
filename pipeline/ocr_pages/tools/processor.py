@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 from PIL import Image
 
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.deepinfra import DeepInfraOCRBatchProcessor, OCRRequest, OCRResult
 

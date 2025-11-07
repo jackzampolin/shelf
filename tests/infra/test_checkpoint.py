@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from infra.storage.checkpoint import CheckpointManager
+from infra.pipeline.storage.checkpoint import CheckpointManager
 
 
 def test_checkpoint_creation(tmp_path):

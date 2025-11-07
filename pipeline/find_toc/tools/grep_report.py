@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 from collections import defaultdict
 
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 
 
 SEARCH_PATTERNS = [

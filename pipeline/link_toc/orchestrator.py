@@ -1,7 +1,7 @@
 import time
 from typing import Tuple, Dict, List
 
-from infra.storage.book_storage import BookStorage
+from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.llm.agent import AgentConfig, AgentBatchConfig, AgentBatchClient
 
