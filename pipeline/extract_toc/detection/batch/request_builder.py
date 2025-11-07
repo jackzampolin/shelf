@@ -1,4 +1,4 @@
-from typing import Optional, Dict
+from typing import Dict
 from PIL import Image
 
 from infra.llm.models import LLMRequest
@@ -18,7 +18,7 @@ def prepare_toc_request(
     structure_notes_from_finder: Dict[int, str],
     global_structure_from_finder: dict,
     logger: PipelineLogger
-) -> Optional[LLMRequest]:
+) -> LLMRequest:
     page_num = item
     total_toc_pages = toc_range.end_page - toc_range.start_page + 1
 
@@ -29,8 +29,10 @@ def prepare_toc_request(
     page_data = ocr_pages_storage.load_page(page_num, schema=OcrPagesPageOutput)
 
     if not page_data:
-        logger.error(f"  Page {page_num}: OCR data not found in ocr-pages stage")
-        return None
+        raise FileNotFoundError(
+            f"OCR data not found for page {page_num}. "
+            f"ocr-pages stage marked complete but page data missing."
+        )
 
     ocr_text = page_data.get("text", "")
 
@@ -38,8 +40,10 @@ def prepare_toc_request(
     page_file = source_storage.output_dir / f"page_{page_num:04d}.png"
 
     if not page_file.exists():
-        logger.error(f"  Page {page_num}: Source image not found: {page_file}")
-        return None
+        raise FileNotFoundError(
+            f"Source image not found for page {page_num} at {page_file}. "
+            f"source stage validated but page file missing."
+        )
 
     image = Image.open(page_file)
     image = downsample_for_vision(image)
