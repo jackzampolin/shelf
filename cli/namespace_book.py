@@ -211,12 +211,13 @@ def cmd_run_stage(args):
         clean_stage_directory(storage, args.stage)
         print(f"   ✓ Cleaned {args.stage}\n")
 
+    print(f"\n🔧 Running stage: {stage.name}")
+
     try:
-        print(f"\n🔧 Running stage: {stage.name}")
         stats = run_stage(stage)
-        print(f"\n✅ Stage complete: {stage.name}")
+        print(f"✅ Stage complete: {stage.name}")
     except Exception as e:
-        print(f"\n❌ Stage failed: {e}")
+        print(f"❌ Stage failed: {e}")
         sys.exit(1)
 
 
@@ -257,12 +258,17 @@ def cmd_process(args):
             print(f"   ✓ Cleaned {stage_name}")
         print()
 
+    print(f"\n🔧 Running pipeline: {', '.join(s.name for s in stages)}")
+
     try:
-        print(f"\n🔧 Running pipeline: {', '.join(s.name for s in stages)}")
-        results = run_pipeline(stages, storage, stop_on_error=True)
-        print(f"\n✅ Pipeline complete: {len(results)} stages")
+        for i, stage in enumerate(stages, 1):
+            print(f"[{i}/{len(stages)}] {stage.name}")
+            run_stage(stage)
+            print(f"✅ {stage.name} complete")
+
+        print(f"\n✅ Pipeline complete: {len(stages)} stages")
     except Exception as e:
-        print(f"\n❌ Pipeline failed: {e}")
+        print(f"❌ Pipeline failed: {e}")
         sys.exit(1)
 
 
