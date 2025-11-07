@@ -33,8 +33,7 @@ Examples:
 
   # Library-wide batch operations
   shelf batch label-pages
-  shelf batch label-pages --reshuffle
-  shelf batch ocr-pages --force
+  shelf batch ocr-pages --delete-outputs --yes
 
   # Web frontend
   shelf serve

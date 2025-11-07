@@ -9,18 +9,9 @@ from cli.constants import CORE_STAGES
 
 def cmd_batch(args):
     library = Library(storage_root=Config.book_storage_root)
-    scan_ids = library.create_shuffle(reshuffle=args.reshuffle)
-    shuffle_info = library.get_shuffle_info()
+    books = library.list_books()
+    scan_ids = [book['scan_id'] for book in books]
 
-    if args.reshuffle:
-        print(f"🔀 Created new global shuffle order")
-    elif shuffle_info:
-        created_date = shuffle_info.get('created_at', '')[:10] if 'created_at' in shuffle_info else 'unknown'
-        print(f"♻️  Using existing global shuffle order (created: {created_date})")
-    else:
-        print(f"🎲 Created random order")
-
-    # Support multiple stages
     stages = args.stages if isinstance(args.stages, list) else [args.stages]
 
     if len(stages) > 1:
@@ -28,8 +19,7 @@ def cmd_batch(args):
         print(f"   Stages: {' → '.join(stages)}")
     else:
         print(f"\n🧹 Sweeping '{stages[0]}' stage across {len(scan_ids)} books")
-    print(f"   Press Ctrl+C to stop at any time")
-    print(f"   Tip: Use --reshuffle to create a new random order\n")
+    print(f"   Press Ctrl+C to stop at any time\n")
 
     # Process each stage in sequence (stage-by-stage across all books)
     for stage_idx, current_stage in enumerate(stages, 1):
@@ -154,7 +144,6 @@ def setup_batch_parser(subparsers):
     batch_parser.add_argument('stages', nargs='+', choices=CORE_STAGES, help='Stage(s) to run (processes each stage across all books sequentially)', metavar='STAGE')
     batch_parser.add_argument('--model', help='Vision model (for correction/label stages)')
     batch_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
-    batch_parser.add_argument('--reshuffle', action='store_true', help='Create new random order')
     batch_parser.add_argument('--delete-outputs', action='store_true', help='DELETE all existing outputs before processing (WARNING: irreversible)')
     batch_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation prompt')
     batch_parser.set_defaults(func=cmd_batch)

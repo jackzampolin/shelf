@@ -1,73 +1,16 @@
 import json
 import shutil
-import threading
-import tempfile
-import random
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from datetime import datetime
 
 from infra.config import Config
 from infra.pipeline.storage.book_storage import BookStorage
 
 class Library:
-    METADATA_VERSION = "1.0"
-    METADATA_FILENAME = ".library.json"
-
     def __init__(self, storage_root: Optional[Path] = None):
         self.storage_root = storage_root or Config.book_storage_root
         self.storage_root.mkdir(parents=True, exist_ok=True)
-
         self._book_storage_cache: Dict[str, BookStorage] = {}
-        self._metadata_file = self.storage_root / self.METADATA_FILENAME
-        self._metadata_lock = threading.Lock()
-        self._metadata_state = self._load_or_create_metadata()
-
-    def _load_or_create_metadata(self) -> Dict[str, Any]:
-        if self._metadata_file.exists():
-            try:
-                with open(self._metadata_file, 'r') as f:
-                    state = json.load(f)
-
-                if state.get('version') != self.METADATA_VERSION:
-                    return self._create_new_metadata()
-
-                if 'shuffle' not in state:
-                    state['shuffle'] = None
-
-                return state
-            except Exception:
-                return self._create_new_metadata()
-        else:
-            return self._create_new_metadata()
-
-    def _create_new_metadata(self) -> Dict[str, Any]:
-        return {
-            "version": self.METADATA_VERSION,
-            "shuffle": None
-        }
-
-    def _save_metadata(self):
-        self._metadata_file.parent.mkdir(parents=True, exist_ok=True)
-
-        fd, temp_path = tempfile.mkstemp(
-            dir=self._metadata_file.parent,
-            prefix=f"{self.METADATA_FILENAME}.tmp"
-        )
-
-        try:
-            import os
-            with os.fdopen(fd, 'w') as f:
-                json.dump(self._metadata_state, f, indent=2)
-
-            os.replace(temp_path, self._metadata_file)
-        except Exception:
-            try:
-                import os
-                os.unlink(temp_path)
-            except Exception:
-                pass
-            raise
 
     def _scan_book_directories(self) -> List[str]:
         scan_ids = []
@@ -133,63 +76,29 @@ class Library:
 
     def add_books(self, pdf_paths: List[Path], run_ocr: bool = False) -> Dict[str, Any]:
         from infra.utils.ingest import add_books_to_library
-
-        result = add_books_to_library(
+        return add_books_to_library(
             pdf_paths=pdf_paths,
             storage_root=self.storage_root,
             run_ocr=run_ocr
         )
 
-        new_scan_ids = result['scan_ids']
-        if new_scan_ids:
-            with self._metadata_lock:
-                current_shuffle = self._metadata_state.get('shuffle')
-                if current_shuffle:
-                    random.shuffle(new_scan_ids)
-                    updated_order = current_shuffle.get('order', []) + new_scan_ids
-                    self._metadata_state['shuffle'] = {
-                        'created_at': current_shuffle.get('created_at'),
-                        'order': updated_order
-                    }
-                    self._save_metadata()
-
-        return result
-
-    def delete_book(
-        self,
-        scan_id: str,
-        delete_files: bool = True,
-        remove_empty_book: bool = True
-    ) -> Dict[str, Any]:
+    def delete_book(self, scan_id: str) -> Dict[str, Any]:
         book_dir = self.storage_root / scan_id
 
         if not book_dir.exists():
             raise ValueError(f"Scan {scan_id} not found in library")
 
-        files_deleted = False
-        if delete_files:
-            try:
-                shutil.rmtree(book_dir)
-                files_deleted = True
-            except Exception as e:
-                raise RuntimeError(f"Failed to delete scan directory {book_dir}: {e}") from e
+        try:
+            shutil.rmtree(book_dir)
+        except Exception as e:
+            raise RuntimeError(f"Failed to delete scan directory {book_dir}: {e}") from e
 
-        with self._metadata_lock:
-            current_shuffle = self._metadata_state.get('shuffle')
-            if current_shuffle and scan_id in current_shuffle.get('order', []):
-                updated_order = [sid for sid in current_shuffle['order'] if sid != scan_id]
-                self._metadata_state['shuffle'] = {
-                    'created_at': current_shuffle.get('created_at'),
-                    'order': updated_order
-                }
-                self._save_metadata()
+        if scan_id in self._book_storage_cache:
+            del self._book_storage_cache[scan_id]
 
         return {
             "scan_id": scan_id,
-            "deleted_from_library": True,
-            "files_deleted": files_deleted,
-            "book_removed": files_deleted,
-            "scan_dir": str(book_dir) if files_deleted else None
+            "scan_dir": str(book_dir)
         }
 
     def get_book_storage(self, scan_id: str) -> BookStorage:
@@ -294,90 +203,3 @@ class Library:
             "total_pages": total_pages,
             "total_cost_usd": round(total_cost, 2)
         }
-
-    def get_shuffle(self, defensive: bool = True) -> Optional[List[str]]:
-        with self._metadata_lock:
-            shuffle_data = self._metadata_state.get('shuffle')
-            if not shuffle_data:
-                return None
-
-            shuffle_order = shuffle_data.get('order', [])
-
-            if not defensive:
-                return shuffle_order
-
-            existing_scan_ids = {book['scan_id'] for book in self.list_books()}
-            valid_shuffle = [sid for sid in shuffle_order if sid in existing_scan_ids]
-
-            if len(valid_shuffle) != len(shuffle_order):
-                self._metadata_state['shuffle'] = {
-                    'created_at': shuffle_data.get('created_at'),
-                    'order': valid_shuffle
-                }
-                self._save_metadata()
-
-            return valid_shuffle
-
-    def create_shuffle(
-        self,
-        reshuffle: bool = False,
-        books: Optional[List[str]] = None
-    ) -> List[str]:
-        existing_shuffle = self.get_shuffle(defensive=True)
-
-        if not reshuffle and existing_shuffle:
-            if books is None:
-                books = [book['scan_id'] for book in self.list_books()]
-
-            existing_set = set(existing_shuffle)
-            new_books = [sid for sid in books if sid not in existing_set]
-
-            if new_books:
-                random.shuffle(new_books)
-                updated_shuffle = existing_shuffle + new_books
-
-                with self._metadata_lock:
-                    self._metadata_state['shuffle'] = {
-                        'created_at': datetime.now().isoformat(),
-                        'order': updated_shuffle
-                    }
-                    self._save_metadata()
-
-                return updated_shuffle
-
-            return existing_shuffle
-
-        if books is None:
-            books = [book['scan_id'] for book in self.list_books()]
-
-        shuffled = books.copy()
-        random.shuffle(shuffled)
-
-        with self._metadata_lock:
-            self._metadata_state['shuffle'] = {
-                'created_at': datetime.now().isoformat(),
-                'order': shuffled
-            }
-            self._save_metadata()
-
-        return shuffled
-
-    def clear_shuffle(self):
-        with self._metadata_lock:
-            self._metadata_state['shuffle'] = None
-            self._save_metadata()
-
-    def has_shuffle(self) -> bool:
-        with self._metadata_lock:
-            shuffle_data = self._metadata_state.get('shuffle')
-            return shuffle_data is not None and len(shuffle_data.get('order', [])) > 0
-
-    def get_shuffle_info(self) -> Optional[Dict[str, Any]]:
-        with self._metadata_lock:
-            shuffle_data = self._metadata_state.get('shuffle')
-            if not shuffle_data:
-                return None
-            return {
-                'created_at': shuffle_data.get('created_at'),
-                'count': len(shuffle_data.get('order', []))
-            }

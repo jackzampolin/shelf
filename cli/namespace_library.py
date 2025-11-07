@@ -48,9 +48,6 @@ def cmd_add(args):
         print(f"\n✅ Added {result['books_added']} book(s) to library")
         for scan_id in result['scan_ids']:
             print(f"  - {scan_id}")
-
-        if library.has_shuffle():
-            print(f"   📚 Updated global shuffle order")
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
@@ -257,16 +254,12 @@ def cmd_delete(args):
         sys.exit(1)
 
     if not args.yes:
-        print(f"\n⚠️  WARNING: This will delete:")
+        scan_dir = Config.book_storage_root / args.scan_id
+        print(f"\n⚠️  WARNING: This will DELETE all files for:")
         print(f"   Scan ID: {args.scan_id}")
         print(f"   Title:   {scan.get('title', args.scan_id)}")
         print(f"   Author:  {scan.get('author', 'Unknown')}")
-
-        if args.keep_files:
-            print(f"\n   Library entry will be removed (files will be kept)")
-        else:
-            scan_dir = Config.book_storage_root / args.scan_id
-            print(f"\n   Library entry AND all files in: {scan_dir}")
+        print(f"   Directory: {scan_dir}")
 
         try:
             response = input("\nAre you sure? (yes/no): ").strip().lower()
@@ -278,18 +271,9 @@ def cmd_delete(args):
             sys.exit(0)
 
     try:
-        result = library.delete_book(
-            scan_id=args.scan_id,
-            delete_files=not args.keep_files,
-            remove_empty_book=True
-        )
-
+        result = library.delete_book(scan_id=args.scan_id)
         print(f"\n✅ Deleted: {result['scan_id']}")
-        if result['files_deleted']:
-            print(f"   Files deleted from: {result['scan_dir']}")
-
-        if library.has_shuffle():
-            print(f"   📚 Removed from global shuffle order")
+        print(f"   Files deleted from: {result['scan_dir']}")
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
@@ -318,5 +302,4 @@ def setup_library_parser(subparsers):
     delete_parser = library_subparsers.add_parser('delete', help='Delete book from library')
     delete_parser.add_argument('scan_id', help='Book scan ID')
     delete_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation')
-    delete_parser.add_argument('--keep-files', action='store_true', help='Keep files (only remove from library)')
     delete_parser.set_defaults(func=cmd_delete)
