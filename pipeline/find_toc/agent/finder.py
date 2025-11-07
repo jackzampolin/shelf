@@ -5,7 +5,6 @@ from infra.storage.book_storage import BookStorage
 from infra.llm.agent import AgentConfig, AgentClient
 from infra.pipeline.logger import PipelineLogger
 from infra.config import Config
-from ..storage import FindTocStageStorage
 
 from .tools import TocFinderTools, TocFinderResult
 from .prompts import SYSTEM_PROMPT, build_user_prompt
@@ -29,11 +28,7 @@ class TocFinderAgent:
         self.scan_id = storage.scan_id
         self.total_pages = self.metadata.get('total_pages', 0)
 
-        self.stage_storage_helper = FindTocStageStorage(stage_name='find-toc')
-        self.tools = TocFinderTools(
-            storage=storage,
-            stage_storage=self.stage_storage_helper
-        )
+        self.tools = TocFinderTools(storage=storage)
 
         initial_messages = [
             {"role": "system", "content": SYSTEM_PROMPT},

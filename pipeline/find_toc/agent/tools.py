@@ -31,9 +31,8 @@ class TocFinderResult(BaseModel):
 
 class TocFinderTools(AgentTools):
 
-    def __init__(self, storage: BookStorage, stage_storage):
+    def __init__(self, storage: BookStorage):
         self.storage = storage
-        self.stage_storage = stage_storage
         self._pending_result: Optional[TocFinderResult] = None
         self._grep_report_cache: Optional[Dict] = None
         self._current_page_num: Optional[int] = None
@@ -174,7 +173,9 @@ class TocFinderTools(AgentTools):
         try:
             if self._grep_report_cache is None:
                 self._grep_report_cache = generate_grep_report(self.storage, max_pages=50)
-                self.stage_storage.save_grep_report(self.storage, self._grep_report_cache)
+                # Save grep report
+                stage_storage = self.storage.stage('find-toc')
+                stage_storage.save_file("grep_report.json", self._grep_report_cache)
 
             report = self._grep_report_cache
             summary = summarize_grep_report(report)
