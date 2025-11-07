@@ -1,12 +1,10 @@
 import sys
 from pathlib import Path
 
-# Ensure web module can be imported
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 def cmd_serve(args):
-    """Start the web frontend server."""
     from web.app import create_app
     from web.config import Config
 
@@ -20,28 +18,9 @@ def cmd_serve(args):
 
 
 def setup_serve_parser(subparsers):
-    """Setup the serve command parser."""
     from web.config import Config
-
-    serve_parser = subparsers.add_parser(
-        'serve',
-        help='Start the web frontend server'
-    )
-    serve_parser.add_argument(
-        '--port',
-        type=int,
-        default=Config.PORT,
-        help=f'Port to run the server on (default: {Config.PORT})'
-    )
-    serve_parser.add_argument(
-        '--host',
-        default=Config.HOST,
-        help=f'Host to bind to (default: {Config.HOST})'
-    )
-    serve_parser.add_argument(
-        '--debug',
-        action='store_true',
-        default=Config.DEBUG,
-        help='Enable Flask debug mode'
-    )
+    serve_parser = subparsers.add_parser('serve', help='Start the web frontend server')
+    serve_parser.add_argument('--port', type=int, default=Config.PORT, help=f'Port to run the server on (default: {Config.PORT})')
+    serve_parser.add_argument('--host', default=Config.HOST, help=f'Host to bind to (default: {Config.HOST})')
+    serve_parser.add_argument('--debug',action='store_true',default=Config.DEBUG,help='Enable Flask debug mode')
     serve_parser.set_defaults(func=cmd_serve)
