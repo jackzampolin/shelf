@@ -5,7 +5,7 @@ from infra.llm.models import LLMRequest
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.utils.pdf import downsample_for_vision
-
+from pipeline.ocr_pages.schemas import OcrPagesPageOutput
 from ...schemas import PageRange
 from ..prompts import SYSTEM_PROMPT, build_user_prompt
 
@@ -22,45 +22,23 @@ def prepare_toc_request(
     page_num = item
     total_toc_pages = toc_range.end_page - toc_range.start_page + 1
 
-    source_storage = storage.stage("source")
-    ocr_pages_storage = storage.stage('ocr-pages')
+    source_image_path = storage.stage("source").load_page_image(page_num)
+    ocr_page = storage.stage('ocr-pages').load_page(page_num, schema=OcrPagesPageOutput)
 
-    from pipeline.ocr_pages.schemas import OcrPagesPageOutput
-    page_data = ocr_pages_storage.load_page(page_num, schema=OcrPagesPageOutput)
-
-    if not page_data:
-        raise FileNotFoundError(
-            f"OCR data not found for page {page_num}. "
-            f"ocr-pages stage marked complete but page data missing."
-        )
-
-    ocr_text = page_data.get("text", "")
-
-    # Load page image
-    page_file = source_storage.output_dir / f"page_{page_num:04d}.png"
-
-    if not page_file.exists():
-        raise FileNotFoundError(
-            f"Source image not found for page {page_num} at {page_file}. "
-            f"source stage validated but page file missing."
-        )
-
-    image = Image.open(page_file)
+    image = Image.open(source_image_path)
     image = downsample_for_vision(image)
 
     page_structure_notes = structure_notes_from_finder.get(page_num, None)
 
-    user_prompt = build_user_prompt(
-        page_num=page_num,
-        total_toc_pages=total_toc_pages,
-        ocr_text=ocr_text,
-        structure_notes=page_structure_notes,
-        global_structure=global_structure_from_finder
-    )
-
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_prompt}
+        {"role": "user", "content": build_user_prompt(
+            page_num=page_num,
+            total_toc_pages=total_toc_pages,
+            ocr_text=ocr_page.get("text", ""),
+            structure_notes=page_structure_notes,
+            global_structure=global_structure_from_finder
+        )}
     ]
 
     return LLMRequest(

@@ -161,6 +161,26 @@ class StageStorage:
 
         return data
 
+    def load_page_image(self, page_num: int, extension: str = "png") -> Path:
+        """Load path to page image file (for source stage).
+
+        Args:
+            page_num: Page number
+            extension: Image extension (default: png)
+
+        Returns:
+            Path to image file
+
+        Raises:
+            FileNotFoundError: If image file doesn't exist
+        """
+        image_file = self.output_page(page_num, extension=extension)
+
+        if not image_file.exists():
+            raise FileNotFoundError(f"Image for page {page_num} not found: {image_file}")
+
+        return image_file
+
     def save_file(
         self,
         filename: str,
