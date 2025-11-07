@@ -14,6 +14,29 @@ class BatchBasedStatusTracker:
         self.source_stage = source_stage
         self.item_pattern = item_pattern
 
+    def is_completed(
+        self,
+        storage: BookStorage,
+        logger: PipelineLogger
+    ) -> bool:
+        status = self.get_status(storage, logger)
+        return status["status"] == "completed"
+
+    def get_remaining_items(
+        self,
+        storage: BookStorage,
+        logger: PipelineLogger
+    ) -> List[int]:
+        status = self.get_status(storage, logger)
+        return status["progress"]["remaining_items"]
+
+    def has_work(
+        self,
+        storage: BookStorage,
+        logger: PipelineLogger
+    ) -> bool:
+        return len(self.get_remaining_items(storage, logger)) > 0
+
     def get_status(
         self,
         storage: BookStorage,
