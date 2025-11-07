@@ -4,7 +4,6 @@ from infra.pipeline.logger import PipelineLogger
 
 from ..schemas import LinkTocReportEntry, LinkedTableOfContents
 
-
 def generate_report(
     storage: BookStorage,
     logger: PipelineLogger,

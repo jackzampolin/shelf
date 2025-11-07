@@ -113,7 +113,7 @@ def find_all_toc_entries(
     model: str,
     max_iterations: int = 15,
     verbose: bool = False
-) -> Tuple[LinkedTableOfContents, Dict]:
+):
     start_time = time.time()
 
     stage_storage = storage.stage("link-toc")
@@ -125,24 +125,7 @@ def find_all_toc_entries(
 
     if not toc_data or not toc_data.get('entries'):
         logger.warning("No ToC entries found in extract-toc output")
-        return LinkedTableOfContents(
-            entries=[],
-            toc_page_range={},
-            entries_by_level={},
-            original_parsing_confidence=0.0,
-            total_entries=0,
-            linked_entries=0,
-            unlinked_entries=0,
-            avg_link_confidence=0.0,
-            total_cost_usd=0.0,
-            total_time_seconds=0.0,
-            avg_iterations_per_entry=0.0
-        ), {
-            "cost_usd": 0.0,
-            "time_seconds": 0.0,
-            "total_entries": 0,
-            "found_count": 0,
-        }
+        return
 
     toc_entries = toc_data['entries']
 
@@ -235,24 +218,7 @@ def find_all_toc_entries(
 
     if not linked_toc or not linked_toc.entries:
         logger.warning("No linked ToC data found after processing")
-        return LinkedTableOfContents(
-            entries=[],
-            toc_page_range={},
-            entries_by_level={},
-            original_parsing_confidence=0.0,
-            total_entries=0,
-            linked_entries=0,
-            unlinked_entries=0,
-            avg_link_confidence=0.0,
-            total_cost_usd=0.0,
-            total_time_seconds=0.0,
-            avg_iterations_per_entry=0.0
-        ), {
-            "cost_usd": 0.0,
-            "time_seconds": 0.0,
-            "total_entries": 0,
-            "found_count": 0,
-        }
+        return
 
     linked_entries = [e for e in linked_toc.entries if e is not None]
 
@@ -272,6 +238,7 @@ def find_all_toc_entries(
     total_cost_usd = sum(m.get('cost_usd', 0.0) for m in all_metrics.values())
     total_time_seconds = time.time() - start_time
 
+    # Finalize metadata in linked_toc.json
     _finalize_linked_toc_metadata(
         storage=storage,
         toc_page_range=toc_data.get('toc_page_range', {}),
@@ -286,30 +253,18 @@ def find_all_toc_entries(
         avg_iterations_per_entry=avg_iterations
     )
 
-    output = LinkedTableOfContents(
-        entries=linked_entries,
-        toc_page_range=toc_data.get('toc_page_range', {}),
-        entries_by_level=toc_data.get('entries_by_level', {}),
-        original_parsing_confidence=toc_data.get('parsing_confidence', 0.0),
-        total_entries=len(linked_entries),
-        linked_entries=linked_count,
-        unlinked_entries=unlinked_count,
-        avg_link_confidence=avg_confidence,
-        total_cost_usd=total_cost_usd,
-        total_time_seconds=total_time_seconds,
-        avg_iterations_per_entry=avg_iterations
+    # Record metrics
+    stage_storage.metrics_manager.record(
+        key="find_entries",
+        cost_usd=total_cost_usd,
+        time_seconds=total_time_seconds,
+        custom_metrics={
+            "total_entries": len(linked_entries),
+            "found_entries": linked_count,
+        }
     )
-
-    metrics = {
-        "cost_usd": total_cost_usd,
-        "time_seconds": total_time_seconds,
-        "total_entries": len(linked_entries),
-        "found_count": linked_count,
-    }
 
     logger.info(
         f"All entries processed: {linked_count}/{len(linked_entries)} linked, "
         f"cost ${total_cost_usd:.4f}, time {total_time_seconds:.1f}s"
     )
-
-    return output, metrics

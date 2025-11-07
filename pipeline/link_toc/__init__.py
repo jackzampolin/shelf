@@ -53,18 +53,15 @@ class LinkTocStage(BaseStage):
         self.check_dependency_completed(ocr_pages_stage)
 
     def run(self) -> Dict[str, Any]:
-        """Execute link-toc stage with if-gates."""
         if self.status_tracker.is_completed():
             return self.status_tracker.get_skip_response()
 
         # Phase 1: Find all ToC entries
         linked_toc_path = self.stage_storage.output_dir / "linked_toc.json"
         if not linked_toc_path.exists():
-            self.logger.info("=== Finding ToC Entries ===")
-
             from .orchestrator import find_all_toc_entries
 
-            output, metrics = find_all_toc_entries(
+            find_all_toc_entries(
                 storage=self.storage,
                 logger=self.logger,
                 model=self.model,
@@ -72,26 +69,9 @@ class LinkTocStage(BaseStage):
                 verbose=self.verbose
             )
 
-            # Save and record metrics
-            self.stage_storage.metrics_manager.record(
-                key="find_entries",
-                cost_usd=metrics['cost_usd'],
-                time_seconds=metrics['time_seconds'],
-                custom_metrics={
-                    "total_entries": metrics['total_entries'],
-                    "found_entries": metrics['found_count'],
-                }
-            )
-
-            from .schemas import LinkedTableOfContents
-            validated = LinkedTableOfContents(**output.model_dump())
-            self.stage_storage.save_file("linked_toc.json", validated.model_dump())
-
         # Phase 2: Generate report
         report_path = self.stage_storage.output_dir / "report.csv"
         if not report_path.exists():
-            self.logger.info("=== Generating Report ===")
-
             from .tools.report_generator import generate_report
 
             generate_report(
