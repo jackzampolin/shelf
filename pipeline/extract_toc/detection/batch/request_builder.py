@@ -19,27 +19,12 @@ def prepare_toc_request(
     global_structure_from_finder: dict,
     logger: PipelineLogger
 ) -> Optional[LLMRequest]:
-    """Build LLMRequest for one ToC page.
-
-    Args:
-        item: Page number to process
-        storage: BookStorage
-        model: Model name
-        toc_range: Range of ToC pages
-        structure_notes_from_finder: Per-page structure observations
-        global_structure_from_finder: Global structure summary
-        logger: Pipeline logger
-
-    Returns:
-        LLMRequest for this page, or None if page data unavailable
-    """
     page_num = item
     total_toc_pages = toc_range.end_page - toc_range.start_page + 1
 
     source_storage = storage.stage("source")
     ocr_pages_storage = storage.stage('ocr-pages')
 
-    # Load OCR data from ocr-pages stage
     from pipeline.ocr_pages.schemas import OcrPagesPageOutput
     page_data = ocr_pages_storage.load_page(page_num, schema=OcrPagesPageOutput)
 

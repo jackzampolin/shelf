@@ -17,30 +17,13 @@ def process_toc_pages(
     global_structure_from_finder: dict,
     model: str
 ) -> Dict:
-    """Process ToC pages using LLMBatchProcessor.
-
-    Args:
-        storage: BookStorage
-        logger: Pipeline logger
-        toc_range: Range of ToC pages
-        structure_notes_from_finder: Per-page structure observations
-        global_structure_from_finder: Global structure summary
-        model: Model to use
-
-    Returns:
-        Dict with pages list and toc_range
-    """
     total_toc_pages = toc_range.end_page - toc_range.start_page + 1
     logger.info(f"Extracting ToC entries from {total_toc_pages} pages (parallel)")
 
-    # Prepare items (page numbers)
     page_nums = list(range(toc_range.start_page, toc_range.end_page + 1))
 
-    # Setup result collection
     page_results = []
-    handler = create_toc_handler(logger, page_results)
 
-    # Process batch
     processor = LLMBatchProcessor(
         storage=storage,
         stage_name='extract-toc',
@@ -56,7 +39,7 @@ def process_toc_pages(
     processor.process(
         items=page_nums,
         request_builder=prepare_toc_request,
-        result_handler=handler,
+        result_handler=create_toc_handler(storage, logger, page_results),
         storage=storage,
         model=model,
         toc_range=toc_range,
@@ -65,7 +48,6 @@ def process_toc_pages(
         logger=logger
     )
 
-    # Sort page_results by page_num
     page_results.sort(key=lambda p: p["page_num"])
 
     return {
