@@ -16,9 +16,6 @@ class LabelPagesStage(BaseStage):
     name = "label-pages"
     dependencies = ["ocr-pages", "source"]
 
-    output_schema = LabelPagesPageOutput
-    report_schema = LabelPagesPageReport
-    self_validating = True
 
     def __init__(
         self,
@@ -33,7 +30,6 @@ class LabelPagesStage(BaseStage):
         self.max_workers = max_workers or Config.max_workers
         self.max_retries = max_retries
 
-        # Two-phase status tracking: process pages + generate report
         self.page_tracker = BatchBasedStatusTracker(
             storage=self.storage,
             logger=self.logger,
@@ -68,7 +64,7 @@ class LabelPagesStage(BaseStage):
                 storage=self.storage,
                 logger=self.logger,
                 stage_name=self.name,
-                output_schema=self.output_schema,
+                output_schema=LabelPagesPageOutput,
                 remaining_pages=remaining_pages,
                 model=self.model,
                 max_workers=self.max_workers,
@@ -81,7 +77,7 @@ class LabelPagesStage(BaseStage):
             generate_report(
                 storage=self.storage,
                 logger=self.logger,
-                report_schema=self.report_schema,
+                report_schema=LabelPagesPageReport,
                 stage_name=self.name,
             )
 

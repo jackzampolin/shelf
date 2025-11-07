@@ -19,7 +19,6 @@ from infra.utils.pdf import downsample_for_vision
 from infra.config import Config
 
 from ..schemas import PageRange, ToCEntry
-from ..storage import ExtractTocStageStorage
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 
 
@@ -67,12 +66,12 @@ def extract_toc_entries(
     source_storage = storage.stage("source")
 
     # Load OCR text directly from ocr-pages stage
-    from pipeline.ocr_pages.storage import OcrPagesStageStorage
-    ocr_pages_storage = OcrPagesStageStorage(stage_name='ocr-pages')
+    from pipeline.ocr_pages.schemas import OcrPagesPageOutput
+    ocr_pages_storage = storage.stage('ocr-pages')
 
     for page_num in range(toc_range.start_page, toc_range.end_page + 1):
         # Load OCR data from ocr-pages stage
-        page_data = ocr_pages_storage.load_page(storage, page_num)
+        page_data = ocr_pages_storage.load_page(page_num, schema=OcrPagesPageOutput)
 
         if not page_data:
             logger.error(f"  Page {page_num}: OCR data not found in ocr-pages stage")

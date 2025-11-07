@@ -6,18 +6,9 @@ from infra.storage.book_storage import BookStorage
 from infra.pipeline.status import MultiPhaseStatusTracker
 from pipeline.ocr_pages import OcrPagesStage
 
-from .schemas import FinderResult
-
-
 class FindTocStage(BaseStage):
-
     name = "find-toc"
     dependencies = ["source", "ocr-pages"]
-
-    output_schema = FinderResult
-    checkpoint_schema = None
-    report_schema = None
-    self_validating = True
 
     def __init__(self, storage: BookStorage, model: str = None):
         super().__init__(storage)

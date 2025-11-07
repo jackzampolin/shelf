@@ -5,18 +5,12 @@ from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.status import BatchBasedStatusTracker
 
-from .schemas import TesseractPageOutput
 from .tools.processor import process_batch
 
 
 class TesseractStage(BaseStage):
     name = "tesseract"
     dependencies = ["source"]
-
-    output_schema = TesseractPageOutput
-    checkpoint_schema = None
-    report_schema = None
-    self_validating = True
 
     def __init__(self, storage: BookStorage, psm_mode: int = 3, max_workers: int = None):
         super().__init__(storage)

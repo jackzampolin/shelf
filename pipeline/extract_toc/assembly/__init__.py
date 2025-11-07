@@ -14,7 +14,6 @@ from infra.llm.client import LLMClient
 from infra.config import Config
 
 from ..schemas import PageRange
-from ..storage import ExtractTocStageStorage
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 
 
@@ -46,14 +45,14 @@ def assemble_toc(
     """
     model = model or Config.text_model_expensive
     llm_client = LLMClient()
-    stage_storage = ExtractTocStageStorage(stage_name='extract-toc')
+    stage_storage = storage.stage('extract-toc')
 
     logger.info("Assembling ToC from extracted entries")
 
     start_time = time.time()
 
     # Load entries from Phase 1
-    entries_data = stage_storage.load_entries_extracted(storage)
+    entries_data = stage_storage.load_file("entries.json")
     pages_data = entries_data.get("pages", [])
 
     entries_by_page = {p["page_num"]: p for p in pages_data}
