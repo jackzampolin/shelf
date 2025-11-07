@@ -13,8 +13,7 @@ from PIL import Image
 
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
-from infra.llm.batch_processor import LLMBatchProcessor, LLMBatchConfig
-from infra.llm.models import LLMRequest, LLMResult
+from infra.llm.batch import LLMBatchProcessor, LLMBatchConfig
 from infra.utils.pdf import downsample_for_vision
 from infra.config import Config
 
@@ -144,21 +143,7 @@ def extract_toc_entries(
                     "notes": response_data.get("notes", "")
                 })
 
-                # Record metrics
-                stage_storage_obj.metrics_manager.record(
-                    key=f"phase1_page_{page_num:04d}",
-                    cost_usd=result.cost_usd,
-                    time_seconds=result.execution_time_seconds,
-                    custom_metrics={
-                        "phase": "extract_entries",
-                        "page": page_num,
-                        "entries_extracted": len(entries_validated),
-                        "confidence": response_data.get("confidence", 0.0),
-                        "prompt_tokens": result.prompt_tokens,
-                        "completion_tokens": result.completion_tokens,
-                        "reasoning_tokens": result.reasoning_tokens,
-                    }
-                )
+                # Metrics automatically recorded by LLMBatchProcessor
 
             except Exception as e:
                 logger.error(f"  Page {page_num}: Failed to parse ToC entry extraction: {e}")
@@ -197,19 +182,8 @@ def extract_toc_entries(
         "toc_range": toc_range.model_dump(),
     }
 
-    total_entries = sum(len(p["entries"]) for p in page_results)
+    # Save entries.json
+    stage_storage_obj.save_file("entries.json", results_data)
+    logger.info(f"Saved entries.json ({len(page_results)} pages)")
 
-    # Access BatchStats from batch_stats dict
-    batch_stats_obj = batch_stats["batch_stats"]
-
-    metrics = {
-        "cost_usd": batch_stats["total_cost_usd"],
-        "time_seconds": elapsed_time,
-        "prompt_tokens": batch_stats_obj.total_prompt_tokens,
-        "completion_tokens": batch_stats_obj.total_tokens,  # batch_stats.total_tokens = completion_tokens
-        "reasoning_tokens": batch_stats_obj.total_reasoning_tokens,
-        "pages_processed": len(page_results),
-        "total_entries": total_entries,
-    }
-
-    return results_data, metrics
+    # Metrics automatically recorded by LLMBatchProcessor

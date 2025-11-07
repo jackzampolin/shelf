@@ -22,7 +22,7 @@ def assemble_toc(
     toc_range: PageRange,
     logger: PipelineLogger,
     model: str = None
-) -> Tuple[Dict[str, any], Dict[str, any]]:
+) -> Dict[str, any]:
     """
     Assemble final ToC from extracted entries across pages.
 
@@ -39,9 +39,7 @@ def assemble_toc(
         model: Text model to use (default: Config.text_model_expensive)
 
     Returns:
-        Tuple of (results_data, metrics)
-        - results_data: {"toc": {...}, "validation": {...}, "notes": "..."}
-        - metrics: {"cost_usd": float, "time_seconds": float, ...}
+        results_data: {"toc": {...}, "validation": {...}, "notes": "..."}
     """
     model = model or Config.text_model_expensive
     llm_client = LLMClient()
@@ -187,20 +185,28 @@ def assemble_toc(
             "search_strategy": "vision_agent_with_ocr"
         }
 
+        # Save toc.json
+        stage_storage.save_file("toc.json", results_data)
+        logger.info(f"Saved toc.json ({total_entries} entries)")
+
+        # Record metrics
         reasoning_details = usage.get("completion_tokens_details", {})
+        stage_storage.metrics_manager.record(
+            key="phase2_assembly",
+            cost_usd=cost,
+            time_seconds=elapsed_time,
+            custom_metrics={
+                "phase": "assembly",
+                "total_entries": total_entries,
+                "confidence": confidence,
+                "issues_found": len(issues),
+                "completion_tokens": usage.get("completion_tokens", 0),
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "reasoning_tokens": reasoning_details.get("reasoning_tokens", 0),
+            }
+        )
 
-        metrics = {
-            "cost_usd": cost,
-            "time_seconds": elapsed_time,
-            "prompt_tokens": usage.get("prompt_tokens", 0),
-            "completion_tokens": usage.get("completion_tokens", 0),
-            "reasoning_tokens": reasoning_details.get("reasoning_tokens", 0),
-            "total_entries": total_entries,
-            "confidence": confidence,
-            "issues_found": len(issues),
-        }
-
-        return results_data, metrics
+        return results_data
 
     except Exception as e:
         logger.error(f"  Failed to parse assembly response: {e}")
