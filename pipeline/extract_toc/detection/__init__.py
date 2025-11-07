@@ -52,7 +52,6 @@ def extract_toc_entries(
         - metrics: {"cost_usd": float, "time_seconds": float, ...}
     """
     model = model or Config.vision_model_primary
-    stage_storage = ExtractTocStageStorage(stage_name='extract-toc')
     stage_storage_obj = storage.stage('extract-toc')
 
     start_time = time.time()
