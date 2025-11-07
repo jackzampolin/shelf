@@ -33,7 +33,7 @@ class BaseStage:
 
     def check_source_exists(self) -> None:
         source_stage = self.storage.stage("source")
-        source_pages = source_stage.list_output_pages(extension="png")
+        source_pages = source_stage.list_pages(extension="png")
 
         if len(source_pages) == 0:
             raise ValueError("No source pages found - cannot run this stage")

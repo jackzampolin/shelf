@@ -42,23 +42,15 @@ class BatchBasedStatusTracker:
         }
 
     def get_status(self) -> Dict[str, Any]:
-        # Ground truth from disk: count source pages that exist
-        source_pages = self.storage.stage("source").list_output_pages(extension="png")
+        source_pages = self.storage.stage("source").list_pages(extension="png")
         total = len(source_pages)
 
         all_page_nums = set(range(1, total + 1))
 
         stage_storage = self.storage.stage(self.stage_name)
 
-        completed = set()
         extension = self.item_pattern.split('.')[-1]
-        output_files = stage_storage.list_output_pages(extension=extension)
-        for page_path in output_files:
-            try:
-                page_num = int(page_path.stem.split('_')[-1])
-                completed.add(page_num)
-            except (ValueError, IndexError):
-                pass
+        completed = set(stage_storage.list_pages(extension=extension))
 
         remaining = sorted(all_page_nums - completed)
 

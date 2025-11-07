@@ -91,5 +91,5 @@ class BookStorage:
             'book_dir_exists': self.book_dir.exists(),
             'metadata_exists': self.metadata_file.exists(),
             'source_dir_exists': source_stage.output_dir.exists(),
-            'has_source_pages': len(source_stage.list_output_pages(extension='png')) > 0
+            'has_source_pages': len(source_stage.list_pages(extension='png')) > 0
         }
