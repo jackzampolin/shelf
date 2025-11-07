@@ -116,4 +116,11 @@ class TocFinderAgent:
         if self.logger:
             self.logger.info("Saved finder_result.json")
 
-        return final_result
+        # Return success or failure based on agent result
+        if not agent_result.success:
+            return {
+                "status": "error",
+                "error": agent_result.error_message or "Agent search failed"
+            }
+
+        return {"status": "success"}

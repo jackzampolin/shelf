@@ -51,7 +51,4 @@ class FindTocStage(BaseStage):
             verbose=True
         )
 
-        # Agent persists finder_result.json directly
-        agent.search()
-
-        return {"status": "success"}
+        return agent.search()
