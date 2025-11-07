@@ -1,5 +1,3 @@
-"""Key-value metrics storage for cost/time/token tracking"""
-
 import json
 import threading
 from pathlib import Path
@@ -7,9 +5,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 
 class MetricsManager:
-
     def __init__(self, metrics_file: Path):
-
         self.metrics_file = Path(metrics_file)
         self._lock = threading.RLock()
         self._state = {
@@ -30,20 +26,6 @@ class MetricsManager:
         custom_metrics: Optional[Dict[str, Any]] = None,
         accumulate: bool = False
     ) -> None:
-        """
-        Record metrics for a key.
-
-        Note: Prefer passing everything in custom_metrics for consistency.
-        See issue #91 for schema validation work.
-
-        Args:
-            key: Metric key (e.g., "page_0001")
-            cost_usd: Cost in USD
-            time_seconds: Time in seconds
-            tokens: Token count
-            custom_metrics: Additional metrics dict
-            accumulate: If True, add to existing values; if False, replace
-        """
         with self._lock:
             metrics_entry = self._state["metrics"].get(key, {}) if accumulate else {}
 
@@ -104,20 +86,7 @@ class MetricsManager:
             )
 
     def get_cumulative_metrics(self) -> Dict[str, Any]:
-        """
-        Get cumulative metrics across all recorded entries.
-
-        Returns:
-            Dict with:
-            - total_requests: Count of metric entries (excluding 'stage_runtime')
-            - total_cost_usd: Sum of all costs
-            - total_time_seconds: Sum of all times
-            - total_prompt_tokens: Sum of all prompt tokens
-            - total_completion_tokens: Sum of all completion tokens
-            - total_reasoning_tokens: Sum of all reasoning tokens
-        """
         with self._lock:
-            # Filter out stage_runtime and other non-page metrics
             page_metrics = {
                 key: entry
                 for key, entry in self._state["metrics"].items()

@@ -1,5 +1,3 @@
-"""High-level Library coordinator (combines LibraryStorage + LibraryMetadata)"""
-
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import random
@@ -10,16 +8,13 @@ from infra.storage.library_metadata import LibraryMetadata
 from infra.storage.book_storage import BookStorage
 
 class Library:
-
     def __init__(self, storage_root: Optional[Path] = None):
-
         self.storage_root = storage_root or Config.book_storage_root
 
         self._storage = LibraryStorage(storage_root=self.storage_root)
         self._metadata = LibraryMetadata(storage_root=self.storage_root)
 
     def add_books(self, pdf_paths: List[Path], run_ocr: bool = False) -> Dict[str, Any]:
-
         from infra.utils.ingest import add_books_to_library
 
         result = add_books_to_library(
@@ -40,7 +35,6 @@ class Library:
         delete_files: bool = True,
         remove_empty_book: bool = True
     ) -> Dict[str, Any]:
-
         result = self._storage.delete_scan(
             scan_id=scan_id,
             delete_files=delete_files,
@@ -52,19 +46,15 @@ class Library:
         return result
 
     def get_book_storage(self, scan_id: str) -> BookStorage:
-
         return self._storage.get_book_storage(scan_id)
 
     def get_book_info(self, scan_id: str) -> Optional[Dict[str, Any]]:
-
         return self._storage.get_scan_info(scan_id)
 
     def list_books(self) -> List[Dict[str, Any]]:
-
         return self._storage.list_all_books()
 
     def get_shuffle(self, defensive: bool = True) -> Optional[List[str]]:
-
         shuffle = self._metadata.get_shuffle()
 
         if shuffle is None:
@@ -86,7 +76,6 @@ class Library:
         reshuffle: bool = False,
         books: Optional[List[str]] = None
     ) -> List[str]:
-
         existing_shuffle = self.get_shuffle(defensive=True)
 
         if not reshuffle and existing_shuffle:
@@ -114,19 +103,15 @@ class Library:
         return shuffled
 
     def clear_shuffle(self):
-
         self._metadata.clear_shuffle()
 
     def has_shuffle(self) -> bool:
-
         return self._metadata.has_shuffle()
 
     def get_shuffle_info(self) -> Optional[Dict[str, Any]]:
-
         return self._metadata.get_shuffle_info()
 
     def _add_books_to_shuffles(self, scan_ids: List[str]):
-
         current_shuffle = self._metadata.get_shuffle()
 
         if current_shuffle:
@@ -135,7 +120,6 @@ class Library:
             self._metadata.set_shuffle(updated_shuffle)
 
     def _remove_book_from_shuffles(self, scan_id: str):
-
         current_shuffle = self._metadata.get_shuffle()
 
         if current_shuffle and scan_id in current_shuffle:
@@ -143,13 +127,10 @@ class Library:
             self._metadata.set_shuffle(updated_shuffle)
 
     def get_stats(self) -> Dict[str, Any]:
-
         return self._storage.get_stats()
 
     def list_all_scans(self) -> List[Dict[str, Any]]:
-
         return self._storage.list_all_scans()
 
     def get_scan_info(self, scan_id: str) -> Optional[Dict[str, Any]]:
-
         return self._storage.get_scan_info(scan_id)

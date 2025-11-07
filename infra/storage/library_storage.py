@@ -1,5 +1,3 @@
-"""Library-level book collection management"""
-
 import json
 import shutil
 from pathlib import Path
@@ -7,9 +5,7 @@ from typing import Optional, Dict, Any, List
 from infra.config import Config
 
 class LibraryStorage:
-
     def __init__(self, storage_root: Path = None):
-
         self.storage_root = storage_root or Config.book_storage_root
 
         self._book_storage_cache: Dict[str, Any] = {}
@@ -17,7 +13,6 @@ class LibraryStorage:
         self.storage_root.mkdir(parents=True, exist_ok=True)
 
     def _scan_book_directories(self) -> List[str]:
-
         scan_ids = []
 
         if not self.storage_root.exists():
@@ -39,7 +34,6 @@ class LibraryStorage:
         return sorted(scan_ids)
 
     def _read_metadata(self, scan_id: str) -> Optional[Dict[str, Any]]:
-
         metadata_file = self.storage_root / scan_id / "metadata.json"
 
         if not metadata_file.exists():
@@ -52,12 +46,6 @@ class LibraryStorage:
             return None
 
     def _get_pipeline_status(self, scan_id: str) -> Dict[str, str]:
-        """
-        Scan book directory for stage outputs and determine status.
-
-        Returns status dict by discovering existing stage directories
-        rather than hardcoding stage names.
-        """
         from infra.storage.book_storage import BookStorage
 
         storage = self.get_book_storage(scan_id)
@@ -67,7 +55,6 @@ class LibraryStorage:
         if not book_dir.exists():
             return status
 
-        # Scan for stage directories (any dir except source, logs, etc.)
         for item in book_dir.iterdir():
             if not item.is_dir():
                 continue
@@ -76,10 +63,8 @@ class LibraryStorage:
             if item.name.startswith('.'):
                 continue
 
-            # This is a stage directory
             stage_name = item.name
 
-            # Check if it has outputs (not just empty or logs-only)
             has_output = False
             if item.exists():
                 contents = [
@@ -93,18 +78,12 @@ class LibraryStorage:
         return status
 
     def _calculate_book_cost(self, scan_id: str) -> float:
-        """
-        Calculate total cost by scanning book directory for stage metrics.
-
-        Discovers stages dynamically rather than hardcoding stage names.
-        """
         book_dir = self.storage_root / scan_id
         total_cost = 0.0
 
         if not book_dir.exists():
             return total_cost
 
-        # Scan for stage directories (any dir except source, logs, etc.)
         for item in book_dir.iterdir():
             if not item.is_dir():
                 continue
@@ -113,28 +92,22 @@ class LibraryStorage:
             if item.name.startswith('.'):
                 continue
 
-            # Check if this stage has metrics
             metrics_file = item / 'metrics.json'
             if metrics_file.exists():
                 try:
-                    # Read metrics directly without creating StageStorage
-                    # (avoid creating directories via storage.stage())
                     import json
                     with open(metrics_file) as f:
                         metrics_data = json.load(f)
 
-                    # Sum all cost_usd values from metrics
                     for key, data in metrics_data.items():
                         if isinstance(data, dict):
                             total_cost += data.get('cost_usd', 0.0)
                 except Exception:
-                    # Skip malformed metrics files
                     pass
 
         return total_cost
 
     def list_all_books(self) -> List[Dict[str, Any]]:
-
         books = []
         scan_ids = self._scan_book_directories()
 
@@ -164,11 +137,9 @@ class LibraryStorage:
         return books
 
     def list_all_scans(self) -> List[Dict[str, Any]]:
-
         return self.list_all_books()
 
     def get_scan_info(self, scan_id: str) -> Optional[Dict[str, Any]]:
-
         book_dir = self.storage_root / scan_id
 
         if not book_dir.exists():
@@ -206,7 +177,6 @@ class LibraryStorage:
         }
 
     def get_stats(self) -> Dict[str, Any]:
-
         scan_ids = self._scan_book_directories()
 
         total_pages = 0
@@ -232,7 +202,6 @@ class LibraryStorage:
         delete_files: bool = True,
         remove_empty_book: bool = True
     ) -> Dict[str, Any]:
-
         book_dir = self.storage_root / scan_id
 
         if not book_dir.exists():
@@ -255,7 +224,6 @@ class LibraryStorage:
         }
 
     def get_book_storage(self, scan_id: str):
-
         from infra.storage.book_storage import BookStorage
 
         book_dir = self.storage_root / scan_id

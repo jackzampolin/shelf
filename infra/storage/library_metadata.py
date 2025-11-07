@@ -1,5 +1,3 @@
-"""Library-level operational state (.library.json for shuffles)"""
-
 import json
 import threading
 from pathlib import Path
@@ -8,12 +6,10 @@ from datetime import datetime
 from infra.config import Config
 
 class LibraryMetadata:
-
     METADATA_VERSION = "1.0"
     METADATA_FILENAME = ".library.json"
 
     def __init__(self, storage_root: Optional[Path] = None):
-
         self.storage_root = storage_root or Config.book_storage_root
         self.metadata_file = self.storage_root / self.METADATA_FILENAME
 
@@ -21,7 +17,6 @@ class LibraryMetadata:
         self._state = self._load_or_create_metadata()
 
     def _load_or_create_metadata(self) -> Dict[str, Any]:
-
         if self.metadata_file.exists():
             try:
                 with open(self.metadata_file, 'r') as f:
@@ -40,14 +35,12 @@ class LibraryMetadata:
             return self._create_new_metadata()
 
     def _create_new_metadata(self) -> Dict[str, Any]:
-
         return {
             "version": self.METADATA_VERSION,
             "shuffle": None
         }
 
     def _save(self):
-
         import tempfile
         import os
 
@@ -71,7 +64,6 @@ class LibraryMetadata:
             raise
 
     def get_shuffle(self) -> Optional[List[str]]:
-
         with self._lock:
             shuffle_data = self._state.get('shuffle')
             if not shuffle_data:
@@ -79,7 +71,6 @@ class LibraryMetadata:
             return shuffle_data.get('order', [])
 
     def set_shuffle(self, scan_ids: List[str]):
-
         with self._lock:
             self._state['shuffle'] = {
                 'created_at': datetime.now().isoformat(),
@@ -88,19 +79,16 @@ class LibraryMetadata:
             self._save()
 
     def clear_shuffle(self):
-
         with self._lock:
             self._state['shuffle'] = None
             self._save()
 
     def has_shuffle(self) -> bool:
-
         with self._lock:
             shuffle_data = self._state.get('shuffle')
             return shuffle_data is not None and len(shuffle_data.get('order', [])) > 0
 
     def get_shuffle_info(self) -> Optional[Dict[str, Any]]:
-
         with self._lock:
             shuffle_data = self._state.get('shuffle')
             if not shuffle_data:
