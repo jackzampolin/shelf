@@ -7,11 +7,10 @@ NEVER run these operations without explicit user approval:
 - `shelf.py book <scan-id> process` - Full pipeline processing
 - `shelf.py book <scan-id> run-stage <stage>` - Single stage processing
 - `shelf.py batch <stage>` - Library-wide batch stage processing
-- Any command that spawns LLM API calls (ocr-pages, find-toc, extract-toc)
+- Any command that spawns LLM API calls (ocr-pages, find-toc, extract-toc, label-pages, link-toc)
 
 Safe operations (can run freely):
 - `shelf.py library list`, `shelf.py book <scan-id> info`, `pytest tests/`
-- `shelf.py book <scan-id> run-stage tesseract` (local, no API calls)
 - Reading files, grepping, analyzing code
 
 **Always ask first**
@@ -66,8 +65,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - `docs`: Documentation changes
 - `chore`: Maintenance tasks (deps, config)
 - `test`: Test additions/changes
-- `debug`: Debugging commits (use sparingly)
-- `wip`: Work in progress (use sparingly)
 
 **Commit atomicity:**
 - One **logical** change per commit (not necessarily one file)
@@ -87,61 +84,12 @@ All commits co-authored with Claude Code must include:
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
-This provides attribution and tracks AI-assisted development.
 
 **History management:**
 - Prefer linear history (rebase over merge)
 - Preserve work history (don't squash unless duplicative)
-- Informal commits (`wip:`, debugging commits) OK if they provide context
 - NEVER force-push to main
 </git_workflow>
-
-<stage_implementation>
-## Stage Implementation
-
-**Tesseract and ocr-pages are reference implementations.**
-Read `pipeline/tesseract/` or `pipeline/ocr_pages/` and `docs/guides/implementing-a-stage.md` for full details.
-
-**Core principles:**
-1. **One schema per file** - Easy to find, easy to modify
-2. **Ground truth from disk** - Files are reality, not metrics state
-3. **If-gates for resume** - Each phase checks progress, refreshes, continues
-4. **Incremental progress** - Metrics recorded after each page via MetricsManager
-5. **Stage independence** - Communicate through files, not imports
-
-**Structure:**
-```
-pipeline/your_stage/
-├── __init__.py       # BaseStage implementation only
-├── status.py         # Progress from disk (ground truth)
-├── storage.py        # File I/O operations
-├── schemas/          # One schema per file
-└── tools/            # Workers and helpers
-```
-
-**Key pattern (if-gates):**
-```python
-def run(self, storage, logger):
-    progress = self.get_status(storage, logger)
-
-    if progress["remaining_pages"]:
-        process_pages()
-        progress = self.get_status(storage, logger)  # Refresh
-
-    if not progress["artifacts"]["report_exists"]:
-        generate_report()
-
-    # Completion determined by status tracker checking disk state
-```
-
-**Naming conventions (CRITICAL):**
-- Stage names ALWAYS use hyphens: `ocr-pages`, `find-toc`, `extract-toc`
-- NEVER use underscores in stage names (causes lookup failures)
-- Use `storage.stage("stage-name")` - exact string, no manipulation
-- Exception: `tesseract` (single word, no hyphen needed)
-- Why: Consistency between CLI args, directory names, and storage lookups
-- Violation causes: "Page not found" errors, empty grep results, wrong log directories
-</stage_implementation>
 
 <prompts>
 ## Prompt Engineering
@@ -152,7 +100,7 @@ def run(self, storage, logger):
 
 **Avoid overfitting (CRITICAL):**
 - THIS IS A REALLY IMPORTANT ONE!
-- Don't add examples from text we are processing.
+- Don't add examples from text we are processing
 - If you feel this urge think generally about the problem and how to solve it as a more general case
 
 **Example of overfitting (WRONG):**
@@ -189,10 +137,39 @@ This teaches WHAT TO LOOK FOR, not what the current book contains.
 **Before finalizing:** Would it work on unseen books?
 </prompts>
 
+<quick_reference>
+## Quick Reference
 
-<environment>
-## Environment Setup
+**Stage Implementation:**
+See `docs/guides/implementing-a-stage.md` for complete guide.
 
+Reference implementations:
+- Simple: `pipeline/ocr_pages/`
+- Complex: `pipeline/label_pages/`
+- Non-LLM: `pipeline/find_toc/`
+
+Core principles:
+- **Ground truth from disk** - Files are reality, not in-memory state
+- **If-gates for resume** - Check progress, refresh, continue
+- **Incremental metrics** - Record after each page via MetricsManager
+- **Stage independence** - Communicate through files, not imports
+- **One schema per file** - Easy to find, easy to modify
+
+**Naming convention (CRITICAL):**
+- Stage names use hyphens: `ocr-pages`, `find-toc`, `extract-toc`
+- NEVER use underscores in stage names (causes lookup failures)
+
+**Stage Registry:**
+`infra/pipeline/registry.py` - Single source of truth for all stages
+
+**Architecture Decisions:**
+See `docs/decisions/` for detailed rationale:
+- `000-information-hygiene.md` - Context clarity as first principle
+- `001-think-data-first.md` - Ground truth from disk
+- `002-stage-independence.md` - Files over imports
+- `007-naming-conventions.md` - Hyphens in stage names
+
+**Environment:**
 ```bash
 # First-time setup
 uv venv && source .venv/bin/activate
@@ -206,57 +183,7 @@ uv run python -m pytest tests/
 **Secrets (.env):**
 - `OPENROUTER_API_KEY` - For LLM API calls
 - `BOOK_STORAGE_ROOT` (optional) - Defaults to `~/Documents/book_scans`
-</environment>
-
-<cli_design>
-## CLI Design Principles
-
-**Explicit over convenient:**
-- Destructive operations should have scary names
-- WRONG: `--force` (vague, sounds convenient)
-- RIGHT: `--delete-outputs` (explicit about what gets destroyed)
-
-**Confirmation for destruction:**
-- Add `-y/--yes` flag to skip confirmation
-- Default: require typing "yes" for irreversible operations
-- Warning format: `⚠️  WARNING: --delete-outputs will DELETE all existing outputs for N books`
-
-**Help text clarity:**
-- Warn about irreversibility: `(WARNING: irreversible)`
-- Show operators for filters: `Operators: = > < >= <=`
-- Be specific: "DELETE all stage outputs" not "clean stage"
-
-**Single source of truth:**
-- Stage registry in ONE place: `cli/constants.py::STAGE_DEFINITIONS`
-- Dynamic stage map building via `get_stage_map()`
-- Never hardcode stage lists in multiple files
-- CLI parsers use `CORE_STAGES`, library commands use `STAGE_ABBRS`
-</cli_design>
-
-<code_hygiene>
-## Code Hygiene
-
-**Dead code accumulates:**
-- Files that exist but are never imported or registered
-- Run periodic audits: grep for imports, check CLI parser registration
-- Delete aggressively - git preserves history if you need it back
-
-**Comments explain WHY, not WHAT:**
-- WRONG: `# Build kwargs for stage initialization`
-- RIGHT: `# Tesseract stage needs worker control for CPU-bound parallelism`
-- WRONG: `# Single source of truth for stage definitions`
-- RIGHT: (no comment - code structure makes this obvious)
-
-**Simplicity over cleverness:**
-- If you need comments to explain the code, simplify the code
-- Prefer `shutil.rmtree()` over `for file in dir: if not .gitkeep: delete`
-- Explicit is better than implicit, but obvious is better than explicit
-
-**Docstrings for non-obvious decisions:**
-- Explain WHY stages need different initialization parameters
-- Explain WHAT gets preserved/destroyed in destructive operations
-- Explain HOW resume logic works (ground truth from disk)
-</code_hygiene>
+</quick_reference>
 
 <remember>
 ## Remember - Critical Checklist
@@ -264,49 +191,33 @@ uv run python -m pytest tests/
 **1. COST AWARENESS**
 - ALWAYS ask before running expensive operations
 - Test on samples, not full books
-- Check costs: `shelf.py book <scan-id> info`
 
 **2. GIT WORKFLOW**
 - Direct to main for solo work; branch for major refactors
 - Commit format: `<type>: <imperative summary>` + markdown body
 - One logical change per commit (may touch many files)
 - ALWAYS include AI collaboration attribution
-- Detailed commit messages with **Problem/Solution/Impact** sections
 
 **3. STAGE IMPLEMENTATION**
-- **Tesseract/ocr-pages are references** - read `pipeline/tesseract/` or `pipeline/ocr_pages/` when stuck
-- Stage names use HYPHENS: `ocr-pages` not `ocr_pages` (exception: single-word `tesseract`)
-- One schema per file
-- Ground truth from disk (not metrics state)
+- Read `docs/guides/implementing-a-stage.md` first
+- Reference implementations: `pipeline/ocr_pages/`, `pipeline/label_pages/`
+- Stage names use HYPHENS: `ocr-pages` not `ocr_pages`
+- Ground truth from disk (not in-memory state)
 - If-gates for resume (check progress, refresh, continue)
-- Incremental metrics (record after each page via MetricsManager)
+- Incremental metrics (record after each page)
 
-**4. SCHEMAS**
-- Three schemas: output, metrics, report
-- Always validate: pass schema to `save_page`/`load_page`
-- Never skip validation
-
-**5. PROMPTS**
+**4. PROMPTS**
 - Teach patterns that generalize, never reference test data
 - Use generic examples: "Ancient World", "Medieval Period" (not actual book content)
-- Pattern-based teaching: show visual signs + structural properties first
-- XML tags: `<role>`, `<critical_instructions>`, `<task>`, `<output_requirements>`
-- Primacy/recency: critical info at START and END
+- Pattern-based teaching: visual signs + structural properties first
 
-**6. CLI DESIGN**
-- Destructive operations need scary names: `--delete-outputs` not `--force`
-- Require confirmation for irreversible operations (unless `-y`)
-- Help text warns about destructiveness
-- Single source of truth: `cli/constants.py::STAGE_DEFINITIONS`
-
-**7. CODE HYGIENE**
-- Comments explain WHY, not WHAT
+**5. CODE HYGIENE**
+- Comments explain WHY, not WHAT (prefer obvious code over comments)
 - Delete dead code aggressively (git preserves history)
 - Simplicity over cleverness
-- Run periodic audits for unused files/imports
 
-**8. DOCUMENTATION**
+**6. DOCUMENTATION**
 - Update with code changes (not after)
-- No "v2" docs - update in place
 - Code is source of truth
+- Point to code rather than duplicate it
 </remember>

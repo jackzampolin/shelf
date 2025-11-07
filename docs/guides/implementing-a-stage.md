@@ -6,19 +6,71 @@ A concise guide for building pipeline stages following established patterns.
 
 ```
 pipeline/your-stage/
-├── __init__.py          # BaseStage implementation
+├── __init__.py          # BaseStage subclass + status tracker setup
 ├── schemas/             # One schema per file
 │   ├── __init__.py
 │   ├── page_output.py
-│   └── page_metrics.py
+│   └── page_report.py
 ├── tools/               # Processing logic
-│   └── processor.py
+│   ├── processor.py
+│   └── report_generator.py
 └── batch/               # (Optional) LLM batch processing
     ├── request_builder.py
     ├── result_handler.py
     ├── prompts.py
     └── schemas.py
 ```
+
+**Key abstractions you'll use:**
+- `BaseStage` - Provides storage, logger, dependency checking
+- `BatchBasedStatusTracker` - Tracks page-by-page progress (simple stages)
+- `MultiPhaseStatusTracker` - Tracks multi-phase progress (complex stages)
+
+## BaseStage Provides Infrastructure
+
+Every stage extends `BaseStage` which provides:
+
+```python
+from infra.pipeline.base_stage import BaseStage
+from infra.pipeline.storage.book_storage import BookStorage
+
+class YourStage(BaseStage):
+    name = "your-stage"           # Stage identifier (with hyphens!)
+    dependencies = ["ocr-pages"]  # Stages that must complete first
+
+    @classmethod
+    def default_kwargs(cls, **overrides):
+        """Map CLI args to __init__ parameters."""
+        return {
+            'max_workers': overrides.get('workers', 10),
+            'model': overrides.get('model', 'default-model')
+        }
+
+    def __init__(self, storage: BookStorage, max_workers: int = 10):
+        super().__init__(storage)  # Sets up storage, logger, stage_storage
+        # Now you have access to:
+        # - self.storage (BookStorage)
+        # - self.logger (PipelineLogger)
+        # - self.stage_storage (this stage's storage)
+
+        # Your stage-specific setup here
+        self.max_workers = max_workers
+
+    def run(self) -> Dict[str, Any]:
+        """Do the work. Called by pipeline runner."""
+        # Your implementation here
+```
+
+**What BaseStage provides for free:**
+- `self.storage` - Access to all book storage
+- `self.logger` - Structured logging to stage's log directory
+- `self.stage_storage` - This stage's output directory and MetricsManager
+- `before()` - Automatic dependency checking (runs before `run()`)
+- `check_source_exists()` - Validates source pages exist
+- `get_status()` - Returns status from `self.status_tracker`
+- `pretty_print_status()` - Formats status for CLI display
+
+**See:** `infra/pipeline/base_stage.py`
 
 ## Stage Names Use Hyphens
 
@@ -49,69 +101,119 @@ When in doubt, copy the pattern from these stages.
 
 ## Core Principles
 
-### 1. Ground Truth from Disk
+### 1. Use Status Trackers (Don't Reinvent)
 
-Status and progress determined by checking files on disk, not in-memory state:
+Status tracking is abstracted - use the built-in trackers instead of rolling your own:
 
+**Simple stage (page-by-page processing):**
 ```python
-def get_status(self, storage, logger):
-    """Check disk to see what's actually done."""
-    source_storage = storage.stage("source")
-    stage_storage = storage.stage(self.name)
+from infra.pipeline.status import BatchBasedStatusTracker
 
-    # Count what exists on disk
-    total_pages = len(source_storage.list_pages(extension="png"))
-    completed = len(stage_storage.list_pages(extension="json"))
+class YourStage(BaseStage):
+    def __init__(self, storage: BookStorage):
+        super().__init__(storage)
+        self.status_tracker = BatchBasedStatusTracker(
+            storage=self.storage,
+            logger=self.logger,
+            stage_name=self.name,
+            item_pattern="page_{:04d}.json"
+        )
 
-    return {
-        "total_pages": total_pages,
-        "remaining_pages": list(set(range(1, total_pages + 1)) - set(completed))
-    }
+    def run(self):
+        if self.status_tracker.is_completed():
+            return self.status_tracker.get_skip_response()
+
+        remaining = self.status_tracker.get_remaining_items()
+        # Process remaining pages...
 ```
 
-**See:** `pipeline/ocr_pages/__init__.py:19-37`
+**Complex stage (multi-phase processing):**
+```python
+from infra.pipeline.status import BatchBasedStatusTracker, MultiPhaseStatusTracker
 
-### 2. If-Gates for Resume
+class YourStage(BaseStage):
+    def __init__(self, storage: BookStorage):
+        super().__init__(storage)
 
-Structure `run()` as if-gates that check progress and refresh:
+        # Phase 1 tracker
+        self.page_tracker = BatchBasedStatusTracker(
+            storage=self.storage,
+            logger=self.logger,
+            stage_name=self.name,
+            item_pattern="page_{:04d}.json"
+        )
+
+        # Overall status tracker
+        self.status_tracker = MultiPhaseStatusTracker(
+            storage=self.storage,
+            logger=self.logger,
+            stage_name=self.name,
+            phases=[
+                {"name": "process_pages", "tracker": self.page_tracker},
+                {"name": "generate_report", "artifact": "report.csv"}
+            ]
+        )
+```
+
+**Status trackers provide:**
+- `is_completed()` - Check if stage is done
+- `get_remaining_items()` - What pages still need processing
+- `get_status()` - Full status dict for display
+- `get_skip_response()` - Return value when already complete
+
+**See:**
+- `infra/pipeline/status/batch_based.py` - BatchBasedStatusTracker
+- `infra/pipeline/status/multi_phase.py` - MultiPhaseStatusTracker
+- `pipeline/ocr_pages/__init__.py:19-24` - Simple usage
+- `pipeline/label_pages/__init__.py:40-55` - Multi-phase usage
+
+### 2. If-Gates for Resume (Multi-Phase Stages)
+
+For multi-phase stages, structure `run()` as if-gates that check completion:
 
 ```python
 def run(self):
-    progress = self.get_status(self.storage, self.logger)
+    if self.status_tracker.is_completed():
+        return self.status_tracker.get_skip_response()
 
     # Phase 1: Process pages
-    if progress["remaining_pages"]:
-        process_pages(progress["remaining_pages"])
-        progress = self.get_status(self.storage, self.logger)  # Refresh
+    remaining_pages = self.page_tracker.get_remaining_items()
+    if remaining_pages:
+        process_pages(remaining_pages)
 
     # Phase 2: Generate report
-    if not progress["artifacts"]["report_exists"]:
+    report_path = self.stage_storage.output_dir / "report.csv"
+    if not report_path.exists():
         generate_report()
 
     return {"status": "success"}
 ```
 
-**See:** `pipeline/ocr_pages/__init__.py:39-57`
+**Why:** Each phase checks disk state before running. If you restart mid-stage, it picks up where it left off.
+
+**See:**
+- `pipeline/label_pages/__init__.py:57-85` - Multi-phase example
+- `pipeline/ocr_pages/__init__.py:26-37` - Simple single-phase example
 
 ### 3. Incremental Metrics
 
-Record metrics after each page via `MetricsManager`:
+Record metrics after each page for immediate resume capability:
 
 ```python
-stage_storage.save_page(
-    page_num,
-    page_data,
-    schema=PageOutput
-)
+# In your result handler
+stage_storage.save_page(page_num, page_data, schema=PageOutput)
 
 stage_storage.metrics_manager.record(
     key=f"page_{page_num:04d}",
     cost_usd=result.cost_usd,
-    time_seconds=result.processing_time
+    time_seconds=result.processing_time,
+    custom_metrics={"tokens": result.tokens}
 )
 ```
 
-**See:** `pipeline/ocr_pages/tools/processor.py:45-55`
+**Why:** Metrics written immediately mean you can resume mid-batch without losing progress or cost tracking.
+
+**See:** Result handlers in `pipeline/*/batch/result_handler.py`
 
 ### 4. Stage Independence
 
