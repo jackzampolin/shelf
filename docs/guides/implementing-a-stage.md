@@ -1,282 +1,396 @@
 # Implementing a Pipeline Stage
 
-A one-page guide for building maintainable, resumable pipeline stages following the OCR pattern.
+A concise guide for building pipeline stages following established patterns.
 
 ## Directory Structure
 
 ```
-pipeline/your_stage/
-├── __init__.py          # Stage class + BaseStage methods ONLY
-├── status.py            # Progress tracking and status logic
-├── storage.py           # Stage-specific storage operations
-├── schemas/             # Pydantic schemas (one per file)
+pipeline/your-stage/
+├── __init__.py          # BaseStage implementation
+├── schemas/             # One schema per file
 │   ├── __init__.py
-│   ├── page_output.py   # Output schema
-│   ├── page_metrics.py  # Checkpoint metrics schema
-│   └── page_report.py   # Report schema (quality metrics only)
-├── tools/               # Helper functions and workers
-│   ├── processor.py
-│   └── parallel_worker.py
-└── llm_calls/           # Per-LLM-call organization (if needed)
-    ├── schemas/
-    │   └── response.py
+│   ├── page_output.py
+│   └── page_metrics.py
+├── tools/               # Processing logic
+│   └── processor.py
+└── batch/               # (Optional) LLM batch processing
+    ├── request_builder.py
+    ├── result_handler.py
     ├── prompts.py
-    └── caller.py
+    └── schemas.py
 ```
 
-## Core Files
+## Stage Names Use Hyphens
 
-### `__init__.py` - Stage Class Only
-
-Contains ONLY the BaseStage implementation. No business logic.
+**CRITICAL:** Stage names ALWAYS use hyphens: `ocr-pages`, `find-toc`, `extract-toc`
 
 ```python
-from infra.pipeline.base_stage import BaseStage
-from .schemas import YourPageOutput, YourPageMetrics, YourPageReport
-from .status import YourStatusTracker
-from .storage import YourStageStorage
+# Correct
+class OcrPagesStage(BaseStage):
+    name = "ocr-pages"  # Uses hyphen
 
-class YourStage(BaseStage):
-    name = "your_stage"
-    dependencies = ["prev_stage"]
+storage.stage("ocr-pages")  # Exact string match
 
-    output_schema = YourPageOutput
-    checkpoint_schema = YourPageMetrics
-    report_schema = YourPageReport
-    self_validating = True  # If multi-phase
-
-    def __init__(self, max_workers=None):
-        super().__init__()
-        self.max_workers = max_workers
-        self.status_tracker = YourStatusTracker(stage_name=self.name)
-        self.stage_storage = YourStageStorage(stage_name=self.name)
-
-    def get_progress(self, storage, checkpoint, logger):
-        """Delegate to status tracker."""
-        return self.status_tracker.get_progress(storage, checkpoint, logger)
-
-    def before(self, storage, checkpoint, logger):
-        """Validate dependencies exist."""
-        # Check input files exist
-        pass
-
-    def run(self, storage, checkpoint, logger):
-        """Execute all phases with resume support."""
-        progress = self.get_progress(storage, checkpoint, logger)
-        total_pages = progress["total_pages"]
-
-        # Phase 1: Main processing
-        if progress["status"] in ["not_started", "processing"]:
-            remaining = progress["remaining_pages"]
-            if len(remaining) > 0:
-                logger.info(f"=== Phase 1: Processing {len(remaining)} pages ===")
-                checkpoint.set_phase("processing")
-                from .tools.processor import process_pages
-                process_pages(storage, checkpoint, logger, remaining)
-                progress = self.get_progress(storage, checkpoint, logger)
-
-        # Phase 2: Report generation
-        if len(progress["remaining_pages"]) == 0:
-            if not progress["artifacts"]["report_exists"]:
-                logger.info("=== Phase 2: Generate Report ===")
-                checkpoint.set_phase("generating_report")
-                from .tools.report_generator import generate_report
-                generate_report(storage, checkpoint, logger, self.report_schema)
-
-        # Mark complete
-        if len(progress["remaining_pages"]) == 0 and progress["artifacts"]["report_exists"]:
-            checkpoint.set_phase("completed")
-
-        return {
-            "pages_processed": total_pages - len(progress["remaining_pages"]),
-            "total_cost_usd": progress["metrics"]["total_cost_usd"]
-        }
+# Wrong - causes lookup failures
+name = "ocr_pages"  # Underscore breaks everything
 ```
 
-### `status.py` - Progress Tracking
+**Exception:** Single-word stages don't need hyphens (`source`, but we removed `tesseract`)
 
-Calculates what work remains by reading disk state (ground truth).
+## Reference Implementations
+
+**Don't read this guide as your source of truth.** Read actual implementations:
+
+- **Simple stage:** `pipeline/ocr_pages/` - Single LLM call per page
+- **Complex stage:** `pipeline/label_pages/` - Multi-phase with batch processing
+- **Non-LLM stage:** `pipeline/find_toc/` - Vision processing without LLM
+
+When in doubt, copy the pattern from these stages.
+
+## Core Principles
+
+### 1. Ground Truth from Disk
+
+Status and progress determined by checking files on disk, not in-memory state:
 
 ```python
-from enum import Enum
-from .storage import YourStageStorage
+def get_status(self, storage, logger):
+    """Check disk to see what's actually done."""
+    source_storage = storage.stage("source")
+    stage_storage = storage.stage(self.name)
 
-class YourStageStatus(str, Enum):
-    """Status progression for this stage."""
-    NOT_STARTED = "not_started"
-    PROCESSING = "processing"
-    GENERATING_REPORT = "generating_report"
-    COMPLETED = "completed"
+    # Count what exists on disk
+    total_pages = len(source_storage.list_pages(extension="png"))
+    completed = len(stage_storage.list_pages(extension="json"))
 
-class YourStatusTracker:
-    """Tracks progress by checking files on disk."""
+    return {
+        "total_pages": total_pages,
+        "remaining_pages": list(set(range(1, total_pages + 1)) - set(completed))
+    }
+```
 
-    def __init__(self, stage_name: str):
-        self.stage_name = stage_name
-        self.storage = YourStageStorage(stage_name=stage_name)
+**See:** `pipeline/ocr_pages/__init__.py:19-37`
 
-    def get_progress(self, storage, checkpoint, logger):
-        """
-        Calculate what work remains.
+### 2. If-Gates for Resume
 
-        Returns:
-            {
-                "status": "processing",
-                "total_pages": 100,
-                "remaining_pages": [5, 10, 23],
-                "metrics": {"total_cost_usd": 1.23},
-                "artifacts": {"report_exists": False}
+Structure `run()` as if-gates that check progress and refresh:
+
+```python
+def run(self):
+    progress = self.get_status(self.storage, self.logger)
+
+    # Phase 1: Process pages
+    if progress["remaining_pages"]:
+        process_pages(progress["remaining_pages"])
+        progress = self.get_status(self.storage, self.logger)  # Refresh
+
+    # Phase 2: Generate report
+    if not progress["artifacts"]["report_exists"]:
+        generate_report()
+
+    return {"status": "success"}
+```
+
+**See:** `pipeline/ocr_pages/__init__.py:39-57`
+
+### 3. Incremental Metrics
+
+Record metrics after each page via `MetricsManager`:
+
+```python
+stage_storage.save_page(
+    page_num,
+    page_data,
+    schema=PageOutput
+)
+
+stage_storage.metrics_manager.record(
+    key=f"page_{page_num:04d}",
+    cost_usd=result.cost_usd,
+    time_seconds=result.processing_time
+)
+```
+
+**See:** `pipeline/ocr_pages/tools/processor.py:45-55`
+
+### 4. Stage Independence
+
+Communicate through files, not imports:
+
+```python
+# Correct - read from disk
+def run(self):
+    ocr_storage = self.storage.stage("ocr-pages")
+    ocr_data = ocr_storage.load_page(page_num, schema=OcrPageOutput)
+
+# Wrong - importing from other stages
+from pipeline.ocr_pages.schemas import OcrPageOutput  # NO!
+```
+
+## Schemas: One Per File
+
+```
+schemas/
+├── __init__.py           # Export all schemas
+├── page_output.py        # What the stage produces
+└── page_metrics.py       # Metrics for this page (optional)
+```
+
+**Always validate** when saving:
+
+```python
+stage_storage.save_page(
+    page_num,
+    data,
+    schema=PageOutput  # Validates before saving
+)
+```
+
+**See:** `pipeline/ocr_pages/schemas/page_output.py`
+
+## LLM Batch Processing (Optional)
+
+For stages that make LLM API calls, organize batch processing in `batch/`:
+
+```
+batch/
+├── request_builder.py    # Build LLMRequest from page data
+├── result_handler.py     # Process LLMResult and save
+├── prompts.py           # System and user prompts
+└── schemas.py           # LLM response schema
+```
+
+### Request Builder Pattern
+
+```python
+# batch/request_builder.py
+from infra.llm.batch_client import LLMRequest
+from .prompts import SYSTEM_PROMPT, build_user_prompt
+from .schemas import ResponseSchema
+
+def prepare_request(page_num: int, storage, model: str):
+    """Build LLM request for a page."""
+    source_storage = storage.stage("source")
+    image = source_storage.load_page(page_num)
+
+    if not image:
+        return None  # Skip this page
+
+    return LLMRequest(
+        id=f"page_{page_num:04d}",
+        model=model,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": build_user_prompt(page_num)}
+        ],
+        images=[image],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "page_analysis",
+                "strict": True,
+                "schema": ResponseSchema.model_json_schema()
             }
-        """
-        metadata = storage.load_metadata()
-        total_pages = metadata.get('total_pages', 0)
+        },
+        metadata={"page_num": page_num}
+    )
+```
 
-        # Check which pages have outputs on disk
-        completed_pages = self.storage.list_completed_pages(storage)
-        remaining_pages = [p for p in range(1, total_pages + 1) if p not in completed_pages]
+**See:** `pipeline/label_pages/batch/request_builder.py`
 
-        # Check artifacts
-        stage_storage = storage.stage(self.stage_name)
-        report_exists = (stage_storage.output_dir / "report.csv").exists()
+### Result Handler Pattern
 
-        # Determine status
-        if len(remaining_pages) == total_pages:
-            status = YourStageStatus.NOT_STARTED.value
-        elif len(remaining_pages) > 0:
-            status = YourStageStatus.PROCESSING.value
-        elif not report_exists:
-            status = YourStageStatus.GENERATING_REPORT.value
+```python
+# batch/result_handler.py
+from infra.llm.metrics import llm_result_to_metrics
+
+def create_result_handler(storage, logger, output_schema):
+    """Factory that creates handler with closure over dependencies."""
+
+    def on_result(result):
+        if result.success:
+            page_num = result.request.metadata["page_num"]
+            stage_storage = storage.stage("your-stage")
+
+            # Validate and save
+            validated = output_schema(**result.parsed_json)
+            stage_storage.save_page(
+                page_num,
+                validated.model_dump(),
+                schema=output_schema
+            )
+
+            # Record metrics
+            metrics = llm_result_to_metrics(result, page_num)
+            stage_storage.metrics_manager.record(
+                key=f"page_{page_num:04d}",
+                cost_usd=result.cost_usd or 0.0,
+                time_seconds=metrics.processing_time_seconds,
+                custom_metrics=metrics.model_dump()
+            )
+
+            logger.info(f"✓ Page {page_num} complete")
         else:
-            status = YourStageStatus.COMPLETED.value
+            page_num = result.request.metadata.get("page_num", "unknown")
+            logger.error(f"✗ Page {page_num} failed: {result.error}")
 
-        # Calculate aggregate metrics
-        all_metrics = checkpoint.get_all_metrics()
-        total_cost = sum(m.get('cost_usd', 0) for m in all_metrics.values())
-
-        return {
-            "status": status,
-            "total_pages": total_pages,
-            "remaining_pages": remaining_pages,
-            "metrics": {"total_cost_usd": total_cost},
-            "artifacts": {"report_exists": report_exists}
-        }
+    return on_result
 ```
 
-### `storage.py` - Stage-Specific Storage
+**See:** `pipeline/label_pages/batch/result_handler.py`
 
-All file I/O operations for this stage.
+### Using the Batch Processor
 
 ```python
-from infra.storage.book_storage import BookStorage
+# __init__.py
+from infra.llm.batch_processor import LLMBatchProcessor, LLMBatchConfig
+from infra.pipeline.batch_helpers import batch_process_with_preparation
+from .batch.request_builder import prepare_request
+from .batch.result_handler import create_result_handler
 
-class YourStageStorage:
-    """Storage operations for your stage."""
+def run(self):
+    progress = self.get_status(self.storage, self.logger)
 
-    def __init__(self, stage_name: str):
-        self.stage_name = stage_name
+    if not progress["remaining_pages"]:
+        return {"status": "success"}
 
-    def list_completed_pages(self, storage: BookStorage) -> list[int]:
-        """Get list of completed page numbers by checking disk."""
-        stage_storage = storage.stage(self.stage_name)
-        output_pages = stage_storage.list_output_pages(extension='json')
-        return sorted(output_pages)
+    # Configure processor
+    config = LLMBatchConfig(
+        model=self.model,
+        max_workers=self.max_workers,
+        max_retries=3
+    )
 
-    def load_custom_data(self, storage: BookStorage, filename: str):
-        """Load stage-specific file (e.g., selection_map.json)."""
-        stage_storage = storage.stage(self.stage_name)
-        custom_file = stage_storage.output_dir / filename
+    stage_storage = self.storage.stage(self.name)
+    log_dir = stage_storage.output_dir / "logs"
 
-        if custom_file.exists():
-            return stage_storage.load_file(filename)
-        return {}
+    processor = LLMBatchProcessor(
+        checkpoint=stage_storage.metrics_manager,
+        logger=self.logger,
+        log_dir=log_dir,
+        config=config
+    )
 
-    def save_custom_data(self, storage: BookStorage, filename: str, data: dict):
-        """Save stage-specific file."""
-        stage_storage = storage.stage(self.stage_name)
-        stage_storage.save_file(filename, data)
+    # Create handler
+    handler = create_result_handler(
+        storage=self.storage,
+        logger=self.logger,
+        output_schema=PageOutput
+    )
+
+    # Process batch
+    batch_process_with_preparation(
+        stage_name=self.name,
+        pages=progress["remaining_pages"],
+        request_builder=prepare_request,
+        result_handler=handler,
+        processor=processor,
+        logger=self.logger,
+        storage=self.storage,
+        model=self.model
+    )
+
+    return {"status": "success"}
 ```
 
-## Key Patterns
-
-### 1. Resume with if-gates
-
-Structure `run()` as a series of if-gates that check progress:
-
-```python
-def run(self, storage, checkpoint, logger):
-    progress = self.get_progress(storage, checkpoint, logger)
-
-    # Each phase checks if work remains
-    if needs_phase_1(progress):
-        do_phase_1()
-        progress = self.get_progress(...)  # Refresh
-
-    if needs_phase_2(progress):
-        do_phase_2()
-        progress = self.get_progress(...)  # Refresh
-
-    if all_done(progress):
-        checkpoint.set_phase("completed")
-
-    return stats
-```
-
-### 2. Ground truth from disk
-
-`status.py` determines progress by checking files on disk, not checkpoint state:
-- **Completed pages**: Check if output files exist
-- **Artifacts**: Check if report.csv exists
-- **Status**: Derive from what's on disk
-
-### 3. Incremental processing
-
-Use `checkpoint.mark_completed()` after each page for immediate resume:
-
-```python
-for page_num in remaining_pages:
-    result = process_page(page_num)
-
-    # Save output
-    storage.stage(self.name).save_page(page_num, result, schema=self.output_schema)
-
-    # Save metrics atomically
-    checkpoint.mark_completed(page_num, cost_usd=0.1, metrics={...})
-```
-
-### 4. LLM call organization
-
-For complex LLM calls, create a subdirectory:
-
-```
-llm_calls/correction/
-├── schemas/
-│   └── response.py     # Structured LLM response
-├── prompts.py          # System and user prompts
-└── caller.py           # LLM invocation logic
-```
+**See:** `pipeline/label_pages/__init__.py`
 
 ## Common Mistakes
 
-❌ **Don't put business logic in `__init__.py`**
-✅ **Keep `__init__.py` minimal** - only BaseStage methods
+### ❌ Don't Put Business Logic in `__init__.py`
 
-❌ **Don't check checkpoint for resume logic**
-✅ **Check disk state** - files are ground truth
+```python
+# Wrong - processing logic in stage file
+class YourStage(BaseStage):
+    def run(self):
+        for page in pages:
+            result = self.process_page(page)  # Business logic here
 
-❌ **Don't batch checkpoint updates**
-✅ **Mark completed immediately** - enables resume at any point
+    def process_page(self, page):
+        # Lots of processing code...
+```
 
-❌ **Don't put schemas in `__init__.py`**
-✅ **One schema per file** in `schemas/` directory
+```python
+# Correct - delegate to tools/
+class YourStage(BaseStage):
+    def run(self):
+        from .tools.processor import process_batch
+        process_batch(self.storage, self.logger, pages)
+```
 
-## Testing Your Stage
+### ❌ Don't Use Underscores in Stage Names
 
-The User will run the stage when it is time to test. DO NOT run these stages youself in background jobs. these stages cost money and the user wants a nice command line experience so is using our coding time together to audit and work on that experience. 
+```python
+# Wrong - causes "Page not found" errors
+class OcrPagesStage(BaseStage):
+    name = "ocr_pages"  # Breaks storage.stage() lookup
 
-## Reference Implementation
+# Correct
+class OcrPagesStage(BaseStage):
+    name = "ocr-pages"  # Matches directory: pipeline/ocr_pages/
+```
 
-See `pipeline/ocr/` for complete reference implementation with:
-- Multi-phase processing (OCR → Selection → Metadata → Report)
-- Complex status tracking (provider progress, selection states)
-- Custom storage operations (selection_map.json, provider outputs)
-- Vision LLM calls organized in `vision/` subdirectory
+### ❌ Don't Skip Schema Validation
+
+```python
+# Wrong - no validation
+stage_storage.save_file(f"page_{page_num:04d}.json", data)
+
+# Correct - validates structure
+stage_storage.save_page(page_num, data, schema=PageOutput)
+```
+
+### ❌ Don't Batch Metrics Updates
+
+```python
+# Wrong - lose resume capability
+results = []
+for page in pages:
+    results.append(process_page(page))
+# Save all at end - if it crashes, all progress lost!
+
+# Correct - record immediately
+for page in pages:
+    result = process_page(page)
+    stage_storage.save_page(page, result, schema=PageOutput)
+    metrics_manager.record(key=f"page_{page:04d}", ...)
+```
+
+## Testing
+
+**DO NOT run stages yourself.** These cost money via OpenRouter API calls.
+
+The user will run stages when ready:
+
+```bash
+# User commands
+uv run python shelf.py book <scan-id> run-stage your-stage
+uv run python shelf.py book <scan-id> run-stage your-stage --workers 20
+```
+
+## Stage Registration
+
+Add your stage to `infra/pipeline/registry.py`:
+
+```python
+STAGE_DEFINITIONS = [
+    {'name': 'ocr-pages', 'class': 'pipeline.ocr_pages.OcrPagesStage'},
+    {'name': 'your-stage', 'class': 'pipeline.your_stage.YourStage'},  # Add here
+    # ...
+]
+```
+
+**See:** `infra/pipeline/registry.py:1-7`
+
+## Summary
+
+1. **Read reference implementations first:** `pipeline/ocr_pages/` or `pipeline/label_pages/`
+2. **Stage names use hyphens:** `ocr-pages` not `ocr_pages`
+3. **Ground truth from disk:** Check files, not memory
+4. **If-gates for resume:** Check progress, refresh, continue
+5. **Incremental metrics:** Record after each page
+6. **Stage independence:** Read from disk, don't import other stages
+7. **One schema per file:** Easy to find and modify
+8. **LLM stages:** Use `batch/` pattern with request builder + result handler
+
+When in doubt, copy the pattern from `pipeline/ocr_pages/` or `pipeline/label_pages/`.
