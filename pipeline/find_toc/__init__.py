@@ -23,7 +23,6 @@ class FindTocStage(BaseStage):
         super().__init__(storage)
         self.model = model or Config.text_model_expensive
 
-        # Single-phase tracking: run finder agent
         self.status_tracker = MultiPhaseStatusTracker(
             storage=self.storage,
             logger=self.logger,
@@ -34,7 +33,6 @@ class FindTocStage(BaseStage):
         )
 
     def before(self) -> None:
-        self.logger.info(f"Find-ToC with {self.model}")
         self.check_source_exists()
 
         ocr_pages_stage = OcrPagesStage(self.storage)
@@ -43,9 +41,6 @@ class FindTocStage(BaseStage):
     def run(self) -> Dict[str, Any]:
         if self.status_tracker.is_completed():
             return self.status_tracker.get_skip_response()
-
-        self.logger.info("Starting find-toc", model=self.model)
-        print("\n🤖 Find-ToC: Searching for Table of Contents")
 
         from .agent.finder import TocFinderAgent
 
@@ -56,21 +51,7 @@ class FindTocStage(BaseStage):
             verbose=True
         )
 
-        result = agent.search()
-
-        # Save finder result
-        finder_result = FinderResult(
-            toc_found=result.toc_found,
-            toc_page_range=result.toc_page_range,
-            confidence=result.confidence,
-            search_strategy_used=result.search_strategy_used,
-            pages_checked=result.pages_checked,
-            reasoning=result.reasoning,
-            structure_notes=result.structure_notes,
-            structure_summary=result.structure_summary,
-        )
-
-        self.stage_storage.save_file("finder_result.json", finder_result.model_dump())
-        self.logger.info("Saved finder_result.json")
+        # Agent persists finder_result.json directly
+        agent.search()
 
         return {"status": "success"}

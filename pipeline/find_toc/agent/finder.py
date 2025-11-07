@@ -97,4 +97,23 @@ class TocFinderAgent:
                            elapsed=f"{elapsed:.1f}s",
                            run_log=str(agent_result.run_log_path) if agent_result.run_log_path else None)
 
+        # Save finder result
+        from ..schemas import FinderResult
+        finder_result = FinderResult(
+            toc_found=final_result.toc_found,
+            toc_page_range=final_result.toc_page_range,
+            confidence=final_result.confidence,
+            search_strategy_used=final_result.search_strategy_used,
+            pages_checked=final_result.pages_checked,
+            reasoning=final_result.reasoning,
+            structure_notes=final_result.structure_notes,
+            structure_summary=final_result.structure_summary,
+        )
+
+        stage_storage = self.storage.stage('find-toc')
+        stage_storage.save_file("finder_result.json", finder_result.model_dump())
+
+        if self.logger:
+            self.logger.info("Saved finder_result.json")
+
         return final_result
