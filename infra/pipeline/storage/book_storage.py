@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from infra.pipeline.storage.stage_storage import StageStorage
+from infra.pipeline.storage.source_storage import SourceStorage
 
 class BookStorage:
     def __init__(self, scan_id: str, storage_root: Optional[Path] = None):
@@ -12,6 +13,7 @@ class BookStorage:
         self._book_dir = self._storage_root / scan_id
 
         self._stage_cache: Dict[str, StageStorage] = {}
+        self._source_storage: Optional[SourceStorage] = None
 
         self._metadata_lock = threading.Lock()
 
@@ -35,6 +37,11 @@ class BookStorage:
         if name not in self._stage_cache:
             self._stage_cache[name] = StageStorage(self, name)
         return self._stage_cache[name]
+
+    def source(self) -> SourceStorage:
+        if self._source_storage is None:
+            self._source_storage = SourceStorage(self)
+        return self._source_storage
 
     def list_stages(self) -> List[str]:
         if not self.book_dir.exists():

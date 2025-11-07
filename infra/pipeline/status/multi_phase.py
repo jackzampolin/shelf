@@ -17,12 +17,10 @@ class MultiPhaseStatusTracker:
         self.phases = phases
 
     def is_completed(self) -> bool:
-        """Check if all phases are completed."""
         status = self.get_status()
         return status["status"] == "completed"
 
     def get_skip_response(self) -> Dict[str, Any]:
-        """Get response for when stage is already completed."""
         status = self.get_status()
         return {
             "status": "skipped",
@@ -31,7 +29,6 @@ class MultiPhaseStatusTracker:
         }
 
     def get_status(self) -> Dict[str, Any]:
-        """Get current status by checking disk for completed phases."""
         stage_storage = self.storage.stage(self.stage_name)
 
         completed_phases = []
@@ -69,7 +66,6 @@ class MultiPhaseStatusTracker:
         }
 
     def _is_phase_complete(self, phase: Dict[str, Any]) -> bool:
-        """Check if a single phase is complete by checking tracker or artifact."""
         if "tracker" in phase:
             phase_status = phase["tracker"].get_status()
             return phase_status["status"] == "completed"
@@ -80,7 +76,6 @@ class MultiPhaseStatusTracker:
             raise ValueError(f"Phase {phase['name']} must have 'tracker' or 'artifact'")
 
     def _merge_metrics(self, target: Dict, source: Dict):
-        """Merge metrics from source into target, summing numeric values."""
         for key, value in source.items():
             if key in target:
                 if isinstance(value, (int, float)):
