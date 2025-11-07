@@ -10,7 +10,7 @@ from pathlib import Path
 
 from infra.storage.library import Library
 from infra.storage.book_storage import BookStorage
-from cli.constants import STAGE_NAMES, STAGE_ABBRS
+from cli.constants import STAGE_NAMES
 from web.data.status_reader import get_stage_status_from_disk
 
 

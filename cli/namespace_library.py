@@ -7,7 +7,7 @@ from pathlib import Path
 from infra.storage.library import Library
 from infra.config import Config
 from cli.helpers import get_stage_status
-from cli.constants import STAGE_NAMES, STAGE_ABBRS
+from cli.constants import STAGE_NAMES
 
 
 def _format_time(seconds: float) -> str:
@@ -199,11 +199,10 @@ def cmd_list(args):
             # Build stage line
             parts = []
             for i, stage_name in enumerate(STAGE_NAMES):
-                abbr = STAGE_ABBRS[stage_name]
                 detail = book['stage_details'][i]
                 cost_str = f"${detail['cost']:.2f}" if detail['cost'] > 0 else "$0.00"
                 time_str = _format_time(detail['time']) if detail['time'] > 0 else "0.0m"
-                parts.append(f"{abbr}: {detail['symbol']}  {cost_str:>7}  {time_str:>6}")
+                parts.append(f"{stage_name}: {detail['symbol']}  {cost_str:>7}  {time_str:>6}")
 
             print(f"  {' | '.join(parts)}")
 
@@ -219,9 +218,8 @@ def cmd_list(args):
         for book in books_info:
             status_parts = []
             for i, stage_name in enumerate(STAGE_NAMES):
-                abbr = STAGE_ABBRS[stage_name]
                 symbol = book['stage_symbols'][i]
-                status_parts.append(f"{abbr}:{symbol}")
+                status_parts.append(f"{stage_name}:{symbol}")
             status_str = " ".join(status_parts)
 
             cost_str = f"${book['total_cost']:.2f}" if book['total_cost'] > 0 else "-"

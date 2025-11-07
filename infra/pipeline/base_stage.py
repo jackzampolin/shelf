@@ -23,19 +23,6 @@ class BaseStage:
 
     @classmethod
     def default_kwargs(cls, **overrides):
-        """
-        Return default initialization kwargs for this stage.
-
-        Stages override this to specify their parameter requirements.
-        The overrides dict contains CLI-provided values (model, workers, max_retries, etc.)
-        that stages can use or ignore as appropriate.
-
-        Args:
-            **overrides: CLI-provided parameter overrides
-
-        Returns:
-            Dict of kwargs to pass to __init__
-        """
         return {}
 
     def get_status(self) -> Dict[Any, Any]:
