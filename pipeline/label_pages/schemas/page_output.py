@@ -1,7 +1,7 @@
 from typing import Literal
 from pydantic import BaseModel, Field
 
-from ..stage1.schemas import VisualSignals, TextualSignals
+from ..batch.schemas import VisualSignals, TextualSignals
 
 
 class LabelPagesPageOutput(BaseModel):
