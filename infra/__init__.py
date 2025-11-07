@@ -39,7 +39,6 @@ from infra.llm import (
 from infra.pipeline import (
     PipelineLogger,
     create_logger,
-    ProgressBar
 )
 
 # Utilities
@@ -75,7 +74,6 @@ __all__ = [
     # Pipeline
     "PipelineLogger",
     "create_logger",
-    "ProgressBar",
 
     # Utils
     "downsample_for_vision",
