@@ -1,4 +1,5 @@
 import os
+import time
 from typing import List
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
@@ -39,7 +40,15 @@ def run_stage(
         stage.before(storage, logger)
 
         logger.info("Running run() hook")
+        start_time = time.time()
         stats = stage.run(storage, logger)
+        elapsed_time = time.time() - start_time
+
+        stage_storage.metrics_manager.record(
+            key="stage_runtime",
+            time_seconds=elapsed_time,
+            accumulate=True
+        )
 
         logger.info(f"✅ Stage complete: {stage.name}", **stats)
         return stats

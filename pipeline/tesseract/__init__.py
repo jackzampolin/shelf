@@ -56,8 +56,6 @@ class TesseractStage(BaseStage):
         storage: BookStorage,
         logger: PipelineLogger,
     ) -> Dict[str, Any]:
-        start_time = time.time()
-
         progress = self.get_status(storage, logger)
 
         if progress["status"] == "completed":
@@ -157,33 +155,23 @@ class TesseractStage(BaseStage):
                         completed += 1
                         progress.update(completed, suffix=f"{completed}/{len(remaining_pages)} | ERROR")
 
-        elapsed_time = time.time() - start_time
         avg_confidence = total_confidence / pages_processed if pages_processed > 0 else 0.0
 
         completion_msg = (
             f"✓ Tesseract complete: {pages_processed} pages, "
             f"{total_paragraphs} paragraphs, "
-            f"avg conf={avg_confidence:.1%}, "
-            f"time={elapsed_time:.1f}s"
+            f"avg conf={avg_confidence:.1%}"
         )
         progress.finish(completion_msg)
-
-        stage_storage_obj.metrics_manager.record(
-            key="stage_runtime",
-            time_seconds=elapsed_time,
-            accumulate=True
-        )
 
         logger.info(
             "Tesseract complete",
             pages_processed=pages_processed,
             paragraphs=total_paragraphs,
-            avg_confidence=f"{avg_confidence:.1%}",
-            time=f"{elapsed_time:.1f}s"
+            avg_confidence=f"{avg_confidence:.1%}"
         )
 
         return {
             "status": "success",
-            "pages_processed": pages_processed,
-            "time_seconds": elapsed_time
+            "pages_processed": pages_processed
         }
