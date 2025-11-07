@@ -1,5 +1,4 @@
 STAGE_DEFINITIONS = [
-    {'name': 'tesseract', 'class': 'pipeline.tesseract.TesseractStage'},
     {'name': 'ocr-pages', 'class': 'pipeline.ocr_pages.OcrPagesStage'},
     {'name': 'label-pages', 'class': 'pipeline.label_pages.LabelPagesStage'},
     {'name': 'find-toc', 'class': 'pipeline.find_toc.FindTocStage'},

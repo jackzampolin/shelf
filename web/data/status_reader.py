@@ -1,8 +1,8 @@
 """
 Read stage status directly from disk.
 
-Avoids importing heavy Stage dependencies (cv2, pytesseract, etc.)
-by reading MetricsManager data directly from filesystem.
+Avoids importing heavy Stage dependencies by reading MetricsManager
+data directly from filesystem.
 
 Ground truth from disk (ADR 001).
 """
@@ -18,31 +18,12 @@ def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) ->
     Check if a stage is completed based on its specific completion markers.
 
     Each stage has different completion criteria:
-    - tesseract: All source pages have corresponding output files
     - ocr-pages: All source pages have corresponding output files
     - find-toc: finder_result.json exists
     - extract-toc: toc_validated.json exists
     - label-pages: report.csv exists
     """
-    if stage_name == 'tesseract':
-        # Check if all source pages have tesseract outputs
-        source_stage = storage.stage("source")
-        source_pages = source_stage.list_pages(extension="png")
-        total_pages = len(source_pages)
-
-        if total_pages == 0:
-            return False
-
-        # Count completed pages
-        completed = 0
-        for page_num in range(1, total_pages + 1):
-            page_path = stage_storage.output_dir / f"page_{page_num:04d}.json"
-            if page_path.exists():
-                completed += 1
-
-        return completed == total_pages
-
-    elif stage_name == 'ocr-pages':
+    if stage_name == 'ocr-pages':
         # Check if all source pages have ocr-pages outputs
         source_stage = storage.stage("source")
         source_pages = source_stage.list_pages(extension="png")
@@ -81,7 +62,7 @@ def get_stage_status_from_disk(storage: BookStorage, stage_name: str) -> Optiona
     """
     Read stage status directly from MetricsManager without instantiating Stage.
 
-    This avoids heavy imports (cv2, pytesseract) required by Stage classes.
+    This avoids heavy imports required by Stage classes.
     Status is read from the stage's metrics file on disk.
 
     Returns:
