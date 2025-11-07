@@ -6,10 +6,105 @@ from infra.pipeline.logger import PipelineLogger
 from infra.llm.agent import AgentConfig, AgentBatchConfig, AgentBatchClient
 
 from .schemas import LinkedTableOfContents, LinkedToCEntry
-from .storage import LinkTocStageStorage
 from .agent.finder import TocEntryFinderAgent
 from .agent.finder_tools import TocEntryFinderTools
 from .agent.prompts import FINDER_SYSTEM_PROMPT, build_finder_user_prompt
+
+
+def _get_completed_entry_indices(storage: BookStorage) -> List[int]:
+    """Return list of entry indices that have already been processed."""
+    linked_toc_path = storage.stage("link-toc").output_dir / "linked_toc.json"
+    if not linked_toc_path.exists():
+        return []
+
+    data = storage.stage("link-toc").load_file("linked_toc.json")
+    linked_toc = LinkedTableOfContents(**data) if data else None
+
+    if not linked_toc or not linked_toc.entries:
+        return []
+
+    # Return indices of non-None entries
+    return [idx for idx, entry in enumerate(linked_toc.entries) if entry is not None]
+
+
+def _update_linked_entry(storage: BookStorage, entry_index: int, linked_entry: LinkedToCEntry):
+    """Update a single entry in linked_toc.json for incremental progress."""
+    stage_storage = storage.stage("link-toc")
+    linked_toc_path = stage_storage.output_dir / "linked_toc.json"
+
+    # Load or create linked_toc structure
+    if linked_toc_path.exists():
+        data = stage_storage.load_file("linked_toc.json")
+    else:
+        # Initialize empty structure
+        data = {
+            "entries": [],
+            "toc_page_range": {},
+            "entries_by_level": {},
+            "original_parsing_confidence": 0.0,
+            "total_entries": 0,
+            "linked_entries": 0,
+            "unlinked_entries": 0,
+            "avg_link_confidence": 0.0,
+            "total_cost_usd": 0.0,
+            "total_time_seconds": 0.0,
+            "avg_iterations_per_entry": 0.0
+        }
+
+    # Update or append entry
+    entries = data.get("entries", [])
+    entry_dict = linked_entry.model_dump()
+
+    # Pad list if needed and insert at index
+    while len(entries) <= entry_index:
+        entries.append(None)
+    entries[entry_index] = entry_dict
+
+    data["entries"] = entries
+
+    # Save using existing infrastructure (already has locking)
+    stage_storage.save_file("linked_toc.json", data)
+
+
+def _finalize_linked_toc_metadata(
+    storage: BookStorage,
+    toc_page_range: Dict,
+    entries_by_level: Dict,
+    original_parsing_confidence: float,
+    total_entries: int,
+    linked_entries: int,
+    unlinked_entries: int,
+    avg_link_confidence: float,
+    total_cost_usd: float,
+    total_time_seconds: float,
+    avg_iterations_per_entry: float
+):
+    """Update metadata fields in linked_toc.json after all entries processed."""
+    stage_storage = storage.stage("link-toc")
+    linked_toc_path = stage_storage.output_dir / "linked_toc.json"
+
+    if not linked_toc_path.exists():
+        return
+
+    # Load existing data
+    data = stage_storage.load_file("linked_toc.json")
+
+    # Update metadata
+    data.update({
+        "toc_page_range": toc_page_range,
+        "entries_by_level": entries_by_level,
+        "original_parsing_confidence": original_parsing_confidence,
+        "total_entries": total_entries,
+        "linked_entries": linked_entries,
+        "unlinked_entries": unlinked_entries,
+        "avg_link_confidence": avg_link_confidence,
+        "total_cost_usd": total_cost_usd,
+        "total_time_seconds": total_time_seconds,
+        "avg_iterations_per_entry": avg_iterations_per_entry
+    })
+
+    # Save using existing infrastructure (already has locking)
+    stage_storage.save_file("linked_toc.json", data)
 
 
 def find_all_toc_entries(
@@ -21,9 +116,10 @@ def find_all_toc_entries(
 ) -> Tuple[LinkedTableOfContents, Dict]:
     start_time = time.time()
 
-    stage_storage = LinkTocStageStorage(stage_name="link-toc")
+    stage_storage = storage.stage("link-toc")
 
-    extract_toc_output = stage_storage.load_extract_toc_output(storage)
+    # Load ToC entries from extract-toc
+    extract_toc_output = storage.stage("extract-toc").load_file("toc.json")
 
     toc_data = extract_toc_output.get('toc', {}) if extract_toc_output else {}
 
@@ -52,7 +148,7 @@ def find_all_toc_entries(
 
     total_entries = len(toc_entries)
 
-    completed_indices = stage_storage.get_completed_entry_indices(storage)
+    completed_indices = _get_completed_entry_indices(storage)
     remaining_indices = [idx for idx in range(total_entries) if idx not in completed_indices]
 
     if completed_indices:
@@ -131,9 +227,11 @@ def find_all_toc_entries(
                 candidates_checked=tools._candidates_checked if tools else [],
             )
 
-        stage_storage.update_linked_entry(storage, idx, linked_entry)
+        _update_linked_entry(storage, idx, linked_entry)
 
-    linked_toc = stage_storage.load_linked_toc(storage)
+    # Load final linked_toc
+    data = stage_storage.load_file("linked_toc.json")
+    linked_toc = LinkedTableOfContents(**data) if data else None
 
     if not linked_toc or not linked_toc.entries:
         logger.warning("No linked ToC data found after processing")
@@ -169,13 +267,12 @@ def find_all_toc_entries(
 
     avg_iterations = sum(e.agent_iterations for e in linked_entries) / len(linked_entries) if linked_entries else 0.0
 
-    stage_storage_obj = storage.stage("link-toc")
-    all_metrics = stage_storage_obj.metrics_manager.get_all()
+    all_metrics = stage_storage.metrics_manager.get_all()
 
     total_cost_usd = sum(m.get('cost_usd', 0.0) for m in all_metrics.values())
     total_time_seconds = time.time() - start_time
 
-    stage_storage.finalize_linked_toc_metadata(
+    _finalize_linked_toc_metadata(
         storage=storage,
         toc_page_range=toc_data.get('toc_page_range', {}),
         entries_by_level=toc_data.get('entries_by_level', {}),

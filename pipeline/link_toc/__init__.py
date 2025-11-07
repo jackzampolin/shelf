@@ -11,19 +11,6 @@ from pipeline.ocr_pages import OcrPagesStage
 
 
 class LinkTocStage(BaseStage):
-    """
-    Link-ToC Stage: Map ToC entries to scan page numbers.
-
-    Uses agent-per-entry approach where each ToC entry gets its own agent
-    to search the book and find where it appears.
-
-    Dependencies:
-    - find-toc: Provides ToC page range to exclude from searches
-    - extract-toc: Provides ToC entries to search for
-    - label-pages: Provides boundary detection for efficient searching
-    - ocr-pages: Provides OCR text for verification
-    """
-
     name = "link-toc"
     dependencies = ["find-toc", "extract-toc", "label-pages", "ocr-pages"]
 
@@ -51,7 +38,6 @@ class LinkTocStage(BaseStage):
         )
 
     def before(self) -> None:
-        """Validate dependencies are complete."""
         self.check_source_exists()
 
         find_toc_stage = FindTocStage(self.storage)
@@ -65,9 +51,6 @@ class LinkTocStage(BaseStage):
 
         ocr_pages_stage = OcrPagesStage(self.storage)
         self.check_dependency_completed(ocr_pages_stage)
-
-        self.logger.info(f"Link-ToC with {self.model}")
-        self.logger.info(f"Max iterations per entry: {self.max_iterations}")
 
     def run(self) -> Dict[str, Any]:
         """Execute link-toc stage with if-gates."""
