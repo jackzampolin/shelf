@@ -15,14 +15,22 @@ def generate_report(
     stage_storage = storage.stage(stage_name)
 
     output_files = stage_storage.list_output_pages(extension='json')
-    completed_pages = sorted(output_files)
 
-    if not completed_pages:
+    if not output_files:
         logger.warning("No completed pages found")
         return
 
+    # Extract page numbers from filenames
+    page_nums = []
+    for file_path in output_files:
+        # Extract page number from page_0001.json -> 1
+        page_num_str = file_path.stem.split('_')[1]
+        page_nums.append(int(page_num_str))
+
+    page_nums = sorted(page_nums)
+
     report_rows = []
-    for page_num in completed_pages:
+    for page_num in page_nums:
         try:
             page_data = stage_storage.load_page(page_num)
             if not page_data:
