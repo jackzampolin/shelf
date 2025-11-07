@@ -1,6 +1,6 @@
 import argparse
-from cli.namespace_library import setup_library_parser
-from cli.namespace_book import setup_book_parser
+import cli.library
+import cli.book
 from cli.namespace_batch import setup_batch_parser
 from cli.namespace_serve import setup_serve_parser
 
@@ -44,8 +44,8 @@ Examples:
     subparsers = parser.add_subparsers(dest='command', help='Command namespace')
     subparsers.required = True
 
-    setup_library_parser(subparsers)
-    setup_book_parser(subparsers)
+    cli.library.setup_parser(subparsers)
+    cli.book.setup_parser(subparsers)
     setup_batch_parser(subparsers)
     setup_serve_parser(subparsers)
 

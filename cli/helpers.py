@@ -4,11 +4,6 @@ from infra.pipeline.registry import get_stage_instance
 
 
 def clean_stage_directory(storage: BookStorage, stage_name: str):
-    """
-    Completely remove stage output directory and reset metrics.
-
-    Warning: This operation cannot be undone.
-    """
     stage_storage = storage.stage(stage_name)
 
     if stage_storage.output_dir.exists():
@@ -19,7 +14,6 @@ def clean_stage_directory(storage: BookStorage, stage_name: str):
 
 
 def get_stage_status(storage: BookStorage, stage_name: str):
-    """Get status for a stage (stage already has logger)."""
     try:
         stage = get_stage_instance(storage, stage_name)
         return stage.get_status()
@@ -31,7 +25,6 @@ def get_stage_status(storage: BookStorage, stage_name: str):
 
 
 def get_stage_and_status(storage: BookStorage, stage_name: str):
-    """Get stage instance and its status (stage already has logger)."""
     try:
         stage = get_stage_instance(storage, stage_name)
         status = stage.get_status()
