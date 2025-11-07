@@ -18,7 +18,6 @@ def get_stage_class(stage_name: str):
 
     raise ValueError(f"Unknown stage: {stage_name}")
 
-
 def get_stage_instance(storage, stage_name: str, **overrides):
     stage_class = get_stage_class(stage_name)
     kwargs = stage_class.default_kwargs(**overrides)
