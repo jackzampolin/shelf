@@ -1,8 +1,8 @@
 import argparse
 import cli.library
 import cli.book
-from cli.namespace_batch import setup_batch_parser
-from cli.namespace_serve import setup_serve_parser
+from cli.batch import setup_batch_parser
+from cli.serve import setup_serve_parser
 
 
 def create_parser():
