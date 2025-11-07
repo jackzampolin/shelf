@@ -4,7 +4,6 @@ from infra.config import Config
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.status import BatchBasedStatusTracker, MultiPhaseStatusTracker
-from pipeline.ocr_pages import OcrPagesStage
 from .tools.report_generator import generate_report
 from .batch.processor import process_pages
 
@@ -14,7 +13,7 @@ from .schemas import LabelPagesPageOutput, LabelPagesPageReport
 class LabelPagesStage(BaseStage):
 
     name = "label-pages"
-    dependencies = ["ocr-pages", "source"]
+    dependencies = ["ocr-pages"]
 
 
     def __init__(
@@ -46,12 +45,6 @@ class LabelPagesStage(BaseStage):
                 {"name": "generate_report", "artifact": "report.csv"}
             ]
         )
-
-    def before(self) -> None:
-        self.check_source_exists()
-
-        ocr_pages_stage = OcrPagesStage(self.storage)
-        self.check_dependency_completed(ocr_pages_stage)
 
     def run(self) -> Dict[str, Any]:
         if self.status_tracker.is_completed():

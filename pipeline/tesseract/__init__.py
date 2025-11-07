@@ -10,7 +10,7 @@ from .tools.processor import process_batch
 
 class TesseractStage(BaseStage):
     name = "tesseract"
-    dependencies = ["source"]
+    dependencies = []
 
     def __init__(self, storage: BookStorage, psm_mode: int = 3, max_workers: int = None):
         super().__init__(storage)
@@ -22,9 +22,6 @@ class TesseractStage(BaseStage):
             stage_name=self.name,
             item_pattern="page_{:04d}.json"
         )
-
-    def before(self) -> None:
-        self.check_source_exists()
 
     def run(self) -> Dict[str, Any]:
         if self.status_tracker.is_completed():

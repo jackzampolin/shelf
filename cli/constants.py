@@ -1,14 +1,5 @@
-STAGE_DEFINITIONS = [
-    {'name': 'tesseract', 'abbr': 'TES', 'class': 'pipeline.tesseract.TesseractStage'},
-    {'name': 'ocr-pages', 'abbr': 'OPG', 'class': 'pipeline.ocr_pages.OcrPagesStage'},
-    {'name': 'label-pages', 'abbr': 'LBL', 'class': 'pipeline.label_pages.LabelPagesStage'},
-    {'name': 'find-toc', 'abbr': 'FTO', 'class': 'pipeline.find_toc.FindTocStage'},
-    {'name': 'extract-toc', 'abbr': 'TOC', 'class': 'pipeline.extract_toc.ExtractTocStage'},
-    {'name': 'link-toc', 'abbr': 'LNK', 'class': 'pipeline.link_toc.LinkTocStage'},
-]
-
-STAGE_NAMES = [s['name'] for s in STAGE_DEFINITIONS]
-STAGE_ABBRS = {s['name']: s['abbr'] for s in STAGE_DEFINITIONS}
+# Import stage registry from infra (single source of truth)
+from infra.pipeline.registry import STAGE_DEFINITIONS, STAGE_NAMES, STAGE_ABBRS
 
 CORE_STAGES = STAGE_NAMES
 REPORT_STAGES = []  # No stages currently generate reports

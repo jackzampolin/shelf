@@ -4,8 +4,6 @@ from infra.config import Config
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.status import MultiPhaseStatusTracker
-from pipeline.find_toc import FindTocStage
-from pipeline.ocr_pages import OcrPagesStage
 from .schemas import PageRange
 from .detection import extract_toc_entries
 from .assembly import assemble_toc
@@ -14,7 +12,7 @@ from .assembly import assemble_toc
 class ExtractTocStage(BaseStage):
 
     name = "extract-toc"
-    dependencies = ["source", "find-toc", "ocr-pages"]
+    dependencies = ["find-toc", "ocr-pages"]
 
     def __init__(self, storage: BookStorage, model: str = None):
         super().__init__(storage)
@@ -29,15 +27,6 @@ class ExtractTocStage(BaseStage):
                 {"name": "assemble_toc", "artifact": "toc.json"}
             ]
         )
-
-    def before(self) -> None:
-        self.check_source_exists()
-
-        find_toc_stage = FindTocStage(self.storage)
-        self.check_dependency_completed(find_toc_stage)
-
-        ocr_pages_stage = OcrPagesStage(self.storage)
-        self.check_dependency_completed(ocr_pages_stage)
 
     def run(self) -> Dict[str, Any]:
         if self.status_tracker.is_completed():

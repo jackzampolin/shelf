@@ -4,10 +4,6 @@ from infra.config import Config
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
 from infra.pipeline.status import MultiPhaseStatusTracker
-from pipeline.find_toc import FindTocStage
-from pipeline.extract_toc import ExtractTocStage
-from pipeline.label_pages import LabelPagesStage
-from pipeline.ocr_pages import OcrPagesStage
 from .orchestrator import find_all_toc_entries
 from .tools.report_generator import generate_report
 
@@ -38,21 +34,6 @@ class LinkTocStage(BaseStage):
                 {"name": "generate_report", "artifact": "report.csv"}
             ]
         )
-
-    def before(self) -> None:
-        self.check_source_exists()
-
-        find_toc_stage = FindTocStage(self.storage)
-        self.check_dependency_completed(find_toc_stage)
-
-        extract_toc_stage = ExtractTocStage(self.storage)
-        self.check_dependency_completed(extract_toc_stage)
-
-        label_pages_stage = LabelPagesStage(self.storage)
-        self.check_dependency_completed(label_pages_stage)
-
-        ocr_pages_stage = OcrPagesStage(self.storage)
-        self.check_dependency_completed(ocr_pages_stage)
 
     def run(self) -> Dict[str, Any]:
         if self.status_tracker.is_completed():

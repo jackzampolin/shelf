@@ -1,49 +1,34 @@
 import os
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 
 from infra.storage.book_storage import BookStorage
-from infra.pipeline.logger import PipelineLogger, create_logger
+from infra.pipeline.logger import create_logger
+from infra.pipeline.registry import get_stage_class
 
 
 class BaseStage:
     name: str = None
     dependencies: List[str] = []
-    status_tracker: Optional[Any] = None
+    status_tracker: Any = None
 
     def __init__(self, storage: BookStorage):
-        """
-        Initialize stage with storage and create logger.
-
-        Args:
-            storage: BookStorage instance for this book
-        """
         self.storage = storage
         self.stage_storage = storage.stage(self.name)
 
-        # Create logger based on stage name and storage
         logs_dir = self.stage_storage.output_dir / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
 
-        # Check DEBUG environment variable for log level
         log_level = "DEBUG" if os.environ.get("DEBUG", "").lower() in ("true", "1") else "INFO"
         self.logger = create_logger(storage.scan_id, self.name, log_dir=logs_dir, level=log_level)
 
     def get_status(self) -> Dict[Any, Any]:
-        """Get status of this stage."""
-        if self.status_tracker:
-            return self.status_tracker.get_status()
-
-        raise NotImplementedError(
-            f"{self.__class__.__name__} must implement get_status() method or set status_tracker"
-        )
+        if not self.status_tracker:
+            raise RuntimeError(
+                f"{self.__class__.__name__} must set status_tracker in __init__"
+            )
+        return self.status_tracker.get_status()
 
     def check_source_exists(self) -> None:
-        """
-        Check if source pages exist. Raises ValueError if not.
-
-        Raises:
-            ValueError: If no source pages found
-        """
         source_stage = self.storage.stage("source")
         source_pages = source_stage.list_output_pages(extension="png")
 
@@ -51,15 +36,6 @@ class BaseStage:
             raise ValueError("No source pages found - cannot run this stage")
 
     def check_dependency_completed(self, dependency_stage) -> None:
-        """
-        Check if a dependency stage is completed. Raises RuntimeError if not.
-
-        Args:
-            dependency_stage: Instance of the dependency stage to check
-
-        Raises:
-            RuntimeError: If dependency stage is not completed
-        """
         status = dependency_stage.get_status()
         stage_status = status.get('status', 'unknown')
 
@@ -97,22 +73,14 @@ class BaseStage:
         return '\n'.join(lines)
 
     def before(self) -> None:
-        """
-        Pre-execution hook to check dependencies.
+        self.check_source_exists()
 
-        Stages should override this to check that dependency stages are completed.
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} must implement before() method: check the dependancy stage(s) status is complete"
-        )
+        for dep_name in self.dependencies:
+            dep_class = get_stage_class(dep_name)
+            dep_stage = dep_class(self.storage)
+            self.check_dependency_completed(dep_stage)
 
     def run(self) -> Dict[str, Any]:
-        """
-        Main stage execution logic.
-
-        Stages should override this to implement their core functionality.
-        Returns dict with execution stats (status, pages_processed, cost_usd, etc).
-        """
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement run() method: the thing that this stage does"
         )

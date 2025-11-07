@@ -8,7 +8,7 @@ from .tools.processor import process_batch
 
 class OcrPagesStage(BaseStage):
     name = "ocr-pages"
-    dependencies = ["source"]
+    dependencies = []
 
     def __init__(self, storage: BookStorage, max_workers: int = 30):
         super().__init__(storage)
@@ -19,9 +19,6 @@ class OcrPagesStage(BaseStage):
             stage_name=self.name,
             item_pattern="page_{:04d}.json"
         )
-
-    def before(self) -> None:
-        self.check_source_exists()
 
     def run(self) -> Dict[str, Any]:
         if self.status_tracker.is_completed():
