@@ -3,7 +3,6 @@ import time
 import json
 import logging
 from typing import Optional, Callable
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 from infra.llm.models import LLMRequest, LLMResult, LLMEvent, EventData
 from infra.llm.client import LLMClient
@@ -42,34 +41,47 @@ class RequestExecutor:
 
             self.logger.debug(f"Executor CALLING LLM: {request.id} (model={current_model})")
 
-            # Hard timeout wrapper to catch hung requests
-            # requests library timeout doesn't always fire, so we add a thread-based hard timeout
-            hard_timeout = request.timeout + 30  # 30s grace period beyond request timeout
+            # Hard timeout wrapper using daemon thread
+            # - requests library timeout doesn't always fire (observed in production)
+            # - ThreadPoolExecutor creates non-daemon threads that block Python exit
+            # - Solution: Use daemon Thread directly - Python automatically cleans up on exit
+            import threading
+            import queue
 
-            def _llm_call():
-                return self.llm_client.call(
-                    model=current_model,
-                    messages=request.messages,
-                    temperature=request.temperature,
-                    max_tokens=request.max_tokens,
-                    images=request.images,
-                    response_format=request.response_format,
-                    timeout=request.timeout,
-                    max_retries=0,
-                    stream=False
-                )
+            hard_timeout = request.timeout + 30  # 30s grace period
 
-            # Don't use context manager - manually manage executor to avoid shutdown blocking
-            thread_executor = ThreadPoolExecutor(max_workers=1)
-            future = thread_executor.submit(_llm_call)
+            result_queue = queue.Queue()
+            exception_queue = queue.Queue()
+
+            def _llm_call_wrapper():
+                try:
+                    result = self.llm_client.call(
+                        model=current_model,
+                        messages=request.messages,
+                        temperature=request.temperature,
+                        max_tokens=request.max_tokens,
+                        images=request.images,
+                        response_format=request.response_format,
+                        timeout=request.timeout,
+                        max_retries=0,
+                        stream=False
+                    )
+                    result_queue.put(result)
+                except Exception as e:
+                    exception_queue.put(e)
+
+            # daemon=True means thread won't block Python exit
+            thread = threading.Thread(target=_llm_call_wrapper, daemon=True)
+            thread.start()
+
             try:
-                response_text, usage, cost = future.result(timeout=hard_timeout)
-                thread_executor.shutdown(wait=False)  # Don't wait for thread cleanup
-            except FuturesTimeoutError:
-                # Hard timeout exceeded - LLM call hung
-                # Abandon the hung thread - don't wait for it
-                thread_executor.shutdown(wait=False)
+                response_text, usage, cost = result_queue.get(timeout=hard_timeout)
 
+                # Check if exception occurred during execution
+                if not exception_queue.empty():
+                    raise exception_queue.get()
+
+            except queue.Empty:
                 self.logger.error(
                     f"HARD TIMEOUT: LLM call hung for {request.id}",
                     request_id=request.id,
