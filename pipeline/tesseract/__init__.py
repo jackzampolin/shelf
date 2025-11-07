@@ -53,20 +53,12 @@ class TesseractStage(BaseStage):
         logger: PipelineLogger,
     ) -> Dict[str, Any]:
         if self.status_tracker.is_completed(storage, logger):
-            status = self.get_status(storage, logger)
             logger.info("Tesseract already completed (skipping)")
-            return {
-                "status": "skipped",
-                "reason": "already completed",
-                "pages_processed": status["progress"]["completed_items"]
-            }
+            return self.status_tracker.get_skip_response(storage, logger)
 
         if not self.status_tracker.has_work(storage, logger):
             logger.info("No pages remaining to process")
-            return {
-                "status": "success",
-                "pages_processed": 0
-            }
+            return self.status_tracker.get_no_work_response()
 
         status = self.get_status(storage, logger)
         remaining_pages = self.status_tracker.get_remaining_items(storage, logger)

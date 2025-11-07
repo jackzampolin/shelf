@@ -37,6 +37,24 @@ class BatchBasedStatusTracker:
     ) -> bool:
         return len(self.get_remaining_items(storage, logger)) > 0
 
+    def get_skip_response(
+        self,
+        storage: BookStorage,
+        logger: PipelineLogger
+    ) -> Dict[str, Any]:
+        status = self.get_status(storage, logger)
+        return {
+            "status": "skipped",
+            "reason": "already completed",
+            "items_processed": status["progress"]["completed_items"]
+        }
+
+    def get_no_work_response(self) -> Dict[str, Any]:
+        return {
+            "status": "success",
+            "items_processed": 0
+        }
+
     def get_status(
         self,
         storage: BookStorage,
