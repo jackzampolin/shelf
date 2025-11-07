@@ -128,19 +128,16 @@ def extract_toc_entries(
             page_num = result.request.metadata["page_num"]
             logger.error(f"  Page {page_num}: Failed to extract ToC entries: {result.error_message}")
 
-    # Create batch processor and run
-    config = LLMBatchConfig(
-        model=model,
-        max_workers=4,  # Process 4 pages concurrently
-        max_retries=3,
-        batch_name="toc-extract"
-    )
-
     processor = LLMBatchProcessor(
+        storage=storage,
+        stage_name='extract-toc',
         logger=logger,
-        log_dir=stage_storage_obj.output_dir / "logs" / "phase1",
-        config=config,
-        metrics_manager=stage_storage_obj.metrics_manager
+        config=LLMBatchConfig(
+            model=model,
+            max_workers=4,
+            max_retries=3,
+            batch_name="ToC entry extraction"
+        )
     )
 
     batch_stats = processor.process_batch(
