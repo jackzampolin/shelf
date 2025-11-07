@@ -9,7 +9,7 @@ from infra.storage.library import Library
 from infra.pipeline.runner import run_stage, run_pipeline
 from infra.config import Config
 from cli.helpers import get_stage_status, get_stage_and_status, clean_stage_directory
-from cli.constants import CORE_STAGES, REPORT_STAGES, STAGE_DISPLAY_NAMES
+from cli.constants import CORE_STAGES, REPORT_STAGES
 
 
 def cmd_info(args):
@@ -45,8 +45,6 @@ def cmd_info(args):
             print(f"Available stages: {', '.join(CORE_STAGES)}")
             sys.exit(1)
 
-        stage_label = STAGE_DISPLAY_NAMES.get(args.stage, args.stage.title())
-
         stage_status = status.get('status', 'unknown')
         if stage_status == 'completed':
             symbol = '✅'
@@ -57,7 +55,7 @@ def cmd_info(args):
         else:
             symbol = '⏳'
 
-        print(f"\n{symbol} {stage_label} ({args.stage})")
+        print(f"\n{symbol} {args.stage}")
         print(stage.pretty_print_status(status))
         print()
         return
@@ -80,11 +78,10 @@ def cmd_info(args):
     total_cost = 0.0
 
     for stage_name in CORE_STAGES:
-        stage_label = STAGE_DISPLAY_NAMES.get(stage_name, stage_name.title())
         stage, status = get_stage_and_status(storage, stage_name)
 
         if status is None:
-            print(f"\n? {stage_label} ({stage_name})")
+            print(f"\n? {stage_name}")
             print(f"   Status: unknown")
             continue
 
@@ -99,7 +96,7 @@ def cmd_info(args):
         else:
             symbol = '⏳'
 
-        print(f"\n{symbol} {stage_label} ({stage_name})")
+        print(f"\n{symbol} {stage_name}")
         print(stage.pretty_print_status(status))
 
         metrics = status.get('metrics', {})

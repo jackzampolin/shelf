@@ -15,6 +15,14 @@ class LabelPagesStage(BaseStage):
     name = "label-pages"
     dependencies = ["ocr-pages"]
 
+    @classmethod
+    def default_kwargs(cls, **overrides):
+        kwargs = {'max_retries': overrides.get('max_retries', 3)}
+        if 'model' in overrides and overrides['model']:
+            kwargs['model'] = overrides['model']
+        if 'workers' in overrides and overrides['workers']:
+            kwargs['max_workers'] = overrides['workers']
+        return kwargs
 
     def __init__(
         self,

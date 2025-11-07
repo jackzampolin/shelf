@@ -12,6 +12,13 @@ class TesseractStage(BaseStage):
     name = "tesseract"
     dependencies = []
 
+    @classmethod
+    def default_kwargs(cls, **overrides):
+        kwargs = {'psm_mode': 3}
+        if 'workers' in overrides and overrides['workers']:
+            kwargs['max_workers'] = overrides['workers']
+        return kwargs
+
     def __init__(self, storage: BookStorage, psm_mode: int = 3, max_workers: int = None):
         super().__init__(storage)
         self.psm_mode = psm_mode

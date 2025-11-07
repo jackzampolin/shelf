@@ -14,6 +14,13 @@ class ExtractTocStage(BaseStage):
     name = "extract-toc"
     dependencies = ["find-toc", "ocr-pages"]
 
+    @classmethod
+    def default_kwargs(cls, **overrides):
+        kwargs = {}
+        if 'model' in overrides and overrides['model']:
+            kwargs['model'] = overrides['model']
+        return kwargs
+
     def __init__(self, storage: BookStorage, model: str = None):
         super().__init__(storage)
         self.model = model or Config.text_model_expensive

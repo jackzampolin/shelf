@@ -10,6 +10,10 @@ class OcrPagesStage(BaseStage):
     name = "ocr-pages"
     dependencies = []
 
+    @classmethod
+    def default_kwargs(cls, **overrides):
+        return {'max_workers': overrides.get('workers', 30)}
+
     def __init__(self, storage: BookStorage, max_workers: int = 30):
         super().__init__(storage)
         self.max_workers = max_workers

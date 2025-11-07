@@ -12,6 +12,13 @@ class LinkTocStage(BaseStage):
     name = "link-toc"
     dependencies = ["find-toc", "extract-toc", "label-pages", "ocr-pages"]
 
+    @classmethod
+    def default_kwargs(cls, **overrides):
+        kwargs = {'max_iterations': 15, 'verbose': False}
+        if 'model' in overrides and overrides['model']:
+            kwargs['model'] = overrides['model']
+        return kwargs
+
     def __init__(
         self,
         storage: BookStorage,
