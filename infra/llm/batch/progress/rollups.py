@@ -68,18 +68,33 @@ def format_rollup_lines(batch_stats, rollup_metrics: Dict) -> List[Tuple[str, st
     """Format rollup metric display lines."""
     lines = []
 
-    if batch_stats.requests_per_second > 0:
-        lines.append((
-            "rollup_throughput",
-            f"[cyan]Throughput:[/cyan] [bold]{batch_stats.requests_per_second:.1f}[/bold] [dim]pages/sec[/dim]"
-        ))
-
+    # Consolidated metrics line: throughput | avg time | avg cost | tokens
     if batch_stats.completed > 0:
+        parts = []
+
+        if batch_stats.requests_per_second > 0:
+            parts.append(f"[bold]{batch_stats.requests_per_second:.1f}[/bold] [dim]pages/sec[/dim]")
+
+        if batch_stats.avg_time_per_request > 0:
+            parts.append(f"[bold]{batch_stats.avg_time_per_request:.1f}s[/bold] [dim]avg[/dim]")
+
         avg_cost_cents = (batch_stats.total_cost_usd / batch_stats.completed) * 100
-        lines.append((
-            "rollup_avg_cost",
-            f"[cyan]Avg cost:[/cyan] [bold yellow]{avg_cost_cents:.2f}¢[/bold yellow][dim]/page[/dim]"
-        ))
+        parts.append(f"[bold yellow]{avg_cost_cents:.2f}¢[/bold yellow] [dim]avg[/dim]")
+
+        token_count = rollup_metrics['token_count']
+        if token_count > 0:
+            avg_input = rollup_metrics['total_input_tokens'] / token_count
+            avg_output = rollup_metrics['total_output_tokens'] / token_count
+            token_part = f"[green]{avg_input:.0f}[/green]→[blue]{avg_output:.0f}[/blue] [dim]tokens[/dim]"
+
+            if rollup_metrics['total_reasoning_tokens'] > 0:
+                avg_reasoning = rollup_metrics['total_reasoning_tokens'] / token_count
+                token_part += f" [dim](+[magenta]{avg_reasoning:.0f}[/magenta] reasoning)[/dim]"
+
+            parts.append(token_part)
+
+        metrics_line = f"[cyan]Metrics:[/cyan] {' | '.join(parts)}"
+        lines.append(("rollup_metrics", metrics_line))
 
     # Show total in-progress (all non-completed requests)
     if batch_stats.in_progress > 0:
@@ -127,17 +142,5 @@ def format_rollup_lines(batch_stats, rollup_metrics: Dict) -> List[Tuple[str, st
         else:
             text = f"[cyan]Streaming:[/cyan] [bold]{avg_streaming:.1f}s[/bold] avg"
         lines.append(("rollup_streaming", text))
-
-    token_count = rollup_metrics['token_count']
-    if token_count > 0:
-        avg_input = rollup_metrics['total_input_tokens'] / token_count
-        avg_output = rollup_metrics['total_output_tokens'] / token_count
-        token_line = f"[cyan]Tokens:[/cyan] [green]{avg_input:.0f}[/green] in → [blue]{avg_output:.0f}[/blue] out"
-
-        if rollup_metrics['total_reasoning_tokens'] > 0:
-            avg_reasoning = rollup_metrics['total_reasoning_tokens'] / token_count
-            token_line += f" [dim](+[magenta]{avg_reasoning:.0f}[/magenta] reasoning)[/dim]"
-
-        lines.append(("rollup_tokens", token_line))
 
     return lines

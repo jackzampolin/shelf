@@ -119,10 +119,18 @@ class LLMBatchClient:
                 rate_limit_utilization=0.0, rate_limit_tokens_available=0
             )
 
+        from .schemas import RequestPhase
+
+        active = self.worker_pool.get_active_requests()
+        in_progress_count = len([
+            s for s in active.values()
+            if s.phase in (RequestPhase.EXECUTING, RequestPhase.DEQUEUED, RequestPhase.RATE_LIMITED)
+        ])
+
         return self.stats_tracker.get_batch_stats(
             total_requests=total_requests or len(self.worker_pool.results),
             completed_results=self.worker_pool.results,
-            in_progress_count=len(self.worker_pool.get_active_requests()),
+            in_progress_count=in_progress_count,
             rate_limit_status=self.rate_limiter.get_status()
         )
 
