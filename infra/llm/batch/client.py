@@ -9,7 +9,7 @@ from infra.config import Config
 
 from .stats import BatchStatsTracker, BatchStats
 from .executor import RequestExecutor
-from .worker import WorkerPool
+from .worker import WorkerPool  # Imports from worker/__init__.py
 from .callbacks import wrap_with_stats_tracking, wrap_with_progress_monitoring
 
 
@@ -23,6 +23,8 @@ class LLMBatchClient:
         progress_interval: float = 1.0,
         logger=None,
     ):
+        if logger is None:
+            raise ValueError("LLMBatchClient requires a logger instance")
         self.max_workers = max_workers if max_workers is not None else Config.max_workers
         self.rate_limit = rate_limit if rate_limit is not None else Config.rate_limit_requests_per_minute
         self.max_retries = max_retries

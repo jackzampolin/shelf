@@ -34,10 +34,14 @@ def wrap_with_progress_monitoring(
     total_requests: int,
     progress_interval: float
 ) -> Callable[[EventData], None]:
-    """Wrap event callback to emit periodic progress events."""
+    """Wrap event callback to emit periodic progress events and track retries."""
     last_progress_time = [time.time()]
 
     def wrapped(event: EventData):
+        # Track retry events in stats
+        if event.event_type == LLMEvent.RETRY_QUEUED:
+            stats_tracker.record_retry()
+
         now = time.time()
         if now - last_progress_time[0] >= progress_interval:
             emit_progress_event(
