@@ -6,30 +6,45 @@ from infra.pipeline.logger import PipelineLogger
 class MultiPhaseStatusTracker:
     def __init__(
         self,
+        storage: BookStorage,
+        logger: PipelineLogger,
         stage_name: str,
         phases: List[Dict[str, Any]]
     ):
+        self.storage = storage
+        self.logger = logger
         self.stage_name = stage_name
         self.phases = phases
 
-    def get_status(
-        self,
-        storage: BookStorage,
-        logger: PipelineLogger
-    ) -> Dict[str, Any]:
-        stage_storage = storage.stage(self.stage_name)
+    def is_completed(self) -> bool:
+        """Check if all phases are completed."""
+        status = self.get_status()
+        return status["status"] == "completed"
+
+    def get_skip_response(self) -> Dict[str, Any]:
+        """Get response for when stage is already completed."""
+        status = self.get_status()
+        return {
+            "status": "skipped",
+            "reason": "already completed",
+            "phases_completed": status["progress"]["completed_phases"]
+        }
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get current status by checking disk for completed phases."""
+        stage_storage = self.storage.stage(self.stage_name)
 
         completed_phases = []
         all_metrics = {}
 
         for phase in self.phases:
-            phase_complete = self._is_phase_complete(phase, storage, logger)
+            phase_complete = self._is_phase_complete(phase)
 
             if phase_complete:
                 completed_phases.append(phase["name"])
 
                 if "tracker" in phase:
-                    phase_status = phase["tracker"].get_status(storage, logger)
+                    phase_status = phase["tracker"].get_status()
                     self._merge_metrics(all_metrics, phase_status.get("metrics", {}))
 
         if len(completed_phases) == 0:
@@ -53,22 +68,19 @@ class MultiPhaseStatusTracker:
             "metrics": all_metrics,
         }
 
-    def _is_phase_complete(
-        self,
-        phase: Dict[str, Any],
-        storage: BookStorage,
-        logger: PipelineLogger
-    ) -> bool:
+    def _is_phase_complete(self, phase: Dict[str, Any]) -> bool:
+        """Check if a single phase is complete by checking tracker or artifact."""
         if "tracker" in phase:
-            phase_status = phase["tracker"].get_status(storage, logger)
+            phase_status = phase["tracker"].get_status()
             return phase_status["status"] == "completed"
         elif "artifact" in phase:
-            stage_storage = storage.stage(self.stage_name)
+            stage_storage = self.storage.stage(self.stage_name)
             return (stage_storage.output_dir / phase["artifact"]).exists()
         else:
             raise ValueError(f"Phase {phase['name']} must have 'tracker' or 'artifact'")
 
     def _merge_metrics(self, target: Dict, source: Dict):
+        """Merge metrics from source into target, summing numeric values."""
         for key, value in source.items():
             if key in target:
                 if isinstance(value, (int, float)):

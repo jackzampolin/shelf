@@ -6,24 +6,23 @@ from infra.storage.book_storage import BookStorage
 from infra.pipeline.logger import create_logger
 
 
-def run_stage(
-    stage: BaseStage,
-    storage: BookStorage
-) -> None:
+def run_stage(stage: BaseStage) -> None:
+    """
+    Run a stage that has already been initialized with storage.
+
+    Args:
+        stage: BaseStage instance already initialized with storage
+    """
     if not stage.name:
         raise ValueError(f"{stage.__class__.__name__}.name is not set")
 
     if not isinstance(stage.dependencies, list):
         raise ValueError(f"{stage.__class__.__name__}.dependencies must be a list")
 
+    # Stage already has storage and logger from __init__
+    logger = stage.logger
+    storage = stage.storage
     stage_storage = storage.stage(stage.name)
-
-    logs_dir = stage_storage.output_dir / "logs"
-    logs_dir.mkdir(parents=True, exist_ok=True)
-
-    # Check DEBUG environment variable for log level
-    log_level = "DEBUG" if os.environ.get("DEBUG", "").lower() in ("true", "1") else "INFO"
-    logger = create_logger(storage.scan_id, stage.name, log_dir=logs_dir, level=log_level)
 
     try:
         logger.info(
@@ -31,17 +30,17 @@ def run_stage(
             dependencies=stage.dependencies
         )
 
-        status = stage.get_status(storage, logger)
+        status = stage.get_status()
         if status["status"] == "completed":
             logger.info("Stage already complete, skipping")
             return
 
         logger.info("Running before() hook")
-        stage.before(storage, logger)
+        stage.before()
 
         logger.info("Running run() hook")
         start_time = time.time()
-        stats = stage.run(storage, logger)
+        stats = stage.run()
         elapsed_time = time.time() - start_time
 
         stage_storage.metrics_manager.record(
@@ -64,12 +63,24 @@ def run_stage(
 
 def run_pipeline(
     stages: List[BaseStage],
-    storage: BookStorage,
     stop_on_error: bool = True
 ) -> dict:
+    """
+    Run a pipeline of stages that have already been initialized with storage.
+
+    Args:
+        stages: List of BaseStage instances already initialized
+        stop_on_error: Whether to stop on first error
+
+    Returns:
+        Dict mapping stage names to execution stats
+    """
     results = {}
 
-    print(f"\n📚 Running pipeline: {storage.scan_id}")
+    # Get scan_id from first stage's storage
+    scan_id = stages[0].storage.scan_id if stages else "unknown"
+
+    print(f"\n📚 Running pipeline: {scan_id}")
     print(f"   Stages: {', '.join(s.name for s in stages)}")
     print()
 
@@ -77,7 +88,7 @@ def run_pipeline(
         print(f"[{i}/{len(stages)}] Running stage: {stage.name}")
 
         try:
-            stats = run_stage(stage, storage)
+            stats = run_stage(stage)
             results[stage.name] = stats
             print(f"✅ {stage.name} complete")
 

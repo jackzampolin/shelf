@@ -6,43 +6,29 @@ from infra.pipeline.logger import PipelineLogger
 class BatchBasedStatusTracker:
     def __init__(
         self,
+        storage: BookStorage,
+        logger: PipelineLogger,
         stage_name: str,
-        source_stage: str,
         item_pattern: str = "page_{:04d}.json"
     ):
+        self.storage = storage
+        self.logger = logger
         self.stage_name = stage_name
-        self.source_stage = source_stage
         self.item_pattern = item_pattern
 
-    def is_completed(
-        self,
-        storage: BookStorage,
-        logger: PipelineLogger
-    ) -> bool:
-        status = self.get_status(storage, logger)
+    def is_completed(self) -> bool:
+        status = self.get_status()
         return status["status"] == "completed"
 
-    def get_remaining_items(
-        self,
-        storage: BookStorage,
-        logger: PipelineLogger
-    ) -> List[int]:
-        status = self.get_status(storage, logger)
+    def get_remaining_items(self) -> List[int]:
+        status = self.get_status()
         return status["progress"]["remaining_items"]
 
-    def has_work(
-        self,
-        storage: BookStorage,
-        logger: PipelineLogger
-    ) -> bool:
-        return len(self.get_remaining_items(storage, logger)) > 0
+    def has_work(self) -> bool:
+        return len(self.get_remaining_items()) > 0
 
-    def get_skip_response(
-        self,
-        storage: BookStorage,
-        logger: PipelineLogger
-    ) -> Dict[str, Any]:
-        status = self.get_status(storage, logger)
+    def get_skip_response(self) -> Dict[str, Any]:
+        status = self.get_status()
         return {
             "status": "skipped",
             "reason": "already completed",
@@ -55,17 +41,14 @@ class BatchBasedStatusTracker:
             "items_processed": 0
         }
 
-    def get_status(
-        self,
-        storage: BookStorage,
-        logger: PipelineLogger
-    ) -> Dict[str, Any]:
-        source_pages = storage.stage(self.source_stage).list_output_pages(extension="png")
+    def get_status(self) -> Dict[str, Any]:
+        # Ground truth from disk: count source pages that exist
+        source_pages = self.storage.stage("source").list_output_pages(extension="png")
         total = len(source_pages)
 
         all_page_nums = set(range(1, total + 1))
 
-        stage_storage = storage.stage(self.stage_name)
+        stage_storage = self.storage.stage(self.stage_name)
 
         completed = set()
         extension = self.item_pattern.split('.')[-1]

@@ -1,12 +1,14 @@
 from typing import Dict, Any
 
+from infra.config import Config
 from infra.pipeline.base_stage import BaseStage
 from infra.storage.book_storage import BookStorage
-from infra.pipeline.logger import PipelineLogger
+from infra.pipeline.status import BatchBasedStatusTracker, MultiPhaseStatusTracker
+from pipeline.ocr_pages import OcrPagesStage
+from .tools.report_generator import generate_report
+from .batch.processor import process_pages
 
 from .schemas import LabelPagesPageOutput, LabelPagesPageReport
-from .status import LabelPagesStatusTracker, LabelPagesStatus
-from .storage import LabelPagesStageStorage
 
 
 class LabelPagesStage(BaseStage):
@@ -15,186 +17,72 @@ class LabelPagesStage(BaseStage):
     dependencies = ["ocr-pages", "source"]
 
     output_schema = LabelPagesPageOutput
-    checkpoint_schema = None  # No checkpoints needed (single-stage)
     report_schema = LabelPagesPageReport
     self_validating = True
 
     def __init__(
         self,
+        storage: BookStorage,
         model: str = None,
         max_workers: int = None,
         max_retries: int = 3,
     ):
-        super().__init__()
+        super().__init__(storage)
 
-        from infra.config import Config
         self.model = model or Config.vision_model_primary
         self.max_workers = max_workers or Config.max_workers
         self.max_retries = max_retries
 
-        self.status_tracker = LabelPagesStatusTracker(stage_name=self.name)
-        self.stage_storage = LabelPagesStageStorage(stage_name=self.name)
+        # Two-phase status tracking: process pages + generate report
+        self.page_tracker = BatchBasedStatusTracker(
+            storage=self.storage,
+            logger=self.logger,
+            stage_name=self.name,
+            item_pattern="page_{:04d}.json"
+        )
 
-    def get_status(
-        self,
-        storage: BookStorage,
-        logger: PipelineLogger
-    ) -> Dict[str, Any]:
-        return self.status_tracker.get_status(storage)
+        self.status_tracker = MultiPhaseStatusTracker(
+            storage=self.storage,
+            logger=self.logger,
+            stage_name=self.name,
+            phases=[
+                {"name": "process_pages", "tracker": self.page_tracker},
+                {"name": "generate_report", "artifact": "report.csv"}
+            ]
+        )
 
-    def pretty_print_status(self, status: Dict[str, Any]) -> str:
-        """Return formatted label-pages status."""
-        lines = []
+    def before(self) -> None:
+        self.check_source_exists()
 
-        stage_status = status.get('status', 'unknown')
-        lines.append(f"   Status: {stage_status}")
+        ocr_pages_stage = OcrPagesStage(self.storage)
+        self.check_dependency_completed(ocr_pages_stage)
 
-        completed = status.get('completed_pages', 0)
-        total = status.get('total_pages', 0)
-        if total > 0:
-            lines.append(f"   Pages:  {completed}/{total} completed")
+    def run(self) -> Dict[str, Any]:
+        if self.status_tracker.is_completed():
+            return self.status_tracker.get_skip_response()
 
-        metrics = status.get('metrics', {})
-        if metrics.get('total_cost_usd', 0) > 0:
-            lines.append(f"   Cost:   ${metrics['total_cost_usd']:.4f}")
-        if metrics.get('stage_runtime_seconds', 0) > 0:
-            mins = metrics['stage_runtime_seconds'] / 60
-            lines.append(f"   Time:   {mins:.1f}m")
-
-        return '\n'.join(lines)
-
-    def before(
-        self,
-        storage: BookStorage,
-        logger: PipelineLogger
-    ):
-        logger.info(f"Label-Pages with {self.model}")
-        logger.info(f"Max workers: {self.max_workers}")
-
-        from pipeline.ocr_pages import OcrPagesStage
-        ocr_pages_stage = OcrPagesStage()
-
-        ocr_progress = ocr_pages_stage.get_status(storage, logger)
-
-        if ocr_progress['status'] != 'completed':
-            raise RuntimeError(
-                f"OCR-Pages stage status is '{ocr_progress['status']}', not 'completed'. "
-                f"Run ocr-pages stage to completion first."
+        # Phase 1: Process pages
+        remaining_pages = self.page_tracker.get_remaining_items()
+        if remaining_pages:
+            process_pages(
+                storage=self.storage,
+                logger=self.logger,
+                stage_name=self.name,
+                output_schema=self.output_schema,
+                remaining_pages=remaining_pages,
+                model=self.model,
+                max_workers=self.max_workers,
+                max_retries=self.max_retries
             )
 
-        logger.info(f"OCR-Pages completed: {ocr_progress['total_pages']} pages ready for labeling")
-
-    def run(
-        self,
-        storage: BookStorage,
-        logger: PipelineLogger,
-    ) -> Dict[str, Any]:
-        import time
-        start_time = time.time()
-
-        progress = self.get_status(storage, logger)
-        total_pages = progress["total_pages"]
-        remaining_pages = progress["remaining_pages"]
-        status = progress["status"]
-
-        logger.info(f"Status: {status}")
-        logger.info(f"Total pages: {total_pages}")
-        logger.info(f"Remaining pages: {len(remaining_pages)}")
-        logger.info(f"Progress: {total_pages - len(remaining_pages)}/{total_pages} pages complete")
-
-        if progress["status"] == LabelPagesStatus.COMPLETED.value:
-            logger.info("Label-pages already completed (skipping)")
-            return {
-                "status": "skipped",
-                "reason": "already completed",
-                "pages_processed": total_pages - len(remaining_pages)
-            }
-
-        if len(remaining_pages) == 0:
-            logger.info("No pages remaining to process")
-            return {
-                "status": "success",
-                "pages_processed": 0
-            }
-
-        # Single-stage vision processing: Structural analysis with 3-image context
-        logger.info(f"=== Label-Pages: Structural Analysis (3 images per page) ===")
-        logger.info(f"Remaining: {len(remaining_pages)}/{total_pages} pages")
-
-        from infra.llm.batch import LLMBatchProcessor, LLMBatchConfig
-        from .stage1.request_builder import prepare_stage1_request
-        from .stage1.result_handler import create_stage1_handler
-
-        # Setup processor and handler
-        config = LLMBatchConfig(
-            model=self.model,
-            max_workers=self.max_workers,
-            max_retries=self.max_retries,
-            batch_name="Label-Pages"
-        )
-        processor = LLMBatchProcessor(
-            storage=storage,
-            stage_name=self.name,
-            logger=logger,
-            config=config,
-        )
-        handler = create_stage1_handler(
-            storage,
-            self.stage_storage,
-            logger,
-            self.name,
-            self.output_schema,
-            self.model
-        )
-
-        # Process batch
-        batch_stats = processor.process(
-            items=remaining_pages,
-            request_builder=prepare_stage1_request,
-            result_handler=handler,
-            storage=storage,
-            model=self.model,
-            total_pages=total_pages,
-        )
-
-        progress = self.get_status(storage, logger)
-
-        # Generate report if not exists
-        if not progress["artifacts"]["report_exists"]:
-            logger.info("=== Generating Report ===")
-
-            from .tools.report_generator import generate_report
+        # Phase 2: Generate report
+        report_path = self.stage_storage.output_dir / "report.csv"
+        if not report_path.exists():
             generate_report(
-                storage=storage,
-                logger=logger,
-                stage_storage=self.stage_storage,
+                storage=self.storage,
+                logger=self.logger,
                 report_schema=self.report_schema,
                 stage_name=self.name,
             )
 
-            progress = self.get_status(storage, logger)
-
-        completed_pages = total_pages - len(progress["remaining_pages"])
-        total_cost = progress["metrics"]["total_cost_usd"]
-
-        # Record total stage runtime (accumulate across runs for resume support)
-        elapsed_time = time.time() - start_time
-        storage.stage(self.name).metrics_manager.record(
-            key="stage_runtime",
-            time_seconds=elapsed_time,
-            accumulate=True
-        )
-
-        logger.info(
-            "Label-pages complete",
-            pages_processed=completed_pages,
-            cost=f"${total_cost:.4f}",
-            time=f"{elapsed_time:.1f}s"
-        )
-
-        return {
-            "status": "success",
-            "pages_processed": completed_pages,
-            "cost_usd": total_cost,
-            "time_seconds": elapsed_time
-        }
+        return {"status": "success"}

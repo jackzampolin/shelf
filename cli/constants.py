@@ -14,9 +14,15 @@ CORE_STAGES = STAGE_NAMES
 REPORT_STAGES = []  # No stages currently generate reports
 
 
-def get_stage_map(model=None, workers=None, max_retries=3):
+def get_stage_map(storage, model=None, workers=None, max_retries=3):
     """
     Instantiate pipeline stages with appropriate parameters.
+
+    Args:
+        storage: BookStorage instance (required for all stages)
+        model: Optional model name override
+        workers: Optional worker count override
+        max_retries: Number of retries for API-bound stages
 
     Different stage types require different initialization:
     - tesseract: CPU-bound, worker count controls parallelism
@@ -34,6 +40,7 @@ def get_stage_map(model=None, workers=None, max_retries=3):
         module = __import__(module_path, fromlist=[class_name])
         stage_class = getattr(module, class_name)
 
+        # All stages now require storage as first argument
         kwargs = {}
 
         if stage_def['name'] == 'tesseract':
@@ -68,6 +75,6 @@ def get_stage_map(model=None, workers=None, max_retries=3):
             kwargs['max_iterations'] = 15
             kwargs['verbose'] = False
 
-        stage_map[stage_def['name']] = stage_class(**kwargs)
+        stage_map[stage_def['name']] = stage_class(storage, **kwargs)
 
     return stage_map

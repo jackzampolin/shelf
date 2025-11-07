@@ -21,8 +21,8 @@ class FindTocStage(BaseStage):
     report_schema = None
     self_validating = True
 
-    def __init__(self, model: str = None):
-        super().__init__()
+    def __init__(self, storage: BookStorage, model: str = None):
+        super().__init__(storage)
         self.model = model or Config.text_model_expensive
         self.status_tracker = FindTocStatusTracker(stage_name=self.name)
         self.stage_storage = FindTocStageStorage(stage_name=self.name)

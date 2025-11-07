@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 from infra.llm.models import LLMResult
+from infra.llm.metrics import record_llm_result
 
 
-def create_stage1_handler(storage, stage_storage, logger, stage_name, output_schema, model):
+def create_stage1_handler(storage, logger, stage_name, output_schema, model):
     """Create handler that maps Stage 1 LLM response to LabelPagesPageOutput."""
 
     def on_result(result: LLMResult):
@@ -24,14 +25,21 @@ def create_stage1_handler(storage, stage_storage, logger, stage_name, output_sch
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
-            # Save final output
-            stage_storage.save_final_output(
-                storage=storage,
-                page_num=page_num,
-                data=page_output,
-                schema=output_schema,
-                cost_usd=result.cost_usd or 0.0,
+            # Save output using standard save_page
+            stage_storage = storage.stage(stage_name)
+            stage_storage.save_page(
+                page_num,
+                page_output,
+                schema=output_schema
+            )
+
+            # Record metrics
+            record_llm_result(
+                metrics_manager=stage_storage.metrics_manager,
+                key=f"page_{page_num:04d}",
                 result=result,
+                page_num=page_num,
+                extra_fields={'stage': stage_name}
             )
 
             boundary_status = "BOUNDARY" if page_output["is_boundary"] else "continuation"

@@ -7,39 +7,30 @@ from infra.pipeline.logger import PipelineLogger
 def generate_report(
     storage: BookStorage,
     logger: PipelineLogger,
-    stage_storage,
     report_schema,
     stage_name: str,
 ):
-    """Generate CSV report summarizing structural boundary detection.
-
-    Shows: boundary status, confidence, visual/textual signals, heading info.
-    Useful for: validating ToC entries, checking boundary detection accuracy.
-    """
     logger.info("Generating report.csv from page outputs")
 
-    stage_storage_obj = storage.stage(stage_name)
+    stage_storage = storage.stage(stage_name)
 
-    # Load all completed pages
-    completed_pages = stage_storage.list_completed_pages(storage)
+    output_files = stage_storage.list_output_pages(extension='json')
+    completed_pages = sorted(output_files)
 
     if not completed_pages:
         logger.warning("No completed pages found")
         return
 
     report_rows = []
-    for page_num in sorted(completed_pages):
+    for page_num in completed_pages:
         try:
-            # Load page output
-            page_data = stage_storage_obj.load_page(page_num)
+            page_data = stage_storage.load_page(page_num)
             if not page_data:
                 continue
 
-            # Extract signals
             visual = page_data.get('visual_signals', {})
             textual = page_data.get('textual_signals', {})
 
-            # Build report row
             report_row = report_schema(
                 page_num=page_num,
                 is_boundary=page_data.get('is_boundary', False),
@@ -61,8 +52,7 @@ def generate_report(
         logger.warning("No valid pages to write to report")
         return
 
-    # Write CSV
-    report_path = stage_storage.get_report_path(storage)
+    report_path = stage_storage.output_dir / "report.csv"
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(report_path, 'w', newline='') as f:

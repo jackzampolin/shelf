@@ -18,53 +18,61 @@ def clean_stage_directory(storage: BookStorage, stage_name: str):
     stage_storage.metrics_manager.reset()
 
 
-def get_stage_instance(stage_name: str):
+def get_stage_instance(storage: BookStorage, stage_name: str):
+    """
+    Create a stage instance initialized with storage.
+
+    Args:
+        storage: BookStorage instance for the book
+        stage_name: Name of the stage to instantiate
+
+    Returns:
+        Initialized stage instance or None if stage not found
+    """
     try:
         if stage_name == 'tesseract':
             from pipeline.tesseract import TesseractStage
-            return TesseractStage()
+            return TesseractStage(storage)
         elif stage_name == 'ocr-pages':
             from pipeline.ocr_pages import OcrPagesStage
-            return OcrPagesStage()
+            return OcrPagesStage(storage)
         elif stage_name == 'label-pages':
             from pipeline.label_pages import LabelPagesStage
-            return LabelPagesStage()
+            return LabelPagesStage(storage)
         elif stage_name == 'find-toc':
             from pipeline.find_toc import FindTocStage
-            return FindTocStage()
+            return FindTocStage(storage)
         elif stage_name == 'extract-toc':
             from pipeline.extract_toc import ExtractTocStage
-            return ExtractTocStage()
+            return ExtractTocStage(storage)
         elif stage_name == 'link-toc':
             from pipeline.link_toc import LinkTocStage
-            return LinkTocStage()
+            return LinkTocStage(storage)
     except ImportError:
         return None
     return None
 
 
 def get_stage_status(storage: BookStorage, stage_name: str):
-    stage = get_stage_instance(stage_name)
+    """Get status for a stage (stage already has logger)."""
+    stage = get_stage_instance(storage, stage_name)
     if stage is None:
         return None
 
-    log_dir = storage.stage(stage_name).output_dir / 'logs'
-    logger = PipelineLogger(storage.scan_id, stage_name, log_dir)
     try:
-        return stage.get_status(storage, logger)
+        return stage.get_status()
     finally:
-        logger.close()
+        stage.logger.close()
 
 
 def get_stage_and_status(storage: BookStorage, stage_name: str):
-    stage = get_stage_instance(stage_name)
+    """Get stage instance and its status (stage already has logger)."""
+    stage = get_stage_instance(storage, stage_name)
     if stage is None:
         return None, None
 
-    log_dir = storage.stage(stage_name).output_dir / 'logs'
-    logger = PipelineLogger(storage.scan_id, stage_name, log_dir)
     try:
-        status = stage.get_status(storage, logger)
+        status = stage.get_status()
         return stage, status
     finally:
-        logger.close()
+        stage.logger.close()

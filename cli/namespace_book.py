@@ -218,6 +218,7 @@ def cmd_run_stage(args):
     storage = library.get_book_storage(args.scan_id)
 
     stage_map = get_stage_map(
+        storage,
         model=args.model,
         workers=args.workers,
         max_retries=3
@@ -237,7 +238,7 @@ def cmd_run_stage(args):
 
     try:
         print(f"\n🔧 Running stage: {stage.name}")
-        stats = run_stage(stage, storage)
+        stats = run_stage(stage)
         print(f"\n✅ Stage complete: {stage.name}")
     except Exception as e:
         print(f"\n❌ Stage failed: {e}")

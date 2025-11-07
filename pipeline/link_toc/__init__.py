@@ -34,11 +34,12 @@ class LinkTocStage(BaseStage):
 
     def __init__(
         self,
+        storage: BookStorage,
         model: str = None,
         max_iterations: int = 15,
         verbose: bool = False
     ):
-        super().__init__()
+        super().__init__(storage)
 
         from infra.config import Config
         self.model = model or Config.text_model_expensive
