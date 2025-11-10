@@ -1,6 +1,11 @@
 """
 DeepInfra OCR provider (OlmOCR).
 
+Uses the olmocr toolkit's recommended settings:
+- Images resized to 1288px on longest dimension (olmocr spec)
+- Uses build_no_anchoring_v4_yaml_prompt() for optimal results
+- Returns structured markdown with front matter metadata
+
 Cost tracking: DeepInfra returns estimated_cost in response.usage.model_extra.
 Typical costs for olmOCR-2-7B-1025 (as of 2025-01):
 - Input tokens: ~$0.08/M tokens
@@ -19,6 +24,7 @@ import io
 import base64
 from PIL import Image
 from dotenv import load_dotenv
+from olmocr.prompts import build_no_anchoring_v4_yaml_prompt
 
 from .client import DeepInfraClient
 
@@ -37,40 +43,44 @@ class OlmOCRProvider:
             raise DeepInfraOCRError(f"Failed to initialize DeepInfra client: {e}")
 
         self.model = "allenai/olmOCR-2-7B-1025"
-        self.max_dimension = 2048
+        # olmocr toolkit spec: images should be 1288px on longest dimension
+        self.target_longest_dim = 1288
 
     def extract_text(self, image: Image.Image, prompt: str = None) -> tuple[str, dict, float]:
         """
-        Extract text from image using OlmOCR.
+        Extract text from image using OlmOCR with toolkit best practices.
 
         Args:
             image: PIL Image to OCR
-            prompt: Optional prompt (default: "Free OCR")
+            prompt: Optional custom prompt (default: uses olmocr's v4 YAML prompt)
 
         Returns:
             Tuple of (text, usage_dict, cost_usd)
-            - text: Extracted text string
+            - text: Extracted markdown with front matter metadata
             - usage_dict: Token usage (prompt_tokens, completion_tokens, total_tokens)
             - cost_usd: Estimated cost in USD from DeepInfra
         """
         try:
-            if image.width > self.max_dimension or image.height > self.max_dimension:
-                scale = self.max_dimension / max(image.width, image.height)
+            # Resize to 1288px on longest dimension (olmocr spec)
+            if image.width > self.target_longest_dim or image.height > self.target_longest_dim:
+                scale = self.target_longest_dim / max(image.width, image.height)
                 new_width = int(image.width * scale)
                 new_height = int(image.height * scale)
                 image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
             image_base64 = self._image_to_base64(image)
 
+            # Use olmocr's recommended v4 YAML prompt unless custom provided
             if not prompt:
-                prompt = "Free OCR"
+                prompt = build_no_anchoring_v4_yaml_prompt()
 
+            # Format request per olmocr spec: text first, then image
             messages = [
                 {
                     "role": "user",
                     "content": [
+                        {"type": "text", "text": prompt},
                         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}},
-                        {"type": "text", "text": prompt}
                     ]
                 }
             ]
@@ -78,7 +88,8 @@ class OlmOCRProvider:
             response = self.client.chat_completion(
                 model=self.model,
                 messages=messages,
-                max_tokens=4096,
+                max_tokens=8000,  # olmocr uses 8000 max tokens
+                temperature=0.1,  # olmocr starts with 0.1 temperature
             )
 
             if not response.choices or len(response.choices) == 0:

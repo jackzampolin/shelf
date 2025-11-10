@@ -1,11 +1,69 @@
 from typing import Dict, Any, List
 from PIL import Image
+import re
 
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.deepinfra import DeepInfraOCRBatchProcessor, OCRRequest, OCRResult
 
 from ..schemas import OcrPagesPageOutput
+
+
+def parse_olmocr_response(text: str) -> Dict[str, Any]:
+    """
+    Parse OlmOCR v4 YAML front matter and extract metadata + clean text.
+
+    Args:
+        text: Raw response from OlmOCR with YAML front matter
+
+    Returns:
+        Dict with parsed metadata and clean text
+    """
+    # Default values
+    result = {
+        "text": text,
+        "primary_language": None,
+        "is_rotation_valid": True,
+        "rotation_correction": 0,
+        "is_table": False,
+        "is_diagram": False,
+    }
+
+    # Check if response has YAML front matter
+    if not text.strip().startswith("---"):
+        return result
+
+    # Split front matter from content
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return result
+
+    front_matter = parts[1].strip()
+    content = parts[2].strip()
+
+    # Parse front matter fields
+    for line in front_matter.split("\n"):
+        line = line.strip()
+        if ":" not in line:
+            continue
+
+        key, value = line.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+
+        if key == "primary_language":
+            result["primary_language"] = value if value != "null" else None
+        elif key == "is_rotation_valid":
+            result["is_rotation_valid"] = value.lower() in ("true", "1")
+        elif key == "rotation_correction":
+            result["rotation_correction"] = int(value)
+        elif key == "is_table":
+            result["is_table"] = value.lower() in ("true", "1")
+        elif key == "is_diagram":
+            result["is_diagram"] = value.lower() in ("true", "1")
+
+    result["text"] = content
+    return result
 
 
 def process_batch(
@@ -26,12 +84,13 @@ def process_batch(
             continue
 
         image = Image.open(page_file)
-        prompt = "Extract all text from this page. Format the output as clean markdown, preserving structure and formatting."
+        # Use olmocr toolkit's default v4 YAML prompt (set in OlmOCRProvider)
+        # This returns structured markdown with metadata front matter
 
         requests.append(OCRRequest(
             id=f"page_{page_num:04d}",
             image=image,
-            prompt=prompt,
+            prompt=None,  # Use default olmocr prompt
             metadata={"page_num": page_num}
         ))
 
@@ -44,10 +103,18 @@ def process_batch(
         if result.success:
             page_num = result.request.metadata["page_num"]
 
+            # Parse OlmOCR v4 YAML front matter
+            parsed = parse_olmocr_response(result.text)
+
             page_data = {
                 "page_num": page_num,
-                "text": result.text,
-                "char_count": len(result.text)
+                "text": parsed["text"],
+                "char_count": len(parsed["text"]),
+                "primary_language": parsed["primary_language"],
+                "is_rotation_valid": parsed["is_rotation_valid"],
+                "rotation_correction": parsed["rotation_correction"],
+                "is_table": parsed["is_table"],
+                "is_diagram": parsed["is_diagram"],
             }
 
             stage_storage.save_page(
