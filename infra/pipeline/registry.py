@@ -2,7 +2,6 @@ STAGE_DEFINITIONS = [
     {'name': 'ocr-pages', 'class': 'pipeline.ocr_pages.OcrPagesStage'},
     {'name': 'docling-ocr', 'class': 'pipeline.docling_ocr.DoclingOcrStage'},
     {'name': 'label-pages', 'class': 'pipeline.label_pages.LabelPagesStage'},
-    {'name': 'label-structure', 'class': 'pipeline.label_structure.LabelStructureStage'},
     {'name': 'find-toc', 'class': 'pipeline.find_toc.FindTocStage'},
     {'name': 'extract-toc', 'class': 'pipeline.extract_toc.ExtractTocStage'},
     {'name': 'link-toc', 'class': 'pipeline.link_toc.LinkTocStage'},
