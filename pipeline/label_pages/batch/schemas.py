@@ -1,90 +1,208 @@
 """
-Stage 1 LLM Response Schema
+Observation-based page structure schema for label-pages.
 
-Focus: Detect structural boundaries (new chapters/sections) vs continuation pages.
+Key principle: Describe what you SEE, not what it MEANS.
+Separate observation from interpretation.
 """
 
-from typing import Literal
+from typing import Literal, Optional, List
 from pydantic import BaseModel, Field
 
 
-class VisualSignals(BaseModel):
-    """Visual indicators from the scanned image."""
+class WhitespaceObservation(BaseModel):
+    """Observations about whitespace on the page."""
 
-    whitespace_amount: Literal["minimal", "moderate", "extensive"] = Field(
-        ...,
-        description="Amount of empty space at the top of the page"
+    zones: List[Literal["top", "middle", "bottom"]] = Field(
+        default_factory=list,
+        description="Where is significant whitespace visible? Can be multiple zones. Empty list if no whitespace."
     )
 
-    page_density: Literal["sparse", "moderate", "dense"] = Field(
-        ...,
-        description="Overall density of content on the page"
-    )
-
-
-class TextualSignals(BaseModel):
-    """Textual indicators from OCR extraction."""
-
-    starts_mid_sentence: bool = Field(
-        ...,
-        description="Does the OCR text start mid-sentence (clear continuation)?"
-    )
-
-    appears_to_continue: bool = Field(
-        ...,
-        description="Does the text appear to continue from a previous page?"
-    )
-
-    has_boundary_marker: bool = Field(
-        ...,
-        description="Is there a chapter/section number or marker visible (arabic/roman numerals, letters)?"
-    )
-
-    boundary_marker_text: str = Field(
-        default="",
-        max_length=600,
-        description="The actual marker text if present (e.g. 'Chapter 5', 'II', '3', 'Part A')"
-    )
-
-
-class Stage1LLMResponse(BaseModel):
-    """
-    Structural boundary detection without header confusion.
-
-    Focus: Is this page a structural boundary (new chapter/section starts here)?
-    Uses visual layout and textual flow, NOT header text content.
-    """
-
-    is_boundary: bool = Field(
-        ...,
-        description="Is this page a structural boundary (new chapter/section starts here)?"
-    )
-
-    boundary_confidence: float = Field(
+    confidence: float = Field(
         ...,
         ge=0.0,
         le=1.0,
-        description="Overall confidence in boundary detection"
+        description="Confidence in whitespace observation (0.0-1.0)"
     )
 
-    boundary_position: Literal["top", "middle", "bottom", "none"] = Field(
+
+class TextContinuationObservation(BaseModel):
+    """Observations about text flow across page boundaries."""
+
+    from_previous: bool = Field(
         ...,
-        description="Where on the page does the boundary occur? 'none' if not a boundary"
+        description="Does text appear to continue from previous page? (starts mid-sentence, mid-paragraph)"
     )
 
-    visual_signals: VisualSignals = Field(
+    to_next: bool = Field(
         ...,
-        description="Visual indicators from the image"
+        description="Does text appear to continue to next page? (ends mid-sentence, no concluding punctuation)"
     )
 
-    textual_signals: TextualSignals = Field(
+    confidence: float = Field(
         ...,
-        description="Textual indicators from OCR"
+        ge=0.0,
+        le=1.0,
+        description="Confidence in continuation observation (0.0-1.0)"
     )
 
-    reasoning: str = Field(
+
+class HeaderObservation(BaseModel):
+    """Observations about headers in margin areas (running headers)."""
+
+    exists: bool = Field(
         ...,
-        min_length=1,
+        description="Is there a header in the top margin area?"
+    )
+
+    text: Optional[str] = Field(
+        None,
+        max_length=200,
+        description="The header text if visible (null if no header)"
+    )
+
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in header observation (0.0-1.0)"
+    )
+
+
+class HeadingObservation(BaseModel):
+    """Observations about headings/titles in body area (chapter/section markers)."""
+
+    exists: bool = Field(
+        ...,
+        description="Is there a large/decorative heading in the body area?"
+    )
+
+    text: Optional[str] = Field(
+        None,
         max_length=500,
-        description="Brief explanation focusing on layout and flow, not header content (1-2 sentences)"
+        description="The heading text if visible (null if no heading)"
     )
+
+    position: Optional[Literal["top", "middle", "bottom"]] = Field(
+        None,
+        description="Where is the heading located? (null if no heading)"
+    )
+
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in heading observation (0.0-1.0)"
+    )
+
+
+class FooterObservation(BaseModel):
+    """Observations about footers on the page."""
+
+    exists: bool = Field(
+        ...,
+        description="Is there a footer visible?"
+    )
+
+    text: Optional[str] = Field(
+        None,
+        max_length=200,
+        description="The footer text if visible (null if no footer)"
+    )
+
+    position: Optional[Literal["left", "center", "right"]] = Field(
+        None,
+        description="Where is the footer located? (null if no footer)"
+    )
+
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in footer observation (0.0-1.0)"
+    )
+
+
+class OrnamentalBreakObservation(BaseModel):
+    """Observations about ornamental/visual breaks on the page."""
+
+    exists: bool = Field(
+        ...,
+        description="Is there a visual break? (asterisks, rules, symbols, significant whitespace)"
+    )
+
+    position: Optional[Literal["top", "middle", "bottom"]] = Field(
+        None,
+        description="Where is the break located? (null if no break)"
+    )
+
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in ornamental break observation (0.0-1.0)"
+    )
+
+
+class FootnotesObservation(BaseModel):
+    """Observations about footnotes on the page."""
+
+    exists: bool = Field(
+        ...,
+        description="Are there footnotes visible? (small text at bottom, references)"
+    )
+
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in footnote observation (0.0-1.0)"
+    )
+
+
+class PageNumberObservation(BaseModel):
+    """Observations about page numbering."""
+
+    exists: bool = Field(
+        ...,
+        description="Is there a page number visible?"
+    )
+
+    number: Optional[str] = Field(
+        None,
+        max_length=20,
+        description="The page number as shown (e.g., '15', 'xiv', '3-12') (null if none)"
+    )
+
+    position: Optional[Literal["top_center", "top_outer", "top_inner", "bottom_center", "bottom_outer", "bottom_inner"]] = Field(
+        None,
+        description="Where is the page number located? (null if none)"
+    )
+
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in page number observation (0.0-1.0)"
+    )
+
+
+class PageStructureObservation(BaseModel):
+    """
+    Complete structural observations for a single page.
+
+    Focus: DESCRIBE what you see, don't INTERPRET what it means.
+    These observations will be used downstream for boundary detection.
+    """
+
+    # Observations organized by logical groups
+    # Margins
+    header: HeaderObservation
+    footer: FooterObservation
+    page_number: PageNumberObservation
+    # Body structure
+    heading: HeadingObservation
+    whitespace: WhitespaceObservation
+    ornamental_break: OrnamentalBreakObservation
+    # Content flow
+    text_continuation: TextContinuationObservation
+    footnotes: FootnotesObservation

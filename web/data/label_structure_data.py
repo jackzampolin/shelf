@@ -1,5 +1,5 @@
 """
-Label-pages stage data access.
+Label-structure stage data access.
 
 Ground truth from disk (ADR 001).
 """
@@ -10,11 +10,11 @@ from pathlib import Path
 from infra.pipeline.storage.book_storage import BookStorage
 
 
-def get_label_pages_report(storage: BookStorage) -> Optional[List[Dict[str, Any]]]:
+def get_label_structure_report(storage: BookStorage) -> Optional[List[Dict[str, Any]]]:
     """
-    Load label-pages report.csv from disk.
+    Load label-structure report.csv from disk.
 
-    Returns list of dicts with observation columns:
+    Returns list of dicts with observation columns (same as label-pages):
     - scan_page_number: int
     - whitespace_zones: str (e.g., 'top,middle' or 'none')
     - whitespace_conf: float
@@ -44,7 +44,7 @@ def get_label_pages_report(storage: BookStorage) -> Optional[List[Dict[str, Any]
 
     Returns None if report.csv doesn't exist (stage not run yet).
     """
-    stage_storage = storage.stage("label-pages")
+    stage_storage = storage.stage("label-structure")
     report_path = stage_storage.output_dir / "report.csv"
 
     if not report_path.exists():
@@ -88,7 +88,7 @@ def get_page_labels(storage: BookStorage, page_num: int) -> Optional[Dict[str, A
 
     Returns dict with all label data for the page, or None if not found.
     """
-    report = get_label_pages_report(storage)
+    report = get_label_structure_report(storage)
 
     if not report:
         return None

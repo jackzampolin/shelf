@@ -4,22 +4,26 @@ from infra.llm.metrics import record_llm_result
 
 
 def create_stage1_handler(storage, logger, stage_name, output_schema, model):
-    """Create handler that maps Stage 1 LLM response to LabelPagesPageOutput."""
+    """Create handler that maps observation response to LabelPagesPageOutput."""
 
     def on_result(result: LLMResult):
         if result.success:
             page_num = result.request.metadata['page_num']
-            stage1_data = result.parsed_json
+            observations = result.parsed_json
 
-            # Direct mapping: Stage 1 response matches final output schema
+            # Direct mapping: observations match output schema
             page_output = {
-                "page_number": page_num,
-                "is_boundary": stage1_data.get('is_boundary', False),
-                "boundary_confidence": stage1_data.get('boundary_confidence', 0.0),
-                "boundary_position": stage1_data.get('boundary_position', 'none'),
-                "visual_signals": stage1_data.get('visual_signals', {}),
-                "textual_signals": stage1_data.get('textual_signals', {}),
-                "reasoning": stage1_data.get('reasoning', ''),
+                "scan_page_number": page_num,
+                # Observations (already in correct structure from schema)
+                "header": observations.get('header', {}),
+                "footer": observations.get('footer', {}),
+                "page_number": observations.get('page_number', {}),
+                "heading": observations.get('heading', {}),
+                "whitespace": observations.get('whitespace', {}),
+                "ornamental_break": observations.get('ornamental_break', {}),
+                "text_continuation": observations.get('text_continuation', {}),
+                "footnotes": observations.get('footnotes', {}),
+                # Metadata
                 "model_used": model,
                 "processing_cost": result.cost_usd or 0.0,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -42,10 +46,11 @@ def create_stage1_handler(storage, logger, stage_name, output_schema, model):
                 extra_fields={'stage': stage_name}
             )
 
-            boundary_status = "BOUNDARY" if page_output["is_boundary"] else "continuation"
-            confidence = page_output["boundary_confidence"]
-            position = page_output["boundary_position"]
-            logger.info(f"✓ Label-pages complete: page {page_num} [{boundary_status} @ {position}, conf={confidence:.2f}]")
+            # Log summary
+            heading = observations.get('heading', {})
+            heading_text = heading.get('text', 'none') if heading.get('exists') else 'none'
+            whitespace_zones = observations.get('whitespace', {}).get('zones', [])
+            logger.info(f"✓ Page {page_num}: heading={heading_text}, whitespace={whitespace_zones}")
         else:
             page_num = result.request.metadata.get('page_num', 'unknown')
             logger.error(f"✗ Label-pages failed: page {page_num}", error=result.error_message)

@@ -184,7 +184,7 @@ class LLMBatchProcessor:
         if self.metrics_manager:
             cumulative = self.metrics_manager.get_cumulative_metrics()
             display_completed = cumulative.get('total_requests', batch_stats.completed)
-            display_total = cumulative.get('total_requests', batch_stats.completed)
+            display_total = total_items  # Use actual total items, not from cumulative metrics
             display_prompt_tokens = cumulative.get('total_prompt_tokens', batch_stats.total_prompt_tokens)
             display_completion_tokens = cumulative.get('total_completion_tokens', batch_stats.total_tokens)
             display_reasoning_tokens = cumulative.get('total_reasoning_tokens', batch_stats.total_reasoning_tokens)

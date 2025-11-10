@@ -49,8 +49,14 @@ class BatchBasedStatusTracker:
 
         stage_storage = self.storage.stage(self.stage_name)
 
-        extension = self.item_pattern.split('.')[-1]
-        completed = set(stage_storage.list_pages(extension=extension))
+        # Check if pattern has subdirectory (e.g., "margin/page_{:04d}.json")
+        if '/' in self.item_pattern:
+            # Use _item_exists for subdirectory patterns
+            completed = {page_num for page_num in all_page_nums if self._item_exists(stage_storage, page_num)}
+        else:
+            # Use list_pages for root-level patterns (faster)
+            extension = self.item_pattern.split('.')[-1]
+            completed = set(stage_storage.list_pages(extension=extension))
 
         remaining = sorted(all_page_nums - completed)
 

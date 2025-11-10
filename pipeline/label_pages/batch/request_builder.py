@@ -5,8 +5,8 @@ from infra.llm.models import LLMRequest
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.utils.pdf import downsample_for_vision
 
-from .prompts import STAGE1_SYSTEM_PROMPT, build_stage1_user_prompt
-from .schemas import Stage1LLMResponse
+from .prompts import OBSERVATION_SYSTEM_PROMPT, build_observation_user_prompt
+from .schemas import PageStructureObservation
 
 
 def prepare_stage1_request(
@@ -32,7 +32,7 @@ def prepare_stage1_request(
     ocr_pages_stage = storage.stage('ocr-pages')
 
     # Load page image
-    image_file = source_stage.output_page(page_num, extension='png')
+    image_file = source_stage.output_dir / f"page_{page_num:04d}.png"
     if not image_file.exists():
         raise FileNotFoundError(f"Source image not found for page {page_num}")
 
@@ -55,25 +55,19 @@ def prepare_stage1_request(
     response_schema = {
         "type": "json_schema",
         "json_schema": {
-            "name": "stage1_boundary_detection",
+            "name": "page_structure_observation",
             "strict": True,
-            "schema": Stage1LLMResponse.model_json_schema()
+            "schema": PageStructureObservation.model_json_schema()
         }
     }
 
-    # Calculate position percentage
-    position_pct = int((page_num / total_pages) * 100)
-
-    user_prompt = build_stage1_user_prompt(
-        position_pct=position_pct,
-        ocr_text=ocr_text,
-    )
+    user_prompt = build_observation_user_prompt(ocr_text=ocr_text)
 
     return LLMRequest(
-        id=f"stage1_page_{page_num:04d}",
+        id=f"page_observation_{page_num:04d}",
         model=model,
         messages=[
-            {"role": "system", "content": STAGE1_SYSTEM_PROMPT},
+            {"role": "system", "content": OBSERVATION_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ],
         images=[page_image],

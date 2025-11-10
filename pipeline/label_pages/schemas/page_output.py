@@ -1,51 +1,39 @@
-from typing import Literal
 from pydantic import BaseModel, Field
 
-from ..batch.schemas import VisualSignals, TextualSignals
+from ..batch.schemas import (
+    WhitespaceObservation,
+    TextContinuationObservation,
+    HeadingObservation,
+    HeaderObservation,
+    FooterObservation,
+    OrnamentalBreakObservation,
+    FootnotesObservation,
+    PageNumberObservation
+)
 
 
 class LabelPagesPageOutput(BaseModel):
-    """Page-level structural boundary detection.
+    """
+    Page structure observations for boundary detection.
 
-    Focus: Is this page a structural boundary (new chapter/section starts)?
-    Uses visual layout and textual flow analysis, NOT header text content.
+    Focus: DESCRIBE what you see, don't INTERPRET what it means.
+    These observations will be used downstream for boundary detection.
     """
 
-    page_number: int = Field(..., ge=1, description="Scan page number")
+    scan_page_number: int = Field(..., ge=1, description="Scan page number")
 
-    # BOUNDARY DETECTION
-    is_boundary: bool = Field(
-        ...,
-        description="Is this page a structural boundary (new chapter/section starts)?"
-    )
-
-    boundary_confidence: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Overall confidence in boundary detection"
-    )
-
-    boundary_position: Literal["top", "middle", "bottom", "none"] = Field(
-        ...,
-        description="Where on the page does the boundary occur? 'none' if not a boundary"
-    )
-
-    # SIGNALS (for debugging/verification)
-    visual_signals: VisualSignals = Field(
-        ...,
-        description="Visual indicators from the scanned image"
-    )
-
-    textual_signals: TextualSignals = Field(
-        ...,
-        description="Textual indicators from OCR extraction"
-    )
-
-    reasoning: str = Field(
-        ...,
-        description="Brief explanation focusing on layout and flow, not header content"
-    )
+    # Observations organized by logical groups
+    # Margins
+    header: HeaderObservation
+    footer: FooterObservation
+    page_number: PageNumberObservation
+    # Body structure
+    heading: HeadingObservation
+    whitespace: WhitespaceObservation
+    ornamental_break: OrnamentalBreakObservation
+    # Content flow
+    text_continuation: TextContinuationObservation
+    footnotes: FootnotesObservation
 
     # METADATA
     model_used: str = Field(..., description="Model used for analysis (e.g., 'gpt-4o')")

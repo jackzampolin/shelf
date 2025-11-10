@@ -22,6 +22,7 @@ def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) ->
     - find-toc: finder_result.json exists
     - extract-toc: toc_validated.json exists
     - label-pages: report.csv exists
+    - label-structure: report.csv exists
     """
     if stage_name == 'ocr-pages':
         # Check if all source pages have ocr-pages outputs
@@ -50,6 +51,10 @@ def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) ->
         return (stage_storage.output_dir / 'toc.json').exists()
 
     elif stage_name == 'label-pages':
+        # Complete when report.csv exists
+        return (stage_storage.output_dir / 'report.csv').exists()
+
+    elif stage_name == 'label-structure':
         # Complete when report.csv exists
         return (stage_storage.output_dir / 'report.csv').exists()
 

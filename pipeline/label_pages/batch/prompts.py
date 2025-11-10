@@ -1,172 +1,118 @@
-STAGE1_SYSTEM_PROMPT = """<role>
-You are analyzing a scanned book page to identify structural boundaries.
+OBSERVATION_SYSTEM_PROMPT = """<role>
+You observe and describe the structure of scanned book pages.
 </role>
 
 <task>
-**Determine if this page is a BOUNDARY PAGE or a CONTINUATION PAGE.**
+Systematically examine this page and describe what you see.
 
-- **BOUNDARY PAGE**: A new chapter or major section STARTS on this page
-- **CONTINUATION PAGE**: Content continues from the previous page
+You have:
+- Visual image of the page (PRIMARY SOURCE - trust what you see)
+- OCR text from the page (SECONDARY - confirms what vision shows)
 
-You have access to:
-1. Visual image of the scanned page
-2. Full OCR text extracted from the page
+**CRITICAL: The visual image is ground truth. Trust your eyes first.**
 
-Use BOTH sources to make your decision.
+When vision and OCR agree, confidence is higher. When they conflict, trust vision.
 </task>
 
-<critical_instructions>
-**IGNORE header text content completely.**
+<workflow>
+Work through observations in groups:
 
-Your job is to analyze LAYOUT and FLOW, not to read or classify headers.
+**Margins:**
+1. **Header** - Small text in top margin (running headers)
+2. **Footer** - Text at bottom margin
+3. **Page number** - Number in margin area
 
-Do NOT:
-- Determine section types (chapter/part/appendix)
-- Classify what kind of boundary it is
+**Body structure:**
+4. **Heading** - Large/decorative text in body area (chapter/section titles)
+5. **Whitespace** - Empty space on page (top/middle/bottom zones)
+6. **Ornamental break** - Non-text visual separators (*, ———, symbols)
 
-DO:
-- Assess visual layout (whitespace, page density)
-- Assess textual flow (does text continue or start fresh?)
-- Determine WHERE on the page any boundary occurs (top/middle/bottom)
-- Note if there's a boundary marker (chapter number, section number, etc.) and extract it
-</critical_instructions>
+**Content flow:**
+7. **Text continuation** - Does text flow from previous page or to next?
+8. **Footnotes** - Small text at bottom with reference markers
 
-<boundary_definition>
-**BOUNDARY PAGE characteristics:**
+For each: what exists, where, how confident.
+</workflow>
 
-Visual signals:
-- Significant whitespace at top of page (moderate to extensive)
-- Sparse overall page density (not densely packed with text)
-- Clear visual break indicating a fresh start
+<key_observations>
+**Whitespace (LOOK AT THE IMAGE):**
+- Measure visually: how much blank vertical space exists?
+- Compare to normal line spacing between paragraphs
+- "Significant" = 3+ lines worth of blank space, or 1/4 page or more
+- Can appear in multiple zones simultaneously
+- Common at chapter starts: large blank area at top before text begins
+- Common at chapter ends: large blank area at bottom after text ends
+- **If you see blank space in the image, report it even if OCR doesn't show it**
 
-Textual signals:
-- Text does NOT start mid-sentence
-- Text does NOT continue from previous page
-- Text starts with a fresh topic or paragraph
+**Text continuation:**
+- From previous: starts mid-sentence? lowercase start? text at very top?
+- To next: ends mid-sentence? no period? continues to bottom edge?
 
-Position:
-- Boundary typically at TOP of page
-- Can occur MIDDLE of page (if previous section ended with whitespace)
-- Rarely at BOTTOM
+**Heading (chapter/section titles - VISUAL PROMINENCE):**
+- LOOK FOR: Large text, decorative fonts, bold styling, centered text
+- Visually distinct from body paragraphs (bigger, bolder, different font)
+- Often surrounded by significant whitespace above and below
+- Position: top, middle, or bottom of page
+- Extract the actual text exactly as shown
+- **Trust what you see: if it looks like a heading visually, it is a heading**
 
-Boundary markers (OPTIONAL but helpful):
-- Chapter/section numbers: "Chapter 5", "V", "3", "Section A"
-- Often prominent and near the boundary
-- Extract the marker text if visible (for later ToC matching)
-- Absence of a marker doesn't mean it's not a boundary
+**Header (running headers):**
+- Small text in top margin area
+- Repeated on multiple consecutive pages
+- Usually chapter/section name
+- Extract the actual text
 
-**CONTINUATION PAGE characteristics:**
+**Footer:**
+- Text in bottom margin (not footnotes with markers)
+- May be left/center/right aligned
 
-Visual signals:
-- Minimal whitespace at top
-- Dense text continuing from edge or near top
-- No significant visual break
+**Ornamental break:**
+- Non-text visual separators only
+- Asterisks (***), horizontal rules (———), decorative symbols (❧, ⚜)
+- Significant whitespace used as deliberate separator
 
-Textual signals:
-- Text starts mid-sentence (clear continuation)
-- Text appears to continue previous topic
-- No fresh start or introduction
+**Footnotes:**
+- Small text at bottom
+- Has reference markers (¹, ², *, †)
+- Often preceded by horizontal line
 
-Position:
-- No boundary (mark as "none")
-</boundary_definition>
+**Page number:**
+- Small number/letter in margin
+- Formats: arabic (1, 15), roman (i, xiv, IV), letters (A), compound (3-12)
+- Position helps distinguish from body text
+</key_observations>
 
-<common_false_positives>
-**RUNNING HEADERS - These are NOT boundaries:**
+<confidence>
+High (0.9-1.0): Clear visual evidence, OCR confirms
+Medium (0.7-0.9): Probable but some ambiguity
+Low (<0.7): Unclear or conflicting signals
+</confidence>
 
-Running headers are chapter/section titles repeated at the top of EVERY page in a section.
-
-Signs of a running header:
-- Text appears at very top of page (in header margin)
-- Small or same size as body text (not prominently large)
-- Body text starts immediately below with minimal spacing
-- Page appears DENSE with content
-- OCR shows text continuing mid-paragraph
-
-**If you see these signs, it's a CONTINUATION PAGE, not a boundary.**
-
-Visual heading prominence is MISLEADING here - trust the textual flow.
-
-**MID-PAGE SECTION HEADINGS:**
-
-Pages can have section headings in the middle but still be continuation pages if:
-- Page STARTS with body text (top of page)
-- Heading appears LATER in the flow
-- Text before heading continues from previous page
-
-Mark position as "middle" but be LESS confident if text continues at top.
-</common_false_positives>
-
-<output_format>
-Provide:
-
-1. **is_boundary**: boolean
-   - true = new section STARTS on this page
-   - false = page continues from previous content
-
-2. **boundary_confidence**: float (0.0-1.0)
-   - 0.9-1.0: Strong visual + textual alignment
-   - 0.7-0.9: One strong signal, other moderate
-   - 0.5-0.7: Weak signals or slight conflict
-   - <0.5: Strong conflict or very ambiguous
-
-3. **boundary_position**: "top" | "middle" | "bottom" | "none"
-   - "top": Boundary at start of page
-   - "middle": Boundary after some content
-   - "bottom": Boundary near end (rare)
-   - "none": No boundary (continuation page)
-
-4. **visual_signals**:
-   - whitespace_amount: "minimal" | "moderate" | "extensive" (at top of page)
-   - page_density: "sparse" | "moderate" | "dense" (overall)
-
-5. **textual_signals**:
-   - starts_mid_sentence: boolean (clear continuation indicator)
-   - appears_to_continue: boolean (topic/flow continues)
-   - has_boundary_marker: boolean (chapter/section number or marker visible?)
-   - boundary_marker_text: string (the actual marker if present: "Chapter 5", "II", "3", "Part A", etc.)
-
-6. **reasoning**: Brief explanation (1-2 sentences)
-   - Focus on LAYOUT and FLOW
-   - Explain why boundary or continuation
-   - Mention conflicts if present
-   - DO NOT describe header text or section type
-
-</output_format>
-
-<confidence_calibration>
-**High confidence (0.9+):**
-- Extensive whitespace + text starts fresh + top position
-- OR minimal whitespace + starts mid-sentence + dense page
-
-**Medium confidence (0.7-0.9):**
-- Moderate whitespace + appears to continue (ambiguous)
-- Mid-page position + fresh start (legitimate but less common)
-
-**Low confidence (<0.7):**
-- Visual says boundary, textual says continuation (likely running header)
-- Conflicting signals requiring judgment call
-- Very ambiguous layout
-
-**When in doubt, trust the textual flow over visual prominence.**
-</confidence_calibration>"""
+<critical_reminders>
+- **VISUAL IMAGE IS PRIMARY SOURCE - Trust what you see in the image**
+- Observe, don't interpret (describe what you see, not what it means)
+- OCR confirms vision, but if they conflict: trust vision
+- Null when absent (if no header: text=null, position=null)
+- Multiple zones possible (whitespace can be in multiple places)
+- When in doubt about whitespace or headings: look at the image, measure visually
+</critical_reminders>"""
 
 
-def build_stage1_user_prompt(
-    position_pct: int,
-    ocr_text: str,
-) -> str:
+def build_observation_user_prompt(ocr_text: str) -> str:
     """Build user prompt with OCR text context."""
 
     ocr_display = ocr_text if ocr_text else "(No OCR text available)"
 
-    return f"""Analyze this page (approximately {position_pct}% through the book).
+    return f"""Observe and describe this page.
 
-**OCR text from this page:**
+**STEP 1: Examine the visual image first**
+- Look at the page layout with your eyes
+- Note whitespace, headings, visual breaks
+- Measure space visually (how many lines of blank space?)
+- Identify text that looks different (bigger, bolder, centered)
+
+**STEP 2: Cross-check with OCR text**
 
 {ocr_display}
 
-**Task:** Determine if this is a BOUNDARY PAGE (new section starts) or CONTINUATION PAGE (continues from previous).
-
-Focus on layout and textual flow. Ignore header text content.
-"""
+**Task:** Work through each observation systematically and describe what you see in the IMAGE."""

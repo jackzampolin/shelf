@@ -20,21 +20,6 @@ class SourceStorage:
         downsample: bool = False,
         max_payload_kb: Optional[int] = None
     ) -> Image.Image:
-        """
-        Load a source page image, optionally downsampled for vision models.
-
-        Args:
-            page_num: Page number (1-indexed)
-            downsample: If True, downsample for vision model consumption
-            max_payload_kb: Maximum base64 payload size in KB (default: 800)
-                          Only used if downsample=True
-
-        Returns:
-            PIL Image object
-
-        Raises:
-            FileNotFoundError: If page image doesn't exist
-        """
         filename = f"page_{page_num:04d}.png"
         image_path = self.source_dir / filename
 
@@ -55,20 +40,6 @@ class SourceStorage:
         image: Image.Image,
         max_payload_kb: int = 800
     ) -> Image.Image:
-        """
-        Downsample high-resolution OCR images to vision-appropriate resolution.
-
-        Two-stage approach:
-        1. DPI-based: 600 DPI → 300 DPI (50% linear reduction)
-        2. Payload validation: Further reduce if needed to fit max_payload_kb
-
-        Args:
-            image: PIL Image (typically 600 DPI from source/ directory)
-            max_payload_kb: Maximum base64-encoded size in KB
-
-        Returns:
-            Downsampled PIL Image
-        """
         ratio = Config.pdf_extraction_dpi_vision / Config.pdf_extraction_dpi_ocr
 
         if ratio < 1.0:

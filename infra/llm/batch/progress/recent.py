@@ -24,7 +24,11 @@ def build_recent_lines(results_dict: Dict, metrics_manager, model: str, max_rece
             metrics = None
             if metrics_manager:
                 try:
-                    match = re.search(r'page_(\d{4})', req_id)
+                    # Extract page number from various formats:
+                    # - page_0104 -> page_0104
+                    # - page_observation_0104 -> page_0104
+                    # - page_extract_0104 -> page_0104
+                    match = re.search(r'(\d{4})', req_id)
                     metrics_key = f"page_{match.group(1)}" if match else req_id
                     metrics = metrics_manager.get(metrics_key)
                 except:
@@ -56,10 +60,22 @@ def build_recent_lines(results_dict: Dict, metrics_manager, model: str, max_rece
                 text = f"{page_id}: [bold green]✓[/bold green] [dim]({', '.join(parts)}){model_suffix}[/dim]"
             else:
                 # Fallback to result data
-                ttft_str = f", TTFT {result.ttft_seconds:.2f}s" if result.ttft_seconds else ""
-                model_suffix = f" [dim][{result.model_used.split('/')[-1]}][/dim]" if result.model_used and result.model_used != model else ""
+                parts = []
+                parts.append(f"{result.execution_time_seconds:.1f}s")
+
+                # Add token breakdown if available
+                if result.usage and 'prompt_tokens' in result.usage and 'completion_tokens' in result.usage:
+                    tok_str = f"{result.usage['prompt_tokens']}→{result.usage['completion_tokens']}"
+                    reasoning_tokens = result.usage.get('reasoning_tokens', 0)
+                    if reasoning_tokens > 0:
+                        tok_str += f"+{reasoning_tokens}r"
+                    parts.append(tok_str)
+
                 cost_cents = (result.cost_usd or 0) * 100
-                text = f"{page_id}: [bold green]✓[/bold green] [dim]({result.execution_time_seconds:.1f}s{ttft_str}, {cost_cents:.2f}¢){model_suffix}[/dim]"
+                parts.append(f"{cost_cents:.2f}¢")
+
+                model_suffix = f" [dim][{result.model_used.split('/')[-1]}][/dim]" if result.model_used and result.model_used != model else ""
+                text = f"{page_id}: [bold green]✓[/bold green] [dim]({', '.join(parts)}){model_suffix}[/dim]"
         else:
             # Format failure
             error_code = extract_error_code(result.error_message)

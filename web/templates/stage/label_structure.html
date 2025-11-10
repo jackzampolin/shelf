@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ scan_id }} - Label Pages{% endblock %}
+{% block title %}{{ scan_id }} - Label Structure{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/stage.css') }}">
@@ -129,10 +129,10 @@
             <span class="separator">/</span>
             <span>{{ scan_id }}</span>
             <span class="separator">/</span>
-            <span class="current">label-pages</span>
+            <span class="current">label-structure</span>
         </div>
 
-        <h2>📋 Page Labels</h2>
+        <h2>🏗️ Page Structure Labels</h2>
 
         <div class="book-info">
             <strong>{{ metadata.title }}</strong>
@@ -219,7 +219,7 @@
 
                 <!-- Actions -->
                 <td>
-                    <a href="{{ url_for('stage.label_pages_page_view', scan_id=scan_id, page_num=row.scan_page_number) }}" class="page-link">
+                    <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=row.scan_page_number) }}" class="page-link">
                         View →
                     </a>
                 </td>

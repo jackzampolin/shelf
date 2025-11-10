@@ -93,7 +93,7 @@ def cmd_batch(args):
         print(f"\nPhase 2: Running {current_stage} stage on {len(books_to_process)} books...\n")
         processed_count = 0
 
-        from cli.namespace_book import cmd_run_stage
+        from cli.book import cmd_run_stage
 
         for idx, scan_id in enumerate(books_to_process, 1):
             print(f"\n{'='*60}")

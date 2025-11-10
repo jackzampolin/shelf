@@ -97,7 +97,11 @@ class AgentClient:
                 }
                 self._emit_event(on_event, "iteration_start", iteration, {})
                 try:
+                    # Get images from tools, fallback to config images
                     images = self.config.tools.get_images()
+                    if images is None and self.config.images is not None:
+                        images = self.config.images
+
                     content, usage, cost, tool_calls, reasoning_details = self.llm_client.call_with_tools(
                         model=self.config.model,
                         messages=messages,

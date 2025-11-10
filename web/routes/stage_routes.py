@@ -14,6 +14,10 @@ from infra.pipeline.storage.library import Library
 from web.data.extract_toc_data import get_extract_toc_data
 from web.data.find_toc_data import get_find_toc_data, get_toc_page_numbers
 from web.data.label_pages_data import get_label_pages_report, get_page_labels
+from web.data.label_structure_data import (
+    get_label_structure_report,
+    get_page_labels as get_structure_page_labels
+)
 from web.data.link_toc_data import get_link_toc_data, get_linked_entries_tree
 
 stage_bp = Blueprint('stage', __name__)
@@ -185,6 +189,71 @@ def label_pages_page_view(scan_id: str, page_num: int):
 
     return render_template(
         'stage/label_pages_page.html',
+        scan_id=scan_id,
+        metadata=metadata,
+        page_num=page_num,
+        labels=labels,
+    )
+
+
+@stage_bp.route('/stage/<scan_id>/label-structure')
+def label_structure_view(scan_id: str):
+    """
+    Label-structure stage detail view.
+
+    Shows:
+    - Report table with all page labels from multi-pass structure analysis
+    - Links to individual page viewers
+    """
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    # Get book metadata
+    metadata = library.get_scan_info(scan_id)
+    if not metadata:
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+
+    # Load label-structure report from disk
+    report = get_label_structure_report(storage)
+
+    if not report:
+        abort(404, f"Label-structure stage not run for '{scan_id}'")
+
+    return render_template(
+        'stage/label_structure.html',
+        scan_id=scan_id,
+        metadata=metadata,
+        report=report,
+    )
+
+
+@stage_bp.route('/stage/<scan_id>/label-structure/page/<int:page_num>')
+def label_structure_page_view(scan_id: str, page_num: int):
+    """
+    Individual page view for label-structure stage.
+
+    Shows:
+    - Page image on left
+    - Page structure labels on right in human-readable format
+    """
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    # Get book metadata
+    metadata = library.get_scan_info(scan_id)
+    if not metadata:
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+
+    # Get labels for this page
+    labels = get_structure_page_labels(storage, page_num)
+
+    if not labels:
+        abort(404, f"Page {page_num} not found in label-structure report")
+
+    return render_template(
+        'stage/label_structure_page.html',
         scan_id=scan_id,
         metadata=metadata,
         page_num=page_num,
