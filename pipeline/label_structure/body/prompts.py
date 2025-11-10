@@ -7,7 +7,7 @@ Examine the BODY area of this page (ignoring margins) and identify structural el
 
 **Analysis order:**
 1. First, identify **whitespace** - areas without dense text
-2. Then, within or around whitespace, look for **headings** or *ok*ornamental breaks**
+2. Then, within or around whitespace, look for **headings** or **ornamental breaks**
 
 You have access to:
 - Visual image (PRIMARY SOURCE)
@@ -26,11 +26,6 @@ Scan the body section of the page. Do you see any areas where there is an **abse
 - **What counts**: If a zone has noticeably less text density (mostly empty), that's whitespace
 - **Multiple zones**: A page can have whitespace in top AND bottom simultaneously
 
-Common patterns:
-- Chapter starts: Blank space at top
-- Chapter ends: Blank space at bottom
-- Section breaks: Blank space in middle
-
 **Step 2: Within the whitespace, look for headings**
 
 Inside or near the whitespace zones, do you see any **large or decorative text**?
@@ -40,7 +35,7 @@ Inside or near the whitespace zones, do you see any **large or decorative text**
 - **Often isolated**: Surrounded by blank space above/below
 - **Extract exact text** as shown
 
-**NOT** the same as running headers (those are small, in margins, already identified).
+**NOT** the same as headers -> those are small, in margins, and already identified in previous pass
 
 **Step 3: Within the whitespace, look for ornamental breaks**
 
@@ -56,16 +51,22 @@ Inside the whitespace zones, do you see any **visual separators**?
 **NOT** the same as regular paragraph spacing.
 </analysis_approach>
 
-<margin_context>
-You already know from the margin pass:
-- Header: {{margin_header}}
-- Footer: {{margin_footer}}
-- Page number: {{margin_page_number}}
+<margin_vs_body_distinction>
+**Distinguishing body headings from margin headers:**
 
-Use this to distinguish body headings from margin headers:
-- Margin headers are SMALL, in TOP margin, repeated across pages
-- Body headings are LARGE, in BODY area, visually prominent
-</margin_context>
+Headers in margins (already identified in previous pass):
+- Small text at the very top edge of page
+- At the margin, separated from body
+
+Body headings (what you're looking for now):
+- LARGE or decorative text in BODY area
+- Visually prominent (stands out)
+- Surrounded by whitespace
+- Inside the body, not at the edge
+
+If you see large, prominent text in the body area → heading
+If it's small text at the edge → that was already identified
+</margin_vs_body_distinction>
 
 <confidence_guidelines>
 High (0.9-1.0):
@@ -95,22 +96,32 @@ Low (<0.7):
 
 
 def build_body_user_prompt(margin_data: dict) -> str:
+    """Build user prompt with optional margin context."""
+
+    # Build margin context section only if elements exist
+    margin_context_lines = []
+
     header = margin_data.get('header', {})
+    if header.get('exists'):
+        margin_context_lines.append(f"- Header found: \"{header.get('text')}\"")
+
     footer = margin_data.get('footer', {})
+    if footer.get('exists'):
+        margin_context_lines.append(f"- Footer found: \"{footer.get('text')}\"")
+
     page_number = margin_data.get('page_number', {})
+    if page_number.get('exists'):
+        margin_context_lines.append(f"- Page number found: {page_number.get('number')}")
 
-    header_text = header.get('text', 'none') if header.get('exists') else 'none'
-    footer_text = footer.get('text', 'none') if footer.get('exists') else 'none'
-    page_num = page_number.get('number', 'none') if page_number.get('exists') else 'none'
+    # Only include margin context if something was found
+    margin_context = ""
+    if margin_context_lines:
+        margin_context = "\n**Context from margin pass:**\n" + "\n".join(margin_context_lines) + "\n\nThese margin elements are already identified. Focus only on the BODY area.\n"
 
-    prompt = BODY_SYSTEM_PROMPT.replace('{{margin_header}}', header_text)
-    prompt = prompt.replace('{{margin_footer}}', footer_text)
-    prompt = prompt.replace('{{margin_page_number}}', page_num)
-
-    return f"""{prompt}
+    return f"""{BODY_SYSTEM_PROMPT}
 
 Examine the BODY area of this page image.
-
+{margin_context}
 **Follow this analysis order:**
 
 1. **First**: Look at the body section. Do you see areas with an absence of dense text? Those are whitespace zones (top, middle, bottom).

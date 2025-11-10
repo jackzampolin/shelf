@@ -86,6 +86,7 @@ def prepare_content_request(
         ],
         images=[],  # No images - text-only
         response_format=response_schema,
+        timeout=20,  # Content: text-only, fastest pass, avg 5s, p95 9s
         metadata={
             'page_num': page_num,
             'pass': 'content',

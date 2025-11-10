@@ -72,6 +72,7 @@ def prepare_body_request(
         ],
         images=[page_image],
         response_format=response_schema,
+        timeout=25,  # Body: vision + text analysis, avg 7s, p95 13s
         metadata={
             'page_num': page_num,
             'pass': 'body',

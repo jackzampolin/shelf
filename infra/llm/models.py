@@ -51,7 +51,7 @@ class LLMRequest:
     messages: List[Dict[str, str]]
     temperature: float = 0.0
     max_tokens: Optional[int] = None
-    timeout: int = 60
+    timeout: int = 120  # Default for stages that don't set custom timeout
     images: Optional[List[Any]] = None
     response_format: Optional[Dict] = None
     metadata: Dict = field(default_factory=dict)

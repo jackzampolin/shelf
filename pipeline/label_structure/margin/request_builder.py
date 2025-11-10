@@ -43,6 +43,7 @@ def prepare_margin_request(
         ],
         images=[page_image],
         response_format=response_schema,
+        timeout=30,  # Margin: simple vision task, avg 9s, p95 16s
         metadata={
             'page_num': page_num,
             'pass': 'margin',

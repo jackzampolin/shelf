@@ -10,89 +10,80 @@ You analyze text content flow in scanned book pages.
 </role>
 
 <task>
-Analyze the OCR text to determine:
+Read the OCR text and answer two questions:
 
-1. **Text continuation** - Does text flow across page boundaries?
-2. **Footnotes** - Are there footnotes with reference markers?
+1. **Text continuation**: Does the text flow across page boundaries?
+2. **Footnotes**: Are there footnotes with reference markers?
+
+**Analysis order:**
+1. First, look at how the text starts - does it continue from previous page?
+2. Second, look at how the text ends - does it continue to next page?
+3. Third, look at the bottom of the text - are there footnote markers?
 
 You have access to:
 - OCR text (PRIMARY SOURCE for this pass)
-- Margin information (header, footer, page number)
-- Body structure (heading, whitespace, ornamental breaks)
+- Context from previous passes (margin + body observations)
 
 This is TEXT-ONLY analysis. Focus on content, not layout.
 </task>
 
-<definitions>
-**Text continuation:**
-- **from_previous**: Text continues FROM previous page
-  - Starts mid-sentence (no capital letter)
-  - Starts mid-paragraph (continues thought)
-  - No clear beginning marker (no chapter start, no paragraph indent at top)
+<analysis_approach>
+**Step 1: Does text continue FROM previous page?**
 
-- **to_next**: Text continues TO next page
-  - Ends mid-sentence (no period, ends with comma/conjunction)
-  - Ends mid-paragraph (no concluding thought)
-  - Text flows to bottom edge without natural ending
+Look at the **first few words** of the OCR text. Does it start mid-sentence or mid-paragraph?
 
-**Footnotes:**
-- Small text at bottom of page
-- Has reference markers: ¹, ², ³, *, †, ‡, §
-- Often preceded by horizontal line or separator
-- NOT the same as footer (footer is margin metadata)
-- Look for marker patterns in text
-</definitions>
-
-<analysis_guidelines>
-**Text continuation signals:**
-
-From previous page (true):
+**Signs of continuation (from_previous=true):**
 - Starts with lowercase: "and then he said..."
-- Mid-sentence start: "to the next location where..."
-- Continues thought: no paragraph break at top
+- Starts mid-sentence: "to the next location where..."
+- No paragraph break at start (continues thought)
 
-From previous page (false):
+**Signs of fresh start (from_previous=false):**
 - Starts with capital: "The beginning of..."
-- Clear paragraph start
-- Chapter/section heading at top
+- Clear paragraph start (new thought)
+- Heading text appears at start
 
-To next page (true):
+**Step 2: Does text continue TO next page?**
+
+Look at the **last few words** of the OCR text. Does it end mid-sentence or mid-paragraph?
+
+**Signs of continuation (to_next=true):**
 - Ends mid-sentence: "and he went to the"
 - Ends with comma: "the results were interesting,"
-- Ends with conjunction: "but"
-- No period at end
+- Ends with conjunction: "but", "and", "or"
+- No period at end (incomplete thought)
 
-To next page (false):
+**Signs of natural ending (to_next=false):**
 - Ends with period: "...and that was that."
-- Natural conclusion
-- Chapter/section ends
+- Natural conclusion (complete thought)
+- Large gap at bottom (from whitespace context)
 
-**Footnote markers:**
+**Step 3: Are there footnotes?**
+
+Look at the **bottom portion** of the OCR text. Do you see reference markers?
+
+**Footnote markers to look for:**
 - Superscript numbers: text¹, passage²
 - Asterisks: word*, phrase**
 - Symbols: †, ‡, §
-- Look at BOTTOM of OCR text for footnote content
+- Often preceded by horizontal line: ———
+
+**What footnotes look like:**
+- Reference marker in body text
+- Corresponding text at bottom with same marker
+- NOT the same as footer (footer has no markers)
 - Multiple footnotes per page possible
-</analysis_guidelines>
+</analysis_approach>
 
-<context_usage>
-Use margin and body context to inform analysis:
+<using_context>
+**Context from previous passes:**
 
-**Margin context:**
-- Header: {{margin_header}}
-- Footer: {{margin_footer}}
-- Page number: {{margin_page_number}}
+You'll receive observations from margin and body analysis:
+- What headers/footers/page numbers were found (if any)
+- What headings were found in the body (if any)
+- Where whitespace zones exist (if any)
 
-**Body context:**
-- Heading exists: {{heading_exists}}
-- Heading text: {{heading_text}}
-- Whitespace zones: {{whitespace_zones}}
-
-**How context helps:**
-- If heading at top → likely page starts fresh (from_previous=false)
-- If significant whitespace at bottom → likely natural ending (to_next=false)
-- If footer exists → helps distinguish footer from footnotes
-</context_usage>
+Use this context to inform your text analysis, but base your conclusions on the OCR text itself.
+</using_context>
 
 <confidence_guidelines>
 High (0.9-1.0):
@@ -121,42 +112,49 @@ Low (<0.7):
 
 
 def build_content_user_prompt(ocr_text: str, margin_data: dict, body_data: dict) -> str:
-    """Build user prompt for content analysis with full context."""
+    """Build user prompt for content analysis with optional context."""
 
-    # Extract margin context
+    # Build context section only if elements exist
+    context_lines = []
+
+    # Margin context
     header = margin_data.get('header', {})
+    if header.get('exists'):
+        context_lines.append(f"- Header found: \"{header.get('text')}\"")
+
     footer = margin_data.get('footer', {})
+    if footer.get('exists'):
+        context_lines.append(f"- Footer found: \"{footer.get('text')}\"")
+
     page_number = margin_data.get('page_number', {})
+    if page_number.get('exists'):
+        context_lines.append(f"- Page number: {page_number.get('number')}")
 
-    header_text = header.get('text', 'none') if header.get('exists') else 'none'
-    footer_text = footer.get('text', 'none') if footer.get('exists') else 'none'
-    page_num = page_number.get('number', 'none') if page_number.get('exists') else 'none'
-
-    # Extract body context
+    # Body context
     heading = body_data.get('heading', {})
+    if heading.get('exists'):
+        context_lines.append(f"- Heading found: \"{heading.get('text')}\"")
+
     whitespace = body_data.get('whitespace', {})
+    zones = whitespace.get('zones', [])
+    if zones:
+        zones_str = ", ".join(zones)
+        context_lines.append(f"- Whitespace zones: {zones_str}")
 
-    heading_exists = "yes" if heading.get('exists') else "no"
-    heading_text = heading.get('text', 'none') if heading.get('exists') else 'none'
-    whitespace_zones = str(whitespace.get('zones', []))
-
-    # Inject context into prompt
-    prompt = CONTENT_SYSTEM_PROMPT.replace('{{margin_header}}', header_text)
-    prompt = prompt.replace('{{margin_footer}}', footer_text)
-    prompt = prompt.replace('{{margin_page_number}}', page_num)
-    prompt = prompt.replace('{{heading_exists}}', heading_exists)
-    prompt = prompt.replace('{{heading_text}}', heading_text)
-    prompt = prompt.replace('{{whitespace_zones}}', whitespace_zones)
+    # Only include context if something was found
+    context_block = ""
+    if context_lines:
+        context_block = "\n**Context from previous passes:**\n" + "\n".join(context_lines) + "\n\n"
 
     ocr_display = ocr_text if ocr_text else "(No OCR text available)"
 
-    return f"""{prompt}
+    return f"""{CONTENT_SYSTEM_PROMPT}
 
 Analyze this OCR text:
 
 {ocr_display}
-
-Determine:
+{context_block}
+**Determine:**
 1. Text continuation (from previous, to next)
 2. Footnotes (presence of reference markers)
 
