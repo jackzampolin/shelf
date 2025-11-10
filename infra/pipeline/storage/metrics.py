@@ -78,13 +78,24 @@ class MetricsManager:
                 for entry in self._state["metrics"].values()
             )
 
-    def get_cumulative_metrics(self) -> Dict[str, Any]:
+    def get_cumulative_metrics(self, prefix: Optional[str] = None) -> Dict[str, Any]:
         with self._lock:
-            page_metrics = {
-                key: entry
-                for key, entry in self._state["metrics"].items()
-                if key.startswith("page_")
-            }
+            # Filter metrics based on prefix pattern
+            # If prefix provided: "margin/page_" -> match "margin/page_0001", "margin/page_0002"
+            # If no prefix: match "page_0001" or any key with "_page_" or "/page_"
+            if prefix:
+                page_metrics = {
+                    key: entry
+                    for key, entry in self._state["metrics"].items()
+                    if key.startswith(prefix)
+                }
+            else:
+                # Backward compatibility: match traditional patterns
+                page_metrics = {
+                    key: entry
+                    for key, entry in self._state["metrics"].items()
+                    if key.startswith("page_") or "_page_" in key or "/page_" in key
+                }
 
             return {
                 "total_requests": len(page_metrics),

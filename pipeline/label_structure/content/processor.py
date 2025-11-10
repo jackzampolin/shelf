@@ -21,7 +21,8 @@ def process_content_pass(
     remaining_pages: List[int],
     model: str,
     max_workers: int,
-    max_retries: int
+    max_retries: int,
+    tracker=None
 ) -> Dict[str, Any]:
     """Process content flow pass for remaining pages."""
 
@@ -39,6 +40,7 @@ def process_content_pass(
             max_retries=max_retries,
             batch_name=f"{stage_name}-content"
         ),
+        tracker=tracker
     )
     handler = create_content_handler(storage, logger, stage_name)
 

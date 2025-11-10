@@ -19,7 +19,7 @@ def create_margin_handler(storage, logger, stage_name):
 
             record_llm_result(
                 metrics_manager=stage_storage.metrics_manager,
-                key=f"margin_page_{page_num:04d}",
+                key=f"margin/page_{page_num:04d}",
                 result=result,
                 page_num=page_num,
                 extra_fields={'pass': 'margin'}

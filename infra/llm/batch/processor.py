@@ -21,6 +21,7 @@ class LLMBatchProcessor:
         stage_name: str,
         logger: PipelineLogger,
         config: LLMBatchConfig,
+        tracker=None,
     ):
         self.logger = logger
         self.model = config.model
@@ -30,6 +31,14 @@ class LLMBatchProcessor:
         self.batch_name = config.batch_name
 
         self.metrics_manager = storage.stage(stage_name).metrics_manager
+
+        # Extract metric prefix from tracker's item_pattern
+        # e.g., "margin/page_{:04d}.json" -> "margin/page_"
+        self.metric_prefix = None
+        if tracker and hasattr(tracker, 'item_pattern'):
+            pattern = tracker.item_pattern
+            # Remove {:04d} and file extension to get prefix
+            self.metric_prefix = pattern.replace('{:04d}', '').replace('.json', '')
 
         self.batch_client = LLMBatchClient(
             max_workers=self.max_workers,
@@ -182,7 +191,7 @@ class LLMBatchProcessor:
         total_items: int
     ):
         if self.metrics_manager:
-            cumulative = self.metrics_manager.get_cumulative_metrics()
+            cumulative = self.metrics_manager.get_cumulative_metrics(prefix=self.metric_prefix)
             display_completed = cumulative.get('total_requests', batch_stats.completed)
             display_total = total_items  # Use actual total items, not from cumulative metrics
             display_prompt_tokens = cumulative.get('total_prompt_tokens', batch_stats.total_prompt_tokens)

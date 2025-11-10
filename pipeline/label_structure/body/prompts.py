@@ -98,25 +98,9 @@ Low (<0.7):
 def build_body_user_prompt(margin_data: dict) -> str:
     """Build user prompt with optional margin context."""
 
-    # Build margin context section only if elements exist
-    margin_context_lines = []
-
-    header = margin_data.get('header', {})
-    if header.get('exists'):
-        margin_context_lines.append(f"- Header found: \"{header.get('text')}\"")
-
-    footer = margin_data.get('footer', {})
-    if footer.get('exists'):
-        margin_context_lines.append(f"- Footer found: \"{footer.get('text')}\"")
-
-    page_number = margin_data.get('page_number', {})
-    if page_number.get('exists'):
-        margin_context_lines.append(f"- Page number found: {page_number.get('number')}")
-
-    # Only include margin context if something was found
+    # Don't pass margin context - body pass should be independent
+    # (avoids confusion where margin misidentifications bias body analysis)
     margin_context = ""
-    if margin_context_lines:
-        margin_context = "\n**Context from margin pass:**\n" + "\n".join(margin_context_lines) + "\n\nThese margin elements are already identified. Focus only on the BODY area.\n"
 
     return f"""{BODY_SYSTEM_PROMPT}
 

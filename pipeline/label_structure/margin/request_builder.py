@@ -16,10 +16,11 @@ def prepare_margin_request(
     page_num = item
 
     # Load page image using SourceStorage API
+    # Higher quality for spatial accuracy (margin detection needs clear positioning)
     page_image = storage.source().load_page_image(
         page_num=page_num,
         downsample=True,
-        max_payload_kb=300
+        max_payload_kb=800
     )
 
     # Response schema

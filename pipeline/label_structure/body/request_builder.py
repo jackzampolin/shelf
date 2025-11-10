@@ -38,10 +38,11 @@ def prepare_body_request(
     label_structure_stage = storage.stage(stage_name)
 
     # Load page image using SourceStorage API
+    # Higher quality for whitespace/heading detection (spatial layout critical)
     page_image = storage.source().load_page_image(
         page_num=page_num,
         downsample=True,
-        max_payload_kb=300
+        max_payload_kb=800
     )
 
     # Load margin pass output

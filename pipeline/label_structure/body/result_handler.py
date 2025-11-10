@@ -29,7 +29,7 @@ def create_body_handler(storage, logger, stage_name):
             # Record metrics
             record_llm_result(
                 metrics_manager=stage_storage.metrics_manager,
-                key=f"body_page_{page_num:04d}",
+                key=f"body/page_{page_num:04d}",
                 result=result,
                 page_num=page_num,
                 extra_fields={'pass': 'body'}

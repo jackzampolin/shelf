@@ -109,7 +109,8 @@ class LabelStructureStage(BaseStage):
                 remaining_pages=remaining_margin,
                 model=self.model,
                 max_workers=self.max_workers,
-                max_retries=self.max_retries
+                max_retries=self.max_retries,
+                tracker=self.margin_tracker
             )
 
         # Pass 2: Body (requires margin complete)
@@ -123,7 +124,8 @@ class LabelStructureStage(BaseStage):
                 remaining_pages=remaining_body,
                 model=self.model,
                 max_workers=self.max_workers,
-                max_retries=self.max_retries
+                max_retries=self.max_retries,
+                tracker=self.body_tracker
             )
 
         # Pass 3: Content (requires margin + body complete)
@@ -137,7 +139,8 @@ class LabelStructureStage(BaseStage):
                 remaining_pages=remaining_content,
                 model=self.model,
                 max_workers=self.max_workers,
-                max_retries=self.max_retries
+                max_retries=self.max_retries,
+                tracker=self.content_tracker
             )
 
         # Merge: Combine margin + body + content into final output

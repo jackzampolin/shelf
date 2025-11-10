@@ -75,7 +75,7 @@ Low (<0.7):
 <critical_rules>
 - Focus ONLY on margins, ignore body content
 - If no element exists: exists=false, text=null, position=null
-- Extract text exactly as shown (don't correct OCR errors)
+- Extract text exactly as shown
 - Trust visual appearance over text content
 - Brief reasoning: explain what you observed and why
 </critical_rules>"""
