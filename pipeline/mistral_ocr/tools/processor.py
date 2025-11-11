@@ -1,6 +1,7 @@
 from typing import Dict, Any, List
 import base64
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -38,6 +39,8 @@ def process_single_page(
     if not page_file.exists():
         logger.error(f"  Page {page_num}: Source image not found: {page_file}")
         return {"success": False, "page_num": page_num, "error": "Source image not found"}
+
+    start_time = time.time()
 
     try:
         # Encode image
@@ -95,11 +98,14 @@ def process_single_page(
         # Save to disk
         stage_storage.save_page(page_num, output.model_dump(), schema=MistralOcrPageOutput)
 
+        # Calculate processing time
+        processing_time = time.time() - start_time
+
         # Record metrics
         stage_storage.metrics_manager.record(
             key=f"page_{page_num:04d}",
             cost_usd=MISTRAL_OCR_COST_PER_PAGE,
-            time_seconds=0,  # Not tracking time for now
+            time_seconds=processing_time,
             custom_metrics={
                 "page": page_num,
                 "char_count": len(page_data.markdown),
@@ -108,21 +114,16 @@ def process_single_page(
             }
         )
 
-        logger.info(f"  Page {page_num}: OCR complete ({len(page_data.markdown)} chars, {len(images)} images)")
-
         return {
             "success": True,
             "page_num": page_num,
             "char_count": len(page_data.markdown),
-            "images_detected": len(images)
+            "images_detected": len(images),
+            "processing_time": processing_time
         }
 
     except Exception as e:
-        import traceback
-        error_msg = f"  Page {page_num}: OCR failed: {str(e)}\n{traceback.format_exc()}"
-        logger.error(error_msg)
-        print(f"ERROR on page {page_num}: {str(e)}")
-        print(traceback.format_exc())
+        logger.error(f"  Page {page_num}: OCR failed: {str(e)}")
         return {"success": False, "page_num": page_num, "error": str(e)}
 
 
@@ -155,7 +156,10 @@ def process_batch(
     total_cost = 0.0
     total_chars = 0
     total_images = 0
+    total_time = 0.0
     failed_pages = []
+
+    batch_start_time = time.time()
 
     # Process pages in parallel
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -173,16 +177,30 @@ def process_batch(
             for page_num in remaining_pages
         }
 
+        total_pages = len(futures)
+        completed_count = 0
+
         for future in as_completed(futures):
             result = future.result()
+            completed_count += 1
 
             if result["success"]:
                 pages_processed += 1
                 total_cost += MISTRAL_OCR_COST_PER_PAGE
                 total_chars += result.get("char_count", 0)
                 total_images += result.get("images_detected", 0)
+                total_time += result.get("processing_time", 0)
+
+                # Log progress every 10 pages or on last page
+                if completed_count % 10 == 0 or completed_count == total_pages:
+                    elapsed = time.time() - batch_start_time
+                    pages_per_sec = completed_count / elapsed if elapsed > 0 else 0
+                    logger.info(f"  Progress: {completed_count}/{total_pages} pages ({pages_per_sec:.1f} pages/sec)")
             else:
                 failed_pages.append(result["page_num"])
+
+    total_elapsed = time.time() - batch_start_time
+    avg_time_per_page = total_time / pages_processed if pages_processed > 0 else 0
 
     logger.info(
         "Mistral OCR complete",
@@ -190,7 +208,9 @@ def process_batch(
         failed=len(failed_pages),
         cost=f"${total_cost:.4f}",
         total_chars=total_chars,
-        total_images=total_images
+        total_images=total_images,
+        avg_time_per_page=f"{avg_time_per_page:.2f}s",
+        total_time=f"{total_elapsed:.1f}s"
     )
 
     return {
