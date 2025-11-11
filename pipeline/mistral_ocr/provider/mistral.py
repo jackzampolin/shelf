@@ -23,7 +23,10 @@ from ..schemas import MistralOcrPageOutput, ImageBBox, PageDimensions
 
 # Mistral OCR pricing and rate limits (as of 2025-11)
 # TODO: Update if pricing changes - check https://mistral.ai/pricing
-MISTRAL_OCR_COST_PER_PAGE = 0.002  # $0.002 per page
+# Base OCR: $1/1000 pages = $0.001
+# Annotations (bboxes): $3/1000 pages = $0.003
+# Total: $0.004 per page (we use annotations for image detection)
+MISTRAL_OCR_COST_PER_PAGE = 0.004  # $0.004 per page
 
 
 def encode_image(image_path: Path) -> str:
