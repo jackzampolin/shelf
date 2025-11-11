@@ -260,9 +260,9 @@ class OCRBatchProcessor:
             summary_lines.append(f"Avg time/page:  {total_time / pages_processed:.1f}s")
 
         if self.rate_limiter:
-            wait_stats = self.rate_limiter.get_stats()
-            if wait_stats['total_wait_time'] > 0:
-                summary_lines.append(f"Rate limit wait: {wait_stats['total_wait_time']:.1f}s")
+            wait_stats = self.rate_limiter.get_status()
+            if wait_stats['total_waited_sec'] > 0:
+                summary_lines.append(f"Rate limit wait: {wait_stats['total_waited_sec']:.1f}s")
 
         summary_lines.append("=" * 80)
 
