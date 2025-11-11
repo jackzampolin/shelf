@@ -15,9 +15,8 @@ from typing import Dict, Any
 from olmocr.prompts import build_no_anchoring_v4_yaml_prompt
 
 from infra.ocr import OCRProvider, OCRResult
+from infra.deepinfra import DeepInfraClient
 from ..schemas import OlmOcrPageOutput
-from .client import DeepInfraClient
-
 
 def parse_olmocr_response(text: str) -> Dict[str, Any]:
     """Parse OlmOCR v4 YAML front matter and extract metadata + clean text."""

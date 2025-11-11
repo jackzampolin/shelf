@@ -7,7 +7,7 @@ import re
 
 from infra.ocr import OCRProvider, OCRResult
 from ..schemas import PaddleOcrPageOutput
-from .client import DeepInfraClient
+from infra.deepinfra import DeepInfraClient
 
 def detect_content_types(text: str) -> Dict[str, bool]:
     has_table = bool(re.search(r'\|.*\|', text))
