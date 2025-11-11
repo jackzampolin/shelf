@@ -35,7 +35,7 @@ def build_user_prompt(
     Args:
         page_num: Current page number
         total_toc_pages: Total number of ToC pages
-        ocr_text: Clean OCR text from ocr-pages stage
+        ocr_text: Clean OCR text from olm-ocr stage
         structure_notes: Optional page-specific structural observations from find-toc stage
         global_structure: Optional global structure summary from find-toc stage
 

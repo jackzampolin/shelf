@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 
-class OcrPagesPageMetrics(BaseModel):
+class OlmOcrPageMetrics(BaseModel):
     page_num: int = Field(..., ge=1, description="Page number processed")
     cost_usd: float = Field(..., ge=0.0, description="API cost for this page")
     time_seconds: float = Field(..., ge=0.0, description="Processing time for this page")

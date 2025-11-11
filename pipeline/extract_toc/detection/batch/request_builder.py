@@ -5,7 +5,7 @@ from infra.llm.models import LLMRequest
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.utils.pdf import downsample_for_vision
-from pipeline.ocr_pages.schemas import OcrPagesPageOutput
+from pipeline.olm_ocr.schemas import OlmOcrPageOutput
 from ...schemas import PageRange
 from ..prompts import SYSTEM_PROMPT, build_user_prompt
 
@@ -23,7 +23,7 @@ def prepare_toc_request(
     total_toc_pages = toc_range.end_page - toc_range.start_page + 1
 
     source_image_path = storage.stage("source").load_page_image(page_num)
-    ocr_page = storage.stage('ocr-pages').load_page(page_num, schema=OcrPagesPageOutput)
+    ocr_page = storage.stage('olm-ocr').load_page(page_num, schema=OlmOcrPageOutput)
 
     image = Image.open(source_image_path)
     image = downsample_for_vision(image)

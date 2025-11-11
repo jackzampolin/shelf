@@ -1,5 +1,5 @@
 STAGE_DEFINITIONS = [
-    {'name': 'ocr-pages', 'class': 'pipeline.ocr_pages.OcrPagesStage'},
+    {'name': 'olm-ocr', 'class': 'pipeline.olm_ocr.OlmOcrStage'},
     {'name': 'mistral-ocr', 'class': 'pipeline.mistral_ocr.MistralOcrStage'},
     {'name': 'label-pages', 'class': 'pipeline.label_pages.LabelPagesStage'},
     {'name': 'find-toc', 'class': 'pipeline.find_toc.FindTocStage'},

@@ -48,11 +48,11 @@ SEARCH_PATTERNS = [
 
 
 def extract_text_from_page(storage: BookStorage, page_num: int) -> str:
-    """Extract OCR text from ocr-pages stage."""
-    from pipeline.ocr_pages.schemas import OcrPagesPageOutput
+    """Extract OCR text from olm-ocr stage."""
+    from pipeline.olm_ocr.schemas import OlmOcrPageOutput
 
-    ocr_stage_storage = storage.stage('ocr-pages')
-    page_data = ocr_stage_storage.load_page(page_num, schema=OcrPagesPageOutput)
+    ocr_stage_storage = storage.stage('olm-ocr')
+    page_data = ocr_stage_storage.load_page(page_num, schema=OlmOcrPageOutput)
     if not page_data:
         raise FileNotFoundError(f"OCR data for page {page_num} not found")
     return page_data.get("text", "")

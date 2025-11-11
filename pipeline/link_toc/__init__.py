@@ -10,7 +10,7 @@ from .tools.report_generator import generate_report
 
 class LinkTocStage(BaseStage):
     name = "link-toc"
-    dependencies = ["find-toc", "extract-toc", "label-pages", "ocr-pages"]
+    dependencies = ["find-toc", "extract-toc", "label-pages", "olm-ocr"]
 
     @classmethod
     def default_kwargs(cls, **overrides):

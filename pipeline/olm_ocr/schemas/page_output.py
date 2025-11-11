@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Literal
 
 
-class OcrPagesPageOutput(BaseModel):
+class OlmOcrPageOutput(BaseModel):
     page_num: int = Field(..., ge=1, description="Page number in book")
     text: str = Field(..., description="Markdown-formatted OCR text from OlmOCR (without front matter)")
     char_count: int = Field(..., ge=0, description="Character count of extracted text")

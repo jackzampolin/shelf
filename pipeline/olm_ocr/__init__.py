@@ -5,8 +5,8 @@ from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import BatchBasedStatusTracker
 from .tools.processor import process_batch
 
-class OcrPagesStage(BaseStage):
-    name = "ocr-pages"
+class OlmOcrStage(BaseStage):
+    name = "olm-ocr"
     dependencies = []
 
     @classmethod

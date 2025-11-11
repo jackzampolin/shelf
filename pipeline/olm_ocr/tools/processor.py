@@ -6,7 +6,7 @@ from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.deepinfra import DeepInfraOCRBatchProcessor, OCRRequest, OCRResult
 
-from ..schemas import OcrPagesPageOutput
+from ..schemas import OlmOcrPageOutput
 
 
 def parse_olmocr_response(text: str) -> Dict[str, Any]:
@@ -94,7 +94,7 @@ def process_batch(
             metadata={"page_num": page_num}
         ))
 
-    stage_storage = storage.stage("ocr-pages")
+    stage_storage = storage.stage("olm-ocr")
     pages_processed = 0
 
     def handle_result(result: OCRResult):
@@ -120,7 +120,7 @@ def process_batch(
             stage_storage.save_page(
                 page_num,
                 page_data,
-                schema=OcrPagesPageOutput
+                schema=OlmOcrPageOutput
             )
 
             stage_storage.metrics_manager.record(

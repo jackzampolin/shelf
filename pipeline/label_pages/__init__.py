@@ -13,7 +13,7 @@ from .schemas import LabelPagesPageOutput, LabelPagesPageReport
 class LabelPagesStage(BaseStage):
 
     name = "label-pages"
-    dependencies = ["ocr-pages"]
+    dependencies = ["olm-ocr"]
 
     @classmethod
     def default_kwargs(cls, **overrides):

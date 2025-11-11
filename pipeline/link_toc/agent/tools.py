@@ -195,14 +195,14 @@ def get_page_ocr(
         storage: BookStorage instance
 
     Returns:
-        Full OCR text from ocr-pages stage
+        Full OCR text from olm-ocr stage
     """
-    from pipeline.ocr_pages.schemas import OcrPagesPageOutput
+    from pipeline.olm_ocr.schemas import OlmOcrPageOutput
 
-    ocr_pages_stage = storage.stage("ocr-pages")
+    ocr_pages_stage = storage.stage("olm-ocr")
 
     try:
-        ocr_data = ocr_pages_stage.load_page(page_num, schema=OcrPagesPageOutput)
+        ocr_data = ocr_pages_stage.load_page(page_num, schema=OlmOcrPageOutput)
         return ocr_data.get('text', '')
     except FileNotFoundError:
         return ""

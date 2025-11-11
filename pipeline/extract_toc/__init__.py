@@ -12,7 +12,7 @@ from .assembly import assemble_toc
 class ExtractTocStage(BaseStage):
 
     name = "extract-toc"
-    dependencies = ["find-toc", "ocr-pages"]
+    dependencies = ["find-toc", "olm-ocr"]
 
     @classmethod
     def default_kwargs(cls, **overrides):

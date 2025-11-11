@@ -29,7 +29,7 @@ def prepare_stage1_request(
     """
     page_num = item  # 'item' is page number for this stage
     source_stage = storage.stage('source')
-    ocr_pages_stage = storage.stage('ocr-pages')
+    ocr_pages_stage = storage.stage('olm-ocr')
 
     # Load page image
     image_file = source_stage.output_dir / f"page_{page_num:04d}.png"
@@ -39,12 +39,12 @@ def prepare_stage1_request(
     page_image = Image.open(image_file)
     page_image = downsample_for_vision(page_image, max_payload_kb=300)
 
-    # Load OCR text from ocr-pages output
+    # Load OCR text from olm-ocr output
     ocr_text = ""
     try:
-        from pipeline.ocr_pages.schemas import OcrPagesPageOutput
+        from pipeline.olm_ocr.schemas import OlmOcrPageOutput
 
-        ocr_data = ocr_pages_stage.load_page(page_num, schema=OcrPagesPageOutput)
+        ocr_data = ocr_pages_stage.load_page(page_num, schema=OlmOcrPageOutput)
         ocr_text = ocr_data.get('text', '')
     except FileNotFoundError:
         # OCR-Pages should have been validated in before(), but handle gracefully
