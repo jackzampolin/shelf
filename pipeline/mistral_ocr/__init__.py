@@ -15,7 +15,8 @@ class MistralOcrStage(BaseStage):
         return {
             'max_workers': overrides.get('workers', 10),
             'model': overrides.get('model') or 'mistral-ocr-latest',
-            'include_images': overrides.get('include_images', False)
+            'include_images': overrides.get('include_images', False),
+            'max_retries': overrides.get('max_retries', 3)
         }
 
     def __init__(
@@ -23,12 +24,14 @@ class MistralOcrStage(BaseStage):
         storage: BookStorage,
         max_workers: int = 10,
         model: str = "mistral-ocr-latest",
-        include_images: bool = False
+        include_images: bool = False,
+        max_retries: int = 3
     ):
         super().__init__(storage)
         self.max_workers = max_workers
         self.model = model
         self.include_images = include_images
+        self.max_retries = max_retries
 
         self.status_tracker = BatchBasedStatusTracker(
             storage=self.storage,
@@ -49,5 +52,6 @@ class MistralOcrStage(BaseStage):
             remaining_pages=remaining_pages,
             max_workers=self.max_workers,
             model=self.model,
-            include_images=self.include_images
+            include_images=self.include_images,
+            max_retries=self.max_retries
         )

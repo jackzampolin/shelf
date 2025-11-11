@@ -1,5 +1,6 @@
 from typing import Dict, Any, List
 import base64
+import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,6 +27,33 @@ def encode_image(image_path: Path) -> str:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
 
+def _log_failure(stage_storage, page_num: int, error: str, attempt: int, max_retries: int):
+    """Log failure to JSON file for tracking."""
+    logs_dir = stage_storage.output_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    failure_log = logs_dir / "llm_failures.json"
+
+    failure_entry = {
+        "page_num": page_num,
+        "error": error,
+        "attempt": attempt,
+        "max_retries": max_retries,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    # Append to existing failures or create new file
+    failures = []
+    if failure_log.exists():
+        with open(failure_log, 'r') as f:
+            failures = json.load(f)
+
+    failures.append(failure_entry)
+
+    with open(failure_log, 'w') as f:
+        json.dump(failures, f, indent=2)
+
+
 def process_single_page(
     page_num: int,
     source_storage,
@@ -34,104 +62,127 @@ def process_single_page(
     client: Mistral,
     rate_limiter: RateLimiter,
     model: str = "mistral-ocr-latest",
-    include_images: bool = False
+    include_images: bool = False,
+    max_retries: int = 3
 ) -> Dict[str, Any]:
-    """Process a single page with Mistral OCR."""
+    """Process a single page with Mistral OCR with retry logic."""
 
     page_file = source_storage.output_dir / f"page_{page_num:04d}.png"
 
     if not page_file.exists():
-        logger.error(f"  Page {page_num}: Source image not found: {page_file}")
-        return {"success": False, "page_num": page_num, "error": "Source image not found"}
+        error_msg = f"Source image not found: {page_file}"
+        logger.error(f"  Page {page_num}: {error_msg}")
+        _log_failure(stage_storage, page_num, error_msg, attempt=0, max_retries=max_retries)
+        return {"success": False, "page_num": page_num, "error": error_msg}
 
-    start_time = time.time()
+    # Retry loop
+    last_error = None
+    for attempt in range(max_retries):
+        start_time = time.time()
 
-    try:
-        # Encode image
-        base64_image = encode_image(page_file)
+        try:
+            # Encode image
+            base64_image = encode_image(page_file)
 
-        # Wait for rate limit token before making API call
-        rate_limiter.consume()
+            # Wait for rate limit token before making API call
+            rate_limiter.consume()
 
-        # Call Mistral OCR API
-        ocr_response = client.ocr.process(
-            model=model,
-            document={
-                "type": "image_url",
-                "image_url": f"data:image/png;base64,{base64_image}"
-            },
-            include_image_base64=include_images
-        )
+            # Call Mistral OCR API
+            ocr_response = client.ocr.process(
+                model=model,
+                document={
+                    "type": "image_url",
+                    "image_url": f"data:image/png;base64,{base64_image}"
+                },
+                include_image_base64=include_images
+            )
 
-        # Extract data from response
-        # The response has: pages, model, document_annotation, usage_info
-        if not ocr_response.pages or len(ocr_response.pages) == 0:
-            logger.error(f"  Page {page_num}: No pages in OCR response")
-            return {"success": False, "page_num": page_num, "error": "No pages in response"}
+            # Extract data from response
+            # The response has: pages, model, document_annotation, usage_info
+            if not ocr_response.pages or len(ocr_response.pages) == 0:
+                error_msg = "No pages in OCR response"
+                last_error = error_msg
+                if attempt < max_retries - 1:
+                    logger.warning(f"  Page {page_num} attempt {attempt + 1}/{max_retries}: {error_msg}, retrying...")
+                    time.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
+                    continue
+                else:
+                    logger.error(f"  Page {page_num}: {error_msg} after {max_retries} attempts")
+                    _log_failure(stage_storage, page_num, error_msg, attempt=attempt + 1, max_retries=max_retries)
+                    return {"success": False, "page_num": page_num, "error": error_msg}
 
-        # Get first page (single image = single page)
-        page_data = ocr_response.pages[0]
+            # Get first page (single image = single page)
+            page_data = ocr_response.pages[0]
 
-        # Extract images with bboxes
-        images = []
-        if hasattr(page_data, 'images') and page_data.images:
-            for img in page_data.images:
-                images.append(ImageBBox(
-                    top_left_x=img.top_left_x,
-                    top_left_y=img.top_left_y,
-                    bottom_right_x=img.bottom_right_x,
-                    bottom_right_y=img.bottom_right_y,
-                    image_base64=img.image_base64 if include_images else None
-                ))
+            # Extract images with bboxes
+            images = []
+            if hasattr(page_data, 'images') and page_data.images:
+                for img in page_data.images:
+                    images.append(ImageBBox(
+                        top_left_x=img.top_left_x,
+                        top_left_y=img.top_left_y,
+                        bottom_right_x=img.bottom_right_x,
+                        bottom_right_y=img.bottom_right_y,
+                        image_base64=img.image_base64 if include_images else None
+                    ))
 
-        # Extract dimensions
-        dimensions = PageDimensions(
-            width=page_data.dimensions.width,
-            height=page_data.dimensions.height,
-            dpi=page_data.dimensions.dpi if hasattr(page_data.dimensions, 'dpi') else None
-        )
+            # Extract dimensions
+            dimensions = PageDimensions(
+                width=page_data.dimensions.width,
+                height=page_data.dimensions.height,
+                dpi=page_data.dimensions.dpi if hasattr(page_data.dimensions, 'dpi') else None
+            )
 
-        # Build output schema
-        output = MistralOcrPageOutput(
-            page_num=page_num,
-            markdown=page_data.markdown,
-            char_count=len(page_data.markdown),
-            dimensions=dimensions,
-            images=images,
-            model_used=ocr_response.model,
-            processing_cost=MISTRAL_OCR_COST_PER_PAGE
-        )
+            # Build output schema
+            output = MistralOcrPageOutput(
+                page_num=page_num,
+                markdown=page_data.markdown,
+                char_count=len(page_data.markdown),
+                dimensions=dimensions,
+                images=images,
+                model_used=ocr_response.model,
+                processing_cost=MISTRAL_OCR_COST_PER_PAGE
+            )
 
-        # Save to disk
-        stage_storage.save_page(page_num, output.model_dump(), schema=MistralOcrPageOutput)
+            # Save to disk
+            stage_storage.save_page(page_num, output.model_dump(), schema=MistralOcrPageOutput)
 
-        # Calculate processing time
-        processing_time = time.time() - start_time
+            # Calculate processing time
+            processing_time = time.time() - start_time
 
-        # Record metrics
-        stage_storage.metrics_manager.record(
-            key=f"page_{page_num:04d}",
-            cost_usd=MISTRAL_OCR_COST_PER_PAGE,
-            time_seconds=processing_time,
-            custom_metrics={
-                "page": page_num,
+            # Record metrics
+            stage_storage.metrics_manager.record(
+                key=f"page_{page_num:04d}",
+                cost_usd=MISTRAL_OCR_COST_PER_PAGE,
+                time_seconds=processing_time,
+                custom_metrics={
+                    "page": page_num,
+                    "char_count": len(page_data.markdown),
+                    "images_detected": len(images),
+                    "model": ocr_response.model,
+                }
+            )
+
+            # Success - return immediately
+            return {
+                "success": True,
+                "page_num": page_num,
                 "char_count": len(page_data.markdown),
                 "images_detected": len(images),
-                "model": ocr_response.model,
+                "processing_time": processing_time
             }
-        )
 
-        return {
-            "success": True,
-            "page_num": page_num,
-            "char_count": len(page_data.markdown),
-            "images_detected": len(images),
-            "processing_time": processing_time
-        }
+        except Exception as e:
+            last_error = str(e)
+            if attempt < max_retries - 1:
+                logger.warning(f"  Page {page_num} attempt {attempt + 1}/{max_retries}: {last_error}, retrying...")
+                time.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
+            else:
+                logger.error(f"  Page {page_num}: OCR failed after {max_retries} attempts: {last_error}")
+                _log_failure(stage_storage, page_num, last_error, attempt=attempt + 1, max_retries=max_retries)
 
-    except Exception as e:
-        logger.error(f"  Page {page_num}: OCR failed: {str(e)}")
-        return {"success": False, "page_num": page_num, "error": str(e)}
+    # All retries exhausted
+    return {"success": False, "page_num": page_num, "error": last_error}
 
 
 def process_batch(
@@ -140,7 +191,8 @@ def process_batch(
     remaining_pages: List[int],
     max_workers: int,
     model: str = "mistral-ocr-latest",
-    include_images: bool = False
+    include_images: bool = False,
+    max_retries: int = 3
 ) -> Dict[str, Any]:
     """Process batch of pages with Mistral OCR."""
 
@@ -191,7 +243,8 @@ def process_batch(
                 client,
                 rate_limiter,
                 model,
-                include_images
+                include_images,
+                max_retries
             ): page_num
             for page_num in remaining_pages
         }
