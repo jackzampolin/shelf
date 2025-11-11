@@ -3,8 +3,10 @@ from typing import Dict, Any
 from infra.config import Config
 from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.status import BatchBasedStatusTracker
+from infra.pipeline.status import BatchBasedStatusTracker, MultiPhaseStatusTracker
 from .batch import process_pages
+from .tools.report_generator import generate_report
+from .schemas import LabelStructurePageReport
 
 
 class LabelStructureStage(BaseStage):
@@ -33,27 +35,45 @@ class LabelStructureStage(BaseStage):
         self.max_workers = max_workers or Config.max_workers
         self.max_retries = max_retries
 
-        self.status_tracker = BatchBasedStatusTracker(
+        self.page_tracker = BatchBasedStatusTracker(
             storage=self.storage,
             logger=self.logger,
             stage_name=self.name,
             item_pattern="page_{:04d}.json"
         )
 
+        self.status_tracker = MultiPhaseStatusTracker(
+            storage=self.storage,
+            logger=self.logger,
+            stage_name=self.name,
+            phases=[
+                {"name": "process_pages", "tracker": self.page_tracker},
+                {"name": "generate_report", "artifact": "report.csv"}
+            ]
+        )
+
     def run(self) -> Dict[str, Any]:
         if self.status_tracker.is_completed():
             return self.status_tracker.get_skip_response()
 
-        remaining_pages = self.status_tracker.get_remaining_items()
-        if not remaining_pages:
-            self.logger.info("No pages to process")
-            return {"status": "success", "pages_processed": 0, "cost_usd": 0.0}
+        # Phase 1: Process pages
+        remaining_pages = self.page_tracker.get_remaining_items()
+        if remaining_pages:
+            process_pages(
+                tracker=self.page_tracker,
+                model=self.model,
+                max_workers=self.max_workers,
+                max_retries=self.max_retries,
+            )
 
-        process_pages(
-            tracker=self.status_tracker,
-            model=self.model,
-            max_workers=self.max_workers,
-            max_retries=self.max_retries,
-        )
+        # Phase 2: Generate report
+        report_path = self.stage_storage.output_dir / "report.csv"
+        if not report_path.exists():
+            generate_report(
+                storage=self.storage,
+                logger=self.logger,
+                report_schema=LabelStructurePageReport,
+                stage_name=self.name,
+            )
 
         return {"status": "success"}
