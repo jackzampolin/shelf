@@ -78,8 +78,7 @@ class OCRBatchProcessor:
     def __init__(
         self,
         provider: OCRProvider,
-        storage: BookStorage,
-        logger: PipelineLogger,
+        status_tracker,
         max_workers: int = 10,
     ):
         """
@@ -87,13 +86,13 @@ class OCRBatchProcessor:
 
         Args:
             provider: OCR provider implementation
-            storage: Book storage for file I/O
-            logger: Pipeline logger
+            status_tracker: BatchBasedStatusTracker with storage, logger, stage info
             max_workers: Thread pool size
         """
         self.provider = provider
-        self.storage = storage
-        self.logger = logger
+        self.status_tracker = status_tracker
+        self.storage = status_tracker.storage
+        self.logger = status_tracker.logger
         self.max_workers = max_workers
 
         # Set up rate limiter if provider has limit
@@ -103,15 +102,11 @@ class OCRBatchProcessor:
         else:
             self.rate_limiter = None
 
-    def process_batch(
-        self,
-        page_nums: List[int],
-    ) -> Dict[str, Any]:
+    def process_batch(self) -> Dict[str, Any]:
         """
-        Process batch of pages with automatic retry, rate limiting, and progress tracking.
+        Process batch of remaining pages with automatic retry, rate limiting, and progress tracking.
 
-        Args:
-            page_nums: List of page numbers to process
+        Gets remaining pages from status tracker.
 
         Returns:
             Batch statistics:
@@ -124,6 +119,9 @@ class OCRBatchProcessor:
                 "failed_pages": List[int]
             }
         """
+        # Get remaining pages from status tracker
+        page_nums = self.status_tracker.get_remaining_items()
+
         source_storage = self.storage.stage("source")
         stage_storage = self.storage.stage(self.provider.name)
 
