@@ -1,13 +1,8 @@
-"""DeepInfra API client infrastructure."""
+"""DeepInfra API client - generic OpenAI-compatible endpoint wrapper."""
 
-from .client import DeepInfraClient
-from .ocr import OlmOCRProvider
-from .batch_processor import DeepInfraOCRBatchProcessor, OCRRequest, OCRResult
+from .client import DeepInfraClient, DeepInfraError
 
 __all__ = [
     "DeepInfraClient",
-    "OlmOCRProvider",
-    "DeepInfraOCRBatchProcessor",
-    "OCRRequest",
-    "OCRResult",
+    "DeepInfraError",
 ]

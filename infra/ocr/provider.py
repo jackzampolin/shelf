@@ -50,10 +50,19 @@ class OCRProvider(ABC):
 
     Each provider (OlmOCR, Mistral, etc.) implements this interface to provide:
     - Image processing logic
+    - Result persistence (save to disk + record metrics)
     - Rate limiting configuration
     - Retry strategy configuration
-    - Provider-specific metadata extraction
     """
+
+    def __init__(self, stage_storage):
+        """
+        Initialize provider with stage storage for persistence.
+
+        Args:
+            stage_storage: StageStorage instance for saving pages and metrics
+        """
+        self.stage_storage = stage_storage
 
     @abstractmethod
     def process_image(self, image: Image.Image, page_num: int) -> OCRResult:
@@ -70,6 +79,21 @@ class OCRProvider(ABC):
         Note:
             This method should NOT handle retries - that's handled by the batch processor.
             Just attempt the OCR call once and return success/failure.
+        """
+        pass
+
+    @abstractmethod
+    def handle_result(self, page_num: int, result: OCRResult):
+        """
+        Handle successful OCR result - save to disk and record metrics.
+
+        Args:
+            page_num: Page number
+            result: OCRResult from process_image()
+
+        Note:
+            Provider knows its own schema and how to persist results.
+            Stage shouldn't need to know about provider-specific metadata fields.
         """
         pass
 

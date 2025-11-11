@@ -106,15 +106,12 @@ class OCRBatchProcessor:
     def process_batch(
         self,
         page_nums: List[int],
-        on_result: Callable[[int, OCRResult], None],
     ) -> Dict[str, Any]:
         """
         Process batch of pages with automatic retry, rate limiting, and progress tracking.
 
         Args:
             page_nums: List of page numbers to process
-            on_result: Callback(page_num, result) invoked for each successful result
-                      Caller handles saving to disk and recording metrics
 
         Returns:
             Batch statistics:
@@ -217,9 +214,9 @@ class OCRBatchProcessor:
                         _log_failure(stage_storage, page_num, error_msg, attempt, self.provider.max_retries)
                         return {"success": False, "page_num": page_num, "error": error_msg}
 
-            # Success - invoke callback
+            # Success - let provider handle result (save + metrics)
             if result and result.success:
-                on_result(page_num, result)
+                self.provider.handle_result(page_num, result)
 
                 # Update aggregates
                 pages_processed += 1

@@ -4,8 +4,7 @@ from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import BatchBasedStatusTracker
 from infra.ocr import OCRBatchProcessor
-from .olmocr import OlmOCRProvider
-from .schemas import OlmOcrPageOutput
+from .provider import OlmOCRProvider
 
 
 class OlmOcrStage(BaseStage):
@@ -26,8 +25,11 @@ class OlmOcrStage(BaseStage):
             item_pattern="page_{:04d}.json"
         )
 
-        # Initialize provider and batch processor
-        self.provider = OlmOCRProvider()
+        # Initialize provider with stage storage
+        stage_storage = self.storage.stage(self.name)
+        self.provider = OlmOCRProvider(stage_storage)
+
+        # Initialize batch processor
         self.processor = OCRBatchProcessor(
             provider=self.provider,
             storage=self.storage,
@@ -40,39 +42,9 @@ class OlmOcrStage(BaseStage):
             return self.status_tracker.get_skip_response()
 
         remaining_pages = self.status_tracker.get_remaining_items()
-        stage_storage = self.storage.stage(self.name)
 
-        def handle_result(page_num: int, result):
-            """Callback for each successful OCR result."""
-            # Build output with provider metadata
-            output = OlmOcrPageOutput(
-                page_num=page_num,
-                text=result.text,
-                char_count=len(result.text),
-                **result.metadata  # OlmOCR-specific fields
-            )
-
-            # Save to disk
-            stage_storage.save_page(page_num, output.model_dump(), schema=OlmOcrPageOutput)
-
-            # Record metrics
-            stage_storage.metrics_manager.record(
-                key=f"page_{page_num:04d}",
-                cost_usd=result.cost_usd,
-                time_seconds=result.execution_time_seconds,
-                custom_metrics={
-                    "page": page_num,
-                    "char_count": len(result.text),
-                    "prompt_tokens": result.prompt_tokens,
-                    "completion_tokens": result.completion_tokens,
-                }
-            )
-
-        # Process batch
-        batch_stats = self.processor.process_batch(
-            page_nums=remaining_pages,
-            on_result=handle_result
-        )
+        # Process batch - provider handles result persistence
+        batch_stats = self.processor.process_batch(page_nums=remaining_pages)
 
         return {
             "status": batch_stats["status"],
