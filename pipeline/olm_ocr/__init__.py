@@ -25,13 +25,8 @@ class OlmOcrStage(BaseStage):
             item_pattern="page_{:04d}.json"
         )
 
-        # Initialize provider with stage storage
-        stage_storage = self.storage.stage(self.name)
-        provider = OlmOCRProvider(stage_storage)
-
-        # Initialize batch processor with status tracker
         self.processor = OCRBatchProcessor(
-            provider=provider,
+            provider=OlmOCRProvider(self.storage.stage(self.name)),
             status_tracker=self.status_tracker,
             max_workers=self.max_workers,
         )
@@ -40,7 +35,6 @@ class OlmOcrStage(BaseStage):
         if self.status_tracker.is_completed():
             return self.status_tracker.get_skip_response()
 
-        # Batch processor gets remaining pages from status tracker
         batch_stats = self.processor.process_batch()
 
         return {

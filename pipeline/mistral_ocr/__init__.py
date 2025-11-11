@@ -3,36 +3,30 @@ from typing import Dict, Any
 from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import BatchBasedStatusTracker
-from .tools.processor import process_batch
+from infra.ocr import OCRBatchProcessor
+from .provider import MistralOCRProvider
 
 
 class MistralOcrStage(BaseStage):
     name = "mistral-ocr"
-    dependencies = []  # Can run directly on source images
+    dependencies = []
 
     @classmethod
     def default_kwargs(cls, **overrides):
         return {
             'max_workers': overrides.get('workers', 10),
-            'model': overrides.get('model') or 'mistral-ocr-latest',
-            'include_images': overrides.get('include_images', False),
-            'max_retries': overrides.get('max_retries', 3)
+            'include_images': overrides.get('include_images', False)
         }
 
     def __init__(
         self,
         storage: BookStorage,
         max_workers: int = 10,
-        model: str = "mistral-ocr-latest",
-        include_images: bool = False,
-        max_retries: int = 3
+        include_images: bool = False
     ):
         super().__init__(storage)
         self.max_workers = max_workers
-        self.model = model
         self.include_images = include_images
-        self.max_retries = max_retries
-
         self.status_tracker = BatchBasedStatusTracker(
             storage=self.storage,
             logger=self.logger,
@@ -40,18 +34,23 @@ class MistralOcrStage(BaseStage):
             item_pattern="page_{:04d}.json"
         )
 
+        self.processor = OCRBatchProcessor(
+            provider=MistralOCRProvider(
+                self.storage.stage(self.name),
+                include_images=self.include_images
+            ),
+            status_tracker=self.status_tracker,
+            max_workers=self.max_workers,
+        )
+
     def run(self) -> Dict[str, Any]:
         if self.status_tracker.is_completed():
             return self.status_tracker.get_skip_response()
 
-        remaining_pages = self.status_tracker.get_remaining_items()
+        batch_stats = self.processor.process_batch()
 
-        return process_batch(
-            storage=self.storage,
-            logger=self.logger,
-            remaining_pages=remaining_pages,
-            max_workers=self.max_workers,
-            model=self.model,
-            include_images=self.include_images,
-            max_retries=self.max_retries
-        )
+        return {
+            "status": batch_stats["status"],
+            "pages_processed": batch_stats["pages_processed"],
+            "cost_usd": batch_stats["total_cost"]
+        }
