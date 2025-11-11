@@ -9,12 +9,14 @@ from mistralai import Mistral
 
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
+from infra.llm.rate_limiter import RateLimiter
 from ..schemas import MistralOcrPageOutput, ImageBBox, PageDimensions
 
 
-# Mistral OCR pricing (as of 2025-11)
+# Mistral OCR pricing and rate limits (as of 2025-11)
 # TODO: Update if pricing changes - check https://mistral.ai/pricing
 MISTRAL_OCR_COST_PER_PAGE = 0.002  # $0.002 per page
+MISTRAL_OCR_RATE_LIMIT = 360  # 6 requests/second = 360 requests/minute
 
 
 def encode_image(image_path: Path) -> str:
@@ -29,6 +31,7 @@ def process_single_page(
     stage_storage,
     logger: PipelineLogger,
     client: Mistral,
+    rate_limiter: RateLimiter,
     model: str = "mistral-ocr-latest",
     include_images: bool = False
 ) -> Dict[str, Any]:
@@ -45,6 +48,9 @@ def process_single_page(
     try:
         # Encode image
         base64_image = encode_image(page_file)
+
+        # Wait for rate limit token before making API call
+        rate_limiter.consume()
 
         # Call Mistral OCR API
         ocr_response = client.ocr.process(
@@ -147,9 +153,13 @@ def process_batch(
     source_storage = storage.stage("source")
     stage_storage = storage.stage("mistral-ocr")
 
+    # Create rate limiter (6 requests/second = 360 requests/minute)
+    rate_limiter = RateLimiter(requests_per_minute=MISTRAL_OCR_RATE_LIMIT)
+
     logger.info(f"=== Mistral OCR: Processing {len(remaining_pages)} pages ===")
     logger.info(f"Model: {model}")
     logger.info(f"Workers: {max_workers or 'default'}")
+    logger.info(f"Rate limit: {MISTRAL_OCR_RATE_LIMIT} requests/min (6/sec)")
     logger.info(f"Estimated cost: ${len(remaining_pages) * MISTRAL_OCR_COST_PER_PAGE:.4f}")
 
     pages_processed = 0
@@ -171,6 +181,7 @@ def process_batch(
                 stage_storage,
                 logger,
                 client,
+                rate_limiter,
                 model,
                 include_images
             ): page_num
@@ -202,6 +213,9 @@ def process_batch(
     total_elapsed = time.time() - batch_start_time
     avg_time_per_page = total_time / pages_processed if pages_processed > 0 else 0
 
+    # Get rate limiter stats
+    rate_stats = rate_limiter.get_status()
+
     logger.info(
         "Mistral OCR complete",
         pages_processed=pages_processed,
@@ -210,7 +224,8 @@ def process_batch(
         total_chars=total_chars,
         total_images=total_images,
         avg_time_per_page=f"{avg_time_per_page:.2f}s",
-        total_time=f"{total_elapsed:.1f}s"
+        total_time=f"{total_elapsed:.1f}s",
+        rate_limited_wait=f"{rate_stats['total_waited_sec']:.1f}s"
     )
 
     return {
