@@ -22,7 +22,7 @@ import json
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.llm.rate_limiter import RateLimiter
-from infra.llm.rich_progress import RichProgressBar
+from infra.pipeline.rich_progress import RichProgressBar
 from .provider import OCRProvider, OCRResult
 
 
