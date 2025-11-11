@@ -10,6 +10,7 @@ from mistralai import Mistral
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.llm.rate_limiter import RateLimiter
+from infra.pipeline.rich_progress import RichProgressBar
 from ..schemas import MistralOcrPageOutput, ImageBBox, PageDimensions
 
 
@@ -171,6 +172,13 @@ def process_batch(
 
     batch_start_time = time.time()
 
+    # Create progress bar
+    progress = RichProgressBar(
+        total=len(remaining_pages),
+        prefix="Mistral OCR: ",
+        unit="pages"
+    )
+
     # Process pages in parallel
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -202,13 +210,18 @@ def process_batch(
                 total_images += result.get("images_detected", 0)
                 total_time += result.get("processing_time", 0)
 
-                # Log progress every 10 pages or on last page
-                if completed_count % 10 == 0 or completed_count == total_pages:
-                    elapsed = time.time() - batch_start_time
-                    pages_per_sec = completed_count / elapsed if elapsed > 0 else 0
-                    logger.info(f"  Progress: {completed_count}/{total_pages} pages ({pages_per_sec:.1f} pages/sec)")
+                # Update progress bar
+                progress.update(
+                    completed_count,
+                    suffix=f"${total_cost:.2f} | {total_chars:,} chars | {total_images} images"
+                )
             else:
                 failed_pages.append(result["page_num"])
+                # Still update progress for failed pages
+                progress.update(
+                    completed_count,
+                    suffix=f"${total_cost:.2f} | {len(failed_pages)} failed"
+                )
 
     total_elapsed = time.time() - batch_start_time
     avg_time_per_page = total_time / pages_processed if pages_processed > 0 else 0
@@ -216,6 +229,20 @@ def process_batch(
     # Get rate limiter stats
     rate_stats = rate_limiter.get_status()
 
+    # Build summary message
+    summary_lines = [
+        f"✅ Mistral OCR complete",
+        f"   Pages: {pages_processed}/{total_pages} ({len(failed_pages)} failed)" if failed_pages else f"   Pages: {pages_processed}/{total_pages}",
+        f"   Cost: ${total_cost:.4f}",
+        f"   Text: {total_chars:,} chars, {total_images} images detected",
+        f"   Time: {total_elapsed:.1f}s ({avg_time_per_page:.2f}s/page avg)",
+        f"   Rate limit wait: {rate_stats['total_waited_sec']:.1f}s"
+    ]
+
+    # Finish progress bar with summary
+    progress.finish("\n".join(summary_lines))
+
+    # Also log to file
     logger.info(
         "Mistral OCR complete",
         pages_processed=pages_processed,
