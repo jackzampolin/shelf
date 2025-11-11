@@ -150,8 +150,7 @@ class OCRBatchProcessor:
         # Progress bar
         progress = RichProgressBar(
             total=len(page_nums),
-            prefix=f"  {self.provider.name}-ocr",
-            transient=True
+            prefix=f"  {self.provider.name}-ocr"
         )
 
         def process_single_page(page_num: int) -> Dict[str, Any]:
