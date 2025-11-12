@@ -38,14 +38,10 @@ class SourceStorage:
         image: Image.Image,
         max_payload_kb: int = 800
     ) -> Image.Image:
-        ratio = 300 / 600  # vision DPI / OCR DPI
-
-        if ratio < 1.0:
-            width, height = image.size
-            new_width = int(width * ratio)
-            new_height = int(height * ratio)
-            image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
+        """
+        Downsample image to fit within max_payload_kb when JPEG-encoded.
+        DPI-agnostic: works regardless of source image resolution.
+        """
         buffer = io.BytesIO()
         image.save(buffer, format='JPEG', quality=75)
         jpeg_size_kb = buffer.tell() / 1024
