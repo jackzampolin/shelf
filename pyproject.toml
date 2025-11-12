@@ -29,6 +29,7 @@ dependencies = [
     "docling>=2.0.0",
     "mlx-vlm>=0.3.0",
     "olmocr>=0.4.4",
+    "flask>=3.0.0",
 ]
 
 [tool.setuptools.packages.find]

@@ -1,7 +1,133 @@
 import csv
+import re
 
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
+
+
+def parse_page_number(page_num_str: str) -> tuple[str, int | None]:
+    """Parse page number string into type and numeric value.
+
+    Returns:
+        (type, value) where type is 'roman', 'arabic', or 'other'
+        value is numeric equivalent (None if unparseable)
+    """
+    if not page_num_str or not page_num_str.strip():
+        return ('none', None)
+
+    cleaned = page_num_str.strip().lower()
+
+    # Roman numerals (common in front matter)
+    roman_pattern = r'^[ivxlcdm]+$'
+    if re.match(roman_pattern, cleaned):
+        # Convert roman to arabic for comparison
+        roman_map = {'i': 1, 'v': 5, 'x': 10, 'l': 50, 'c': 100, 'd': 500, 'm': 1000}
+        result = 0
+        prev = 0
+        for char in reversed(cleaned):
+            val = roman_map.get(char, 0)
+            if val < prev:
+                result -= val
+            else:
+                result += val
+            prev = val
+        return ('roman', result)
+
+    # Arabic numerals
+    arabic_pattern = r'^(\d+)$'
+    match = re.match(arabic_pattern, cleaned)
+    if match:
+        return ('arabic', int(match.group(1)))
+
+    # Mixed or other formats (e.g., "3o" instead of "30")
+    return ('other', None)
+
+
+def calculate_sequence_validation(report_rows: list[dict]) -> list[dict]:
+    """Calculate sequence validation metrics for all pages.
+
+    Adds sequence_status, sequence_gap, expected_value, needs_review to each row.
+    """
+    prev_type = None
+    prev_value = None
+
+    for i, row in enumerate(report_rows):
+        page_num_str = row['page_num_value']
+        curr_type, curr_value = parse_page_number(page_num_str)
+
+        # Default values
+        row['sequence_status'] = 'unknown'
+        row['sequence_gap'] = 0
+        row['expected_value'] = ''
+        row['needs_review'] = False
+
+        # No page number on this page
+        if curr_type == 'none':
+            row['sequence_status'] = 'no_number'
+            row['sequence_gap'] = 0
+            row['expected_value'] = ''
+            row['needs_review'] = False
+            continue
+
+        # Unparseable page number
+        if curr_value is None:
+            row['sequence_status'] = 'unparseable'
+            row['sequence_gap'] = 0
+            row['expected_value'] = ''
+            row['needs_review'] = True
+            continue
+
+        # First page with a number
+        if prev_value is None:
+            row['sequence_status'] = 'first_page'
+            row['sequence_gap'] = 0
+            row['expected_value'] = ''
+            row['needs_review'] = False
+            prev_type = curr_type
+            prev_value = curr_value
+            continue
+
+        # Type changed (e.g., roman → arabic at chapter 1)
+        if curr_type != prev_type:
+            row['sequence_status'] = 'type_change'
+            row['sequence_gap'] = 0
+            row['expected_value'] = f'{prev_value + 1} ({prev_type})'
+            row['needs_review'] = False
+            prev_type = curr_type
+            prev_value = curr_value
+            continue
+
+        # Calculate gap
+        gap = curr_value - prev_value
+        row['sequence_gap'] = gap
+        row['expected_value'] = str(prev_value + 1)
+
+        # Validate sequence
+        if gap < 0:
+            # Backward jump - definite error
+            row['sequence_status'] = 'backward_jump'
+            row['needs_review'] = True
+        elif gap == 1:
+            # Perfect sequence
+            row['sequence_status'] = 'ok'
+            row['needs_review'] = False
+        elif gap == 2:
+            # Gap of 1 (one missing page, likely blank)
+            row['sequence_status'] = 'gap_1'
+            row['needs_review'] = False
+        elif gap == 3:
+            # Gap of 2 (two missing pages, could be blank spread)
+            row['sequence_status'] = 'gap_2'
+            row['needs_review'] = False
+        else:
+            # Gap of 3+ (suspicious)
+            row['sequence_status'] = f'gap_{gap-1}'
+            row['needs_review'] = True
+
+        prev_type = curr_type
+        prev_value = curr_value
+
+    return report_rows
 
 
 def generate_report(
@@ -76,6 +202,21 @@ def generate_report(
     if not report_rows:
         logger.warning("No valid pages to write to report")
         return
+
+    # Calculate sequence validation metrics
+    report_rows = calculate_sequence_validation(report_rows)
+
+    # Log validation summary
+    status_counts = {}
+    for row in report_rows:
+        status = row.get('sequence_status', 'unknown')
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+    needs_review_count = sum(1 for row in report_rows if row.get('needs_review', False))
+
+    logger.info(f"Sequence validation: {needs_review_count} pages need review")
+    for status, count in sorted(status_counts.items()):
+        logger.info(f"  {status}: {count} pages")
 
     report_path = stage_storage.output_dir / "report.csv"
     report_path.parent.mkdir(parents=True, exist_ok=True)

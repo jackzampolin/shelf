@@ -150,12 +150,11 @@
         <thead>
             <tr>
                 <th>Page</th>
-                <th>Heading</th>
+                <th>Headings</th>
                 <th>Header</th>
                 <th>Footer</th>
-                <th>Whitespace</th>
-                <th>Continuation</th>
                 <th>Page #</th>
+                <th>Confidence</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -163,12 +162,15 @@
             {% for row in report %}
             <tr>
                 <!-- Page Number -->
-                <td>{{ row.scan_page_number }}</td>
+                <td>{{ row.page_num }}</td>
 
-                <!-- Heading (chapter/section titles in body) -->
+                <!-- Headings (chapter/section titles in body) -->
                 <td>
-                    {% if row.heading_exists %}
-                        <span class="badge badge-yes">{{ row.heading_text|truncate(20) }}</span>
+                    {% if row.headings_present %}
+                        <span class="badge badge-yes">{{ row.headings_count }} heading{{ 's' if row.headings_count != 1 else '' }}</span>
+                        {% if row.headings_text %}
+                            <br><small>{{ row.headings_text|truncate(30) }}</small>
+                        {% endif %}
                     {% else %}
                         <span class="text-muted">—</span>
                     {% endif %}
@@ -176,8 +178,9 @@
 
                 <!-- Header (running headers in margin) -->
                 <td>
-                    {% if row.header_exists %}
-                        {{ row.header_text|truncate(20) }}
+                    {% if row.header_present %}
+                        {{ row.header_text|truncate(25) }}
+                        <br><small class="text-muted">{{ row.header_source }}</small>
                     {% else %}
                         <span class="text-muted">—</span>
                     {% endif %}
@@ -185,24 +188,9 @@
 
                 <!-- Footer -->
                 <td>
-                    {% if row.footer_exists %}
-                        {{ row.footer_text|truncate(20) }}
-                    {% else %}
-                        <span class="text-muted">—</span>
-                    {% endif %}
-                </td>
-
-                <!-- Whitespace Zones -->
-                <td>{{ row.whitespace_zones }}</td>
-
-                <!-- Text Continuation -->
-                <td>
-                    {% if row.continues_from_prev and row.continues_to_next %}
-                        <span class="badge badge-region-body">↔ Both</span>
-                    {% elif row.continues_from_prev %}
-                        <span class="badge badge-region-front">← Prev</span>
-                    {% elif row.continues_to_next %}
-                        <span class="badge badge-region-back">Next →</span>
+                    {% if row.footer_present %}
+                        {{ row.footer_text|truncate(25) }}
+                        <br><small class="text-muted">{{ row.footer_source }}</small>
                     {% else %}
                         <span class="text-muted">—</span>
                     {% endif %}
@@ -210,16 +198,33 @@
 
                 <!-- Page Number Observation -->
                 <td>
-                    {% if row.page_num_exists %}
+                    {% if row.page_num_present %}
                         {{ row.page_num_value }}
+                        {% if row.page_num_location %}
+                            <small>({{ row.page_num_location }})</small>
+                        {% endif %}
                     {% else %}
                         <span class="text-muted">—</span>
                     {% endif %}
                 </td>
 
+                <!-- Confidence Summary -->
+                <td>
+                    {% if row.header_present %}
+                        <span class="confidence-{{ 'high' if row.header_conf == 'high' else 'med' if row.header_conf == 'medium' else 'low' }}">
+                            H: {{ row.header_conf }}
+                        </span>
+                    {% endif %}
+                    {% if row.footer_present %}
+                        <br><span class="confidence-{{ 'high' if row.footer_conf == 'high' else 'med' if row.footer_conf == 'medium' else 'low' }}">
+                            F: {{ row.footer_conf }}
+                        </span>
+                    {% endif %}
+                </td>
+
                 <!-- Actions -->
                 <td>
-                    <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=row.scan_page_number) }}" class="page-link">
+                    <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=row.page_num) }}" class="page-link">
                         View →
                     </a>
                 </td>

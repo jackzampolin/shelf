@@ -17,6 +17,13 @@ def cmd_run_stage(args):
 
     storage = library.get_book_storage(args.scan_id)
 
+    # Clean BEFORE creating stage instance (which creates logger)
+    if args.clean:
+        print(f"\n🧹 Cleaning stage before processing: {args.stage}")
+        clean_stage_directory(storage, args.stage)
+        print(f"   ✓ Cleaned {args.stage}\n")
+
+    # Create stage instances AFTER clean
     stage_map = get_stage_map(
         storage,
         model=args.model,
@@ -30,11 +37,6 @@ def cmd_run_stage(args):
         sys.exit(1)
 
     stage = stage_map[args.stage]
-
-    if args.clean:
-        print(f"\n🧹 Cleaning stage before processing: {args.stage}")
-        clean_stage_directory(storage, args.stage)
-        print(f"   ✓ Cleaned {args.stage}\n")
 
     print(f"\n🔧 Running stage: {stage.name}")
 

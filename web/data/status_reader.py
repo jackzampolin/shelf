@@ -18,14 +18,15 @@ def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) ->
     Check if a stage is completed based on its specific completion markers.
 
     Each stage has different completion criteria:
-    - ocr-pages: All source pages have corresponding output files
+    - ocr-pages, olm-ocr, mistral-ocr, paddle-ocr: All source pages have corresponding output files
     - find-toc: finder_result.json exists
     - extract-toc: toc_validated.json exists
     - label-pages: report.csv exists
     - label-structure: report.csv exists
     """
-    if stage_name == 'ocr-pages':
-        # Check if all source pages have ocr-pages outputs
+    # OCR stages (old and new names)
+    if stage_name in ['ocr-pages', 'olm-ocr', 'mistral-ocr', 'paddle-ocr']:
+        # Check if all source pages have outputs
         source_stage = storage.stage("source")
         source_pages = source_stage.list_pages(extension="png")
         total_pages = len(source_pages)

@@ -22,27 +22,31 @@ def cmd_process(args):
 
     storage = library.get_book_storage(args.scan_id)
 
-    stages = [
-        OCRStage(max_workers=args.workers if args.workers else None),
-        ParagraphCorrectStage(
-            model=args.model,
-            max_workers=args.workers if args.workers else 30,
-            max_retries=3
-        ),
-        LabelPagesStage(
-            model=args.model,
-            max_workers=args.workers if args.workers else 30,
-            max_retries=3
-        ),
-        ExtractTocStage(model=args.model)
-    ]
-
+    # Clean BEFORE creating stage instances (which create loggers)
     if args.clean:
         print(f"\n🧹 Cleaning all stages before processing")
         for stage_name in CORE_STAGES:
             clean_stage_directory(storage, stage_name)
             print(f"   ✓ Cleaned {stage_name}")
         print()
+
+    # Create stage instances AFTER clean
+    stages = [
+        OCRStage(storage=storage, max_workers=args.workers if args.workers else None),
+        ParagraphCorrectStage(
+            storage=storage,
+            model=args.model,
+            max_workers=args.workers if args.workers else 30,
+            max_retries=3
+        ),
+        LabelPagesStage(
+            storage=storage,
+            model=args.model,
+            max_workers=args.workers if args.workers else 30,
+            max_retries=3
+        ),
+        ExtractTocStage(storage=storage, model=args.model)
+    ]
 
     print(f"\n🔧 Running pipeline: {', '.join(s.name for s in stages)}")
 

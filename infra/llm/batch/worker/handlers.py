@@ -38,7 +38,7 @@ def handle_success(
             on_result(result)
         except Exception as e:
             # Page may not have been saved despite successful LLM response
-            worker_pool.logger.debug(
+            worker_pool.logger.error(
                 f"Result handler failed for {request.id}: {type(e).__name__}: {e}",
                 request_id=request.id,
                 error_type=type(e).__name__,
@@ -110,7 +110,7 @@ def handle_permanent_failure(
         try:
             on_result(result)
         except Exception as e:
-            worker_pool.logger.debug(
+            worker_pool.logger.error(
                 f"Result handler failed for {request.id} (original error: {result.error_type}): {type(e).__name__}: {e}",
                 request_id=request.id,
                 error_type=type(e).__name__,
@@ -149,7 +149,7 @@ def handle_worker_crash(
             try:
                 on_result(failure_result)
             except Exception as e:
-                worker_pool.logger.debug(f"Result handler failed during worker crash for {request.id}: {type(e).__name__}: {e}")
+                worker_pool.logger.error(f"Result handler failed during worker crash for {request.id}: {type(e).__name__}: {e}")
 
     worker_pool.logger.debug(
         f"CRITICAL: Worker thread crashed with unexpected error",

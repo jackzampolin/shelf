@@ -7,7 +7,7 @@ from infra.pipeline.status import MultiPhaseStatusTracker
 
 class FindTocStage(BaseStage):
     name = "find-toc"
-    dependencies = ["olm-ocr"]
+    dependencies = ["mistral-ocr", "olm-ocr"]
 
     @classmethod
     def default_kwargs(cls, **overrides):

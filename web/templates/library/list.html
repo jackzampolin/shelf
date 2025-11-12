@@ -39,7 +39,6 @@
                 <th style="width: 10%;">OCR Pages</th>
                 <th style="width: 10%;">Find ToC</th>
                 <th style="width: 10%;">Extract ToC</th>
-                <th style="width: 10%;">Label Pages</th>
                 <th style="width: 10%;">Label Structure</th>
                 <th style="width: 10%;">Link ToC</th>
             </tr>
@@ -108,18 +107,6 @@
                     {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
                     {% if status in ['completed', 'in_progress'] %}
                         {% set link = '/stage/' ~ book.scan_id ~ '/extract-toc' %}
-                    {% endif %}
-                    {% include 'components/status_badge.html' %}
-                </td>
-
-                <!-- Label Pages Status -->
-                <td>
-                    {% set stage_data = book.stages.get('label-pages', {}) %}
-                    {% set status = stage_data.get('status', 'not_started') %}
-                    {% set cost_usd = stage_data.get('cost_usd', 0.0) %}
-                    {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
-                    {% if status in ['completed', 'in_progress'] %}
-                        {% set link = '/stage/' ~ book.scan_id ~ '/label-pages' %}
                     {% endif %}
                     {% include 'components/status_badge.html' %}
                 </td>

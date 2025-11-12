@@ -84,6 +84,14 @@ def create_result_handler(
             )
         else:
             page_num = result.request.metadata.get('page_num', 'unknown')
-            logger.error(f"✗ Label-structure failed: page {page_num}", error=result.error_message)
+            logger.error(
+                f"✗ Label-structure failed: page {page_num}",
+                page_num=page_num,
+                error_type=result.error_type,
+                error=result.error_message,
+                attempts=result.attempts,
+                execution_time=result.execution_time_seconds,
+                model=result.model_used if hasattr(result, 'model_used') else model
+            )
 
     return on_result

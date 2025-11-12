@@ -16,7 +16,14 @@ STRUCTURE_EXTRACTION_PROMPT = """Extract structural metadata from three OCR outp
 {paddle_text}
 </paddle_ocr>
 
-## Process in Order
+## Important: OCR Quality Check
+
+If ANY OCR output is corrupted (repetitive garbage like "I I I I...", random characters, or clearly nonsensical):
+- Set ALL observations to `present: false` with `confidence: "low"`
+- Use empty strings for text fields
+- Skip to response - don't try to extract structure from garbage
+
+## Process in Order (only if OCR outputs are valid)
 
 **1. Headings** (from Mistral only)
 - Lines starting with `#`, `##`, `###`, etc.
@@ -65,6 +72,7 @@ def prepare_structure_extraction_request(
             }
         },
         temperature=0.1,
+        timeout=30,  # 30s request timeout + 30s grace = 60s total
         metadata={
             "page_num": page_num,
         }

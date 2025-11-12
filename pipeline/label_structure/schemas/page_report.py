@@ -32,3 +32,9 @@ class LabelStructurePageReport(BaseModel):
     headings_levels: str = Field(default="", description="Heading levels (pipe-separated)")
     headings_conf: str = Field(..., description="Headings confidence (high/medium/low)")
     headings_source: str = Field(..., description="Source provider")
+
+    # SEQUENCE VALIDATION (calculated during report generation)
+    sequence_status: str = Field(default="unknown", description="Sequence validation status")
+    sequence_gap: int = Field(default=0, description="Gap from expected sequence (negative=backward, positive=forward)")
+    expected_value: str = Field(default="", description="Expected page number based on previous page")
+    needs_review: bool = Field(default=False, description="Flag for manual review")

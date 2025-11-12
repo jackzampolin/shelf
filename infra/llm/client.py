@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from typing import List, Dict, Tuple, Optional
 
-from infra.config import Config
 from infra.llm.pricing import CostCalculator
 from infra.llm.openrouter import OpenRouterTransport, ResponseParser, RetryPolicy
 

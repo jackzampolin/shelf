@@ -77,6 +77,18 @@ class TocFinderTools(AgentTools):
             {
                 "type": "function",
                 "function": {
+                    "name": "load_ocr_text",
+                    "description": "Load OCR text (both Mistral and OLM) for the CURRENTLY loaded page. Use this AFTER load_page_image to see clean text extraction. This helps analyze structure accurately (indentation levels, numbering patterns, entry hierarchy). Only works if a page is currently loaded.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "write_toc_result",
                     "description": "Write final ToC search result and complete the task. Your page observations will be automatically compiled into structure_notes. If ToC found, provide structure_summary with global hierarchy analysis.",
                     "parameters": {
@@ -157,6 +169,8 @@ class TocFinderTools(AgentTools):
                 page_num=arguments["page_num"],
                 current_page_observations=arguments.get("current_page_observations")
             )
+        elif tool_name == "load_ocr_text":
+            return self.load_ocr_text()
         elif tool_name == "write_toc_result":
             return self.write_toc_result(
                 toc_found=arguments["toc_found"],
@@ -203,16 +217,12 @@ class TocFinderTools(AgentTools):
                     "observations": current_page_observations
                 })
 
-            source_stage = self.storage.stage('source')
-            page_image_path = source_stage.output_page(page_num, extension='png')
 
-            if not page_image_path.exists():
-                return json.dumps({
-                    "error": f"Page {page_num} image not found at {page_image_path}"
-                })
-
-            image = Image.open(page_image_path)
-            downsampled_image = downsample_for_vision(image, max_payload_kb=250)
+            downsampled_image = self.storage.source().load_page_image(
+                page_num=page_num,
+                downsample=True,
+                max_payload_kb=250
+            )
 
             self._current_images = [downsampled_image]
 
@@ -233,6 +243,56 @@ class TocFinderTools(AgentTools):
 
         except Exception as e:
             return json.dumps({"error": f"Failed to load page image: {str(e)}"})
+
+    def load_ocr_text(self) -> str:
+        """Load OCR text (both Mistral and OLM) for the currently loaded page."""
+        try:
+            if self._current_page_num is None:
+                return json.dumps({
+                    "error": "No page currently loaded. Call load_page_image first."
+                })
+
+            page_num = self._current_page_num
+
+            # Load Mistral OCR
+            mistral_ocr = None
+            try:
+                mistral_data = self.storage.stage('mistral-ocr').load_page(page_num)
+                mistral_ocr = mistral_data.get('markdown', '')
+            except FileNotFoundError:
+                pass
+
+            # Load OLM OCR
+            olm_ocr = None
+            try:
+                olm_data = self.storage.stage('olm-ocr').load_page(page_num)
+                olm_ocr = olm_data.get('text', '') or olm_data.get('markdown', '')
+            except FileNotFoundError:
+                pass
+
+            if not mistral_ocr and not olm_ocr:
+                return json.dumps({
+                    "error": f"No OCR data found for page {page_num}. Ensure mistral-ocr or olm-ocr stages have run."
+                })
+
+            response = {
+                "success": True,
+                "page_num": page_num,
+                "message": f"OCR text loaded for page {page_num}"
+            }
+
+            if mistral_ocr:
+                response["mistral_ocr"] = mistral_ocr
+                response["mistral_char_count"] = len(mistral_ocr)
+
+            if olm_ocr:
+                response["olm_ocr"] = olm_ocr
+                response["olm_char_count"] = len(olm_ocr)
+
+            return json.dumps(response, indent=2)
+
+        except Exception as e:
+            return json.dumps({"error": f"Failed to load OCR text: {str(e)}"})
 
     def write_toc_result(
         self,

@@ -6,7 +6,7 @@ Provides views for individual stage outputs:
 - /image/<scan_id>/source/<page_num> - Serve source page image
 """
 
-from flask import Blueprint, render_template, send_file, abort
+from flask import Blueprint, render_template, send_file, abort, jsonify
 from pathlib import Path
 
 from web.config import Config
@@ -19,8 +19,73 @@ from web.data.label_structure_data import (
     get_page_labels as get_structure_page_labels
 )
 from web.data.link_toc_data import get_link_toc_data, get_linked_entries_tree
+from web.data.ocr_pages_data import get_ocr_pages_data, get_all_providers_text, get_page_ocr_text
 
 stage_bp = Blueprint('stage', __name__)
+
+
+@stage_bp.route('/stage/<scan_id>/ocr-pages')
+def ocr_pages_view(scan_id: str):
+    """
+    OCR pages stage detail view.
+
+    Shows aggregate status for all OCR providers with links to individual pages.
+    """
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    # Get book metadata
+    metadata = library.get_scan_info(scan_id)
+    if not metadata:
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+
+    # Load OCR data from disk
+    ocr_data = get_ocr_pages_data(storage)
+
+    if not ocr_data:
+        abort(404, f"No OCR stages run for '{scan_id}'")
+
+    return render_template(
+        'stage/ocr_pages.html',
+        scan_id=scan_id,
+        metadata=metadata,
+        ocr_data=ocr_data,
+    )
+
+
+@stage_bp.route('/stage/<scan_id>/ocr-pages/page/<int:page_num>')
+def ocr_pages_page_view(scan_id: str, page_num: int):
+    """
+    Individual page view for OCR pages stage.
+
+    Shows:
+    - Page image on left
+    - Tabbed view of OCR text from each provider on right
+    """
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    # Get book metadata
+    metadata = library.get_scan_info(scan_id)
+    if not metadata:
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+
+    # Get OCR text from all providers
+    provider_texts = get_all_providers_text(storage, page_num)
+
+    # Check if any provider has data for this page
+    if not any(text is not None for text in provider_texts.values()):
+        abort(404, f"No OCR data found for page {page_num}")
+
+    return render_template(
+        'stage/ocr_pages_page.html',
+        scan_id=scan_id,
+        metadata=metadata,
+        page_num=page_num,
+        provider_texts=provider_texts,
+    )
 
 
 @stage_bp.route('/stage/<scan_id>/find-toc')
@@ -259,6 +324,30 @@ def label_structure_page_view(scan_id: str, page_num: int):
         page_num=page_num,
         labels=labels,
     )
+
+
+@stage_bp.route('/api/ocr/<scan_id>/<provider>/<int:page_num>')
+def api_get_ocr_text(scan_id: str, provider: str, page_num: int):
+    """
+    API endpoint to get OCR text for a specific page from a specific provider.
+
+    Returns JSON: {"text": "..."}
+    """
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    # Check book exists
+    if not library.get_scan_info(scan_id):
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+
+    # Get OCR text
+    text = get_page_ocr_text(storage, provider, page_num)
+
+    if text is None:
+        abort(404, f"No OCR data for page {page_num} from {provider}")
+
+    return jsonify({"text": text})
 
 
 @stage_bp.route('/image/<scan_id>/source/<int:page_num>')

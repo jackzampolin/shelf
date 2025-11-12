@@ -395,18 +395,23 @@ class RichProgressBarHierarchical:
                         suffix = f"{batch_stats.completed}/{total_requests} • {elapsed_str} • ${batch_stats.total_cost_usd:.2f}"
 
                     # Section 1: Rollups (aggregated metrics)
+                    # Include QUEUED, DEQUEUED, and EXECUTING phases as "active"
                     executing = {req_id: status for req_id, status in active.items()
-                                if status.phase == RequestPhase.EXECUTING}
+                                if status.phase in (RequestPhase.QUEUED, RequestPhase.DEQUEUED, RequestPhase.EXECUTING)}
 
-                    # Count active requests by state (waiting vs streaming)
+                    # Count active requests by state (queued vs waiting vs streaming)
+                    queued_count = 0
                     waiting_count = 0
                     streaming_count = 0
-                    for req_id in executing.keys():
-                        msg = self._sub_lines.get(req_id, "")
-                        if "Waiting for response" in msg or not msg:
-                            waiting_count += 1
+                    for req_id, status in executing.items():
+                        if status.phase == RequestPhase.QUEUED:
+                            queued_count += 1
                         else:
-                            streaming_count += 1
+                            msg = self._sub_lines.get(req_id, "")
+                            if "Waiting for response" in msg or not msg:
+                                waiting_count += 1
+                            else:
+                                streaming_count += 1
 
                     # Calculate aggregate metrics from ALL completed pages (session-wide, not just recent window)
                     # This provides stable stats throughout the entire run instead of only the last 10 seconds
@@ -476,10 +481,12 @@ class RichProgressBarHierarchical:
                             f"[cyan]Avg cost:[/cyan] [bold yellow]{avg_cost_cents:.2f}¢[/bold yellow][dim]/page[/dim]")
                         rollup_ids.append("rollup_avg_cost")
 
-                    # Active requests breakdown (waiting vs streaming)
+                    # Active requests breakdown (queued vs waiting vs streaming)
                     active_count = len(executing)
                     if active_count > 0:
                         parts = []
+                        if queued_count > 0:
+                            parts.append(f"{queued_count} queued")
                         if waiting_count > 0:
                             parts.append(f"{waiting_count} waiting")
                         if streaming_count > 0:

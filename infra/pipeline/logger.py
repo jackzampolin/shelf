@@ -60,6 +60,8 @@ class PipelineLogger:
         if json_output:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             json_file = self.log_dir / f"{stage}_{timestamp}.jsonl"
+            # Ensure parent directory exists (in case log_dir was just created)
+            json_file.parent.mkdir(parents=True, exist_ok=True)
             json_handler = logging.FileHandler(json_file)
             json_handler.setFormatter(JSONFormatter())
             self.logger.addHandler(json_handler)

@@ -14,33 +14,27 @@ def get_label_structure_report(storage: BookStorage) -> Optional[List[Dict[str, 
     """
     Load label-structure report.csv from disk.
 
-    Returns list of dicts with observation columns (same as label-pages):
-    - scan_page_number: int
-    - whitespace_zones: str (e.g., 'top,middle' or 'none')
-    - whitespace_conf: float
-    - continues_from_prev: bool
-    - continues_to_next: bool
-    - continuation_conf: float
-    - heading_exists: bool
-    - heading_text: str
-    - heading_position: str
-    - heading_conf: float
-    - header_exists: bool
+    Returns list of dicts with columns:
+    - page_num: int
+    - header_present: bool
     - header_text: str
-    - header_conf: float
-    - footer_exists: bool
+    - header_conf: str (high/medium/low)
+    - header_source: str
+    - footer_present: bool
     - footer_text: str
-    - footer_position: str
-    - footer_conf: float
-    - ornamental_break: bool
-    - ornamental_break_position: str
-    - ornamental_break_conf: float
-    - footnotes_exist: bool
-    - footnotes_conf: float
-    - page_num_exists: bool
+    - footer_conf: str
+    - footer_source: str
+    - page_num_present: bool
     - page_num_value: str
-    - page_num_position: str
-    - page_num_conf: float
+    - page_num_location: str
+    - page_num_conf: str
+    - page_num_source: str
+    - headings_present: bool
+    - headings_count: int
+    - headings_text: str (pipe-separated)
+    - headings_levels: str (pipe-separated)
+    - headings_conf: str
+    - headings_source: str
 
     Returns None if report.csv doesn't exist (stage not run yet).
     """
@@ -54,28 +48,17 @@ def get_label_structure_report(storage: BookStorage) -> Optional[List[Dict[str, 
     with open(report_path, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            # Convert scan_page_number to int
-            row['scan_page_number'] = int(row['scan_page_number'])
+            # Convert page_num to int
+            row['page_num'] = int(row['page_num'])
 
             # Convert booleans
-            row['continues_from_prev'] = row['continues_from_prev'].lower() == 'true'
-            row['continues_to_next'] = row['continues_to_next'].lower() == 'true'
-            row['heading_exists'] = row['heading_exists'].lower() == 'true'
-            row['header_exists'] = row['header_exists'].lower() == 'true'
-            row['footer_exists'] = row['footer_exists'].lower() == 'true'
-            row['ornamental_break'] = row['ornamental_break'].lower() == 'true'
-            row['footnotes_exist'] = row['footnotes_exist'].lower() == 'true'
-            row['page_num_exists'] = row['page_num_exists'].lower() == 'true'
+            row['header_present'] = row['header_present'].lower() == 'true'
+            row['footer_present'] = row['footer_present'].lower() == 'true'
+            row['page_num_present'] = row['page_num_present'].lower() == 'true'
+            row['headings_present'] = row['headings_present'].lower() == 'true'
 
-            # Convert confidence scores to float
-            row['whitespace_conf'] = float(row['whitespace_conf']) if row['whitespace_conf'] else 0.0
-            row['continuation_conf'] = float(row['continuation_conf']) if row['continuation_conf'] else 0.0
-            row['heading_conf'] = float(row['heading_conf']) if row['heading_conf'] else 0.0
-            row['header_conf'] = float(row['header_conf']) if row['header_conf'] else 0.0
-            row['footer_conf'] = float(row['footer_conf']) if row['footer_conf'] else 0.0
-            row['ornamental_break_conf'] = float(row['ornamental_break_conf']) if row['ornamental_break_conf'] else 0.0
-            row['footnotes_conf'] = float(row['footnotes_conf']) if row['footnotes_conf'] else 0.0
-            row['page_num_conf'] = float(row['page_num_conf']) if row['page_num_conf'] else 0.0
+            # Convert headings_count to int
+            row['headings_count'] = int(row['headings_count']) if row.get('headings_count') else 0
 
             rows.append(row)
 
@@ -94,7 +77,7 @@ def get_page_labels(storage: BookStorage, page_num: int) -> Optional[Dict[str, A
         return None
 
     for row in report:
-        if row['scan_page_number'] == page_num:
+        if row['page_num'] == page_num:
             return row
 
     return None

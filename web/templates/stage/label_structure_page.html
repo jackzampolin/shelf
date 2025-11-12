@@ -241,12 +241,9 @@
                     <div class="label-item">
                         <span class="label-key">Header:</span>
                         <span class="label-value">
-                            {% if labels.header_exists %}
-                                {{ labels.header_text }}
-                                <span class="confidence-bar">
-                                    <span class="confidence-fill {% if labels.header_conf >= 0.9 %}confidence-high{% elif labels.header_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
-                                          style="width: {{ (labels.header_conf * 100)|int }}%"></span>
-                                </span>
+                            {% if labels.header_present %}
+                                <strong>{{ labels.header_text }}</strong>
+                                <br><small class="text-muted">Source: {{ labels.header_source }} | Confidence: {{ labels.header_conf }}</small>
                             {% else %}
                                 <span class="text-muted">None</span>
                             {% endif %}
@@ -257,12 +254,9 @@
                     <div class="label-item">
                         <span class="label-key">Footer:</span>
                         <span class="label-value">
-                            {% if labels.footer_exists %}
-                                {{ labels.footer_text }} ({{ labels.footer_position }})
-                                <span class="confidence-bar">
-                                    <span class="confidence-fill {% if labels.footer_conf >= 0.9 %}confidence-high{% elif labels.footer_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
-                                          style="width: {{ (labels.footer_conf * 100)|int }}%"></span>
-                                </span>
+                            {% if labels.footer_present %}
+                                <strong>{{ labels.footer_text }}</strong>
+                                <br><small class="text-muted">Source: {{ labels.footer_source }} | Confidence: {{ labels.footer_conf }}</small>
                             {% else %}
                                 <span class="text-muted">None</span>
                             {% endif %}
@@ -273,12 +267,10 @@
                     <div class="label-item">
                         <span class="label-key">Page Number:</span>
                         <span class="label-value">
-                            {% if labels.page_num_exists %}
-                                {{ labels.page_num_value }} ({{ labels.page_num_position }})
-                                <span class="confidence-bar">
-                                    <span class="confidence-fill {% if labels.page_num_conf >= 0.9 %}confidence-high{% elif labels.page_num_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
-                                          style="width: {{ (labels.page_num_conf * 100)|int }}%"></span>
-                                </span>
+                            {% if labels.page_num_present %}
+                                <strong>{{ labels.page_num_value }}</strong>
+                                {% if labels.page_num_location %} ({{ labels.page_num_location }}){% endif %}
+                                <br><small class="text-muted">Source: {{ labels.page_num_source }} | Confidence: {{ labels.page_num_conf }}</small>
                             {% else %}
                                 <span class="text-muted">None</span>
                             {% endif %}
@@ -290,97 +282,19 @@
                 <div class="label-section">
                     <h4>📄 Body Structure</h4>
 
-                    <!-- Heading -->
+                    <!-- Headings -->
                     <div class="label-item">
-                        <span class="label-key">Heading:</span>
+                        <span class="label-key">Headings:</span>
                         <span class="label-value">
-                            {% if labels.heading_exists %}
-                                <strong>{{ labels.heading_text }}</strong> ({{ labels.heading_position }})
-                                <span class="confidence-bar">
-                                    <span class="confidence-fill {% if labels.heading_conf >= 0.9 %}confidence-high{% elif labels.heading_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
-                                          style="width: {{ (labels.heading_conf * 100)|int }}%"></span>
-                                </span>
-                            {% else %}
-                                <span class="text-muted">None</span>
-                            {% endif %}
-                        </span>
-                    </div>
-
-                    <!-- Whitespace -->
-                    <div class="label-item">
-                        <span class="label-key">Whitespace Zones:</span>
-                        <span class="label-value">
-                            {{ labels.whitespace_zones }}
-                            <span class="confidence-bar">
-                                <span class="confidence-fill {% if labels.whitespace_conf >= 0.9 %}confidence-high{% elif labels.whitespace_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
-                                      style="width: {{ (labels.whitespace_conf * 100)|int }}%"></span>
-                            </span>
-                        </span>
-                    </div>
-
-                    <!-- Ornamental Break -->
-                    <div class="label-item">
-                        <span class="label-key">Ornamental Break:</span>
-                        <span class="label-value">
-                            {% if labels.ornamental_break %}
-                                <span class="badge badge-yes">Yes</span> ({{ labels.ornamental_break_position }})
-                                <span class="confidence-bar">
-                                    <span class="confidence-fill {% if labels.ornamental_break_conf >= 0.9 %}confidence-high{% elif labels.ornamental_break_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
-                                          style="width: {{ (labels.ornamental_break_conf * 100)|int }}%"></span>
-                                </span>
-                            {% else %}
-                                <span class="text-muted">None</span>
-                            {% endif %}
-                        </span>
-                    </div>
-                </div>
-
-                <!-- Content Flow -->
-                <div class="label-section">
-                    <h4>🔗 Content Flow</h4>
-
-                    <!-- Text Continuation -->
-                    <div class="label-item">
-                        <span class="label-key">Continues from Previous:</span>
-                        <span class="label-value">
-                            {% if labels.continues_from_prev %}
-                                <span class="badge badge-yes">Yes</span>
-                            {% else %}
-                                <span class="badge badge-no">No</span>
-                            {% endif %}
-                        </span>
-                    </div>
-                    <div class="label-item">
-                        <span class="label-key">Continues to Next:</span>
-                        <span class="label-value">
-                            {% if labels.continues_to_next %}
-                                <span class="badge badge-yes">Yes</span>
-                            {% else %}
-                                <span class="badge badge-no">No</span>
-                            {% endif %}
-                        </span>
-                    </div>
-                    <div class="label-item">
-                        <span class="label-key">Continuation Confidence:</span>
-                        <span class="label-value">
-                            <span class="confidence-bar">
-                                <span class="confidence-fill {% if labels.continuation_conf >= 0.9 %}confidence-high{% elif labels.continuation_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
-                                      style="width: {{ (labels.continuation_conf * 100)|int }}%"></span>
-                            </span>
-                            {{ "%.0f"|format(labels.continuation_conf * 100) }}%
-                        </span>
-                    </div>
-
-                    <!-- Footnotes -->
-                    <div class="label-item">
-                        <span class="label-key">Footnotes:</span>
-                        <span class="label-value">
-                            {% if labels.footnotes_exist %}
-                                <span class="badge badge-yes">Yes</span>
-                                <span class="confidence-bar">
-                                    <span class="confidence-fill {% if labels.footnotes_conf >= 0.9 %}confidence-high{% elif labels.footnotes_conf >= 0.7 %}confidence-med{% else %}confidence-low{% endif %}"
-                                          style="width: {{ (labels.footnotes_conf * 100)|int }}%"></span>
-                                </span>
+                            {% if labels.headings_present %}
+                                <strong>{{ labels.headings_count }} heading{{ 's' if labels.headings_count != 1 else '' }}</strong>
+                                {% if labels.headings_text %}
+                                    <br><em>"{{ labels.headings_text }}"</em>
+                                    {% if labels.headings_levels %}
+                                        <br><small class="text-muted">Levels: {{ labels.headings_levels }}</small>
+                                    {% endif %}
+                                {% endif %}
+                                <br><small class="text-muted">Source: {{ labels.headings_source }} | Confidence: {{ labels.headings_conf }}</small>
                             {% else %}
                                 <span class="text-muted">None</span>
                             {% endif %}

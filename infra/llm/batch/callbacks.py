@@ -71,8 +71,12 @@ def emit_progress_event(
         return
 
     stats = stats_tracker.get_stats()
-    completed = len(worker_pool.results)
-    in_progress = len(worker_pool.get_active_requests())
+    active_requests = worker_pool.get_active_requests()
+
+    # Only count results that are NOT being retried
+    # (a request can have a failed result but still be in active_requests if retrying)
+    completed = len([r for r in worker_pool.results.keys() if r not in active_requests])
+    in_progress = len(active_requests)
     queued = total_requests - completed - in_progress
 
     event = EventData(
