@@ -4,7 +4,6 @@ from queue import PriorityQueue, Empty
 
 from infra.llm.models import LLMRequest
 
-
 def get_next_request(
     worker_pool,
     queue: PriorityQueue,

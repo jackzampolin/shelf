@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from infra.llm.rate_limiter import RateLimiter
 
 from .rollups import aggregate_batch_stats
+from infra.llm.display_format import format_token_count
 
 
 def create_progress_handler(
@@ -18,14 +19,6 @@ def create_progress_handler(
     start_time: float,
     batch_start_time: float
 ):
-    def format_token_count(count: int) -> str:
-        """Format token count with k/M suffix."""
-        if count >= 1_000_000:
-            return f"{count / 1_000_000:.1f}M"
-        elif count >= 1_000:
-            return f"{count / 1_000:.1f}k"
-        else:
-            return str(count)
 
     def handle_progress():
         batch_stats = aggregate_batch_stats(

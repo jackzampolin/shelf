@@ -69,7 +69,6 @@ class LLMBatchClient:
             on_result=on_result
         )
 
-        # Convert dict to ordered list
         result_list = []
         for req in requests:
             result = results_dict.get(req.id)

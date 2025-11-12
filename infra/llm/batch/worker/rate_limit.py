@@ -5,17 +5,11 @@ from queue import PriorityQueue
 from infra.llm.models import LLMRequest
 from ..schemas import RequestPhase
 
-
 def check_rate_limit(
     worker_pool,
     request: LLMRequest,
     queue: PriorityQueue
 ) -> bool:
-    """Check rate limit and sleep if necessary.
-
-    Returns:
-        True if can proceed, False if was rate limited (request re-queued)
-    """
     if not worker_pool.rate_limiter.can_execute():
         wait_time = worker_pool.rate_limiter.time_until_token()
 

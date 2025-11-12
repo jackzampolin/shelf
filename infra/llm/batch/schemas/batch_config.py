@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from dataclasses import dataclass
 from typing import Optional, Callable
-
+from ....pipeline.status.batch_based import BatchBasedStatusTracker
 
 @dataclass
 class LLMBatchConfig:

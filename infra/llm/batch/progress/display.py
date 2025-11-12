@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Display formatting for batch processing progress and summaries."""
 from rich.text import Text
 from rich.console import Console
 
@@ -41,33 +40,19 @@ def display_summary(
     batch_stats,
     elapsed: float,
     total_items: int,
-    metrics_manager=None,
+    metrics_manager,
     metric_prefix: str = ""
 ):
-    """Format and display batch completion summary.
+    cumulative = metrics_manager.get_cumulative_metrics(prefix=metric_prefix)
+    display_completed = cumulative.get('total_requests', batch_stats.completed)
+    display_total = total_items
+    display_prompt_tokens = cumulative.get('total_prompt_tokens', batch_stats.total_prompt_tokens)
+    display_completion_tokens = cumulative.get('total_completion_tokens', batch_stats.total_tokens)
+    display_reasoning_tokens = cumulative.get('total_reasoning_tokens', batch_stats.total_reasoning_tokens)
+    display_cost = cumulative.get('total_cost_usd', batch_stats.total_cost_usd)
 
-    Pulls cumulative metrics if available (for resumed batches),
-    otherwise uses current batch stats.
-    """
-    if metrics_manager:
-        cumulative = metrics_manager.get_cumulative_metrics(prefix=metric_prefix)
-        display_completed = cumulative.get('total_requests', batch_stats.completed)
-        display_total = total_items
-        display_prompt_tokens = cumulative.get('total_prompt_tokens', batch_stats.total_prompt_tokens)
-        display_completion_tokens = cumulative.get('total_completion_tokens', batch_stats.total_tokens)
-        display_reasoning_tokens = cumulative.get('total_reasoning_tokens', batch_stats.total_reasoning_tokens)
-        display_cost = cumulative.get('total_cost_usd', batch_stats.total_cost_usd)
-
-        runtime_metrics = metrics_manager.get("stage_runtime")
-        display_time = runtime_metrics.get("time_seconds", elapsed) if runtime_metrics else elapsed
-    else:
-        display_completed = batch_stats.completed
-        display_total = total_items
-        display_prompt_tokens = batch_stats.total_prompt_tokens
-        display_completion_tokens = batch_stats.total_tokens
-        display_reasoning_tokens = batch_stats.total_reasoning_tokens
-        display_cost = batch_stats.total_cost_usd
-        display_time = elapsed
+    runtime_metrics = metrics_manager.get("stage_runtime")
+    display_time = runtime_metrics.get("time_seconds", elapsed) if runtime_metrics else elapsed
 
     summary_text = format_batch_summary(
         batch_name=batch_name,

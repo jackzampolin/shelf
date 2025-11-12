@@ -107,7 +107,6 @@ class WorkerPool:
         on_result: Optional[Callable[[LLMResult], None]],
         expected_ids: Set[str]
     ):
-        """Main loop for worker thread - dequeue and execute requests until done."""
         worker_id = threading.current_thread().name
         self.logger.debug(f"Worker {worker_id} started")
 

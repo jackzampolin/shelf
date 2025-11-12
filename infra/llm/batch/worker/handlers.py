@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Result handlers for worker pool.
-
-Handles success, retry, permanent failure, and worker crash scenarios.
-Each function receives the worker pool instance and delegates to its state.
-"""
 import traceback
 from typing import Optional, Callable
 from queue import PriorityQueue
