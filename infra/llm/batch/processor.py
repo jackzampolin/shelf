@@ -7,7 +7,7 @@ from .client import LLMBatchClient
 from .progress import create_progress_handler
 from .progress.display import display_summary
 from .schemas import BatchStats, LLMBatchConfig
-from infra.pipeline.rich_progress import RichProgressBarHierarchical
+from rich.progress import Progress, BarColumn, TextColumn, TaskProgressColumn, TimeRemainingColumn
 from infra.config import Config
 
 
@@ -33,6 +33,7 @@ class LLMBatchProcessor:
         self.metric_prefix = pattern.replace('{:04d}', '').replace('.json', '')
 
         self.batch_client = LLMBatchClient(
+            model=self.model,  # Pass model to batch client
             max_workers=self.max_workers,
             max_retries=self.max_retries,
             retry_jitter=self.retry_jitter,
@@ -59,11 +60,12 @@ class LLMBatchProcessor:
 
         The processor automatically:
         - Gets items from self.tracker.get_remaining_items()
-        - Injects storage=self.storage and model=self.model to request_builder
-        - Any additional kwargs are forwarded to request_builder
+        - Injects storage=self.storage to request_builder
+        - Uses self.model at batch level (not per-request)
+        - Forwards any additional kwargs to request_builder
 
         Args:
-            **request_builder_kwargs: Optional extra kwargs for request_builder
+            **request_builder_kwargs: Optional stage-specific kwargs for request_builder
         """
         # Get items from tracker
         items = self.tracker.get_remaining_items()
@@ -76,49 +78,55 @@ class LLMBatchProcessor:
         start_time = time.time()
 
         prep_start = time.time()
-        prep_progress = RichProgressBarHierarchical(
-            total=len(items),
-            prefix="",
-            width=40,
-            unit="requests"
+        prep_progress = Progress(
+            TextColumn("{task.description}"),
+            BarColumn(bar_width=40),
+            TaskProgressColumn(),
+            TextColumn("{task.fields[suffix]}", justify="right"),
+            transient=True
         )
 
-        # Auto-inject storage and model into request_builder kwargs
+        # Auto-inject storage into request_builder kwargs
+        # Model is handled at batch level (not per-request)
         builder_kwargs = {
             'storage': self.storage,
-            'model': self.model,
             **request_builder_kwargs  # Allow overrides
         }
 
         requests = []
-        for prepared, item in enumerate(items, 1):
-            try:
-                request = self.request_builder(item=item, **builder_kwargs)
-                if request:
-                    requests.append(request)
-            except Exception as e:
-                self.logger.warning(f"Failed to prepare item {item}", error=str(e))
+        with prep_progress:
+            prep_task = prep_progress.add_task("", total=len(items), suffix="")
+            for prepared, item in enumerate(items, 1):
+                try:
+                    request = self.request_builder(item=item, **builder_kwargs)
+                    if request:
+                        requests.append(request)
+                except Exception as e:
+                    self.logger.warning(f"Failed to prepare item {item}", error=str(e))
 
-            prep_progress.update(prepared, suffix=f"{prepared}/{len(items)} prepared")
+                prep_progress.update(prep_task, completed=prepared, suffix=f"{prepared}/{len(items)} prepared")
 
         prep_elapsed = time.time() - prep_start
-        prep_progress.finish(f"✅ Prepared {len(requests)} requests in {prep_elapsed:.1f}s")
+        print(f"✅ Prepared {len(requests)} requests in {prep_elapsed:.1f}s")
         self.logger.info(f"{self.batch_name}: Prepared {len(requests)}/{len(items)} requests in {prep_elapsed:.1f}s")
 
         if not requests:
             self.logger.error(f"{self.batch_name}: No valid requests prepared")
             return BatchStats()
 
-        progress = RichProgressBarHierarchical(
-            total=len(requests),
-            prefix="   ",
-            width=40,
-            unit="items",
+        progress = Progress(
+            TextColumn("   {task.description}"),
+            BarColumn(bar_width=40),
+            TaskProgressColumn(),
+            TextColumn("{task.fields[suffix]}", justify="right"),
+            transient=True
         )
-        progress.update(0, suffix="starting...")
+        progress.__enter__()
+        progress_task = progress.add_task("", total=len(requests), suffix="starting...")
 
         progress_handler = create_progress_handler(
             progress_bar=progress,
+            progress_task=progress_task,
             worker_pool=self.batch_client.worker_pool,
             rate_limiter=self.batch_client.rate_limiter,
             metrics_manager=self.metrics_manager,
@@ -137,7 +145,7 @@ class LLMBatchProcessor:
                     rate_limit_status = self.batch_client.rate_limiter.get_status()
                     if rate_limit_status.get('paused', False):
                         wait_seconds = rate_limit_status.get('wait_seconds', 0)
-                        progress.set_status(f"⏸️  Rate limited, resuming in {wait_seconds:.0f}s")
+                        progress.update(progress_task, description=f"⏸️  Rate limited, resuming in {wait_seconds:.0f}s")
                 except Exception as e:
                     self.logger.debug(f"Progress polling error: {e}")
 
@@ -158,8 +166,9 @@ class LLMBatchProcessor:
             elapsed = time.time() - start_time
             batch_stats = self.get_batch_stats(total_items=len(items))
 
+            progress.__exit__(None, None, None)
+
             display_summary(
-                progress_bar=progress,
                 batch_name=self.batch_name,
                 batch_stats=batch_stats,
                 elapsed=elapsed,

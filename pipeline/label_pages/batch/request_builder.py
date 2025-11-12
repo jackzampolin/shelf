@@ -12,7 +12,6 @@ from .schemas import PageStructureObservation
 def prepare_stage1_request(
     item: int,
     storage: BookStorage,
-    model: str,
     total_pages: int,
 ) -> Optional[LLMRequest]:
     """
@@ -21,7 +20,6 @@ def prepare_stage1_request(
     Args:
         item: Page number to process
         storage: BookStorage (from closure)
-        model: Model name
         total_pages: Total page count for position calculation
 
     Returns:
@@ -65,15 +63,10 @@ def prepare_stage1_request(
 
     return LLMRequest(
         id=f"page_observation_{page_num:04d}",
-        model=model,
         messages=[
             {"role": "system", "content": OBSERVATION_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
         ],
         images=[page_image],
-        response_format=response_schema,
-        metadata={
-            'page_num': page_num,
-            'stage': 'stage1',
-        }
+        response_format=response_schema
     )

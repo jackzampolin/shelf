@@ -3,8 +3,6 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
-
 
 class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:

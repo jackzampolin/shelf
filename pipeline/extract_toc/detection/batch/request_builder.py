@@ -12,7 +12,6 @@ from ..prompts import SYSTEM_PROMPT, build_user_prompt
 def prepare_toc_request(
     item: int,
     storage: BookStorage,
-    model: str,
     toc_range: PageRange,
     structure_notes_from_finder: Dict[int, str],
     global_structure_from_finder: dict,
@@ -54,11 +53,9 @@ def prepare_toc_request(
 
     return LLMRequest(
         id=f"page_{page_num:04d}",
-        model=model,
         messages=messages,
         images=[image],
         temperature=0.0,
         response_format={"type": "json_object"},
-        timeout=300,
-        metadata={"page_num": page_num}
+        timeout=300
     )

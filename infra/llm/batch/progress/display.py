@@ -35,7 +35,6 @@ def format_batch_summary(
 
 
 def display_summary(
-    progress_bar,
     batch_name: str,
     batch_stats,
     elapsed: float,
@@ -67,6 +66,4 @@ def display_summary(
     )
 
     console = Console()
-    with console.capture() as capture:
-        console.print(summary_text)
-    progress_bar.finish(capture.get().rstrip())
+    console.print(summary_text)

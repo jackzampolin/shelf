@@ -10,10 +10,11 @@ logger = logging.getLogger(__name__)
 
 
 class RequestExecutor:
-    def __init__(self, llm_client: LLMClient, max_retries: int = 5, logger=None):
+    def __init__(self, llm_client: LLMClient, model: str, max_retries: int = 5, logger=None):
         if logger is None:
             raise ValueError("RequestExecutor requires a logger instance")
         self.llm_client = llm_client
+        self.model = model
         self.max_retries = max_retries
         self.logger = logger
 
@@ -24,12 +25,12 @@ class RequestExecutor:
         self.logger.debug(f"Executor START: {request.id}")
 
         try:
-            current_model = request.model
-            self.logger.debug(f"Executor CALLING LLM: {request.id} (model={current_model})")
+            # Use batch-level model (not request.model)
+            self.logger.debug(f"Executor CALLING LLM: {request.id} (model={self.model})")
 
             # LLMClient.call() now returns LLMResult directly
             result = self.llm_client.call(
-                model=current_model,
+                model=self.model,
                 messages=request.messages,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
@@ -67,7 +68,7 @@ class RequestExecutor:
                 'error': str(e),
                 'attempt': request._retry_count + 1,
                 'max_retries': self.max_retries,
-                'model': current_model,
+                'model': self.model,
                 'temperature': request.temperature,
                 'max_tokens': request.max_tokens,
                 'timeout': request.timeout,

@@ -24,8 +24,6 @@ from infra.llm import (
     LLMBatchClient,
     LLMRequest,
     LLMResult,
-    LLMEvent,
-    EventData,
     RequestPhase,
     RequestStatus,
     BatchStats,

@@ -14,6 +14,7 @@ from .worker import WorkerPool
 class LLMBatchClient:
     def __init__(
         self,
+        model: str,
         max_workers: Optional[int] = None,
         rate_limit: Optional[int] = None,
         max_retries: int = 5,
@@ -22,6 +23,7 @@ class LLMBatchClient:
     ):
         if logger is None:
             raise ValueError("LLMBatchClient requires a logger instance")
+        self.model = model
         self.max_workers = max_workers if max_workers is not None else Config.max_workers
         self.rate_limit = rate_limit if rate_limit is not None else Config.rate_limit_requests_per_minute
         self.max_retries = max_retries
@@ -33,6 +35,7 @@ class LLMBatchClient:
 
         self.request_executor = RequestExecutor(
             llm_client=self.llm_client,
+            model=self.model,  # Pass model to executor
             max_retries=self.max_retries,
             logger=self.logger
         )

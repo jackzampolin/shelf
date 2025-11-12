@@ -22,7 +22,7 @@ from pdf2image import convert_from_path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from infra.config import Config
-from infra.pipeline.rich_progress import RichProgressBar
+from rich.progress import Progress, BarColumn, TextColumn, TaskProgressColumn, TimeRemainingColumn
 # LibraryStorage is now filesystem-based - no library.json!
 
 
@@ -177,14 +177,19 @@ def ingest_book_group(
     completed = 0
     failed = 0
 
-    progress = RichProgressBar(
-        total=total_pages,
-        prefix="   ",
-        width=40,
-        unit="pages"
+    progress = Progress(
+        TextColumn("   {task.description}"),
+        BarColumn(bar_width=40),
+        TaskProgressColumn(),
+        TextColumn("•"),
+        TimeRemainingColumn(),
+        TextColumn("•"),
+        TextColumn("{task.fields[suffix]}", justify="right"),
+        transient=True
     )
 
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+    with progress, ProcessPoolExecutor(max_workers=max_workers) as executor:
+        task_id = progress.add_task("", total=total_pages, suffix="")
         future_to_task = {executor.submit(_extract_single_page, task): task for task in tasks}
 
         for future in as_completed(future_to_task):
@@ -206,10 +211,10 @@ def ingest_book_group(
             # Update progress bar
             current = completed + failed
             suffix = f"{completed} ok" + (f", {failed} failed" if failed > 0 else "")
-            progress.update(current, suffix=suffix)
+            progress.update(task_id, completed=current, suffix=suffix)
 
-    # Finish progress bar
-    progress.finish(f"   ✓ Extracted {completed}/{total_pages} pages")
+    # Progress bar finishes automatically when exiting context
+    print(f"   ✓ Extracted {completed}/{total_pages} pages")
     if failed > 0:
         print(f"   ⚠️  {failed} pages failed")
 

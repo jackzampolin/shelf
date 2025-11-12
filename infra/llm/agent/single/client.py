@@ -125,7 +125,10 @@ class AgentClient:
                         'content': result.response,
                         'tool_calls': result.tool_calls,
                         'reasoning_details': result.reasoning_details,
-                        'usage': result.usage,
+                        'prompt_tokens': result.prompt_tokens,
+                        'completion_tokens': result.completion_tokens,
+                        'total_tokens': result.total_tokens,
+                        'reasoning_tokens': result.reasoning_tokens,
                         'cost_usd': result.cost_usd,
                         'timestamp': datetime.now().isoformat()
                     }

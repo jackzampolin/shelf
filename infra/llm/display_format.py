@@ -1,6 +1,3 @@
-"""Display formatting utilities for LLM token counts."""
-
-
 def format_token_count(count: int) -> str:
     if count >= 1_000_000:
         return f"{count / 1_000_000:.1f}M"

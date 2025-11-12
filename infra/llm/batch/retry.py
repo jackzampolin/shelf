@@ -28,6 +28,7 @@ def is_retryable(error_type: Optional[str]) -> bool:
         '429_rate_limit',
         '413_payload_too_large',
         '422_unprocessable',
+        'json_parse',  # JSON parsing failures for structured responses
         'unknown'
     ]
     return error_type in retryable

@@ -1,17 +1,7 @@
-from .page_output import LabelStructurePageOutput
 from .page_report import LabelStructurePageReport
-from .observations import (
-    HeaderObservation,
-    FooterObservation,
-    PageNumberObservation,
-    HeadingObservation,
-)
+from .llm_response import StructureExtractionResponse
 
 __all__ = [
-    "LabelStructurePageOutput",
     "LabelStructurePageReport",
-    "HeaderObservation",
-    "FooterObservation",
-    "PageNumberObservation",
-    "HeadingObservation",
+    "StructureExtractionResponse",
 ]

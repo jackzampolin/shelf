@@ -32,14 +32,6 @@ class LLMClient:
         request: Optional[any] = None,
         **kwargs
     ) -> LLMResult:
-        """
-        Execute LLM call and return complete result with telemetry.
-
-        Args:
-            request_id: Optional request ID (generated if not provided)
-            queue_time: Time spent in queue before execution (for batch processing)
-            request: Optional original LLMRequest (for batch processing)
-        """
         start_time = time.time()
         if request_id is None:
             request_id = str(uuid.uuid4())
@@ -69,19 +61,36 @@ class LLMClient:
 
         cost = self.cost_calculator.calculate_cost(
             model,
-            parsed.usage.get('prompt_tokens', 0),
-            parsed.usage.get('completion_tokens', 0),
+            parsed.prompt_tokens,
+            parsed.completion_tokens,
             num_images=len(images) if images else 0
         )
 
-        # Parse JSON if response_format was specified
         parsed_json = None
         if response_format and parsed.content:
             import json
             try:
                 parsed_json = json.loads(parsed.content)
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e:
+                # Structured response requested but got invalid JSON - treat as retryable error
+                return LLMResult(
+                    request_id=request_id,
+                    success=False,
+                    error_type="json_parse",
+                    error_message=f"Failed to parse JSON response: {str(e)}",
+                    attempts=attempts,
+                    total_time_seconds=execution_time + queue_time,
+                    queue_time_seconds=queue_time,
+                    execution_time_seconds=execution_time,
+                    prompt_tokens=parsed.prompt_tokens,
+                    completion_tokens=parsed.completion_tokens,
+                    total_tokens=parsed.total_tokens,
+                    reasoning_tokens=parsed.reasoning_tokens,
+                    cost_usd=cost,
+                    provider=parsed.provider,
+                    model_used=parsed.model_used,
+                    request=request
+                )
 
         return LLMResult(
             request_id=request_id,
@@ -92,8 +101,10 @@ class LLMClient:
             total_time_seconds=execution_time + queue_time,
             queue_time_seconds=queue_time,
             execution_time_seconds=execution_time,
-            tokens_received=parsed.usage.get('completion_tokens', 0),
-            usage=parsed.usage,
+            prompt_tokens=parsed.prompt_tokens,
+            completion_tokens=parsed.completion_tokens,
+            total_tokens=parsed.total_tokens,
+            reasoning_tokens=parsed.reasoning_tokens,
             cost_usd=cost,
             provider=parsed.provider,
             model_used=parsed.model_used,
@@ -110,7 +121,6 @@ class LLMClient:
         timeout: int = 120,
         images: Optional[List] = None,
     ) -> LLMResult:
-        """Execute LLM call with tools and return complete result with telemetry."""
         start_time = time.time()
         request_id = str(uuid.uuid4())
 
@@ -137,8 +147,8 @@ class LLMClient:
 
         cost = self.cost_calculator.calculate_cost(
             model,
-            parsed.usage.get('prompt_tokens', 0),
-            parsed.usage.get('completion_tokens', 0)
+            parsed.prompt_tokens,
+            parsed.completion_tokens
         )
 
         return LLMResult(
@@ -150,8 +160,10 @@ class LLMClient:
             total_time_seconds=execution_time,
             queue_time_seconds=0.0,  # No queue for direct calls
             execution_time_seconds=execution_time,
-            tokens_received=parsed.usage.get('completion_tokens', 0),
-            usage=parsed.usage,
+            prompt_tokens=parsed.prompt_tokens,
+            completion_tokens=parsed.completion_tokens,
+            total_tokens=parsed.total_tokens,
+            reasoning_tokens=parsed.reasoning_tokens,
             cost_usd=cost,
             provider=parsed.provider,
             model_used=parsed.model_used,

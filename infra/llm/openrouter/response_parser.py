@@ -15,7 +15,10 @@ class ParsedResponse:
     to this normalized structure. LLMClient then creates LLMResult from this.
     """
     content: Optional[str]
-    usage: Dict[str, Any]
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    reasoning_tokens: int
     model_used: str
     provider: Optional[str] = None
     tool_calls: Optional[List[Dict]] = None
@@ -29,6 +32,12 @@ class ResponseParser:
             content = result['choices'][0]['message']['content']
             usage = result.get('usage', {})
 
+            # Extract and flatten token fields (normalize provider format)
+            prompt_tokens = usage.get('prompt_tokens', 0)
+            completion_tokens = usage.get('completion_tokens', 0)
+            total_tokens = usage.get('total_tokens', 0)
+            reasoning_tokens = usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+
             # Extract provider from model string (e.g., "openai/gpt-4" -> "openai")
             provider = model.split('/')[0] if '/' in model else None
 
@@ -37,14 +46,17 @@ class ResponseParser:
                 model=model,
                 provider=provider,
                 content_length=len(content) if content else 0,
-                prompt_tokens=usage.get('prompt_tokens', 0),
-                completion_tokens=usage.get('completion_tokens', 0),
-                reasoning_tokens=usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                reasoning_tokens=reasoning_tokens
             )
 
             return ParsedResponse(
                 content=content,
-                usage=usage,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                reasoning_tokens=reasoning_tokens,
                 model_used=model,
                 provider=provider
             )
@@ -76,6 +88,12 @@ class ResponseParser:
             reasoning_details = message.get('reasoning_details')
             usage = result.get('usage', {})
 
+            # Extract and flatten token fields (normalize provider format)
+            prompt_tokens = usage.get('prompt_tokens', 0)
+            completion_tokens = usage.get('completion_tokens', 0)
+            total_tokens = usage.get('total_tokens', 0)
+            reasoning_tokens = usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+
             # Extract provider from model string (e.g., "openai/gpt-4" -> "openai")
             provider = model.split('/')[0] if '/' in model else None
 
@@ -87,14 +105,17 @@ class ResponseParser:
                 content_length=len(content) if content else 0,
                 num_tool_calls=len(tool_calls) if tool_calls else 0,
                 has_reasoning=reasoning_details is not None,
-                prompt_tokens=usage.get('prompt_tokens', 0),
-                completion_tokens=usage.get('completion_tokens', 0),
-                reasoning_tokens=usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                reasoning_tokens=reasoning_tokens
             )
 
             return ParsedResponse(
                 content=content,
-                usage=usage,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                reasoning_tokens=reasoning_tokens,
                 model_used=model,
                 provider=provider,
                 tool_calls=tool_calls,

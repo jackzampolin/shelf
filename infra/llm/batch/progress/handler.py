@@ -12,6 +12,7 @@ from infra.llm.display_format import format_token_string
 
 def create_progress_handler(
     progress_bar,
+    progress_task,
     worker_pool: 'WorkerPool',
     rate_limiter: 'RateLimiter',
     metrics_manager,
@@ -64,6 +65,6 @@ def create_progress_handler(
         parts.append(f"${batch_stats.total_cost_usd:.2f}")
 
         suffix = " • ".join(parts)
-        progress_bar.update(batch_stats.completed, suffix=suffix)
+        progress_bar.update(progress_task, completed=batch_stats.completed, suffix=suffix)
 
     return handle_progress

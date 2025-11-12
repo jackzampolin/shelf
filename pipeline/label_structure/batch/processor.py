@@ -5,7 +5,6 @@ from infra.pipeline.status import BatchBasedStatusTracker
 
 from .request_builder import prepare_structure_extraction_request
 from .result_handler import create_result_handler
-from ..schemas.page_output import LabelStructurePageOutput
 
 
 def process_pages(
@@ -30,9 +29,6 @@ def process_pages(
         result_handler=create_result_handler(
             tracker.storage,
             tracker.logger,
-            tracker.stage_name,
-            LabelStructurePageOutput,
-            model,
         ),
         max_workers=max_workers,
         max_retries=max_retries,
