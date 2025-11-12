@@ -3,7 +3,7 @@ import logging
 import time
 import threading
 from queue import PriorityQueue
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Optional, Callable, Dict, Set
 
 from infra.llm.models import LLMRequest, LLMResult
@@ -163,7 +163,28 @@ class WorkerPool:
 
                 self._update_request_phase(request.id, RequestPhase.DEQUEUED)
 
-                result = self.executor.execute_request(request)
+                # Execute with thread-level timeout enforcement
+                # This prevents hung requests from blocking workers forever
+                thread_timeout = request.timeout if request.timeout else 120
+                try:
+                    with ThreadPoolExecutor(max_workers=1) as timeout_executor:
+                        future = timeout_executor.submit(self.executor.execute_request, request)
+                        result = future.result(timeout=thread_timeout)
+                except FutureTimeoutError:
+                    # Thread-level timeout - the request hung beyond its timeout
+                    self.logger.error(
+                        f"Thread timeout for {request.id} after {thread_timeout}s",
+                        request_id=request.id,
+                        thread_timeout=thread_timeout
+                    )
+                    result = LLMResult(
+                        request_id=request.id,
+                        success=False,
+                        error_type="thread_timeout",
+                        error_message=f"Thread hung beyond {thread_timeout}s timeout",
+                        attempts=request._retry_count + 1,
+                        request=request
+                    )
 
                 self.logger.debug(f"Worker {worker_id} RECEIVED RESULT: {request.id} (success={result.success})")
 

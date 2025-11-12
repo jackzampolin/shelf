@@ -23,6 +23,7 @@ def classify_error(error: Exception) -> str:
 def is_retryable(error_type: Optional[str]) -> bool:
     retryable = [
         'timeout',
+        'thread_timeout',  # Thread-level timeout from worker pool
         '5xx',
         '429_rate_limit',
         '413_payload_too_large',

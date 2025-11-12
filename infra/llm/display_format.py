@@ -22,12 +22,12 @@ def format_token_string(
     if colored:
         if reasoning_tokens > 0:
             r_tokens = format_token_count(reasoning_tokens)
-            return f"[green]{in_tokens}[/green]→[blue]{out_tokens}[/blue]+[magenta]{r_tokens}[/magenta]"
+            return f"[green]({in_tokens})[/green]in→[blue]({out_tokens})[/blue]out+[magenta]({r_tokens})[/magenta]r"
         else:
-            return f"[green]{in_tokens}[/green]→[blue]{out_tokens}[/blue]"
+            return f"[green]({in_tokens})[/green]in→[blue]({out_tokens})[/blue]out"
     else:
-        token_str = f"{in_tokens}in→{out_tokens}out"
+        token_str = f"({in_tokens})in->({out_tokens})out"
         if reasoning_tokens > 0:
             r_tokens = format_token_count(reasoning_tokens)
-            token_str += f"+{r_tokens}r"
+            token_str += f"+({r_tokens})r"
         return token_str
