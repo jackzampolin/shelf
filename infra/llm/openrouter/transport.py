@@ -4,7 +4,6 @@ from typing import Dict, Any
 
 from infra.config import Config
 
-
 class OpenRouterTransport:
     def __init__(self, site_url: str = None, site_name: str = None):
         self.api_key = Config.openrouter_api_key

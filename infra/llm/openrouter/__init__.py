@@ -1,19 +1,11 @@
-"""
-OpenRouter API client components.
-
-Clean separation of concerns:
-- transport.py: HTTP requests
-- response_parser.py: Response parsing
-- retry_policy.py: Retry logic
-"""
-
 from .transport import OpenRouterTransport
-from .response_parser import ResponseParser, MalformedResponseError
+from .response_parser import ResponseParser
 from .retry_policy import RetryPolicy
+from .errors import MalformedResponseError
 
 __all__ = [
     'OpenRouterTransport',
     'ResponseParser',
-    'MalformedResponseError',
     'RetryPolicy',
+    'MalformedResponseError',
 ]

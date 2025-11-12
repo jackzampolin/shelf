@@ -46,7 +46,7 @@ class LLMClient:
             site_name: Site name for OpenRouter tracking (default: Config.openrouter_site_name)
         """
         self.transport = OpenRouterTransport(site_url=site_url, site_name=site_name)
-        self.retry = RetryPolicy(max_retries=3, backoff_factor=2.0)
+        self.retry = RetryPolicy(max_retries=3)
         self.parser = ResponseParser()
         self.cost_calculator = CostCalculator()
 

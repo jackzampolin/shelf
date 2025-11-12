@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 import logging
-import requests
 from typing import Dict, Any, Tuple, Optional, List
 
+from .errors import MalformedResponseError
+
 logger = logging.getLogger(__name__)
-
-
-class MalformedResponseError(Exception):
-    """Raised when OpenRouter returns HTTP 200 but malformed JSON structure."""
-    pass
 
 
 class ResponseParser:

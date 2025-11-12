@@ -1,62 +1,40 @@
 #!/usr/bin/env python3
-"""
-Retry policy for OpenRouter API calls.
-
-Battle-tested retry logic with exponential backoff and nonce injection.
-"""
-
 import time
 import uuid
+import random
 import logging
 import requests
 from typing import Callable, Dict, Any, TypeVar
+
+from .errors import MalformedResponseError
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
 
 class RetryPolicy:
-    def __init__(self, max_retries: int = 3, backoff_factor: float = 2.0):
+    def __init__(self, max_retries: int = 3):
         self.max_retries = max_retries
-        self.backoff_factor = backoff_factor
 
     def execute_with_retry(
         self,
         fn: Callable[[], T],
         payload: Dict[str, Any]
     ) -> T:
-        """
-        Execute function with retry logic.
-
-        Args:
-            fn: Function to execute (should raise exception on failure)
-            payload: Request payload (mutated to add nonces for 413/422 retries)
-
-        Returns:
-            Result from fn()
-
-        Raises:
-            Exception: On non-retryable or final retry failure
-        """
-        # Import here to avoid circular dependency
-        from .response_parser import MalformedResponseError
-
         for attempt in range(max(1, self.max_retries)):
             try:
                 return fn()
 
             except MalformedResponseError as e:
-                # Malformed response from OpenRouter - always retry
                 if attempt < max(1, self.max_retries) - 1:
                     logger.warning(
                         f"Malformed response on attempt {attempt+1}/{self.max_retries}, retrying...",
                         error=str(e)
                     )
-                    delay = (self.backoff_factor ** attempt) * 2
+                    delay = 2.0 + random.uniform(-1.5, 1.5)
                     time.sleep(delay)
                     continue
                 else:
-                    # Final attempt - reraise
                     raise
 
             except requests.exceptions.HTTPError as e:
@@ -66,13 +44,13 @@ class RetryPolicy:
                 if e.response.status_code in [413, 422]:
                     self._inject_nonce(payload, e.response.status_code, attempt)
 
-                delay = (self.backoff_factor ** attempt) * 2  # 2s, 4s, 8s
+                delay = 2.0 + random.uniform(-1.5, 1.5)
                 time.sleep(delay)
                 continue
 
             except requests.exceptions.Timeout:
                 if attempt < max(1, self.max_retries) - 1:
-                    delay = (self.backoff_factor ** attempt) * 2
+                    delay = 2.0 + random.uniform(-1.5, 1.5)
                     time.sleep(delay)
                     continue
                 else:
