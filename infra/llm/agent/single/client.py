@@ -4,7 +4,9 @@ from typing import List, Dict, Optional, Callable, Any
 from datetime import datetime
 from pathlib import Path
 
-from infra.llm.client import LLMClient
+from infra.llm.openrouter import OpenRouterTransport, ResponseParser, RetryPolicy
+from infra.llm.openrouter.pricing import CostCalculator
+from ..tool_calling import call_with_tools
 from .config import AgentConfig
 from ..schemas import AgentResult, AgentEvent
 from ..logging import save_run_log
@@ -14,7 +16,10 @@ from .progress import AgentProgressDisplay
 class AgentClient:
     def __init__(self, config: AgentConfig):
         self.config = config
-        self.llm_client = LLMClient()
+        self.transport = OpenRouterTransport()
+        self.parser = ResponseParser()
+        self.retry = RetryPolicy(max_retries=3)
+        self.cost_calculator = CostCalculator()
 
         self.log_dir = config.stage_storage.output_dir / 'logs' / 'agents' / config.agent_id
         self.log_filename = f"{config.agent_id}.json"
@@ -102,7 +107,11 @@ class AgentClient:
                     if images is None and self.config.images is not None:
                         images = self.config.images
 
-                    content, usage, cost, tool_calls, reasoning_details = self.llm_client.call_with_tools(
+                    content, usage, cost, tool_calls, reasoning_details = call_with_tools(
+                        transport=self.transport,
+                        parser=self.parser,
+                        retry=self.retry,
+                        cost_calculator=self.cost_calculator,
                         model=self.config.model,
                         messages=messages,
                         tools=self.config.tools.get_tools(),
