@@ -18,10 +18,14 @@ def process_toc_pages(
     global_structure_from_finder: dict,
     model: str
 ) -> Dict:
+    """
+    Process ToC pages using batch LLM extraction.
+
+    Processor automatically gets items from tracker and injects storage/model.
+    Stage-specific kwargs are forwarded to request_builder.
+    """
     total_toc_pages = toc_range.end_page - toc_range.start_page + 1
     logger.info(f"Extracting ToC entries from {total_toc_pages} pages (parallel)")
-
-    page_nums = list(range(toc_range.start_page, toc_range.end_page + 1))
 
     page_results = []
 
@@ -39,11 +43,9 @@ def process_toc_pages(
         max_retries=3,
     )
 
+    # Process batch - processor handles items, storage, model automatically
     processor = LLMBatchProcessor(config)
     processor.process(
-        items=page_nums,
-        storage=storage,
-        model=model,
         toc_range=toc_range,
         structure_notes_from_finder=structure_notes_from_finder,
         global_structure_from_finder=global_structure_from_finder,

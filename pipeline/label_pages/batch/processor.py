@@ -19,12 +19,16 @@ def process_pages(
     max_workers: int,
     max_retries: int
 ) -> Dict[str, Any]:
-    """Process remaining pages using LLMBatchProcessor."""
+    """
+    Process remaining pages using LLMBatchProcessor.
+
+    Processor automatically gets items from tracker and injects storage/model.
+    Stage-specific kwargs (like total_pages) are forwarded to request_builder.
+    """
 
     logger.info(f"=== Label-Pages: Structural Analysis (3 images per page) ===")
-    logger.info(f"Remaining: {len(remaining_pages)} pages")
 
-    # Get total pages for context
+    # Get total pages for context (stage-specific requirement)
     metadata = storage.load_metadata()
     total_pages = metadata.get('total_pages', 0)
 
@@ -42,13 +46,10 @@ def process_pages(
         max_retries=max_retries,
     )
 
-    # Process batch
+    # Process batch - processor handles items, storage, model automatically
     processor = LLMBatchProcessor(config)
     batch_stats = processor.process(
-        items=remaining_pages,
-        storage=storage,
-        model=model,
-        total_pages=total_pages,
+        total_pages=total_pages,  # Stage-specific kwarg forwarded to request_builder
     )
 
     return batch_stats

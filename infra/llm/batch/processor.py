@@ -52,9 +52,22 @@ class LLMBatchProcessor:
 
     def process(
         self,
-        items: List,
         **request_builder_kwargs
     ) -> BatchStats:
+        """
+        Process all remaining items from tracker using batch LLM processing.
+
+        The processor automatically:
+        - Gets items from self.tracker.get_remaining_items()
+        - Injects storage=self.storage and model=self.model to request_builder
+        - Any additional kwargs are forwarded to request_builder
+
+        Args:
+            **request_builder_kwargs: Optional extra kwargs for request_builder
+        """
+        # Get items from tracker
+        items = self.tracker.get_remaining_items()
+
         if not items:
             self.logger.info(f"{self.batch_name}: No items to process")
             return BatchStats()
@@ -70,10 +83,17 @@ class LLMBatchProcessor:
             unit="requests"
         )
 
+        # Auto-inject storage and model into request_builder kwargs
+        builder_kwargs = {
+            'storage': self.storage,
+            'model': self.model,
+            **request_builder_kwargs  # Allow overrides
+        }
+
         requests = []
         for prepared, item in enumerate(items, 1):
             try:
-                request = self.request_builder(item=item, **request_builder_kwargs)
+                request = self.request_builder(item=item, **builder_kwargs)
                 if request:
                     requests.append(request)
             except Exception as e:
