@@ -145,6 +145,70 @@ class LLMResult:
         completion_details = self.usage.get('completion_tokens_details', {})
         return completion_details.get('reasoning_tokens', 0)
 
+    def record_to_metrics(
+        self,
+        metrics_manager,
+        key: str,
+        page_num: int,
+        extra_fields: Optional[Dict[str, Any]] = None,
+        accumulate: bool = False
+    ):
+        """
+        Record this LLMResult to MetricsManager with proper field mapping.
+
+        Converts LLMResult fields to metrics dict and records to MetricsManager.
+        Standard fields (cost, time, tokens) are top-level, everything else goes
+        to custom_metrics.
+
+        Args:
+            metrics_manager: MetricsManager instance to record to
+            key: Metric key (e.g., "page_0042")
+            page_num: Page number being processed
+            extra_fields: Optional stage-specific fields to include in custom_metrics
+            accumulate: Whether to accumulate costs/times (default: False)
+
+        Example:
+            >>> result.record_to_metrics(
+            ...     metrics_manager=stage_storage.metrics_manager,
+            ...     key=f"page_{page_num:04d}",
+            ...     page_num=page_num,
+            ...     extra_fields={'stage': 'label-structure', 'model': 'gpt-4o'}
+            ... )
+        """
+        # Build custom_metrics dict with all LLM-specific fields
+        custom_metrics = {
+            # LLM-specific fields
+            "attempts": self.attempts,
+            "model_used": self.model_used,
+            "provider": self.provider,
+
+            # Timing breakdown
+            "queue_time_seconds": self.queue_time_seconds,
+            "execution_time_seconds": self.execution_time_seconds,
+
+            # Token breakdown
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
+
+            # Raw usage data (for compatibility)
+            "usage": self.usage,
+        }
+
+        # Merge stage-specific fields
+        if extra_fields:
+            custom_metrics.update(extra_fields)
+
+        # Record to MetricsManager
+        metrics_manager.record(
+            key=key,
+            cost_usd=self.cost_usd,
+            time_seconds=self.total_time_seconds,
+            tokens=self.tokens_received,
+            custom_metrics=custom_metrics,
+            accumulate=accumulate
+        )
+
 
 @dataclass
 class EventData:

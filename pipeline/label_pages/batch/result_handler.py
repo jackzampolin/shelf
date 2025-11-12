@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 from infra.llm.models import LLMResult
-from infra.llm.metrics import record_llm_result
 
 
 def create_stage1_handler(storage, logger, stage_name, output_schema, model):
@@ -38,10 +37,9 @@ def create_stage1_handler(storage, logger, stage_name, output_schema, model):
             )
 
             # Record metrics
-            record_llm_result(
+            result.record_to_metrics(
                 metrics_manager=stage_storage.metrics_manager,
                 key=f"page_{page_num:04d}",
-                result=result,
                 page_num=page_num,
                 extra_fields={'stage': stage_name}
             )

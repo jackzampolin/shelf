@@ -7,7 +7,6 @@ Takes LLM structure extraction response and builds LabelStructurePageOutput.
 from datetime import datetime, timezone
 
 from infra.llm.models import LLMResult
-from infra.llm.metrics import record_llm_result
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from ..schemas import (
@@ -64,10 +63,9 @@ def create_result_handler(
             )
 
             # Record metrics
-            record_llm_result(
+            result.record_to_metrics(
                 metrics_manager=stage_storage.metrics_manager,
                 key=f"page_{page_num:04d}",
-                result=result,
                 page_num=page_num,
                 extra_fields={'stage': stage_name, 'model': model}
             )

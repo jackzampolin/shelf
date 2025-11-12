@@ -2,7 +2,6 @@ import json
 from typing import List, Dict, Callable
 
 from infra.llm.models import LLMResult
-from infra.llm.metrics import record_llm_result
 from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.storage.book_storage import BookStorage
 
@@ -54,10 +53,9 @@ def create_toc_handler(
                 })
 
                 # Record metrics
-                record_llm_result(
+                result.record_to_metrics(
                     metrics_manager=stage_storage.metrics_manager,
                     key=f"page_{page_num:04d}",
-                    result=result,
                     page_num=page_num,
                     extra_fields={'phase': 'detection', 'entries_found': len(entries_validated)}
                 )

@@ -304,8 +304,6 @@ def prepare_request(page_num: int, storage, model: str):
 
 ```python
 # batch/result_handler.py
-from infra.llm.metrics import llm_result_to_metrics
-
 def create_result_handler(storage, logger, output_schema):
     """Factory that creates handler with closure over dependencies."""
 
@@ -322,13 +320,12 @@ def create_result_handler(storage, logger, output_schema):
                 schema=output_schema
             )
 
-            # Record metrics
-            metrics = llm_result_to_metrics(result, page_num)
-            stage_storage.metrics_manager.record(
+            # Record metrics (LLMResult handles conversion)
+            result.record_to_metrics(
+                metrics_manager=stage_storage.metrics_manager,
                 key=f"page_{page_num:04d}",
-                cost_usd=result.cost_usd or 0.0,
-                time_seconds=metrics.processing_time_seconds,
-                custom_metrics=metrics.model_dump()
+                page_num=page_num,
+                extra_fields={'stage': 'your-stage'}
             )
 
             logger.info(f"✓ Page {page_num} complete")
