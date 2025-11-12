@@ -135,8 +135,8 @@ def assemble_toc(
         }
     }
 
-    # Single LLM call - lightweight assembly
-    response_text, usage, cost = llm_client.call(
+    # Single LLM call - lightweight assembly (now returns LLMResult)
+    result = llm_client.call(
         model=model,
         messages=messages,
         temperature=0.0,
@@ -144,29 +144,26 @@ def assemble_toc(
         timeout=300
     )
 
-    elapsed_time = time.time() - start_time
-
     # Print summary line after completion
     from infra.llm.batch.progress.display import format_batch_summary
-    reasoning_details = usage.get("completion_tokens_details", {})
-    reasoning_tokens = reasoning_details.get("reasoning_tokens", 0)
 
     summary = format_batch_summary(
         batch_name="ToC assembly",
         completed=1,
         total=1,
-        time_seconds=elapsed_time,
-        prompt_tokens=usage.get("prompt_tokens", 0),
-        completion_tokens=usage.get("completion_tokens", 0),
-        reasoning_tokens=reasoning_tokens,
-        cost_usd=cost,
+        time_seconds=result.total_time_seconds,
+        prompt_tokens=result.prompt_tokens,
+        completion_tokens=result.completion_tokens,
+        reasoning_tokens=result.reasoning_tokens,
+        cost_usd=result.cost_usd,
         unit="call"
     )
     from rich.console import Console
     Console().print(summary)
 
     try:
-        response_data = json.loads(response_text)
+        # LLMResult.parsed_json contains the parsed JSON (if response_format was set)
+        response_data = result.parsed_json if result.parsed_json else json.loads(result.response)
 
         toc_data = response_data.get("toc", {})
         validation_data = response_data.get("validation", {})

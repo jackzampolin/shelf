@@ -4,7 +4,7 @@ import uuid
 import random
 import logging
 import requests
-from typing import Callable, Dict, Any, TypeVar, Optional
+from typing import Callable, Dict, Any, TypeVar, Optional, Tuple
 
 from .errors import MalformedResponseError
 
@@ -19,7 +19,8 @@ class RetryPolicy:
         self,
         fn: Callable[[], T],
         payload: Dict[str, Any]
-    ) -> T:
+    ) -> Tuple[T, int]:
+        """Execute function with retry logic, returning (result, attempts)."""
         model = payload.get('model', 'unknown')
 
         for attempt in range(max(1, self.max_retries)):
@@ -40,7 +41,7 @@ class RetryPolicy:
                         attempts=attempt+1
                     )
 
-                return result
+                return result, attempt + 1
 
             except MalformedResponseError as e:
                 if attempt < max(1, self.max_retries) - 1:

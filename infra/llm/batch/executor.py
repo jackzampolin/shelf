@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import time
-import json
 import logging
 
 from infra.llm.models import LLMRequest, LLMResult
@@ -28,7 +27,8 @@ class RequestExecutor:
             current_model = request.model
             self.logger.debug(f"Executor CALLING LLM: {request.id} (model={current_model})")
 
-            response_text, usage, cost = self.llm_client.call(
+            # LLMClient.call() now returns LLMResult directly
+            result = self.llm_client.call(
                 model=current_model,
                 messages=request.messages,
                 temperature=request.temperature,
@@ -36,39 +36,15 @@ class RequestExecutor:
                 images=request.images,
                 response_format=request.response_format,
                 timeout=request.timeout,
-                max_retries=0,
-                stream=False
-            )
-
-            self.logger.debug(f"Executor LLM RETURNED: {request.id} (response_len={len(response_text)}, cost=${cost:.4f})")
-
-            parsed_json = json.loads(response_text)
-
-            execution_time = time.time() - start_time
-            completion_tokens = usage.get('completion_tokens', 0)
-
-            provider = None
-            if '/' in current_model:
-                provider = current_model.split('/')[0]
-
-            self.logger.debug(f"Executor RETURNING SUCCESS: {request.id} ({execution_time:.1f}s)")
-
-            return LLMResult(
                 request_id=request.id,
-                success=True,
-                response=response_text,
-                parsed_json=parsed_json,
-                attempts=request._retry_count + 1,
-                total_time_seconds=execution_time + queue_time,
-                queue_time_seconds=queue_time,
-                execution_time_seconds=execution_time,
-                tokens_received=completion_tokens,
-                usage=usage,
-                cost_usd=cost,
-                provider=provider,
-                model_used=current_model,
+                queue_time=queue_time,
                 request=request
             )
+
+            self.logger.debug(f"Executor LLM RETURNED: {request.id} (response_len={len(result.response or '')}, cost=${result.cost_usd:.4f})")
+            self.logger.debug(f"Executor RETURNING SUCCESS: {request.id} ({result.execution_time_seconds:.1f}s)")
+
+            return result
 
         except Exception as e:
             execution_time = time.time() - start_time

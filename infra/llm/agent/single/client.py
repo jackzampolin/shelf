@@ -103,7 +103,8 @@ class AgentClient:
                     if images is None and self.config.images is not None:
                         images = self.config.images
 
-                    content, usage, cost, tool_calls, reasoning_details = self.llm_client.call_with_tools(
+                    # LLMClient.call_with_tools() now returns LLMResult
+                    result = self.llm_client.call_with_tools(
                         model=self.config.model,
                         messages=messages,
                         tools=self.config.tools.get_tools(),
@@ -111,20 +112,21 @@ class AgentClient:
                         max_tokens=self.config.max_tokens,
                         images=images
                     )
-                    self.total_cost += cost
+
+                    self.total_cost += result.cost_usd
                     self.run_log['metadata']['total_cost_usd'] = self.total_cost
-                    prompt_tokens = usage.get('prompt_tokens', 0)
-                    completion_tokens = usage.get('completion_tokens', 0)
-                    reasoning_tokens = usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+                    prompt_tokens = result.prompt_tokens
+                    completion_tokens = result.completion_tokens
+                    reasoning_tokens = result.reasoning_tokens
                     self.total_prompt_tokens += prompt_tokens
                     self.total_completion_tokens += completion_tokens
                     self.total_reasoning_tokens += reasoning_tokens
                     iteration_log['llm_response'] = {
-                        'content': content,
-                        'tool_calls': tool_calls,
-                        'reasoning_details': reasoning_details,
-                        'usage': usage,
-                        'cost_usd': cost,
+                        'content': result.response,
+                        'tool_calls': result.tool_calls,
+                        'reasoning_details': result.reasoning_details,
+                        'usage': result.usage,
+                        'cost_usd': result.cost_usd,
                         'timestamp': datetime.now().isoformat()
                     }
                 except Exception as e:
@@ -138,14 +140,14 @@ class AgentClient:
                         f"LLM call failed in iteration {iteration}: {str(e)}"
                     )
                 assistant_msg = {"role": "assistant"}
-                if content:
-                    assistant_msg["content"] = content
-                if tool_calls:
-                    assistant_msg["tool_calls"] = tool_calls
-                if reasoning_details:
-                    assistant_msg["reasoning_details"] = reasoning_details
+                if result.response:
+                    assistant_msg["content"] = result.response
+                if result.tool_calls:
+                    assistant_msg["tool_calls"] = result.tool_calls
+                if result.reasoning_details:
+                    assistant_msg["reasoning_details"] = result.reasoning_details
                 messages.append(assistant_msg)
-                if not tool_calls:
+                if not result.tool_calls:
                     if self.config.tools.is_complete():
                         elapsed = time.time() - self.start_time
                         self._emit_event(on_event, "agent_complete", iteration, {
@@ -160,7 +162,7 @@ class AgentClient:
                             "content": "Please continue using the available tools to complete your task."
                         })
                         continue
-                for tool_call in tool_calls:
+                for tool_call in result.tool_calls:
                     tool_name = tool_call['function']['name']
                     try:
                         arguments = json.loads(tool_call['function']['arguments'])
@@ -196,7 +198,7 @@ class AgentClient:
                 if self.metrics_manager:
                     self.metrics_manager.record(
                         key=f"{self.metrics_key_prefix}iteration_{iteration:04d}",
-                        cost_usd=cost,
+                        cost_usd=result.cost_usd,
                         time_seconds=time.time() - iteration_start_time,
                         tokens=prompt_tokens + completion_tokens + reasoning_tokens,
                         custom_metrics={
@@ -204,14 +206,14 @@ class AgentClient:
                             'prompt_tokens': prompt_tokens,
                             'completion_tokens': completion_tokens,
                             'reasoning_tokens': reasoning_tokens,
-                            'tool_calls': len(tool_calls) if tool_calls else 0,
+                            'tool_calls': len(result.tool_calls) if result.tool_calls else 0,
                         }
                     )
                 iteration_total_time = time.time() - iteration_start_time
                 self._emit_event(on_event, "iteration_complete", iteration, {
-                    "cost": cost,
+                    "cost": result.cost_usd,
                     "total_cost": self.total_cost,
-                    "tool_count": len(tool_calls) if tool_calls else 0,
+                    "tool_count": len(result.tool_calls) if result.tool_calls else 0,
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
                     "reasoning_tokens": reasoning_tokens,

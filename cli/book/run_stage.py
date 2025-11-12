@@ -6,7 +6,6 @@ from infra.config import Config
 from cli.helpers import clean_stage_directory
 from cli.constants import get_stage_map
 
-
 def cmd_run_stage(args):
     library = Library(storage_root=Config.book_storage_root)
     scan = library.get_scan_info(args.scan_id)

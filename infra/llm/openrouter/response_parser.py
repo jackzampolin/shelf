@@ -1,27 +1,53 @@
 #!/usr/bin/env python3
 import logging
 from typing import Dict, Any, Tuple, Optional, List
+from dataclasses import dataclass
 
 from .errors import MalformedResponseError
+
+
+@dataclass
+class ParsedResponse:
+    """
+    Intermediate structure for parsed OpenRouter API responses.
+
+    Provider-specific ResponseParser extracts raw API fields and maps them
+    to this normalized structure. LLMClient then creates LLMResult from this.
+    """
+    content: Optional[str]
+    usage: Dict[str, Any]
+    model_used: str
+    provider: Optional[str] = None
+    tool_calls: Optional[List[Dict]] = None
+    reasoning_details: Optional[List[Dict]] = None
 
 class ResponseParser:
     def __init__(self, logger: Optional[logging.Logger] = None):
         self.logger = logger or logging.getLogger(__name__)
-    def parse_chat_completion(self, result: Dict[str, Any], model: str) -> Tuple[str, Dict[str, Any]]:
+    def parse_chat_completion(self, result: Dict[str, Any], model: str) -> ParsedResponse:
         try:
             content = result['choices'][0]['message']['content']
             usage = result.get('usage', {})
 
+            # Extract provider from model string (e.g., "openai/gpt-4" -> "openai")
+            provider = model.split('/')[0] if '/' in model else None
+
             self.logger.debug(
                 f"Parsed chat completion",
                 model=model,
+                provider=provider,
                 content_length=len(content) if content else 0,
                 prompt_tokens=usage.get('prompt_tokens', 0),
                 completion_tokens=usage.get('completion_tokens', 0),
                 reasoning_tokens=usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
             )
 
-            return content, usage
+            return ParsedResponse(
+                content=content,
+                usage=usage,
+                model_used=model,
+                provider=provider
+            )
 
         except (KeyError, IndexError, TypeError) as e:
             self.logger.error(
@@ -42,7 +68,7 @@ class ResponseParser:
         self,
         result: Dict[str, Any],
         model: str
-    ) -> Tuple[Optional[str], Dict[str, Any], Optional[List[Dict]], Optional[List[Dict]]]:
+    ) -> ParsedResponse:
         try:
             message = result['choices'][0]['message']
             content = message.get('content')
@@ -50,9 +76,13 @@ class ResponseParser:
             reasoning_details = message.get('reasoning_details')
             usage = result.get('usage', {})
 
+            # Extract provider from model string (e.g., "openai/gpt-4" -> "openai")
+            provider = model.split('/')[0] if '/' in model else None
+
             self.logger.debug(
                 f"Parsed tool completion",
                 model=model,
+                provider=provider,
                 has_content=content is not None,
                 content_length=len(content) if content else 0,
                 num_tool_calls=len(tool_calls) if tool_calls else 0,
@@ -62,7 +92,14 @@ class ResponseParser:
                 reasoning_tokens=usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
             )
 
-            return content, usage, tool_calls, reasoning_details
+            return ParsedResponse(
+                content=content,
+                usage=usage,
+                model_used=model,
+                provider=provider,
+                tool_calls=tool_calls,
+                reasoning_details=reasoning_details
+            )
 
         except (KeyError, IndexError, TypeError) as e:
             self.logger.error(

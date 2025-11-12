@@ -90,6 +90,10 @@ class LLMResult:
         provider: Provider that handled request (if available)
         model_used: Actual model used (may differ from requested)
 
+        # Tool usage (for call_with_tools)
+        tool_calls: List of tool calls made by model (if any)
+        reasoning_details: Reasoning details from model (if any)
+
         # Original request
         request: Reference to original LLMRequest
     """
@@ -117,6 +121,10 @@ class LLMResult:
     # Provider info
     provider: Optional[str] = None
     model_used: Optional[str] = None
+
+    # Tool usage (for call_with_tools)
+    tool_calls: Optional[List[Dict]] = None
+    reasoning_details: Optional[List[Dict]] = None
 
     # Original request (for metadata access)
     request: Optional['LLMRequest'] = field(default=None, repr=False)
