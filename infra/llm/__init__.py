@@ -24,7 +24,7 @@ from infra.llm.models import (
     EventData,
 )
 from infra.llm.metrics import llm_result_to_metrics
-from infra.llm.openrouter.pricing import PricingCache, CostCalculator, calculate_cost
+from infra.llm.openrouter.pricing import PricingCache, CostCalculator
 from infra.llm.rate_limiter import RateLimiter
 
 __all__ = [
@@ -40,6 +40,5 @@ __all__ = [
     "llm_result_to_metrics",
     "PricingCache",
     "CostCalculator",
-    "calculate_cost",
     "RateLimiter",
 ]

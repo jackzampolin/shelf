@@ -32,7 +32,7 @@ class LLMBatchClient:
         self.progress_interval = progress_interval
         self.logger = logger
 
-        self.llm_client = LLMClient()
+        self.llm_client = LLMClient(logger=self.logger)
         self.rate_limiter = RateLimiter(requests_per_minute=self.rate_limit)
 
         self.request_executor = RequestExecutor(

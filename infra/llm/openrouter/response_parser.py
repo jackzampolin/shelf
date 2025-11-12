@@ -4,19 +4,27 @@ from typing import Dict, Any, Tuple, Optional, List
 
 from .errors import MalformedResponseError
 
-logger = logging.getLogger(__name__)
-
-
 class ResponseParser:
-    @staticmethod
-    def parse_chat_completion(result: Dict[str, Any], model: str) -> Tuple[str, Dict[str, Any]]:
+    def __init__(self, logger: Optional[logging.Logger] = None):
+        self.logger = logger or logging.getLogger(__name__)
+    def parse_chat_completion(self, result: Dict[str, Any], model: str) -> Tuple[str, Dict[str, Any]]:
         try:
             content = result['choices'][0]['message']['content']
             usage = result.get('usage', {})
+
+            self.logger.debug(
+                f"Parsed chat completion",
+                model=model,
+                content_length=len(content) if content else 0,
+                prompt_tokens=usage.get('prompt_tokens', 0),
+                completion_tokens=usage.get('completion_tokens', 0),
+                reasoning_tokens=usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+            )
+
             return content, usage
 
         except (KeyError, IndexError, TypeError) as e:
-            logger.error(
+            self.logger.error(
                 "Malformed API response from OpenRouter (missing expected keys)",
                 model=model,
                 error_type=type(e).__name__,
@@ -30,8 +38,8 @@ class ResponseParser:
                 f"Malformed API response from OpenRouter: missing '{e.args[0] if e.args else 'expected key'}'"
             )
 
-    @staticmethod
     def parse_tool_completion(
+        self,
         result: Dict[str, Any],
         model: str
     ) -> Tuple[Optional[str], Dict[str, Any], Optional[List[Dict]], Optional[List[Dict]]]:
@@ -42,10 +50,22 @@ class ResponseParser:
             reasoning_details = message.get('reasoning_details')
             usage = result.get('usage', {})
 
+            self.logger.debug(
+                f"Parsed tool completion",
+                model=model,
+                has_content=content is not None,
+                content_length=len(content) if content else 0,
+                num_tool_calls=len(tool_calls) if tool_calls else 0,
+                has_reasoning=reasoning_details is not None,
+                prompt_tokens=usage.get('prompt_tokens', 0),
+                completion_tokens=usage.get('completion_tokens', 0),
+                reasoning_tokens=usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+            )
+
             return content, usage, tool_calls, reasoning_details
 
         except (KeyError, IndexError, TypeError) as e:
-            logger.error(
+            self.logger.error(
                 "Malformed API response from OpenRouter (missing expected keys)",
                 model=model,
                 error_type=type(e).__name__,

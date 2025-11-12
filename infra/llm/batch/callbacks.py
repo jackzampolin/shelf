@@ -5,7 +5,6 @@ from typing import Callable, Optional
 from infra.llm.models import LLMResult, LLMEvent, EventData
 from .stats import BatchStatsTracker
 
-
 def wrap_with_stats_tracking(
     original_callback: Optional[Callable[[LLMResult], None]],
     stats_tracker: BatchStatsTracker

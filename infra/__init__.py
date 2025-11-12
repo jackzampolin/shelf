@@ -31,7 +31,6 @@ from infra.llm import (
     BatchStats,
     PricingCache,
     CostCalculator,
-    calculate_cost,
     RateLimiter
 )
 
@@ -68,7 +67,6 @@ __all__ = [
     "BatchStats",
     "PricingCache",
     "CostCalculator",
-    "calculate_cost",
     "RateLimiter",
 
     # Pipeline
