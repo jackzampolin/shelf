@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from infra.llm.rate_limiter import RateLimiter
 
 from .rollups import aggregate_batch_stats
-from infra.llm.display_format import format_token_count
+from infra.llm.display_format import format_token_string
 
 
 def create_progress_handler(
@@ -52,15 +52,12 @@ def create_progress_handler(
 
         # Tokens: in->out+r format with colors
         if batch_stats.total_prompt_tokens > 0 or batch_stats.total_tokens > 0:
-            in_tokens = format_token_count(batch_stats.total_prompt_tokens)
-            out_tokens = format_token_count(batch_stats.total_tokens)
-
-            if batch_stats.total_reasoning_tokens > 0:
-                r_tokens = format_token_count(batch_stats.total_reasoning_tokens)
-                token_str = f"[green]{in_tokens}[/green]→[blue]{out_tokens}[/blue]+[magenta]{r_tokens}[/magenta]"
-            else:
-                token_str = f"[green]{in_tokens}[/green]→[blue]{out_tokens}[/blue]"
-
+            token_str = format_token_string(
+                batch_stats.total_prompt_tokens,
+                batch_stats.total_tokens,
+                batch_stats.total_reasoning_tokens,
+                colored=True
+            )
             parts.append(token_str)
 
         # Cost

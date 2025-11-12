@@ -13,13 +13,21 @@ def format_token_count(count: int) -> str:
 def format_token_string(
     prompt_tokens: int,
     completion_tokens: int,
-    reasoning_tokens: int = 0
+    reasoning_tokens: int = 0,
+    colored: bool = False
 ) -> str:
     in_tokens = format_token_count(prompt_tokens)
     out_tokens = format_token_count(completion_tokens)
 
-    token_str = f"{in_tokens}in→{out_tokens}out"
-    if reasoning_tokens > 0:
-        r_tokens = format_token_count(reasoning_tokens)
-        token_str += f"+{r_tokens}r"
-    return token_str
+    if colored:
+        if reasoning_tokens > 0:
+            r_tokens = format_token_count(reasoning_tokens)
+            return f"[green]{in_tokens}[/green]→[blue]{out_tokens}[/blue]+[magenta]{r_tokens}[/magenta]"
+        else:
+            return f"[green]{in_tokens}[/green]→[blue]{out_tokens}[/blue]"
+    else:
+        token_str = f"{in_tokens}in→{out_tokens}out"
+        if reasoning_tokens > 0:
+            r_tokens = format_token_count(reasoning_tokens)
+            token_str += f"+{r_tokens}r"
+        return token_str
