@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""
+Retry policy for OpenRouter API calls.
+
+Battle-tested retry logic with exponential backoff and nonce injection.
+"""
+
 import time
 import uuid
 import logging
@@ -19,9 +25,39 @@ class RetryPolicy:
         fn: Callable[[], T],
         payload: Dict[str, Any]
     ) -> T:
+        """
+        Execute function with retry logic.
+
+        Args:
+            fn: Function to execute (should raise exception on failure)
+            payload: Request payload (mutated to add nonces for 413/422 retries)
+
+        Returns:
+            Result from fn()
+
+        Raises:
+            Exception: On non-retryable or final retry failure
+        """
+        # Import here to avoid circular dependency
+        from .response_parser import MalformedResponseError
+
         for attempt in range(max(1, self.max_retries)):
             try:
                 return fn()
+
+            except MalformedResponseError as e:
+                # Malformed response from OpenRouter - always retry
+                if attempt < max(1, self.max_retries) - 1:
+                    logger.warning(
+                        f"Malformed response on attempt {attempt+1}/{self.max_retries}, retrying...",
+                        error=str(e)
+                    )
+                    delay = (self.backoff_factor ** attempt) * 2
+                    time.sleep(delay)
+                    continue
+                else:
+                    # Final attempt - reraise
+                    raise
 
             except requests.exceptions.HTTPError as e:
                 if not self._should_retry(e, attempt):
