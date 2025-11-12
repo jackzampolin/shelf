@@ -24,10 +24,8 @@ class RequestExecutor:
         self.logger.debug(f"Executor START: {request.id}")
 
         try:
-            # Use batch-level model (not request.model)
             self.logger.debug(f"Executor CALLING LLM: {request.id} (model={self.model})")
 
-            # LLMClient.call() now returns LLMResult directly
             result = self.llm_client.call(
                 model=self.model,
                 messages=request.messages,

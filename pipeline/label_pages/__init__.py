@@ -4,9 +4,8 @@ from infra.config import Config
 from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import BatchBasedStatusTracker, MultiPhaseStatusTracker
-from .tools.report_generator import generate_report
-from .batch.processor import process_pages
-
+from .tools import generate_report
+from .batch import process_pages
 from .schemas import LabelPagesPageOutput, LabelPagesPageReport
 
 
@@ -83,3 +82,12 @@ class LabelPagesStage(BaseStage):
             )
 
         return {"status": "success"}
+
+
+__all__ = [
+    "LabelPagesStage",
+    "process_pages",
+    "generate_report",
+    "LabelPagesPageOutput",
+    "LabelPagesPageReport",
+]

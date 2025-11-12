@@ -4,6 +4,7 @@ from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import MultiPhaseStatusTracker
 from infra.config import Config
+from .schemas import PageRange, FinderResult, LevelPattern, StructureSummary
 
 class FindTocStage(BaseStage):
     name = "find-toc"
@@ -43,3 +44,12 @@ class FindTocStage(BaseStage):
         )
 
         return agent.search()
+
+
+__all__ = [
+    "FindTocStage",
+    "PageRange",
+    "FinderResult",
+    "LevelPattern",
+    "StructureSummary",
+]

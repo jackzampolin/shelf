@@ -53,19 +53,6 @@ class LLMBatchProcessor:
         self,
         **request_builder_kwargs
     ) -> BatchStats:
-        """
-        Process all remaining items from tracker using batch LLM processing.
-
-        The processor automatically:
-        - Gets items from self.tracker.get_remaining_items()
-        - Injects storage=self.storage to request_builder
-        - Uses self.model at batch level (not per-request)
-        - Forwards any additional kwargs to request_builder
-
-        Args:
-            **request_builder_kwargs: Optional stage-specific kwargs for request_builder
-        """
-        # Get items from tracker
         items = self.tracker.get_remaining_items()
 
         if not items:
@@ -84,8 +71,6 @@ class LLMBatchProcessor:
             transient=True
         )
 
-        # Auto-inject storage into request_builder kwargs
-        # Model is handled at batch level (not per-request)
         builder_kwargs = {
             'storage': self.storage,
             **request_builder_kwargs  # Allow overrides

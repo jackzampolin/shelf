@@ -5,6 +5,7 @@ from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import BatchBasedStatusTracker
 from infra.ocr import OCRBatchProcessor
 from .provider import OlmOCRProvider
+from .schemas import OlmOcrPageOutput, OlmOcrPageMetrics
 
 
 class OlmOcrStage(BaseStage):
@@ -42,3 +43,11 @@ class OlmOcrStage(BaseStage):
             "pages_processed": batch_stats["pages_processed"],
             "cost_usd": batch_stats["total_cost"]
         }
+
+
+__all__ = [
+    "OlmOcrStage",
+    "OlmOCRProvider",
+    "OlmOcrPageOutput",
+    "OlmOcrPageMetrics",
+]

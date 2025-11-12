@@ -5,6 +5,7 @@ from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import BatchBasedStatusTracker
 from infra.ocr import OCRBatchProcessor
 from .provider import MistralOCRProvider
+from .schemas import MistralOcrPageOutput, ImageBBox, PageDimensions
 
 
 class MistralOcrStage(BaseStage):
@@ -54,3 +55,12 @@ class MistralOcrStage(BaseStage):
             "pages_processed": batch_stats["pages_processed"],
             "cost_usd": batch_stats["total_cost"]
         }
+
+
+__all__ = [
+    "MistralOcrStage",
+    "MistralOCRProvider",
+    "MistralOcrPageOutput",
+    "ImageBBox",
+    "PageDimensions",
+]

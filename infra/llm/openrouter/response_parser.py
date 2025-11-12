@@ -7,12 +7,6 @@ from .errors import MalformedResponseError
 
 @dataclass
 class ParsedResponse:
-    """
-    Intermediate structure for parsed OpenRouter API responses.
-
-    Provider-specific ResponseParser extracts raw API fields and maps them
-    to this normalized structure. LLMClient then creates LLMResult from this.
-    """
     content: Optional[str]
     prompt_tokens: int
     completion_tokens: int
@@ -31,13 +25,11 @@ class ResponseParser:
             content = result['choices'][0]['message']['content']
             usage = result.get('usage', {})
 
-            # Extract and flatten token fields (normalize provider format)
             prompt_tokens = usage.get('prompt_tokens', 0)
             completion_tokens = usage.get('completion_tokens', 0)
             total_tokens = usage.get('total_tokens', 0)
             reasoning_tokens = usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
 
-            # Extract provider from model string (e.g., "openai/gpt-4" -> "openai")
             provider = model.split('/')[0] if '/' in model else None
 
             self.logger.debug(
@@ -87,13 +79,11 @@ class ResponseParser:
             reasoning_details = message.get('reasoning_details')
             usage = result.get('usage', {})
 
-            # Extract and flatten token fields (normalize provider format)
             prompt_tokens = usage.get('prompt_tokens', 0)
             completion_tokens = usage.get('completion_tokens', 0)
             total_tokens = usage.get('total_tokens', 0)
             reasoning_tokens = usage.get('completion_tokens_details', {}).get('reasoning_tokens', 0)
 
-            # Extract provider from model string (e.g., "openai/gpt-4" -> "openai")
             provider = model.split('/')[0] if '/' in model else None
 
             self.logger.debug(

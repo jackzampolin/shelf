@@ -5,6 +5,7 @@ from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import BatchBasedStatusTracker
 from infra.ocr import OCRBatchProcessor
 from .provider import PaddleOCRProvider
+from .schemas import PaddleOcrPageOutput, PaddleOcrPageMetrics
 
 class PaddleOcrStage(BaseStage):
     name = "paddle-ocr"
@@ -41,3 +42,11 @@ class PaddleOcrStage(BaseStage):
             "pages_processed": batch_stats["pages_processed"],
             "cost_usd": batch_stats["total_cost"]
         }
+
+
+__all__ = [
+    "PaddleOcrStage",
+    "PaddleOCRProvider",
+    "PaddleOcrPageOutput",
+    "PaddleOcrPageMetrics",
+]

@@ -1,4 +1,5 @@
 from infra.config import Config
+
 from infra.pipeline.storage import (
     Library,
     BookStorage, 

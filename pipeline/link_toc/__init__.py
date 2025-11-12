@@ -5,7 +5,8 @@ from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import MultiPhaseStatusTracker
 from infra.config import Config
 from .orchestrator import find_all_toc_entries
-from .tools.report_generator import generate_report
+from .tools import generate_report
+from .schemas import AgentResult, LinkedToCEntry, LinkedTableOfContents, LinkTocReportEntry
 
 
 class LinkTocStage(BaseStage):
@@ -67,3 +68,14 @@ class LinkTocStage(BaseStage):
             )
 
         return {"status": "success"}
+
+
+__all__ = [
+    "LinkTocStage",
+    "find_all_toc_entries",
+    "generate_report",
+    "AgentResult",
+    "LinkedToCEntry",
+    "LinkedTableOfContents",
+    "LinkTocReportEntry",
+]

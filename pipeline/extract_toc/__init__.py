@@ -4,7 +4,7 @@ from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import MultiPhaseStatusTracker
 from infra.config import Config
-from .schemas import PageRange
+from .schemas import PageRange, TableOfContents, ToCEntry, ExtractTocBookOutput
 from .detection import extract_toc_entries
 from .assembly import assemble_toc
 
@@ -72,3 +72,14 @@ class ExtractTocStage(BaseStage):
 
 
         return {"status": "success"}
+
+
+__all__ = [
+    "ExtractTocStage",
+    "extract_toc_entries",
+    "assemble_toc",
+    "PageRange",
+    "TableOfContents",
+    "ToCEntry",
+    "ExtractTocBookOutput",
+]
