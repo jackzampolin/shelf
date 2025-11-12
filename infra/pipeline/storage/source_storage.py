@@ -3,8 +3,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 from PIL import Image
 
-from infra.config import Config
-
 if TYPE_CHECKING:
     from infra.pipeline.storage.book_storage import BookStorage
 
@@ -40,7 +38,7 @@ class SourceStorage:
         image: Image.Image,
         max_payload_kb: int = 800
     ) -> Image.Image:
-        ratio = Config.pdf_extraction_dpi_vision / Config.pdf_extraction_dpi_ocr
+        ratio = 300 / 600  # vision DPI / OCR DPI
 
         if ratio < 1.0:
             width, height = image.size

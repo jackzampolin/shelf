@@ -87,13 +87,13 @@ def ingest_book_group(
 
         for local_page in range(1, page_count + 1):
             output_path = source_dir / f"page_{global_page_num:04d}.png"
-            tasks.append((pdf_path, local_page, output_path, Config.pdf_extraction_dpi_ocr))
+            tasks.append((pdf_path, local_page, output_path, 600))
             global_page_num += 1
 
     total_pages = len(tasks)
     max_workers = multiprocessing.cpu_count()
 
-    print(f"\n   Extracting {total_pages} pages at {Config.pdf_extraction_dpi_ocr} DPI...")
+    print(f"\n   Extracting {total_pages} pages at 600 DPI...")
 
     completed = 0
     failed = 0
@@ -144,7 +144,7 @@ def ingest_book_group(
         "source_files": [f"{base_name}-{i}.pdf" for i in range(1, len(pdf_paths) + 1)],
         "total_pages": completed,
         "status": "registered",
-        "extraction_dpi": Config.pdf_extraction_dpi_ocr,
+        "extraction_dpi": 600,
         "extraction_workers": max_workers
     }
 

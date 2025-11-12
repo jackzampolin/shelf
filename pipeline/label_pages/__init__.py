@@ -34,7 +34,7 @@ class LabelPagesStage(BaseStage):
         super().__init__(storage)
 
         self.model = model or Config.vision_model_primary
-        self.max_workers = max_workers or Config.max_workers
+        self.max_workers = max_workers or 30
         self.max_retries = max_retries
 
         self.page_tracker = BatchBasedStatusTracker(

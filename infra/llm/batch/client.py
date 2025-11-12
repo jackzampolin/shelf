@@ -4,7 +4,6 @@ from typing import List, Optional, Callable
 from infra.llm.models import LLMRequest, LLMResult
 from infra.llm.client import LLMClient
 from infra.llm.rate_limiter import RateLimiter
-from infra.config import Config
 
 from .executor import RequestExecutor
 from .worker import WorkerPool
@@ -23,8 +22,8 @@ class LLMBatchClient:
         if logger is None:
             raise ValueError("LLMBatchClient requires a logger instance")
         self.model = model
-        self.max_workers = max_workers if max_workers is not None else Config.max_workers
-        self.rate_limit = rate_limit if rate_limit is not None else Config.rate_limit_requests_per_minute
+        self.max_workers = max_workers if max_workers is not None else 30
+        self.rate_limit = rate_limit if rate_limit is not None else 150
         self.max_retries = max_retries
         self.retry_jitter = retry_jitter
         self.logger = logger

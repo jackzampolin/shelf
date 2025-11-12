@@ -7,7 +7,6 @@ from .progress import create_progress_handler
 from .progress.display import display_summary
 from .schemas import BatchStats, LLMBatchConfig
 from rich.progress import Progress, BarColumn, TextColumn, TaskProgressColumn, TimeRemainingColumn
-from infra.config import Config
 
 
 class LLMBatchProcessor:
@@ -19,7 +18,7 @@ class LLMBatchProcessor:
         self.stage_name = config.tracker.stage_name
 
         self.model = config.model
-        self.max_workers = config.max_workers or Config.max_workers
+        self.max_workers = config.max_workers or 30
         self.max_retries = config.max_retries
         self.retry_jitter = config.retry_jitter
         self.batch_name = config.batch_name

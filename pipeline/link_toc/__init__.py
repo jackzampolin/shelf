@@ -1,9 +1,9 @@
 from typing import Dict, Any
 
-from infra.config import Config
 from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import MultiPhaseStatusTracker
+from infra.config import Config
 from .orchestrator import find_all_toc_entries
 from .tools.report_generator import generate_report
 
@@ -28,7 +28,7 @@ class LinkTocStage(BaseStage):
     ):
         super().__init__(storage)
 
-        self.model = model or Config.text_model_expensive
+        self.model = model or Config.vision_model_primary
         self.max_iterations = max_iterations
         self.verbose = verbose
 

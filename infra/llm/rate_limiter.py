@@ -2,12 +2,10 @@ import time
 import threading
 from typing import Dict, Optional
 
-from infra.config import Config
-
 
 class RateLimiter:
     def __init__(self, requests_per_minute: Optional[int] = None):
-        self.requests_per_minute = requests_per_minute if requests_per_minute is not None else Config.rate_limit_requests_per_minute
+        self.requests_per_minute = requests_per_minute if requests_per_minute is not None else 150
         self.window_seconds = 60.0
         self.lock = threading.RLock()  # Use RLock (reentrant) instead of Lock to avoid deadlock
 
