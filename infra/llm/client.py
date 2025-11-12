@@ -1,49 +1,43 @@
 #!/usr/bin/env python3
 """
-Unified LLM Client for OpenRouter API
+Unified LLM Client for OpenRouter API.
 
-Provides a consistent interface for all LLM calls across the pipeline with:
-- Automatic retries with exponential backoff
-- Optional streaming with progress tracking
-- Vision model support (images)
-- Cost tracking with dynamic pricing
-- Configurable timeouts
-- Thread-safe for parallel execution
+Orchestrates transport, retry, parsing, and cost tracking layers.
+
+Simplified architecture:
+- No streaming support (removed)
+- No image encoding (handled by SourceStorage)
+- Clean composition of focused components
 """
 
-import os
-import time
-import json
-import base64
-import logging
-import requests
-from typing import List, Dict, Tuple, Optional, Union
-from pathlib import Path
-from dotenv import load_dotenv
-from infra.llm.pricing import CostCalculator
+from typing import List, Dict, Tuple, Optional
+
 from infra.config import Config
-
-
-# Token estimation constant
-# Empirically derived average for character-to-token conversion when actual usage unavailable
-CHARS_PER_TOKEN_ESTIMATE = 4
+from infra.llm.pricing import CostCalculator
+from infra.llm.openrouter import OpenRouterTransport, ResponseParser, RetryPolicy
 
 
 class LLMClient:
     """
-    Unified client for OpenRouter API calls.
+    Orchestrates OpenRouter API calls with retry, parsing, and cost tracking.
 
-    Features:
-    - Automatic retry logic with exponential backoff
-    - Streaming support for long responses
-    - Vision model support with image inputs
-    - Cost tracking with dynamic pricing
-    - Thread-safe for parallel execution
+    Responsibilities:
+    - Build request payloads
+    - Coordinate transport + retry + parsing layers
+    - Calculate costs
+
+    Components:
+    - OpenRouterTransport: HTTP requests
+    - RetryPolicy: Retry logic with backoff and nonce
+    - ResponseParser: Response extraction and malformed handling
+    - CostCalculator: Dynamic pricing from OpenRouter
+
+    Note:
+        Images should be preprocessed by SourceStorage.load_page_image(downsample=True)
+        before passing to this client. This client does NOT handle image encoding.
     """
 
-    def __init__(self,
-                 site_url: Optional[str] = None,
-                 site_name: Optional[str] = None):
+    def __init__(self, site_url: Optional[str] = None, site_name: Optional[str] = None):
         """
         Initialize LLM client.
 
@@ -51,25 +45,22 @@ class LLMClient:
             site_url: Site URL for OpenRouter tracking (default: Config.openrouter_site_url)
             site_name: Site name for OpenRouter tracking (default: Config.openrouter_site_name)
         """
-        # Use Config for all settings (API key, site URL, site name)
-        self.api_key = Config.openrouter_api_key  # Already validated by Pydantic
-        self.site_url = site_url if site_url is not None else Config.openrouter_site_url
-        self.site_name = site_name if site_name is not None else Config.openrouter_site_name
-        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
-
-        # Cost calculator (supports dynamic pricing from OpenRouter)
+        self.transport = OpenRouterTransport(site_url=site_url, site_name=site_name)
+        self.retry = RetryPolicy(max_retries=3, backoff_factor=2.0)
+        self.parser = ResponseParser()
         self.cost_calculator = CostCalculator()
 
-    def call(self,
-             model: str,
-             messages: List[Dict[str, str]],
-             temperature: float = 0.0,
-             max_tokens: Optional[int] = None,
-             timeout: int = 120,
-             max_retries: int = 3,
-             stream: bool = False,
-             images: Optional[List[Union[bytes, str, Path]]] = None,
-             response_format: Optional[Dict] = None) -> Tuple[str, Dict, float]:
+    def call(
+        self,
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.0,
+        max_tokens: Optional[int] = None,
+        timeout: int = 120,
+        response_format: Optional[Dict] = None,
+        images: Optional[List] = None,
+        **kwargs  # Absorb unused legacy params (stream, max_retries, etc.)
+    ) -> Tuple[str, Dict, float]:
         """
         Make LLM API call with automatic retries and cost tracking.
 
@@ -79,12 +70,10 @@ class LLMClient:
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens to generate (None = no limit)
             timeout: Request timeout in seconds
-            max_retries: Maximum retry attempts for server errors
-            stream: Enable streaming response (shows progress)
-            images: Optional list of images for vision models
-                    Can be bytes, base64 strings, or file paths
             response_format: Optional structured output schema
                            Use {"type": "json_schema", "json_schema": {...}} for guaranteed JSON
+            images: Optional list of PIL Image objects (preprocessed by SourceStorage)
+                    IMPORTANT: Images should be downsampled before passing here
 
         Returns:
             Tuple of (response_text, usage_dict, cost_usd)
@@ -95,28 +84,12 @@ class LLMClient:
         Note:
             Reasoning models (Grok-4-fast, o1/o4) use extended reasoning by default.
             Usage dict includes 'completion_tokens_details': {'reasoning_tokens': N}
-            To control reasoning behavior, add to payload (not yet implemented):
-                payload['reasoning'] = {"effort": "high"|"medium"|"low"}  # Grok, o-series
-                payload['reasoning'] = {"max_tokens": 2000}                # Anthropic, Gemini
-                payload['reasoning'] = {"enabled": False}                   # Disable
         """
-        # Handle vision models with images
-        if images:
-            messages = self._add_images_to_messages(messages, images)
-
-        # Build request payload
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": self.site_url,
-            "X-Title": self.site_name
-        }
-
+        # Build payload
         payload = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
-            "stream": stream
         }
 
         if max_tokens:
@@ -125,116 +98,16 @@ class LLMClient:
         if response_format:
             payload["response_format"] = response_format
 
-        # Retry loop for server errors (always try at least once)
-        for attempt in range(max(1, max_retries)):
-            try:
-                if stream:
-                    return self._call_streaming(headers, payload, model, images)
-                else:
-                    return self._call_non_streaming(headers, payload, model, timeout, images)
+        # Handle images (if provided - should be preprocessed by SourceStorage)
+        if images:
+            payload["messages"] = self._add_images_to_messages(messages, images)
 
-            except requests.exceptions.HTTPError as e:
-                # Check for retryable errors
-                should_retry = False
-                error_type = "error"
-                error_msg = ""
+        # Execute with retry
+        def _make_call():
+            result = self.transport.post(payload, timeout)
+            return self.parser.parse_chat_completion(result, model)
 
-                # Always retry 5xx server errors
-                if e.response.status_code >= 500:
-                    should_retry = True
-                    error_type = f"{e.response.status_code} server error"
-
-                # Retry all 422 errors (xAI provider deserialization issues are transient)
-                elif e.response.status_code == 422:
-                    should_retry = True
-                    error_type = "422 unprocessable entity"
-                    # Use cached error data for logging (response body already consumed)
-                    error_data = getattr(e.response, '_error_data_cache', None)
-                    if error_data:
-                        error_msg = error_data.get('error', {}).get('message', '')
-                        # Truncate long error messages
-                        if len(error_msg) > 80:
-                            error_msg = error_msg[:80] + "..."
-
-                # Retry 413 errors (payload too large - may be transient capacity issue)
-                elif e.response.status_code == 413:
-                    should_retry = True
-                    error_type = "413 payload too large"
-
-                if should_retry and attempt < max(1, max_retries) - 1:
-                    delay = (2 ** attempt) * 2  # Exponential backoff: 2s, 4s, 8s
-                    # Suppress retry messages - stage-level logging will show final errors
-                    time.sleep(delay)
-                    continue
-                elif should_retry:
-                    # Final retry failed - let exception propagate to stage-level handler
-                    raise
-                else:
-                    # Non-retryable client errors (4xx) - let exception propagate
-                    raise
-
-            except requests.exceptions.Timeout:
-                if attempt < max(1, max_retries) - 1:
-                    delay = (2 ** attempt) * 2  # Exponential backoff: 2s, 4s, 8s
-                    # Suppress retry messages - stage-level logging will show final errors
-                    time.sleep(delay)
-                    continue
-                else:
-                    # Let exception propagate to stage-level handler
-                    raise
-
-    def _call_non_streaming(self,
-                           headers: Dict,
-                           payload: Dict,
-                           model: str,
-                           timeout: int,
-                           images: Optional[List] = None) -> Tuple[str, Dict, float]:
-        """Make non-streaming API call."""
-        response = requests.post(
-            self.base_url,
-            headers=headers,
-            json=payload,
-            timeout=timeout
-        )
-
-        # Cache error data on response object for retry logic (no printing here)
-        if not response.ok:
-            try:
-                error_data = response.json()
-                response._error_data_cache = error_data  # Cache for retry logic
-            except:
-                response._error_data_cache = None
-
-        response.raise_for_status()
-
-        result = response.json()
-
-        # Extract response and usage
-        try:
-            content = result['choices'][0]['message']['content']
-            usage = result.get('usage', {})
-        except (KeyError, IndexError, TypeError) as e:
-            # Malformed API response - log and make retryable
-            logger = logging.getLogger(__name__)
-            logger.error(
-                f"Malformed API response from OpenRouter (missing expected keys)",
-                model=model,
-                error_type=type(e).__name__,
-                error=str(e),
-                response_keys=list(result.keys()) if isinstance(result, dict) else type(result).__name__,
-                has_choices='choices' in result if isinstance(result, dict) else False,
-                full_response=result
-            )
-            # Create synthetic 502 error to trigger retry logic
-            mock_response = type('MockResponse', (), {
-                'status_code': 502,
-                'text': f'Malformed API response: {type(e).__name__}',
-                '_error_data_cache': None
-            })()
-            raise requests.exceptions.HTTPError(
-                f"502 Bad Gateway: Malformed API response (missing '{e.args[0] if e.args else 'expected key'}')",
-                response=mock_response
-            )
+        content, usage = self.retry.execute_with_retry(_make_call, payload)
 
         # Calculate cost
         cost = self.cost_calculator.calculate_cost(
@@ -246,196 +119,17 @@ class LLMClient:
 
         return content, usage, cost
 
-    def _call_streaming(self,
-                       headers: Dict,
-                       payload: Dict,
-                       model: str,
-                       images: Optional[List] = None) -> Tuple[str, Dict, float]:
-        """Make streaming API call with progress tracking."""
-        response = requests.post(
-            self.base_url,
-            headers=headers,
-            json=payload,
-            stream=True
-        )
-        response.raise_for_status()
-
-        full_content = []
-        tokens_received = 0
-        actual_usage = None  # Will be populated from final chunk
-
-        print("📊 Streaming response:")
-
-        for line in response.iter_lines():
-            if not line:
-                continue
-
-            line = line.decode('utf-8')
-            if line.startswith('data: '):
-                data_str = line[6:]
-
-                if data_str == '[DONE]':
-                    break
-
-                try:
-                    chunk = json.loads(data_str)
-
-                    # Check for usage data in final chunk (before [DONE])
-                    if 'usage' in chunk:
-                        usage_data = chunk['usage']
-
-                        # Validate usage structure
-                        if (isinstance(usage_data, dict) and
-                            'prompt_tokens' in usage_data and
-                            'completion_tokens' in usage_data):
-                            actual_usage = usage_data
-                        else:
-                            # Malformed - log and skip
-                            logger = logging.getLogger(__name__)
-                            logger.warning(
-                                f"Malformed usage data in SSE chunk",
-                                extra={
-                                    'model': model,
-                                    'usage_data': usage_data,
-                                    'expected_keys': ['prompt_tokens', 'completion_tokens']
-                                }
-                            )
-
-                    if 'choices' in chunk and len(chunk['choices']) > 0:
-                        delta = chunk['choices'][0].get('delta', {})
-                        content = delta.get('content', '')
-
-                        if content:
-                            full_content.append(content)
-                            tokens_received += 1
-
-                            # Update progress every 100 tokens
-                            if tokens_received % 100 == 0:
-                                print(f"\r   Tokens: {tokens_received:,}...", end='', flush=True)
-                except json.JSONDecodeError:
-                    continue
-
-        print(f"\r   Tokens: {tokens_received:,} ✓")
-
-        complete_response = ''.join(full_content)
-
-        # Use actual usage if available, otherwise fall back to estimate
-        if actual_usage:
-            usage = actual_usage
-        else:
-            # Fallback to char-based estimate
-            prompt_chars = sum(len(m.get('content', '')) for m in payload['messages'])
-            completion_chars = len(complete_response)
-
-            usage = {
-                'prompt_tokens': prompt_chars // CHARS_PER_TOKEN_ESTIMATE,
-                'completion_tokens': completion_chars // CHARS_PER_TOKEN_ESTIMATE,
-                '_estimated': True
-            }
-
-            # Log warning
-            logger = logging.getLogger(__name__)
-            logger.warning(
-                f"No usage data in SSE stream, using char-based estimate. "
-                f"Cost tracking may be inaccurate.",
-                extra={'model': model, 'estimated_tokens': usage}
-            )
-
-        # Calculate cost
-        cost = self.cost_calculator.calculate_cost(
-            model,
-            usage['prompt_tokens'],
-            usage['completion_tokens'],
-            num_images=len(images) if images else 0
-        )
-
-        return complete_response, usage, cost
-
-    def _add_images_to_messages(self,
-                                messages: List[Dict],
-                                images: List[Union[bytes, str, Path]]) -> List[Dict]:
-        """
-        Add images to the last user message for vision models.
-
-        Args:
-            messages: Original message list
-            images: List of images (bytes, base64 strings, PIL Images, or file paths)
-
-        Returns:
-            Modified messages with images embedded
-        """
-        # Find last user message
-        user_msg_idx = None
-        for i in range(len(messages) - 1, -1, -1):
-            if messages[i]['role'] == 'user':
-                user_msg_idx = i
-                break
-
-        if user_msg_idx is None:
-            raise ValueError("No user message found to attach images to")
-
-        # Convert message content to multipart format
-        original_content = messages[user_msg_idx]['content']
-
-        # If content is already multipart format (from previous iteration),
-        # reuse it and just append images (preserves any nonces in text)
-        if isinstance(original_content, list):
-            # Content is already multipart - just append images to it
-            content = original_content.copy()
-        else:
-            # Build new content array with text + images
-            content = [{"type": "text", "text": original_content}]
-
-        for img in images:
-            # Convert to base64 if needed
-            if isinstance(img, bytes):
-                img_b64 = base64.b64encode(img).decode('utf-8')
-            elif isinstance(img, Path) or (isinstance(img, str) and os.path.exists(img)):
-                with open(img, 'rb') as f:
-                    img_b64 = base64.b64encode(f.read()).decode('utf-8')
-            elif hasattr(img, 'save'):  # PIL Image object
-                # Convert PIL Image to bytes then base64
-                # Use JPEG for efficiency (quality=75 balances size vs readability for text)
-                import io
-                logger = logging.getLogger(__name__)
-
-                buffered = io.BytesIO()
-                img.save(buffered, format="JPEG", quality=75)
-                img_bytes = buffered.getvalue()
-                img_b64 = base64.b64encode(img_bytes).decode('utf-8')
-
-                # Log payload size for debugging
-                jpeg_kb = len(img_bytes) / 1024
-                payload_kb = len(img_b64) / 1024
-                logger.debug(f"Encoding image: {img.size[0]}×{img.size[1]} → {jpeg_kb:.0f}KB JPEG, {payload_kb:.0f}KB base64")
-            else:
-                # Assume it's already base64
-                img_b64 = img
-
-            # Use JPEG MIME type for PIL Image objects, PNG for others
-            mime_type = "image/jpeg" if hasattr(img, 'save') else "image/png"
-
-            content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:{mime_type};base64,{img_b64}"
-                }
-            })
-
-        # Update message
-        messages[user_msg_idx]['content'] = content
-
-        return messages
-
-    def call_with_tools(self,
-                       model: str,
-                       messages: List[Dict[str, str]],
-                       tools: List[Dict],
-                       temperature: float = 0.0,
-                       max_tokens: Optional[int] = None,
-                       timeout: int = 120,
-                       max_retries: int = 3,
-                       images: Optional[List[Union[bytes, str, Path]]] = None) -> Tuple[Optional[str], Dict, float, Optional[List[Dict]], Optional[List[Dict]]]:
+    def call_with_tools(
+        self,
+        model: str,
+        messages: List[Dict[str, str]],
+        tools: List[Dict],
+        temperature: float = 0.0,
+        max_tokens: Optional[int] = None,
+        timeout: int = 120,
+        images: Optional[List] = None,
+        **kwargs  # Absorb unused legacy params (max_retries, etc.)
+    ) -> Tuple[Optional[str], Dict, float, Optional[List[Dict]], Optional[List[Dict]]]:
         """
         Make LLM API call with tool calling support.
 
@@ -447,194 +141,57 @@ class LLMClient:
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens to generate (None = no limit)
             timeout: Request timeout in seconds
-            max_retries: Maximum retry attempts for server errors
-            images: Optional list of images for vision models
-                    Can be bytes, base64 strings, PIL Images, or file paths
+            images: Optional list of PIL Image objects (preprocessed by SourceStorage)
 
         Returns:
             Tuple of (response_text, usage_dict, cost_usd, tool_calls, reasoning_details)
             - response_text: Can be None if model only calls tools
             - tool_calls: None if no tools called, otherwise list of:
               [{"id": "call_xxx", "type": "function", "function": {"name": "...", "arguments": "..."}}]
-            - reasoning_details: None if no reasoning, otherwise list of reasoning blocks:
-              [{"type": "reasoning.encrypted", "data": "...", "id": "rs_...", "format": "...", "index": 0}]
+            - reasoning_details: None if no reasoning, otherwise list of reasoning blocks
 
         Raises:
             requests.exceptions.RequestException: On non-retryable errors
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
-        # Handle vision models with images
-        if images:
-            messages = self._add_images_to_messages(messages, images)
-
-        # Build request payload
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": self.site_url,
-            "X-Title": self.site_name
-        }
-
+        # Build payload
         payload = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
             "tools": tools,
-            "stream": False  # Tool calling doesn't support streaming
         }
 
         if max_tokens:
             payload["max_tokens"] = max_tokens
 
-        # Retry loop for server errors
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(
-                    self.base_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=timeout
-                )
+        # Handle images (if provided - should be preprocessed by SourceStorage)
+        if images:
+            payload["messages"] = self._add_images_to_messages(messages, images)
 
-                # Cache error data for retry logic
-                if not response.ok:
-                    try:
-                        error_data = response.json()
-                        response._error_data_cache = error_data
-                    except:
-                        response._error_data_cache = None
+        # Execute with retry
+        def _make_call():
+            result = self.transport.post(payload, timeout)
+            return self.parser.parse_tool_completion(result, model)
 
-                response.raise_for_status()
+        content, usage, tool_calls, reasoning_details = self.retry.execute_with_retry(_make_call, payload)
 
-                result = response.json()
+        # Calculate cost
+        cost = self.cost_calculator.calculate_cost(
+            model,
+            usage.get('prompt_tokens', 0),
+            usage.get('completion_tokens', 0)
+        )
 
-                # Extract response and tool calls
-                try:
-                    message = result['choices'][0]['message']
-                    content = message.get('content')  # Can be None if only tool calls
-                    tool_calls = message.get('tool_calls')  # None if no tools called
-                    reasoning_details = message.get('reasoning_details')  # None if no reasoning (e.g., Grok encrypted reasoning)
-                    usage = result.get('usage', {})
-                except (KeyError, IndexError, TypeError) as e:
-                    # Malformed API response - log and make retryable
-                    logger.error(
-                        f"Malformed API response from OpenRouter (missing expected keys)",
-                        model=model,
-                        error_type=type(e).__name__,
-                        error=str(e),
-                        response_keys=list(result.keys()) if isinstance(result, dict) else type(result).__name__,
-                        has_choices='choices' in result if isinstance(result, dict) else False,
-                        full_response=result
-                    )
-                    # Create synthetic 502 error to trigger retry logic
-                    mock_response = type('MockResponse', (), {
-                        'status_code': 502,
-                        'text': f'Malformed API response: {type(e).__name__}',
-                        '_error_data_cache': None
-                    })()
-                    raise requests.exceptions.HTTPError(
-                        f"502 Bad Gateway: Malformed API response (missing '{e.args[0] if e.args else 'expected key'}')",
-                        response=mock_response
-                    )
+        return content, usage, cost, tool_calls, reasoning_details
 
-                # Calculate cost
-                cost = self.cost_calculator.calculate_cost(
-                    model,
-                    usage.get('prompt_tokens', 0),
-                    usage.get('completion_tokens', 0)
-                )
-
-                return content, usage, cost, tool_calls, reasoning_details
-
-            except requests.exceptions.HTTPError as e:
-                # Same retry logic as call()
-                should_retry = False
-                error_type = "error"
-
-                if e.response.status_code >= 500:
-                    should_retry = True
-                    error_type = f"{e.response.status_code} server error"
-                elif e.response.status_code == 422:
-                    should_retry = True
-                    error_type = "422 unprocessable entity"
-                elif e.response.status_code == 413:
-                    should_retry = True
-                    error_type = "413 payload too large"
-                elif e.response.status_code == 429:
-                    should_retry = True
-                    error_type = "429 rate limit"
-                elif e.response.status_code in [502, 503, 504]:
-                    should_retry = True
-                    error_type = f"{e.response.status_code} gateway error"
-
-                if should_retry and attempt < max_retries - 1:
-                    import logging
-                    logger = logging.getLogger(__name__)
-
-                    # For 413/422 errors, add nonce to avoid cached error responses
-                    if e.response.status_code in [413, 422]:
-                        import uuid
-                        nonce = uuid.uuid4().hex[:16]
-
-                        # Add nonce to last USER message (not last message, which might be a tool result)
-                        if payload['messages']:
-                            # Find last user message
-                            user_msg_idx = None
-                            for i in range(len(payload['messages']) - 1, -1, -1):
-                                if payload['messages'][i]['role'] == 'user':
-                                    user_msg_idx = i
-                                    break
-
-                            if user_msg_idx is not None:
-                                last_msg = payload['messages'][user_msg_idx].copy()
-                                content = last_msg.get('content', '')
-
-                                if isinstance(content, str):
-                                    # Simple text message
-                                    last_msg['content'] = f"{content}\n<!-- retry_{attempt}_id: {nonce} -->"
-                                    logger.warning(f"Retry {attempt+1}/{max_retries} for {e.response.status_code} - added nonce to text content")
-                                elif isinstance(content, list):
-                                    # Multipart message (text + images)
-                                    # Find the text part and add nonce there
-                                    content_copy = []
-                                    for item in content:
-                                        item_copy = item.copy()
-                                        if item_copy.get('type') == 'text':
-                                            # Add nonce to text content
-                                            item_copy['text'] = f"{item_copy.get('text', '')}\n<!-- retry_{attempt}_id: {nonce} -->"
-                                        content_copy.append(item_copy)
-                                    last_msg['content'] = content_copy
-                                    logger.warning(f"Retry {attempt+1}/{max_retries} for {e.response.status_code} - added nonce {nonce} to multipart content ({len(content)} parts, {sum(1 for c in content if c.get('type')=='image_url')} images)")
-
-                                payload['messages'][user_msg_idx] = last_msg
-                    else:
-                        logger.warning(f"Retry {attempt+1}/{max_retries} for {error_type}")
-
-                    wait_time = (2 ** attempt) * 1.0  # Exponential backoff
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    raise
-
-            except requests.exceptions.RequestException as e:
-                if attempt < max_retries - 1:
-                    wait_time = (2 ** attempt) * 1.0
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    raise
-
-        # Should never reach here
-        raise requests.exceptions.RequestException("Max retries exceeded")
-
-    def simple_call(self,
-                   model: str,
-                   system_prompt: str,
-                   user_prompt: str,
-                   temperature: float = 0.0,
-                   **kwargs) -> Tuple[str, Dict, float]:
+    def simple_call(
+        self,
+        model: str,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.0,
+        **kwargs
+    ) -> Tuple[str, Dict, float]:
         """
         Simplified call with system + user prompts (common pattern).
 
@@ -655,72 +212,61 @@ class LLMClient:
 
         return self.call(model, messages, temperature=temperature, **kwargs)
 
+    def _add_images_to_messages(self, messages: List[Dict], images: List) -> List[Dict]:
+        """
+        Add PIL Images to the last user message in multipart format.
 
-# Convenience function for quick one-off calls
-# NOTE: Currently unused in codebase (not exported in __all__).
-# Kept for potential use in scripts, notebooks, or future convenience.
-# Consider: Instantiate LLMClient() and use simple_call() instead for better performance.
-def call_llm(model: str,
-            system_prompt: str,
-            user_prompt: str,
-            temperature: float = 0.0,
-            **kwargs) -> Tuple[str, Dict, float]:
-    """
-    Quick convenience function for simple LLM calls.
+        IMPORTANT: Images should be preprocessed by SourceStorage.load_page_image(downsample=True)
+        before passing here. This method only converts PIL Images to base64 - it does NOT
+        handle resizing, compression, or optimization.
 
-    NOTE: This function creates a new LLMClient instance for each call.
-    For better performance with multiple calls, instantiate LLMClient once
-    and call simple_call() directly.
+        Args:
+            messages: Original message list
+            images: List of PIL Image objects (already downsampled)
 
-    Args:
-        model: OpenRouter model name
-        system_prompt: System message content
-        user_prompt: User message content
-        temperature: Sampling temperature
-        **kwargs: Additional arguments (timeout, stream, images, etc.)
+        Returns:
+            Modified messages with images embedded
+        """
+        import base64
+        import io
 
-    Returns:
-        Tuple of (response_text, usage_dict, cost_usd)
+        # Find last user message
+        user_msg_idx = None
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i]['role'] == 'user':
+                user_msg_idx = i
+                break
 
-    Example:
-        response, usage, cost = call_llm(
-            "openai/gpt-4o-mini",
-            "You are a helpful assistant.",
-            "What is 2+2?",
-            temperature=0.0
-        )
-    """
-    client = LLMClient()
-    return client.simple_call(model, system_prompt, user_prompt, temperature, **kwargs)
+        if user_msg_idx is None:
+            raise ValueError("No user message found to attach images to")
 
+        # Convert message to multipart format
+        original_content = messages[user_msg_idx]['content']
 
-if __name__ == "__main__":
-    # Test the client
-    print("Testing LLMClient...")
+        if isinstance(original_content, list):
+            # Already multipart (from retry with nonce)
+            content = original_content.copy()
+        else:
+            # Build new content array
+            content = [{"type": "text", "text": original_content}]
 
-    client = LLMClient()
+        # Add images (assume PIL Image objects)
+        for img in images:
+            # Convert PIL Image to JPEG base64
+            buffered = io.BytesIO()
+            img.save(buffered, format="JPEG", quality=75)
+            img_b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-    # Test 1: Simple call
-    print("\n1. Simple call:")
-    response, usage, cost = client.simple_call(
-        "openai/gpt-4o-mini",
-        "You are a helpful assistant.",
-        "What is 2+2?",
-        temperature=0.0
-    )
-    print(f"Response: {response}")
-    print(f"Tokens: {usage.get('prompt_tokens', 0)} in, {usage.get('completion_tokens', 0)} out")
-    print(f"Cost: ${cost:.6f}")
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{img_b64}"
+                }
+            })
 
-    # Test 2: Streaming call
-    print("\n2. Streaming call:")
-    response, usage, cost = client.simple_call(
-        "openai/gpt-4o-mini",
-        "You are a helpful assistant.",
-        "Count from 1 to 10 and explain why each number is interesting.",
-        temperature=0.0,
-        stream=True
-    )
-    print(f"\nCost: ${cost:.6f}")
+        # Update message
+        messages = messages.copy()
+        messages[user_msg_idx] = messages[user_msg_idx].copy()
+        messages[user_msg_idx]['content'] = content
 
-    print("\n✅ LLMClient tests complete!")
+        return messages
