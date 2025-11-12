@@ -7,7 +7,8 @@ from rich.tree import Tree
 from rich.padding import Padding
 import threading
 
-from infra.llm.display_format import format_token_string, format_batch_summary
+from infra.llm.display_format import format_token_string
+from infra.llm.batch.progress.display import format_batch_summary
 from ..schemas import AgentEvent
 
 

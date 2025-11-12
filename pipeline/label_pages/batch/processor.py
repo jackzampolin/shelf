@@ -2,6 +2,7 @@ from typing import Dict, Any, List
 
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
+from infra.pipeline.status.batch_based import BatchBasedStatusTracker
 from infra.llm.batch import LLMBatchProcessor, LLMBatchConfig
 
 from .request_builder import prepare_stage1_request
@@ -23,35 +24,28 @@ def process_pages(
     logger.info(f"=== Label-Pages: Structural Analysis (3 images per page) ===")
     logger.info(f"Remaining: {len(remaining_pages)} pages")
 
-    # Setup processor and handler
-    processor = LLMBatchProcessor(
-        storage=storage,
-        stage_name=stage_name,
-        logger=logger,
-        config=LLMBatchConfig(
-            model=model,
-            max_workers=max_workers,
-            max_retries=max_retries,
-            batch_name=stage_name
-        ),
-    )
-    handler = create_stage1_handler(
-        storage,
-        logger,
-        stage_name,
-        output_schema,
-        model
-    )
-
     # Get total pages for context
     metadata = storage.load_metadata()
     total_pages = metadata.get('total_pages', 0)
 
-    # Process batch
-    batch_stats = processor.process(
-        items=remaining_pages,
+    # Setup tracker, handler, and config
+    tracker = BatchBasedStatusTracker(storage, logger, stage_name, "page_{:04d}.json")
+    handler = create_stage1_handler(storage, logger, stage_name, output_schema, model)
+
+    config = LLMBatchConfig(
+        tracker=tracker,
+        model=model,
+        batch_name=stage_name,
         request_builder=prepare_stage1_request,
         result_handler=handler,
+        max_workers=max_workers,
+        max_retries=max_retries,
+    )
+
+    # Process batch
+    processor = LLMBatchProcessor(config)
+    batch_stats = processor.process(
+        items=remaining_pages,
         storage=storage,
         model=model,
         total_pages=total_pages,

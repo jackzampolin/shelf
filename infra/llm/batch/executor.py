@@ -2,10 +2,10 @@
 import time
 import json
 import logging
-from typing import Optional, Callable
 
-from infra.llm.models import LLMRequest, LLMResult, LLMEvent, EventData
+from infra.llm.models import LLMRequest, LLMResult
 from infra.llm.client import LLMClient
+from .retry import classify_error, extract_retry_after
 
 logger = logging.getLogger(__name__)
 
@@ -18,94 +18,34 @@ class RequestExecutor:
         self.max_retries = max_retries
         self.logger = logger
 
-    def execute_request(
-        self,
-        request: LLMRequest,
-        on_event: Optional[Callable[[EventData], None]] = None
-    ) -> LLMResult:
+    def execute_request(self, request: LLMRequest) -> LLMResult:
         start_time = time.time()
         queue_time = start_time - request._queued_at
 
         self.logger.debug(f"Executor START: {request.id}")
 
         try:
-            if not hasattr(request, '_router') or request._router is None:
-                if request.fallback_models:
-                    from infra.llm.router import ModelRouter
-                    request._router = ModelRouter(
-                        primary_model=request.model,
-                        fallback_models=request.fallback_models
-                    )
-
-            current_model = request._router.get_current() if request._router else request.model
-
+            current_model = request.model
             self.logger.debug(f"Executor CALLING LLM: {request.id} (model={current_model})")
 
-            # Hard timeout wrapper using daemon thread
-            # - requests library timeout doesn't always fire (observed in production)
-            # - ThreadPoolExecutor creates non-daemon threads that block Python exit
-            # - Solution: Use daemon Thread directly - Python automatically cleans up on exit
-            import threading
-            import queue
-
-            hard_timeout = request.timeout + 30  # 30s grace period
-
-            result_queue = queue.Queue()
-            exception_queue = queue.Queue()
-
-            def _llm_call_wrapper():
-                try:
-                    result = self.llm_client.call(
-                        model=current_model,
-                        messages=request.messages,
-                        temperature=request.temperature,
-                        max_tokens=request.max_tokens,
-                        images=request.images,
-                        response_format=request.response_format,
-                        timeout=request.timeout,
-                        max_retries=0,
-                        stream=False
-                    )
-                    result_queue.put(result)
-                except Exception as e:
-                    exception_queue.put(e)
-
-            # daemon=True means thread won't block Python exit
-            thread = threading.Thread(target=_llm_call_wrapper, daemon=True)
-            thread.start()
-
-            try:
-                response_text, usage, cost = result_queue.get(timeout=hard_timeout)
-
-                # Check if exception occurred during execution
-                if not exception_queue.empty():
-                    raise exception_queue.get()
-
-            except queue.Empty:
-                self.logger.error(
-                    f"HARD TIMEOUT: LLM call hung for {request.id}",
-                    request_id=request.id,
-                    model=current_model,
-                    hard_timeout=hard_timeout,
-                    request_timeout=request.timeout
-                )
-                raise TimeoutError(f"LLM call exceeded hard timeout of {hard_timeout}s")
+            response_text, usage, cost = self.llm_client.call(
+                model=current_model,
+                messages=request.messages,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                images=request.images,
+                response_format=request.response_format,
+                timeout=request.timeout,
+                max_retries=0,
+                stream=False
+            )
 
             self.logger.debug(f"Executor LLM RETURNED: {request.id} (response_len={len(response_text)}, cost=${cost:.4f})")
 
             parsed_json = json.loads(response_text)
 
-            self.logger.debug(f"Executor JSON PARSED: {request.id}")
-
-            if request._router:
-                request._router.mark_success()
-
             execution_time = time.time() - start_time
-
-            tokens_per_second = 0.0
             completion_tokens = usage.get('completion_tokens', 0)
-            if execution_time > 0 and completion_tokens > 0:
-                tokens_per_second = completion_tokens / execution_time
 
             provider = None
             if '/' in current_model:
@@ -122,67 +62,23 @@ class RequestExecutor:
                 total_time_seconds=execution_time + queue_time,
                 queue_time_seconds=queue_time,
                 execution_time_seconds=execution_time,
-                ttft_seconds=None,  # No TTFT without streaming
                 tokens_received=completion_tokens,
-                tokens_per_second=tokens_per_second,
                 usage=usage,
                 cost_usd=cost,
                 provider=provider,
                 model_used=current_model,
-                models_attempted=request._router.get_models_attempted() if request._router else [request.model],
-                request=request
-            )
-
-        except json.JSONDecodeError as e:
-            execution_time = time.time() - start_time
-
-            will_retry = request._retry_count < self.max_retries
-            log_message = f"JSON parsing failed: {request.id}"
-            if will_retry:
-                log_message += f" (will retry, attempt {request._retry_count + 1}/{self.max_retries})"
-            else:
-                log_message += f" (final attempt)"
-
-            response_preview = response_text if len(response_text) <= 1000 else f"{response_text[:500]}...{response_text[-500:]}"
-
-            self.logger.error(
-                log_message,
-                request_id=request.id,
-                error_type='json_parse',
-                error=str(e),
-                model=current_model,
-                response_length=len(response_text),
-                response_preview=response_preview,
-                response_format=str(request.response_format),
-                attempt=request._retry_count + 1,
-                max_retries=self.max_retries,
-                has_images=len(request.images) if request.images else 0,
-                queue_time_seconds=queue_time,
-                execution_time_seconds=execution_time
-            )
-            self.logger.debug(f"Executor RETURNING ERROR (json_parse): {request.id}")
-
-            return LLMResult(
-                request_id=request.id,
-                success=False,
-                error_type="json_parse",
-                error_message=f"JSON parsing failed: {str(e)}",
-                attempts=request._retry_count + 1,
-                total_time_seconds=execution_time + queue_time,
-                queue_time_seconds=queue_time,
-                execution_time_seconds=execution_time,
                 request=request
             )
 
         except Exception as e:
             execution_time = time.time() - start_time
-            error_type = self.classify_error(e)
+            error_type = classify_error(e)
 
             retry_after = None
             if error_type == '429_rate_limit':
-                retry_after = self.extract_retry_after(e)
+                retry_after = extract_retry_after(e)
 
-            will_retry = request._retry_count < self.max_retries and self.is_retryable(error_type)
+            will_retry = request._retry_count < self.max_retries
             log_message = f"LLM request failed: {request.id}"
             if will_retry:
                 log_message += f" (will retry, attempt {request._retry_count + 1}/{self.max_retries})"
@@ -214,7 +110,6 @@ class RequestExecutor:
                 error_context['response_format'] = request.response_format.get('type', 'unknown')
 
             self.logger.error(log_message, **error_context)
-            self.logger.debug(f"Executor RETURNING ERROR ({error_type}): {request.id}")
 
             return LLMResult(
                 request_id=request.id,
@@ -228,59 +123,3 @@ class RequestExecutor:
                 execution_time_seconds=execution_time,
                 request=request
             )
-
-    @staticmethod
-    def classify_error(error: Exception) -> str:
-        error_str = str(error).lower()
-        if 'timeout' in error_str:
-            return 'timeout'
-        elif '5' in error_str and ('server' in error_str or 'error' in error_str):
-            return '5xx'
-        elif '429' in error_str:
-            return '429_rate_limit'
-        elif '413' in error_str:
-            return '413_payload_too_large'
-        elif '422' in error_str:
-            return '422_unprocessable'
-        elif '4' in error_str and ('client' in error_str or 'error' in error_str):
-            return '4xx'
-        else:
-            return 'unknown'
-
-    @staticmethod
-    def extract_retry_after(error: Exception) -> Optional[int]:
-        """Extract Retry-After header value from HTTPError exception.
-
-        Returns:
-            Seconds to wait (int), or None if header not present
-        """
-        try:
-            import requests
-            if isinstance(error, requests.exceptions.HTTPError):
-                if hasattr(error, 'response') and error.response is not None:
-                    retry_after = error.response.headers.get('Retry-After')
-                    if retry_after:
-                        # Retry-After can be either seconds (int) or HTTP date
-                        # Try parsing as int first
-                        try:
-                            return int(retry_after)
-                        except ValueError:
-                            # Could be HTTP date format, but for now just return None
-                            # Most APIs use seconds
-                            return None
-        except:
-            pass
-        return None
-
-    @staticmethod
-    def is_retryable(error_type: Optional[str]) -> bool:
-        retryable = [
-            'timeout',
-            '5xx',
-            '429_rate_limit',
-            '413_payload_too_large',
-            '422_unprocessable',
-            'json_parse',
-            'unknown'
-        ]
-        return error_type in retryable

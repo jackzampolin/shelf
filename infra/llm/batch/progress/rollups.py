@@ -1,146 +1,73 @@
 #!/usr/bin/env python3
-from typing import Dict, List, Tuple, Optional
+import time
+from typing import Dict
 
-from ..schemas import RequestPhase
+from ..schemas import RequestPhase, BatchStats
 
 
-def calculate_rollups(metrics_manager, active_requests: Dict, sub_lines: Dict) -> Dict:
-    """Calculate rollup metrics from metrics.json."""
-    executing = {req_id: status for req_id, status in active_requests.items()
-                if status.phase == RequestPhase.EXECUTING}
+def aggregate_batch_stats(
+    metrics_manager,
+    active_requests: Dict,
+    total_requests: int,
+    rate_limit_status: Dict,
+    batch_start_time: float
+) -> BatchStats:
+    all_metrics = metrics_manager.get_all() if metrics_manager else {}
+    completed_count = len(all_metrics)
 
-    waiting_count = sum(1 for req_id in executing.keys()
-                       if "Waiting for response" in sub_lines.get(req_id, "") or not sub_lines.get(req_id))
-    streaming_count = len(executing) - waiting_count
+    if not all_metrics:
+        return BatchStats()
 
-    ttfts = []
-    streaming_times = []
-    total_input_tokens = 0
-    total_output_tokens = 0
+    total_cost = 0.0
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
     total_reasoning_tokens = 0
-    token_count = 0
+    failed_count = 0
+    times = []
 
-    if metrics_manager:
-        all_metrics = metrics_manager.get_all()
+    for metrics in all_metrics.values():
+        total_cost += metrics.get('cost_usd', 0.0)
+        total_prompt_tokens += metrics.get('prompt_tokens', 0)
+        total_completion_tokens += metrics.get('completion_tokens', 0)
+        total_reasoning_tokens += metrics.get('reasoning_tokens', 0)
 
-        for key, metrics in all_metrics.items():
-            if metrics.get('ttft_seconds') is not None:
-                ttfts.append(metrics['ttft_seconds'])
+        if metrics.get('error_type') or not metrics.get('success', True):
+            failed_count += 1
 
-            if metrics.get('execution_time_seconds') is not None and metrics.get('ttft_seconds') is not None:
-                streaming_time = metrics['execution_time_seconds'] - metrics['ttft_seconds']
-                if streaming_time > 0:
-                    streaming_times.append(streaming_time)
+        times.append(metrics.get('time_seconds', 0.0))
 
-            if metrics.get('prompt_tokens') is not None:
-                total_input_tokens += metrics.get('prompt_tokens', 0)
-                total_output_tokens += metrics.get('completion_tokens', 0)
-                total_reasoning_tokens += metrics.get('reasoning_tokens', 0)
-                token_count += 1
+    avg_time = sum(times) / len(times) if times else 0.0
+    min_time = min(times) if times else 0.0
+    max_time = max(times) if times else 0.0
+    avg_cost = total_cost / completed_count if completed_count > 0 else 0.0
+    avg_tokens = total_completion_tokens / completed_count if completed_count > 0 else 0.0
 
-    return {
-        'ttfts': ttfts,
-        'streaming_times': streaming_times,
-        'total_input_tokens': total_input_tokens,
-        'total_output_tokens': total_output_tokens,
-        'total_reasoning_tokens': total_reasoning_tokens,
-        'token_count': token_count,
-        'active_count': len(executing),
-        'waiting_count': waiting_count,
-        'streaming_count': streaming_count,
-    }
+    elapsed = time.time() - batch_start_time if batch_start_time else 0.0
+    requests_per_second = completed_count / elapsed if elapsed > 0 else 0.0
 
+    in_progress_count = len([
+        s for s in active_requests.values()
+        if s.phase in (RequestPhase.EXECUTING, RequestPhase.DEQUEUED, RequestPhase.RATE_LIMITED)
+    ])
 
-def percentile(values: List[float], p: float) -> Optional[float]:
-    """Calculate percentile of values."""
-    if not values:
-        return None
-    sorted_vals = sorted(values)
-    k = (len(sorted_vals) - 1) * p / 100
-    f = int(k)
-    c = min(f + 1, len(sorted_vals) - 1)
-    if f == c:
-        return sorted_vals[int(k)]
-    return sorted_vals[f] + (k - f) * (sorted_vals[c] - sorted_vals[f])
+    queued = max(0, total_requests - completed_count - in_progress_count)
 
-
-def format_rollup_lines(batch_stats, rollup_metrics: Dict) -> List[Tuple[str, str]]:
-    """Format rollup metric display lines."""
-    lines = []
-
-    # Consolidated metrics line: throughput | avg time | avg cost | tokens
-    if batch_stats.completed > 0:
-        parts = []
-
-        if batch_stats.requests_per_second > 0:
-            parts.append(f"[bold]{batch_stats.requests_per_second:.1f}[/bold] [dim]pages/sec[/dim]")
-
-        if batch_stats.avg_time_per_request > 0:
-            parts.append(f"[bold]{batch_stats.avg_time_per_request:.1f}s[/bold] [dim]avg[/dim]")
-
-        avg_cost_cents = (batch_stats.total_cost_usd / batch_stats.completed) * 100
-        parts.append(f"[bold yellow]{avg_cost_cents:.2f}¢[/bold yellow] [dim]avg[/dim]")
-
-        token_count = rollup_metrics['token_count']
-        if token_count > 0:
-            avg_input = rollup_metrics['total_input_tokens'] / token_count
-            avg_output = rollup_metrics['total_output_tokens'] / token_count
-            token_part = f"[green]{avg_input:.0f}[/green]→[blue]{avg_output:.0f}[/blue] [dim]tokens[/dim]"
-
-            if rollup_metrics['total_reasoning_tokens'] > 0:
-                avg_reasoning = rollup_metrics['total_reasoning_tokens'] / token_count
-                token_part += f" [dim](+[magenta]{avg_reasoning:.0f}[/magenta] reasoning)[/dim]"
-
-            parts.append(token_part)
-
-        metrics_line = f"[cyan]Metrics:[/cyan] {' | '.join(parts)}"
-        lines.append(("rollup_metrics", metrics_line))
-
-    # Show total in-progress (all non-completed requests)
-    if batch_stats.in_progress > 0:
-        parts = []
-        if batch_stats.queued > 0:
-            parts.append(f"{batch_stats.queued} queued")
-
-        active_count = rollup_metrics['active_count']
-        if active_count > 0:
-            waiting_count = rollup_metrics['waiting_count']
-            streaming_count = rollup_metrics['streaming_count']
-
-            if waiting_count > 0 and streaming_count > 0:
-                parts.append(f"{active_count} active ({waiting_count} waiting, {streaming_count} streaming)")
-            elif waiting_count > 0:
-                parts.append(f"{active_count} active (waiting)")
-            elif streaming_count > 0:
-                parts.append(f"{active_count} active (streaming)")
-            else:
-                parts.append(f"{active_count} active")
-
-        in_progress_line = f"[cyan]In progress:[/cyan] [bold]{batch_stats.in_progress}[/bold] [dim]({', '.join(parts)})[/dim]"
-        lines.append(("rollup_in_progress", in_progress_line))
-
-    ttfts = rollup_metrics['ttfts']
-    if ttfts:
-        avg_ttft = sum(ttfts) / len(ttfts)
-        p10_ttft = percentile(ttfts, 10)
-        p90_ttft = percentile(ttfts, 90)
-
-        if p10_ttft is not None and p90_ttft is not None and len(ttfts) > 1:
-            text = f"[cyan]TTFT:[/cyan] [bold]{avg_ttft:.1f}s[/bold] avg [dim](p10-p90: {p10_ttft:.1f}s-{p90_ttft:.1f}s)[/dim]"
-        else:
-            text = f"[cyan]TTFT:[/cyan] [bold]{avg_ttft:.1f}s[/bold] avg"
-        lines.append(("rollup_ttft", text))
-
-    streaming_times = rollup_metrics['streaming_times']
-    if streaming_times:
-        avg_streaming = sum(streaming_times) / len(streaming_times)
-        p10_streaming = percentile(streaming_times, 10)
-        p90_streaming = percentile(streaming_times, 90)
-
-        if p10_streaming is not None and p90_streaming is not None and len(streaming_times) > 1:
-            text = f"[cyan]Streaming:[/cyan] [bold]{avg_streaming:.1f}s[/bold] avg [dim](p10-p90: {p10_streaming:.1f}s-{p90_streaming:.1f}s)[/dim]"
-        else:
-            text = f"[cyan]Streaming:[/cyan] [bold]{avg_streaming:.1f}s[/bold] avg"
-        lines.append(("rollup_streaming", text))
-
-    return lines
+    return BatchStats(
+        total_requests=total_requests,
+        completed=completed_count,
+        failed=failed_count,
+        in_progress=in_progress_count,
+        queued=queued,
+        avg_time_per_request=avg_time,
+        min_time=min_time,
+        max_time=max_time,
+        total_cost_usd=total_cost,
+        avg_cost_per_request=avg_cost,
+        total_prompt_tokens=total_prompt_tokens,
+        total_tokens=total_completion_tokens,
+        total_reasoning_tokens=total_reasoning_tokens,
+        avg_tokens_per_request=avg_tokens,
+        requests_per_second=requests_per_second,
+        rate_limit_utilization=rate_limit_status.get('utilization', 0.0),
+        rate_limit_tokens_available=rate_limit_status.get('tokens_available', 0)
+    )

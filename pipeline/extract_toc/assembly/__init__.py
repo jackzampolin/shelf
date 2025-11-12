@@ -147,7 +147,7 @@ def assemble_toc(
     elapsed_time = time.time() - start_time
 
     # Print summary line after completion
-    from infra.llm.display_format import format_batch_summary
+    from infra.llm.batch.progress.display import format_batch_summary
     reasoning_details = usage.get("completion_tokens_details", {})
     reasoning_tokens = reasoning_details.get("reasoning_tokens", 0)
 

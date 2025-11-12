@@ -50,14 +50,12 @@ def llm_result_to_metrics(
 
         # LLM-specific fields
         "attempts": result.attempts,
-        "tokens_per_second": result.tokens_per_second,
         "model_used": result.model_used,
         "provider": result.provider,
 
         # Timing breakdown
         "queue_time_seconds": result.queue_time_seconds,
         "execution_time_seconds": result.execution_time_seconds,
-        "ttft_seconds": result.ttft_seconds,
 
         # Token breakdown (extracted from usage dict for easy access)
         "prompt_tokens": result.usage.get("prompt_tokens", 0),
@@ -122,8 +120,8 @@ def record_llm_result(
 
     # Everything else goes to custom_metrics:
     # - prompt_tokens, completion_tokens, reasoning_tokens
-    # - ttft_seconds, execution_time_seconds, queue_time_seconds
-    # - model_used, provider, attempts, tokens_per_second
+    # - execution_time_seconds, queue_time_seconds
+    # - model_used, provider, attempts
     # - usage dict (raw API response)
     # - Any extra_fields provided by stage
     metrics_manager.record(

@@ -20,19 +20,7 @@ def process_pages(
     tracker.logger.info(f"Remaining: {len(remaining_pages)} pages")
     tracker.logger.info(f"Extraction model: {model}")
 
-    processor = LLMBatchProcessor(
-        storage=tracker.storage,
-        stage_name=tracker.stage_name,
-        logger=tracker.logger,
-        config=LLMBatchConfig(
-            model=model,
-            max_workers=max_workers,
-            max_retries=max_retries,
-            batch_name="label-structure"
-        ),
-        tracker=tracker
-    )
-
+    # Setup handler and config
     handler = create_result_handler(
         tracker.storage,
         tracker.logger,
@@ -41,10 +29,19 @@ def process_pages(
         model,
     )
 
-    batch_stats = processor.process(
-        items=remaining_pages,
+    config = LLMBatchConfig(
+        tracker=tracker,
+        model=model,
+        batch_name="label-structure",
         request_builder=prepare_structure_extraction_request,
         result_handler=handler,
+        max_workers=max_workers,
+        max_retries=max_retries,
+    )
+
+    processor = LLMBatchProcessor(config)
+    batch_stats = processor.process(
+        items=remaining_pages,
         storage=tracker.storage,
         model=model,
     )

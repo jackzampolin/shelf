@@ -2,6 +2,7 @@ from typing import Dict
 
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
+from infra.pipeline.status.batch_based import BatchBasedStatusTracker
 from infra.llm.batch import LLMBatchProcessor, LLMBatchConfig
 
 from ...schemas import PageRange
@@ -24,22 +25,23 @@ def process_toc_pages(
 
     page_results = []
 
-    processor = LLMBatchProcessor(
-        storage=storage,
-        stage_name='extract-toc',
-        logger=logger,
-        config=LLMBatchConfig(
-            model=model,
-            max_workers=4,
-            max_retries=3,
-            batch_name="ToC entry extraction"
-        )
+    # Setup tracker, handler, and config
+    tracker = BatchBasedStatusTracker(storage, logger, 'extract-toc', "page_{:04d}.json")
+    handler = create_toc_handler(storage, logger, page_results)
+
+    config = LLMBatchConfig(
+        tracker=tracker,
+        model=model,
+        batch_name="ToC entry extraction",
+        request_builder=prepare_toc_request,
+        result_handler=handler,
+        max_workers=4,
+        max_retries=3,
     )
 
+    processor = LLMBatchProcessor(config)
     processor.process(
         items=page_nums,
-        request_builder=prepare_toc_request,
-        result_handler=create_toc_handler(storage, logger, page_results),
         storage=storage,
         model=model,
         toc_range=toc_range,

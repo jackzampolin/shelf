@@ -4,31 +4,27 @@
 Handles success, retry, permanent failure, and worker crash scenarios.
 Each function receives the worker pool instance and delegates to its state.
 """
-import sys
 import traceback
 from typing import Optional, Callable
 from queue import PriorityQueue
 import random
 import time
 
-from infra.llm.models import LLMRequest, LLMResult, LLMEvent
+from infra.llm.models import LLMRequest, LLMResult
 
 
 def handle_success(
     worker_pool,
     result: LLMResult,
     request: LLMRequest,
-    on_event: Optional[Callable],
     on_result: Optional[Callable]
 ):
-    """Handle successful request completion."""
     worker_pool.logger.debug(f"Worker HANDLING SUCCESS: {request.id}")
 
     with worker_pool.request_tracking_lock:
         if request.id in worker_pool.active_requests:
             worker_pool.active_requests.pop(request.id)
 
-    worker_pool._emit_event(on_event, LLMEvent.COMPLETED, request_id=request.id)
     worker_pool._store_result(result)
 
     worker_pool.logger.debug(f"Worker STORED RESULT: {request.id}")
@@ -37,7 +33,6 @@ def handle_success(
         try:
             on_result(result)
         except Exception as e:
-            # Page may not have been saved despite successful LLM response
             worker_pool.logger.error(
                 f"Result handler failed for {request.id}: {type(e).__name__}: {e}",
                 request_id=request.id,
@@ -50,17 +45,13 @@ def handle_retry(
     worker_pool,
     result: LLMResult,
     request: LLMRequest,
-    queue: PriorityQueue,
-    on_event: Optional[Callable]
+    queue: PriorityQueue
 ):
-    """Handle retryable failure - re-queue the request."""
-    # Record 429 rate limit in rate limiter
     if result.error_type == '429_rate_limit':
         worker_pool.rate_limiter.record_429(retry_after=result.retry_after)
 
     request._retry_count += 1
 
-    # Only log when exceeding max_retries (infinite retry warning)
     if request._retry_count >= worker_pool.executor.max_retries:
         worker_pool.logger.warning(
             f"Retrying {request.id}: attempt {request._retry_count} (EXCEEDS max_retries={worker_pool.executor.max_retries}, infinite retry!)",
@@ -83,28 +74,17 @@ def handle_retry(
             status.phase_entered_at = time.time()
             status.retry_count = request._retry_count
 
-    worker_pool._emit_event(
-        on_event,
-        LLMEvent.RETRY_QUEUED,
-        request_id=request.id,
-        retry_count=request._retry_count,
-        queue_position=queue.qsize()
-    )
-
 
 def handle_permanent_failure(
     worker_pool,
     result: LLMResult,
     request: LLMRequest,
-    on_event: Optional[Callable],
     on_result: Optional[Callable]
 ):
-    """Handle non-retryable failure - store failed result."""
     with worker_pool.request_tracking_lock:
         if request.id in worker_pool.active_requests:
             worker_pool.active_requests.pop(request.id)
 
-    worker_pool._emit_event(on_event, LLMEvent.FAILED, request_id=request.id)
     worker_pool._store_result(result)
     if on_result:
         try:
@@ -123,10 +103,8 @@ def handle_worker_crash(
     worker_pool,
     error: Exception,
     request: Optional[LLMRequest],
-    on_event: Optional[Callable],
     on_result: Optional[Callable]
 ):
-    """Handle unexpected worker thread crash."""
     error_detail = traceback.format_exc()
 
     if request and hasattr(request, 'id'):
@@ -139,11 +117,6 @@ def handle_worker_crash(
         )
 
         worker_pool._store_result(failure_result)
-
-        try:
-            worker_pool._emit_event(on_event, LLMEvent.FAILED, request_id=request.id)
-        except Exception as e:
-            worker_pool.logger.debug(f"Failed to emit FAILED event during worker crash: {e}")
 
         if on_result:
             try:

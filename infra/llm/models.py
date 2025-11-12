@@ -16,10 +16,7 @@ class LLMEvent(str, Enum):
     QUEUED = "queued"              # Request added to queue
     RATE_LIMITED = "rate_limited"  # Waiting for rate limit
     DEQUEUED = "dequeued"          # Picked up by worker
-    EXECUTING = "executing"        # LLM call started (waiting for first token)
-    FIRST_TOKEN = "first_token"    # First token received (time-to-first-token)
-    STREAMING = "streaming"        # Tokens arriving (periodic)
-    RETRY_QUEUED = "retry_queued"  # Failed, re-enqueued
+    EXECUTING = "executing"        # LLM call started
     COMPLETED = "completed"        # Success
     FAILED = "failed"              # Permanent failure (max retries)
     PROGRESS = "progress"          # Batch-level aggregate (periodic)
@@ -27,25 +24,6 @@ class LLMEvent(str, Enum):
 
 @dataclass
 class LLMRequest:
-    """
-    Container for a single LLM API request.
-
-    Attributes:
-        id: User-defined identifier (e.g., "page_042")
-        model: OpenRouter model name (e.g., "anthropic/claude-sonnet-4")
-        messages: List of message dicts with 'role' and 'content'
-        temperature: Sampling temperature (0.0-1.0)
-        max_tokens: Maximum tokens to generate (None = no limit)
-        timeout: Request timeout in seconds
-        images: Optional list of images for vision models (bytes, paths, or PIL Images)
-        response_format: Optional structured output schema
-        metadata: User-defined metadata (carried through to result)
-        provider_order: Optional list of provider names to try in order
-        provider_sort: Optional sort strategy ("price", "throughput", "latency")
-        allow_fallbacks: Whether to allow provider fallbacks
-        fallback_models: Optional list of fallback models to try if primary fails
-        priority: Queue priority (higher = processed first, default: 0)
-    """
     id: str
     model: str
     messages: List[Dict[str, str]]
@@ -62,7 +40,7 @@ class LLMRequest:
     provider_sort: Optional[str] = None
     allow_fallbacks: bool = True
 
-    # Model fallback routing (IMPLEMENTED - see router.py)
+    # Model fallback routing (PLANNED FEATURE - not yet implemented)
     fallback_models: Optional[List[str]] = None
 
     # Queue management
@@ -73,7 +51,6 @@ class LLMRequest:
     # This is intentional - these fields are managed by the batch processing infrastructure
     _retry_count: int = field(default=0, repr=False)
     _queued_at: float = field(default=0.0, repr=False)
-    _router: Optional[Any] = field(default=None, repr=False)  # ModelRouter instance
 
     def __lt__(self, other):
         """Support priority queue ordering (higher priority first, then FIFO)."""
@@ -112,7 +89,6 @@ class LLMResult:
         # Provider info
         provider: Provider that handled request (if available)
         model_used: Actual model used (may differ from requested)
-        models_attempted: All models tried during fallback attempts
 
         # Original request
         request: Reference to original LLMRequest
@@ -127,9 +103,7 @@ class LLMResult:
     total_time_seconds: float = 0.0
     queue_time_seconds: float = 0.0
     execution_time_seconds: float = 0.0
-    ttft_seconds: Optional[float] = None  # Time to first token (streaming only)
     tokens_received: int = 0
-    tokens_per_second: float = 0.0
 
     # Cost & Usage
     usage: Dict = field(default_factory=dict)
@@ -143,7 +117,6 @@ class LLMResult:
     # Provider info
     provider: Optional[str] = None
     model_used: Optional[str] = None
-    models_attempted: Optional[List[str]] = None  # All models tried (for fallback tracking)
 
     # Original request (for metadata access)
     request: Optional['LLMRequest'] = field(default=None, repr=False)
