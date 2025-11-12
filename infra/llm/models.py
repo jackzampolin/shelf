@@ -149,57 +149,33 @@ class LLMResult:
         self,
         metrics_manager,
         key: str,
-        page_num: int,
         extra_fields: Optional[Dict[str, Any]] = None,
         accumulate: bool = False
     ):
         """
         Record this LLMResult to MetricsManager with proper field mapping.
 
-        Converts LLMResult fields to metrics dict and records to MetricsManager.
-        Standard fields (cost, time, tokens) are top-level, everything else goes
-        to custom_metrics.
-
         Args:
             metrics_manager: MetricsManager instance to record to
             key: Metric key (e.g., "page_0042")
-            page_num: Page number being processed
             extra_fields: Optional stage-specific fields to include in custom_metrics
             accumulate: Whether to accumulate costs/times (default: False)
-
-        Example:
-            >>> result.record_to_metrics(
-            ...     metrics_manager=stage_storage.metrics_manager,
-            ...     key=f"page_{page_num:04d}",
-            ...     page_num=page_num,
-            ...     extra_fields={'stage': 'label-structure', 'model': 'gpt-4o'}
-            ... )
         """
-        # Build custom_metrics dict with all LLM-specific fields
         custom_metrics = {
-            # LLM-specific fields
             "attempts": self.attempts,
             "model_used": self.model_used,
             "provider": self.provider,
-
-            # Timing breakdown
             "queue_time_seconds": self.queue_time_seconds,
             "execution_time_seconds": self.execution_time_seconds,
-
-            # Token breakdown
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "reasoning_tokens": self.reasoning_tokens,
-
-            # Raw usage data (for compatibility)
             "usage": self.usage,
         }
 
-        # Merge stage-specific fields
         if extra_fields:
             custom_metrics.update(extra_fields)
 
-        # Record to MetricsManager
         metrics_manager.record(
             key=key,
             cost_usd=self.cost_usd,
@@ -212,31 +188,6 @@ class LLMResult:
 
 @dataclass
 class EventData:
-    """
-    Event payload for lifecycle and progress events.
-
-    Attributes:
-        event_type: Type of event (from LLMEvent enum)
-        request_id: ID of request (None for batch-level events)
-        timestamp: Event timestamp (seconds since epoch)
-
-        # Per-request details (for request-level events)
-        retry_count: Current retry count
-        queue_position: Position in queue (for QUEUED events)
-        tokens_received: Tokens received so far (for STREAMING events)
-        tokens_per_second: Token generation rate
-        eta_seconds: Estimated time to completion
-        stage: Pipeline stage name (e.g., "correction", "label")
-        message: Pre-formatted display message for progress bar
-
-        # Batch-level details (for PROGRESS events)
-        completed: Number of completed requests
-        failed: Number of failed requests
-        in_flight: Number of requests currently executing
-        queued: Number of requests waiting in queue
-        total_cost_usd: Total cost so far
-        rate_limit_status: Current rate limit state
-    """
     event_type: LLMEvent
     request_id: Optional[str] = None
     timestamp: float = 0.0
@@ -260,35 +211,22 @@ class EventData:
 
 
 class RequestPhase(str, Enum):
-    """Request lifecycle phases for tracking."""
     QUEUED = "queued"
     RATE_LIMITED = "rate_limited"
     DEQUEUED = "dequeued"
     EXECUTING = "executing"
-    # Terminal states (move to recent_completions)
     COMPLETED = "completed"
     FAILED = "failed"
 
 
 @dataclass
 class RequestStatus:
-    """
-    Real-time status for an active request.
-
-    Lifecycle: QUEUED → RATE_LIMITED → DEQUEUED → EXECUTING → [COMPLETED/FAILED]
-    """
     request_id: str
     phase: RequestPhase
-
-    # Timestamps
-    queued_at: float          # When first queued
-    phase_entered_at: float   # When entered current phase
-
-    # Retry tracking
+    queued_at: float
+    phase_entered_at: float
     retry_count: int = 0
-
-    # Phase-specific data
-    rate_limit_eta: Optional[float] = None  # For RATE_LIMITED phase
+    rate_limit_eta: Optional[float] = None
 
     @property
     def total_elapsed(self) -> float:

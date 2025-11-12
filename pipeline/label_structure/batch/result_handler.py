@@ -66,7 +66,6 @@ def create_result_handler(
             result.record_to_metrics(
                 metrics_manager=stage_storage.metrics_manager,
                 key=f"page_{page_num:04d}",
-                page_num=page_num,
                 extra_fields={'stage': stage_name, 'model': model}
             )
 
