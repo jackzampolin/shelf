@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import traceback
 from typing import Optional, Callable
 from queue import PriorityQueue

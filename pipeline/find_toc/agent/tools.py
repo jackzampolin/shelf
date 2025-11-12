@@ -1,13 +1,11 @@
 import json
 from pathlib import Path
 from typing import List, Dict, Optional
-from PIL import Image
 
 from pydantic import BaseModel, Field
 
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.llm.agent import AgentTools
-from infra.utils.pdf import downsample_for_vision
 from ..schemas import PageRange, StructureSummary
 from ..tools.grep_report import generate_grep_report, summarize_grep_report
 

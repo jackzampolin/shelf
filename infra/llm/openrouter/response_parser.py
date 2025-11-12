@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import logging
 from typing import Dict, Any, Tuple, Optional, List
 from dataclasses import dataclass

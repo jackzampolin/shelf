@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from rich.text import Text
 from rich.console import Console
 

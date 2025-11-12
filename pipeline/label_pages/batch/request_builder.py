@@ -1,9 +1,7 @@
 from typing import Optional
-from PIL import Image
 
 from infra.llm.models import LLMRequest
 from infra.pipeline.storage.book_storage import BookStorage
-from infra.utils.pdf import downsample_for_vision
 
 from .prompts import OBSERVATION_SYSTEM_PROMPT, build_observation_user_prompt
 from .schemas import PageStructureObservation
@@ -26,16 +24,14 @@ def prepare_stage1_request(
         LLMRequest for this page
     """
     page_num = item  # 'item' is page number for this stage
-    source_stage = storage.stage('source')
     ocr_pages_stage = storage.stage('olm-ocr')
 
-    # Load page image
-    image_file = source_stage.output_dir / f"page_{page_num:04d}.png"
-    if not image_file.exists():
-        raise FileNotFoundError(f"Source image not found for page {page_num}")
-
-    page_image = Image.open(image_file)
-    page_image = downsample_for_vision(page_image, max_payload_kb=300)
+    # Load page image (downsampled for vision)
+    page_image = storage.source().load_page_image(
+        page_num=page_num,
+        downsample=True,
+        max_payload_kb=300
+    )
 
     # Load OCR text from olm-ocr output
     ocr_text = ""

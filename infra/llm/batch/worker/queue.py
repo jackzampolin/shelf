@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from typing import Optional, Set
 from queue import PriorityQueue, Empty
 

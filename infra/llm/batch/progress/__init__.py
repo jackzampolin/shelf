@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from .handler import create_progress_handler
 from .rollups import aggregate_batch_stats
 

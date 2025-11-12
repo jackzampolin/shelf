@@ -75,7 +75,7 @@ class Library:
         return total_cost
 
     def add_books(self, pdf_paths: List[Path], run_ocr: bool = False) -> Dict[str, Any]:
-        from infra.utils.ingest import add_books_to_library
+        from cli.library.ingest import add_books_to_library
         return add_books_to_library(
             pdf_paths=pdf_paths,
             storage_root=self.storage_root,

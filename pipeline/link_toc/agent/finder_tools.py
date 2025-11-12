@@ -1,9 +1,7 @@
 from typing import Dict, List, Optional
-from PIL import Image
 
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.llm.agent import AgentTools
-from infra.utils.pdf import downsample_for_vision
 
 from .tools import list_boundaries, grep_text, get_page_ocr
 
@@ -201,17 +199,12 @@ class TocEntryFinderTools(AgentTools):
                     "observations": current_page_observations
                 })
 
-            # Load page image
-            source_stage = self.storage.stage('source')
-            page_image_path = source_stage.output_page(page_num, extension='png')
-
-            if not page_image_path.exists():
-                return json.dumps({
-                    "error": f"Page {page_num} image not found at {page_image_path}"
-                })
-
-            image = Image.open(page_image_path)
-            downsampled_image = downsample_for_vision(image, max_payload_kb=250)
+            # Load page image (downsampled for vision)
+            downsampled_image = self.storage.source().load_page_image(
+                page_num=page_num,
+                downsample=True,
+                max_payload_kb=250
+            )
 
             self._current_images = [downsampled_image]
 
