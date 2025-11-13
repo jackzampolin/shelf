@@ -3,10 +3,11 @@ STAGE_DEFINITIONS = [
     {'name': 'mistral-ocr', 'class': 'pipeline.mistral_ocr.MistralOcrStage'},
     {'name': 'paddle-ocr', 'class': 'pipeline.paddle_ocr.PaddleOcrStage'},
     {'name': 'label-structure', 'class': 'pipeline.label_structure.LabelStructureStage'},
-    {'name': 'label-pages', 'class': 'pipeline.label_pages.LabelPagesStage'},
     {'name': 'find-toc', 'class': 'pipeline.find_toc.FindTocStage'},
     {'name': 'extract-toc', 'class': 'pipeline.extract_toc.ExtractTocStage'},
     {'name': 'link-toc', 'class': 'pipeline.link_toc.LinkTocStage'},
+    {'name': 'common-structure', 'class': 'pipeline.common_structure.CommonStructureStage'},
+    {'name': 'epub-output', 'class': 'pipeline.epub_output.EpubOutputStage'},
 ]
 
 STAGE_NAMES = [s['name'] for s in STAGE_DEFINITIONS]

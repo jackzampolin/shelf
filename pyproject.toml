@@ -30,6 +30,8 @@ dependencies = [
     "mlx-vlm>=0.3.0",
     "olmocr>=0.4.4",
     "flask>=3.0.0",
+    "ebooklib>=0.18",
+    "epubcheck>=5.1.0",
 ]
 
 [tool.setuptools.packages.find]
