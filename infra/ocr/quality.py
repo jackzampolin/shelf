@@ -12,7 +12,7 @@ def filter_ocr_quality(
     mistral_text: str,
     olm_text: str,
     paddle_text: str,
-    inflation_threshold: float = 2.0
+    inflation_threshold: float = 1.75
 ) -> Dict[str, any]:
     """
     Detects and filters low-quality OCR output based on size inflation.
@@ -26,7 +26,7 @@ def filter_ocr_quality(
         mistral_text: Text from Mistral OCR
         olm_text: Text from OLM OCR
         paddle_text: Text from PADDLE OCR
-        inflation_threshold: Max ratio before flagging as garbage (default: 2.0x)
+        inflation_threshold: Max ratio before flagging as garbage (default: 1.75x)
 
     Returns:
         {
