@@ -1,6 +1,8 @@
+import os
 import time
 import threading
 from typing import List
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .client import LLMBatchClient
 from .progress import create_progress_handler
@@ -76,18 +78,32 @@ class LLMBatchProcessor:
             **request_builder_kwargs  # Allow overrides
         }
 
+        def prepare_single(item):
+            """Prepare one request (called in parallel)."""
+            try:
+                request = self.request_builder(item=item, **builder_kwargs)
+                return request
+            except Exception as e:
+                self.logger.warning(f"Failed to prepare item {item}", error=str(e))
+                return None
+
         requests = []
         with prep_progress:
-            prep_task = prep_progress.add_task("", total=len(items), suffix="")
-            for prepared, item in enumerate(items, 1):
-                try:
-                    request = self.request_builder(item=item, **builder_kwargs)
+            prep_task = prep_progress.add_task("", total=len(items), suffix="loading...")
+            prepared = 0
+
+            # Parallel preparation using thread pool (CPU-bound: image loading/processing)
+            # Use CPU count * 2 for preparation, separate from network I/O workers
+            prep_workers = os.cpu_count() * 4 if os.cpu_count() else 8
+            with ThreadPoolExecutor(max_workers=prep_workers) as executor:
+                futures = {executor.submit(prepare_single, item): item for item in items}
+                for future in as_completed(futures):
+                    request = future.result()
                     if request:
                         requests.append(request)
-                except Exception as e:
-                    self.logger.warning(f"Failed to prepare item {item}", error=str(e))
 
-                prep_progress.update(prep_task, completed=prepared, suffix=f"{prepared}/{len(items)} prepared")
+                    prepared += 1
+                    prep_progress.update(prep_task, completed=prepared, suffix=f"{prepared}/{len(items)} prepared")
 
         prep_elapsed = time.time() - prep_start
         print(f"✅ Prepared {len(requests)} requests in {prep_elapsed:.1f}s")
