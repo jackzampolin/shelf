@@ -43,7 +43,7 @@ class TocFinderTools(AgentTools):
                 "type": "function",
                 "function": {
                     "name": "get_frontmatter_grep_report",
-                    "description": "Get keyword search report showing pages with ToC keywords, front matter markers, and structure patterns. FREE operation (no LLM cost). Returns JSON with toc_candidates (pages with ToC keywords), front_matter (preface/intro pages), structure (chapter/part mentions), and back_matter (index/appendix pages).",
+                    "description": "Get keyword search report showing categorized keyword matches in front matter. FREE operation (no LLM cost). Returns categorized_pages (pages grouped by keyword type: toc, structure, front_matter, back_matter) and page_details (which keywords appear on each page). Summary includes clustering analysis.",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -88,7 +88,7 @@ class TocFinderTools(AgentTools):
                 "type": "function",
                 "function": {
                     "name": "write_toc_result",
-                    "description": "Write final ToC search result and complete the task. Your page observations will be automatically compiled into structure_notes. If ToC found, provide structure_summary with global hierarchy analysis.",
+                    "description": "Write final ToC search result and complete the task. IMPORTANT: If toc_found=false, set toc_page_range to null (not a dummy range). Your page observations will be automatically compiled into structure_notes. If ToC found, provide structure_summary with global hierarchy analysis.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -97,13 +97,20 @@ class TocFinderTools(AgentTools):
                                 "description": "Whether ToC was found"
                             },
                             "toc_page_range": {
-                                "type": "object",
-                                "description": "ToC page range (null if not found)",
-                                "properties": {
-                                    "start_page": {"type": "integer"},
-                                    "end_page": {"type": "integer"}
-                                },
-                                "required": ["start_page", "end_page"]
+                                "anyOf": [
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "start_page": {"type": "integer", "minimum": 1},
+                                            "end_page": {"type": "integer", "minimum": 1}
+                                        },
+                                        "required": ["start_page", "end_page"]
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ],
+                                "description": "ToC page range with start_page and end_page (both >= 1), or null if ToC not found"
                             },
                             "confidence": {
                                 "type": "number",
@@ -196,7 +203,7 @@ class TocFinderTools(AgentTools):
                 "success": True,
                 "report": report,
                 "summary": summary,
-                "message": "Grep report generated. Use 'toc_candidates' to find pages with ToC keywords."
+                "message": "Grep report generated. Check 'categorized_pages' for keyword groupings and 'summary' for actionable recommendations."
             }, indent=2)
 
         except Exception as e:

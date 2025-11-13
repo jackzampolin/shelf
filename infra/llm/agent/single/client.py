@@ -173,16 +173,16 @@ class AgentClient:
                         arguments = {}
                     tool_start = time.time()
                     try:
-                        result = self.config.tools.execute_tool(tool_name, arguments)
+                        tool_result = self.config.tools.execute_tool(tool_name, arguments)
                     except Exception as e:
-                        result = json.dumps({"error": f"Tool execution failed: {str(e)}"})
+                        tool_result = json.dumps({"error": f"Tool execution failed: {str(e)}"})
                     tool_time = time.time() - tool_start
                     iteration_tool_time += tool_time
                     tool_execution_log = {
                         'tool_call_id': tool_call['id'],
                         'tool_name': tool_name,
                         'arguments': arguments,
-                        'result': result,
+                        'result': tool_result,
                         'execution_time_seconds': tool_time,
                         'timestamp': datetime.now().isoformat()
                     }
@@ -195,7 +195,7 @@ class AgentClient:
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call['id'],
-                        "content": result
+                        "content": tool_result
                     })
                 self.run_log['iterations'].append(iteration_log)
                 if self.metrics_manager:

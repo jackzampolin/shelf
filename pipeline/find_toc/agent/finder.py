@@ -11,7 +11,6 @@ from .prompts import SYSTEM_PROMPT, build_user_prompt
 
 
 class TocFinderAgent:
-
     def __init__(
         self,
         storage: BookStorage,
@@ -37,7 +36,7 @@ class TocFinderAgent:
 
         stage_storage = storage.stage('find-toc')
         self.config = AgentConfig(
-            model=Config.text_model_expensive,
+            model=Config.vision_model_primary,
             initial_messages=initial_messages,
             tools=self.tools,
             stage_storage=stage_storage,
