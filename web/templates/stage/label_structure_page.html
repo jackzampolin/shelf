@@ -230,20 +230,20 @@
 
         <!-- Right Column: Labels -->
         <div class="labels-column">
-            <h3>Page Structure Observations</h3>
+            <h3>Page Structure Analysis</h3>
 
             <div class="labels-grid">
-                <!-- Margins -->
+                <!-- Margins & Page Metadata -->
                 <div class="label-section">
-                    <h4>📍 Margins</h4>
+                    <h4>📍 Margins & Metadata</h4>
 
                     <!-- Header (running header) -->
                     <div class="label-item">
                         <span class="label-key">Header:</span>
                         <span class="label-value">
-                            {% if labels.header_present %}
-                                <strong>{{ labels.header_text }}</strong>
-                                <br><small class="text-muted">Source: {{ labels.header_source }} | Confidence: {{ labels.header_conf }}</small>
+                            {% if labels.header.present %}
+                                <strong>{{ labels.header.text }}</strong>
+                                <br><small class="text-muted">Source: {{ labels.header.source_provider }} | Confidence: {{ labels.header.confidence }}</small>
                             {% else %}
                                 <span class="text-muted">None</span>
                             {% endif %}
@@ -254,9 +254,9 @@
                     <div class="label-item">
                         <span class="label-key">Footer:</span>
                         <span class="label-value">
-                            {% if labels.footer_present %}
-                                <strong>{{ labels.footer_text }}</strong>
-                                <br><small class="text-muted">Source: {{ labels.footer_source }} | Confidence: {{ labels.footer_conf }}</small>
+                            {% if labels.footer.present %}
+                                <strong>{{ labels.footer.text }}</strong>
+                                <br><small class="text-muted">Source: {{ labels.footer.source_provider }} | Confidence: {{ labels.footer.confidence }}</small>
                             {% else %}
                                 <span class="text-muted">None</span>
                             {% endif %}
@@ -267,10 +267,10 @@
                     <div class="label-item">
                         <span class="label-key">Page Number:</span>
                         <span class="label-value">
-                            {% if labels.page_num_present %}
-                                <strong>{{ labels.page_num_value }}</strong>
-                                {% if labels.page_num_location %} ({{ labels.page_num_location }}){% endif %}
-                                <br><small class="text-muted">Source: {{ labels.page_num_source }} | Confidence: {{ labels.page_num_conf }}</small>
+                            {% if labels.page_number.present %}
+                                <strong>{{ labels.page_number.number }}</strong>
+                                {% if labels.page_number.location %} ({{ labels.page_number.location }}){% endif %}
+                                <br><small class="text-muted">Source: {{ labels.page_number.source_provider }} | Confidence: {{ labels.page_number.confidence }}</small>
                             {% else %}
                                 <span class="text-muted">None</span>
                             {% endif %}
@@ -278,52 +278,209 @@
                     </div>
                 </div>
 
-                <!-- Body Structure -->
+                <!-- Headings (from Mechanical Extraction) -->
                 <div class="label-section">
-                    <h4>📄 Body Structure</h4>
+                    <h4>📄 Headings</h4>
 
-                    <!-- Headings -->
                     <div class="label-item">
-                        <span class="label-key">Headings:</span>
+                        <span class="label-key">Headings Found:</span>
                         <span class="label-value">
                             {% if labels.headings_present %}
-                                <strong>{{ labels.headings_count }} heading{{ 's' if labels.headings_count != 1 else '' }}</strong>
-                                {% if labels.headings_text %}
-                                    <br><em>"{{ labels.headings_text }}"</em>
-                                    {% if labels.headings_levels %}
-                                        <br><small class="text-muted">Levels: {{ labels.headings_levels }}</small>
-                                    {% endif %}
-                                {% endif %}
-                                <br><small class="text-muted">Source: {{ labels.headings_source }} | Confidence: {{ labels.headings_conf }}</small>
+                                <strong>{{ labels.headings|length }} heading{{ 's' if labels.headings|length != 1 else '' }}</strong>
+                                <br><small class="text-muted">Source: mistral-markdown (mechanical)</small>
                             {% else %}
                                 <span class="text-muted">None</span>
                             {% endif %}
                         </span>
                     </div>
+
+                    {% if labels.headings_present and labels.headings %}
+                        {% for heading in labels.headings %}
+                        <div class="label-item">
+                            <span class="label-key">Level {{ heading.level }}:</span>
+                            <span class="label-value">
+                                <em>"{{ heading.text }}"</em>
+                                <br><small class="text-muted">Line {{ heading.line_number }}</small>
+                            </span>
+                        </div>
+                        {% endfor %}
+                    {% endif %}
                 </div>
+
+                <!-- Pattern Hints (from Mechanical Extraction) -->
+                {% if labels.pattern_hints.has_mistral_footnote_refs or labels.pattern_hints.has_repeated_symbols or labels.pattern_hints.has_mistral_endnote_refs or labels.pattern_hints.has_olm_chart_tags %}
+                <div class="label-section">
+                    <h4>🔍 Pattern Hints (Mechanical)</h4>
+
+                    {% if labels.pattern_hints.has_mistral_footnote_refs %}
+                    <div class="label-item">
+                        <span class="label-key">Footnote Refs:</span>
+                        <span class="label-value">
+                            <span class="badge badge-yes">{{ labels.pattern_hints.mistral_footnote_count }} [^N] patterns</span>
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    {% if labels.pattern_hints.has_repeated_symbols %}
+                    <div class="label-item">
+                        <span class="label-key">Repeated Symbols:</span>
+                        <span class="label-value">
+                            <strong>{{ labels.pattern_hints.repeated_symbol }}</strong> ({{ labels.pattern_hints.repeated_symbol_count }}×)
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    {% if labels.pattern_hints.has_mistral_endnote_refs %}
+                    <div class="label-item">
+                        <span class="label-key">Endnote Markers:</span>
+                        <span class="label-value">
+                            {{ labels.pattern_hints.mistral_endnote_markers|join(', ') }}
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    {% if labels.pattern_hints.has_olm_chart_tags %}
+                    <div class="label-item">
+                        <span class="label-key">Charts/Tables:</span>
+                        <span class="label-value">
+                            <span class="badge badge-yes">{{ labels.pattern_hints.olm_chart_count }} detected</span>
+                        </span>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <!-- Reference Markers (from Annotations) -->
+                {% if labels.markers_present %}
+                <div class="label-section">
+                    <h4>🔗 Reference Markers</h4>
+
+                    <div class="label-item">
+                        <span class="label-key">Markers Found:</span>
+                        <span class="label-value">
+                            <strong>{{ labels.markers|length }}</strong>
+                        </span>
+                    </div>
+
+                    {% for marker in labels.markers %}
+                    <div class="label-item" style="flex-direction: column; align-items: flex-start;">
+                        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.25rem;">
+                            <span class="badge badge-region-body">{{ marker.marker_text }}</span>
+                            <small class="text-muted">{{ marker.marker_type }}{% if marker.is_superscript %}, superscript{% endif %}</small>
+                        </div>
+                        <small style="color: #666;">Context: "{{ marker.context|truncate(60) }}"</small>
+                        <small class="text-muted">Confidence: {{ marker.confidence }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <!-- Footnotes (from Annotations) -->
+                {% if labels.footnotes_present %}
+                <div class="label-section">
+                    <h4>📝 Footnotes (This Page)</h4>
+
+                    <div class="label-item">
+                        <span class="label-key">Footnotes Found:</span>
+                        <span class="label-value">
+                            <strong>{{ labels.footnotes|length }}</strong>
+                        </span>
+                    </div>
+
+                    {% for footnote in labels.footnotes %}
+                    <div class="label-item" style="flex-direction: column; align-items: flex-start;">
+                        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.25rem;">
+                            <span class="badge badge-region-body">{{ footnote.marker }}</span>
+                            <small class="text-muted">{{ footnote.source_provider }} | {{ footnote.confidence }}</small>
+                        </div>
+                        <div style="color: #333; font-size: 0.9rem; margin-top: 0.25rem;">{{ footnote.content|truncate(120) }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <!-- Cross-References (from Annotations) -->
+                {% if labels.cross_references_present %}
+                <div class="label-section">
+                    <h4>↔️ Cross-References</h4>
+
+                    <div class="label-item">
+                        <span class="label-key">References Found:</span>
+                        <span class="label-value">
+                            <strong>{{ labels.cross_references|length }}</strong>
+                        </span>
+                    </div>
+
+                    {% for ref in labels.cross_references %}
+                    <div class="label-item" style="flex-direction: column; align-items: flex-start;">
+                        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.25rem;">
+                            <strong>"{{ ref.link_text }}"</strong>
+                            <span class="badge badge-region-front">{{ ref.target_type }}</span>
+                        </div>
+                        <small style="color: #666;">→ {{ ref.target_description }}</small>
+                        <small class="text-muted">Confidence: {{ ref.confidence }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <!-- Visual Layout Indicators (from Annotations) -->
+                {% if labels.has_horizontal_rule or labels.has_small_text_at_bottom %}
+                <div class="label-section">
+                    <h4>👁️ Visual Layout</h4>
+
+                    {% if labels.has_horizontal_rule %}
+                    <div class="label-item">
+                        <span class="label-key">Horizontal Rule:</span>
+                        <span class="label-value">
+                            <span class="badge badge-yes">Yes</span>
+                            <br><small class="text-muted">Separator line detected</small>
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    {% if labels.has_small_text_at_bottom %}
+                    <div class="label-item">
+                        <span class="label-key">Small Text:</span>
+                        <span class="label-value">
+                            <span class="badge badge-yes">Yes</span>
+                            <br><small class="text-muted">Small/reduced font at bottom</small>
+                        </span>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
 
             <!-- Navigation -->
             <div class="navigation">
-                {% if page_num > 1 %}
-                    <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=page_num-1) }}" class="nav-button">
-                        ← Previous
-                    </a>
-                {% else %}
-                    <span class="nav-button disabled">← Previous</span>
-                {% endif %}
+                <div style="display: flex; gap: 0.5rem;">
+                    {% if page_num > 1 %}
+                        <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=page_num-1) }}" class="nav-button">
+                            ← Previous
+                        </a>
+                    {% else %}
+                        <span class="nav-button disabled">← Previous</span>
+                    {% endif %}
 
-                <a href="{{ url_for('stage.label_structure_view', scan_id=scan_id) }}" class="nav-button">
-                    Back to Report
+                    <a href="{{ url_for('stage.label_structure_view', scan_id=scan_id) }}" class="nav-button">
+                        Back to Report
+                    </a>
+                </div>
+
+                <a href="{{ url_for('stage.ocr_pages_page_view', scan_id=scan_id, page_num=page_num) }}" class="nav-button" style="background: #7b1fa2;">
+                    📄 View OCR
                 </a>
 
-                {% if page_num < metadata.scan.pages %}
-                    <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=page_num+1) }}" class="nav-button">
-                        Next →
-                    </a>
-                {% else %}
-                    <span class="nav-button disabled">Next →</span>
-                {% endif %}
+                <div style="display: flex; gap: 0.5rem;">
+                    {% if page_num < metadata.scan.pages %}
+                        <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=page_num+1) }}" class="nav-button">
+                            Next →
+                        </a>
+                    {% else %}
+                        <span class="nav-button disabled">Next →</span>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>

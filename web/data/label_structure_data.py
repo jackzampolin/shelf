@@ -60,6 +60,12 @@ def get_label_structure_report(storage: BookStorage) -> Optional[List[Dict[str, 
             # Convert headings_count to int
             row['headings_count'] = int(row['headings_count']) if row.get('headings_count') else 0
 
+            # Convert sequence_gap to int
+            row['sequence_gap'] = int(row['sequence_gap']) if row.get('sequence_gap') else 0
+
+            # Convert needs_review to bool
+            row['needs_review'] = row.get('needs_review', '').lower() == 'true'
+
             rows.append(row)
 
     return rows
@@ -67,17 +73,21 @@ def get_label_structure_report(storage: BookStorage) -> Optional[List[Dict[str, 
 
 def get_page_labels(storage: BookStorage, page_num: int) -> Optional[Dict[str, Any]]:
     """
-    Get labels for a specific page.
+    Get full labels for a specific page from the page JSON file.
 
-    Returns dict with all label data for the page, or None if not found.
+    Returns dict with all label data including:
+    - headings, pattern_hints (from mechanical extraction)
+    - header, footer, page_number (from structural metadata)
+    - markers, footnotes, cross_references (from annotations)
+
+    Returns None if page file not found.
     """
-    report = get_label_structure_report(storage)
+    stage_storage = storage.stage("label-structure")
+    page_path = stage_storage.output_dir / f"page_{page_num:04d}.json"
 
-    if not report:
+    if not page_path.exists():
         return None
 
-    for row in report:
-        if row['page_num'] == page_num:
-            return row
-
-    return None
+    import json
+    with open(page_path, 'r') as f:
+        return json.load(f)

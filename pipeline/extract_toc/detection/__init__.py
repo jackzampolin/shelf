@@ -1,53 +1,42 @@
-"""
-Detection: Direct ToC Entry Extraction
-
-Vision model extracts complete ToC entries (title + page number + hierarchy) in a single pass.
-Loads OCR text directly from olm-ocr stage (no intermediate storage needed).
-"""
-
-from typing import Dict
-
-from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.logger import PipelineLogger
-from infra.config import Config
+from infra.pipeline.status import BatchBasedStatusTracker
 
 from ..schemas import PageRange
-from .batch.processor import process_toc_pages
+from .processor import process_toc_pages
+from infra import Config
 
 
 def extract_toc_entries(
-    storage: BookStorage,
-    toc_range: PageRange,
-    structure_notes_from_finder: Dict[int, str],
-    logger: PipelineLogger,
-    global_structure_from_finder: dict = None,
-    model: str = None
+    tracker: BatchBasedStatusTracker,
+    max_workers: int = 10,
+    max_retries: int = 5,
 ):
-    """Extract ToC entries from pages using batch processor.
+    stage_storage = tracker.storage.stage('extract-toc')
 
-    Args:
-        storage: BookStorage
-        toc_range: Range of ToC pages
-        structure_notes_from_finder: Per-page structure observations
-        logger: Pipeline logger
-        global_structure_from_finder: Global structure summary
-        model: Model to use (default: Config.vision_model_primary)
-    """
-    model = model or Config.vision_model_primary
-    stage_storage_obj = storage.stage('extract-toc')
+    finder_result = tracker.storage.stage('find-toc').load_file("finder_result.json")
+    toc_range = PageRange(**finder_result["toc_page_range"])
 
-    # Process all ToC pages
-    results_data = process_toc_pages(
-        storage=storage,
-        logger=logger,
-        toc_range=toc_range,
-        structure_notes_from_finder=structure_notes_from_finder,
-        global_structure_from_finder=global_structure_from_finder,
-        model=model
+    process_toc_pages(
+        tracker=tracker,
+        model=Config.vision_model_primary,
+        max_workers=max_workers,
+        max_retries=max_retries,
     )
 
-    # Save entries.json
-    stage_storage_obj.save_file("entries.json", results_data)
-    logger.info(f"Saved entries.json ({len(results_data['pages'])} pages)")
+    page_results = []
+    for page_num in range(toc_range.start_page, toc_range.end_page + 1):
+        page_file = f"page_{page_num:04d}.json"
+        try:
+            page_data = stage_storage.load_file(page_file)
+            page_results.append(page_data)
+        except Exception as e:
+            tracker.logger.warning(f"Could not load {page_file}: {e}")
 
-    # Metrics automatically recorded by LLMBatchProcessor
+    page_results.sort(key=lambda p: p["page_num"])
+
+    results_data = {
+        "pages": page_results,
+        "toc_range": toc_range.model_dump(),
+    }
+
+    stage_storage.save_file("entries.json", results_data)
+    tracker.logger.info(f"Saved entries.json ({len(page_results)} pages)")

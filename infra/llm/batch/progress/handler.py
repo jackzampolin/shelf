@@ -17,7 +17,8 @@ def create_progress_handler(
     metrics_manager,
     total_requests: int,
     start_time: float,
-    batch_start_time: float
+    batch_start_time: float,
+    metric_prefix: str = None
 ):
 
     def handle_progress():
@@ -26,7 +27,8 @@ def create_progress_handler(
             active_requests=worker_pool.get_active_requests(),
             total_requests=total_requests,
             rate_limit_status=rate_limiter.get_status(),
-            batch_start_time=batch_start_time
+            batch_start_time=batch_start_time,
+            metric_prefix=metric_prefix
         )
 
         elapsed = time.time() - start_time

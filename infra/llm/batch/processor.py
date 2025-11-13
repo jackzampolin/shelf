@@ -30,7 +30,7 @@ class LLMBatchProcessor:
         self.metrics_manager = self.storage.stage(self.stage_name).metrics_manager
 
         pattern = self.tracker.item_pattern
-        self.metric_prefix = pattern.replace('{:04d}', '').replace('.json', '')
+        self.metric_prefix = pattern.replace('{:04d}', '').replace('.json', '').replace('/', '_')
 
         self.batch_client = LLMBatchClient(
             model=self.model,  # Pass model to batch client
@@ -48,7 +48,8 @@ class LLMBatchProcessor:
             active_requests=self.batch_client.worker_pool.get_active_requests(),
             total_requests=total_items,
             rate_limit_status=self.batch_client.rate_limiter.get_status(),
-            batch_start_time=self.batch_client.batch_start_time or time.time()
+            batch_start_time=self.batch_client.batch_start_time or time.time(),
+            metric_prefix=self.metric_prefix
         )
 
     def process(
@@ -131,7 +132,8 @@ class LLMBatchProcessor:
             metrics_manager=self.metrics_manager,
             total_requests=len(requests),
             start_time=start_time,
-            batch_start_time=self.batch_client.batch_start_time or start_time
+            batch_start_time=self.batch_client.batch_start_time or start_time,
+            metric_prefix=self.metric_prefix
         )
 
         stop_polling = threading.Event()

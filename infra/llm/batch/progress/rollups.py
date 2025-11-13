@@ -9,9 +9,14 @@ def aggregate_batch_stats(
     active_requests: Dict,
     total_requests: int,
     rate_limit_status: Dict,
-    batch_start_time: float
+    batch_start_time: float,
+    metric_prefix: str = None
 ) -> BatchStats:
     all_metrics = metrics_manager.get_all() if metrics_manager else {}
+
+    if metric_prefix:
+        all_metrics = {k: v for k, v in all_metrics.items() if k.startswith(metric_prefix)}
+
     completed_count = len(all_metrics)
 
     if not all_metrics:

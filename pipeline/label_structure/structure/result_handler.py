@@ -1,7 +1,8 @@
 from infra.llm.models import LLMResult
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
-from ..schemas.llm_response import StructureExtractionResponse
+from ..schemas.structure import StructuralMetadataOutput
+
 
 def create_result_handler(
     storage: BookStorage,
@@ -11,29 +12,38 @@ def create_result_handler(
 
     def on_result(result: LLMResult):
         if result.success:
+            # Guard against None/null parsed_json
+            # NOTE: This shouldn't happen - executor should catch this earlier
+            # But if it does, just log it and don't save anything (will be retried)
+            if result.parsed_json is None:
+                logger.error(
+                    f"✗ Structure extraction returned None: {result.request.id}",
+                    request_id=result.request.id,
+                    error="LLM returned null/empty response - should have been caught by executor"
+                )
+                return
+
             stage_storage.save_file(
-                f"{result.request.id}.json",
+                f"structure/{result.request.id}.json",
                 result.parsed_json,
-                schema=StructureExtractionResponse
+                schema=StructuralMetadataOutput
             )
 
             result.record_to_metrics(
                 metrics_manager=stage_storage.metrics_manager,
-                key=result.request.id,
+                key=f"structure_{result.request.id}",
             )
 
             header_present = result.parsed_json.get('header', {}).get('present', False)
             footer_present = result.parsed_json.get('footer', {}).get('present', False)
             page_num_present = result.parsed_json.get('page_number', {}).get('present', False)
-            headings_present = result.parsed_json.get('headings', {}).get('present', False)
             logger.info(
                 f"✓ {result.request.id}: "
-                f"header={header_present}, footer={footer_present}, "
-                f"page#={page_num_present}, headings={headings_present}"
+                f"header={header_present}, footer={footer_present}, page#={page_num_present}"
             )
         else:
             logger.error(
-                f"✗ Label-structure failed: {result.request.id}",
+                f"✗ Structure extraction failed: {result.request.id}",
                 request_id=result.request.id,
                 error_type=result.error_type,
                 error=result.error_message,

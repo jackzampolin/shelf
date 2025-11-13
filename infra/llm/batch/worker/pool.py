@@ -229,15 +229,15 @@ class WorkerPool:
         if result.success:
             self._handle_success(result, request, on_result)
         elif is_retryable(result.error_type):
-            self._handle_retry(result, request, request_queue)
+            self._handle_retry(result, request, request_queue, on_result)
         else:
             self._handle_permanent_failure(result, request, on_result)
 
     def _handle_success(self, result: LLMResult, request: LLMRequest, on_result: Optional[Callable]):
         handlers.handle_success(self, result, request, on_result)
 
-    def _handle_retry(self, result: LLMResult, request: LLMRequest, request_queue: PriorityQueue):
-        handlers.handle_retry(self, result, request, request_queue)
+    def _handle_retry(self, result: LLMResult, request: LLMRequest, request_queue: PriorityQueue, on_result: Optional[Callable] = None):
+        handlers.handle_retry(self, result, request, request_queue, on_result)
 
     def _handle_permanent_failure(self, result: LLMResult, request: LLMRequest, on_result: Optional[Callable]):
         handlers.handle_permanent_failure(self, result, request, on_result)

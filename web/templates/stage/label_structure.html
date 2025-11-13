@@ -154,13 +154,13 @@
                 <th>Header</th>
                 <th>Footer</th>
                 <th>Page #</th>
-                <th>Confidence</th>
+                <th>Sequence</th>
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for row in report %}
-            <tr>
+            <tr {% if row.needs_review %}style="background-color: #fff3e0;"{% endif %}>
                 <!-- Page Number -->
                 <td>{{ row.page_num }}</td>
 
@@ -180,7 +180,7 @@
                 <td>
                     {% if row.header_present %}
                         {{ row.header_text|truncate(25) }}
-                        <br><small class="text-muted">{{ row.header_source }}</small>
+                        <br><small class="text-muted">{{ row.header_source }} ({{ row.header_conf }})</small>
                     {% else %}
                         <span class="text-muted">—</span>
                     {% endif %}
@@ -190,7 +190,7 @@
                 <td>
                     {% if row.footer_present %}
                         {{ row.footer_text|truncate(25) }}
-                        <br><small class="text-muted">{{ row.footer_source }}</small>
+                        <br><small class="text-muted">{{ row.footer_source }} ({{ row.footer_conf }})</small>
                     {% else %}
                         <span class="text-muted">—</span>
                     {% endif %}
@@ -199,26 +199,37 @@
                 <!-- Page Number Observation -->
                 <td>
                     {% if row.page_num_present %}
-                        {{ row.page_num_value }}
+                        <strong>{{ row.page_num_value }}</strong>
                         {% if row.page_num_location %}
-                            <small>({{ row.page_num_location }})</small>
+                            <br><small class="text-muted">{{ row.page_num_location }}</small>
                         {% endif %}
                     {% else %}
                         <span class="text-muted">—</span>
                     {% endif %}
                 </td>
 
-                <!-- Confidence Summary -->
+                <!-- Sequence Validation -->
                 <td>
-                    {% if row.header_present %}
-                        <span class="confidence-{{ 'high' if row.header_conf == 'high' else 'med' if row.header_conf == 'medium' else 'low' }}">
-                            H: {{ row.header_conf }}
-                        </span>
-                    {% endif %}
-                    {% if row.footer_present %}
-                        <br><span class="confidence-{{ 'high' if row.footer_conf == 'high' else 'med' if row.footer_conf == 'medium' else 'low' }}">
-                            F: {{ row.footer_conf }}
-                        </span>
+                    {% if row.sequence_status == 'ok' %}
+                        <span class="confidence-high">✓ OK</span>
+                    {% elif row.sequence_status == 'no_number' %}
+                        <span class="text-muted">No #</span>
+                    {% elif row.sequence_status == 'first_page' %}
+                        <span style="color: #1976d2;">First</span>
+                    {% elif row.sequence_status == 'type_change' %}
+                        <span style="color: #1976d2;">Type change</span>
+                    {% elif row.sequence_status.startswith('gap_') %}
+                        <span class="confidence-med">Gap: {{ row.sequence_gap - 1 }}</span>
+                        {% if row.needs_review %}
+                            <br><span class="confidence-low">⚠ Review</span>
+                        {% endif %}
+                    {% elif row.sequence_status == 'backward_jump' %}
+                        <span class="confidence-low">⚠ Backward</span>
+                        <br><small class="text-muted">Expected: {{ row.expected_value }}</small>
+                    {% elif row.sequence_status == 'unparseable' %}
+                        <span class="confidence-low">⚠ Bad format</span>
+                    {% else %}
+                        <span class="text-muted">{{ row.sequence_status }}</span>
                     {% endif %}
                 </td>
 

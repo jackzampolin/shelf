@@ -1,60 +1,28 @@
-from typing import Dict
+from typing import Dict, Any
 
-from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.logger import PipelineLogger
-from infra.pipeline.status.batch_based import BatchBasedStatusTracker
 from infra.llm.batch import LLMBatchProcessor, LLMBatchConfig
+from infra.pipeline.status import BatchBasedStatusTracker
 
-from ...schemas import PageRange
 from .request_builder import prepare_toc_request
 from .result_handler import create_toc_handler
 
 
 def process_toc_pages(
-    storage: BookStorage,
-    logger: PipelineLogger,
-    toc_range: PageRange,
-    structure_notes_from_finder: Dict[int, str],
-    global_structure_from_finder: dict,
-    model: str
-) -> Dict:
-    """
-    Process ToC pages using batch LLM extraction.
-
-    Processor automatically gets items from tracker and injects storage/model.
-    Stage-specific kwargs are forwarded to request_builder.
-    """
-    total_toc_pages = toc_range.end_page - toc_range.start_page + 1
-    logger.info(f"Extracting ToC entries from {total_toc_pages} pages (parallel)")
-
-    page_results = []
-
-    # Setup tracker, handler, and config
-    tracker = BatchBasedStatusTracker(storage, logger, 'extract-toc', "page_{:04d}.json")
-    handler = create_toc_handler(storage, logger, page_results)
-
-    config = LLMBatchConfig(
+    tracker: BatchBasedStatusTracker,
+    model: str,
+    max_workers: int,
+    max_retries: int,
+) -> Dict[str, Any]:
+    tracker.logger.info(f"=== Extract-ToC: Extract entries from ToC pages ===")
+    return LLMBatchProcessor(LLMBatchConfig(
         tracker=tracker,
         model=model,
-        batch_name="ToC entry extraction",
+        batch_name="extract-toc",
         request_builder=prepare_toc_request,
-        result_handler=handler,
-        max_workers=4,
-        max_retries=3,
-    )
-
-    # Process batch - processor handles items, storage, model automatically
-    processor = LLMBatchProcessor(config)
-    processor.process(
-        toc_range=toc_range,
-        structure_notes_from_finder=structure_notes_from_finder,
-        global_structure_from_finder=global_structure_from_finder,
-        logger=logger
-    )
-
-    page_results.sort(key=lambda p: p["page_num"])
-
-    return {
-        "pages": page_results,
-        "toc_range": toc_range.model_dump(),
-    }
+        result_handler=create_toc_handler(
+            tracker.storage,
+            tracker.logger,
+        ),
+        max_workers=max_workers,
+        max_retries=max_retries,
+    )).process()

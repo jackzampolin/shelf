@@ -66,7 +66,29 @@ class LLMClient:
         )
 
         parsed_json = None
-        if response_format and parsed.content:
+        if response_format:
+            # Structured response requested - we MUST get valid JSON
+            if not parsed.content:
+                # LLM returned null/empty response - treat as retryable error
+                return LLMResult(
+                    request_id=request_id,
+                    success=False,
+                    error_type="null_response",
+                    error_message="LLM returned null/empty response body despite structured response format",
+                    attempts=attempts,
+                    total_time_seconds=execution_time + queue_time,
+                    queue_time_seconds=queue_time,
+                    execution_time_seconds=execution_time,
+                    prompt_tokens=parsed.prompt_tokens,
+                    completion_tokens=parsed.completion_tokens,
+                    total_tokens=parsed.total_tokens,
+                    reasoning_tokens=parsed.reasoning_tokens,
+                    cost_usd=cost,
+                    provider=parsed.provider,
+                    model_used=parsed.model_used,
+                    request=request
+                )
+
             import json
             try:
                 parsed_json = json.loads(parsed.content)

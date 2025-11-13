@@ -1,39 +1,25 @@
 import json
-from typing import List, Dict, Callable
 
 from infra.llm.models import LLMResult
 from infra.pipeline.logger import PipelineLogger
 from infra.pipeline.storage.book_storage import BookStorage
 
-from ...schemas import ToCEntry
+from ..schemas import ToCEntry
 
 
 def create_toc_handler(
     storage: BookStorage,
     logger: PipelineLogger,
-    page_results: List[Dict]
-) -> Callable[[LLMResult], None]:
-    """Create result handler for ToC entry extraction.
-
-    Args:
-        storage: BookStorage for accessing metrics_manager
-        logger: Pipeline logger
-        page_results: Shared list to collect results
-
-    Returns:
-        Handler function that validates and stores results
-    """
+):
     stage_storage = storage.stage('extract-toc')
 
-    def handle_result(result: LLMResult):
-        """Handle completed ToC entry extraction result."""
+    def on_result(result: LLMResult):
         if result.success:
-            page_num = result.request.metadata["page_num"]
+            page_num = int(result.request.id.split('_')[1])
 
             try:
                 response_data = json.loads(result.response)
 
-                # Validate entries against ToCEntry schema
                 entries_raw = response_data.get("entries", [])
                 entries_validated = []
 
@@ -42,27 +28,46 @@ def create_toc_handler(
                         validated_entry = ToCEntry(**entry)
                         entries_validated.append(validated_entry.model_dump())
                     except Exception as e:
-                        logger.error(f"  Page {page_num}: Invalid entry {entry}: {e}")
+                        logger.error(f"Page {page_num}: Invalid entry {entry}: {e}")
 
-                page_results.append({
+                page_result = {
                     "page_num": page_num,
                     "entries": entries_validated,
                     "page_metadata": response_data.get("page_metadata", {}),
                     "confidence": response_data.get("confidence", 0.0),
                     "notes": response_data.get("notes", "")
-                })
+                }
 
-                # Record metrics
+                stage_storage.save_file(
+                    f"{result.request.id}.json",
+                    page_result
+                )
+                
                 result.record_to_metrics(
                     metrics_manager=stage_storage.metrics_manager,
-                    key=f"page_{page_num:04d}",
+                    key=result.request.id,
                     extra_fields={'phase': 'detection', 'entries_found': len(entries_validated)}
                 )
 
-            except Exception as e:
-                logger.error(f"  Page {page_num}: Failed to parse ToC entry extraction: {e}")
-        else:
-            page_num = result.request.metadata["page_num"]
-            logger.error(f"  Page {page_num}: Failed to extract ToC entries: {result.error_message}")
+                logger.info(
+                    f"✓ {result.request.id}: {len(entries_validated)} entries extracted"
+                )
 
-    return handle_result
+            except Exception as e:
+                logger.error(
+                    f"✗ {result.request.id}: Failed to parse response",
+                    request_id=result.request.id,
+                    error=str(e)
+                )
+        else:
+            logger.error(
+                f"✗ {result.request.id}: ToC extraction failed",
+                request_id=result.request.id,
+                error_type=result.error_type,
+                error=result.error_message,
+                attempts=result.attempts,
+                execution_time=result.execution_time_seconds,
+                model=result.model_used
+            )
+
+    return on_result

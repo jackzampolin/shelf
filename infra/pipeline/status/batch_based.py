@@ -9,12 +9,14 @@ class BatchBasedStatusTracker:
         storage: BookStorage,
         logger: PipelineLogger,
         stage_name: str,
-        item_pattern: str = "page_{:04d}.json"
+        item_pattern: str = "page_{:04d}.json",
+        items: List[int] = None
     ):
         self.storage = storage
         self.logger = logger
         self.stage_name = stage_name
         self.item_pattern = item_pattern
+        self._custom_items = items  # Optional: override default "all source pages"
 
     def is_completed(self) -> bool:
         status = self.get_status()
@@ -42,10 +44,13 @@ class BatchBasedStatusTracker:
         }
 
     def get_status(self) -> Dict[str, Any]:
-        source_pages = self.storage.stage("source").list_pages(extension="png")
-        total = len(source_pages)
-
-        all_page_nums = set(range(1, total + 1))
+        # Use custom items if provided, otherwise default to all source pages
+        if self._custom_items is not None:
+            all_page_nums = set(self._custom_items)
+        else:
+            source_pages = self.storage.stage("source").list_pages(extension="png")
+            total = len(source_pages)
+            all_page_nums = set(range(1, total + 1))
 
         stage_storage = self.storage.stage(self.stage_name)
 
@@ -72,7 +77,7 @@ class BatchBasedStatusTracker:
         return {
             "status": status,
             "progress": {
-                "total_items": total,
+                "total_items": len(all_page_nums),
                 "completed_items": len(completed),
                 "remaining_items": remaining,
             },

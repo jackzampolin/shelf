@@ -5,8 +5,7 @@ Merges ToC entries from multiple pages, handles continuations, validates sequenc
 """
 
 import json
-import time
-from typing import Dict, Tuple
+from typing import Dict
 
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
@@ -21,33 +20,12 @@ def assemble_toc(
     storage: BookStorage,
     toc_range: PageRange,
     logger: PipelineLogger,
-    model: str = None
 ) -> Dict[str, any]:
-    """
-    Assemble final ToC from extracted entries across pages.
-
-    This is a lightweight operation that:
-    - Merges continuation entries across pages
-    - Validates entry sequence
-    - Counts chapters and sections
-    - Trusts Phase 1's hierarchy determination
-
-    Args:
-        storage: Book storage
-        toc_range: Range of ToC pages
-        logger: Pipeline logger
-        model: Text model to use (default: Config.text_model_expensive)
-
-    Returns:
-        results_data: {"toc": {...}, "validation": {...}, "notes": "..."}
-    """
-    model = model or Config.text_model_expensive
+    model = Config.vision_model_primary
     llm_client = LLMClient()
     stage_storage = storage.stage('extract-toc')
 
     logger.info("Assembling ToC from extracted entries")
-
-    start_time = time.time()
 
     # Load entries from Phase 1
     entries_data = stage_storage.load_file("entries.json")
@@ -187,19 +165,18 @@ def assemble_toc(
         logger.info(f"Saved toc.json ({total_entries} entries)")
 
         # Record metrics
-        reasoning_details = usage.get("completion_tokens_details", {})
         stage_storage.metrics_manager.record(
             key="phase2_assembly",
-            cost_usd=cost,
-            time_seconds=elapsed_time,
+            cost_usd=result.cost_usd,
+            time_seconds=result.total_time_seconds,
             custom_metrics={
                 "phase": "assembly",
                 "total_entries": total_entries,
                 "confidence": confidence,
                 "issues_found": len(issues),
-                "completion_tokens": usage.get("completion_tokens", 0),
-                "prompt_tokens": usage.get("prompt_tokens", 0),
-                "reasoning_tokens": reasoning_details.get("reasoning_tokens", 0),
+                "completion_tokens": result.completion_tokens,
+                "prompt_tokens": result.prompt_tokens,
+                "reasoning_tokens": result.reasoning_tokens,
             }
         )
 

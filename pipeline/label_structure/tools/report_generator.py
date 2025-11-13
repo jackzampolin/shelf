@@ -153,19 +153,21 @@ def generate_report(
             if not page_data:
                 continue
 
-            # Extract observations
+            # Extract observations from merged schema
             header = page_data.get('header', {})
             footer = page_data.get('footer', {})
             page_number = page_data.get('page_number', {})
-            headings = page_data.get('headings', {})
+
+            # Headings are now directly in page_data (from Pass 1)
+            headings_present = page_data.get('headings_present', False)
+            heading_items = page_data.get('headings', [])
 
             # Format headings for CSV
-            heading_items = headings.get('headings', [])
             headings_text = '|'.join(h.get('text', '') for h in heading_items) if heading_items else ''
             headings_levels = '|'.join(str(h.get('level', '')) for h in heading_items) if heading_items else ''
 
             report_row = report_schema(
-                page_num=page_data.get('page_num', page_num),
+                page_num=page_num,
 
                 # Header
                 header_present=header.get('present', False),
@@ -186,13 +188,13 @@ def generate_report(
                 page_num_conf=page_number.get('confidence', 'low'),
                 page_num_source=page_number.get('source_provider', ''),
 
-                # Headings
-                headings_present=headings.get('present', False),
+                # Headings (from Pass 1 mechanical extraction)
+                headings_present=headings_present,
                 headings_count=len(heading_items),
                 headings_text=headings_text,
                 headings_levels=headings_levels,
-                headings_conf=headings.get('confidence', 'low'),
-                headings_source=headings.get('source_provider', ''),
+                headings_conf='high',  # Mechanical extraction is always high confidence
+                headings_source='mistral-markdown',  # From Pass 1
             )
             report_rows.append(report_row.model_dump())
         except Exception as e:

@@ -39,22 +39,49 @@ def handle_retry(
     worker_pool,
     result: LLMResult,
     request: LLMRequest,
-    queue: PriorityQueue
+    queue: PriorityQueue,
+    on_result: Optional[Callable] = None
 ):
     if result.error_type == '429_rate_limit':
         worker_pool.rate_limiter.record_429(retry_after=result.retry_after)
 
     request._retry_count += 1
 
+    # Check if we've exceeded max retries - convert to permanent failure
     if request._retry_count >= worker_pool.executor.max_retries:
-        worker_pool.logger.warning(
-            f"Retrying {request.id}: attempt {request._retry_count} (EXCEEDS max_retries={worker_pool.executor.max_retries}, infinite retry!)",
+        worker_pool.logger.error(
+            f"✗ {request.id}: Max retries exceeded (attempt {request._retry_count}/{worker_pool.executor.max_retries})",
             request_id=request.id,
             retry_count=request._retry_count,
             max_retries=worker_pool.executor.max_retries,
             error_type=result.error_type,
-            error_message=result.error_message
+            error_message=result.error_message,
+            execution_time=result.execution_time_seconds
         )
+
+        # Convert to permanent failure instead of infinite retry
+        permanent_result = LLMResult(
+            request_id=request.id,
+            success=False,
+            error_type=f"{result.error_type}_max_retries_exceeded",
+            error_message=f"Max retries ({worker_pool.executor.max_retries}) exceeded. Last error: {result.error_message}",
+            attempts=request._retry_count,
+            execution_time_seconds=result.execution_time_seconds,
+            request=request
+        )
+        handle_permanent_failure(worker_pool, permanent_result, request, on_result)
+        return
+
+    # Log every retry with full context
+    worker_pool.logger.warning(
+        f"⟳ {request.id}: Retry attempt {request._retry_count}/{worker_pool.executor.max_retries}",
+        request_id=request.id,
+        retry_count=request._retry_count,
+        max_retries=worker_pool.executor.max_retries,
+        error_type=result.error_type,
+        error_message=result.error_message,
+        execution_time=result.execution_time_seconds
+    )
 
     jitter = random.uniform(*worker_pool.retry_jitter)
     time.sleep(jitter)
@@ -75,18 +102,24 @@ def handle_permanent_failure(
     request: LLMRequest,
     on_result: Optional[Callable]
 ):
-    with worker_pool.request_tracking_lock:
-        if request.id in worker_pool.active_requests:
-            worker_pool.active_requests.pop(request.id)
+    # Remove from active requests tracking
+    if request and hasattr(request, 'id'):
+        with worker_pool.request_tracking_lock:
+            if request.id in worker_pool.active_requests:
+                worker_pool.active_requests.pop(request.id)
 
+    # Always store result (contains error info)
     worker_pool._store_result(result)
+
+    # Call result handler with additional error protection
     if on_result:
         try:
             on_result(result)
         except Exception as e:
+            request_id = request.id if request and hasattr(request, 'id') else result.request_id
             worker_pool.logger.error(
-                f"Result handler failed for {request.id} (original error: {result.error_type}): {type(e).__name__}: {e}",
-                request_id=request.id,
+                f"Result handler failed for {request_id} (original error: {result.error_type}): {type(e).__name__}: {e}",
+                request_id=request_id,
                 error_type=type(e).__name__,
                 error_message=str(e),
                 original_error_type=result.error_type
