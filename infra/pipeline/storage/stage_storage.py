@@ -14,9 +14,20 @@ class StageStorage:
         self._lock = threading.RLock()
 
         from infra.pipeline.storage.metrics import MetricsManager
+        from infra.pipeline.logger import create_logger
+
         self.output_dir = storage.book_dir / name
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.metrics_manager = MetricsManager(self.output_dir / 'metrics.json')
+
+        # Create logger for this stage
+        log_dir = storage.book_dir / 'logs'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        self._logger = create_logger(storage.scan_id, name, log_dir=log_dir)
+
+    def logger(self):
+        """Get logger instance for this stage."""
+        return self._logger
 
     def save_page(
         self,
@@ -81,13 +92,23 @@ class StageStorage:
 
         return data
 
-    def list_pages(self, extension: str = "json") -> list[int]:
-        if not self.output_dir.exists():
+    def list_files(self, pattern: str, subdir: Optional[str] = None) -> list[Path]:
+        if subdir:
+            search_dir = self.output_dir / subdir
+        else:
+            search_dir = self.output_dir
+
+        if not search_dir.exists():
             return []
 
-        page_nums = []
+        return sorted(search_dir.glob(pattern))
+
+    def list_pages(self, extension: str = "json", subdir: Optional[str] = None) -> list[int]:
         pattern = f"page_*.{extension}"
-        for path in self.output_dir.glob(pattern):
+        paths = self.list_files(pattern, subdir)
+
+        page_nums = []
+        for path in paths:
             page_num_str = path.stem.split('_')[1]
             page_nums.append(int(page_num_str))
 

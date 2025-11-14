@@ -78,6 +78,19 @@ class MetricsManager:
                 for entry in self._state["metrics"].values()
             )
 
+    def get_metrics_by_prefix(self, prefix: str) -> Dict[str, Dict[str, Any]]:
+        """
+        Get individual metric records matching a prefix.
+
+        Returns dict of {key: metric_record} for all keys starting with prefix.
+        """
+        with self._lock:
+            return {
+                key: entry
+                for key, entry in self._state["metrics"].items()
+                if key.startswith(prefix)
+            }
+
     def get_cumulative_metrics(self, prefix: Optional[str] = None) -> Dict[str, Any]:
         with self._lock:
             # Filter metrics based on prefix pattern
