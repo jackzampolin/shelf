@@ -72,3 +72,14 @@ class MultiPhaseStatusTracker:
                     target[key] += value
             else:
                 target[key] = value
+
+    def run(self) -> Dict[str, Any]:
+        for phase_tracker in self.phase_trackers:
+            if phase_tracker.is_completed():
+                self.logger.debug(f"{phase_tracker.phase_name} phase complete, skipping")
+                continue
+
+            self.logger.info(f"Running phase: {phase_tracker.phase_name}")
+            phase_tracker.run()
+
+        return {"status": "success"}
