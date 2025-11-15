@@ -52,20 +52,68 @@ class BaseStage:
         lines = []
 
         stage_status = status.get('status', 'unknown')
-
         progress = status.get('progress', {})
-        remaining = progress.get('remaining_items', progress.get('remaining_pages', []))
-        total = progress.get('total_items', progress.get('total_pages', 0))
-        completed = progress.get('completed_items', progress.get('completed_pages', 0))
-
-        if isinstance(remaining, list):
-            remaining = len(remaining)
 
         lines.append(f"   Status: {stage_status}")
 
-        if total > 0:
-            lines.append(f"   Items:  {completed}/{total} ({remaining} remaining)")
+        # Check if this is a MultiPhaseStatusTracker (has phase breakdown)
+        if 'total_phases' in progress and 'completed_phases' in progress:
+            total_phases = progress['total_phases']
+            completed_phase_names = progress['completed_phases']
+            current_phase = progress.get('current_phase')
 
+            lines.append(f"   Phases: {len(completed_phase_names)}/{total_phases} completed")
+
+            if current_phase:
+                lines.append(f"   Current: {current_phase}")
+
+            # Show detailed phase breakdown
+            lines.append("")
+            lines.append("   Phase Details:")
+
+            # Import here to avoid circular dependency
+            from infra.pipeline.status import MultiPhaseStatusTracker
+
+            if isinstance(self.status_tracker, MultiPhaseStatusTracker):
+                for i, tracker in enumerate(self.status_tracker.phase_trackers, 1):
+                    phase_name = tracker.phase_name
+                    is_completed = tracker.is_completed()
+                    is_current = phase_name == current_phase
+
+                    if is_completed:
+                        symbol = '✅'
+                    elif is_current:
+                        symbol = '⏳'
+                    else:
+                        symbol = '○'
+
+                    # Get phase progress
+                    phase_status = tracker.get_status()
+                    phase_progress = phase_status.get('progress', {})
+
+                    total_items = phase_progress.get('total_items', 0)
+                    completed_items = phase_progress.get('completed_items', 0)
+
+                    if total_items > 0:
+                        progress_str = f"({completed_items}/{total_items})"
+                    else:
+                        progress_str = ""
+
+                    lines.append(f"   {symbol} {i:2d}. {phase_name:20s} {progress_str}")
+
+        else:
+            # Single-phase tracker (PhaseStatusTracker directly)
+            remaining = progress.get('remaining_items', progress.get('remaining_pages', []))
+            total = progress.get('total_items', progress.get('total_pages', 0))
+            completed = progress.get('completed_items', progress.get('completed_pages', 0))
+
+            if isinstance(remaining, list):
+                remaining = len(remaining)
+
+            if total > 0:
+                lines.append(f"   Items:  {completed}/{total} ({remaining} remaining)")
+
+        # Show metrics (cost/time) regardless of tracker type
         metrics = status.get('metrics', {})
         if metrics.get('total_cost_usd', 0) > 0:
             lines.append(f"   Cost:   ${metrics['total_cost_usd']:.4f}")

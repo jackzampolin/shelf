@@ -170,6 +170,7 @@ def heal_all_clusters(
         ))
 
     batch_config = AgentBatchConfig(
+        tracker=tracker,
         agent_configs=configs,
         max_workers=max_workers
     )
