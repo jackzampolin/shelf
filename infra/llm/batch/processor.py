@@ -17,7 +17,19 @@ class LLMBatchProcessor:
         self.tracker = config.tracker
         self.logger = config.tracker.logger
         self.storage = config.tracker.storage
-        self.stage_name = config.tracker.stage_name
+
+        # Support both old BatchBasedStatusTracker and new PhaseStatusTracker
+        if hasattr(config.tracker, 'stage_storage'):
+            # New PhaseStatusTracker - has stage_storage and metrics_prefix
+            self.stage_name = config.tracker.stage_storage.stage_name
+            self.metrics_manager = config.tracker.stage_storage.metrics_manager
+            self.metric_prefix = config.tracker.metrics_prefix
+        else:
+            # Old BatchBasedStatusTracker - has stage_name and item_pattern
+            self.stage_name = config.tracker.stage_name
+            self.metrics_manager = self.storage.stage(self.stage_name).metrics_manager
+            pattern = self.tracker.item_pattern
+            self.metric_prefix = pattern.replace('{:04d}', '').replace('.json', '').replace('/', '_')
 
         self.model = config.model
         self.max_workers = config.max_workers or 30
@@ -26,11 +38,6 @@ class LLMBatchProcessor:
         self.batch_name = config.batch_name
         self.request_builder = config.request_builder
         self.result_handler = config.result_handler
-
-        self.metrics_manager = self.storage.stage(self.stage_name).metrics_manager
-
-        pattern = self.tracker.item_pattern
-        self.metric_prefix = pattern.replace('{:04d}', '').replace('.json', '').replace('/', '_')
 
         self.batch_client = LLMBatchClient(
             model=self.model,  # Pass model to batch client

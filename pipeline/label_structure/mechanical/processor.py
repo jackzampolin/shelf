@@ -1,22 +1,20 @@
-from infra.pipeline.status import BatchBasedStatusTracker
+from typing import Dict, Optional, Any
 from .extractor import extract_mechanical_patterns
+from infra.pipeline.status import PhaseStatusTracker
 from ..schemas.mechanical import MechanicalExtractionOutput
 
 
 def process_mechanical_extraction(
-    tracker: BatchBasedStatusTracker,
+    tracker: PhaseStatusTracker,
+    **kwargs: Optional[Dict[str, Any]],
 ) -> None:
-    tracker.logger.info(f"=== Mechanical: Pattern extraction ===")
-
+    tracker.logger.info(f"mechanical pattern extraction starting")
     remaining_pages = tracker.get_remaining_items()
     if not remaining_pages:
         tracker.logger.info("No pages to process (all completed)")
         return
 
-    tracker.logger.info(f"Processing {len(remaining_pages)} pages")
-
-    output_dir = tracker.storage.stage("label-structure").output_dir / "mechanical"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    tracker.logger.info(f"processing {len(remaining_pages)} pages")
 
     processed = 0
     for page_num in remaining_pages:

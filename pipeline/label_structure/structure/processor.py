@@ -1,21 +1,24 @@
 from typing import Dict, Any
 from infra.llm.batch import LLMBatchProcessor, LLMBatchConfig
-from infra.pipeline.status import BatchBasedStatusTracker
+from infra.pipeline.status import PhaseStatusTracker
 from .request_builder import prepare_structural_metadata_request
 from .result_handler import create_result_handler
 
 
 def process_structural_metadata(
-    tracker: BatchBasedStatusTracker,
-    model: str,
-    max_workers: int,
-    max_retries: int,
+    tracker: PhaseStatusTracker,
+    **kwargs
 ) -> Dict[str, Any]:
-    tracker.logger.info(f"=== Structure: LLM metadata extraction ===")
-    tracker.logger.info(f"Model: {model}")
+    """Process structural metadata extraction using LLM batch processor.
 
-    output_dir = tracker.storage.stage("label-structure").output_dir / "structure"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    Args:
+        tracker: PhaseStatusTracker providing access to storage, logger, status
+        **kwargs: Optional configuration (model, max_workers, max_retries)
+    """
+    # Extract kwargs with defaults
+    model = kwargs.get("model")
+    max_workers = kwargs.get("max_workers")
+    max_retries = kwargs.get("max_retries", 3)
 
     return LLMBatchProcessor(LLMBatchConfig(
         tracker=tracker,

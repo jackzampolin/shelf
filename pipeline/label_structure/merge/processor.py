@@ -1,6 +1,4 @@
-from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.logger import PipelineLogger
-from infra.pipeline.status import BatchBasedStatusTracker
+from infra.pipeline.status import PhaseStatusTracker
 from ..schemas.merged_output import LabelStructurePageOutput
 from ..schemas.mechanical import MechanicalExtractionOutput
 from ..schemas.structure import StructuralMetadataOutput
@@ -8,8 +6,15 @@ from ..schemas.annotations import AnnotationsOutput
 
 
 def merge_outputs(
-    tracker: BatchBasedStatusTracker,
+    tracker: PhaseStatusTracker,
+    **kwargs
 ) -> None:
+    """Merge mechanical, structure, and annotations outputs into final page files.
+
+    Args:
+        tracker: PhaseStatusTracker providing access to storage, logger, status
+        **kwargs: Optional configuration (unused for this phase)
+    """
     tracker.logger.info(f"=== Merge: Combining outputs ===")
 
     remaining_pages = tracker.get_remaining_items()
