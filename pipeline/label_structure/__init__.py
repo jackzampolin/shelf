@@ -61,27 +61,51 @@ def healing_directory_tracker(
     run_kwargs: Optional[Dict[str, Any]] = None,
 ) -> PhaseStatusTracker:
     """
-    Custom tracker for healing directory phase.
+    Custom tracker for gap healing agent phase.
 
-    Completion criteria: healing/ directory exists AND contains page_*.json files
-    (not just that the directory exists, which would always be true after first run)
+    Discovers cluster_ids from clusters.json.
+    Validates by checking if all pages in each cluster have healing decisions.
     """
-    def discover_healing_artifacts(phase_dir: Path):
+    import json
+
+    def discover_clusters(phase_dir: Path):
+        clusters_path = phase_dir / "clusters.json"
+        if not clusters_path.exists():
+            return []
+
+        with open(clusters_path, 'r') as f:
+            data = json.load(f)
+
+        return [cluster['cluster_id'] for cluster in data.get('clusters', [])]
+
+    def validate_cluster_healed(cluster_id: str, phase_dir: Path):
+        # Load cluster to get scan_pages
+        clusters_path = phase_dir / "clusters.json"
+        if not clusters_path.exists():
+            return False
+
+        with open(clusters_path, 'r') as f:
+            data = json.load(f)
+
+        cluster = next((c for c in data['clusters'] if c['cluster_id'] == cluster_id), None)
+        if not cluster:
+            return False
+
         healing_dir = phase_dir / "healing"
         if not healing_dir.exists():
-            return []
-        return list(healing_dir.glob("page_*.json"))
+            return False
 
-    def validate_healing_complete(item, phase_dir: Path):
-        # If we discovered any files, healing has run
-        # This validator is called per-item, but we only care that files exist
-        return item.exists()
+        # Check if all pages in cluster have healing decisions
+        return all(
+            (healing_dir / f"page_{page:04d}.json").exists()
+            for page in cluster['scan_pages']
+        )
 
     return PhaseStatusTracker(
         stage_storage=stage_storage,
         phase_name=phase_name,
-        discoverer=discover_healing_artifacts,
-        validator=validate_healing_complete,
+        discoverer=discover_clusters,
+        validator=validate_cluster_healed,
         run_fn=run_fn,
         use_subdir=False,
         run_kwargs=run_kwargs,

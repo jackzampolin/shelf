@@ -161,11 +161,11 @@ def heal_all_clusters(
         ]
 
         configs.append(AgentConfig(
-            model=model,
-            initial_messages=initial_messages,
-            tools=tools,
-            stage_storage=stage_storage,
+            tracker=tracker,
             agent_id=agent_id,
+            model=model,
+            tools=tools,
+            initial_messages=initial_messages,
             max_iterations=max_iterations
         ))
 
@@ -188,8 +188,8 @@ def heal_all_clusters(
 
         if agent_result.success and tools.get_pending_updates():
             for update in tools.get_pending_updates():
-                _save_healing_decision(tracker, 
-                    storage=storage,
+                _save_healing_decision(
+                    tracker=tracker,
                     update=update,
                     agent_id=agent_id,
                     cost_usd=agent_result.total_cost_usd / len(tools.get_pending_updates()),
