@@ -176,11 +176,17 @@ class LLMBatchProcessor:
 
             progress.__exit__(None, None, None)
 
+            # Get accurate totals from tracker status (source of truth)
+            tracker_status = self.tracker.get_status()
+            total_items = tracker_status['progress']['total_items']
+            completed_items = tracker_status['progress']['completed_items']
+
             display_summary(
                 batch_name=self.batch_name,
                 batch_stats=batch_stats,
                 elapsed=elapsed,
-                total_items=len(items),
+                total_items=total_items,
+                completed_items=completed_items,
                 metrics_manager=self.metrics_manager,
                 metric_prefix=self.metric_prefix
             )

@@ -38,12 +38,28 @@ def display_summary(
     batch_stats,
     elapsed: float,
     total_items: int,
+    completed_items: int,
     metrics_manager,
     metric_prefix: str = ""
 ):
+    """Display summary of batch processing.
+
+    Args:
+        batch_name: Name of the batch operation
+        batch_stats: BatchStats from this run
+        elapsed: Elapsed time for this run
+        total_items: Total items in phase (from tracker status)
+        completed_items: Completed items in phase (from tracker status)
+        metrics_manager: MetricsManager for cost/token data
+        metric_prefix: Prefix for filtering metrics
+    """
     cumulative = metrics_manager.get_cumulative_metrics(prefix=metric_prefix)
-    display_completed = cumulative.get('total_requests', batch_stats.completed)
+
+    # Use tracker-provided counts (source of truth for completion)
+    display_completed = completed_items
     display_total = total_items
+
+    # Use cumulative metrics for cost/tokens (accurate across runs)
     display_prompt_tokens = cumulative.get('total_prompt_tokens', batch_stats.total_prompt_tokens)
     display_completion_tokens = cumulative.get('total_completion_tokens', batch_stats.total_tokens)
     display_reasoning_tokens = cumulative.get('total_reasoning_tokens', batch_stats.total_reasoning_tokens)
