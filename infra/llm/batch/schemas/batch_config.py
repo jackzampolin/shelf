@@ -1,11 +1,10 @@
 from dataclasses import dataclass
-from typing import Optional, Callable, Union
-from ....pipeline.status.batch_based import BatchBasedStatusTracker
+from typing import Optional, Callable
 from ....pipeline.status.phase_tracker import PhaseStatusTracker
 
 @dataclass
 class LLMBatchConfig:
-    tracker: Union[BatchBasedStatusTracker, PhaseStatusTracker]
+    tracker: PhaseStatusTracker
     model: str
     batch_name: str
     request_builder: Callable

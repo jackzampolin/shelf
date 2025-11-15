@@ -1,27 +1,41 @@
-from infra.pipeline.status import BatchBasedStatusTracker
+from infra.pipeline.status import PhaseStatusTracker
 
 from ..schemas import PageRange
 from .processor import process_toc_pages
 from infra import Config
 
 
-def extract_toc_entries(
-    tracker: BatchBasedStatusTracker,
-    max_workers: int = 10,
-    max_retries: int = 5,
-):
-    stage_storage = tracker.storage.stage('extract-toc')
+def extract_toc_entries(tracker: PhaseStatusTracker, **kwargs):
+    max_workers = kwargs.get("max_workers", 10)
+    max_retries = kwargs.get("max_retries", 5)
 
-    finder_result = tracker.storage.stage('find-toc').load_file("finder_result.json")
+    # Access book storage through tracker's stage_storage
+    book_storage = tracker.stage_storage.storage
+    stage_storage = book_storage.stage('extract-toc')
+
+    finder_result = book_storage.stage('find-toc').load_file("finder_result.json")
     toc_range = PageRange(**finder_result["toc_page_range"])
 
-    process_toc_pages(
-        tracker=tracker,
-        model=Config.vision_model_primary,
-        max_workers=max_workers,
-        max_retries=max_retries,
+    # Create a batch tracker for the page processing
+    from infra.pipeline.status import page_batch_tracker
+
+    batch_tracker = page_batch_tracker(
+        stage_storage=tracker.stage_storage,
+        phase_name="extract_pages",
+        run_fn=lambda t, **kw: process_toc_pages(
+            tracker=t,
+            model=Config.vision_model_primary,
+            max_workers=max_workers,
+            max_retries=max_retries,
+        ),
+        extension="json",
+        use_subdir=False,
     )
 
+    # Run batch processing
+    batch_tracker.run()
+
+    # Collect results
     page_results = []
     for page_num in range(toc_range.start_page, toc_range.end_page + 1):
         page_file = f"page_{page_num:04d}.json"
@@ -38,5 +52,8 @@ def extract_toc_entries(
         "toc_range": toc_range.model_dump(),
     }
 
-    stage_storage.save_file("entries.json", results_data)
+    # Save to phase_dir (tracker handles directory creation)
+    output_path = tracker.phase_dir / "entries.json"
+    import json
+    output_path.write_text(json.dumps(results_data, indent=2))
     tracker.logger.info(f"Saved entries.json ({len(page_results)} pages)")

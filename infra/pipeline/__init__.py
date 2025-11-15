@@ -9,7 +9,7 @@ from infra.pipeline.registry import (
     STAGE_DEFINITIONS
 )
 from infra.pipeline.status import (
-    BatchBasedStatusTracker,
+    PhaseStatusTracker,
     MultiPhaseStatusTracker
 )
 from infra.pipeline.storage import (
@@ -40,7 +40,7 @@ __all__ = [
     "STAGE_DEFINITIONS",
 
     # Status trackers
-    "BatchBasedStatusTracker",
+    "PhaseStatusTracker",
     "MultiPhaseStatusTracker",
 
     # Storage

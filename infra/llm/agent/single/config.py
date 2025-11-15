@@ -1,17 +1,19 @@
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Any
-
+from infra.pipeline.status import PhaseStatusTracker
 from ..tools import AgentTools
-
 
 @dataclass
 class AgentConfig:
-    model: str
-    initial_messages: List[Dict]
-    tools: AgentTools
-    stage_storage: any
+    # Required fields (no defaults) must come first
+    tracker: PhaseStatusTracker
     agent_id: str
-    images: Optional[List[Any]] = None  # Images to include in initial message
-    max_iterations: int = 15
+    model: str
+    tools: AgentTools
+    initial_messages: List[Dict]
+
+    # Optional fields (with defaults) come after
     temperature: float = 0.0
     max_tokens: Optional[int] = None
+    images: Optional[List[Any]] = None
+    max_iterations: int = 15

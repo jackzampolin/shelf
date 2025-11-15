@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.status import MultiPhaseStatusTracker
+from infra.pipeline.status import artifact_tracker
 
 from pipeline.common_structure.schemas import CommonStructureOutput
 
@@ -36,60 +36,68 @@ class EpubOutputStage(BaseStage):
         super().__init__(storage)
         self.config = EpubConfig(**kwargs)
 
-        self.status_tracker = MultiPhaseStatusTracker(
-            storage=self.storage,
-            logger=self.logger,
-            stage_name=self.name,
-            phases=[
-                {"name": "load_structure", "artifact": "structure loaded"},
-                {"name": "extract_content", "artifact": "chapters extracted"},
-                {"name": "build_epub", "artifact": f"{storage.scan_id}.epub"},
-                {"name": "validate", "artifact": "validation complete"}
-            ]
+        def generate_epub(tracker, **kwargs):
+            return self._generate_epub(tracker)
+
+        # The epub file is generated in the book's root directory, not the stage directory
+        # So we use a custom validator that checks the root directory
+        def discover_epub(phase_dir):
+            return [f"{storage.scan_id}.epub"]
+
+        def validate_epub(item, phase_dir):
+            epub_path = storage.root_dir / item
+            return epub_path.exists()
+
+        from infra.pipeline.status import PhaseStatusTracker
+        self.status_tracker = PhaseStatusTracker(
+            stage_storage=self.stage_storage,
+            phase_name="generate_epub",
+            discoverer=discover_epub,
+            validator=validate_epub,
+            run_fn=generate_epub,
+            use_subdir=False,
         )
 
-    def run(self) -> Dict[str, Any]:
-        if self.status_tracker.is_completed():
-            return self.status_tracker.get_skip_response()
 
-        epub_path = self.storage.root_dir / f"{self.storage.scan_id}.epub"
-        if epub_path.exists():
-            self.logger.info(f"✓ ePub already exists: {epub_path}")
-            return {"status": "success", "epub_path": str(epub_path)}
+    def _generate_epub(self, tracker) -> Dict[str, Any]:
+        storage = tracker.storage
+        logger = tracker.logger
+
+        epub_path = storage.root_dir / f"{storage.scan_id}.epub"
 
         start_time = datetime.now(timezone.utc)
 
-        self.logger.info("Phase 1: Loading structure...")
-        structure = self._load_structure()
-        self.logger.info(
+        logger.info("Phase 1: Loading structure...")
+        structure = self._load_structure(storage)
+        logger.info(
             f"✓ Loaded structure: {structure.total_chapters} chapters, "
             f"{structure.total_sections} sections"
         )
 
-        self.logger.info("Phase 2: Extracting chapter content...")
-        chapters = self._extract_all_chapters(structure)
-        self.logger.info(f"✓ Extracted {len(chapters)} chapters")
+        logger.info("Phase 2: Extracting chapter content...")
+        chapters = self._extract_all_chapters(storage, logger, structure)
+        logger.info(f"✓ Extracted {len(chapters)} chapters")
 
-        self.logger.info("Phase 3: Building ePub...")
+        logger.info("Phase 3: Building ePub...")
         book = build_epub(
             output_path=epub_path,
             structure=structure,
             chapters=chapters,
-            logger=self.logger,
+            logger=logger,
             generate_page_list=self.config.generate_page_list,
             css_theme=self.config.css_theme
         )
 
         validation_result = None
         if self.config.validate_output:
-            self.logger.info("Phase 4: Validating ePub...")
-            validation_result = self._validate_epub(epub_path)
+            logger.info("Phase 4: Validating ePub...")
+            validation_result = self._validate_epub(logger, epub_path)
 
         end_time = datetime.now(timezone.utc)
         processing_time = (end_time - start_time).total_seconds()
 
         metadata = {
-            "scan_id": self.storage.scan_id,
+            "scan_id": storage.scan_id,
             "epub_path": str(epub_path),
             "total_chapters": len(chapters),
             "config": self.config.model_dump(),
@@ -98,14 +106,14 @@ class EpubOutputStage(BaseStage):
             "validation": validation_result
         }
 
-        metadata_path = self.stage_storage.output_dir / "metadata.json"
+        metadata_path = tracker.phase_dir / "metadata.json"
         with open(metadata_path, "w") as f:
             json.dump(metadata, f, indent=2)
 
-        self.logger.info(
+        logger.info(
             f"✓ ePub generation complete in {processing_time:.1f}s"
         )
-        self.logger.info(f"  → Output: {epub_path}")
+        logger.info(f"  → Output: {epub_path}")
 
         return {
             "status": "success",
@@ -114,8 +122,8 @@ class EpubOutputStage(BaseStage):
             "processing_time": processing_time
         }
 
-    def _load_structure(self) -> CommonStructureOutput:
-        structure_path = self.storage.stage("common-structure").output_dir / "structure.json"
+    def _load_structure(self, storage) -> CommonStructureOutput:
+        structure_path = storage.stage("common-structure").output_dir / "structure.json"
 
         if not structure_path.exists():
             raise FileNotFoundError(
@@ -128,7 +136,7 @@ class EpubOutputStage(BaseStage):
 
         return CommonStructureOutput(**data)
 
-    def _extract_all_chapters(self, structure: CommonStructureOutput) -> list:
+    def _extract_all_chapters(self, storage, logger, structure: CommonStructureOutput) -> list:
         chapters = []
 
         content_entries = [
@@ -137,13 +145,13 @@ class EpubOutputStage(BaseStage):
         ]
 
         for entry in content_entries:
-            self.logger.debug(
+            logger.debug(
                 f"Extracting: {entry.title} "
                 f"(pages {entry.scan_page_start}-{entry.scan_page_end})"
             )
 
             chapter = extract_chapter_content(
-                storage=self.storage,
+                storage=storage,
                 entry_id=entry.entry_id,
                 title=entry.title,
                 level=entry.level,
@@ -157,25 +165,25 @@ class EpubOutputStage(BaseStage):
 
         return chapters
 
-    def _validate_epub(self, epub_path: Path) -> Dict[str, Any]:
+    def _validate_epub(self, logger, epub_path: Path) -> Dict[str, Any]:
         try:
             from epubcheck import EpubCheck
 
             result = EpubCheck(str(epub_path))
 
             if result.valid:
-                self.logger.info("✅ ePub validation passed!")
+                logger.info("✅ ePub validation passed!")
                 return {
                     "valid": True,
                     "errors": [],
                     "warnings": []
                 }
             else:
-                self.logger.warning(
+                logger.warning(
                     f"⚠️  ePub validation found {len(result.messages)} issues"
                 )
                 for msg in result.messages[:5]:
-                    self.logger.warning(f"  - {msg}")
+                    logger.warning(f"  - {msg}")
 
                 return {
                     "valid": False,
@@ -184,7 +192,7 @@ class EpubOutputStage(BaseStage):
                 }
 
         except ImportError:
-            self.logger.warning(
+            logger.warning(
                 "epubcheck not installed - skipping validation\n"
                 "Install with: pip install epubcheck"
             )
@@ -194,7 +202,7 @@ class EpubOutputStage(BaseStage):
                 "warnings": ["epubcheck not installed"]
             }
         except Exception as e:
-            self.logger.error(f"Validation error: {e}")
+            logger.error(f"Validation error: {e}")
             return {
                 "valid": False,
                 "errors": [str(e)],

@@ -10,24 +10,29 @@ class PhaseStatusTracker:
         phase_name: str,
         discoverer: Callable[[Path], List[Any]],
         validator: Callable[[Any, Path], bool],
-        run_fn: Callable[['PhaseStatusTracker'], None],
+        run_fn: Callable[['PhaseStatusTracker', Any], None],
         use_subdir: bool = False,
+        run_kwargs: Optional[Dict[str, Any]] = None,
     ):
         self.stage_storage = stage_storage
         self.logger = stage_storage.logger()
         self.phase_name = phase_name
         self.storage = stage_storage.storage
+        self.metrics_manager = stage_storage.metrics_manager
 
         if use_subdir:
             self.phase_dir = stage_storage.output_dir / phase_name
         else:
             self.phase_dir = stage_storage.output_dir
 
+        self.phase_dir.mkdir(parents=True, exist_ok=True)
+
         self.metrics_prefix = f"{phase_name}_"
 
         self._discoverer = lambda: discoverer(self.phase_dir)
         self._validator = lambda item: validator(item, self.phase_dir)
         self._run_fn = run_fn
+        self._run_kwargs = run_kwargs or {}
 
     def is_completed(self) -> bool:
         return len(self.get_remaining_items()) == 0
@@ -84,4 +89,4 @@ class PhaseStatusTracker:
         )
 
     def run(self) -> None:
-        self._run_fn(self)
+        self._run_fn(self, **self._run_kwargs)

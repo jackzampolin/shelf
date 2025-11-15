@@ -2,7 +2,7 @@ from typing import Dict, Any
 
 from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.status import BatchBasedStatusTracker
+from infra.pipeline.status import page_batch_tracker
 from infra.ocr import OCRBatchProcessor
 from .provider import PaddleOCRProvider
 from .schemas import PaddleOcrPageOutput, PaddleOcrPageMetrics
@@ -18,24 +18,28 @@ class PaddleOcrStage(BaseStage):
     def __init__(self, storage: BookStorage, max_workers: int = 30):
         super().__init__(storage)
         self.max_workers = max_workers
-        self.status_tracker = BatchBasedStatusTracker(
-            storage=self.storage,
-            logger=self.logger,
-            stage_name=self.name,
-            item_pattern="page_{:04d}.json"
-        )
 
-        self.processor = OCRBatchProcessor(
-            provider=PaddleOCRProvider(self.storage.stage(self.name)),
-            status_tracker=self.status_tracker,
-            max_workers=self.max_workers,
+        def run_ocr(tracker, **kwargs):
+            processor = OCRBatchProcessor(
+                provider=PaddleOCRProvider(tracker.stage_storage),
+                status_tracker=tracker,
+                max_workers=self.max_workers,
+            )
+            return processor.process_batch()
+
+        self.status_tracker = page_batch_tracker(
+            stage_storage=self.stage_storage,
+            phase_name="ocr",
+            run_fn=run_ocr,
+            extension="json",
+            use_subdir=False,
         )
 
     def run(self) -> Dict[str, Any]:
         if self.status_tracker.is_completed():
-            return self.status_tracker.get_skip_response()
+            return {"status": "skipped", "reason": "already completed"}
 
-        batch_stats = self.processor.process_batch()
+        batch_stats = self.status_tracker.run()
 
         return {
             "status": batch_stats["status"],

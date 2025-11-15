@@ -14,14 +14,12 @@ from .progress import AgentProgressDisplay
 class AgentClient:
     def __init__(self, config: AgentConfig):
         self.config = config
-        stage_logger = config.stage_storage.logger if hasattr(config.stage_storage, 'logger') else None
-        self.llm_client = LLMClient(logger=stage_logger, max_retries=3)
-
-        self.log_dir = config.stage_storage.output_dir / 'logs' / 'agents' / config.agent_id
+        self.tracker = config.tracker
+        self.llm_client = LLMClient(logger=self.tracker.logger, max_retries=3)
+        self.log_dir = self.tracker.stage_storage.output_dir / 'logs' / 'agents' / config.agent_id
         self.log_filename = f"{config.agent_id}.json"
-        self.metrics_manager = config.stage_storage.metrics_manager
-        self.metrics_key_prefix = f"{config.agent_id}_"
-
+        self.metrics_manager = self.tracker.stage_storage.metrics_manager
+        self.metrics_key_prefix = self.tracker.metrics_prefix
         self.iteration_count = 0
         self.total_cost = 0.0
         self.total_prompt_tokens = 0
@@ -29,6 +27,7 @@ class AgentClient:
         self.total_reasoning_tokens = 0
         self.start_time = None
         self.run_log = None
+        
     def run(
         self,
         verbose: bool = False,

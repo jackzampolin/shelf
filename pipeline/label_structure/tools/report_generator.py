@@ -1,8 +1,7 @@
 import csv
 import re
 
-from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.logger import PipelineLogger
+from ..schemas import LabelStructurePageReport
 
 
 def parse_page_number(page_num_str: str) -> tuple[str, int | None]:
@@ -130,15 +129,13 @@ def calculate_sequence_validation(report_rows: list[dict]) -> list[dict]:
     return report_rows
 
 
-def generate_report(
-    storage: BookStorage,
-    logger: PipelineLogger,
-    report_schema,
-    stage_name: str,
-):
-    logger.info("Generating report.csv from page outputs")
+def generate_report(tracker, **kwargs):
+    # Extract from tracker
+    storage = tracker.storage
+    logger = tracker.logger
+    stage_storage = tracker.stage_storage
 
-    stage_storage = storage.stage(stage_name)
+    logger.info("Generating report.csv from page outputs")
 
     page_nums = stage_storage.list_pages(extension='json')
 
@@ -166,7 +163,7 @@ def generate_report(
             headings_text = '|'.join(h.get('text', '') for h in heading_items) if heading_items else ''
             headings_levels = '|'.join(str(h.get('level', '')) for h in heading_items) if heading_items else ''
 
-            report_row = report_schema(
+            report_row = LabelStructurePageReport(
                 page_num=page_num,
 
                 # Header

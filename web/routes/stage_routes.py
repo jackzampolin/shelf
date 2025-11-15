@@ -268,6 +268,7 @@ def label_structure_view(scan_id: str):
 
     Shows:
     - Report table with all page labels from multi-pass structure analysis
+    - Clusters tab with gap healing visualization
     - Links to individual page viewers
     """
     library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
@@ -285,11 +286,24 @@ def label_structure_view(scan_id: str):
     if not report:
         abort(404, f"Label-structure stage not run for '{scan_id}'")
 
+    # Check if clusters exist
+    stage_storage = storage.stage("label-structure")
+    clusters_embeddable_path = stage_storage.output_dir / "clusters_embeddable.html"
+    has_clusters = clusters_embeddable_path.exists()
+
+    # If clusters exist, read the embeddable HTML content
+    clusters_html = None
+    if has_clusters:
+        with open(clusters_embeddable_path, 'r', encoding='utf-8') as f:
+            clusters_html = f.read()
+
     return render_template(
         'stage/label_structure.html',
         scan_id=scan_id,
         metadata=metadata,
         report=report,
+        has_clusters=has_clusters,
+        clusters_html=clusters_html,
     )
 
 

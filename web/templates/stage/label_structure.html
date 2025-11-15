@@ -117,6 +117,53 @@
         color: #999;
         font-style: italic;
     }
+
+    /* Tab styling */
+    .tabs {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 2rem;
+        border-bottom: 2px solid #e0e0e0;
+    }
+
+    .tab {
+        padding: 0.75rem 1.5rem;
+        background: white;
+        border: none;
+        border-bottom: 3px solid transparent;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 500;
+        color: #666;
+        transition: all 0.2s;
+    }
+
+    .tab:hover {
+        color: #333;
+        background: #f9f9f9;
+    }
+
+    .tab.active {
+        color: #0066cc;
+        border-bottom-color: #0066cc;
+    }
+
+    .tab-content {
+        display: none;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    .clusters-container {
+        margin-top: 2rem;
+    }
+
+    /* Override clusters HTML body styles */
+    .clusters-container body {
+        all: unset;
+    }
 </style>
 {% endblock %}
 
@@ -145,7 +192,16 @@
         </div>
     </div>
 
-    <!-- Report Table -->
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('report')">📊 Report</button>
+        {% if has_clusters %}
+        <button class="tab" onclick="switchTab('clusters')">🔍 Gap Clusters</button>
+        {% endif %}
+    </div>
+
+    <!-- Report Table Tab -->
+    <div id="report-tab" class="tab-content active">
     <table class="report-table">
         <thead>
             <tr>
@@ -243,5 +299,31 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
+
+    <!-- Gap Clusters Tab -->
+    {% if has_clusters %}
+    <div id="clusters-tab" class="tab-content">
+        <div class="clusters-container">
+            {{ clusters_html|safe }}
+        </div>
+    </div>
+    {% endif %}
 </div>
+
+<script>
+function switchTab(tabName) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+
+    // Show selected tab
+    document.getElementById(tabName + '-tab').classList.add('active');
+    event.target.classList.add('active');
+}
+</script>
 {% endblock %}

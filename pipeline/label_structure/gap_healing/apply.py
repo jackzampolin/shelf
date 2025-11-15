@@ -15,7 +15,9 @@ def apply_healing_decisions(
         tracker: PhaseStatusTracker providing access to storage, logger, status
         **kwargs: Optional configuration (unused for this phase)
     """
-    stage_storage = tracker.storage.stage("label-structure")
+    storage = tracker.storage
+    logger = tracker.logger
+    stage_storage = storage.stage("label-structure")
     healing_dir = stage_storage.output_dir / "healing"
 
     if not healing_dir.exists():
@@ -151,4 +153,19 @@ def extract_chapter_markers(
     else:
         logger.info("No chapter markers discovered")
 
-    return {"chapters_found": len(chapters)}
+    # Save artifact for tracker
+    result = {
+        "pages_updated": pages_updated,
+        "chapters_discovered": len(chapters),
+        "skipped": skipped
+    }
+
+    output_path = tracker.phase_dir / "healing_applied.json"
+    output_path.write_text(json.dumps(result, indent=2))
+
+    logger.info(
+        f"Applied healing: {pages_updated} pages updated, "
+        f"{len(chapters)} chapters discovered, {skipped} skipped"
+    )
+
+    return result

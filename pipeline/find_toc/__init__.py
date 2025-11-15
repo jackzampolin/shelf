@@ -21,29 +21,27 @@ class FindTocStage(BaseStage):
         super().__init__(storage)
         self.model = model or Config.vision_model_primary
 
-        self.status_tracker = MultiPhaseStatusTracker(
-            storage=self.storage,
-            logger=self.logger,
-            stage_name=self.name,
-            phases=[
-                {"name": "find_toc", "artifact": "finder_result.json"}
-            ]
+        # Single artifact phase - use artifact_tracker
+        from infra.pipeline.status import artifact_tracker
+
+        def run_find_toc(tracker, **kwargs):
+            from .agent.finder import TocFinderAgent
+
+            agent = TocFinderAgent(
+                storage=tracker.storage,
+                logger=tracker.logger,
+                max_iterations=15,
+                verbose=True
+            )
+            return agent.search()
+
+        self.status_tracker = artifact_tracker(
+            stage_storage=self.stage_storage,
+            phase_name="find_toc",
+            artifact_filename="finder_result.json",
+            run_fn=run_find_toc,
         )
 
-    def run(self) -> Dict[str, Any]:
-        if self.status_tracker.is_completed():
-            return self.status_tracker.get_skip_response()
-
-        from .agent.finder import TocFinderAgent
-
-        agent = TocFinderAgent(
-            storage=self.storage,
-            logger=self.logger,
-            max_iterations=15,
-            verbose=True
-        )
-
-        return agent.search()
 
 
 __all__ = [

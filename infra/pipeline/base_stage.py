@@ -84,6 +84,18 @@ class BaseStage:
             self.check_dependency_completed(dep_stage)
 
     def run(self) -> Dict[str, Any]:
-        raise NotImplementedError(
-            f"{self.__class__.__name__} must implement run() method: the thing that this stage does"
-        )
+        """Default run implementation that delegates to status_tracker.
+
+        Stages can override this if they need custom behavior, but most stages
+        can use this default implementation.
+        """
+        if not self.status_tracker:
+            raise RuntimeError(
+                f"{self.__class__.__name__} must set status_tracker in __init__"
+            )
+
+        if self.status_tracker.is_completed():
+            return {"status": "skipped", "reason": "already completed"}
+
+        result = self.status_tracker.run()
+        return result if result else {"status": "success"}

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional, Dict, Any
 from .mechanical import HeadingItem, PatternHints
 from .structure import HeaderObservation, FooterObservation, PageNumberObservation
 from .annotations import ReferenceMarker, FootnoteContent, CrossReference
@@ -28,6 +28,12 @@ class LabelStructurePageOutput(BaseModel):
 
     has_horizontal_rule: bool = Field(False, description="Separator line before footnotes?")
     has_small_text_at_bottom: bool = Field(False, description="Small text at bottom?")
+
+    # Optional: Chapter marker discovered by gap healing agents
+    chapter_marker: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Chapter metadata if this page is a chapter title page (discovered by gap healing)"
+    )
 
 
 __all__ = [

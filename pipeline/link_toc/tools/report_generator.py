@@ -1,17 +1,13 @@
 import csv
-from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.logger import PipelineLogger
-
 from ..schemas import LinkTocReportEntry, LinkedTableOfContents
 
-def generate_report(
-    storage: BookStorage,
-    logger: PipelineLogger,
-    stage_name: str
-):
+def generate_report(tracker, **kwargs):
     """Generate CSV report from linked_toc.json."""
 
-    stage_storage = storage.stage(stage_name)
+    # Access storage and logger through tracker
+    storage = tracker.storage
+    logger = tracker.logger
+    stage_storage = tracker.stage_storage
 
     # Load linked ToC
     data = stage_storage.load_file("linked_toc.json")

@@ -43,5 +43,7 @@ def cmd_run_stage(args):
         stats = run_stage(stage)
         print(f"✅ Stage complete: {stage.name}")
     except Exception as e:
+        import traceback
         print(f"❌ Stage failed: {e}")
+        traceback.print_exc()
         sys.exit(1)

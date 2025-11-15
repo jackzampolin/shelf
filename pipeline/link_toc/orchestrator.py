@@ -107,16 +107,17 @@ def _finalize_linked_toc_metadata(
     stage_storage.save_file("linked_toc.json", data)
 
 
-def find_all_toc_entries(
-    storage: BookStorage,
-    logger: PipelineLogger,
-    model: str,
-    max_iterations: int = 15,
-    verbose: bool = False
-):
+def find_all_toc_entries(tracker, **kwargs):
+    model = kwargs.get('model')
+    max_iterations = kwargs.get('max_iterations', 15)
+    verbose = kwargs.get('verbose', False)
+
     start_time = time.time()
 
-    stage_storage = storage.stage("link-toc")
+    # Access storage and logger through tracker
+    storage = tracker.storage
+    logger = tracker.logger
+    stage_storage = tracker.stage_storage
 
     # Load ToC entries from extract-toc
     extract_toc_output = storage.stage("extract-toc").load_file("toc.json")

@@ -2,7 +2,7 @@ from typing import Dict, Any
 
 from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.status import MultiPhaseStatusTracker
+from infra.pipeline.status import MultiPhaseStatusTracker, artifact_tracker
 from infra.config import Config
 from .orchestrator import find_all_toc_entries
 from .tools import generate_report
@@ -33,41 +33,39 @@ class LinkTocStage(BaseStage):
         self.max_iterations = max_iterations
         self.verbose = verbose
 
-        self.status_tracker = MultiPhaseStatusTracker(
-            storage=self.storage,
-            logger=self.logger,
-            stage_name=self.name,
-            phases=[
-                {"name": "find_entries", "artifact": "linked_toc.json"},
-                {"name": "generate_report", "artifact": "report.csv"}
-            ]
-        )
-
-    def run(self) -> Dict[str, Any]:
-        if self.status_tracker.is_completed():
-            return self.status_tracker.get_skip_response()
-
         # Phase 1: Find all ToC entries
-        linked_toc_path = self.stage_storage.output_dir / "linked_toc.json"
-        if not linked_toc_path.exists():
-            find_all_toc_entries(
-                storage=self.storage,
-                logger=self.logger,
+        def run_find_entries(tracker, **kwargs):
+            return find_all_toc_entries(
+                tracker=tracker,
                 model=self.model,
                 max_iterations=self.max_iterations,
                 verbose=self.verbose
             )
 
-        # Phase 2: Generate report
-        report_path = self.stage_storage.output_dir / "report.csv"
-        if not report_path.exists():
-            generate_report(
-                storage=self.storage,
-                logger=self.logger,
-                stage_name=self.name
-            )
+        self.find_tracker = artifact_tracker(
+            stage_storage=self.stage_storage,
+            phase_name="find_entries",
+            artifact_filename="linked_toc.json",
+            run_fn=run_find_entries,
+        )
 
-        return {"status": "success"}
+        # Phase 2: Generate report
+        self.report_tracker = artifact_tracker(
+            stage_storage=self.stage_storage,
+            phase_name="generate_report",
+            artifact_filename="report.csv",
+            run_fn=generate_report,
+        )
+
+        # Multi-phase tracker
+        self.status_tracker = MultiPhaseStatusTracker(
+            stage_storage=self.stage_storage,
+            phase_trackers=[
+                self.find_tracker,
+                self.report_tracker,
+            ]
+        )
+
 
 
 __all__ = [

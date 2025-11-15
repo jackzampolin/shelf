@@ -7,8 +7,7 @@ Merges ToC entries from multiple pages, handles continuations, validates sequenc
 import json
 from typing import Dict
 
-from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.logger import PipelineLogger
+from infra.pipeline.status import PhaseStatusTracker
 from infra.llm.client import LLMClient
 from infra.config import Config
 
@@ -16,16 +15,15 @@ from ..schemas import PageRange
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 
 
-def assemble_toc(
-    storage: BookStorage,
-    toc_range: PageRange,
-    logger: PipelineLogger,
-) -> Dict[str, any]:
+def assemble_toc(tracker: PhaseStatusTracker, **kwargs) -> Dict[str, any]:
     model = Config.vision_model_primary
-    llm_client = LLMClient()
-    stage_storage = storage.stage('extract-toc')
+    llm_client = LLMClient(logger=tracker.logger)
 
-    logger.info("Assembling ToC from extracted entries")
+    # Access book storage through tracker's stage_storage
+    book_storage = tracker.stage_storage.storage
+    stage_storage = book_storage.stage('extract-toc')
+
+    tracker.logger.info("Assembling ToC from extracted entries")
 
     # Load entries from Phase 1
     entries_data = stage_storage.load_file("entries.json")
@@ -151,7 +149,7 @@ def assemble_toc(
         confidence = validation_data.get("confidence", 0.0)
         issues = validation_data.get("issues_found", [])
 
-        logger.info(f"  Assembled ToC: {total_entries} entries, confidence={confidence:.2f}, {len(issues)} issues")
+        tracker.logger.info(f"  Assembled ToC: {total_entries} entries, confidence={confidence:.2f}, {len(issues)} issues")
 
         results_data = {
             "toc": toc_data,
@@ -160,13 +158,14 @@ def assemble_toc(
             "search_strategy": "vision_agent_with_ocr"
         }
 
-        # Save toc.json
-        stage_storage.save_file("toc.json", results_data)
-        logger.info(f"Saved toc.json ({total_entries} entries)")
+        # Save to phase_dir (tracker handles directory creation)
+        output_path = tracker.phase_dir / "toc.json"
+        output_path.write_text(json.dumps(results_data, indent=2))
+        tracker.logger.info(f"Saved toc.json ({total_entries} entries)")
 
-        # Record metrics
-        stage_storage.metrics_manager.record(
-            key="phase2_assembly",
+        # Record metrics using tracker's metrics manager
+        tracker.metrics_manager.record(
+            key=f"{tracker.metrics_prefix}assembly",
             cost_usd=result.cost_usd,
             time_seconds=result.total_time_seconds,
             custom_metrics={
@@ -183,5 +182,5 @@ def assemble_toc(
         return results_data
 
     except Exception as e:
-        logger.error(f"  Failed to parse assembly response: {e}")
+        tracker.logger.error(f"  Failed to parse assembly response: {e}")
         raise

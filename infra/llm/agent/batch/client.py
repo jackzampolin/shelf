@@ -13,10 +13,12 @@ class AgentBatchClient:
 
     def __init__(self, config: AgentBatchConfig):
         self.config = config
+        self.tracker = config.tracker
+
         self.progress = MultiAgentProgressDisplay(
             total_agents=len(config.agent_configs),
-            max_visible_agents=config.max_visible_agents,
-            completed_agent_display_seconds=config.completed_agent_display_seconds
+            max_visible_agents=config.max_workers,  # Show as many as can run in parallel
+            completed_agent_display_seconds=3  # Hardcoded: keep completed agents visible for 3s
         )
 
     def run(self) -> AgentBatchResult:
@@ -104,6 +106,10 @@ class AgentBatchClient:
         avg_iterations = sum(r.iterations for r in results) / len(results) if results else 0.0
         avg_cost = total_cost / len(results) if results else 0.0
         avg_time = total_time / len(results) if results else 0.0
+
+        # NOTE: Don't record batch-level metrics here - would double-count!
+        # Individual agents already record per-iteration metrics via their trackers.
+        # The MetricsManager can aggregate those via get_cumulative_metrics(prefix=tracker.metrics_prefix)
 
         return AgentBatchResult(
             results=results,

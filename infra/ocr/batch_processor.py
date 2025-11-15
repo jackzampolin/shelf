@@ -3,16 +3,15 @@ from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
 import json
+from pathlib import Path
 
-from infra.pipeline.storage.book_storage import BookStorage
 from infra.llm.rate_limiter import RateLimiter
 from rich.progress import Progress, BarColumn, TextColumn, TaskProgressColumn, TimeRemainingColumn
 from .provider import OCRProvider
 
 
-def _log_failure(storage: BookStorage, page_num: int, error: str, attempt: int, max_retries: int):
-    logs_dir = storage.output_dir / "logs"
-    logs_dir.mkdir(exist_ok=True)
+def _log_failure(logs_dir: Path, page_num: int, error: str, attempt: int, max_retries: int):
+    logs_dir.mkdir(parents=True, exist_ok=True)
     failure_log = logs_dir / "llm_failures.json"
 
     failure_entry = {
@@ -48,6 +47,12 @@ class OCRBatchProcessor:
         self.logger = status_tracker.logger
         self.max_workers = max_workers
 
+        # Use tracker's stage_storage and phase_dir
+        self.stage_storage = status_tracker.stage_storage
+        self.output_dir = status_tracker.phase_dir
+        self.metrics_manager = status_tracker.metrics_manager
+        self.metrics_prefix = status_tracker.metrics_prefix
+
         if provider.requests_per_second != float('inf'):
             requests_per_minute = int(provider.requests_per_second * 60)
             self.rate_limiter = RateLimiter(requests_per_minute=requests_per_minute)
@@ -58,7 +63,8 @@ class OCRBatchProcessor:
         page_nums = self.status_tracker.get_remaining_items()
 
         source_storage = self.storage.stage("source")
-        stage_storage = self.storage.stage(self.provider.name)
+        # Use tracker's output_dir instead of assuming stage name
+        logs_dir = self.output_dir / "logs"
 
         pages_processed = 0
         total_cost = 0.0
@@ -99,7 +105,7 @@ class OCRBatchProcessor:
             if not page_file.exists():
                 error_msg = f"Source image not found: {page_file}"
                 self.logger.error(f"  Page {page_num}: {error_msg}")
-                _log_failure(stage_storage, page_num, error_msg, attempt=0, max_retries=self.provider.max_retries)
+                _log_failure(logs_dir, page_num, error_msg, attempt=0, max_retries=self.provider.max_retries)
                 return {"success": False, "page_num": page_num, "error": error_msg}
 
             # Load image
@@ -108,7 +114,7 @@ class OCRBatchProcessor:
             except Exception as e:
                 error_msg = f"Failed to load image: {e}"
                 self.logger.error(f"  Page {page_num}: {error_msg}")
-                _log_failure(stage_storage, page_num, error_msg, attempt=0, max_retries=self.provider.max_retries)
+                _log_failure(logs_dir, page_num, error_msg, attempt=0, max_retries=self.provider.max_retries)
                 return {"success": False, "page_num": page_num, "error": error_msg}
 
             # Retry loop with exponential backoff
@@ -134,7 +140,7 @@ class OCRBatchProcessor:
                             continue
                         else:
                             # Out of retries
-                            _log_failure(stage_storage, page_num, result.error_message, attempt, self.provider.max_retries)
+                            _log_failure(logs_dir, page_num, result.error_message, attempt, self.provider.max_retries)
                             return {"success": False, "page_num": page_num, "error": result.error_message}
 
                 except Exception as e:
@@ -146,12 +152,13 @@ class OCRBatchProcessor:
                         continue
                     else:
                         # Out of retries
-                        _log_failure(stage_storage, page_num, error_msg, attempt, self.provider.max_retries)
+                        _log_failure(logs_dir, page_num, error_msg, attempt, self.provider.max_retries)
                         return {"success": False, "page_num": page_num, "error": error_msg}
 
             # Success - let provider handle result (save + metrics)
             if result and result.success:
-                self.provider.handle_result(page_num, result)
+                # Pass output_dir to provider so it writes to correct location
+                self.provider.handle_result(page_num, result, output_dir=self.output_dir)
 
                 # Update aggregates
                 pages_processed += 1
