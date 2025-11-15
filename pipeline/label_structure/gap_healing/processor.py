@@ -1,6 +1,5 @@
 import re
-from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.logger import PipelineLogger
+from infra.pipeline.status import PhaseStatusTracker
 from ..schemas.merged_output import LabelStructurePageOutput
 from ..schemas.structure import PageNumberObservation
 
@@ -38,13 +37,19 @@ def get_arabic_value(page_data: dict) -> int | None:
 
 
 def heal_page_number_gaps(
-    storage: BookStorage,
-    logger: PipelineLogger,
+    tracker: PhaseStatusTracker,
+    **kwargs
 ) -> dict:
-    logger.info("=== Gap Healing: Analyzing page numbers ===")
+    """Simple gap healing using sequence analysis.
 
-    stage_storage = storage.stage("label-structure")
-    source_pages = storage.stage("source").list_pages(extension="png")
+    Args:
+        tracker: PhaseStatusTracker providing access to storage, logger, status
+        **kwargs: Optional configuration (unused for this phase)
+    """
+    tracker.logger.info("=== Gap Healing: Analyzing page numbers ===")
+
+    stage_storage = tracker.storage.stage("label-structure")
+    source_pages = tracker.storage.stage("source").list_pages(extension="png")
     total_pages = len(source_pages)
 
     sequence = []
@@ -72,7 +77,7 @@ def heal_page_number_gaps(
                 "output": output
             })
         except Exception as e:
-            logger.error(f"Failed to load page_{page_num:04d}: {e}")
+            tracker.logger.error(f"Failed to load page_{page_num:04d}: {e}")
             sequence.append({
                 "scan_page": page_num,
                 "detected": None,
@@ -121,7 +126,7 @@ def heal_page_number_gaps(
                 if all_missing and expected_gap_size == actual_gap_size and expected_gap_size > 0:
                     # Heal the entire gap
                     gap_type = f"gap_{expected_gap_size}"
-                    logger.info(
+                    tracker.logger.info(
                         f"✓ {gap_type} heal: pages {sequence[i]['scan_page']:04d}-{sequence[next_idx-1]['scan_page']:04d} "
                         f"({prev_val} -> [{prev_val + 1}...{next_val - 1}] -> {next_val})"
                     )
@@ -196,7 +201,7 @@ def heal_page_number_gaps(
             if prev_val is not None and next_val is not None:
                 if next_val == prev_val + 2:
                     expected = prev_val + 1
-                    logger.info(
+                    tracker.logger.info(
                         f"✓ OCR error heal: page_{current['scan_page']:04d} "
                         f"({prev_val} -> [{current['detected']}→{expected}] -> {next_val})"
                     )
@@ -221,20 +226,20 @@ def heal_page_number_gaps(
         i += 1
 
     total_healed = trivial_healed + ocr_error_healed
-    logger.info(
+    tracker.logger.info(
         f"Gap healing complete: {total_healed} pages healed "
         f"({trivial_healed} gap_1, {ocr_error_healed} OCR errors)"
     )
 
     if complex_gaps:
-        logger.warning(f"Found {len(complex_gaps)} complex gaps requiring review:")
+        tracker.logger.warning(f"Found {len(complex_gaps)} complex gaps requiring review:")
         for gap in complex_gaps[:10]:
-            logger.warning(
+            tracker.logger.warning(
                 f"  page_{gap['scan_page']:04d}: "
                 f"{gap['prev']} -> [?] -> {gap['next']} ({gap['type']})"
             )
         if len(complex_gaps) > 10:
-            logger.warning(f"  ... and {len(complex_gaps) - 10} more")
+            tracker.logger.warning(f"  ... and {len(complex_gaps) - 10} more")
 
     return {
         "trivial_healed": trivial_healed,
