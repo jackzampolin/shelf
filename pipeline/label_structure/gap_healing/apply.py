@@ -86,11 +86,17 @@ def apply_healing_decisions(
         f"{skipped} skipped"
     )
 
-    return {
+    result = {
         "pages_updated": pages_updated,
         "chapters_discovered": chapters_discovered,
         "skipped": skipped
     }
+
+    # Save artifact for tracker
+    output_path = tracker.phase_dir / "healing_applied.json"
+    output_path.write_text(json.dumps(result, indent=2))
+
+    return result
 
 
 def extract_chapter_markers(
@@ -159,7 +165,7 @@ def extract_chapter_markers(
         "chapters_discovered": len(chapters)
     }
 
-    output_path = tracker.phase_dir / "healing_applied.json"
+    output_path = tracker.phase_dir / "discovered_chapters.json"
     output_path.write_text(json.dumps(result, indent=2))
 
     logger.info(

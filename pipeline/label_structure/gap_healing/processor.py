@@ -241,10 +241,17 @@ def heal_page_number_gaps(
         if len(complex_gaps) > 10:
             tracker.logger.warning(f"  ... and {len(complex_gaps) - 10} more")
 
-    return {
+    result = {
         "trivial_healed": trivial_healed,
         "ocr_error_healed": ocr_error_healed,
         "total_healed": total_healed,
         "complex_gaps": len(complex_gaps),
         "complex_gap_details": complex_gaps
     }
+
+    # Save artifact for tracker
+    import json
+    output_path = tracker.phase_dir / "gap_healing_simple.json"
+    output_path.write_text(json.dumps(result, indent=2))
+
+    return result
