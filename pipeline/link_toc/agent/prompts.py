@@ -21,10 +21,10 @@ Start targeted (boundaries), expand if needed (grep), always confirm (OCR), use 
 
 <tools_and_what_they_reveal>
 **list_boundaries(start_page, end_page)**
-What it reveals: Known section starts from label-pages stage (50-200 curated pages)
+What it reveals: Known section starts from label-structure stage (50-200 curated pages)
 Returns: [{scan_page, heading_preview, boundary_confidence}]
-Strength: Targeted, clean signal
-Limitation: Might miss boundaries, heading previews can be truncated/unclear
+Strength: Targeted, clean signal - uses actual heading extraction
+Limitation: Might miss boundaries if heading detection failed, relies on Mistral markdown parsing
 
 **grep_text(query)**
 What it reveals: Where your text appears across the ENTIRE book

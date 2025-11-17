@@ -113,6 +113,10 @@ class LLMBatchProcessor:
             self.logger.error(f"{self.batch_name}: No valid requests prepared")
             return BatchStats()
 
+        # Get total items from tracker (source of truth for phase totals)
+        tracker_status = self.tracker.get_status()
+        total_items_in_phase = tracker_status['progress']['total_items']
+
         progress = Progress(
             TextColumn("   {task.description}"),
             BarColumn(bar_width=40),
@@ -129,7 +133,7 @@ class LLMBatchProcessor:
             worker_pool=self.batch_client.worker_pool,
             rate_limiter=self.batch_client.rate_limiter,
             metrics_manager=self.metrics_manager,
-            total_requests=len(requests),
+            total_requests=total_items_in_phase,
             start_time=start_time,
             batch_start_time=self.batch_client.batch_start_time or start_time,
             metric_prefix=self.metric_prefix

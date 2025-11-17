@@ -11,7 +11,7 @@ from .schemas import AgentResult, LinkedToCEntry, LinkedTableOfContents, LinkToc
 
 class LinkTocStage(BaseStage):
     name = "link-toc"
-    dependencies = ["find-toc", "extract-toc", "label-pages", "olm-ocr"]
+    dependencies = ["find-toc", "extract-toc", "label-structure", "olm-ocr"]
 
     @classmethod
     def default_kwargs(cls, **overrides):

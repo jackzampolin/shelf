@@ -25,7 +25,7 @@ class TocEntryFinderTools(AgentTools):
                 "type": "function",
                 "function": {
                     "name": "list_boundaries",
-                    "description": "List boundary pages from label-pages with heading previews. Returns ALL boundaries by default (50-200 items). Use start_page/end_page to narrow search if needed (calculate from total_pages context).",
+                    "description": "List boundary pages from label-structure with heading previews. Returns ALL boundaries by default (50-200 items). Use start_page/end_page to narrow search if needed (calculate from total_pages context).",
                     "parameters": {
                         "type": "object",
                         "properties": {

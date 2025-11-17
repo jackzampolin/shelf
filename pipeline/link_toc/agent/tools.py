@@ -10,7 +10,7 @@ def list_boundaries(
     end_page: Optional[int] = None
 ) -> List[Dict]:
     """
-    List boundary pages from label-pages with heading previews.
+    List boundary pages from label-structure with heading previews.
 
     Returns ALL boundaries by default (only 50-200 items, easy to scan).
     Optional range filtering for targeted searches.
@@ -26,7 +26,7 @@ def list_boundaries(
         List of {scan_page, heading_preview, boundary_confidence}
         Sorted by scan_page ascending
     """
-    label_pages_stage = storage.stage("label-pages")
+    from pipeline.label_structure.merge import get_merged_page
 
     # Get TOC page range to exclude from boundaries
     toc_pages = set()
@@ -41,19 +41,13 @@ def list_boundaries(
             if toc_start > 0 and toc_end >= toc_start:
                 toc_pages = set(range(toc_start, toc_end + 1))
 
-    # Find all boundary pages
-    output_files = sorted(label_pages_stage.output_dir.glob("page_*.json"))
+    # Get total pages from metadata
+    metadata = storage.load_metadata()
+    total_pages = metadata.get('total_pages', 0)
 
     boundaries = []
 
-    for output_file in output_files:
-        page_data = label_pages_stage.load_file(output_file.name)
-
-        if not page_data or not page_data.get("is_boundary", False):
-            continue
-
-        page_num = page_data["page_number"]
-
+    for page_num in range(1, total_pages + 1):
         # Skip TOC pages
         if page_num in toc_pages:
             continue
@@ -64,20 +58,46 @@ def list_boundaries(
         if end_page and page_num > end_page:
             continue
 
-        # Get OCR for heading preview
         try:
-            ocr_text = get_page_ocr(page_num, storage)
-            # First 2-3 lines as heading preview
-            lines = ocr_text.strip().split('\n')
-            heading_preview = ' '.join(lines[:2])[:150]  # First 2 lines, max 150 chars
-        except Exception:
-            heading_preview = "(OCR unavailable)"
+            # Get merged page data (includes gap healing fixes)
+            page_data = get_merged_page(storage, page_num)
 
-        boundaries.append({
-            "scan_page": page_num,
-            "heading_preview": heading_preview,
-            "boundary_confidence": page_data.get("boundary_confidence", 0.0),
-        })
+            # Skip pages without headings
+            if not page_data.headings_present or not page_data.headings:
+                continue
+
+            # Filter for chapter-level headings (level 1-2)
+            chapter_headings = [h for h in page_data.headings if h.level <= 2]
+
+            if not chapter_headings:
+                continue
+
+            # Use first heading as preview
+            heading_preview = chapter_headings[0].text
+
+            # Calculate confidence based on heading level and chapter marker
+            # Level 1 = high confidence boundary, Level 2 = medium confidence
+            if chapter_headings[0].level == 1:
+                confidence = 0.9
+            else:
+                confidence = 0.7
+
+            # Boost confidence if gap healing confirmed this as a chapter marker
+            if page_data.chapter_marker:
+                confidence = min(1.0, confidence + 0.1)
+
+            boundaries.append({
+                "scan_page": page_num,
+                "heading_preview": heading_preview,
+                "boundary_confidence": confidence,
+            })
+
+        except FileNotFoundError:
+            # label-structure data doesn't exist for this page yet
+            continue
+        except Exception:
+            # Other errors - skip page
+            continue
 
     # Sort by page number
     boundaries.sort(key=lambda x: x["scan_page"])
