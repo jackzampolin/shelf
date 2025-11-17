@@ -95,8 +95,10 @@ def healing_directory_tracker(
         if not healing_dir.exists():
             return False
 
-        # Check if all pages in cluster have healing decisions
-        return all(
+        # Check if ANY page in cluster has a healing decision
+        # Agents only write decisions for pages that actually need healing,
+        # not necessarily all pages in the cluster
+        return any(
             (healing_dir / f"page_{page:04d}.json").exists()
             for page in cluster['scan_pages']
         )
