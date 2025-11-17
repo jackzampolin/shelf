@@ -66,16 +66,26 @@ class PipelineLogger:
             self.log_file = json_file
 
     def _log(self, level: str, message: str, **kwargs):
+        # Extract reserved logging parameters
+        reserved_params = {}
+        for param in ['exc_info', 'stack_info', 'stacklevel', 'extra']:
+            if param in kwargs:
+                reserved_params[param] = kwargs.pop(param)
+
+        # Merge custom extra fields with any provided extra dict
         extra = {
             'scan_id': self.scan_id,
             'stage': self.stage,
             **kwargs
         }
+        if 'extra' in reserved_params:
+            extra.update(reserved_params.pop('extra'))
 
         self.logger.log(
             getattr(logging, level.upper()),
             message,
-            extra=extra
+            extra=extra,
+            **reserved_params
         )
 
     def debug(self, message: str, **kwargs):
