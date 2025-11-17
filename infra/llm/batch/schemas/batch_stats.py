@@ -13,7 +13,7 @@ class BatchStats:
     total_cost_usd: float = 0
     avg_cost_per_request: float = 0
     total_prompt_tokens: int = 0
-    total_tokens: int = 0
+    total_completion_tokens: int = 0
     total_reasoning_tokens: int = 0
     avg_tokens_per_request: float = 0
     requests_per_second: float = 0

@@ -53,10 +53,10 @@ def create_progress_handler(
             parts.append(elapsed_str)
 
         # Tokens: in->out+r format with colors
-        if batch_stats.total_prompt_tokens > 0 or batch_stats.total_tokens > 0:
+        if batch_stats.total_prompt_tokens > 0 or batch_stats.total_completion_tokens > 0:
             token_str = format_token_string(
                 batch_stats.total_prompt_tokens,
-                batch_stats.total_tokens,
+                batch_stats.total_completion_tokens,
                 batch_stats.total_reasoning_tokens,
                 colored=True
             )

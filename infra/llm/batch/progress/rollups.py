@@ -25,7 +25,6 @@ def aggregate_batch_stats(
     total_cost = 0.0
     total_prompt_tokens = 0
     total_completion_tokens = 0
-    total_tokens = 0
     total_reasoning_tokens = 0
     failed_count = 0
     times = []
@@ -34,7 +33,6 @@ def aggregate_batch_stats(
         total_cost += metrics.get('cost_usd', 0.0)
         total_prompt_tokens += metrics.get('prompt_tokens', 0)
         total_completion_tokens += metrics.get('completion_tokens', 0)
-        total_tokens += metrics.get('total_tokens', 0)
         total_reasoning_tokens += metrics.get('reasoning_tokens', 0)
 
         if metrics.get('error_type') or not metrics.get('success', True):
@@ -46,7 +44,7 @@ def aggregate_batch_stats(
     min_time = min(times) if times else 0.0
     max_time = max(times) if times else 0.0
     avg_cost = total_cost / completed_count if completed_count > 0 else 0.0
-    avg_tokens = total_tokens / completed_count if completed_count > 0 else 0.0
+    avg_tokens = (total_prompt_tokens + total_completion_tokens + total_reasoning_tokens) / completed_count if completed_count > 0 else 0.0
 
     elapsed = time.time() - batch_start_time if batch_start_time else 0.0
     requests_per_second = completed_count / elapsed if elapsed > 0 else 0.0
@@ -70,7 +68,7 @@ def aggregate_batch_stats(
         total_cost_usd=total_cost,
         avg_cost_per_request=avg_cost,
         total_prompt_tokens=total_prompt_tokens,
-        total_tokens=total_tokens,
+        total_completion_tokens=total_completion_tokens,
         total_reasoning_tokens=total_reasoning_tokens,
         avg_tokens_per_request=avg_tokens,
         requests_per_second=requests_per_second,

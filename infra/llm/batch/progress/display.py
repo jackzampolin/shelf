@@ -61,7 +61,7 @@ def display_summary(
 
     # Use cumulative metrics for cost/tokens (accurate across runs)
     display_prompt_tokens = cumulative.get('total_prompt_tokens', batch_stats.total_prompt_tokens)
-    display_completion_tokens = cumulative.get('total_completion_tokens', batch_stats.total_tokens)
+    display_completion_tokens = cumulative.get('total_completion_tokens', batch_stats.total_completion_tokens)
     display_reasoning_tokens = cumulative.get('total_reasoning_tokens', batch_stats.total_reasoning_tokens)
     display_cost = cumulative.get('total_cost_usd', batch_stats.total_cost_usd)
 
