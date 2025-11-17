@@ -4,6 +4,14 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+
+class FlushingFileHandler(logging.FileHandler):
+    """FileHandler that flushes after every emit for real-time log visibility."""
+    def emit(self, record):
+        super().emit(record)
+        self.flush()
+
+
 class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         log_data = {
@@ -60,7 +68,7 @@ class PipelineLogger:
             json_file = self.log_dir / f"{stage}_{timestamp}.jsonl"
             # Ensure parent directory exists (in case log_dir was just created)
             json_file.parent.mkdir(parents=True, exist_ok=True)
-            json_handler = logging.FileHandler(json_file)
+            json_handler = FlushingFileHandler(json_file)
             json_handler.setFormatter(JSONFormatter())
             self.logger.addHandler(json_handler)
             self.log_file = json_file
