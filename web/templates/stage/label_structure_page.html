@@ -214,6 +214,22 @@
         </div>
     </div>
 
+    <!-- Report Version Selector -->
+    <div class="tabs" style="margin-top: 1.5rem;">
+        <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=page_num, report='base') }}"
+           class="tab {% if current_report == 'base' %}active{% endif %}">
+            📊 Base
+        </a>
+        <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=page_num, report='simple') }}"
+           class="tab {% if current_report == 'simple' %}active{% endif %}">
+            🔧 + Simple
+        </a>
+        <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=page_num, report='full') }}"
+           class="tab {% if current_report == 'full' %}active{% endif %}">
+            ✨ + Agent
+        </a>
+    </div>
+
     <!-- Two-column layout: page image left, labels right -->
     <div class="page-viewer-layout">
         <!-- Left Column: Page Image -->
@@ -456,14 +472,14 @@
             <div class="navigation">
                 <div style="display: flex; gap: 0.5rem;">
                     {% if page_num > 1 %}
-                        <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=page_num-1) }}" class="nav-button">
+                        <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=page_num-1, report=current_report) }}" class="nav-button">
                             ← Previous
                         </a>
                     {% else %}
                         <span class="nav-button disabled">← Previous</span>
                     {% endif %}
 
-                    <a href="{{ url_for('stage.label_structure_view', scan_id=scan_id) }}" class="nav-button">
+                    <a href="{{ url_for('stage.label_structure_view', scan_id=scan_id, report=current_report) }}" class="nav-button">
                         Back to Report
                     </a>
                 </div>
@@ -474,7 +490,7 @@
 
                 <div style="display: flex; gap: 0.5rem;">
                     {% if page_num < metadata.scan.pages %}
-                        <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=page_num+1) }}" class="nav-button">
+                        <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=page_num+1, report=current_report) }}" class="nav-button">
                             Next →
                         </a>
                     {% else %}

@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+
+{% block title %}{{ scan_id }} - Gap Clusters{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/stage.css') }}">
+<style>
+    .cluster-summary {
+        margin-top: 2rem;
+        padding: 1.5rem;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .cluster-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .stat-box {
+        padding: 1rem;
+        background: #f9f9f9;
+        border-radius: 4px;
+        border-left: 4px solid #0066cc;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #333;
+    }
+
+    .stat-label {
+        font-size: 0.9rem;
+        color: #666;
+        margin-top: 0.25rem;
+    }
+
+    .clusters-list {
+        margin-top: 2rem;
+    }
+
+    .cluster-card {
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    .cluster-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid #e0e0e0;
+    }
+
+    .cluster-id {
+        font-weight: 600;
+        color: #0066cc;
+        font-size: 1.1rem;
+    }
+
+    .cluster-type {
+        display: inline-block;
+        padding: 0.3rem 0.8rem;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    .type-backward_jump {
+        background: #ffebee;
+        color: #c62828;
+    }
+
+    .type-ocr_error {
+        background: #fff3e0;
+        color: #f57c00;
+    }
+
+    .type-structural_gap {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .type-gap_mismatch {
+        background: #fce4ec;
+        color: #c2185b;
+    }
+
+    .type-isolated, .type-edge_gap, .type-multi_page_jump {
+        background: #f3e5f5;
+        color: #7b1fa2;
+    }
+
+    .cluster-details {
+        display: grid;
+        gap: 0.75rem;
+        font-size: 0.95rem;
+    }
+
+    .detail-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.5rem 0;
+    }
+
+    .detail-label {
+        font-weight: 600;
+        color: #666;
+    }
+
+    .detail-value {
+        color: #333;
+    }
+
+    .page-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .page-badge {
+        display: inline-block;
+        padding: 0.25rem 0.6rem;
+        background: #e3f2fd;
+        color: #1976d2;
+        border-radius: 4px;
+        font-weight: 500;
+        text-decoration: none;
+        transition: background-color 0.2s;
+    }
+
+    .page-badge:hover {
+        background: #bbdefb;
+    }
+
+    .priority-high {
+        color: #c62828;
+        font-weight: 600;
+    }
+
+    .priority-medium {
+        color: #f57c00;
+        font-weight: 600;
+    }
+
+    .priority-low {
+        color: #2e7d32;
+        font-weight: 600;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-wide">
+    <!-- Header -->
+    <div class="stage-header">
+        <div class="breadcrumb">
+            <a href="/">← Library</a>
+            <span class="separator">/</span>
+            <span>{{ scan_id }}</span>
+            <span class="separator">/</span>
+            <a href="{{ url_for('stage.label_structure_view', scan_id=scan_id) }}">label-structure</a>
+            <span class="separator">/</span>
+            <span class="current">Gap Clusters</span>
+        </div>
+
+        <h2>🔍 Gap Healing Clusters</h2>
+
+        <div class="book-info">
+            <strong>{{ metadata.title }}</strong>
+            {% if metadata.author %}
+                <span class="author">by {{ metadata.author }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Summary Statistics -->
+    <div class="cluster-summary">
+        <h3>Cluster Summary</h3>
+        <div class="cluster-stats">
+            <div class="stat-box">
+                <div class="stat-value">{{ clusters_data.total_clusters }}</div>
+                <div class="stat-label">Total Clusters</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">{{ clusters_data.clusters_by_type.backward_jump }}</div>
+                <div class="stat-label">Backward Jumps</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">{{ clusters_data.clusters_by_type.ocr_error }}</div>
+                <div class="stat-label">OCR Errors</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">{{ clusters_data.clusters_by_type.structural_gap }}</div>
+                <div class="stat-label">Structural Gaps</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">{{ clusters_data.clusters_by_type.gap_mismatch }}</div>
+                <div class="stat-label">Gap Mismatches</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">{{ clusters_data.clusters_by_type.isolated }}</div>
+                <div class="stat-label">Isolated Issues</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Clusters List -->
+    <div class="clusters-list">
+        <h3>All Clusters</h3>
+
+        {% for cluster in clusters_data.clusters %}
+        <div class="cluster-card">
+            <div class="cluster-header">
+                <span class="cluster-id">{{ cluster.cluster_id }}</span>
+                <span class="cluster-type type-{{ cluster.type }}">{{ cluster.type }}</span>
+            </div>
+
+            <div class="cluster-details">
+                <!-- Priority -->
+                <div class="detail-row">
+                    <span class="detail-label">Priority:</span>
+                    <span class="detail-value priority-{{ cluster.priority }}">
+                        {{ cluster.priority|upper }}
+                    </span>
+                </div>
+
+                <!-- Affected Pages -->
+                <div class="detail-row">
+                    <span class="detail-label">Affected Pages:</span>
+                    <div class="page-list">
+                        {% for page in cluster.scan_pages %}
+                        <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=page, report='full') }}"
+                           class="page-badge">
+                            Page {{ page }}
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Type-specific details -->
+                {% if cluster.type == 'backward_jump' %}
+                <div class="detail-row">
+                    <span class="detail-label">Detected Value:</span>
+                    <span class="detail-value">{{ cluster.detected_value }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Expected Value:</span>
+                    <span class="detail-value">{{ cluster.expected_value }}</span>
+                </div>
+                {% elif cluster.type == 'ocr_error' %}
+                <div class="detail-row">
+                    <span class="detail-label">Raw Value:</span>
+                    <span class="detail-value">{{ cluster.raw_value }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Expected Value:</span>
+                    <span class="detail-value">{{ cluster.expected_value }}</span>
+                </div>
+                {% elif cluster.type == 'structural_gap' %}
+                <div class="detail-row">
+                    <span class="detail-label">Gap Size:</span>
+                    <span class="detail-value">{{ cluster.gap_size }} pages</span>
+                </div>
+                {% elif cluster.type == 'gap_mismatch' %}
+                <div class="detail-row">
+                    <span class="detail-label">Actual Gap:</span>
+                    <span class="detail-value">{{ cluster.actual_gap }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Expected Gap:</span>
+                    <span class="detail-value">{{ cluster.expected_gap }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Back Navigation -->
+    <div style="margin-top: 2rem; padding-top: 1rem; border-top: 2px solid #e0e0e0;">
+        <a href="{{ url_for('stage.label_structure_view', scan_id=scan_id) }}" class="nav-button">
+            ← Back to Label Structure
+        </a>
+    </div>
+</div>
+{% endblock %}

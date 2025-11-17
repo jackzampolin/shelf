@@ -1,30 +1,30 @@
 import re
+import json
 from infra.pipeline.status import PhaseStatusTracker
 from ..schemas.merged_output import LabelStructurePageOutput
 from ..schemas.structure import PageNumberObservation
+from ..merge import get_merged_page
+
+
+def _save_patch(tracker: PhaseStatusTracker, scan_page: int, patch_data: dict) -> None:
+    patch_file = tracker.phase_dir / f"page_{scan_page:04d}.json"
+    patch_file.write_text(json.dumps(patch_data, indent=2))
 
 
 def is_roman_numeral(value: str) -> bool:
-    """Check if a string is a roman numeral."""
     if not value:
         return False
     return bool(re.match(r'^[IVXLCDMivxlcdm]+$', value.strip()))
 
 
 def get_arabic_value(page_data: dict) -> int | None:
-    """
-    Extract arabic numeral value from page data.
-    Returns None if roman numeral, missing, or invalid.
-    """
     detected = page_data.get("detected")
     if detected is None:
         return None
 
-    # Check if it's stored as int (already parsed)
     if isinstance(detected, int):
         return detected
 
-    # Check if it's a string that could be roman
     if isinstance(detected, str):
         if is_roman_numeral(detected):
             return None
@@ -36,16 +36,7 @@ def get_arabic_value(page_data: dict) -> int | None:
     return None
 
 
-def heal_page_number_gaps(
-    tracker: PhaseStatusTracker,
-    **kwargs
-) -> dict:
-    """Simple gap healing using sequence analysis.
-
-    Args:
-        tracker: PhaseStatusTracker providing access to storage, logger, status
-        **kwargs: Optional configuration (unused for this phase)
-    """
+def heal_page_number_gaps(tracker: PhaseStatusTracker, **kwargs) -> dict:
     tracker.logger.info("=== Gap Healing: Analyzing page numbers ===")
 
     stage_storage = tracker.storage.stage("label-structure")
@@ -53,10 +44,12 @@ def heal_page_number_gaps(
     total_pages = len(source_pages)
 
     sequence = []
+    failed_pages = []
+
     for page_num in range(1, total_pages + 1):
         try:
-            data = stage_storage.load_file(f"page_{page_num:04d}.json")
-            output = LabelStructurePageOutput(**data)
+            # Use get_merged_page to get current state (mechanical + structure + annotations)
+            output = get_merged_page(tracker.storage, page_num)
 
             detected_value = None
             detected_raw = None
@@ -77,13 +70,19 @@ def heal_page_number_gaps(
                 "output": output
             })
         except Exception as e:
-            tracker.logger.error(f"Failed to load page_{page_num:04d}: {e}")
-            sequence.append({
-                "scan_page": page_num,
-                "detected": None,
-                "detected_raw": None,
-                "output": None
-            })
+            tracker.logger.error(
+                f"Failed to load page {page_num}",
+                page_num=page_num,
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            failed_pages.append(page_num)
+
+    if failed_pages:
+        raise ValueError(
+            f"Gap healing cannot proceed: {len(failed_pages)} pages failed to load "
+            f"(pages: {', '.join(str(p) for p in failed_pages[:10])}{'...' if len(failed_pages) > 10 else ''})"
+        )
 
     trivial_healed = 0
     ocr_error_healed = 0
@@ -93,16 +92,13 @@ def heal_page_number_gaps(
     while i < len(sequence):
         current = sequence[i]
 
-        # Case 1: Missing page number - check for N-page gaps
         if current["detected"] is None:
-            # Find the previous valid arabic page number
             prev_val = None
             for j in range(i - 1, -1, -1):
                 prev_val = get_arabic_value(sequence[j])
                 if prev_val is not None:
                     break
 
-            # Find the next valid arabic page number (skip all missing pages)
             next_val = None
             next_idx = None
             for j in range(i + 1, len(sequence)):
@@ -112,19 +108,15 @@ def heal_page_number_gaps(
                     break
 
             if prev_val is not None and next_val is not None:
-                # Calculate expected gap size
                 expected_gap_size = next_val - prev_val - 1
-                # Count actual missing pages
                 actual_gap_size = next_idx - i
 
-                # Check if all pages in the gap are missing
                 all_missing = all(
                     sequence[k]["detected"] is None
                     for k in range(i, next_idx)
                 )
 
                 if all_missing and expected_gap_size == actual_gap_size and expected_gap_size > 0:
-                    # Heal the entire gap
                     gap_type = f"gap_{expected_gap_size}"
                     tracker.logger.info(
                         f"✓ {gap_type} heal: pages {sequence[i]['scan_page']:04d}-{sequence[next_idx-1]['scan_page']:04d} "
@@ -134,25 +126,23 @@ def heal_page_number_gaps(
                     for offset in range(expected_gap_size):
                         gap_page_idx = i + offset
                         expected = prev_val + 1 + offset
+                        scan_page = sequence[gap_page_idx]['scan_page']
 
-                        sequence[gap_page_idx]["output"].page_number = PageNumberObservation(
-                            present=True,
-                            number=str(expected),
-                            location="margin",
-                            confidence="high",
-                            source_provider="paddle"
-                        )
+                        patch = {
+                            "scan_page": scan_page,
+                            "page_number": {
+                                "present": True,
+                                "number": str(expected),
+                                "location": "margin",
+                                "confidence": "high",
+                                "source_provider": "gap_healing_simple"
+                            }
+                        }
 
-                        stage_storage.save_file(
-                            f"page_{sequence[gap_page_idx]['scan_page']:04d}.json",
-                            sequence[gap_page_idx]["output"].model_dump(),
-                            schema=LabelStructurePageOutput
-                        )
-
+                        _save_patch(tracker, scan_page, patch)
                         sequence[gap_page_idx]["detected"] = expected
                         trivial_healed += 1
 
-                    # Skip past all the pages we just healed
                     i = next_idx
                     continue
                 elif next_val < prev_val:
@@ -191,35 +181,32 @@ def heal_page_number_gaps(
                     "type": "edge_gap"
                 })
 
-        # Case 2: Roman numeral detected (possible OCR error in arabic sequence)
         elif isinstance(current["detected"], str) and is_roman_numeral(current["detected"]):
-            # Get arabic values from adjacent pages
             prev_val = get_arabic_value(sequence[i-1]) if i > 0 else None
             next_val = get_arabic_value(sequence[i+1]) if i < len(sequence) - 1 else None
 
-            # Check if we're in the middle of an arabic sequence
             if prev_val is not None and next_val is not None:
                 if next_val == prev_val + 2:
                     expected = prev_val + 1
+                    scan_page = current['scan_page']
+
                     tracker.logger.info(
-                        f"✓ OCR error heal: page_{current['scan_page']:04d} "
+                        f"✓ OCR error heal: page_{scan_page:04d} "
                         f"({prev_val} -> [{current['detected']}→{expected}] -> {next_val})"
                     )
 
-                    current["output"].page_number = PageNumberObservation(
-                        present=True,
-                        number=str(expected),
-                        location="margin",
-                        confidence="high",
-                        source_provider="paddle"
-                    )
+                    patch = {
+                        "scan_page": scan_page,
+                        "page_number": {
+                            "present": True,
+                            "number": str(expected),
+                            "location": "margin",
+                            "confidence": "high",
+                            "source_provider": "gap_healing_simple"
+                        }
+                    }
 
-                    stage_storage.save_file(
-                        f"page_{current['scan_page']:04d}.json",
-                        current["output"].model_dump(),
-                        schema=LabelStructurePageOutput
-                    )
-
+                    _save_patch(tracker, scan_page, patch)
                     current["detected"] = expected
                     ocr_error_healed += 1
 
@@ -241,7 +228,7 @@ def heal_page_number_gaps(
         if len(complex_gaps) > 10:
             tracker.logger.warning(f"  ... and {len(complex_gaps) - 10} more")
 
-    result = {
+    summary = {
         "trivial_healed": trivial_healed,
         "ocr_error_healed": ocr_error_healed,
         "total_healed": total_healed,
@@ -249,9 +236,7 @@ def heal_page_number_gaps(
         "complex_gap_details": complex_gaps
     }
 
-    # Save artifact for tracker
-    import json
-    output_path = tracker.phase_dir / "gap_healing_simple.json"
-    output_path.write_text(json.dumps(result, indent=2))
+    summary_path = tracker.phase_dir / "summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2))
 
-    return result
+    return summary

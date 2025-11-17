@@ -23,18 +23,27 @@ def prepare_structural_metadata_request(
     # Load OCR texts with error handling
     try:
         mistral_text = storage.stage("mistral-ocr").load_page(item).get("markdown", "")
-    except Exception:
+    except FileNotFoundError:
         mistral_text = ""
+    except Exception as e:
+        raise ValueError(f"Failed to load Mistral OCR for page {item:04d}: {type(e).__name__}: {e}")
 
     try:
         olm_text = storage.stage("olm-ocr").load_page(item).get("text", "")
-    except Exception:
+    except FileNotFoundError:
         olm_text = ""
+    except Exception as e:
+        raise ValueError(f"Failed to load OLM OCR for page {item:04d}: {type(e).__name__}: {e}")
 
     try:
         paddle_text = storage.stage("paddle-ocr").load_page(item).get("text", "")
-    except Exception:
+    except FileNotFoundError:
         paddle_text = ""
+    except Exception as e:
+        raise ValueError(f"Failed to load Paddle OCR for page {item:04d}: {type(e).__name__}: {e}")
+
+    if not mistral_text and not olm_text and not paddle_text:
+        raise ValueError(f"No OCR data available for page {item:04d} - all three OCR sources are empty")
 
     # Filter out low-quality OCR output (e.g., PADDLE hallucinations on TOC/index pages)
     ocr_filtered = filter_ocr_quality(mistral_text, olm_text, paddle_text)

@@ -2,51 +2,41 @@ import json
 from typing import Dict, List
 
 
-HEALER_SYSTEM_PROMPT = """You are a page number gap healing expert. Your job is to analyze problematic page number sequences and determine the correct fix.
+HEALER_SYSTEM_PROMPT = """You are a page number gap healing expert for scanned books.
 
-You understand these issue patterns:
+**Your role:**
+Analyze page number sequences in scanned books and fix detection errors. You work with:
+- OCR-detected page numbers (may be wrong)
+- Page metadata (headers, footers, headings)
+- Sequence context (surrounding pages)
+- Visual inspection when needed
 
-**1. Backward Jump (Chapter Markers)**
-- Pattern: Page number decreases (e.g., 22 → 3 → 24)
-- Cause: Chapter number detected as page number
-- Signature: Small detected value (≤40), heading contains chapter marker
-- Fix: Restore sequential numbering, extract chapter metadata
-- Example: Page 37 shows "3" but should be "23" (Chapter 3 title page)
+**Available tools:**
+1. **get_page_metadata(page_num)**: Read full metadata for pages outside the cluster (FREE)
+2. **view_page_image(page_num)**: Visual inspection when metadata is ambiguous (~$0.001/page)
+   - WORKFLOW: Document observations of current page BEFORE loading next
+   - One page at a time - previous page removed when you load next
+3. **heal_page(scan_page, page_number, ...)**: Fix ONE page's number/chapter (call multiple times for multi-page gaps)
+4. **finish_cluster(summary, pages_healed)**: Mark cluster complete (REQUIRED at end)
 
-**2. OCR Character Substitution**
-- Pattern: Unparseable page number value
-- Common errors: "13o" → "130" (O→0), "30I" → "301" (I→1), "1.11" → "111" (decimal)
-- Fix: Apply character substitution heuristic, restore correct value
+**Core principles:**
+- **Be conservative**: Only fix when confident
+- **Use vision liberally**: It's cheap (~$0.001/page) and prevents errors
+- **Reason explicitly**: Show your analysis in reasoning field
+- **One heal_page per page**: Call multiple times for multi-page clusters
+- **Always finish**: Call finish_cluster even if no healing needed
 
-**3. Structural Gap (Intentional Design)**
-- Pattern: gap_3 to gap_6 at part/chapter boundaries
-- Cause: Blank pages or unnumbered dividers (intentional book design)
-- Fix: Accept as-is, no healing needed
+**Common issue patterns:**
+- Backward jumps: Usually chapter numbers detected as page numbers
+- OCR errors: Character substitutions (O→0, I→1, decimal artifacts)
+- Structural gaps: Blank/unnumbered pages at chapter boundaries
+- Gap mismatches: Missing pages from scan or numbering restarts
 
-**4. Gap Mismatch**
-- Pattern: Expected gap size ≠ actual gap size
-- Causes: Missing scan pages, OCR detection failure, numbering restart
-- Fix: Requires case-by-case analysis
-
-**Your workflow:**
-1. Read cluster context (pages, type, sequence data)
-2. Examine page metadata (headings, headers, footers, detected values)
-3. Apply pattern recognition heuristics
-4. Use vision tool if metadata is ambiguous (~$0.001/page - use liberally!)
-5. Call write_page_update for each page you want to fix
-6. Extract chapter markers from backward_jump cases
-
-**Key principles:**
-- Be conservative: Only fix if you're confident
-- Use vision when uncertain (it's cheap and prevents errors)
-- Extract chapter metadata when you find chapter title pages
-- One write_page_update call per page (can call multiple times)
-- Include clear reasoning for each decision
-
-**Cost awareness:**
-- Reading metadata: FREE
-- Vision inspection: ~$0.001/page (use when needed!)
-- You have access to full page JSON + sequence context in initial prompt
+**Important context about scans:**
+- Books often have blank divider pages between parts/chapters
+- These blank pages are frequently not scanned
+- This means page number sequences may have gaps
+- Always examine surrounding page numbers to infer correct value
 """
 
 
@@ -80,19 +70,50 @@ def build_healer_user_prompt(cluster: Dict, page_data_map: Dict[int, Dict], sequ
     type_guidance = ""
 
     if cluster_type == "backward_jump":
-        type_guidance = """**Backward Jump Analysis:**
+        type_guidance = """**Analysis Task: Backward Jump**
 
-This cluster shows a backward jump in page numbering. Typical cause: chapter number detected as page number.
+This cluster shows a backward jump (page number decreased when it should increase).
+Typical cause: Chapter number detected as page number instead of actual page number.
 
-**What to check:**
-1. Look at headings on the backward_jump page - does it contain a chapter marker?
-2. Check if detected value matches a chapter number in the heading
-3. If it's a chapter page, the correct page number should follow the sequence
-4. Extract chapter metadata (chapter_num, title) if you find a chapter marker
+**Step 1: Examine the sequence context below**
+- Find prev_page, current_page(s), and next_page detected numbers
+- Calculate what the gap tells you about missing pages
 
-**Example fix:**
-- Page 37: heading="3 | The First Days", detected="3", expected="23"
-- Action: Fix page number to "23", mark as Chapter 3 with title "The First Days"
+**Step 2: Infer correct page number**
+Method: Use the NEXT page's detected number to work backward
+
+Example from sequence table:
+```
+Page 84: detected=71
+Page 85: detected=9   ← THIS is the backward jump (CLUSTER PAGE)
+Page 86: detected=73
+```
+
+Analysis:
+- Next page (86) shows 73
+- Therefore current page (85) should be: 73 - 1 = **72**
+- The detected "9" is likely a chapter number
+
+**Step 3: Check for chapter markers**
+- Look at the page_data JSON below for heading fields
+- If heading shows "Chapter 9" or "IX" or similar: This is a chapter title page
+- Extract chapter_marker: {chapter_num: 9, chapter_title: "...", ...}
+
+**Step 4: Account for missing blank pages**
+- If next_page - prev_page = 2 (like 73 - 71 = 2):
+  * Only 1 page between them in the scan
+  * No missing blank pages
+  * Current page = prev + 1 = 72
+- If next_page - prev_page = 3 (like 74 - 71 = 3):
+  * 2 pages between them in the scan (should be page 85 and 86)
+  * One blank page was not scanned
+  * Current page (85) might be 72 or 73 depending on which blank is missing
+  * Use headings/vision to determine
+
+**Step 5: Heal the page(s)**
+- Call heal_page for EACH page needing correction
+- Include your reasoning showing the calculation
+- Extract chapter_marker if this is a chapter title page
 """
 
     elif cluster_type == "ocr_error":
@@ -144,12 +165,9 @@ This cluster has a mismatch between expected and actual gap size.
 4. Use vision to inspect pages and determine cause
 """
 
-    prompt = f"""You are analyzing gap healing cluster: **{cluster['cluster_id']}**
+    prompt = f"""Analyze and heal cluster: **{cluster['cluster_id']}**
 
-**Cluster Info:**
-- Type: {cluster_type}
-- Pages: {', '.join(map(str, scan_pages))}
-- Priority: {cluster.get('priority', 'medium')}
+**Cluster:** {cluster_type} | Pages: {', '.join(map(str, scan_pages))} | Priority: {cluster.get('priority', 'medium')}
 
 {type_guidance}
 
@@ -157,19 +175,18 @@ This cluster has a mismatch between expected and actual gap size.
 
 {page_data_section}
 
-**Your task:**
-1. Analyze the cluster using the page data and sequence context above
-2. Determine the root cause of the issue
-3. Decide on appropriate healing action for each page
-4. Call write_page_update for each page you want to fix
-5. Extract chapter markers if applicable (backward_jump cases)
+**Your Task:**
+1. Follow the analysis steps above for this cluster type
+2. Use tools to gather additional information if needed
+3. For EACH page requiring correction: call heal_page(scan_page, page_number, reasoning, ...)
+4. When analysis complete: call finish_cluster(summary, pages_healed)
 
-**Tools available:**
-- get_page_metadata(page_num): Read pages OUTSIDE cluster for more context
-- view_page_image(page_num): Visual inspection when metadata is ambiguous
-- write_page_update(scan_page, ...): Submit fix for ONE page (call multiple times if needed)
+**Remember:**
+- Call heal_page ONCE per page (multiple times for multi-page clusters)
+- Call finish_cluster even if no healing needed
+- Show your calculation/reasoning in each heal_page call
 
-Begin your analysis. Think step-by-step, then use tools to gather information and make decisions.
+Begin analysis.
 """
 
     return prompt

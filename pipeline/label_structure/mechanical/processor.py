@@ -17,6 +17,8 @@ def process_mechanical_extraction(
     tracker.logger.info(f"processing {len(remaining_pages)} pages")
 
     processed = 0
+    failed_pages = []
+
     for page_num in remaining_pages:
         try:
             mistral_data = tracker.storage.stage("mistral-ocr").load_page(page_num)
@@ -67,7 +69,15 @@ def process_mechanical_extraction(
             tracker.logger.error(
                 f"✗ Failed to process page_{page_num:04d}: {e}",
                 page_num=page_num,
-                error=str(e)
+                error=str(e),
+                error_type=type(e).__name__
             )
+            failed_pages.append({"page": page_num, "error": str(e), "error_type": type(e).__name__})
+
+    if failed_pages:
+        import json
+        error_file = tracker.phase_dir / "mechanical_errors.json"
+        error_file.write_text(json.dumps(failed_pages, indent=2))
+        raise ValueError(f"{len(failed_pages)} pages failed mechanical extraction - see {error_file}")
 
     tracker.logger.info(f"Mechanical extraction complete: {processed}/{len(remaining_pages)} pages processed")

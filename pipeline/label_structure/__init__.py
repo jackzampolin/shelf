@@ -1,117 +1,17 @@
-"""
-ASPIRATIONAL VERSION - Shows what this file SHOULD look like after full refactoring.
-
-Refactoring needed:
-1. Update all phase functions to accept (tracker: PhaseStatusTracker, **kwargs) instead of (storage, logger, ...)
-2. Create custom tracker for agent_healing phase (directory + file check)
-3. Refactor apply_healing_decisions to handle report regeneration
-4. Add chapter extraction as proper phase
-5. Functions should access context via tracker.storage, tracker.logger, tracker.stage_storage
-6. Functions can accept **kwargs for runtime configuration (most don't need it)
-
-Function signature migrations needed:
-- process_mechanical_extraction(tracker, **kwargs) ✓ Already correct (no kwargs needed)
-- process_structural_metadata(tracker, **kwargs)   ✓ Already correct (no kwargs needed)
-- process_annotations(tracker, **kwargs)           ✓ Already correct (no kwargs needed)
-- merge_outputs(tracker, **kwargs)                 ✓ Already correct (no kwargs needed)
-- heal_page_number_gaps(tracker, **kwargs) instead of (storage, logger)
-  - No kwargs needed
-- generate_report(tracker, **kwargs) instead of (storage, logger, report_schema, stage_name)
-  - Gets report_schema, stage_name from tracker.stage_storage.stage_name or hardcoded
-- create_clusters(tracker, **kwargs) instead of (storage, logger)
-  - No kwargs needed
-- heal_all_clusters(tracker, **kwargs) instead of (storage, logger, model, max_iterations, max_workers)
-  - Exposes: model, max_iterations, max_workers via kwargs (for CLI override)
-- apply_healing_decisions(tracker, **kwargs) instead of (storage, logger) [AND regenerate report]
-  - No kwargs needed (gets report_schema/stage_name internally)
-- extract_chapter_markers(tracker, **kwargs) instead of (storage, logger)
-  - No kwargs needed
-"""
-
-from typing import Dict, Any, Optional
-from pathlib import Path
 from infra.pipeline import BaseStage, BookStorage
-from infra.pipeline.status import MultiPhaseStatusTracker, page_batch_tracker, artifact_tracker, PhaseStatusTracker
+from infra.pipeline.status import MultiPhaseStatusTracker
 from infra.config import Config
 
-from .mechanical import process_mechanical_extraction
-from .structure import process_structural_metadata
-from .annotations import process_annotations
-from .merge import merge_outputs
-from .gap_healing import (
-    heal_page_number_gaps,
-    heal_all_clusters,
-    apply_healing_decisions,
-    extract_chapter_markers
-)
-from .gap_healing.clustering import create_clusters
-
-from .tools import generate_report
+from . import mechanical
+from . import structure
+from . import annotations
+from . import merge
+from . import gap_healing
 from .schemas import (
     LabelStructurePageOutput,
     LabelStructurePageReport,
     StructureExtractionResponse,
 )
-
-
-def healing_directory_tracker(
-    stage_storage,
-    phase_name: str,
-    run_fn,
-    run_kwargs: Optional[Dict[str, Any]] = None,
-) -> PhaseStatusTracker:
-    """
-    Custom tracker for gap healing agent phase.
-
-    Discovers cluster_ids from clusters.json.
-    Validates by checking if all pages in each cluster have healing decisions.
-    """
-    import json
-
-    def discover_clusters(phase_dir: Path):
-        clusters_path = phase_dir / "clusters.json"
-        if not clusters_path.exists():
-            return []
-
-        with open(clusters_path, 'r') as f:
-            data = json.load(f)
-
-        return [cluster['cluster_id'] for cluster in data.get('clusters', [])]
-
-    def validate_cluster_healed(cluster_id: str, phase_dir: Path):
-        # Load cluster to get scan_pages
-        clusters_path = phase_dir / "clusters.json"
-        if not clusters_path.exists():
-            return False
-
-        with open(clusters_path, 'r') as f:
-            data = json.load(f)
-
-        cluster = next((c for c in data['clusters'] if c['cluster_id'] == cluster_id), None)
-        if not cluster:
-            return False
-
-        healing_dir = phase_dir / "healing"
-        if not healing_dir.exists():
-            return False
-
-        # Check if ANY page in cluster has a healing decision
-        # Agents only write decisions for pages that actually need healing,
-        # not necessarily all pages in the cluster
-        return any(
-            (healing_dir / f"page_{page:04d}.json").exists()
-            for page in cluster['scan_pages']
-        )
-
-    return PhaseStatusTracker(
-        stage_storage=stage_storage,
-        phase_name=phase_name,
-        discoverer=discover_clusters,
-        validator=validate_cluster_healed,
-        run_fn=run_fn,
-        use_subdir=False,
-        run_kwargs=run_kwargs,
-    )
 
 
 class LabelStructureStage(BaseStage):
@@ -132,131 +32,37 @@ class LabelStructureStage(BaseStage):
         self.max_workers = 30
         self.max_retries = 5
 
-        # Phase 1: Mechanical extraction (PaddleOCR → page number, header, footer)
-        self.mechanical_tracker = page_batch_tracker(
-            stage_storage=self.stage_storage,
-            phase_name="mechanical",
-            run_fn=process_mechanical_extraction,
-            use_subdir=True,
+        # Phase 1: Mechanical Extraction
+        self.mechanical_tracker = mechanical.create_tracker(self.stage_storage)
+
+        # Phase 2: Structure Extraction
+        self.structure_tracker = structure.create_tracker(self.stage_storage, self.model, self.max_workers)
+
+        # Phase 3: Annotations Extraction
+        self.annotations_tracker = annotations.create_tracker(self.stage_storage, self.model, self.max_workers)
+
+        # Phase 4: Simple Gap Healing
+        self.simple_gap_healing_tracker = gap_healing.create_simple_gap_healing_tracker(self.stage_storage)
+
+        # Phase 5: Clusters Gap Healing
+        self.clusters_tracker = gap_healing.create_clusters_tracker(self.stage_storage)
+
+        # Phase 6: Agent Healing
+        self.agent_healing_tracker = gap_healing.create_agent_healing_tracker(
+            self.stage_storage, self.model, self.max_workers
         )
 
-        # Phase 2: Structural metadata (LLM → page number, header, footer)
-        self.structure_tracker = page_batch_tracker(
-            stage_storage=self.stage_storage,
-            phase_name="structure",
-            run_fn=process_structural_metadata,
-            use_subdir=True,
-            run_kwargs={
-                "model": self.model,
-                "max_workers": self.max_workers,
-            }
-        )
-
-        # Phase 3: Annotations (LLM → headings)
-        self.annotations_tracker = page_batch_tracker(
-            stage_storage=self.stage_storage,
-            phase_name="annotations",
-            run_fn=process_annotations,
-            use_subdir=True,
-            run_kwargs={
-                "model": self.model,
-                "max_workers": self.max_workers,
-            }
-        )
-
-        # Phase 4: Merge all sources into final page files
-        self.merge_tracker = page_batch_tracker(
-            stage_storage=self.stage_storage,
-            phase_name="merge",
-            run_fn=merge_outputs,
-            use_subdir=False,
-        )
-
-        # Phase 5: Simple gap healing (mechanical fixes)
-        # TODO: Refactor heal_page_number_gaps to accept (tracker, **kwargs)
-        #       No kwargs needed - uses tracker.storage, tracker.logger
-        self.simple_gap_healing_tracker = artifact_tracker(
-            stage_storage=self.stage_storage,
-            phase_name="simple_gap_healing",
-            artifact_filename="gap_healing_simple.json",
-            run_fn=heal_page_number_gaps,
-        )
-
-        # Phase 6: CSV rollup of the data
-        # TODO: Refactor generate_report to accept (tracker, **kwargs)
-        #       No kwargs needed - gets report_schema/stage_name from tracker.stage_storage
-        self.report_tracker = artifact_tracker(
-            stage_storage=self.stage_storage,
-            phase_name="report",
-            artifact_filename="report.csv",
-            run_fn=generate_report,
-        )
-
-        # Phase 7: Create issue clusters for agent dispatch
-        # TODO: Refactor create_clusters to accept (tracker, **kwargs)
-        #       No kwargs needed - uses tracker.storage, tracker.logger
-        self.clusters_tracker = artifact_tracker(
-            stage_storage=self.stage_storage,
-            phase_name="clusters",
-            artifact_filename="clusters.json",
-            run_fn=create_clusters,
-        )
-
-        # Phase 8: Run gap healing agents
-        # TODO: Refactor heal_all_clusters to accept (tracker, **kwargs)
-        #       Exposes model, max_iterations, max_workers via kwargs (for CLI override)
-        # Uses custom tracker because completion = healing/ directory exists with page_*.json files
-        self.agent_healing_tracker = healing_directory_tracker(
-            stage_storage=self.stage_storage,
-            phase_name="agent_healing",
-            run_fn=heal_all_clusters,
-            run_kwargs={
-                "model": self.model,
-                "max_iterations": 15,
-                "max_workers": self.max_workers,
-            }
-        )
-
-        # Phase 9: Apply healing decisions AND regenerate report
-        # TODO: Refactor apply_healing_decisions to:
-        #       1. Accept (tracker, **kwargs)
-        #       2. Save healing_applied.json artifact
-        #       3. Regenerate report with healed values (call generate_report internally)
-        #       No kwargs needed - calls generate_report internally with correct params
-        self.healing_applied_tracker = artifact_tracker(
-            stage_storage=self.stage_storage,
-            phase_name="healing_applied",
-            artifact_filename="healing_applied.json",
-            run_fn=apply_healing_decisions,
-        )
-
-        # Phase 10: Extract discovered chapter markers
-        # TODO: Refactor extract_chapter_markers to accept (tracker, **kwargs)
-        #       No kwargs needed - uses tracker.storage, tracker.logger
-        self.chapters_tracker = artifact_tracker(
-            stage_storage=self.stage_storage,
-            phase_name="chapters_discovered",
-            artifact_filename="discovered_chapters.json",
-            run_fn=extract_chapter_markers,
-        )
-
-        # Create multi-phase tracker with all phases
         self.status_tracker = MultiPhaseStatusTracker(
             stage_storage=self.stage_storage,
             phase_trackers=[
                 self.mechanical_tracker,
                 self.structure_tracker,
                 self.annotations_tracker,
-                self.merge_tracker,
                 self.simple_gap_healing_tracker,
-                self.report_tracker,
                 self.clusters_tracker,
                 self.agent_healing_tracker,
-                self.healing_applied_tracker,
-                self.chapters_tracker,
             ]
         )
-
 
 
 __all__ = [

@@ -77,22 +77,22 @@ class BaseStage:
             if isinstance(self.status_tracker, MultiPhaseStatusTracker):
                 for i, tracker in enumerate(self.status_tracker.phase_trackers, 1):
                     phase_name = tracker.phase_name
-                    is_completed = tracker.is_completed()
-                    is_current = phase_name == current_phase
-
-                    if is_completed:
-                        symbol = '✅'
-                    elif is_current:
-                        symbol = '⏳'
-                    else:
-                        symbol = '○'
-
-                    # Get phase progress
                     phase_status = tracker.get_status()
                     phase_progress = phase_status.get('progress', {})
 
                     total_items = phase_progress.get('total_items', 0)
                     completed_items = phase_progress.get('completed_items', 0)
+
+                    is_completed = tracker.is_completed()
+                    is_current = phase_name == current_phase
+                    has_progress = completed_items > 0 and not is_completed
+
+                    if is_completed:
+                        symbol = '✅'
+                    elif is_current or has_progress:
+                        symbol = '⏳'
+                    else:
+                        symbol = '○'
 
                     if total_items > 0:
                         progress_str = f"({completed_items}/{total_items})"

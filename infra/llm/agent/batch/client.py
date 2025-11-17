@@ -76,11 +76,32 @@ class AgentBatchClient:
                 }
 
                 for future in as_completed(futures):
+                    cfg = futures[future]
                     try:
                         result = future.result()
                         results.append(result)
+                    except KeyboardInterrupt:
+                        self.tracker.logger.warning(
+                            f"Agent batch interrupted by user",
+                            agent_id=cfg.agent_id
+                        )
+                        raise
+                    except MemoryError as e:
+                        self.tracker.logger.error(
+                            f"Agent {cfg.agent_id} ran out of memory - this is a critical error",
+                            agent_id=cfg.agent_id,
+                            error=str(e),
+                            exc_info=True
+                        )
+                        raise
                     except Exception as e:
-                        cfg = futures[future]
+                        self.tracker.logger.error(
+                            f"Agent {cfg.agent_id} failed with exception",
+                            agent_id=cfg.agent_id,
+                            error_type=type(e).__name__,
+                            error=str(e),
+                            exc_info=True
+                        )
                         results.append(AgentResult(
                             success=False,
                             iterations=0,
@@ -90,7 +111,7 @@ class AgentBatchClient:
                             total_reasoning_tokens=0,
                             execution_time_seconds=0.0,
                             final_messages=[],
-                            error_message=f"Agent {cfg.agent_id} failed: {str(e)}"
+                            error_message=f"Agent {cfg.agent_id} failed: {type(e).__name__}: {str(e)}"
                         ))
         finally:
             self.progress.__exit__(None, None, None)

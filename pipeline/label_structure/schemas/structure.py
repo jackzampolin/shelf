@@ -24,7 +24,7 @@ class PageNumberObservation(BaseModel):
     number: Optional[str] = Field(default="", description="Page number value")
     location: Optional[Literal["header", "footer", "margin"]] = None
     confidence: Literal["high", "medium", "low"]
-    source_provider: Literal["mistral", "olm", "paddle", "agent_healed"]
+    source_provider: Literal["mistral", "olm", "paddle", "gap_healing_simple", "agent_healed"]
 
 
 class StructuralMetadataOutput(BaseModel):

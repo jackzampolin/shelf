@@ -263,39 +263,28 @@ def label_pages_page_view(scan_id: str, page_num: int):
 
 @stage_bp.route('/stage/<scan_id>/label-structure')
 def label_structure_view(scan_id: str):
-    """
-    Label-structure stage detail view.
+    from flask import request
 
-    Shows:
-    - Report table with all page labels from multi-pass structure analysis
-    - Clusters tab with gap healing visualization
-    - Links to individual page viewers
-    """
     library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
 
-    # Get book metadata
     metadata = library.get_scan_info(scan_id)
     if not metadata:
         abort(404, f"Book '{scan_id}' not found")
 
     storage = library.get_book_storage(scan_id)
 
-    # Load label-structure report from disk
-    report = get_label_structure_report(storage)
+    report_type = request.args.get('report', 'full')
+    if report_type not in ['base', 'simple', 'full']:
+        report_type = 'full'
+
+    report = get_label_structure_report(storage, report_type)
 
     if not report:
         abort(404, f"Label-structure stage not run for '{scan_id}'")
 
-    # Check if clusters exist
     stage_storage = storage.stage("label-structure")
-    clusters_embeddable_path = stage_storage.output_dir / "clusters_embeddable.html"
-    has_clusters = clusters_embeddable_path.exists()
-
-    # If clusters exist, read the embeddable HTML content
-    clusters_html = None
-    if has_clusters:
-        with open(clusters_embeddable_path, 'r', encoding='utf-8') as f:
-            clusters_html = f.read()
+    clusters_path = stage_storage.output_dir / "clusters" / "clusters.json"
+    has_clusters = clusters_path.exists()
 
     return render_template(
         'stage/label_structure.html',
@@ -303,30 +292,27 @@ def label_structure_view(scan_id: str):
         metadata=metadata,
         report=report,
         has_clusters=has_clusters,
-        clusters_html=clusters_html,
+        current_report=report_type,
     )
 
 
 @stage_bp.route('/stage/<scan_id>/label-structure/page/<int:page_num>')
 def label_structure_page_view(scan_id: str, page_num: int):
-    """
-    Individual page view for label-structure stage.
+    from flask import request
 
-    Shows:
-    - Page image on left
-    - Page structure labels on right in human-readable format
-    """
     library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
 
-    # Get book metadata
     metadata = library.get_scan_info(scan_id)
     if not metadata:
         abort(404, f"Book '{scan_id}' not found")
 
     storage = library.get_book_storage(scan_id)
 
-    # Get labels for this page
-    labels = get_structure_page_labels(storage, page_num)
+    report_type = request.args.get('report', 'full')
+    if report_type not in ['base', 'simple', 'full']:
+        report_type = 'full'
+
+    labels = get_structure_page_labels(storage, page_num, report_type)
 
     if not labels:
         abort(404, f"Page {page_num} not found in label-structure report")
@@ -337,6 +323,34 @@ def label_structure_page_view(scan_id: str, page_num: int):
         metadata=metadata,
         page_num=page_num,
         labels=labels,
+        current_report=report_type,
+    )
+
+
+@stage_bp.route('/stage/<scan_id>/label-structure/clusters')
+def label_structure_clusters_view(scan_id: str):
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    metadata = library.get_scan_info(scan_id)
+    if not metadata:
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+    stage_storage = storage.stage("label-structure")
+    clusters_path = stage_storage.output_dir / "clusters" / "clusters.json"
+
+    if not clusters_path.exists():
+        abort(404, f"Clusters not found for '{scan_id}'")
+
+    import json
+    with open(clusters_path, 'r') as f:
+        clusters_data = json.load(f)
+
+    return render_template(
+        'stage/label_structure_clusters.html',
+        scan_id=scan_id,
+        metadata=metadata,
+        clusters_data=clusters_data,
     )
 
 

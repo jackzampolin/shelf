@@ -192,16 +192,30 @@
         </div>
     </div>
 
-    <!-- Tabs -->
+    <!-- Report Type Selector -->
     <div class="tabs">
-        <button class="tab active" onclick="switchTab('report')">📊 Report</button>
+        <a href="{{ url_for('stage.label_structure_view', scan_id=scan_id, report='base') }}"
+           class="tab {% if current_report == 'base' %}active{% endif %}">
+            📊 Base Report
+        </a>
+        <a href="{{ url_for('stage.label_structure_view', scan_id=scan_id, report='simple') }}"
+           class="tab {% if current_report == 'simple' %}active{% endif %}">
+            🔧 + Simple Healing
+        </a>
+        <a href="{{ url_for('stage.label_structure_view', scan_id=scan_id, report='full') }}"
+           class="tab {% if current_report == 'full' %}active{% endif %}">
+            ✨ + Agent Healing
+        </a>
         {% if has_clusters %}
-        <button class="tab" onclick="switchTab('clusters')">🔍 Gap Clusters</button>
+        <a href="{{ url_for('stage.label_structure_clusters_view', scan_id=scan_id) }}"
+           class="tab" style="margin-left: auto;">
+            🔍 View Clusters
+        </a>
         {% endif %}
     </div>
 
-    <!-- Report Table Tab -->
-    <div id="report-tab" class="tab-content active">
+    <!-- Report Table -->
+    <div>
     <table class="report-table">
         <thead>
             <tr>
@@ -291,7 +305,7 @@
 
                 <!-- Actions -->
                 <td>
-                    <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=row.page_num) }}" class="page-link">
+                    <a href="{{ url_for('stage.label_structure_page_view', scan_id=scan_id, page_num=row.page_num, report=current_report) }}" class="page-link">
                         View →
                     </a>
                 </td>
@@ -300,30 +314,5 @@
         </tbody>
     </table>
     </div>
-
-    <!-- Gap Clusters Tab -->
-    {% if has_clusters %}
-    <div id="clusters-tab" class="tab-content">
-        <div class="clusters-container">
-            {{ clusters_html|safe }}
-        </div>
-    </div>
-    {% endif %}
 </div>
-
-<script>
-function switchTab(tabName) {
-    // Hide all tabs
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
-    });
-    document.querySelectorAll('.tab').forEach(tab => {
-        tab.classList.remove('active');
-    });
-
-    // Show selected tab
-    document.getElementById(tabName + '-tab').classList.add('active');
-    event.target.classList.add('active');
-}
-</script>
 {% endblock %}

@@ -8,19 +8,16 @@ from infra.llm.agent import AgentConfig, AgentBatchConfig, AgentBatchClient
 
 from .agent.healer_tools import GapHealingTools
 from .agent.prompts import HEALER_SYSTEM_PROMPT, build_healer_user_prompt
+from ..merge import get_simple_fixes_merged_page
+from .clustering import generate_report_data
 
 
 def _load_report_data(tracker: PhaseStatusTracker) -> Dict[int, Dict]:
-    stage_storage = tracker.storage.stage("label-structure")
-    csv_path = stage_storage.output_dir / "report.csv"
-
+    rows = generate_report_data(tracker.storage, tracker.logger)
     report_data = {}
-    with open(csv_path, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            page_num = int(row['page_num'])
-            report_data[page_num] = row
-
+    for row in rows:
+        page_num = row['scan_page']
+        report_data[page_num] = row
     return report_data
 
 
@@ -41,39 +38,36 @@ def _get_sequence_context(cluster: Dict, report_data: Dict[int, Dict], context_s
 
 
 def _get_page_data_for_cluster(tracker: PhaseStatusTracker, cluster: Dict) -> Dict[int, Dict]:
-    stage_storage = tracker.storage.stage("label-structure")
     page_data_map = {}
+    failed_pages = []
 
     for page_num in cluster['scan_pages']:
         try:
-            page_data = stage_storage.load_file(f"page_{page_num:04d}.json")
-            page_data_map[page_num] = page_data
+            page_output = get_simple_fixes_merged_page(tracker.storage, page_num)
+            page_data_map[page_num] = page_output.model_dump()
         except Exception as e:
-            page_data_map[page_num] = {"error": f"Failed to load: {str(e)}"}
+            tracker.logger.error(
+                f"Failed to load page {page_num} for cluster {cluster['cluster_id']}",
+                page_num=page_num,
+                cluster_id=cluster['cluster_id'],
+                error=str(e)
+            )
+            failed_pages.append(page_num)
+
+    if failed_pages:
+        raise ValueError(
+            f"Cannot process cluster {cluster['cluster_id']}: "
+            f"{len(failed_pages)} pages failed to load ({failed_pages})"
+        )
 
     return page_data_map
 
 
-def _save_healing_decision(tracker: PhaseStatusTracker, update: Dict, agent_id: str, cost_usd: float, iterations: int):
-    stage_storage = tracker.storage.stage("label-structure")
-    healing_dir = stage_storage.output_dir / "healing"
-    healing_dir.mkdir(exist_ok=True)
-
-    update['agent_id'] = agent_id
-    update['cost_usd'] = cost_usd
-    update['agent_iterations'] = iterations
-
-    scan_page = update['scan_page']
-    decision_path = healing_dir / f"page_{scan_page:04d}.json"
-
-    import json
-    with open(decision_path, 'w') as f:
-        json.dump(update, f, indent=2)
 
 
 def _get_completed_clusters(tracker: PhaseStatusTracker, clusters: List[Dict]) -> List[str]:
     stage_storage = tracker.storage.stage("label-structure")
-    healing_dir = stage_storage.output_dir / "healing"
+    healing_dir = stage_storage.output_dir / "agent_healing"
 
     if not healing_dir.exists():
         return []
@@ -82,30 +76,15 @@ def _get_completed_clusters(tracker: PhaseStatusTracker, clusters: List[Dict]) -
 
     for cluster in clusters:
         cluster_id = cluster['cluster_id']
-        scan_pages = cluster['scan_pages']
+        marker_path = healing_dir / f"cluster_{cluster_id}.json"
 
-        all_healed = all(
-            (healing_dir / f"page_{page:04d}.json").exists()
-            for page in scan_pages
-        )
-
-        if all_healed:
+        if marker_path.exists():
             completed.append(cluster_id)
 
     return completed
 
 
-def heal_all_clusters(
-    tracker: PhaseStatusTracker,
-    **kwargs
-):
-    """Run gap healing agents on complex gap clusters.
-
-    Args:
-        tracker: PhaseStatusTracker providing access to storage, logger, status
-        **kwargs: Configuration (model, max_iterations, max_workers, verbose)
-    """
-    # Extract kwargs with defaults
+def heal_all_clusters(tracker: PhaseStatusTracker, **kwargs):
     model = kwargs.get("model")
     max_iterations = kwargs.get("max_iterations", 10)
     max_workers = kwargs.get("max_workers", 10)
@@ -116,10 +95,10 @@ def heal_all_clusters(
     stage_storage = tracker.storage.stage("label-structure")
 
     try:
-        cluster_data = stage_storage.load_file("clusters.json")
+        cluster_data = stage_storage.load_file("clusters/clusters.json")
     except Exception as e:
         tracker.logger.error(f"Failed to load clusters.json: {e}")
-        return
+        raise ValueError(f"Agent healing requires clusters.json - run clustering phase first: {e}")
 
     clusters = cluster_data.get('clusters', [])
     total_clusters = len(clusters)
@@ -184,27 +163,28 @@ def heal_all_clusters(
 
     for agent_result, cluster, config in zip(batch_result.results, remaining_clusters, configs):
         cluster_id = cluster['cluster_id']
-        agent_id = config.agent_id
         tools = tools_by_cluster_id[cluster_id]
+        pages_healed = tools.get_pages_healed()
 
-        if agent_result.success and tools.get_pending_updates():
-            for update in tools.get_pending_updates():
-                _save_healing_decision(
-                    tracker=tracker,
-                    update=update,
-                    agent_id=agent_id,
-                    cost_usd=agent_result.total_cost_usd / len(tools.get_pending_updates()),
-                    iterations=agent_result.iterations
+        if agent_result.success and tools.is_complete():
+            healed_pages += len(pages_healed)
+
+            if pages_healed:
+                tracker.logger.info(
+                    f"✓ {cluster_id}: {len(pages_healed)} pages healed "
+                    f"(${agent_result.total_cost_usd:.4f}, {agent_result.iterations} iter)"
                 )
-                healed_pages += 1
-
-            tracker.logger.info(
-                f"✓ {cluster_id}: {len(tools.get_pending_updates())} pages healed "
-                f"(${agent_result.total_cost_usd:.4f}, {agent_result.iterations} iter)"
-            )
+            else:
+                tracker.logger.info(
+                    f"✓ {cluster_id}: no healing needed "
+                    f"(${agent_result.total_cost_usd:.4f}, {agent_result.iterations} iter)"
+                )
         else:
             failed_clusters += 1
-            error_msg = agent_result.error_message or "No updates submitted"
+            if agent_result.success and not tools.is_complete():
+                error_msg = "Agent finished but did not call finish_cluster"
+            else:
+                error_msg = agent_result.error_message or "Agent failed"
             tracker.logger.warning(f"✗ {cluster_id}: {error_msg}")
 
         total_cost += agent_result.total_cost_usd

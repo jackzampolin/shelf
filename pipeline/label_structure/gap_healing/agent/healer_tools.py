@@ -10,11 +10,15 @@ class GapHealingTools(AgentTools):
     def __init__(self, storage: BookStorage, cluster: Dict):
         self.storage = storage
         self.cluster = cluster
-        self._pending_updates: List[Dict] = []
+        self.cluster_id = cluster['cluster_id']
+        self.agent_id = f"heal_{self.cluster_id}"
+        self.healing_dir = storage.stage("label-structure").output_dir / "agent_healing"
+        self.healing_dir.mkdir(parents=True, exist_ok=True)
         self._current_page_num: Optional[int] = None
         self._page_observations: List[Dict[str, str]] = []
         self._current_images: Optional[List] = None
         self._pages_examined: List[int] = []
+        self._pages_healed: List[int] = []
 
     def get_tools(self) -> List[Dict]:
         return [
@@ -59,30 +63,26 @@ class GapHealingTools(AgentTools):
             {
                 "type": "function",
                 "function": {
-                    "name": "write_page_update",
-                    "description": "Submit healing decision for ONE page. Call multiple times if you need to update multiple pages in the cluster. Each call records a decision file that will be applied later.",
+                    "name": "heal_page",
+                    "description": "Heal ONE specific page by updating its page number and/or chapter marker. Call this multiple times to heal multiple pages in a gap. You must call finish_cluster when done.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "scan_page": {
                                 "type": "integer",
-                                "description": "Scan page number to update"
+                                "description": "Scan page number to heal"
                             },
-                            "page_number_update": {
+                            "page_number": {
                                 "type": "object",
-                                "description": "Fields to update in page_number observation. Only include fields you want to change.",
+                                "description": "Corrected page number fields",
                                 "properties": {
-                                    "present": {
-                                        "type": "boolean",
-                                        "description": "Is page number present?"
-                                    },
                                     "number": {
                                         "type": "string",
                                         "description": "Corrected page number value"
                                     },
                                     "location": {
                                         "type": "string",
-                                        "description": "Location: 'margin', 'header', 'footer'"
+                                        "description": "Location: 'header', 'footer', 'margin'"
                                     },
                                     "confidence": {
                                         "type": "string",
@@ -90,13 +90,14 @@ class GapHealingTools(AgentTools):
                                     },
                                     "source_provider": {
                                         "type": "string",
-                                        "description": "Source provider (use 'agent_healed' for healed values)"
+                                        "description": "Always use 'agent_healed'"
                                     }
-                                }
+                                },
+                                "required": ["number", "source_provider"]
                             },
                             "chapter_marker": {
                                 "type": "object",
-                                "description": "Optional: If this page is a chapter title page, extract chapter metadata",
+                                "description": "Optional: Chapter metadata if this is a chapter title page",
                                 "properties": {
                                     "chapter_num": {
                                         "type": "integer",
@@ -108,7 +109,7 @@ class GapHealingTools(AgentTools):
                                     },
                                     "confidence": {
                                         "type": "number",
-                                        "description": "Confidence in chapter identification (0.0-1.0)"
+                                        "description": "Confidence (0.0-1.0)"
                                     },
                                     "detected_from": {
                                         "type": "string",
@@ -118,10 +119,32 @@ class GapHealingTools(AgentTools):
                             },
                             "reasoning": {
                                 "type": "string",
-                                "description": "Brief explanation of why you're making this update"
+                                "description": "Why are you healing this specific page?"
                             }
                         },
-                        "required": ["scan_page", "reasoning"]
+                        "required": ["scan_page", "page_number", "reasoning"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "finish_cluster",
+                    "description": "Mark this cluster as complete. Call this AFTER you've healed all pages that need healing (or determined no healing is needed). Required to complete the cluster.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "summary": {
+                                "type": "string",
+                                "description": "Summary of what you did: how many pages healed, what issues were fixed, or why no healing was needed"
+                            },
+                            "pages_healed": {
+                                "type": "array",
+                                "items": {"type": "integer"},
+                                "description": "List of page numbers you healed (empty if none)"
+                            }
+                        },
+                        "required": ["summary", "pages_healed"]
                     }
                 }
             }
@@ -134,12 +157,11 @@ class GapHealingTools(AgentTools):
                 self._pages_examined.append(page_num)
 
             try:
-                page_data = self.storage.stage("label-structure").load_file(
-                    f"page_{page_num:04d}.json"
-                )
+                from ...merge import get_simple_fixes_merged_page
+                page_output = get_simple_fixes_merged_page(self.storage, page_num)
                 return json.dumps({
                     "page_num": page_num,
-                    "metadata": page_data
+                    "metadata": page_output.model_dump()
                 }, indent=2)
             except Exception as e:
                 return json.dumps({"error": f"Failed to load page {page_num}: {str(e)}"})
@@ -149,30 +171,56 @@ class GapHealingTools(AgentTools):
             current_page_observations = tool_input.get("current_page_observations")
             return self._view_page_image(page_num, current_page_observations)
 
-        elif tool_name == "write_page_update":
+        elif tool_name == "heal_page":
             scan_page = tool_input["scan_page"]
             reasoning = tool_input["reasoning"]
-            page_number_update = tool_input.get("page_number_update")
+            page_number = tool_input["page_number"]
             chapter_marker = tool_input.get("chapter_marker")
 
-            update = {
-                "scan_page": scan_page,
-                "cluster_id": self.cluster['cluster_id'],
-                "cluster_type": self.cluster['type'],
-                "reasoning": reasoning
+            patch = {
+                "agent_id": self.agent_id,
+                "reasoning": reasoning,
+                "page_number": page_number
             }
 
-            if page_number_update:
-                update["page_number_update"] = page_number_update
-
             if chapter_marker:
-                update["chapter_marker"] = chapter_marker
+                patch["chapter_marker"] = chapter_marker
 
-            self._pending_updates.append(update)
+            decision_path = self.healing_dir / f"page_{scan_page:04d}.json"
+            with open(decision_path, 'w') as f:
+                json.dump(patch, f, indent=2)
+
+            self._pages_healed.append(scan_page)
 
             return json.dumps({
                 "status": "success",
-                "message": f"Page {scan_page} update recorded. Total updates: {len(self._pending_updates)}"
+                "message": f"✓ Page {scan_page} healed and saved. Total pages healed so far: {len(self._pages_healed)}"
+            })
+
+        elif tool_name == "finish_cluster":
+            summary = tool_input["summary"]
+            pages_healed = tool_input["pages_healed"]
+
+            if set(pages_healed) != set(self._pages_healed):
+                return json.dumps({
+                    "error": f"Mismatch: you said you healed {pages_healed} but heal_page was called for {self._pages_healed}"
+                })
+
+            marker = {
+                "cluster_id": self.cluster_id,
+                "agent_id": self.agent_id,
+                "summary": summary,
+                "pages_healed": pages_healed,
+                "pages_examined": self._pages_examined,
+                "images_viewed": self.get_images_viewed()
+            }
+            marker_path = self.healing_dir / f"cluster_{self.cluster_id}.json"
+            with open(marker_path, 'w') as f:
+                json.dump(marker, f, indent=2)
+
+            return json.dumps({
+                "status": "complete",
+                "message": f"✓ Cluster marked complete. {len(pages_healed)} pages healed. Cluster processing finished."
             })
 
         else:
@@ -221,13 +269,14 @@ class GapHealingTools(AgentTools):
             return json.dumps({"error": f"Failed to load page image: {str(e)}"})
 
     def is_complete(self) -> bool:
-        return len(self._pending_updates) > 0
+        marker_path = self.healing_dir / f"cluster_{self.cluster_id}.json"
+        return marker_path.exists()
 
     def get_images(self) -> Optional[List]:
         return self._current_images
 
-    def get_pending_updates(self) -> List[Dict]:
-        return self._pending_updates
+    def get_pages_healed(self) -> List[int]:
+        return self._pages_healed
 
     def get_pages_examined(self) -> List[int]:
         return self._pages_examined

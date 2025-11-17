@@ -16,7 +16,7 @@ class AgentClient:
         self.config = config
         self.tracker = config.tracker
         self.llm_client = LLMClient(logger=self.tracker.logger, max_retries=3)
-        self.log_dir = self.tracker.stage_storage.output_dir / 'logs' / 'agents' / config.agent_id
+        self.log_dir = self.tracker.stage_storage.output_dir / 'logs' / 'agents'
         self.log_filename = f"{config.agent_id}.json"
         self.metrics_manager = self.tracker.stage_storage.metrics_manager
         self.metrics_key_prefix = self.tracker.metrics_prefix
