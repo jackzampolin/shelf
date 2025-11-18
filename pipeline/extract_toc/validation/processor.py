@@ -113,9 +113,30 @@ def validate_toc_with_structure(
                         "type": "array",
                         "items": correction_schema,
                         "description": "Array of corrections to apply (empty if no corrections needed)"
+                    },
+                    "analysis": {
+                        "type": "object",
+                        "properties": {
+                            "toc_quality": {
+                                "type": "string",
+                                "enum": ["high", "medium", "low"],
+                                "description": "Overall quality assessment of the ToC"
+                            },
+                            "patterns_found": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of patterns observed (problems and confirmations)"
+                            },
+                            "observations": {
+                                "type": "string",
+                                "description": "Brief narrative summary of ToC quality and findings"
+                            }
+                        },
+                        "required": ["toc_quality", "patterns_found", "observations"],
+                        "additionalProperties": False
                     }
                 },
-                "required": ["corrections"],
+                "required": ["corrections", "analysis"],
                 "additionalProperties": False
             }
         }
@@ -137,10 +158,18 @@ def validate_toc_with_structure(
         tracker.logger.error(f"Validation LLM call failed: {result.error_message}")
         return {"corrections": [], "error": result.error_message}
 
-    # Parse corrections from result
+    # Parse corrections and analysis from result
     corrections = result.parsed_json.get("corrections", [])
+    analysis = result.parsed_json.get("analysis", {})
 
     tracker.logger.info(f"Validation complete: {len(corrections)} corrections proposed")
+
+    # Log analysis
+    toc_quality = analysis.get("toc_quality", "unknown")
+    observations = analysis.get("observations", "")
+    tracker.logger.info(f"  ToC quality: {toc_quality}")
+    if observations:
+        tracker.logger.info(f"  Observations: {observations}")
 
     # Log correction summary
     if corrections:
@@ -152,9 +181,10 @@ def validate_toc_with_structure(
         summary = ", ".join([f"{count} {field}" for field, count in by_field.items()])
         tracker.logger.info(f"  Corrections: {summary}")
 
-    # Save corrections
+    # Save corrections and analysis
     output_data = {
         "corrections": corrections,
+        "analysis": analysis,
         "validation_stats": {
             "entries_reviewed": len(raw_entries),
             "corrections_proposed": len(corrections),

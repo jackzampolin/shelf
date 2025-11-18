@@ -49,7 +49,12 @@ Output format (structured JSON):
       "confidence": 0.95,
       "reasoning": "Merged into entry 5"
     }
-  ]
+  ],
+  "analysis": {
+    "toc_quality": "high",
+    "patterns_found": ["No systematic OCR errors detected", "All entries properly formatted"],
+    "observations": "ToC appears clean with consistent hierarchy. No continuations or obvious errors found."
+  }
 }
 
 Fields you can correct:
@@ -153,7 +158,9 @@ If you see the same error in multiple entries, fix ALL instances.
 
 <output_format>
 
-Return JSON with corrections array. Each correction must have:
+Return JSON with corrections array AND analysis:
+
+**corrections**: Array of corrections (empty if none needed). Each correction must have:
 - entry_index: Which entry to correct (integer)
 - field: Which field to change ("title", "printed_page_number", "level_name", "entry_number", "_delete")
 - old: Current value (must match exactly!)
@@ -161,11 +168,22 @@ Return JSON with corrections array. Each correction must have:
 - confidence: Your confidence (0.7-1.0)
 - reasoning: Brief explanation of why this correction is needed
 
-If NO corrections needed (ToC is clean), return empty array: {"corrections": []}
+**analysis**: Overall assessment of the ToC. Must include:
+- toc_quality: "high", "medium", or "low"
+- patterns_found: Array of patterns you observed (both problems and non-problems)
+  - Examples: "No OCR errors detected", "Consistent use of roman numerals", "3 entries with missing page numbers"
+- observations: Brief narrative summary of ToC quality and any noteworthy findings
 
 **Pattern corrections:**
 If you correct "Chapter VIll" → "Chapter VIII" at entry 5, check ALL other entries for the same pattern.
 Show this in reasoning: "Same OCR pattern as entry 5"
+
+**Analysis guidelines:**
+- toc_quality="high": Clean ToC, no or minimal corrections needed
+- toc_quality="medium": Some issues but overall usable structure
+- toc_quality="low": Significant problems requiring many corrections
+- patterns_found: Include both problems AND confirmations (e.g., "No continuations found")
+- observations: Be specific about what you checked and what you found
 
 </output_format>
 

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from web.config import Config
 from infra.pipeline.storage.library import Library
-from web.data.extract_toc_data import get_extract_toc_data
+from web.data.extract_toc_data import get_extract_toc_data, get_validation_data
 from web.data.find_toc_data import get_find_toc_data, get_toc_page_numbers
 from web.data.label_pages_data import get_label_pages_report, get_page_labels
 from web.data.label_structure_data import (
@@ -148,6 +148,9 @@ def extract_toc_view(scan_id: str):
     if not toc_data:
         abort(404, f"Extract-toc stage not run for '{scan_id}'")
 
+    # Load validation data (corrections and analysis)
+    validation_data = get_validation_data(storage)
+
     # Get page numbers for images (from find-toc stage)
     page_numbers = get_toc_page_numbers(storage)
 
@@ -156,6 +159,7 @@ def extract_toc_view(scan_id: str):
         scan_id=scan_id,
         metadata=metadata,
         toc_data=toc_data,
+        validation_data=validation_data,
         page_numbers=page_numbers,
     )
 

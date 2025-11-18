@@ -70,3 +70,24 @@ def get_toc_page_numbers(storage: BookStorage) -> List[int]:
         return list(range(start, end + 1))
 
     return []
+
+
+def get_validation_data(storage: BookStorage) -> Optional[Dict[str, Any]]:
+    """
+    Load validation corrections and analysis from extract-toc.
+
+    Returns:
+        Dict with:
+        - corrections: list of corrections applied
+        - analysis: {toc_quality, patterns_found, observations}
+        - validation_stats: {entries_reviewed, corrections_proposed}
+
+    Returns None if corrections.json doesn't exist.
+    """
+    extract_toc_storage = storage.stage("extract-toc")
+    corrections_path = extract_toc_storage.output_dir / "corrections.json"
+
+    if not corrections_path.exists():
+        return None
+
+    return extract_toc_storage.load_file("corrections.json")

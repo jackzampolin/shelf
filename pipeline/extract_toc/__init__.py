@@ -14,7 +14,7 @@ from . import finalize
 class ExtractTocStage(BaseStage):
 
     name = "extract-toc"
-    dependencies = ["find-toc", "mistral-ocr", "olm-ocr", "label-structure"]
+    dependencies = ["find-toc", "mistral-ocr", "olm-ocr"]
 
     @classmethod
     def default_kwargs(cls, **overrides):

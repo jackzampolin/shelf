@@ -208,6 +208,123 @@
         color: #666;
         margin-bottom: 0.25rem;
     }
+
+    /* Validation Analysis Section */
+    .validation-analysis {
+        background: #f0fff4;
+        border: 1px solid #a7f3d0;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .validation-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .validation-header h4 {
+        margin: 0;
+        color: #065f46;
+    }
+
+    .quality-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .quality-badge.high {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .quality-badge.medium {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .quality-badge.low {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .validation-observations {
+        color: #374151;
+        line-height: 1.6;
+        margin-bottom: 1rem;
+        font-style: italic;
+    }
+
+    .validation-patterns {
+        margin-top: 1rem;
+    }
+
+    .validation-patterns h5 {
+        margin: 0 0 0.5rem 0;
+        color: #065f46;
+        font-size: 0.9rem;
+    }
+
+    .validation-patterns ul {
+        margin: 0;
+        padding-left: 1.5rem;
+        list-style: none;
+    }
+
+    .validation-patterns li {
+        padding: 0.25rem 0;
+        color: #374151;
+    }
+
+    .validation-patterns li:before {
+        content: "✓ ";
+        color: #10b981;
+        font-weight: bold;
+        margin-right: 0.5rem;
+    }
+
+    .corrections-section {
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid #a7f3d0;
+    }
+
+    .corrections-section h5 {
+        margin: 0 0 0.75rem 0;
+        color: #065f46;
+    }
+
+    .correction-item {
+        background: white;
+        border: 1px solid #d1fae5;
+        border-radius: 4px;
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .correction-item .correction-field {
+        font-weight: bold;
+        color: #059669;
+    }
+
+    .correction-item .correction-change {
+        font-family: monospace;
+        font-size: 0.9rem;
+        color: #374151;
+    }
+
+    .correction-item .correction-reasoning {
+        margin-top: 0.5rem;
+        font-size: 0.9rem;
+        color: #6b7280;
+        font-style: italic;
+    }
 </style>
 {% endblock %}
 
@@ -262,6 +379,54 @@
         <!-- Right Column: Parsed TOC Structure -->
         <div class="toc-structure-column">
             <h3>Parsed Structure</h3>
+
+            <!-- Validation Analysis -->
+            {% if validation_data and validation_data.analysis %}
+            <div class="validation-analysis">
+                <div class="validation-header">
+                    <h4>✓ Validation Analysis</h4>
+                    <span class="quality-badge {{ validation_data.analysis.toc_quality }}">
+                        {{ validation_data.analysis.toc_quality }} quality
+                    </span>
+                </div>
+
+                {% if validation_data.analysis.observations %}
+                <div class="validation-observations">
+                    {{ validation_data.analysis.observations }}
+                </div>
+                {% endif %}
+
+                {% if validation_data.analysis.patterns_found %}
+                <div class="validation-patterns">
+                    <h5>Patterns Found:</h5>
+                    <ul>
+                        {% for pattern in validation_data.analysis.patterns_found %}
+                        <li>{{ pattern }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                {% if validation_data.corrections %}
+                <div class="corrections-section">
+                    <h5>Corrections Applied ({{ validation_data.corrections|length }}):</h5>
+                    {% for correction in validation_data.corrections %}
+                    <div class="correction-item">
+                        <div>
+                            <span class="correction-field">{{ correction.field }}</span> at entry {{ correction.entry_index }}
+                        </div>
+                        <div class="correction-change">
+                            "{{ correction.old }}" → "{{ correction.new }}"
+                        </div>
+                        <div class="correction-reasoning">
+                            {{ correction.reasoning }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
 
             {% if toc_data.toc_entries %}
                 <!-- TOC Entries -->
