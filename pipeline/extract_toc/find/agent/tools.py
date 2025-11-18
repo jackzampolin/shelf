@@ -193,7 +193,7 @@ class TocFinderTools(AgentTools):
             if self._grep_report_cache is None:
                 self._grep_report_cache = generate_grep_report(self.storage, max_pages=50)
                 # Save grep report
-                stage_storage = self.storage.stage('find-toc')
+                stage_storage = self.storage.stage('extract-toc')
                 stage_storage.save_file("grep_report.json", self._grep_report_cache)
 
             report = self._grep_report_cache

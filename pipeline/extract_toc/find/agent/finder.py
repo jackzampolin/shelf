@@ -14,11 +14,13 @@ class TocFinderAgent:
     def __init__(
         self,
         storage: BookStorage,
+        tracker,  # PhaseStatusTracker
         logger: Optional[PipelineLogger] = None,
         max_iterations: int = 15,
         verbose: bool = True
     ):
         self.storage = storage
+        self.tracker = tracker
         self.logger = logger
         self.max_iterations = max_iterations
         self.verbose = verbose
@@ -34,12 +36,11 @@ class TocFinderAgent:
             {"role": "user", "content": build_user_prompt(self.scan_id, self.total_pages)}
         ]
 
-        stage_storage = storage.stage('find-toc')
         self.config = AgentConfig(
+            tracker=tracker,  # Pass tracker directly
             model=Config.vision_model_primary,
             initial_messages=initial_messages,
             tools=self.tools,
-            stage_storage=stage_storage,
             agent_id="toc-finder",
             max_iterations=max_iterations,
             temperature=0.0
@@ -109,7 +110,7 @@ class TocFinderAgent:
             structure_summary=final_result.structure_summary,
         )
 
-        stage_storage = self.storage.stage('find-toc')
+        stage_storage = self.storage.stage('extract-toc')
         stage_storage.save_file("finder_result.json", finder_result.model_dump())
 
         if self.logger:

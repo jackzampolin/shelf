@@ -48,16 +48,16 @@ def get_toc_page_numbers(storage: BookStorage) -> List[int]:
     """
     Get list of page numbers where TOC appears.
 
-    Reads from find-toc stage output.
-    Returns empty list if find-toc not run or TOC not found.
+    Reads from extract-toc stage (find phase output).
+    Returns empty list if find phase not run or TOC not found.
     """
-    find_toc_storage = storage.stage("find-toc")
-    finder_path = find_toc_storage.output_dir / "finder_result.json"
+    extract_toc_storage = storage.stage("extract-toc")
+    finder_path = extract_toc_storage.output_dir / "finder_result.json"
 
     if not finder_path.exists():
         return []
 
-    finder_result = find_toc_storage.load_file("finder_result.json")
+    finder_result = extract_toc_storage.load_file("finder_result.json")
 
     if not finder_result.get('toc_found'):
         return []

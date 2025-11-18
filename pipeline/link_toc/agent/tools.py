@@ -30,10 +30,10 @@ def list_boundaries(
 
     # Get TOC page range to exclude from boundaries
     toc_pages = set()
-    find_toc_stage = storage.stage("find-toc")
-    finder_result_path = find_toc_stage.output_dir / "finder_result.json"
+    extract_toc_stage = storage.stage("extract-toc")
+    finder_result_path = extract_toc_stage.output_dir / "finder_result.json"
     if finder_result_path.exists():
-        finder_data = find_toc_stage.load_file("finder_result.json")
+        finder_data = extract_toc_stage.load_file("finder_result.json")
         if finder_data and finder_data.get("toc_found"):
             page_range = finder_data.get("toc_page_range", {})
             toc_start = page_range.get("start_page", 0)
@@ -139,10 +139,10 @@ def grep_text(
 
     # Get TOC page range to exclude from search results
     toc_pages = set()
-    find_toc_stage = storage.stage("find-toc")
-    finder_result_path = find_toc_stage.output_dir / "finder_result.json"
+    extract_toc_stage = storage.stage("extract-toc")
+    finder_result_path = extract_toc_stage.output_dir / "finder_result.json"
     if finder_result_path.exists():
-        finder_data = find_toc_stage.load_file("finder_result.json")
+        finder_data = extract_toc_stage.load_file("finder_result.json")
         if finder_data and finder_data.get("toc_found"):
             page_range = finder_data.get("toc_page_range", {})
             toc_start = page_range.get("start_page", 0)

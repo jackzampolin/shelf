@@ -34,8 +34,9 @@ def validate_toc_with_structure(
     storage = tracker.storage
     stage_storage = tracker.stage_storage
 
-    # Load raw ToC entries from detection phase (phase 1)
-    finder_result = storage.stage('find-toc').load_file("finder_result.json")
+    # Load raw ToC entries from detection phase (phase 2)
+    # finder_result.json comes from find phase (phase 1, same stage)
+    finder_result = stage_storage.load_file("finder_result.json")
     from ..schemas import PageRange
     toc_range = PageRange(**finder_result["toc_page_range"])
 

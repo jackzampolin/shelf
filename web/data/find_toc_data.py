@@ -11,7 +11,7 @@ from infra.pipeline.storage.book_storage import BookStorage
 
 def get_find_toc_data(storage: BookStorage) -> Optional[Dict[str, Any]]:
     """
-    Load find-toc finder result from disk.
+    Load finder result from extract-toc stage (find phase).
 
     Returns:
         Dict with:
@@ -24,15 +24,15 @@ def get_find_toc_data(storage: BookStorage) -> Optional[Dict[str, Any]]:
         - structure_notes: dict[page_num, note] or None
         - structure_summary: {total_levels, level_patterns, consistency_notes} or None
 
-    Returns None if finder_result.json doesn't exist (stage not run yet).
+    Returns None if finder_result.json doesn't exist (find phase not run yet).
     """
-    find_toc_storage = storage.stage("find-toc")
-    finder_path = find_toc_storage.output_dir / "finder_result.json"
+    extract_toc_storage = storage.stage("extract-toc")
+    finder_path = extract_toc_storage.output_dir / "finder_result.json"
 
     if not finder_path.exists():
         return None
 
-    finder_result = find_toc_storage.load_file("finder_result.json")
+    finder_result = extract_toc_storage.load_file("finder_result.json")
 
     if not finder_result:
         return None

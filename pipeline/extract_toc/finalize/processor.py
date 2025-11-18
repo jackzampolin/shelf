@@ -28,7 +28,8 @@ def apply_corrections(tracker: PhaseStatusTracker, **kwargs) -> Dict:
     stage_storage = tracker.stage_storage
 
     # Load raw ToC entries from detection phase
-    finder_result = storage.stage('find-toc').load_file("finder_result.json")
+    # finder_result.json comes from find phase (phase 1, same stage)
+    finder_result = stage_storage.load_file("finder_result.json")
     toc_range = PageRange(**finder_result["toc_page_range"])
 
     raw_entries = []

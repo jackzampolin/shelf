@@ -6,6 +6,7 @@ from infra.pipeline.status import MultiPhaseStatusTracker
 from infra.config import Config
 
 from .schemas import PageRange, TableOfContents, ToCEntry, ExtractTocBookOutput
+from . import find
 from . import detection
 from . import validation
 from . import finalize
@@ -14,7 +15,7 @@ from . import finalize
 class ExtractTocStage(BaseStage):
 
     name = "extract-toc"
-    dependencies = ["find-toc", "mistral-ocr", "olm-ocr"]
+    dependencies = ["mistral-ocr", "olm-ocr"]
 
     @classmethod
     def default_kwargs(cls, **overrides):
@@ -39,21 +40,25 @@ class ExtractTocStage(BaseStage):
         self.max_iterations = max_iterations
         self.verbose = verbose
 
-        # Phase 1: Extract ToC entries from pages
+        # Phase 1: Find ToC pages
+        self.find_tracker = find.create_find_tracker(self.stage_storage, self.model)
+
+        # Phase 2: Extract ToC entries from pages
         self.extract_tracker = detection.create_detection_tracker(self.stage_storage, self.model)
 
-        # Phase 2: Validate and assemble with label-structure
+        # Phase 3: Validate and propose corrections
         self.validate_tracker = validation.create_validation_tracker(
             self.stage_storage, self.model, self.max_iterations
         )
 
-        # Phase 3: Apply corrections and build final ToC
+        # Phase 4: Apply corrections and build final ToC
         self.finalize_tracker = finalize.create_finalize_tracker(self.stage_storage)
 
         # Multi-phase tracker
         self.status_tracker = MultiPhaseStatusTracker(
             stage_storage=self.stage_storage,
             phase_trackers=[
+                self.find_tracker,
                 self.extract_tracker,
                 self.validate_tracker,
                 self.finalize_tracker,

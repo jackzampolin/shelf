@@ -12,7 +12,8 @@ def prepare_toc_request(
 ) -> LLMRequest:
     page_num = item
 
-    finder_result = storage.stage('find-toc').load_file("finder_result.json")
+    # Load from find phase (same stage as extract-toc)
+    finder_result = storage.stage('extract-toc').load_file("finder_result.json")
     toc_range = PageRange(**finder_result["toc_page_range"])
     structure_notes_from_finder = finder_result.get("structure_notes") or {}
     global_structure_from_finder = finder_result.get("structure_summary")
