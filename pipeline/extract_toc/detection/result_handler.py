@@ -10,6 +10,7 @@ from ..schemas import ToCEntry
 def create_toc_handler(
     storage: BookStorage,
     logger: PipelineLogger,
+    phase_name: str = "detection",
 ):
     stage_storage = storage.stage('extract-toc')
 
@@ -42,10 +43,10 @@ def create_toc_handler(
                     f"{result.request.id}.json",
                     page_result
                 )
-                
+
                 result.record_to_metrics(
                     metrics_manager=stage_storage.metrics_manager,
-                    key=result.request.id,
+                    key=f"{phase_name}_{result.request.id}",
                     extra_fields={'phase': 'detection', 'entries_found': len(entries_validated)}
                 )
 

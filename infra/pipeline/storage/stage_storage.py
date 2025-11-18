@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 from pathlib import Path
 from typing import Dict, Any, Optional, Type, TYPE_CHECKING
@@ -23,7 +24,8 @@ class StageStorage:
         # Create logger for this stage
         log_dir = storage.book_dir / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)
-        self._logger = create_logger(storage.scan_id, name, log_dir=log_dir)
+        log_level = "DEBUG" if os.environ.get("DEBUG", "").lower() in ("true", "1", "yes") else "INFO"
+        self._logger = create_logger(storage.scan_id, name, log_dir=log_dir, level=log_level)
 
     def logger(self):
         """Get logger instance for this stage."""

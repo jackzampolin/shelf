@@ -9,10 +9,12 @@ from .result_handler import create_toc_handler
 
 def process_toc_pages(
     tracker: PhaseStatusTracker,
-    model: str,
-    max_workers: int,
-    max_retries: int,
+    **kwargs
 ) -> Dict[str, Any]:
+    model = kwargs.get("model")
+    max_workers = kwargs.get("max_workers")
+    max_retries = kwargs.get("max_retries", 5)
+
     tracker.logger.info(f"=== Extract-ToC: Extract entries from ToC pages ===")
 
     # Access book storage through tracker's stage_storage
@@ -26,6 +28,7 @@ def process_toc_pages(
         result_handler=create_toc_handler(
             book_storage,
             tracker.logger,
+            phase_name=tracker.phase_name,
         ),
         max_workers=max_workers,
         max_retries=max_retries,

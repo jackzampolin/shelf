@@ -132,14 +132,26 @@ class AgentClient:
                         'timestamp': datetime.now().isoformat()
                     }
                 except Exception as e:
+                    self.tracker.logger.error(
+                        f"LLM call failed",
+                        extra={
+                            "agent_id": self.config.agent_id,
+                            "iteration": iteration,
+                            "model": self.config.model,
+                            "error_type": type(e).__name__,
+                            "error": str(e)
+                        },
+                        exc_info=True
+                    )
                     iteration_log['llm_response'] = {
                         'error': str(e),
+                        'error_type': type(e).__name__,
                         'timestamp': datetime.now().isoformat()
                     }
                     self.run_log['iterations'].append(iteration_log)
                     return self._create_error_result(
                         messages,
-                        f"LLM call failed in iteration {iteration}: {str(e)}"
+                        f"LLM call failed in iteration {iteration}: {type(e).__name__}: {str(e)}"
                     )
                 assistant_msg = {"role": "assistant"}
                 if result.response:
@@ -174,7 +186,19 @@ class AgentClient:
                     try:
                         tool_result = self.config.tools.execute_tool(tool_name, arguments)
                     except Exception as e:
-                        tool_result = json.dumps({"error": f"Tool execution failed: {str(e)}"})
+                        self.tracker.logger.warning(
+                            f"Tool execution failed",
+                            extra={
+                                "agent_id": self.config.agent_id,
+                                "iteration": iteration,
+                                "tool_name": tool_name,
+                                "arguments": arguments,
+                                "error_type": type(e).__name__,
+                                "error": str(e)
+                            },
+                            exc_info=True
+                        )
+                        tool_result = json.dumps({"error": f"Tool execution failed: {type(e).__name__}: {str(e)}"})
                     tool_time = time.time() - tool_start
                     iteration_tool_time += tool_time
                     tool_execution_log = {
@@ -235,9 +259,19 @@ class AgentClient:
                 f"Agent did not complete within {self.config.max_iterations} iterations"
             )
         except Exception as e:
+            self.tracker.logger.error(
+                f"Unexpected error in agent execution",
+                extra={
+                    "agent_id": self.config.agent_id,
+                    "iteration": self.iteration_count,
+                    "error_type": type(e).__name__,
+                    "error": str(e)
+                },
+                exc_info=True
+            )
             return self._create_error_result(
                 messages,
-                f"Unexpected error: {str(e)}"
+                f"Unexpected error: {type(e).__name__}: {str(e)}"
             )
     def _finalize_and_save_log(self, run_timestamp: str, success: bool, error_message: Optional[str] = None) -> Optional[Path]:
         self.run_log['metadata']['end_time'] = datetime.now().isoformat()
@@ -246,7 +280,7 @@ class AgentClient:
         self.run_log['metadata']['execution_time_seconds'] = time.time() - self.start_time if self.start_time else 0.0
         if error_message:
             self.run_log['metadata']['error_message'] = error_message
-        return save_run_log(self.run_log, self.log_dir, run_timestamp, self.log_filename)
+        return save_run_log(self.run_log, self.log_dir, run_timestamp, self.tracker.logger, self.log_filename)
     def _emit_event(
         self,
         on_event: Optional[Callable],

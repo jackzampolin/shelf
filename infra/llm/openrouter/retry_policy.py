@@ -115,6 +115,19 @@ class RetryPolicy:
                     )
                     raise
 
+            except Exception as e:
+                self.logger.error(
+                    f"Unexpected error during LLM call (not retryable)",
+                    extra={
+                        "model": model,
+                        "attempt": attempt+1,
+                        "error_type": type(e).__name__,
+                        "error": str(e)
+                    },
+                    exc_info=True
+                )
+                raise
+
     def _should_retry(self, error: requests.exceptions.HTTPError, attempt: int) -> bool:
         if attempt >= max(1, self.max_retries) - 1:
             return False

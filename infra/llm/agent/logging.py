@@ -4,8 +4,6 @@ import logging
 from typing import Dict, List, Optional
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 
 def strip_images_from_messages(messages: List[Dict]) -> List[Dict]:
     cleaned_messages = []
@@ -31,7 +29,7 @@ def strip_images_from_messages(messages: List[Dict]) -> List[Dict]:
     return cleaned_messages
 
 
-def clean_run_log(log: Dict) -> Dict:
+def clean_run_log(log: Dict, logger: logging.Logger) -> Dict:
     try:
         cleaned = copy.deepcopy(log)
     except (TypeError, ValueError) as e:
@@ -64,7 +62,7 @@ def clean_run_log(log: Dict) -> Dict:
     return cleaned
 
 
-def save_run_log(log: Dict, log_dir: Path, run_timestamp: str, log_filename: Optional[str] = None) -> Optional[Path]:
+def save_run_log(log: Dict, log_dir: Path, run_timestamp: str, logger: logging.Logger, log_filename: Optional[str] = None) -> Optional[Path]:
     if not log_dir:
         logger.warning("Cannot save run log: log_dir is None or empty")
         return None
@@ -79,7 +77,7 @@ def save_run_log(log: Dict, log_dir: Path, run_timestamp: str, log_filename: Opt
         )
         return None
 
-    cleaned_log = clean_run_log(log)
+    cleaned_log = clean_run_log(log, logger)
 
     if log_filename:
         run_log_path = log_dir / log_filename
