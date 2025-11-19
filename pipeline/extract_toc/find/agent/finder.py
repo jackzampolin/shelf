@@ -17,13 +17,15 @@ class TocFinderAgent:
         tracker,  # PhaseStatusTracker
         logger: Optional[PipelineLogger] = None,
         max_iterations: int = 15,
-        verbose: bool = True
+        verbose: bool = True,
+        attempt_number: int = 1
     ):
         self.storage = storage
         self.tracker = tracker
         self.logger = logger
         self.max_iterations = max_iterations
         self.verbose = verbose
+        self.attempt_number = attempt_number
 
         self.metadata = storage.load_metadata()
         self.scan_id = storage.scan_id
@@ -121,7 +123,11 @@ class TocFinderAgent:
         )
 
         stage_storage = self.storage.stage('extract-toc')
-        stage_storage.save_file("finder_result.json", finder_result.model_dump())
+
+        # Add attempt_number to saved result (not in schema, but useful for retry tracking)
+        result_dict = finder_result.model_dump()
+        result_dict['attempt_number'] = self.attempt_number
+        stage_storage.save_file("finder_result.json", result_dict)
 
         if self.logger:
             self.logger.info("Saved finder_result.json")

@@ -156,10 +156,11 @@ Build structure_summary for downstream extraction."""
         prev_pages_checked = previous_attempt.get('pages_checked', 0)
         prev_structure_notes = previous_attempt.get('structure_notes', {})
 
+        attempt_num = previous_attempt.get('attempt_number', 1)
         retry_context = f"""
 
 <previous_attempt>
-This is a RETRY. Previous attempt did not find ToC.
+This is ATTEMPT #{attempt_num + 1}. Previous attempt did not find ToC.
 
 Previous Strategy: {prev_strategy}
 Pages Checked: {prev_pages_checked}

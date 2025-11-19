@@ -21,6 +21,7 @@ class ExtractTocStage(BaseStage):
     def default_kwargs(cls, **overrides):
         kwargs = {
             'max_iterations': 15,
+            'max_find_attempts': 3,
             'verbose': False
         }
         if 'model' in overrides and overrides['model']:
@@ -32,16 +33,22 @@ class ExtractTocStage(BaseStage):
         storage: BookStorage,
         model: str = None,
         max_iterations: int = 15,
+        max_find_attempts: int = 3,
         verbose: bool = False
     ):
         super().__init__(storage)
 
         self.model = model or Config.vision_model_primary
         self.max_iterations = max_iterations
+        self.max_find_attempts = max_find_attempts
         self.verbose = verbose
 
-        # Phase 1: Find ToC pages
-        self.find_tracker = find.create_find_tracker(self.stage_storage, self.model)
+        # Phase 1: Find ToC pages (with automatic retry)
+        self.find_tracker = find.create_find_tracker(
+            self.stage_storage,
+            self.model,
+            max_attempts=max_find_attempts
+        )
 
         # Phase 2: Extract ToC entries from pages
         self.extract_tracker = detection.create_detection_tracker(self.stage_storage, self.model)
