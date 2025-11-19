@@ -69,7 +69,6 @@ Total levels: {global_structure.get('total_levels', 'unknown')}
   - Visual: {pattern.get('visual', 'N/A')}
   - Numbering: {pattern.get('numbering') or 'None'}
   - Has page numbers: {pattern.get('has_page_numbers')}
-  - Semantic type: {pattern.get('semantic_type') or 'N/A'}
 
 """
         consistency_notes = global_structure.get('consistency_notes', [])
@@ -109,9 +108,6 @@ Each ToC entry has:
 - Level: hierarchy depth (1, 2, or 3) determined by visual indentation/styling
 - Entry number: if present ("5", "II", "A", "1.1")
 - Page number: if present (right-aligned: "127", "ix", "xii")
-
-Note: Semantic naming (part/chapter/section) will be applied later based on global structure.
-Focus on extracting visual hierarchy level only.
 
 **HOW VISUAL LAYOUT DETERMINES HIERARCHY**:
 
