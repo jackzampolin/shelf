@@ -36,37 +36,41 @@ def create_find_tracker(stage_storage: StageStorage, model: str, max_attempts: i
     def run_find_toc(tracker, **kwargs):
         from .agent.finder import TocFinderAgent
 
-        # Check how many attempts we've made
-        finder_result_path = stage_storage.output_dir / "finder_result.json"
-        attempt_num = 1
+        # Loop for automatic retry within same run
+        for attempt_num in range(1, max_attempts + 1):
+            if attempt_num > 1:
+                tracker.logger.info(f"Retry attempt {attempt_num}/{max_attempts}")
 
-        if finder_result_path.exists():
-            try:
-                import json
-                with open(finder_result_path) as f:
-                    previous = json.load(f)
-                # Count attempts from previous runs
-                attempt_num = previous.get('attempt_number', 1) + 1
-            except Exception:
-                pass
+            agent = TocFinderAgent(
+                storage=tracker.storage,
+                tracker=tracker,
+                logger=tracker.logger,
+                max_iterations=15,
+                verbose=True,
+                attempt_number=attempt_num
+            )
+            result = agent.search()
 
-        # If we've exceeded max attempts, stop
-        if attempt_num > max_attempts:
-            tracker.logger.warning(f"Max attempts ({max_attempts}) reached - ToC not found")
-            return {"status": "failed", "reason": f"ToC not found after {max_attempts} attempts"}
+            # Check if ToC was found
+            finder_result_path = stage_storage.output_dir / "finder_result.json"
+            if finder_result_path.exists():
+                try:
+                    import json
+                    with open(finder_result_path) as f:
+                        finder_result = json.load(f)
+                    if finder_result.get("toc_found"):
+                        # Success! Return
+                        return result
+                except Exception:
+                    pass
 
-        if attempt_num > 1:
-            tracker.logger.info(f"Retry attempt {attempt_num}/{max_attempts}")
+            # ToC not found, continue to next attempt
+            if attempt_num < max_attempts:
+                tracker.logger.info(f"ToC not found on attempt {attempt_num}, retrying...")
 
-        agent = TocFinderAgent(
-            storage=tracker.storage,
-            tracker=tracker,
-            logger=tracker.logger,
-            max_iterations=15,
-            verbose=True,
-            attempt_number=attempt_num
-        )
-        return agent.search()
+        # All attempts exhausted
+        tracker.logger.warning(f"ToC not found after {max_attempts} attempts")
+        return {"status": "failed", "reason": f"ToC not found after {max_attempts} attempts"}
 
     return PhaseStatusTracker(
         stage_storage=stage_storage,

@@ -30,6 +30,23 @@ def apply_corrections(tracker: PhaseStatusTracker, **kwargs) -> Dict:
     # Load raw ToC entries from detection phase
     # finder_result.json comes from find phase (phase 1, same stage)
     finder_result = stage_storage.load_file("finder_result.json")
+
+    # If no ToC was found, skip finalization
+    if not finder_result.get("toc_found") or not finder_result.get("toc_page_range"):
+        tracker.logger.info("No ToC found - skipping finalization")
+        # Save empty toc.json to mark phase as complete
+        stage_storage.save_file("toc.json", {
+            "toc": {
+                "entries": [],
+                "toc_page_range": None,
+                "total_chapters": 0,
+                "total_sections": 0,
+                "parsing_confidence": 0.0,
+                "notes": ["No ToC found - finalization skipped"]
+            }
+        })
+        return {"status": "skipped", "reason": "No ToC found"}
+
     toc_range = PageRange(**finder_result["toc_page_range"])
 
     raw_entries = []
