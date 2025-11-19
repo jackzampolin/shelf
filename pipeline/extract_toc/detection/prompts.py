@@ -104,12 +104,14 @@ These page-specific notes complement the global structure above.
 <extraction_guidelines>
 
 **WHAT TO EXTRACT**:
-Each ToC entry typically has:
-- Title (entry text, may span multiple lines)
-- Hierarchy level (determined by visual indentation/styling: 1, 2, or 3)
-- Optional entry number (if present: "5", "II", "A", "1.1")
-- Optional level name (semantic type: "part", "chapter", "section", "appendix")
-- Optional printed page number (right-aligned: "127", "ix", "xii")
+Each ToC entry has:
+- Title: entry text (may span multiple lines)
+- Level: hierarchy depth (1, 2, or 3) determined by visual indentation/styling
+- Entry number: if present ("5", "II", "A", "1.1")
+- Page number: if present (right-aligned: "127", "ix", "xii")
+
+Note: Semantic naming (part/chapter/section) will be applied later based on global structure.
+Focus on extracting visual hierarchy level only.
 
 **HOW VISUAL LAYOUT DETERMINES HIERARCHY**:
 

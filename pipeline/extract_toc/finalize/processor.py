@@ -70,6 +70,9 @@ def apply_corrections(tracker: PhaseStatusTracker, **kwargs) -> Dict:
     if deleted_count > 0:
         tracker.logger.info(f"Removed {deleted_count} merged/duplicate entries")
 
+    # Apply consistent level_name from structure_summary
+    _apply_level_names_from_structure(entries, finder_result, tracker)
+
     # Clean up internal fields
     for entry in entries:
         entry.pop("_source_page", None)
@@ -198,6 +201,53 @@ def _apply_corrections_to_entries(
             tracker.logger.warning(f"  Entry {fail['entry_index']}: {fail.get('error', 'unknown error')}")
 
     return applied_count, failed_corrections
+
+
+def _apply_level_names_from_structure(
+    entries: List[Dict],
+    finder_result: Dict,
+    tracker: PhaseStatusTracker
+) -> None:
+    """
+    Apply consistent level_name to all entries based on structure_summary.
+
+    The find phase already determined semantic types per level (part/chapter/section).
+    Apply these consistently to all entries at each level.
+    """
+    structure_summary = finder_result.get("structure_summary")
+    if not structure_summary:
+        tracker.logger.info("No structure_summary - skipping level_name application")
+        return
+
+    level_patterns = structure_summary.get("level_patterns", {})
+    if not level_patterns:
+        tracker.logger.info("No level_patterns - skipping level_name application")
+        return
+
+    # Build level -> semantic_type mapping
+    level_names = {}
+    for level_str, pattern in level_patterns.items():
+        semantic_type = pattern.get("semantic_type")
+        if semantic_type:
+            level_names[int(level_str)] = semantic_type
+
+    if not level_names:
+        tracker.logger.info("No semantic_types in structure - skipping level_name application")
+        return
+
+    # Apply level_name to all entries
+    applied_count = 0
+    for entry in entries:
+        level = entry.get("level", 1)
+        if level in level_names:
+            # Only apply if not already set (respect explicit ToC labels)
+            if not entry.get("level_name"):
+                entry["level_name"] = level_names[level]
+                applied_count += 1
+
+    tracker.logger.info(
+        f"Applied consistent level_name to {applied_count} entries from structure_summary"
+    )
 
 
 def _build_final_toc(entries: List[Dict], toc_range: PageRange) -> Dict:
