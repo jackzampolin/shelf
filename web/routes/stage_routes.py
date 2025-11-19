@@ -88,50 +88,16 @@ def ocr_pages_page_view(scan_id: str, page_num: int):
     )
 
 
-@stage_bp.route('/stage/<scan_id>/find-toc')
-def find_toc_view(scan_id: str):
-    """
-    Find-toc stage detail view.
-
-    Shows:
-    - TOC page images on the left (from find-toc result)
-    - Finder analysis on the right (confidence, reasoning, structure summary)
-    """
-    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
-
-    # Get book metadata
-    metadata = library.get_scan_info(scan_id)
-    if not metadata:
-        abort(404, f"Book '{scan_id}' not found")
-
-    storage = library.get_book_storage(scan_id)
-
-    # Load find-toc data from disk
-    finder_data = get_find_toc_data(storage)
-
-    if not finder_data:
-        abort(404, f"Find-toc stage not run for '{scan_id}'")
-
-    # Get page numbers for images
-    page_numbers = get_toc_page_numbers(storage)
-
-    return render_template(
-        'stage/find_toc.html',
-        scan_id=scan_id,
-        metadata=metadata,
-        finder_data=finder_data,
-        page_numbers=page_numbers,
-    )
-
-
 @stage_bp.route('/stage/<scan_id>/extract-toc')
 def extract_toc_view(scan_id: str):
     """
     Extract-toc stage detail view.
 
     Shows:
-    - TOC page images on the left (from find-toc)
-    - Parsed TOC structure on the right (from extract-toc)
+    - TOC page images on the left (from find phase)
+    - Finder analysis (confidence, reasoning, structure summary)
+    - Parsed TOC structure (from extract phase)
+    - Validation analysis (from validate phase)
     """
     library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
 
@@ -148,10 +114,13 @@ def extract_toc_view(scan_id: str):
     if not toc_data:
         abort(404, f"Extract-toc stage not run for '{scan_id}'")
 
+    # Load finder data (from find phase)
+    finder_data = get_find_toc_data(storage)
+
     # Load validation data (corrections and analysis)
     validation_data = get_validation_data(storage)
 
-    # Get page numbers for images (from find-toc stage)
+    # Get page numbers for images (from find phase)
     page_numbers = get_toc_page_numbers(storage)
 
     return render_template(
@@ -159,6 +128,7 @@ def extract_toc_view(scan_id: str):
         scan_id=scan_id,
         metadata=metadata,
         toc_data=toc_data,
+        finder_data=finder_data,
         validation_data=validation_data,
         page_numbers=page_numbers,
     )

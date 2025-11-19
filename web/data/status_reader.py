@@ -19,8 +19,7 @@ def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) ->
 
     Each stage has different completion criteria:
     - ocr-pages, olm-ocr, mistral-ocr, paddle-ocr: All source pages have corresponding output files
-    - find-toc: finder_result.json exists
-    - extract-toc: toc_validated.json exists
+    - extract-toc: toc.json exists
     - label-pages: report.csv exists
     - label-structure: report.csv exists
     """
@@ -42,10 +41,6 @@ def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) ->
                 completed += 1
 
         return completed == total_pages
-
-    elif stage_name == 'find-toc':
-        # Complete when finder_result.json exists
-        return (stage_storage.output_dir / 'finder_result.json').exists()
 
     elif stage_name == 'extract-toc':
         # Complete when toc.json exists
