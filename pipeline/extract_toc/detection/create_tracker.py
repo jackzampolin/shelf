@@ -10,8 +10,18 @@ def create_detection_tracker(stage_storage: StageStorage, model: str):
 
     # Discoverer function - loads ToC range when called
     def discover_toc_pages(phase_dir):
+        # Check if find phase has run
+        finder_result_path = stage_storage.output_dir / "finder_result.json"
+        if not finder_result_path.exists():
+            return []  # Find phase hasn't run yet
+
         # Load ToC range from find phase (phase 1, same stage)
         finder_result = stage_storage.load_file("finder_result.json")
+
+        # If no ToC was found, return empty list (nothing to extract)
+        if not finder_result.get("toc_found") or not finder_result.get("toc_page_range"):
+            return []
+
         toc_range = PageRange(**finder_result["toc_page_range"])
         # Only process ToC pages, not all pages
         return list(range(toc_range.start_page, toc_range.end_page + 1))

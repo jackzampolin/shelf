@@ -140,12 +140,45 @@ Not found:
 """
 
 
-def build_user_prompt(scan_id: str, total_pages: int) -> str:
-    return f"""Find the Table of Contents in book: {scan_id}
+def build_user_prompt(scan_id: str, total_pages: int, previous_attempt: dict = None) -> str:
+    base_prompt = f"""Find the Table of Contents in book: {scan_id}
 
 Total pages: {total_pages}
 
 Use grep report to identify candidates, then verify with vision + OCR.
 Document structure patterns (hierarchy, numbering, visual layout) not content.
-Build structure_summary for downstream extraction.
+Build structure_summary for downstream extraction."""
+
+    if previous_attempt:
+        # Include context from previous attempt
+        prev_reasoning = previous_attempt.get('reasoning', 'No reasoning provided')
+        prev_strategy = previous_attempt.get('search_strategy_used', 'unknown')
+        prev_pages_checked = previous_attempt.get('pages_checked', 0)
+        prev_structure_notes = previous_attempt.get('structure_notes', {})
+
+        retry_context = f"""
+
+<previous_attempt>
+This is a RETRY. Previous attempt did not find ToC.
+
+Previous Strategy: {prev_strategy}
+Pages Checked: {prev_pages_checked}
+Previous Reasoning: {prev_reasoning}
 """
+
+        if prev_structure_notes:
+            retry_context += "\nPrevious Observations:\n"
+            for page_num, note in sorted(prev_structure_notes.items())[:5]:  # Show first 5
+                retry_context += f"  Page {page_num}: {note}\n"
+
+        retry_context += """
+Consider:
+- Did previous attempt search the right pages?
+- Were there false negatives in grep report?
+- Should you try different page ranges?
+- Could ToC have unusual formatting/naming?
+</previous_attempt>
+"""
+        return base_prompt + retry_context
+
+    return base_prompt

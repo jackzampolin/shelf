@@ -37,6 +37,18 @@ def validate_toc_with_structure(
     # Load raw ToC entries from detection phase (phase 2)
     # finder_result.json comes from find phase (phase 1, same stage)
     finder_result = stage_storage.load_file("finder_result.json")
+
+    # If no ToC was found, skip validation
+    if not finder_result.get("toc_found") or not finder_result.get("toc_page_range"):
+        tracker.logger.info("No ToC found - skipping validation")
+        # Save empty corrections file to mark phase as complete
+        stage_storage.save_file("corrections.json", {
+            "corrections": [],
+            "analysis": {"note": "No ToC found - validation skipped"},
+            "validation_stats": {"entries_reviewed": 0, "corrections_proposed": 0}
+        })
+        return {"status": "skipped", "reason": "No ToC found"}
+
     from ..schemas import PageRange
     toc_range = PageRange(**finder_result["toc_page_range"])
 

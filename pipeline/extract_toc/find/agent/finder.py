@@ -31,9 +31,19 @@ class TocFinderAgent:
 
         self.tools = TocFinderTools(storage=storage)
 
+        # Check for previous attempt (for retry scenarios)
+        stage_storage = storage.stage('extract-toc')
+        previous_attempt = None
+        finder_result_path = stage_storage.output_dir / "finder_result.json"
+        if finder_result_path.exists():
+            try:
+                previous_attempt = stage_storage.load_file("finder_result.json")
+            except Exception:
+                pass
+
         initial_messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_user_prompt(self.scan_id, self.total_pages)}
+            {"role": "user", "content": build_user_prompt(self.scan_id, self.total_pages, previous_attempt)}
         ]
 
         self.config = AgentConfig(
