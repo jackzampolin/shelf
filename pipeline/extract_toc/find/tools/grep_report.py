@@ -14,6 +14,14 @@ KEYWORD_CATEGORIES = {
         r"\bTABLE OF CONTENTS\b",
         r"\bContents\b",
         r"\bCONTENTS\b",
+        # Alternative ToC titles
+        r"\bOrder of Battle\b",
+        r"\bORDER OF BATTLE\b",
+        r"\bList of Chapters\b",
+        r"\bLIST OF CHAPTERS\b",
+        r"\bChapter Overview\b",
+        r"\bSynopsis\b",
+        r"\bSYNOPSIS\b",
     ],
     "front_matter": [
         r"\bPreface\b",
