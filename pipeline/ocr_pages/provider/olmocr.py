@@ -166,7 +166,7 @@ class OlmOCRProvider(OCRProvider):
                 execution_time_seconds=time.time() - start,
             )
 
-    def handle_result(self, page_num: int, result: OCRResult, output_dir=None):
+    def handle_result(self, page_num: int, result: OCRResult, subdir: str = None, metrics_prefix: str = ""):
         """Save OCR result to disk and record metrics."""
         # Build output with provider metadata
         output = OlmOcrPageOutput(
@@ -176,12 +176,12 @@ class OlmOCRProvider(OCRProvider):
             **result.metadata  # OlmOCR-specific fields
         )
 
-        # Save to disk
-        self.stage_storage.save_page(page_num, output.model_dump(), schema=OlmOcrPageOutput)
+        # Save to disk (with subdir for multi-provider stages)
+        self.stage_storage.save_page(page_num, output.model_dump(), schema=OlmOcrPageOutput, subdir=subdir)
 
-        # Record metrics
+        # Record metrics (with prefix for phase-specific tracking)
         self.stage_storage.metrics_manager.record(
-            key=f"page_{page_num:04d}",
+            key=f"{metrics_prefix}page_{page_num:04d}",
             cost_usd=result.cost_usd,
             time_seconds=result.execution_time_seconds,
             custom_metrics={

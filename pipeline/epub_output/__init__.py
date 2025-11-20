@@ -24,7 +24,7 @@ class EpubOutputStage(BaseStage):
             "include_headers_footers": False,
             "css_theme": "serif",
             "image_quality": "original",
-            "ocr_source": "mistral-ocr",
+            "ocr_source": "mistral",
             "epub_version": "3.0",
             "generate_page_list": True,
             "validate_output": True,

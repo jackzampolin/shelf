@@ -21,22 +21,24 @@ def prepare_structural_metadata_request(
     pattern_hints_json = json.dumps(mechanical_output.get("pattern_hints", {}), indent=2)
 
     # Load OCR texts with error handling
+    ocr_stage = storage.stage("ocr-pages")
+
     try:
-        mistral_text = storage.stage("mistral-ocr").load_page(item).get("markdown", "")
+        mistral_text = ocr_stage.load_page(item, subdir="mistral").get("markdown", "")
     except FileNotFoundError:
         mistral_text = ""
     except Exception as e:
         raise ValueError(f"Failed to load Mistral OCR for page {item:04d}: {type(e).__name__}: {e}")
 
     try:
-        olm_text = storage.stage("olm-ocr").load_page(item).get("text", "")
+        olm_text = ocr_stage.load_page(item, subdir="olm").get("text", "")
     except FileNotFoundError:
         olm_text = ""
     except Exception as e:
         raise ValueError(f"Failed to load OLM OCR for page {item:04d}: {type(e).__name__}: {e}")
 
     try:
-        paddle_text = storage.stage("paddle-ocr").load_page(item).get("text", "")
+        paddle_text = ocr_stage.load_page(item, subdir="paddle").get("text", "")
     except FileNotFoundError:
         paddle_text = ""
     except Exception as e:

@@ -23,8 +23,7 @@ class GroundTruthBook:
 
     # Paths
     gt_dir: Path
-    find_dir: Path
-    extract_dir: Path
+    expected_dir: Path
 
     # Expected results
     expected_finder_result: Dict[str, Any]
@@ -57,20 +56,21 @@ def load_book(scan_id: str) -> GroundTruthBook:
     with open(gt_dir / "metadata.json") as f:
         metadata = json.load(f)
 
-    # Load expected results
-    with open(gt_dir / "find" / "expected_result.json") as f:
+    # Load expected results from .expected/ subdirectory
+    expected_dir = gt_dir / ".expected"
+
+    with open(expected_dir / "find" / "finder_result.json") as f:
         expected_finder_result = json.load(f)
 
-    with open(gt_dir / "extract" / "expected_toc.json") as f:
+    with open(expected_dir / "finalize" / "toc.json") as f:
         expected_toc = json.load(f)
 
     return GroundTruthBook(
         scan_id=scan_id,
         metadata=metadata,
-        toc_page_range=metadata["toc_page_range"],
+        toc_page_range=expected_finder_result.get("toc_page_range", {}),
         gt_dir=gt_dir,
-        find_dir=gt_dir / "find",
-        extract_dir=gt_dir / "extract",
+        expected_dir=expected_dir,
         expected_finder_result=expected_finder_result,
         expected_toc=expected_toc,
     )

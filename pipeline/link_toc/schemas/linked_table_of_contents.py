@@ -22,9 +22,7 @@ class LinkedTableOfContents(BaseModel):
     total_entries: int = Field(..., ge=0, description="Total entries attempted")
     linked_entries: int = Field(..., ge=0, description="Entries successfully linked")
     unlinked_entries: int = Field(..., ge=0, description="Entries not found")
-    avg_link_confidence: float = Field(..., ge=0.0, le=1.0, description="Average confidence of linked entries")
 
     # COST TRACKING
     total_cost_usd: float = Field(..., ge=0.0, description="Total linking cost")
     total_time_seconds: float = Field(..., ge=0.0, description="Total processing time")
-    avg_iterations_per_entry: float = Field(..., ge=0.0, description="Average agent iterations")

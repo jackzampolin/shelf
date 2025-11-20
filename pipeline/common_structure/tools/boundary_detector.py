@@ -100,7 +100,7 @@ def detect_boundaries(
             entry_number=entry_num,
             scan_page_start=start_page,
             scan_page_end=end_page,
-            toc_confidence=entry.get("link_confidence", 1.0),
+            toc_confidence=1.0,  # Link-toc no longer provides confidence (see agent logs for details)
             link_source="toc",
             semantic_type=semantic_type
         )

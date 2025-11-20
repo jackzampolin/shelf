@@ -47,9 +47,9 @@ class OCRBatchProcessor:
         self.logger = status_tracker.logger
         self.max_workers = max_workers
 
-        # Use tracker's stage_storage and phase_dir
+        # Use tracker's stage_storage and phase info
         self.stage_storage = status_tracker.stage_storage
-        self.output_dir = status_tracker.phase_dir
+        self.subdir = status_tracker.phase_name  # e.g., "mistral", "olm", "paddle"
         self.metrics_manager = status_tracker.metrics_manager
         self.metrics_prefix = status_tracker.metrics_prefix
 
@@ -63,8 +63,8 @@ class OCRBatchProcessor:
         page_nums = self.status_tracker.get_remaining_items()
 
         source_storage = self.storage.stage("source")
-        # Use tracker's output_dir instead of assuming stage name
-        logs_dir = self.output_dir / "logs"
+        # Use tracker's phase_dir for logs
+        logs_dir = self.status_tracker.phase_dir / "logs"
 
         pages_processed = 0
         total_cost = 0.0
@@ -157,8 +157,8 @@ class OCRBatchProcessor:
 
             # Success - let provider handle result (save + metrics)
             if result and result.success:
-                # Pass output_dir to provider so it writes to correct location
-                self.provider.handle_result(page_num, result, output_dir=self.output_dir)
+                # Pass subdir and metrics_prefix to provider
+                self.provider.handle_result(page_num, result, subdir=self.subdir, metrics_prefix=self.metrics_prefix)
 
                 # Update aggregates
                 pages_processed += 1

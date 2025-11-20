@@ -5,7 +5,7 @@ from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.llm.agent import AgentConfig, AgentBatchConfig, AgentBatchClient
 
-from .schemas import LinkedTableOfContents, LinkedToCEntry
+from ..schemas import LinkedTableOfContents, LinkedToCEntry
 from .agent.finder import TocEntryFinderAgent
 from .agent.finder_tools import TocEntryFinderTools
 from .agent.prompts import FINDER_SYSTEM_PROMPT, build_finder_user_prompt
@@ -45,10 +45,8 @@ def _update_linked_entry(storage: BookStorage, entry_index: int, linked_entry: L
             "total_entries": 0,
             "linked_entries": 0,
             "unlinked_entries": 0,
-            "avg_link_confidence": 0.0,
             "total_cost_usd": 0.0,
             "total_time_seconds": 0.0,
-            "avg_iterations_per_entry": 0.0
         }
 
     # Update or append entry
@@ -74,10 +72,8 @@ def _finalize_linked_toc_metadata(
     total_entries: int,
     linked_entries: int,
     unlinked_entries: int,
-    avg_link_confidence: float,
     total_cost_usd: float,
     total_time_seconds: float,
-    avg_iterations_per_entry: float
 ):
     """Update metadata fields in linked_toc.json after all entries processed."""
     stage_storage = storage.stage("link-toc")
@@ -97,14 +93,37 @@ def _finalize_linked_toc_metadata(
         "total_entries": total_entries,
         "linked_entries": linked_entries,
         "unlinked_entries": unlinked_entries,
-        "avg_link_confidence": avg_link_confidence,
         "total_cost_usd": total_cost_usd,
         "total_time_seconds": total_time_seconds,
-        "avg_iterations_per_entry": avg_iterations_per_entry
     })
 
     # Save using existing infrastructure (already has locking)
     stage_storage.save_file("linked_toc.json", data)
+
+
+def _create_linked_entry_from_result(toc_entry: Dict, agent_result, tools) -> LinkedToCEntry:
+    """Create LinkedToCEntry from agent result, handling success and failure cases."""
+    if agent_result.success and tools._pending_result:
+        result_data = tools._pending_result
+        return LinkedToCEntry(
+            entry_number=toc_entry.get('entry_number'),
+            title=toc_entry['title'],
+            level=toc_entry.get('level', 1),
+            level_name=toc_entry.get('level_name'),
+            printed_page_number=toc_entry.get('printed_page_number'),
+            scan_page=result_data["scan_page"],
+            agent_reasoning=result_data["reasoning"],
+        )
+    else:
+        return LinkedToCEntry(
+            entry_number=toc_entry.get('entry_number'),
+            title=toc_entry['title'],
+            level=toc_entry.get('level', 1),
+            level_name=toc_entry.get('level_name'),
+            printed_page_number=toc_entry.get('printed_page_number'),
+            scan_page=None,
+            agent_reasoning=agent_result.error_message or "Agent failed",
+        )
 
 
 def find_all_toc_entries(tracker, **kwargs):
@@ -153,7 +172,8 @@ def find_all_toc_entries(tracker, **kwargs):
         tools = TocEntryFinderTools(
             storage=storage,
             toc_entry=toc_entry,
-            total_pages=total_pages
+            total_pages=total_pages,
+            logger=logger
         )
         tools_by_idx[idx] = tools
 
@@ -166,12 +186,13 @@ def find_all_toc_entries(tracker, **kwargs):
             model=model,
             initial_messages=initial_messages,
             tools=tools,
-            stage_storage=storage.stage('link-toc'),
+            tracker=tracker,
             agent_id=agent_id,
             max_iterations=max_iterations
         ))
 
     batch_config = AgentBatchConfig(
+        tracker=tracker,
         agent_configs=configs,
         max_workers=10
     )
@@ -182,35 +203,7 @@ def find_all_toc_entries(tracker, **kwargs):
     for agent_result, idx in zip(batch_result.results, remaining_indices):
         toc_entry = toc_entries[idx]
         tools = tools_by_idx[idx]
-
-        if agent_result.success and tools._pending_result:
-            result_data = tools._pending_result
-            linked_entry = LinkedToCEntry(
-                entry_number=toc_entry.get('entry_number'),
-                title=toc_entry['title'],
-                level=toc_entry.get('level', 1),
-                level_name=toc_entry.get('level_name'),
-                printed_page_number=toc_entry.get('printed_page_number'),
-                scan_page=result_data["scan_page"],
-                link_confidence=result_data["confidence"],
-                agent_reasoning=result_data["reasoning"],
-                agent_iterations=agent_result.iterations,
-                candidates_checked=tools._candidates_checked,
-            )
-        else:
-            linked_entry = LinkedToCEntry(
-                entry_number=toc_entry.get('entry_number'),
-                title=toc_entry['title'],
-                level=toc_entry.get('level', 1),
-                level_name=toc_entry.get('level_name'),
-                printed_page_number=toc_entry.get('printed_page_number'),
-                scan_page=None,
-                link_confidence=0.0,
-                agent_reasoning=agent_result.error_message or "Agent failed",
-                agent_iterations=agent_result.iterations,
-                candidates_checked=tools._candidates_checked if tools else [],
-            )
-
+        linked_entry = _create_linked_entry_from_result(toc_entry, agent_result, tools)
         _update_linked_entry(storage, idx, linked_entry)
 
     # Load final linked_toc
@@ -226,14 +219,6 @@ def find_all_toc_entries(tracker, **kwargs):
     linked_count = sum(1 for e in linked_entries if e.scan_page is not None)
     unlinked_count = len(linked_entries) - linked_count
 
-    linked_only = [e for e in linked_entries if e.scan_page is not None]
-    avg_confidence = (
-        sum(e.link_confidence for e in linked_only) / len(linked_only)
-        if linked_only else 0.0
-    )
-
-    avg_iterations = sum(e.agent_iterations for e in linked_entries) / len(linked_entries) if linked_entries else 0.0
-
     all_metrics = stage_storage.metrics_manager.get_all()
 
     total_cost_usd = sum(m.get('cost_usd', 0.0) for m in all_metrics.values())
@@ -248,10 +233,8 @@ def find_all_toc_entries(tracker, **kwargs):
         total_entries=len(linked_entries),
         linked_entries=linked_count,
         unlinked_entries=unlinked_count,
-        avg_link_confidence=avg_confidence,
         total_cost_usd=total_cost_usd,
         total_time_seconds=total_time_seconds,
-        avg_iterations_per_entry=avg_iterations
     )
 
     # Record metrics

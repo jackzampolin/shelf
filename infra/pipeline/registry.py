@@ -1,8 +1,5 @@
 STAGE_DEFINITIONS = [
     {'name': 'ocr-pages', 'class': 'pipeline.ocr_pages.OcrPagesStage'},
-    {'name': 'olm-ocr', 'class': 'pipeline.olm_ocr.OlmOcrStage'},
-    {'name': 'mistral-ocr', 'class': 'pipeline.mistral_ocr.MistralOcrStage'},
-    {'name': 'paddle-ocr', 'class': 'pipeline.paddle_ocr.PaddleOcrStage'},
     {'name': 'label-structure', 'class': 'pipeline.label_structure.LabelStructureStage'},
     {'name': 'extract-toc', 'class': 'pipeline.extract_toc.ExtractTocStage'},
     {'name': 'link-toc', 'class': 'pipeline.link_toc.LinkTocStage'},

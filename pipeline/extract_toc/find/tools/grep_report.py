@@ -65,11 +65,11 @@ KEYWORD_CATEGORIES = {
 
 
 def extract_text_from_page(storage: BookStorage, page_num: int) -> str:
-    """Extract OCR text from olm-ocr stage."""
-    from pipeline.olm_ocr.schemas import OlmOcrPageOutput
+    """Extract OCR text from ocr-pages (olm provider)."""
+    from pipeline.ocr_pages.schemas import OlmOcrPageOutput
 
-    ocr_stage_storage = storage.stage('olm-ocr')
-    page_data = ocr_stage_storage.load_page(page_num, schema=OlmOcrPageOutput)
+    ocr_stage = storage.stage('ocr-pages')
+    page_data = ocr_stage.load_page(page_num, schema=OlmOcrPageOutput, subdir="olm")
     if not page_data:
         raise FileNotFoundError(f"OCR data for page {page_num} not found")
     return page_data.get("text", "")

@@ -25,8 +25,8 @@ from ..schemas.mistral import MistralOcrPageOutput, ImageBBox, PageDimensions
 # TODO: Update if pricing changes - check https://mistral.ai/pricing
 # Base OCR: $1/1000 pages = $0.001
 # Annotations (bboxes): $3/1000 pages = $0.003
-# Total: $0.004 per page (we use annotations for image detection)
-MISTRAL_OCR_COST_PER_PAGE = 0.004  # $0.004 per page
+# Actual cost is much closer to $0.001 per page since not all pages have images
+MISTRAL_OCR_COST_PER_PAGE = 0.0012
 
 
 def encode_image(image_path: Path) -> str:
@@ -130,7 +130,7 @@ class MistralOCRProvider(OCRProvider):
                 execution_time_seconds=time.time() - start,
             )
 
-    def handle_result(self, page_num: int, result: OCRResult, output_dir=None):
+    def handle_result(self, page_num: int, result: OCRResult, subdir: str = None, metrics_prefix: str = ""):
         """Save OCR result to disk and record metrics."""
         # Reconstruct structured objects from metadata
         dimensions = PageDimensions(**result.metadata["dimensions"])
@@ -147,12 +147,12 @@ class MistralOCRProvider(OCRProvider):
             processing_cost=result.cost_usd
         )
 
-        # Save to disk
-        self.stage_storage.save_page(page_num, output.model_dump(), schema=MistralOcrPageOutput)
+        # Save to disk (with subdir for multi-provider stages)
+        self.stage_storage.save_page(page_num, output.model_dump(), schema=MistralOcrPageOutput, subdir=subdir)
 
-        # Record metrics
+        # Record metrics (with prefix for phase-specific tracking)
         self.stage_storage.metrics_manager.record(
-            key=f"page_{page_num:04d}",
+            key=f"{metrics_prefix}page_{page_num:04d}",
             cost_usd=result.cost_usd,
             time_seconds=result.execution_time_seconds,
             custom_metrics={

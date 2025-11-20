@@ -262,7 +262,7 @@ class TocFinderTools(AgentTools):
             # Load Mistral OCR
             mistral_ocr = None
             try:
-                mistral_data = self.storage.stage('mistral-ocr').load_page(page_num)
+                mistral_data = self.storage.stage('ocr-pages').load_page(page_num, subdir="mistral")
                 mistral_ocr = mistral_data.get('markdown', '')
             except FileNotFoundError:
                 pass
@@ -270,14 +270,14 @@ class TocFinderTools(AgentTools):
             # Load OLM OCR
             olm_ocr = None
             try:
-                olm_data = self.storage.stage('olm-ocr').load_page(page_num)
+                olm_data = self.storage.stage('ocr-pages').load_page(page_num, subdir="olm")
                 olm_ocr = olm_data.get('text', '') or olm_data.get('markdown', '')
             except FileNotFoundError:
                 pass
 
             if not mistral_ocr and not olm_ocr:
                 return json.dumps({
-                    "error": f"No OCR data found for page {page_num}. Ensure mistral-ocr or olm-ocr stages have run."
+                    "error": f"No OCR data found for page {page_num}. Ensure ocr-pages stage has run."
                 })
 
             response = {

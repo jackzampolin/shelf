@@ -2,20 +2,22 @@ from typing import List, Dict, Optional, Any
 import re
 
 from infra.pipeline.storage.book_storage import BookStorage
+from infra.pipeline.logger import PipelineLogger
 
 
-def list_boundaries(
+def get_heading_pages(
     storage: BookStorage,
     start_page: Optional[int] = None,
-    end_page: Optional[int] = None
+    end_page: Optional[int] = None,
+    logger: Optional[PipelineLogger] = None
 ) -> List[Dict]:
     """
-    List boundary pages from label-structure with heading previews.
+    Get pages with chapter-level headings from label-structure.
 
-    Returns ALL boundaries by default (only 50-200 items, easy to scan).
+    Returns ALL pages with headings by default (typically 50-200 pages).
     Optional range filtering for targeted searches.
 
-    Filters out TOC pages - they are not chapter boundaries.
+    Filters out TOC pages - they are not chapter pages.
 
     Args:
         storage: BookStorage instance
@@ -23,12 +25,12 @@ def list_boundaries(
         end_page: Optional end of page range
 
     Returns:
-        List of {scan_page, heading_preview, boundary_confidence}
+        List of {scan_page, heading: {text, level}, page_number: {number, confidence}, confidence}
         Sorted by scan_page ascending
     """
     from pipeline.label_structure.merge import get_merged_page
 
-    # Get TOC page range to exclude from boundaries
+    # Get TOC page range to exclude from results
     toc_pages = set()
     extract_toc_stage = storage.stage("extract-toc")
     finder_result_path = extract_toc_stage.output_dir / "finder_result.json"
@@ -45,7 +47,7 @@ def list_boundaries(
     metadata = storage.load_metadata()
     total_pages = metadata.get('total_pages', 0)
 
-    boundaries = []
+    heading_pages = []
 
     for page_num in range(1, total_pages + 1):
         # Skip TOC pages
@@ -72,57 +74,81 @@ def list_boundaries(
             if not chapter_headings:
                 continue
 
-            # Use first heading as preview
-            heading_preview = chapter_headings[0].text
+            # Use first heading
+            first_heading = chapter_headings[0]
 
-            # Calculate confidence based on heading level and chapter marker
-            # Level 1 = high confidence boundary, Level 2 = medium confidence
-            if chapter_headings[0].level == 1:
+            # Calculate confidence based on heading level
+            # Level 1 = high confidence, Level 2 = medium confidence
+            if first_heading.level == 1:
                 confidence = 0.9
             else:
                 confidence = 0.7
 
-            # Boost confidence if gap healing confirmed this as a chapter marker
-            if page_data.chapter_marker:
-                confidence = min(1.0, confidence + 0.1)
+            # Build heading data
+            heading_data = {
+                "text": first_heading.text,
+                "level": first_heading.level,
+            }
 
-            boundaries.append({
+            # Build page_number data (optional)
+            page_number_data = None
+            if page_data.page_number.present and page_data.page_number.number:
+                page_number_data = {
+                    "number": page_data.page_number.number,
+                    "confidence": page_data.page_number.confidence,
+                }
+
+            heading_pages.append({
                 "scan_page": page_num,
-                "heading_preview": heading_preview,
-                "boundary_confidence": confidence,
+                "heading": heading_data,
+                "page_number": page_number_data,
+                "confidence": confidence,
             })
 
         except FileNotFoundError:
-            # label-structure data doesn't exist for this page yet
+            # label-structure data doesn't exist for this page yet - expected
             continue
-        except Exception:
-            # Other errors - skip page
+        except (AttributeError, KeyError) as e:
+            # Data structure issue - log for debugging but continue
+            if logger:
+                logger.warning(
+                    f"Malformed label-structure data for page {page_num}: {e}"
+                )
             continue
+        except Exception as e:
+            # Unexpected error - log with high severity and fail fast
+            if logger:
+                logger.error(
+                    f"Unexpected error processing page {page_num} in get_heading_pages: {e}",
+                    exc_info=True
+                )
+            raise
 
     # Sort by page number
-    boundaries.sort(key=lambda x: x["scan_page"])
+    heading_pages.sort(key=lambda x: x["scan_page"])
 
-    return boundaries
+    return heading_pages
 
 
 def grep_text(
     query: str,
-    storage: BookStorage
+    storage: BookStorage,
+    logger: Optional[PipelineLogger] = None
 ) -> List[Dict]:
     """
     Search entire book's OCR for text pattern (creates "heatmap").
 
     Key insight: Running headers create DENSITY. Dense regions show chapter extent,
-    first page in dense region is the boundary.
+    first page in dense region is where the chapter starts.
 
     Example:
         grep_text("Chapter XIII")
         → Page 44: 1 match (previous chapter mentions next)
-        → Page 45: 4 matches (BOUNDARY + running headers start)
+        → Page 45: 4 matches (CHAPTER START + running headers begin)
         → Pages 46-62: 3-4 matches each (running headers continue)
         → Page 63: 1 match (next chapter starts)
 
-        Agent sees: Dense region 45-62, boundary at page 45!
+        Agent sees: Dense region 45-62, chapter starts at page 45!
 
     Filters out TOC pages - chapter titles in the TOC are not the actual chapters.
 
@@ -160,7 +186,7 @@ def grep_text(
         if page_num in toc_pages:
             continue
         try:
-            ocr_text = get_page_ocr(page_num, storage)
+            ocr_text = get_page_ocr(page_num, storage, logger)
 
             # Try both exact and fuzzy matching
             exact_matches = []
@@ -193,9 +219,23 @@ def grep_text(
                 })
 
         except FileNotFoundError:
+            # OCR data doesn't exist for this page - expected
             continue
-        except Exception:
+        except (AttributeError, TypeError) as e:
+            # Data structure issue (e.g., ocr_text is not a string) - log but continue
+            if logger:
+                logger.warning(
+                    f"Malformed OCR data for page {page_num} in grep_text: {e}"
+                )
             continue
+        except Exception as e:
+            # Unexpected error - log with high severity and fail fast
+            if logger:
+                logger.error(
+                    f"Unexpected error processing page {page_num} in grep_text: {e}",
+                    exc_info=True
+                )
+            raise
 
     # Sort by page number
     results.sort(key=lambda x: x["scan_page"])
@@ -205,7 +245,8 @@ def grep_text(
 
 def get_page_ocr(
     page_num: int,
-    storage: BookStorage
+    storage: BookStorage,
+    logger: Optional[PipelineLogger] = None
 ) -> str:
     """
     Get full OCR text for a specific page.
@@ -213,16 +254,21 @@ def get_page_ocr(
     Args:
         page_num: Scan page number
         storage: BookStorage instance
+        logger: Optional logger for warnings
 
     Returns:
-        Full OCR text from olm-ocr stage
+        Full OCR text from olm-ocr stage, or empty string if not found
     """
-    from pipeline.olm_ocr.schemas import OlmOcrPageOutput
+    from pipeline.ocr_pages.schemas import OlmOcrPageOutput
 
-    ocr_pages_stage = storage.stage("olm-ocr")
+    ocr_stage = storage.stage("ocr-pages")
 
     try:
-        ocr_data = ocr_pages_stage.load_page(page_num, schema=OlmOcrPageOutput)
+        ocr_data = ocr_stage.load_page(page_num, schema=OlmOcrPageOutput, subdir="olm")
         return ocr_data.get('text', '')
     except FileNotFoundError:
+        if logger:
+            logger.warning(
+                f"OCR data missing for page {page_num} - returning empty text"
+            )
         return ""

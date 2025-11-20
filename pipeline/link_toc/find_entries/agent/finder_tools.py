@@ -1,17 +1,19 @@
 from typing import Dict, List, Optional
 
 from infra.pipeline.storage.book_storage import BookStorage
+from infra.pipeline.logger import PipelineLogger
 from infra.llm.agent import AgentTools
 
-from .tools import list_boundaries, grep_text, get_page_ocr
+from .tools import get_heading_pages, grep_text, get_page_ocr
 
 
 class TocEntryFinderTools(AgentTools):
 
-    def __init__(self, storage: BookStorage, toc_entry: Dict, total_pages: int):
+    def __init__(self, storage: BookStorage, toc_entry: Dict, total_pages: int, logger: Optional[PipelineLogger] = None):
         self.storage = storage
         self.toc_entry = toc_entry
         self.total_pages = total_pages
+        self.logger = logger
         self._pending_result: Optional[Dict] = None
         self._candidates_checked: List[int] = []
         self._current_page_num: Optional[int] = None
@@ -24,18 +26,18 @@ class TocEntryFinderTools(AgentTools):
             {
                 "type": "function",
                 "function": {
-                    "name": "list_boundaries",
-                    "description": "List boundary pages from label-structure with heading previews. Returns ALL boundaries by default (50-200 items). Use start_page/end_page to narrow search if needed (calculate from total_pages context).",
+                    "name": "get_heading_pages",
+                    "description": "Get pages with chapter-level headings from label-structure. Returns ALL pages with headings by default (50-200 items). Use start_page/end_page to narrow search if needed. Each page includes heading text, level, and actual page number if available.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "start_page": {
                                 "type": ["integer", "null"],
-                                "description": "Optional: Start of page range to filter boundaries"
+                                "description": "Optional: Start of page range to filter"
                             },
                             "end_page": {
                                 "type": ["integer", "null"],
-                                "description": "Optional: End of page range to filter boundaries"
+                                "description": "Optional: End of page range to filter"
                             }
                         },
                         "required": []
@@ -101,34 +103,20 @@ class TocEntryFinderTools(AgentTools):
                 "type": "function",
                 "function": {
                     "name": "write_result",
-                    "description": "Submit final search result and complete the task. Call this when you've found the ToC entry or exhausted all search strategies.",
+                    "description": "Submit final search result. Call this when you've found the ToC entry or exhausted all search strategies.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "found": {
-                                "type": "boolean",
-                                "description": "Did you find the ToC entry?"
-                            },
                             "scan_page": {
                                 "type": ["integer", "null"],
                                 "description": "Scan page number where found (null if not found)"
                             },
-                            "confidence": {
-                                "type": "number",
-                                "description": "Confidence in the match (0.0-1.0)",
-                                "minimum": 0.0,
-                                "maximum": 1.0
-                            },
-                            "search_strategy": {
-                                "type": "string",
-                                "description": "Strategy used: 'boundary_match' | 'grep_crosscheck' | 'visual_verify' | 'not_found'"
-                            },
                             "reasoning": {
                                 "type": "string",
-                                "description": "Brief explanation of how you found it or why you couldn't"
+                                "description": "Explanation of how you found it or why you couldn't. Be specific about which tools you used and what you saw."
                             }
                         },
-                        "required": ["found", "scan_page", "confidence", "search_strategy", "reasoning"]
+                        "required": ["scan_page", "reasoning"]
                     }
                 }
             }
@@ -138,22 +126,22 @@ class TocEntryFinderTools(AgentTools):
         """Execute a tool and return result as JSON string."""
         import json
 
-        if tool_name == "list_boundaries":
+        if tool_name == "get_heading_pages":
             start_page = tool_input.get("start_page")
             end_page = tool_input.get("end_page")
-            results = list_boundaries(self.storage, start_page, end_page)
+            results = get_heading_pages(self.storage, start_page, end_page, self.logger)
             return json.dumps(results, indent=2)
 
         elif tool_name == "grep_text":
             query = tool_input["query"]
-            results = grep_text(query, self.storage)
+            results = grep_text(query, self.storage, self.logger)
             return json.dumps(results, indent=2)
 
         elif tool_name == "get_page_ocr":
             page_num = tool_input["page_num"]
             if page_num not in self._candidates_checked:
                 self._candidates_checked.append(page_num)
-            ocr_text = get_page_ocr(page_num, self.storage)
+            ocr_text = get_page_ocr(page_num, self.storage, self.logger)
             # Truncate for context window
             truncated = ocr_text[:2000] if len(ocr_text) > 2000 else ocr_text
             return json.dumps({
@@ -170,10 +158,7 @@ class TocEntryFinderTools(AgentTools):
         elif tool_name == "write_result":
             # Store result for retrieval
             self._pending_result = {
-                "found": tool_input["found"],
                 "scan_page": tool_input["scan_page"],
-                "confidence": tool_input["confidence"],
-                "search_strategy": tool_input["search_strategy"],
                 "reasoning": tool_input["reasoning"],
             }
             return json.dumps({"status": "success", "message": "Result recorded"})

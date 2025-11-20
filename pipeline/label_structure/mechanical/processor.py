@@ -21,9 +21,10 @@ def process_mechanical_extraction(
 
     for page_num in remaining_pages:
         try:
-            mistral_data = tracker.storage.stage("mistral-ocr").load_page(page_num)
-            olm_data = tracker.storage.stage("olm-ocr").load_page(page_num)
-            paddle_data = tracker.storage.stage("paddle-ocr").load_page(page_num)
+            ocr_stage = tracker.storage.stage("ocr-pages")
+            mistral_data = ocr_stage.load_page(page_num, subdir="mistral")
+            olm_data = ocr_stage.load_page(page_num, subdir="olm")
+            paddle_data = ocr_stage.load_page(page_num, subdir="paddle")
 
             mistral_markdown = mistral_data.get("markdown", "")
             olm_text = olm_data.get("text", "")

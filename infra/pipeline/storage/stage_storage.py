@@ -36,18 +36,24 @@ class StageStorage:
         page_num: int,
         data: Dict[str, Any],
         extension: str = "json",
-        schema: Optional[Type[BaseModel]] = None
+        schema: Optional[Type[BaseModel]] = None,
+        subdir: Optional[str] = None
     ):
         filename = f"page_{page_num:04d}.{extension}"
+        if subdir:
+            filename = f"{subdir}/{filename}"
         self.save_file(filename, data, schema=schema)
 
     def load_page(
         self,
         page_num: int,
         extension: str = "json",
-        schema: Optional[Type[BaseModel]] = None
+        schema: Optional[Type[BaseModel]] = None,
+        subdir: Optional[str] = None
     ) -> Dict[str, Any]:
         filename = f"page_{page_num:04d}.{extension}"
+        if subdir:
+            filename = f"{subdir}/{filename}"
         return self.load_file(filename, schema=schema)
 
     def save_file(

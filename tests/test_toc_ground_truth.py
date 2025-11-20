@@ -24,7 +24,7 @@ def all_ground_truth_books():
 def test_ground_truth_loads():
     """Test that ground truth data loads correctly."""
     books = load_all_books()
-    assert len(books) == 5, f"Expected 5 books, found {len(books)}"
+    assert len(books) >= 5, f"Expected at least 5 books, found {len(books)}"
 
     for book in books:
         assert book.scan_id
@@ -47,23 +47,22 @@ def test_ordering_correctness(all_ground_truth_books):
 def test_structure_completeness(all_ground_truth_books):
     """Test that all ground truth books have complete structure."""
     for book in all_ground_truth_books:
-        # Check find data exists
-        assert (book.find_dir / "expected_result.json").exists()
-        assert (book.find_dir / "ocr" / "paddle").exists()
-        assert (book.find_dir / "source").exists()
+        # Check standard book structure
+        assert (book.gt_dir / "metadata.json").exists()
+        assert (book.gt_dir / "source").exists()
+        assert (book.gt_dir / "ocr-pages" / "paddle").exists()
+        assert (book.gt_dir / "ocr-pages" / "mistral").exists()
+        assert (book.gt_dir / "ocr-pages" / "olm").exists()
 
-        # Check extract data exists
-        assert (book.extract_dir / "expected_toc.json").exists()
-        assert (book.extract_dir / "ocr" / "paddle").exists()
-        assert (book.extract_dir / "source").exists()
+        # Check expected outputs
+        assert (book.expected_dir / "find" / "finder_result.json").exists()
+        assert (book.expected_dir / "finalize" / "toc.json").exists()
 
-        # Check ToC pages exist
-        toc_start = book.toc_page_range["start_page"]
-        toc_end = book.toc_page_range["end_page"]
-
-        for page in range(toc_start, toc_end + 1):
+        # Check first 50 pages exist (for find phase)
+        for page in range(1, 51):
             page_str = f"{page:04d}"
-            assert (book.extract_dir / "ocr" / "paddle" / f"page_{page_str}.json").exists(), \
+            # At least paddle OCR should exist
+            assert (book.gt_dir / "ocr-pages" / "paddle" / f"page_{page_str}.json").exists(), \
                 f"{book.scan_id}: Missing paddle OCR for page {page}"
 
 

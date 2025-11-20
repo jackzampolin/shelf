@@ -113,6 +113,34 @@
         cursor: not-allowed;
     }
 
+    .toc-entry.source-discovered {
+        background-color: #f0f9ff;
+        border-left-color: #38bdf8;
+    }
+
+    .toc-entry.source-discovered:hover {
+        background-color: #e0f2fe;
+    }
+
+    .toc-entry.source-discovered.active {
+        background-color: #bae6fd;
+        border-left-color: #0284c7;
+    }
+
+    .source-badge {
+        display: inline-block;
+        padding: 0.1rem 0.4rem;
+        border-radius: 3px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        margin-left: 0.5rem;
+    }
+
+    .source-badge.discovered {
+        background: #dbeafe;
+        color: #1e40af;
+    }
+
     .entry-content {
         display: flex;
         flex-direction: column;
@@ -256,6 +284,102 @@
         padding: 2rem;
         color: #666;
     }
+
+    /* Expandable sections */
+    .expandable-section {
+        margin: 2rem 0;
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .expandable-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.5rem;
+        background: #f9f9f9;
+        cursor: pointer;
+        user-select: none;
+        transition: background-color 0.2s;
+    }
+
+    .expandable-header:hover {
+        background: #f0f0f0;
+    }
+
+    .expandable-header h3 {
+        margin: 0;
+        font-size: 1rem;
+        color: #333;
+    }
+
+    .expandable-toggle {
+        font-size: 1.2rem;
+        color: #666;
+        transition: transform 0.3s;
+    }
+
+    .expandable-section.expanded .expandable-toggle {
+        transform: rotate(180deg);
+    }
+
+    .expandable-content {
+        padding: 1.5rem;
+        display: none;
+        border-top: 1px solid #e0e0e0;
+    }
+
+    .expandable-section.expanded .expandable-content {
+        display: block;
+    }
+
+    .pattern-info {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .pattern-row {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .pattern-row strong {
+        min-width: 160px;
+        color: #666;
+    }
+
+    .evaluation-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .evaluation-table th {
+        text-align: left;
+        padding: 0.5rem;
+        background: #f5f5f5;
+        border-bottom: 2px solid #e0e0e0;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+
+    .evaluation-table td {
+        padding: 0.5rem;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 0.9rem;
+    }
+
+    .decision-included {
+        color: #059669;
+        font-weight: 600;
+    }
+
+    .decision-excluded {
+        color: #dc2626;
+        font-weight: 600;
+    }
 </style>
 {% endblock %}
 
@@ -286,23 +410,121 @@
 
     <!-- Metadata Summary -->
     <div class="link-toc-metadata">
-        <div class="metadata-item">
-            <strong>Total Entries:</strong>
-            <span class="value">{{ toc_data.metadata.total_entries }}</span>
-        </div>
-        <div class="metadata-item">
-            <strong>Linked:</strong>
-            <span class="value success">{{ toc_data.metadata.linked_entries }}</span>
-        </div>
-        <div class="metadata-item">
-            <strong>Not Found:</strong>
-            <span class="value warning">{{ toc_data.metadata.unlinked_entries }}</span>
-        </div>
-        <div class="metadata-item">
-            <strong>Avg Confidence:</strong>
-            <span class="value">{{ "%.0f"|format(toc_data.metadata.avg_link_confidence * 100) }}%</span>
-        </div>
+        {% if toc_data.is_enriched %}
+            <!-- Enriched ToC metadata -->
+            <div class="metadata-item">
+                <strong>📖 Total Entries:</strong>
+                <span class="value">{{ toc_data.metadata.total_entries }}</span>
+            </div>
+            <div class="metadata-item">
+                <strong>📑 Original ToC:</strong>
+                <span class="value">{{ toc_data.metadata.original_toc_count }}</span>
+            </div>
+            <div class="metadata-item">
+                <strong>✨ Discovered:</strong>
+                <span class="value success">{{ toc_data.metadata.discovered_count }}</span>
+            </div>
+            <div class="metadata-item">
+                <strong>🎯 Pattern Confidence:</strong>
+                <span class="value">{{ "%.0f"|format(toc_data.metadata.pattern_confidence * 100) }}%</span>
+            </div>
+        {% else %}
+            <!-- Linked ToC metadata (fallback) -->
+            <div class="metadata-item">
+                <strong>Total Entries:</strong>
+                <span class="value">{{ toc_data.metadata.total_entries }}</span>
+            </div>
+            <div class="metadata-item">
+                <strong>Linked:</strong>
+                <span class="value success">{{ toc_data.metadata.linked_entries }}</span>
+            </div>
+            <div class="metadata-item">
+                <strong>Not Found:</strong>
+                <span class="value warning">{{ toc_data.metadata.unlinked_entries }}</span>
+            </div>
+        {% endif %}
     </div>
+
+    <!-- Expandable Sections (only if enriched ToC) -->
+    {% if toc_data.is_enriched %}
+
+        <!-- Pattern Analysis Section -->
+        {% if toc_data.pattern_analysis %}
+        <div class="expandable-section" id="pattern-section">
+            <div class="expandable-header" onclick="toggleSection('pattern-section')">
+                <h3>🔍 Pattern Analysis</h3>
+                <span class="expandable-toggle">▼</span>
+            </div>
+            <div class="expandable-content">
+                <div class="pattern-info">
+                    <div class="pattern-row">
+                        <strong>Pattern Description:</strong>
+                        <span>{{ toc_data.pattern_analysis.pattern_description }}</span>
+                    </div>
+                    <div class="pattern-row">
+                        <strong>Relationship:</strong>
+                        <span>{{ toc_data.pattern_analysis.expected_relationship }}</span>
+                    </div>
+                    <div class="pattern-row">
+                        <strong>Body Range:</strong>
+                        <span>Pages {{ toc_data.pattern_analysis.body_range[0] }} - {{ toc_data.pattern_analysis.body_range[1] }}</span>
+                    </div>
+                    <div class="pattern-row">
+                        <strong>Candidate Headings:</strong>
+                        <span>{{ toc_data.pattern_analysis.candidate_headings|length }} discovered</span>
+                    </div>
+                    <div class="pattern-row">
+                        <strong>Confidence:</strong>
+                        <span>{{ "%.0f"|format(toc_data.pattern_analysis.confidence * 100) }}%</span>
+                    </div>
+                    <div class="pattern-row">
+                        <strong>Reasoning:</strong>
+                        <span>{{ toc_data.pattern_analysis.reasoning }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Evaluation Details Section -->
+        {% if toc_data.evaluation_summary %}
+        <div class="expandable-section" id="evaluation-section">
+            <div class="expandable-header" onclick="toggleSection('evaluation-section')">
+                <h3>✅ Evaluation Details ({{ toc_data.evaluation_summary.included_count }}/{{ toc_data.evaluation_summary.total_evaluated }} included)</h3>
+                <span class="expandable-toggle">▼</span>
+            </div>
+            <div class="expandable-content">
+                <table class="evaluation-table">
+                    <thead>
+                        <tr>
+                            <th>Page</th>
+                            <th>Heading</th>
+                            <th>Decision</th>
+                            <th>Reasoning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for decision in toc_data.evaluation_summary.decisions %}
+                        <tr>
+                            <td>{{ decision.scan_page }}</td>
+                            <td>{{ decision.heading_text }}</td>
+                            <td>
+                                {% if decision.include %}
+                                    <span class="decision-included">✓ Included</span>
+                                {% else %}
+                                    <span class="decision-excluded">✗ Excluded</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ decision.reasoning }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+    {% endif %}
 
     <!-- Two-column layout: TOC sidebar left, page viewer right -->
     <div class="link-toc-layout">
@@ -314,12 +536,11 @@
             {% if entries %}
                 <div class="toc-entries">
                     {% for entry in entries %}
-                    <div class="toc-entry level-{{ entry.level }} {% if not entry.scan_page %}not-found{% endif %}"
+                    <div class="toc-entry level-{{ entry.level }} {% if entry.source == 'discovered' %}source-discovered{% endif %} {% if not entry.scan_page %}not-found{% endif %}"
                          {% if entry.scan_page %}
                          data-scan-page="{{ entry.scan_page }}"
                          data-title="{{ entry.title }}"
                          data-printed-page="{{ entry.printed_page_number or 'N/A' }}"
-                         data-confidence="{{ entry.link_confidence }}"
                          onclick="showPage(this)"
                          {% endif %}>
                         <div class="entry-content">
@@ -328,6 +549,9 @@
                                     <span class="entry-number">{{ entry.entry_number }}</span>
                                 {% endif %}
                                 <span class="entry-title">{{ entry.title }}</span>
+                                {% if entry.source == 'discovered' %}
+                                    <span class="source-badge discovered">✨ Discovered</span>
+                                {% endif %}
                             </div>
                             <div class="entry-meta">
                                 {% if entry.printed_page_number %}
@@ -335,13 +559,6 @@
                                 {% endif %}
                                 {% if entry.scan_page %}
                                     <span class="scan-page">Scan: p.{{ entry.scan_page }}</span>
-                                    {% if entry.link_confidence >= 0.9 %}
-                                        <span class="confidence-badge confidence-high">{{ "%.0f"|format(entry.link_confidence * 100) }}%</span>
-                                    {% elif entry.link_confidence >= 0.7 %}
-                                        <span class="confidence-badge confidence-med">{{ "%.0f"|format(entry.link_confidence * 100) }}%</span>
-                                    {% else %}
-                                        <span class="confidence-badge confidence-low">{{ "%.0f"|format(entry.link_confidence * 100) }}%</span>
-                                    {% endif %}
                                 {% else %}
                                     <span class="confidence-badge not-found-badge">Not Found</span>
                                 {% endif %}
@@ -369,6 +586,13 @@
 </div>
 
 <script>
+function toggleSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (section) {
+        section.classList.toggle('expanded');
+    }
+}
+
 function showPage(element) {
     // Remove active class from all entries
     document.querySelectorAll('.toc-entry').forEach(entry => {
@@ -382,19 +606,10 @@ function showPage(element) {
     const scanPage = element.getAttribute('data-scan-page');
     const title = element.getAttribute('data-title');
     const printedPage = element.getAttribute('data-printed-page');
-    const confidence = parseFloat(element.getAttribute('data-confidence'));
 
     // Build page viewer content using safe DOM methods
     const pageContainer = document.getElementById('page-container');
     pageContainer.textContent = ''; // Clear existing content
-
-    const confidencePercent = Math.round(confidence * 100);
-    let confidenceClass = 'confidence-low';
-    if (confidence >= 0.9) {
-        confidenceClass = 'confidence-high';
-    } else if (confidence >= 0.7) {
-        confidenceClass = 'confidence-med';
-    }
 
     // Create page image container
     const container = document.createElement('div');
@@ -419,16 +634,7 @@ function showPage(element) {
     const printedPageLabel = document.createElement('strong');
     printedPageLabel.textContent = 'Printed Page: ';
     entryDetails.appendChild(printedPageLabel);
-    entryDetails.appendChild(document.createTextNode(printedPage + ' | '));
-
-    const confidenceLabel = document.createElement('strong');
-    confidenceLabel.textContent = 'Confidence: ';
-    entryDetails.appendChild(confidenceLabel);
-
-    const confidenceBadge = document.createElement('span');
-    confidenceBadge.className = 'confidence-badge ' + confidenceClass;
-    confidenceBadge.textContent = confidencePercent + '%';
-    entryDetails.appendChild(confidenceBadge);
+    entryDetails.appendChild(document.createTextNode(printedPage));
 
     pageInfo.appendChild(entryDetails);
     container.appendChild(pageInfo);

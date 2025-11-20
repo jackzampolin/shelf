@@ -137,11 +137,13 @@ def extract_toc_view(scan_id: str):
 @stage_bp.route('/stage/<scan_id>/link-toc')
 def link_toc_view(scan_id: str):
     """
-    Link-toc stage detail view.
+    Link-toc stage detail view with progressive enhancement.
 
     Shows:
-    - Linked TOC entries on the left (clickable sidebar)
-    - Page image on the right (when entry is clicked)
+    - Enriched ToC (Phase 4) if available, or linked ToC (Phase 1) as fallback
+    - Discovered headings highlighted with "✨ Discovered" badge
+    - Expandable sections: Pattern Analysis (Phase 2) and Evaluation Details (Phase 3)
+    - Clickable ToC sidebar with page viewer on the right
     """
     library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
 

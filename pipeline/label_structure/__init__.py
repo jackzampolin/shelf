@@ -16,7 +16,7 @@ from .schemas import (
 
 class LabelStructureStage(BaseStage):
     name = "label-structure"
-    dependencies = ["mistral-ocr", "olm-ocr", "paddle-ocr"]
+    dependencies = ["ocr-pages"]
 
     @classmethod
     def default_kwargs(cls, **overrides):

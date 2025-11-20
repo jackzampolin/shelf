@@ -31,30 +31,36 @@ Enable rapid iteration on ToC extraction prompts by:
 
 ## Structure
 
+Each book is a **valid BookStorage directory** that can be used directly with the pipeline:
+
 ```
 toc_ground_truth/
   {book-id}/                    # e.g., fiery-peace
 
-    # FIND phase ground truth
-    find/
-      expected_result.json      # Ground truth: finder_result.json (ToC page range)
-      ocr/                      # First 50 pages OCR (all 3 providers)
-        paddle/page_*.json
-        mistral/page_*.json
-        olm/page_*.json
-      source/page_*.png         # First 50 page images
+    # Standard book directory structure
+    metadata.json               # Book metadata
+    source/
+      page_0001.png             # Source images (pages 1-50)
+      ...
+      page_0050.png
+    ocr-pages/
+      paddle/page_*.json        # All OCR providers (pages 1-50)
+      mistral/page_*.json
+      olm/page_*.json
 
-    # EXTRACT phase ground truth
-    extract/
-      expected_toc.json         # Ground truth: toc.json (extracted ToC)
-      ocr/                      # ToC pages only (all 3 providers)
-        paddle/page_*.json
-        mistral/page_*.json
-        olm/page_*.json
-      source/page_*.png         # ToC page images only
-
-    metadata.json               # Book info, ToC range, notes
+    # Expected outputs for validation
+    .expected/
+      find/
+        finder_result.json      # Expected find phase output
+      finalize/
+        toc.json                # Expected final ToC (ground truth)
 ```
+
+**Key Design:**
+- No duplication: OCR files exist once in proper location
+- Tests real code: Uses actual BookStorage API
+- Self-contained: Each book is runnable through extract-toc stage
+- Phase outputs in `.expected/` for comparison
 
 ## Books Included
 

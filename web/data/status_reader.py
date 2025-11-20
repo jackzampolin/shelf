@@ -18,14 +18,13 @@ def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) ->
     Check if a stage is completed based on its specific completion markers.
 
     Each stage has different completion criteria:
-    - ocr-pages, olm-ocr, mistral-ocr, paddle-ocr: All source pages have corresponding output files
+    - ocr-pages: All source pages have outputs in all three provider subdirs
     - extract-toc: toc.json exists
-    - label-pages: report.csv exists
     - label-structure: report.csv exists
     """
-    # OCR stages (old and new names)
-    if stage_name in ['ocr-pages', 'olm-ocr', 'mistral-ocr', 'paddle-ocr']:
-        # Check if all source pages have outputs
+    if stage_name == 'ocr-pages':
+        # New unified OCR stage with subdirectories (mistral/, olm/, paddle/)
+        # Complete when all three providers have processed all pages
         source_stage = storage.stage("source")
         source_pages = source_stage.list_pages(extension="png")
         total_pages = len(source_pages)
@@ -33,22 +32,29 @@ def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) ->
         if total_pages == 0:
             return False
 
-        # Count completed pages
-        completed = 0
-        for page_num in range(1, total_pages + 1):
-            page_path = stage_storage.output_dir / f"page_{page_num:04d}.json"
-            if page_path.exists():
-                completed += 1
+        # Check all three provider subdirectories
+        for provider in ['mistral', 'olm', 'paddle']:
+            provider_dir = stage_storage.output_dir / provider
+            if not provider_dir.exists():
+                return False
 
-        return completed == total_pages
+            # Count completed pages in this provider
+            completed = 0
+            for page_num in range(1, total_pages + 1):
+                page_path = provider_dir / f"page_{page_num:04d}.json"
+                if page_path.exists():
+                    completed += 1
+
+            # If any provider is incomplete, stage is incomplete
+            if completed != total_pages:
+                return False
+
+        # All three providers complete
+        return True
 
     elif stage_name == 'extract-toc':
         # Complete when toc.json exists
         return (stage_storage.output_dir / 'toc.json').exists()
-
-    elif stage_name == 'label-pages':
-        # Complete when report.csv exists
-        return (stage_storage.output_dir / 'report.csv').exists()
 
     elif stage_name == 'label-structure':
         # Complete when report.csv exists

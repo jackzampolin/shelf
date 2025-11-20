@@ -28,13 +28,14 @@ class OCRProvider(ABC):
         pass
 
     @abstractmethod
-    def handle_result(self, page_num: int, result: OCRResult, output_dir=None):
+    def handle_result(self, page_num: int, result: OCRResult, subdir: str = None, metrics_prefix: str = ""):
         """Handle OCR result - save to disk and record metrics.
 
         Args:
             page_num: Page number being processed
             result: OCR result to handle
-            output_dir: Optional output directory (defaults to stage_storage.output_dir)
+            subdir: Optional subdirectory within stage (e.g., "mistral", "olm", "paddle")
+            metrics_prefix: Prefix for metrics keys (e.g., "mistral_", "olm_", "paddle_")
         """
         pass
 

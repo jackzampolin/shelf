@@ -3,7 +3,7 @@ from typing import Dict
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.llm.agent import AgentConfig, AgentClient
 
-from ..schemas import AgentResult
+from ...schemas import AgentResult
 from .finder_tools import TocEntryFinderTools
 from .prompts import FINDER_SYSTEM_PROMPT, build_finder_user_prompt
 

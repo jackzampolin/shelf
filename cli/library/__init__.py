@@ -2,6 +2,7 @@ from cli.library.add import cmd_add
 from cli.library.list import cmd_list
 from cli.library.stats import cmd_stats
 from cli.library.delete import cmd_delete
+from cli.library.cleanup import cmd_cleanup
 
 
 def setup_parser(subparsers):
@@ -28,5 +29,9 @@ def setup_parser(subparsers):
     delete_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation')
     delete_parser.set_defaults(func=cmd_delete)
 
+    cleanup_parser = library_subparsers.add_parser('cleanup', help='Clean up deprecated stage directories')
+    cleanup_parser.add_argument('--dry-run', action='store_true', help='Preview what would be cleaned without making changes')
+    cleanup_parser.set_defaults(func=cmd_cleanup)
 
-__all__ = ['cmd_add', 'cmd_list', 'cmd_stats', 'cmd_delete', 'setup_parser']
+
+__all__ = ['cmd_add', 'cmd_list', 'cmd_stats', 'cmd_delete', 'cmd_cleanup', 'setup_parser']
