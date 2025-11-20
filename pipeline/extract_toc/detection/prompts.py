@@ -32,6 +32,18 @@ Level assignment should be semantically coherent:
 - Level 2: Subdivisions (chapters under parts, sections under chapters)
 - Level 3: Fine details (subsections, appendices)
 
+**SPECIAL RULE: Endmatter is Always Level 1**
+Back matter sections default to Level 1 regardless of visual appearance:
+- Notes, Footnotes, Endnotes
+- Bibliography, References, Sources
+- Index, Indices
+- Appendix, Appendices (when at end)
+- Acknowledgments, Credits
+- Glossary, Abbreviations
+
+Rationale: These are structural divisions of the book, not hierarchical content.
+Even if they appear visually similar to nested entries, treat as Level 1.
+
 **WARNING: Common Pitfall - Multi-line Entries**
 
 DO NOT assign different levels to lines within the same entry:
@@ -339,6 +351,13 @@ Pattern: "Part I: Title Text" or "BOOK II: Title Text"
 - title="Title Text" (WITHOUT the prefix)
 - level_name="part" (or "book", etc.)
 
+**NEVER include the prefix in the title field:**
+❌ WRONG: title="Part I: The Beginning"
+✅ CORRECT: entry_number="I", title="The Beginning"
+
+❌ WRONG: title="BOOK III: The Middle Years"
+✅ CORRECT: entry_number="III", title="The Middle Years"
+
 Examples:
 - "Part I: The Beginning" → entry_number="I", title="The Beginning", level_name="part"
 - "BOOK III: The Middle Years" → entry_number="III", title="The Middle Years", level_name="book"
@@ -346,6 +365,12 @@ Examples:
 - "Part One: Early Period" → entry_number="One", title="Early Period", level_name="part"
 - "Volume IV" → entry_number="IV", title="", level_name="volume"
 - "Book II" → entry_number="II", title="", level_name="book"
+
+**How to parse:**
+1. Identify prefix keyword: Part, Book, Unit, Volume, Act
+2. Extract number: Roman (I, II), Arabic (1, 2), or Spelled (One, Two)
+3. Extract title: Everything AFTER the colon (or empty if no colon)
+4. Set level_name based on prefix keyword
 
 CRITICAL: Detect and preserve numbering patterns:
 - Roman numerals: I, II, III, IV, V, etc.

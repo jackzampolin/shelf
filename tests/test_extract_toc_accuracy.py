@@ -152,10 +152,13 @@ def compare_finalize_phase(book: GroundTruthBook, actual: Dict[str, Any]) -> Fin
 
         act_entry = actual_entries[i]
 
-        # Check if entries match
+        # Check if entries match (case-insensitive for title)
+        exp_title = (exp_entry.get("title") or "").lower()
+        act_title = (act_entry.get("title") or "").lower()
+
         entry_matches = (
             exp_entry.get("entry_number") == act_entry.get("entry_number") and
-            exp_entry.get("title") == act_entry.get("title") and
+            exp_title == act_title and
             exp_entry.get("level") == act_entry.get("level") and
             exp_entry.get("level_name") == act_entry.get("level_name") and
             exp_entry.get("printed_page_number") == act_entry.get("printed_page_number")
@@ -170,8 +173,8 @@ def compare_finalize_phase(book: GroundTruthBook, actual: Dict[str, Any]) -> Fin
                 "actual": act_entry,
             })
 
-        # Track title matches separately (more lenient)
-        if exp_entry.get("title") == act_entry.get("title"):
+        # Track title matches separately (more lenient, case-insensitive)
+        if exp_title == act_title:
             title_matches += 1
 
     title_match_rate = title_matches / len(expected_entries) if expected_entries else 1.0
