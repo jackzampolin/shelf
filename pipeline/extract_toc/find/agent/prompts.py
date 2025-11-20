@@ -37,11 +37,11 @@ HIERARCHY IDENTIFICATION:
 • Typical: 1-3 levels
 • Use OCR text to precisely measure indentation and identify patterns
 
-**CRITICAL: Multi-line Entries vs Hierarchy**
+**Distinguishing Multi-line Entries from Hierarchy**
 
-DO NOT confuse multi-line entries with parent/child hierarchy:
+Recognize two different patterns:
 
-SINGLE-LEVEL (total_levels=1):
+SINGLE-LEVEL (total_levels=1) - Multi-line entries:
 ```
 Part I
 The Opening Period
@@ -52,8 +52,9 @@ The Middle Years
 ```
 → These are multi-line entries at the SAME indentation level (flush left)
 → total_levels=1 (flat structure, no nesting)
+→ Line breaks separate components of ONE entry, not different levels
 
-TWO-LEVEL (total_levels=2):
+TWO-LEVEL (total_levels=2) - Hierarchical nesting:
 ```
 Part I: The Ancient Era
   Chapter 1: Origins ... 1      <-- Clearly INDENTED
@@ -63,9 +64,10 @@ Part II: The Medieval Period
 ```
 → Parts are flush left (level 1), chapters are indented (level 2)
 → total_levels=2 (hierarchical structure)
+→ Indentation change indicates parent/child relationship
 
-KEY RULE: Only count as different levels if there's INDENTATION difference.
-Line breaks alone do NOT indicate hierarchy.
+KEY INDICATOR: Different levels show INDENTATION difference.
+Line breaks alone indicate multi-line entries at same level.
 </visual_markers>
 
 <tools_available>
@@ -95,11 +97,47 @@ OBSERVATION FOCUS:
 ✓ Document VISUAL PATTERNS: "Right-aligned page numbers with leader dots"
 ✗ Avoid CONTENT: Don't record chapter titles or specific entry text (extraction stage handles this)
 
-**When Counting Levels**:
-1. Look for INDENTATION changes (left margin position)
-2. Verify with OCR text - measure actual pixel offsets if possible
-3. Distinguish multi-line entries (same indent) from nested entries (different indent)
-4. Common mistake: "Part I\nTitle\nPage#" looks like 3 levels, but it's 1 level (multi-line entry)
+**When Counting Levels** (use TWO-PASS ANALYSIS):
+
+**PASS 1: Semantic Pattern Detection**
+Look for structural markers FIRST, before measuring indentation:
+• "PART I", "PART ONE", "BOOK II", "UNIT 3" = Structural divisions
+• These may appear at SAME indent as children (not visually nested)
+• Example:
+  ```
+  PART I
+
+  1 First Chapter ... 15
+  2 Second Chapter ... 30
+  ```
+  → This is 2 levels (Part + Chapters) even though "PART I" is at same indent
+
+• If you see structural prefixes (Part/Book/Unit), count them as a separate level
+• They often have NO page numbers (parent entries)
+• May use Roman numerals (I, II, III) or spelled out (One, Two, Three)
+
+**PASS 2: Visual Hierarchy Verification**
+After identifying semantic structure, verify with indentation:
+1. Measure INDENTATION changes (left margin position)
+2. Use OCR text to measure actual pixel offsets
+3. Recognize OCR artifacts - slight variations (2-3 spaces) are typically noise, not hierarchy
+4. Confirm multi-line entries (same indent) vs nested entries (different indent)
+5. Example: "Part I\nTitle\nPage#" at same indent = 1 level (multi-line entry)
+
+**Handling Indentation Variations**
+OCR can introduce slight spacing inconsistencies:
+• Small variations (2-3 spaces difference) = Likely same level (OCR artifact)
+• Significant differences (20+ pixels) = Different levels (real indentation)
+• When uncertain, trust SEMANTIC patterns (Part/Chapter markers) over small spacing differences
+
+**Numbering Pattern Detection**
+When documenting level_patterns, detect numbering schemes:
+• "PART I", "PART II", "PART III" → numbering="Roman numerals (I-III)"
+• "Part One", "Part Two" → numbering="Spelled out (One-Three)"
+• "Chapter 1", "Chapter 2" → numbering="Arabic (1-15)"
+• No numbers → numbering=null
+
+Even if structural marker is on separate line with no page number, detect its numbering pattern!
 
 Be efficient: grep narrows candidates, stop when confident about ToC range and structure.
 </strategy>
@@ -188,6 +226,39 @@ Flat structure with multi-line entries:
       "1": {"visual": "Flush left, multi-line entries with page numbers on separate lines", "numbering": "Roman numerals (I-V)", "has_page_numbers": true, "semantic_type": "part"}
     },
     "consistency_notes": ["Multi-line format: 'Part I' on one line, title on next, page number on third line - all flush left"]
+  }
+}
+
+2-level with structural markers at same indent (semantic hierarchy, not visual):
+{
+  "toc_found": true,
+  "toc_page_range": {"start_page": 11, "end_page": 12},
+  "confidence": 0.92,
+  "search_strategy_used": "grep_report",
+  "reasoning": "2-level structure detected via semantic patterns. 'PART I', 'PART II', 'PART III' markers at same indent as chapters, but clearly separate structural level.",
+  "structure_summary": {
+    "total_levels": 2,
+    "level_patterns": {
+      "1": {"visual": "Flush left, uppercase, bold, structural marker only", "numbering": "Roman numerals (I-III)", "has_page_numbers": false, "semantic_type": "part"},
+      "2": {"visual": "Flush left (same as level 1), standard font", "numbering": "Arabic (1-31)", "has_page_numbers": true, "semantic_type": "chapter"}
+    },
+    "consistency_notes": ["Parts indicated by 'PART [Roman]' on separate lines with no page numbers", "Chapters numbered sequentially across all parts"]
+  }
+}
+
+WARNING - Avoid false positives from OCR spacing artifacts:
+{
+  "toc_found": true,
+  "toc_page_range": {"start_page": 5, "end_page": 5},
+  "confidence": 0.93,
+  "search_strategy_used": "grep_report",
+  "reasoning": "Single-level chapter list. OCR introduced inconsistent spacing (some entries have 2-3 extra spaces) but all entries are semantically the same level - Roman numeral chapters.",
+  "structure_summary": {
+    "total_levels": 1,
+    "level_patterns": {
+      "1": {"visual": "Flush left with minor OCR spacing variations", "numbering": "Roman numerals (I-XI)", "has_page_numbers": true, "semantic_type": "chapter"}
+    },
+    "consistency_notes": ["OCR artifact: some entries have slight indentation (2-3 spaces) but all are same hierarchical level", "All entries follow same pattern: Roman numeral + title + page"]
   }
 }
 

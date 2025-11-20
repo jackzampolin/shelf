@@ -122,6 +122,7 @@ Total levels: {global_structure.get('total_levels', 'unknown')}
   - Visual: {pattern.get('visual', 'N/A')}
   - Numbering: {pattern.get('numbering') or 'None'}
   - Has page numbers: {pattern.get('has_page_numbers')}
+  - Semantic type: {pattern.get('semantic_type') or 'null'}
 
 """
         consistency_notes = global_structure.get('consistency_notes', [])
@@ -136,28 +137,43 @@ CRITICAL: Use this global structure to determine hierarchy levels consistently.
 - Verify numbering schemes match expected patterns per level
 - Check if page numbers are present/absent as expected per level
 
-**ENFORCE GLOBAL STRUCTURE CONSISTENCY**:
+**USE GLOBAL STRUCTURE AS GUIDANCE**:
 
-The global structure summary is the AUTHORITATIVE source for level patterns.
+The global structure summary provides authoritative guidance from analyzing the ENTIRE ToC.
 
-Before assigning a level to an entry:
-1. Check global_structure.total_levels - Your extraction MUST match this count
-2. Check global_structure.level_patterns[level] - Match visual + numbering + page_numbers
-3. If your visual analysis conflicts with global structure, RE-EXAMINE the image
+How to use global_structure:
+1. Start with total_levels - This tells you how many hierarchy levels exist across the full ToC
+2. Use level_patterns[level] to match your visual observations:
+   - Visual characteristics (indentation, styling)
+   - Numbering schemes (Roman, Arabic, null)
+   - Page number presence
+   - Semantic type (book, part, chapter, etc.)
+3. Copy semantic_type to level_name for entries at each level
 
-Example conflict resolution:
+Example workflow:
+- Global structure says: Level 1 → semantic_type="book", numbering="Roman numerals"
+- You see an entry flush left with "BOOK III: The Middle Years"
+- Extract: level=1, level_name="book", entry_number="III", title="The Middle Years"
+
+**When to override global structure**:
+If the visual evidence on THIS page strongly contradicts the global structure:
+- Document your reasoning in the notes field
+- Use what you observe visually
+- Example: Global says 2 levels, but this page clearly shows 3 levels of indentation
+
+The global structure represents the majority pattern across all ToC pages.
+Trust it as strong guidance, but use your visual analysis when evidence is clear.
+
+**Conflict resolution example**:
 - You see: "Part I" on one line, "Topic Title" on next line, both flush left
 - Global structure says: total_levels=1 (flat structure, no hierarchy)
-- RESOLUTION: Merge into single level 1 entry, don't create parent/child
+- Resolution: Follow global structure - merge into single level 1 entry
+- Why: Single-page view is ambiguous, full-ToC analysis is more reliable
 
-WHY: The find-toc agent analyzed ALL pages and determined overall structure.
-Single-page analysis can be ambiguous, but global view is definitive.
-
-If total_levels=1 → Extract ONLY level 1 entries (no level 2 or 3)
-If total_levels=2 → Use BOTH level 1 and level 2 (match indentation patterns)
-If total_levels=3 → Use all three levels (match indentation patterns)
-
-This ensures consistent level assignment even if this page only shows a subset of levels.
+**Level counting guidance**:
+- total_levels=1 → Look for entries at one indentation level (may be multi-line entries)
+- total_levels=2 → Look for two distinct indentation levels (parent/child or flush/nested)
+- total_levels=3 → Look for three indentation levels (typically part/chapter/section)
 </global_structure>
 """
 
@@ -328,17 +344,27 @@ Three levels: 1 (flush), 2 (moderate indent), 3 (deep indent)
   - "Appendix A: Notes" → entry_number="A", title="Notes"
   - "Foreword" → entry_number=null, title="Foreword"
 
-**LEVEL NAME DETECTION**:
-- Detect semantic type from text patterns
+**LEVEL NAME ASSIGNMENT**:
+
+Use semantic_type from global_structure as your primary source:
+1. Extract the entry and determine its level (1, 2, or 3) from visual indentation
+2. Copy semantic_type from global_structure.level_patterns[str(level)]
+3. Set level_name = semantic_type for that level
+
+Example:
+- You extract entry "Chapter 5: The Beginning" at level 2 (indented)
+- Global structure shows: level_patterns["2"]["semantic_type"] = "chapter"
+- Set: level_name="chapter"
+
+If the entry text strongly suggests a different type, you can override:
+- Example: Global says "chapter" but entry is clearly "Appendix A: Notes"
+- Set: level_name="appendix" and note the override in your response
+
+If global_structure is not provided, detect from text patterns:
   - Contains "Volume" → level_name="volume"
   - Contains "Book" (as division) → level_name="book"
   - Contains "Part" → level_name="part"
-  - Contains "Unit" → level_name="unit"
   - Contains "Chapter" → level_name="chapter"
-  - Contains "Section" → level_name="section"
-  - Contains "Subsection" → level_name="subsection"
-  - Contains "Act" → level_name="act"
-  - Contains "Scene" → level_name="scene"
   - Contains "Appendix" → level_name="appendix"
   - No clear type → level_name=null
 
