@@ -13,10 +13,51 @@ You have TWO sources of information:
 Your goal: Extract complete ToC entries (title + page number + hierarchy level) in a single pass.
 
 HIERARCHY DETERMINATION:
-- Use VISUAL CUES (indentation, styling, size) to determine entry level
-- Level 1: Top-level entries (flush left or minimally indented, often bold/large)
-- Level 2: Nested entries (moderate indent, sub-entries under Level 1)
-- Level 3: Deeply nested entries (deeper indent, sub-entries under Level 2)
+Levels are determined by VISUAL INDENTATION and STYLING, verified against global structure.
+
+**Step 1: Measure Visual Position**
+- Level 1: Flush left (0-20px from margin) OR largest/boldest text
+- Level 2: Moderate indent (20-60px from margin)
+- Level 3: Deep indent (60-100px from margin)
+
+**Step 2: Cross-reference with Global Structure**
+If global_structure is provided, use it to verify your level assignment:
+- Does the indentation match the expected pattern for this level?
+- Does the numbering scheme match (Roman vs Arabic vs null)?
+- Does this level typically have page numbers?
+
+**Step 3: Verify Semantic Consistency**
+Level assignment should be semantically coherent:
+- Level 1: Major divisions (parts, books, units, top chapters)
+- Level 2: Subdivisions (chapters under parts, sections under chapters)
+- Level 3: Fine details (subsections, appendices)
+
+**WARNING: Common Pitfall - Multi-line Entries**
+
+DO NOT assign different levels to lines within the same entry:
+```
+Part I                    <-- NOT level 1
+The Opening Period        <-- NOT level 2
+I                         <-- This is all ONE entry at level 1!
+```
+
+If lines have NO indentation difference → Same entry, not parent/child.
+
+**Decision Tree:**
+
+1. Are the lines at DIFFERENT indentations?
+   - YES → Different levels (parent/child relationship)
+   - NO → Continue to step 2
+
+2. Is there a page number separating the lines?
+   - YES → Multi-line entry (merge into one)
+   - NO → Check if first line is structural prefix
+
+3. Is first line just "Part I" / "BOOK II" with no other text?
+   - YES → Check next line's indentation
+     - Indented? → Separate parent entry (level 1) + children (level 2)
+     - Same indent? → Prefix for merged entry (level 1)
+   - NO → Multi-line entry (merge into one)
 
 Use OCR text for WHAT (the content), use IMAGE for WHERE and HOW (the structure).
 </critical_instructions>"""
@@ -83,6 +124,27 @@ CRITICAL: Use this global structure to determine hierarchy levels consistently.
 - Verify numbering schemes match expected patterns per level
 - Check if page numbers are present/absent as expected per level
 
+**ENFORCE GLOBAL STRUCTURE CONSISTENCY**:
+
+The global structure summary is the AUTHORITATIVE source for level patterns.
+
+Before assigning a level to an entry:
+1. Check global_structure.total_levels - Your extraction MUST match this count
+2. Check global_structure.level_patterns[level] - Match visual + numbering + page_numbers
+3. If your visual analysis conflicts with global structure, RE-EXAMINE the image
+
+Example conflict resolution:
+- You see: "Part I" on one line, "Topic Title" on next line, both flush left
+- Global structure says: total_levels=1 (flat structure, no hierarchy)
+- RESOLUTION: Merge into single level 1 entry, don't create parent/child
+
+WHY: The find-toc agent analyzed ALL pages and determined overall structure.
+Single-page analysis can be ambiguous, but global view is definitive.
+
+If total_levels=1 → Extract ONLY level 1 entries (no level 2 or 3)
+If total_levels=2 → Use BOTH level 1 and level 2 (match indentation patterns)
+If total_levels=3 → Use all three levels (match indentation patterns)
+
 This ensures consistent level assignment even if this page only shows a subset of levels.
 </global_structure>
 """
@@ -145,6 +207,45 @@ Chapter 1: An Incredibly Long Title That
            Continues on the Next Line ... 15
 ```
 Merge into single entry: title="Chapter 1: An Incredibly Long Title That Continues on the Next Line"
+
+Multi-line entries with separated page numbers:
+Some ToCs have page numbers on a separate line BELOW the title:
+```
+Part I
+A Long Descriptive Title About
+the Subject Matter
+15                        <-- Page number on separate line
+```
+
+Recognition pattern:
+- Title text spans 1-3 lines at same indentation
+- Next line contains ONLY a number/Roman numeral (page reference)
+- NO indentation change between lines
+
+Merge into single entry:
+- entry_number: Extract from first line if present ("I" from "Part I")
+- title: Combine all text lines (exclude first line if it's just "Part I")
+- printed_page_number: The isolated number on last line
+- level: Based on indentation of the ENTIRE block (not each line)
+
+Example:
+```
+Part I
+The Early Period
+I
+```
+→ entry_number="I", title="The Early Period", page="I", level=1
+
+CONTRAST with hierarchical structure:
+```
+Part I: The Ancient Era
+  Origins ... 1           <-- Indented child
+  Growth ... 20
+```
+→ Entry 1: title="Part I: The Ancient Era", page=null, level=1 (parent)
+→ Entry 2: entry_number=null, title="Origins", page="1", level=2 (child)
+
+The key difference: INDENTATION indicates hierarchy, not line breaks.
 
 Parent entries without page numbers:
 ```
@@ -229,16 +330,88 @@ Three levels: 1 (flush), 2 (moderate indent), 3 (deep indent)
   - Contains "Appendix" → level_name="appendix"
   - No clear type → level_name=null
 
+**CRITICAL: PREFIX PARSING RULES**:
+
+Structural prefixes (Part, Book, Unit, Volume, Act) should be parsed as entry_number, NOT title:
+
+Pattern: "Part I: Title Text" or "BOOK II: Title Text"
+- entry_number="I" (or "II", etc.)
+- title="Title Text" (WITHOUT the prefix)
+- level_name="part" (or "book", etc.)
+
+Examples:
+- "Part I: The Beginning" → entry_number="I", title="The Beginning", level_name="part"
+- "BOOK III: The Middle Years" → entry_number="III", title="The Middle Years", level_name="book"
+- "Unit 2: Foundation Concepts" → entry_number="2", title="Foundation Concepts", level_name="unit"
+- "Part One: Early Period" → entry_number="One", title="Early Period", level_name="part"
+- "Volume IV" → entry_number="IV", title="", level_name="volume"
+- "Book II" → entry_number="II", title="", level_name="book"
+
+CRITICAL: Detect and preserve numbering patterns:
+- Roman numerals: I, II, III, IV, V, etc.
+- Arabic numerals: 1, 2, 3, 4, 5, etc.
+- Spelled out: One, Two, Three, Four, Five, etc.
+- The pattern used is part of the book's structure - preserve it exactly
+
+EMPTY TITLES ARE VALID:
+If the entry is just a structural prefix with NO additional text:
+- "Part I" → entry_number="I", title="", level_name="part"
+- "BOOK II" → entry_number="II", title="", level_name="book"
+- "Volume III" → entry_number="III", title="", level_name="volume"
+
+This is completely fine - the entry_number and level_name provide the structure.
+Do NOT try to invent a title if there isn't one.
+
+ONLY treat prefix as separate parent entry if:
+1. Prefix appears on separate line with NO title text following
+2. AND next entries are clearly INDENTED (children under parent)
+3. AND prefix line has NO page number
+
+Example of separate parent entry:
+```
+Part I                         <-- No title, no page, no indent
+  Chapter 1: Topic A ... 10    <-- Clearly indented children
+  Chapter 2: Topic B ... 20
+```
+→ Entry 1: title="Part I", level=1, page=null (parent)
+→ Entry 2: entry_number="1", title="Topic A", level=2, page="10" (child)
+
+SPECIAL CASE: Multi-line entries with page number on separate line:
+```
+Part I
+The Opening Period
+I                         <-- Page number on its own line
+```
+
+This is a SINGLE entry split across 3 lines:
+- entry_number="I" (from "Part I")
+- title="The Opening Period"
+- printed_page_number="I" (Roman numeral)
+- level=1 (NOT level 2 - no hierarchy here)
+
+KEY DECISION RULE:
+- If no visual indentation difference → merge into single entry
+- If clear indentation difference → separate parent/child entries
+
 **PAGE NUMBER EXTRACTION**:
 - Extract right-aligned text that looks like a page number
-- Preserve exactly as shown: "ix", "XII", "23"
+- Preserve exactly as shown: "ix", "XII", "23", "I", "1"
 - Empty if no page number (parent entries)
 
-**CAPITALIZATION NORMALIZATION**:
-- Convert ALL CAPS titles to Title Case:
-  - "FOREWORD" → "Foreword"
-  - "THE OPENING CHAPTER" → "The Opening Chapter"
-- Preserve proper nouns: "Part I", "Book II", "World War II"
+**QUOTE PRESERVATION**:
+- Preserve surrounding quotes in titles EXACTLY as shown
+  - '"A sort of wartime normal"' → '"A sort of wartime normal"' (keep quotes)
+  - "The Beginning" → "The Beginning" (no quotes to add)
+- Do NOT strip or normalize quotes
+- Rationale: Quotes may indicate direct quotations or stylistic emphasis
+
+**CAPITALIZATION PRESERVATION**:
+- Preserve original capitalization EXACTLY as shown in the OCR text
+  - "FOREWORD" → "FOREWORD" (keep all caps)
+  - "The Opening Chapter" → "The Opening Chapter" (keep mixed case)
+  - "foreword" → "foreword" (keep lowercase)
+- Do NOT normalize or convert capitalization
+- Rationale: Capitalization may carry semantic meaning (emphasis, styling)
 
 </text_processing>
 

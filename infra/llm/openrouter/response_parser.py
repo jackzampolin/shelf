@@ -33,13 +33,10 @@ class ResponseParser:
             provider = model.split('/')[0] if '/' in model else None
 
             self.logger.debug(
-                f"Parsed chat completion",
-                model=model,
-                provider=provider,
-                content_length=len(content) if content else 0,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                reasoning_tokens=reasoning_tokens
+                f"Parsed chat completion: model={model}, provider={provider}, "
+                f"content_length={len(content) if content else 0}, "
+                f"prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}, "
+                f"reasoning_tokens={reasoning_tokens}"
             )
 
             return ParsedResponse(
@@ -53,14 +50,13 @@ class ResponseParser:
             )
 
         except (KeyError, IndexError, TypeError) as e:
+            response_keys = list(result.keys()) if isinstance(result, dict) else type(result).__name__
+            has_choices = 'choices' in result if isinstance(result, dict) else False
             self.logger.error(
-                "Malformed API response from OpenRouter (missing expected keys)",
-                model=model,
-                error_type=type(e).__name__,
-                error=str(e),
-                response_keys=list(result.keys()) if isinstance(result, dict) else type(result).__name__,
-                has_choices='choices' in result if isinstance(result, dict) else False,
-                full_response=result
+                f"Malformed API response from OpenRouter (missing expected keys): "
+                f"model={model}, error_type={type(e).__name__}, error={str(e)}, "
+                f"response_keys={response_keys}, has_choices={has_choices}, "
+                f"full_response={result}"
             )
 
             raise MalformedResponseError(
@@ -87,16 +83,12 @@ class ResponseParser:
             provider = model.split('/')[0] if '/' in model else None
 
             self.logger.debug(
-                f"Parsed tool completion",
-                model=model,
-                provider=provider,
-                has_content=content is not None,
-                content_length=len(content) if content else 0,
-                num_tool_calls=len(tool_calls) if tool_calls else 0,
-                has_reasoning=reasoning_details is not None,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                reasoning_tokens=reasoning_tokens
+                f"Parsed tool completion: model={model}, provider={provider}, "
+                f"has_content={content is not None}, content_length={len(content) if content else 0}, "
+                f"num_tool_calls={len(tool_calls) if tool_calls else 0}, "
+                f"has_reasoning={reasoning_details is not None}, "
+                f"prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}, "
+                f"reasoning_tokens={reasoning_tokens}"
             )
 
             return ParsedResponse(
@@ -112,14 +104,13 @@ class ResponseParser:
             )
 
         except (KeyError, IndexError, TypeError) as e:
+            response_keys = list(result.keys()) if isinstance(result, dict) else type(result).__name__
+            has_choices = 'choices' in result if isinstance(result, dict) else False
             self.logger.error(
-                "Malformed API response from OpenRouter (missing expected keys)",
-                model=model,
-                error_type=type(e).__name__,
-                error=str(e),
-                response_keys=list(result.keys()) if isinstance(result, dict) else type(result).__name__,
-                has_choices='choices' in result if isinstance(result, dict) else False,
-                full_response=result
+                f"Malformed API response from OpenRouter (missing expected keys): "
+                f"model={model}, error_type={type(e).__name__}, error={str(e)}, "
+                f"response_keys={response_keys}, has_choices={has_choices}, "
+                f"full_response={result}"
             )
 
             raise MalformedResponseError(

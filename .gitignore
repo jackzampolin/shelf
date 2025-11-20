@@ -41,3 +41,14 @@ dist/
 tests/fixtures/**/extracted_text/
 tests/fixtures/**/fulltext_*.txt
 tests/validation_reports/
+
+# ToC ground truth - exclude copyrighted book content (OCR, images)
+# Keep setup scripts and Python utilities
+tests/fixtures/toc_ground_truth/*/
+!tests/fixtures/toc_ground_truth/README.md
+!tests/fixtures/toc_ground_truth/setup_ground_truth.sh
+!tests/fixtures/toc_ground_truth/__init__.py
+
+# Test results tracking - gitignored for local iteration
+# Results are saved with git metadata for correlation
+test_results/

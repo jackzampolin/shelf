@@ -36,6 +36,36 @@ HIERARCHY IDENTIFICATION:
 • Entry nested under parent = separate level (even if unnumbered)
 • Typical: 1-3 levels
 • Use OCR text to precisely measure indentation and identify patterns
+
+**CRITICAL: Multi-line Entries vs Hierarchy**
+
+DO NOT confuse multi-line entries with parent/child hierarchy:
+
+SINGLE-LEVEL (total_levels=1):
+```
+Part I
+The Opening Period
+I
+Part II
+The Middle Years
+39
+```
+→ These are multi-line entries at the SAME indentation level (flush left)
+→ total_levels=1 (flat structure, no nesting)
+
+TWO-LEVEL (total_levels=2):
+```
+Part I: The Ancient Era
+  Chapter 1: Origins ... 1      <-- Clearly INDENTED
+  Chapter 2: Growth ... 20
+Part II: The Medieval Period
+  Chapter 3: Decline ... 45     <-- Clearly INDENTED
+```
+→ Parts are flush left (level 1), chapters are indented (level 2)
+→ total_levels=2 (hierarchical structure)
+
+KEY RULE: Only count as different levels if there's INDENTATION difference.
+Line breaks alone do NOT indicate hierarchy.
 </visual_markers>
 
 <tools_available>
@@ -64,6 +94,12 @@ OBSERVATION FOCUS:
 ✓ Document NUMBERING: "Level 1 uses Roman (I-V), Level 2 uses Arabic (1-25), Level 3 unnumbered"
 ✓ Document VISUAL PATTERNS: "Right-aligned page numbers with leader dots"
 ✗ Avoid CONTENT: Don't record chapter titles or specific entry text (extraction stage handles this)
+
+**When Counting Levels**:
+1. Look for INDENTATION changes (left margin position)
+2. Verify with OCR text - measure actual pixel offsets if possible
+3. Distinguish multi-line entries (same indent) from nested entries (different indent)
+4. Common mistake: "Part I\nTitle\nPage#" looks like 3 levels, but it's 1 level (multi-line entry)
 
 Be efficient: grep narrows candidates, stop when confident about ToC range and structure.
 </strategy>
@@ -136,6 +172,22 @@ Flat structure (chapters only):
     "level_patterns": {
       "1": {"visual": "Flush left", "numbering": "Arabic (1-12)", "has_page_numbers": true, "semantic_type": "chapter"}
     }
+  }
+}
+
+Flat structure with multi-line entries:
+{
+  "toc_found": true,
+  "toc_page_range": {"start_page": 6, "end_page": 7},
+  "confidence": 0.90,
+  "search_strategy_used": "grep_report",
+  "reasoning": "Single-level part list. Each entry spans multiple lines (prefix, title, page number on separate lines) but ALL at same indentation - no hierarchy.",
+  "structure_summary": {
+    "total_levels": 1,
+    "level_patterns": {
+      "1": {"visual": "Flush left, multi-line entries with page numbers on separate lines", "numbering": "Roman numerals (I-V)", "has_page_numbers": true, "semantic_type": "part"}
+    },
+    "consistency_notes": ["Multi-line format: 'Part I' on one line, title on next, page number on third line - all flush left"]
   }
 }
 
