@@ -2,11 +2,14 @@
 Integration test: Run extract-toc on ground truth and measure accuracy.
 
 This test COSTS MONEY - it runs actual LLM calls on all 19 books.
+Books are processed IN PARALLEL (10 concurrent workers) for faster execution.
 
 Usage:
     pytest tests/test_extract_toc_accuracy.py -v -s
 
 The -s flag is important to see the detailed report output.
+
+Expected runtime: ~4-5 minutes (parallel) vs ~40 minutes (sequential)
 """
 
 import pytest
@@ -14,6 +17,8 @@ import shutil
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 from infra.pipeline.storage.book_storage import BookStorage
 from pipeline.extract_toc import ExtractTocStage
@@ -375,7 +380,7 @@ def test_extract_toc_full_library():
     WARNING: This test costs money! It runs actual LLM calls on all 19 books.
 
     The test will:
-    1. Run extract-toc on each book
+    1. Run extract-toc on each book IN PARALLEL
     2. Compare outputs to expected results
     3. Generate comprehensive report
     4. Fail if any book doesn't match perfectly
@@ -385,24 +390,60 @@ def test_extract_toc_full_library():
     books = load_all_books()
 
     print(f"\n{'='*80}")
-    print(f"Running extract-toc on {len(books)} books...")
+    print(f"Running extract-toc on {len(books)} books in PARALLEL...")
     print(f"WARNING: This will cost money (LLM calls)")
     print(f"{'='*80}\n")
 
     results = []
+    results_lock = threading.Lock()
+    completed_count = [0]  # Use list for mutable reference in closure
 
-    for i, book in enumerate(books, 1):
-        print(f"[{i}/{len(books)}] Testing {book.scan_id}...", end=" ", flush=True)
+    def process_book(book):
+        """Process a single book and return result."""
+        return run_extract_toc_and_compare(book)
 
-        result = run_extract_toc_and_compare(book)
-        results.append(result)
+    # Run all books in parallel with limited concurrency
+    max_workers = 10  # Limit to avoid API rate limits
 
-        if result.success:
-            print("✅")
-        elif result.error:
-            print(f"❌ ERROR")
-        else:
-            print("⚠️  PARTIAL")
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all books
+        future_to_book = {
+            executor.submit(process_book, book): book
+            for book in books
+        }
+
+        # Collect results as they complete
+        for future in as_completed(future_to_book):
+            book = future_to_book[future]
+            try:
+                result = future.result()
+            except Exception as e:
+                # Handle unexpected errors
+                result = BookTestResult(
+                    book_id=book.scan_id,
+                    success=False,
+                    find_comparison=None,
+                    finalize_comparison=None,
+                    error=str(e)
+                )
+
+            with results_lock:
+                results.append(result)
+                completed_count[0] += 1
+                count = completed_count[0]
+
+            # Print progress
+            if result.success:
+                status = "✅"
+            elif result.error:
+                status = "❌ ERROR"
+            else:
+                status = "⚠️  PARTIAL"
+
+            print(f"[{count}/{len(books)}] {book.scan_id}: {status}")
+
+    # Sort results by book_id for consistent report ordering
+    results.sort(key=lambda r: r.book_id)
 
     # Generate and print report
     report = generate_report(results)
