@@ -6,12 +6,18 @@ from rich.table import Table
 from rich.panel import Panel
 import threading
 import time
+import os
 from typing import Dict, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from infra.llm.display_format import format_token_string
 from ..schemas import AgentEvent
+
+
+def is_headless():
+    """Check if running in headless mode (no Rich Live displays)."""
+    return os.environ.get('SCANSHELF_HEADLESS', '').lower() in ('1', 'true', 'yes')
 
 
 @dataclass
@@ -259,13 +265,17 @@ class MultiAgentProgressDisplay:
             return f"{seconds:.0f}s"
 
     def __enter__(self):
-        self.live = Live(
-            self._render(),
-            console=self.console,
-            refresh_per_second=2,
-            transient=False
-        )
-        self.live.__enter__()
+        if is_headless():
+            # Skip Live display in headless mode (parallel execution)
+            self.live = None
+        else:
+            self.live = Live(
+                self._render(),
+                console=self.console,
+                refresh_per_second=2,
+                transient=False
+            )
+            self.live.__enter__()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

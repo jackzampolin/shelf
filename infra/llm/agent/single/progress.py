@@ -6,10 +6,16 @@ from rich.text import Text
 from rich.tree import Tree
 from rich.padding import Padding
 import threading
+import os
 
 from infra.llm.display_format import format_token_string
 from infra.llm.batch.progress.display import format_batch_summary
 from ..schemas import AgentEvent
+
+
+def is_headless():
+    """Check if running in headless mode (no Rich Live displays)."""
+    return os.environ.get('SCANSHELF_HEADLESS', '').lower() in ('1', 'true', 'yes')
 
 
 class AgentProgressDisplay:
@@ -182,13 +188,17 @@ class AgentProgressDisplay:
         return Panel(summary_text, title="[bold green]Agent Complete[/bold green]", border_style="green")
 
     def __enter__(self):
-        self.live = Live(
-            self._render(),
-            console=self.console,
-            refresh_per_second=4,
-            transient=False
-        )
-        self.live.__enter__()
+        if is_headless():
+            # Skip Live display in headless mode (parallel execution)
+            self.live = None
+        else:
+            self.live = Live(
+                self._render(),
+                console=self.console,
+                refresh_per_second=4,
+                transient=False
+            )
+            self.live.__enter__()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

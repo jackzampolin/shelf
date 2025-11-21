@@ -14,6 +14,7 @@ Expected runtime: ~4-5 minutes (parallel) vs ~40 minutes (sequential)
 
 import pytest
 import shutil
+import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
@@ -393,6 +394,9 @@ def test_extract_toc_full_library():
     print(f"Running extract-toc on {len(books)} books in PARALLEL...")
     print(f"WARNING: This will cost money (LLM calls)")
     print(f"{'='*80}\n")
+
+    # Enable headless mode to disable Rich Live displays (they conflict in parallel)
+    os.environ['SCANSHELF_HEADLESS'] = '1'
 
     results = []
     results_lock = threading.Lock()
