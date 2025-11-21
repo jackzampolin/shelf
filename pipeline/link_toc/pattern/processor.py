@@ -56,9 +56,8 @@ def analyze_toc_pattern(tracker, **kwargs):
         if not page_data:
             continue
 
-        page_num = page_data.get("page_num")
-        if page_num is None:
-            continue
+        # Extract page number from filename (page_0001.json → 1)
+        page_num = int(page_file.stem.split("_")[1])
 
         headings = page_data.get("headings", [])
 
