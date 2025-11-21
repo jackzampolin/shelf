@@ -283,6 +283,45 @@ Part I: The Ancient World
 ```
 "Part I" is Level 1 with no page number, children are Level 2
 
+**Standalone structural markers (CRITICAL)**:
+Some ToCs have Part/Book markers on their own line with NO title and NO page number:
+```
+FOREWORD ... xiii
+PART I
+1 First Chapter ... 3
+2 Second Chapter ... 19
+...
+PART II
+18 Later Chapter ... 200
+```
+
+These standalone markers ARE entries - extract them:
+- entry_number: "I" (or "II", "III", etc.)
+- title: "" (empty string - no title text)
+- level: 1
+- level_name: "part"
+- printed_page_number: null (no page number)
+
+The chapters that follow are level 2 entries under this Part.
+Each "PART [number]" line becomes its own entry, even with no title or page.
+
+**Appendix entries**:
+Back matter often includes appendixes with letter designations:
+```
+APPENDIX A ... 253
+APPENDIX B ... 257
+NOTES ... 269
+```
+
+Extract appendix entries as:
+- entry_number: "A" (or "B", "C", etc.)
+- title: "" (or subtitle if present, e.g., "APPENDIX A: Detailed Data" → title="Detailed Data")
+- level: 1 (back matter is top-level)
+- level_name: "appendix"
+- printed_page_number: "253"
+
+Recognize patterns: "APPENDIX A", "APPENDIX B", "Appendix 1", "Appendix I"
+
 </extraction_guidelines>
 
 <generic_pattern_examples>
