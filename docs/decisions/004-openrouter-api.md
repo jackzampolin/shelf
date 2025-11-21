@@ -22,7 +22,7 @@ Single API key, consistent interface, automatic cost tracking via `/api/v1/model
 
 ## Current Reality (Nov 2025)
 
-**Consolidated around a single model:** `x-ai/grok-4-fast`
+**Consolidated around a single model:** `x-ai/grok-4.1-fast`
 
 Why:
 - Pragmatic cost/quality balance
