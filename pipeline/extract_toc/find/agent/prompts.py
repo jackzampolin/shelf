@@ -88,6 +88,11 @@ GENERAL APPROACH:
   - Numbering: What schemes are used? (Roman, Arabic, decimal, letters, or null)
   - Page numbers: Which levels have them?
   - Visual cues: Indentation, alignment, leader dots, styling
+• **Check for ToC continuation**: After finding ToC start, ALWAYS check next page
+  - ToCs often span multiple pages (2-5 pages common)
+  - Look for: Sequential numbering continues, same formatting, no new section title
+  - If next page continues ToC, include it in range and keep checking
+  - Stop when: Different content type, new section starts, or reach page ~10 without continuation
 • Determine ToC boundaries (start/end pages)
 • Synthesize global structure summary
 

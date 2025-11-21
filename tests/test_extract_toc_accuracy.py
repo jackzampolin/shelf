@@ -310,23 +310,58 @@ def generate_report(results: List[BookTestResult]) -> str:
                 for diff in result.finalize_comparison.differences:
                     lines.append(f"       - {diff}")
 
-                # Show first few mismatched entries
-                mismatches = result.finalize_comparison.mismatched_entries[:3]
+                # Categorize and show ALL mismatches concisely
+                mismatches = result.finalize_comparison.mismatched_entries
                 if mismatches:
-                    lines.append(f"     Entry mismatches (showing first {len(mismatches)}):")
+                    # Group by issue type
+                    issues = {
+                        'entry_number': [],
+                        'title_exact': [],
+                        'title_case': [],
+                        'level': [],
+                        'level_name': [],
+                        'page': [],
+                        'missing': []
+                    }
+
                     for m in mismatches:
-                        lines.append(f"       Entry {m['index']}:")
+                        idx = m['index']
                         exp = m['expected']
                         act = m.get('actual')
-                        if act:
-                            if exp.get('title') != act.get('title'):
-                                lines.append(f"         title: '{exp.get('title')}' → '{act.get('title')}'")
-                            if exp.get('level') != act.get('level'):
-                                lines.append(f"         level: {exp.get('level')} → {act.get('level')}")
-                            if exp.get('printed_page_number') != act.get('printed_page_number'):
-                                lines.append(f"         page: {exp.get('printed_page_number')} → {act.get('printed_page_number')}")
-                        else:
-                            lines.append(f"         MISSING in actual output")
+
+                        if not act:
+                            issues['missing'].append(idx)
+                            continue
+
+                        # Check each field
+                        if exp.get('entry_number') != act.get('entry_number'):
+                            issues['entry_number'].append(f"{idx}: {exp.get('entry_number')}→{act.get('entry_number')}")
+
+                        exp_title = exp.get('title') or ''
+                        act_title = act.get('title') or ''
+                        if exp_title != act_title:
+                            if exp_title.lower() == act_title.lower():
+                                issues['title_case'].append(f"{idx}: {exp_title}→{act_title}")
+                            else:
+                                issues['title_exact'].append(f"{idx}: {exp_title}→{act_title}")
+
+                        if exp.get('level') != act.get('level'):
+                            issues['level'].append(f"{idx}: L{exp.get('level')}→L{act.get('level')}")
+
+                        if exp.get('level_name') != act.get('level_name'):
+                            issues['level_name'].append(f"{idx}: {exp.get('level_name')}→{act.get('level_name')}")
+
+                        if exp.get('printed_page_number') != act.get('printed_page_number'):
+                            issues['page'].append(f"{idx}: {exp.get('printed_page_number')}→{act.get('printed_page_number')}")
+
+                    # Report by category
+                    lines.append(f"     Entry issues ({len(mismatches)} total):")
+                    for issue_type, items in issues.items():
+                        if items:
+                            if issue_type == 'missing':
+                                lines.append(f"       • Missing: entries {', '.join(map(str, items))}")
+                            else:
+                                lines.append(f"       • {issue_type}: {', '.join(items[:10])}{' ...' if len(items) > 10 else ''}")
 
     lines.append("\n" + "="*80)
 
