@@ -45,6 +45,12 @@ class PatternAnalysis(BaseModel):
         description="Headings in body range, filtered and contextualized"
     )
 
+    # LLM observations for evaluation agents
+    observations: List[str] = Field(
+        default_factory=list,
+        description="High-level observations about patterns in the candidate headings"
+    )
+
     # Confidence
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in pattern analysis")
     reasoning: str = Field(..., description="Why this pattern was identified")

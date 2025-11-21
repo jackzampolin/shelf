@@ -42,8 +42,8 @@ class LinkTocStage(BaseStage):
             verbose=self.verbose
         )
 
-        # Phase 2: Pattern analysis
-        self.pattern_tracker = pattern.create_tracker(self.stage_storage)
+        # Phase 2: Pattern analysis (LLM-based)
+        self.pattern_tracker = pattern.create_tracker(self.stage_storage, model=self.model)
 
         # Phase 3: Evaluate candidate headings
         self.evaluation_tracker = evaluation.create_tracker(self.stage_storage)
