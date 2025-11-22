@@ -1,78 +1,39 @@
 """Prompts for Detection: Direct ToC Entry Extraction"""
 
-SYSTEM_PROMPT = """<role>
-You are a Table of Contents extraction specialist.
-Your task is to extract structured ToC entries directly from each page.
-</role>
+SYSTEM_PROMPT = """You are a Table of Contents extraction specialist. Extract structured entries from ToC pages.
 
-<critical_instructions>
-You have TWO sources of information:
-1. **VISUAL LAYOUT** (image): Shows hierarchy through indentation, styling, positioning
-2. **CLEAN OCR TEXT**: Accurate text extraction (use this for entry content)
+**YOUR TASK**: For each line in the ToC, extract:
+- entry_number: "1", "II", "A", or null
+- title: The entry text
+- level: 1, 2, or 3 (from visual indentation)
+- level_name: "part", "chapter", "section", etc.
+- printed_page_number: "15", "ix", or null
 
-Your goal: Extract complete ToC entries (title + page number + hierarchy level) in a single pass.
+**TWO SOURCES**:
+1. IMAGE: Visual layout (indentation) → determines hierarchy level
+2. OCR TEXT: Accurate content → use for titles and page numbers
 
-HIERARCHY DETERMINATION:
-Levels are determined by VISUAL INDENTATION and STYLING, verified against global structure.
+**HIERARCHY LEVELS**:
+- Level 1: Flush left (parts, chapters, back matter)
+- Level 2: Moderate indent (sub-entries)
+- Level 3: Deep indent (sub-sub-entries)
 
-**Step 1: Measure Visual Position**
-- Level 1: Flush left (0-20px from margin) OR largest/boldest text
-- Level 2: Moderate indent (20-60px from margin)
-- Level 3: Deep indent (60-100px from margin)
+**EXAMPLES**:
 
-**Step 2: Cross-reference with Global Structure**
-If global_structure is provided, use it to verify your level assignment:
-- Does the indentation match the expected pattern for this level?
-- Does the numbering scheme match (Roman vs Arabic vs null)?
-- Does this level typically have page numbers?
+1. "Chapter 1: The Beginning ... 15" →
+   entry_number="1", title="The Beginning", level=1, level_name="chapter", printed_page_number="15"
 
-**Step 3: Verify Semantic Consistency**
-Level assignment should be semantically coherent:
-- Level 1: Major divisions (parts, books, units, top chapters)
-- Level 2: Subdivisions (chapters under parts, sections under chapters)
-- Level 3: Fine details (subsections, appendices)
+2. "PART I" alone on a line (no title, no page) →
+   entry_number="I", title="", level=1, level_name="part", printed_page_number=null
 
-**SPECIAL RULE: Endmatter is Always Level 1**
-Back matter sections default to Level 1 regardless of visual appearance:
-- Notes, Footnotes, Endnotes
-- Bibliography, References, Sources
-- Index, Indices
-- Appendix, Appendices (when at end)
-- Acknowledgments, Credits
-- Glossary, Abbreviations
+3. "APPENDIX A ... 253" →
+   entry_number="A", title="", level=1, level_name="appendix", printed_page_number="253"
 
-Rationale: These are structural divisions of the book, not hierarchical content.
-Even if they appear visually similar to nested entries, treat as Level 1.
-
-**WARNING: Common Pitfall - Multi-line Entries**
-
-DO NOT assign different levels to lines within the same entry:
-```
-Part I                    <-- NOT level 1
-The Opening Period        <-- NOT level 2
-I                         <-- This is all ONE entry at level 1!
-```
-
-If lines have NO indentation difference → Same entry, not parent/child.
-
-**Decision Tree:**
-
-1. Are the lines at DIFFERENT indentations?
-   - YES → Different levels (parent/child relationship)
-   - NO → Continue to step 2
-
-2. Is there a page number separating the lines?
-   - YES → Multi-line entry (merge into one)
-   - NO → Check if first line is structural prefix
-
-3. Is first line just "Part I" / "BOOK II" with no other text?
-   - YES → Check next line's indentation
-     - Indented? → Separate parent entry (level 1) + children (level 2)
-     - Same indent? → Prefix for merged entry (level 1)
-   - NO → Multi-line entry (merge into one)
-
-Use OCR text for WHAT (the content), use IMAGE for WHERE and HOW (the structure).
-</critical_instructions>"""
+**KEY RULES**:
+- Extract page numbers from right side (after dots/spaces)
+- Back matter (Notes, Bibliography, Index, Appendix) = Level 1
+- Parent entries may lack page numbers
+- Standalone "PART I" lines ARE entries with empty title"""
 
 
 def build_user_prompt(
@@ -99,9 +60,12 @@ def build_user_prompt(
     prompt = f"""<task>
 Extract ALL Table of Contents entries from this page (page {page_num} of {total_toc_pages}).
 
-You have TWO sources of information:
-1. **The IMAGE**: Shows visual layout, indentation, hierarchy, styling
-2. **OCR TEXT**: Clean text extraction (more accurate than reading image directly)
+For EACH entry in the ToC, extract these fields:
+- entry_number: The number/letter prefix ("1", "II", "A") or null
+- title: The entry text (without the prefix)
+- level: 1, 2, or 3 based on visual indentation
+- level_name: "chapter", "part", "section", etc.
+- printed_page_number: The page number on the right ("15", "ix") or null
 
 <ocr_text>
 {ocr_text}
@@ -132,48 +96,8 @@ Total levels: {global_structure.get('total_levels', 'unknown')}
                 prompt += f"  - {note}\n"
 
         prompt += """
-CRITICAL: Use this global structure to determine hierarchy levels consistently.
-- Match visual characteristics (indentation, styling) to the level patterns above
-- Verify numbering schemes match expected patterns per level
-- Check if page numbers are present/absent as expected per level
-
-**USE GLOBAL STRUCTURE AS GUIDANCE**:
-
-The global structure summary provides authoritative guidance from analyzing the ENTIRE ToC.
-
-How to use global_structure:
-1. Start with total_levels - This tells you how many hierarchy levels exist across the full ToC
-2. Use level_patterns[level] to match your visual observations:
-   - Visual characteristics (indentation, styling)
-   - Numbering schemes (Roman, Arabic, null)
-   - Page number presence
-   - Semantic type (book, part, chapter, etc.)
-3. Copy semantic_type to level_name for entries at each level
-
-Example workflow:
-- Global structure says: Level 1 → semantic_type="book", numbering="Roman numerals"
-- You see an entry flush left with "BOOK III: The Middle Years"
-- Extract: level=1, level_name="book", entry_number="III", title="The Middle Years"
-
-**When to override global structure**:
-If the visual evidence on THIS page strongly contradicts the global structure:
-- Document your reasoning in the notes field
-- Use what you observe visually
-- Example: Global says 2 levels, but this page clearly shows 3 levels of indentation
-
-The global structure represents the majority pattern across all ToC pages.
-Trust it as strong guidance, but use your visual analysis when evidence is clear.
-
-**Conflict resolution example**:
-- You see: "Part I" on one line, "Topic Title" on next line, both flush left
-- Global structure says: total_levels=1 (flat structure, no hierarchy)
-- Resolution: Follow global structure - merge into single level 1 entry
-- Why: Single-page view is ambiguous, full-ToC analysis is more reliable
-
-**Level counting guidance**:
-- total_levels=1 → Look for entries at one indentation level (may be multi-line entries)
-- total_levels=2 → Look for two distinct indentation levels (parent/child or flush/nested)
-- total_levels=3 → Look for three indentation levels (typically part/chapter/section)
+Use semantic_type from each level as level_name for entries at that level.
+Override only if entry text clearly indicates different type (e.g., "Appendix A").
 </global_structure>
 """
 
@@ -192,351 +116,66 @@ These page-specific notes complement the global structure above.
 
 <extraction_guidelines>
 
-**WHAT TO EXTRACT**:
-Each ToC entry has:
-- Title: entry text (may span multiple lines)
-- Level: hierarchy depth (1, 2, or 3) determined by visual indentation/styling
-- Entry number: if present ("5", "II", "A", "1.1")
-- Page number: if present (right-aligned: "127", "ix", "xii")
+**HIERARCHY FROM VISUAL INDENTATION**:
+- Level 1: Flush left (major divisions: parts, chapters, back matter)
+- Level 2: Moderate indent (sub-entries under Level 1)
+- Level 3: Deep indent (sub-entries under Level 2)
 
-**HOW VISUAL LAYOUT DETERMINES HIERARCHY**:
+**TWO CRITICAL PATTERNS**:
 
-Level 1 (Top-level):
-- Flush left or minimal indentation (~0-20px from left margin)
-- Often **bold** or **larger font**
-- Top-level structural divisions
-- Examples: "Introduction", "Part I", "Chapter 1: The Beginning"
-
-Level 2 (Nested):
-- Moderate indentation (~20-60px from left margin)
-- Sub-entries under a Level 1 entry
-- Visually nested under previous Level 1 entry
-- Examples: "Background", "1.1 Early Period", "Section A"
-
-Level 3 (Deeply nested):
-- Deep indentation (~60-100px from left margin)
-- Sub-entries under a Level 2 entry
-- Further nested detail
-- Examples: "Historical Context", "1.1.1 Specific Topic", "Subsection i"
-
-**VISUAL SIGNS TO DETECT**:
-✓ **Indentation**: Distance from left edge determines level
-✓ **Styling**: Bold/large = higher level (usually Level 1)
-✓ **Vertical alignment**: Entries at same indent = same level
-✓ **Page numbers**: Right-aligned numbers (may be roman numerals or arabic)
-✓ **Parent entries**: Some entries have NO page number (parent of children below)
-✓ **Continuations**: Entry title may span multiple lines (same indentation)
-
-**SPECIAL CASES**:
-
-Continuation entries (title spans multiple lines):
+1. **STANDALONE PART MARKERS** - Extract as separate entries:
 ```
-Chapter 1: An Incredibly Long Title That
-           Continues on the Next Line ... 15
-```
-Merge into single entry: title="Chapter 1: An Incredibly Long Title That Continues on the Next Line"
-
-Multi-line entries with separated page numbers:
-Some ToCs have page numbers on a separate line BELOW the title:
-```
-Part I
-A Long Descriptive Title About
-the Subject Matter
-15                        <-- Page number on separate line
-```
-
-Recognition pattern:
-- Title text spans 1-3 lines at same indentation
-- Next line contains ONLY a number/Roman numeral (page reference)
-- NO indentation change between lines
-
-Merge into single entry:
-- entry_number: Extract from first line if present ("I" from "Part I")
-- title: Combine all text lines (exclude first line if it's just "Part I")
-- printed_page_number: The isolated number on last line
-- level: Based on indentation of the ENTIRE block (not each line)
-
-Example:
-```
-Part I
-The Early Period
-I
-```
-→ entry_number="I", title="The Early Period", page="I", level=1
-
-CONTRAST with hierarchical structure:
-```
-Part I: The Ancient Era
-  Origins ... 1           <-- Indented child
-  Growth ... 20
-```
-→ Entry 1: title="Part I: The Ancient Era", page=null, level=1 (parent)
-→ Entry 2: entry_number=null, title="Origins", page="1", level=2 (child)
-
-The key difference: INDENTATION indicates hierarchy, not line breaks.
-
-Parent entries without page numbers:
-```
-Part I: The Ancient World
-  Early Civilizations ... 1
-  Classical Period ... 25
-```
-"Part I" is Level 1 with no page number, children are Level 2
-
-**Standalone structural markers (CRITICAL)**:
-Some ToCs have Part/Book markers on their own line with NO title and NO page number:
-```
-FOREWORD ... xiii
 PART I
 1 First Chapter ... 3
 2 Second Chapter ... 19
-...
 PART II
-18 Later Chapter ... 200
+10 Later Chapter ... 150
 ```
+Here "PART I" and "PART II" are SEPARATE entries (not merged with chapters):
+- PART I → entry_number="I", title="", level=1, level_name="part", printed_page_number=null
+- 1 First Chapter → entry_number="1", title="First Chapter", level=2, printed_page_number="3"
 
-These standalone markers ARE entries - extract them:
-- entry_number: "I" (or "II", "III", etc.)
-- title: "" (empty string - no title text)
-- level: 1
-- level_name: "part"
-- printed_page_number: null (no page number)
-
-The chapters that follow are level 2 entries under this Part.
-Each "PART [number]" line becomes its own entry, even with no title or page.
-
-**Appendix entries**:
-Back matter often includes appendixes with letter designations:
+2. **MULTI-LINE ENTRIES** - Merge lines at same indentation:
 ```
-APPENDIX A ... 253
-APPENDIX B ... 257
-NOTES ... 269
+Part One
+The Path to War
+17
 ```
+These THREE lines are ONE entry (all flush left, no indent change):
+- entry_number="One", title="The Path to War", printed_page_number="17"
 
-Extract appendix entries as:
-- entry_number: "A" (or "B", "C", etc.)
-- title: "" (or subtitle if present, e.g., "APPENDIX A: Detailed Data" → title="Detailed Data")
-- level: 1 (back matter is top-level)
-- level_name: "appendix"
-- printed_page_number: "253"
+**KEY DISTINCTION**:
+- Standalone marker followed by INDENTED children → separate entries
+- Multiple lines at SAME indentation → merge into one entry
 
-Recognize patterns: "APPENDIX A", "APPENDIX B", "Appendix 1", "Appendix I"
+**PAGE NUMBERS**:
+Extract right-aligned numbers: "15", "ix", "xiii"
+Parent entries (Parts with children) often lack page numbers.
+
+**APPENDIXES**:
+"APPENDIX A ... 253" → entry_number="A", title="", level_name="appendix", printed_page_number="253"
 
 </extraction_guidelines>
 
-<generic_pattern_examples>
-# These are GENERIC patterns to teach structure recognition (NOT from any specific book)
-
-Pattern 1: Flat chapter list
-```
-Introduction ........................... ix
-Chapter 1: Early Days .................. 1
-Chapter 2: Middle Period ............... 45
-Chapter 3: Modern Times ................ 89
-```
-All Level 1 entries (flush left, same indentation)
-
-Pattern 2: Two-level hierarchy
-```
-The Beginning .......................... 1
-  Background ........................... 3
-  Context .............................. 12
-The Middle ............................. 25
-  Developments ......................... 27
-```
-Top entries are Level 1 (flush left), nested are Level 2 (indented)
-
-Pattern 3: Parent entries without page numbers
-```
-Part I: Ancient World
-  Origins .............................. 1
-  Growth ............................... 20
-Part II: Medieval Period
-  Decline .............................. 45
-  Revival .............................. 70
-```
-Parts are Level 1 (no page numbers), sub-entries are Level 2 (with page numbers)
-
-Pattern 4: Deep hierarchy
-```
-1. Major Topic ......................... 1
-   1.1 Subtopic ........................ 5
-       1.1.1 Detail .................... 7
-       1.1.2 More Detail ............... 10
-   1.2 Another Subtopic ................ 15
-2. Next Major Topic .................... 25
-```
-Three levels: 1 (flush), 2 (moderate indent), 3 (deep indent)
-
-</generic_pattern_examples>
 
 <text_processing>
 
-**ENTRY NUMBER & TITLE EXTRACTION**:
-- Use OCR text for accurate content
-- Merge continuation lines (same indentation)
-- Extract entry_number if present (before the title)
-  - "1. Introduction" → entry_number="1", title="Introduction"
-  - "Chapter 5: The End" → entry_number="5", title="The End"
-  - "Part II: Ancient World" → entry_number="II", title="Ancient World"
-  - "1.1 Background" → entry_number="1.1", title="Background"
-  - "Appendix A: Notes" → entry_number="A", title="Notes"
-  - "Foreword" → entry_number=null, title="Foreword"
+**ENTRY PARSING**:
+- Use OCR text for content, merge continuation lines at same indentation
+- Extract entry_number from prefixes: "Part II: Title" → entry_number="II", title="Title", level_name="part"
+- Empty titles are valid: "Part I" → entry_number="I", title="", level_name="part"
+- Preserve quotes and capitalization exactly as shown
 
-**LEVEL NAME ASSIGNMENT**:
+**LEVEL NAME**:
+- Use semantic_type from global_structure.level_patterns[level] when available
+- Override if entry text clearly indicates different type (e.g., "Appendix A" → level_name="appendix")
 
-Use semantic_type from global_structure as your primary source:
-1. Extract the entry and determine its level (1, 2, or 3) from visual indentation
-2. Copy semantic_type from global_structure.level_patterns[str(level)]
-3. Set level_name = semantic_type for that level
-
-Example:
-- You extract entry "Chapter 5: The Beginning" at level 2 (indented)
-- Global structure shows: level_patterns["2"]["semantic_type"] = "chapter"
-- Set: level_name="chapter"
-
-If the entry text strongly suggests a different type, you can override:
-- Example: Global says "chapter" but entry is clearly "Appendix A: Notes"
-- Set: level_name="appendix" and note the override in your response
-
-If global_structure is not provided, detect from text patterns:
-  - Contains "Volume" → level_name="volume"
-  - Contains "Book" (as division) → level_name="book"
-  - Contains "Part" → level_name="part"
-  - Contains "Chapter" → level_name="chapter"
-  - Contains "Appendix" → level_name="appendix"
-  - No clear type → level_name=null
-
-**CRITICAL: PREFIX PARSING RULES**:
-
-Structural prefixes (Part, Book, Unit, Volume, Act) should be parsed as entry_number, NOT title:
-
-Pattern: "Part I: Title Text" or "BOOK II: Title Text"
-- entry_number="I" (or "II", etc.)
-- title="Title Text" (WITHOUT the prefix)
-- level_name="part" (or "book", etc.)
-
-**NEVER include the prefix in the title field:**
-❌ WRONG: title="Part I: The Beginning"
-✅ CORRECT: entry_number="I", title="The Beginning"
-
-❌ WRONG: title="BOOK III: The Middle Years"
-✅ CORRECT: entry_number="III", title="The Middle Years"
-
-Examples:
-- "Part I: The Beginning" → entry_number="I", title="The Beginning", level_name="part"
-- "BOOK III: The Middle Years" → entry_number="III", title="The Middle Years", level_name="book"
-- "Unit 2: Foundation Concepts" → entry_number="2", title="Foundation Concepts", level_name="unit"
-- "Part One: Early Period" → entry_number="One", title="Early Period", level_name="part"
-- "Volume IV" → entry_number="IV", title="", level_name="volume"
-- "Book II" → entry_number="II", title="", level_name="book"
-
-**How to parse:**
-1. Identify prefix keyword: Part, Book, Unit, Volume, Act
-2. Extract number: Roman (I, II), Arabic (1, 2), or Spelled (One, Two)
-3. Extract title: Everything AFTER the colon (or empty if no colon)
-4. Set level_name based on prefix keyword
-
-CRITICAL: Detect and preserve numbering patterns:
-- Roman numerals: I, II, III, IV, V, etc.
-- Arabic numerals: 1, 2, 3, 4, 5, etc.
-- Spelled out: One, Two, Three, Four, Five, etc.
-- The pattern used is part of the book's structure - preserve it exactly
-
-EMPTY TITLES ARE VALID:
-If the entry is just a structural prefix with NO additional text:
-- "Part I" → entry_number="I", title="", level_name="part"
-- "BOOK II" → entry_number="II", title="", level_name="book"
-- "Volume III" → entry_number="III", title="", level_name="volume"
-
-This is completely fine - the entry_number and level_name provide the structure.
-Do NOT try to invent a title if there isn't one.
-
-ONLY treat prefix as separate parent entry if:
-1. Prefix appears on separate line with NO title text following
-2. AND next entries are clearly INDENTED (children under parent)
-3. AND prefix line has NO page number
-
-Example of separate parent entry:
-```
-Part I                         <-- No title, no page, no indent
-  Chapter 1: Topic A ... 10    <-- Clearly indented children
-  Chapter 2: Topic B ... 20
-```
-→ Entry 1: title="Part I", level=1, page=null (parent)
-→ Entry 2: entry_number="1", title="Topic A", level=2, page="10" (child)
-
-SPECIAL CASE: Multi-line entries with page number on separate line:
-```
-Part I
-The Opening Period
-I                         <-- Page number on its own line
-```
-
-This is a SINGLE entry split across 3 lines:
-- entry_number="I" (from "Part I")
-- title="The Opening Period"
-- printed_page_number="I" (Roman numeral)
-- level=1 (NOT level 2 - no hierarchy here)
-
-KEY DECISION RULE:
-- If no visual indentation difference → merge into single entry
-- If clear indentation difference → separate parent/child entries
-
-**PAGE NUMBER EXTRACTION**:
-- Extract right-aligned text that looks like a page number
-- Preserve exactly as shown: "ix", "XII", "23", "I", "1"
-- Empty if no page number (parent entries)
-
-**QUOTE PRESERVATION**:
-- Preserve surrounding quotes in titles EXACTLY as shown
-  - '"A sort of wartime normal"' → '"A sort of wartime normal"' (keep quotes)
-  - "The Beginning" → "The Beginning" (no quotes to add)
-- Do NOT strip or normalize quotes
-- Rationale: Quotes may indicate direct quotations or stylistic emphasis
-
-**CAPITALIZATION PRESERVATION**:
-- Preserve original capitalization EXACTLY as shown in the OCR text
-  - "FOREWORD" → "FOREWORD" (keep all caps)
-  - "The Opening Chapter" → "The Opening Chapter" (keep mixed case)
-  - "foreword" → "foreword" (keep lowercase)
-- Do NOT normalize or convert capitalization
-- Rationale: Capitalization may carry semantic meaning (emphasis, styling)
+**PAGE NUMBERS**:
+- Extract right-aligned numbers exactly: "ix", "XII", "23"
+- null if no page number (common for parent entries)
 
 </text_processing>
 
-<output_requirements>
-Return JSON with this structure:
-{
-    "entries": [
-        {
-            "entry_number": "5" or "II" or "1.1" or null,
-            "title": "Introduction",
-            "level": 1,
-            "level_name": "volume" or "book" or "part" or "unit" or "chapter" or "section" or "subsection" or "act" or "scene" or "appendix" or null,
-            "printed_page_number": "1" or null
-        }
-    ],
-    "page_metadata": {
-        "continuation_from_previous": false,
-        "continues_to_next": true,
-        "total_entries_on_page": 15
-    },
-    "confidence": 0.95,
-    "notes": "Any observations about this page's structure or challenges"
-}
-
-CRITICAL REQUIREMENTS:
-- "level" (REQUIRED) MUST be 1, 2, or 3 (visual hierarchy)
-- "title" (REQUIRED) must be non-empty
-- "entry_number" (optional) is string: "5", "II", "A", "1.1", or null
-- "level_name" (optional) is string: "volume", "book", "part", "unit", "chapter", "section", "subsection", "act", "scene", "appendix", or null
-- "printed_page_number" (optional) is string or null
-- Extract entries in the ORDER they appear on the page (top to bottom)
-- Each entry should be COMPLETE (don't output partial entries)
-
-</output_requirements>
-
-Begin extraction."""
+Extract entries in ORDER (top to bottom). Each entry must be complete."""
 
     return prompt

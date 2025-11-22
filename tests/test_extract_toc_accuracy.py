@@ -407,7 +407,7 @@ def test_extract_toc_full_library():
         return run_extract_toc_and_compare(book)
 
     # Run all books in parallel with limited concurrency
-    max_workers = 10  # Limit to avoid API rate limits
+    max_workers = 30  # High concurrency - API has good rate limits
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all books

@@ -1,7 +1,14 @@
 """Create tracker for find phase (locate ToC pages)."""
 
+import os
+
 from infra.pipeline.status import PhaseStatusTracker
 from infra.pipeline.storage.stage_storage import StageStorage
+
+
+def is_headless():
+    """Check if running in headless mode (no Rich Live displays)."""
+    return os.environ.get('SCANSHELF_HEADLESS', '').lower() in ('1', 'true', 'yes')
 
 
 def create_find_tracker(stage_storage: StageStorage, model: str, max_attempts: int = 3):
@@ -46,7 +53,7 @@ def create_find_tracker(stage_storage: StageStorage, model: str, max_attempts: i
                 tracker=tracker,
                 logger=tracker.logger,
                 max_iterations=15,
-                verbose=True,
+                verbose=not is_headless(),
                 attempt_number=attempt_num
             )
             result = agent.search()

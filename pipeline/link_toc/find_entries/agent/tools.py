@@ -251,24 +251,42 @@ def get_page_ocr(
     """
     Get full OCR text for a specific page.
 
+    Uses both OLM and Mistral OCR providers, returning the longer text
+    (which likely captured more content).
+
     Args:
         page_num: Scan page number
         storage: BookStorage instance
         logger: Optional logger for warnings
 
     Returns:
-        Full OCR text from olm-ocr stage, or empty string if not found
+        Full OCR text (best of OLM and Mistral), or empty string if not found
     """
-    from pipeline.ocr_pages.schemas import OlmOcrPageOutput
+    from pipeline.ocr_pages.schemas import OlmOcrPageOutput, MistralOcrPageOutput
 
     ocr_stage = storage.stage("ocr-pages")
 
+    olm_text = ""
+    mistral_text = ""
+
     try:
-        ocr_data = ocr_stage.load_page(page_num, schema=OlmOcrPageOutput, subdir="olm")
-        return ocr_data.get('text', '')
+        olm_data = ocr_stage.load_page(page_num, schema=OlmOcrPageOutput, subdir="olm")
+        olm_text = olm_data.get('text', '') if olm_data else ""
     except FileNotFoundError:
+        pass
+
+    try:
+        mistral_data = ocr_stage.load_page(page_num, schema=MistralOcrPageOutput, subdir="mistral")
+        mistral_text = mistral_data.get('markdown', '') if mistral_data else ""
+    except FileNotFoundError:
+        pass
+
+    # Return the longer one (likely captured more content)
+    if not olm_text and not mistral_text:
         if logger:
             logger.warning(
                 f"OCR data missing for page {page_num} - returning empty text"
             )
         return ""
+
+    return mistral_text if len(mistral_text) > len(olm_text) else olm_text

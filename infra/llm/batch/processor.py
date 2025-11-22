@@ -11,6 +11,11 @@ from .schemas import BatchStats, LLMBatchConfig
 from rich.progress import Progress, BarColumn, TextColumn, TaskProgressColumn, TimeRemainingColumn
 
 
+def is_headless():
+    """Check if running in headless mode (no Rich displays)."""
+    return os.environ.get('SCANSHELF_HEADLESS', '').lower() in ('1', 'true', 'yes')
+
+
 class LLMBatchProcessor:
     def __init__(self, config: LLMBatchConfig):
         self.config = config
@@ -65,13 +70,6 @@ class LLMBatchProcessor:
         start_time = time.time()
 
         prep_start = time.time()
-        prep_progress = Progress(
-            TextColumn("{task.description}"),
-            BarColumn(bar_width=40),
-            TaskProgressColumn(),
-            TextColumn("{task.fields[suffix]}", justify="right"),
-            transient=True
-        )
 
         builder_kwargs = {
             'storage': self.storage,
@@ -88,22 +86,40 @@ class LLMBatchProcessor:
                 return None
 
         requests = []
-        with prep_progress:
-            prep_task = prep_progress.add_task("", total=len(items), suffix="loading...")
-            prepared = 0
 
-            # Parallel preparation using thread pool (CPU-bound: image loading/processing)
-            # Use CPU count * 2 for preparation, separate from network I/O workers
-            prep_workers = os.cpu_count() * 4 if os.cpu_count() else 8
+        # Parallel preparation using thread pool (CPU-bound: image loading/processing)
+        # Use CPU count * 2 for preparation, separate from network I/O workers
+        prep_workers = os.cpu_count() * 4 if os.cpu_count() else 8
+
+        if is_headless():
+            # No progress display in headless mode
             with ThreadPoolExecutor(max_workers=prep_workers) as executor:
                 futures = {executor.submit(prepare_single, item): item for item in items}
                 for future in as_completed(futures):
                     request = future.result()
                     if request:
                         requests.append(request)
+        else:
+            prep_progress = Progress(
+                TextColumn("{task.description}"),
+                BarColumn(bar_width=40),
+                TaskProgressColumn(),
+                TextColumn("{task.fields[suffix]}", justify="right"),
+                transient=True
+            )
+            with prep_progress:
+                prep_task = prep_progress.add_task("", total=len(items), suffix="loading...")
+                prepared = 0
 
-                    prepared += 1
-                    prep_progress.update(prep_task, completed=prepared, suffix=f"{prepared}/{len(items)} prepared")
+                with ThreadPoolExecutor(max_workers=prep_workers) as executor:
+                    futures = {executor.submit(prepare_single, item): item for item in items}
+                    for future in as_completed(futures):
+                        request = future.result()
+                        if request:
+                            requests.append(request)
+
+                        prepared += 1
+                        prep_progress.update(prep_task, completed=prepared, suffix=f"{prepared}/{len(items)} prepared")
 
         prep_elapsed = time.time() - prep_start
         print(f"✅ Prepared {len(requests)} requests in {prep_elapsed:.1f}s")
@@ -117,6 +133,41 @@ class LLMBatchProcessor:
         tracker_status = self.tracker.get_status()
         total_items_in_phase = tracker_status['progress']['total_items']
 
+        if is_headless():
+            # No progress display in headless mode - just run batch processing
+            try:
+                self.batch_client.process_batch(
+                    requests,
+                    on_result=self.result_handler,
+                )
+            finally:
+                elapsed = time.time() - start_time
+                batch_stats = self.get_batch_stats(total_items=len(items))
+
+                # Get accurate totals from tracker status (source of truth)
+                tracker_status = self.tracker.get_status()
+                total_items = tracker_status['progress']['total_items']
+                completed_items = tracker_status['progress']['completed_items']
+
+                display_summary(
+                    batch_name=self.batch_name,
+                    batch_stats=batch_stats,
+                    elapsed=elapsed,
+                    total_items=total_items,
+                    completed_items=completed_items,
+                    metrics_manager=self.metrics_manager,
+                    metric_prefix=self.metric_prefix
+                )
+
+                self.logger.info(
+                    f"{self.batch_name} complete: {batch_stats.completed} completed, "
+                    f"{batch_stats.failed} failed, "
+                    f"${batch_stats.total_cost_usd:.4f}"
+                )
+
+            return batch_stats
+
+        # Normal mode with progress display
         progress = Progress(
             TextColumn("   {task.description}"),
             BarColumn(bar_width=40),

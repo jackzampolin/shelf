@@ -3,6 +3,7 @@ from infra.pipeline.storage.book_storage import BookStorage
 from pipeline.ocr_pages.schemas import OlmOcrPageOutput, MistralOcrPageOutput
 from ..schemas import PageRange
 from .prompts import SYSTEM_PROMPT, build_user_prompt
+from .schemas import PageExtractionOutput
 
 
 def prepare_toc_request(
@@ -52,6 +53,13 @@ def prepare_toc_request(
         messages=messages,
         images=[image],
         temperature=0.0,
-        response_format={"type": "json_object"},
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "page_extraction",
+                "strict": True,
+                "schema": PageExtractionOutput.model_json_schema()
+            }
+        },
         timeout=300
     )

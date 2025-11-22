@@ -5,6 +5,7 @@ from infra.llm.batch import (
     RequestStatus,
     BatchStats,
 )
+from infra.llm.single import LLMSingleCall, LLMSingleCallConfig
 from infra.llm.models import (
     LLMRequest,
     LLMResult,
@@ -15,6 +16,8 @@ from infra.llm.rate_limiter import RateLimiter
 __all__ = [
     "LLMClient",
     "LLMBatchClient",
+    "LLMSingleCall",
+    "LLMSingleCallConfig",
     "LLMRequest",
     "LLMResult",
     "RequestPhase",

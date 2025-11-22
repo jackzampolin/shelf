@@ -7,11 +7,28 @@ class CandidateHeading(BaseModel):
 
     scan_page: int = Field(..., ge=1, description="Page where heading appears")
     heading_text: str = Field(..., description="Heading text from label-structure")
-    heading_level: int = Field(..., ge=1, le=3, description="Level from label-structure (1=top, 2=mid, 3=nested)")
+    heading_level: int = Field(..., ge=1, description="Level from label-structure (1=top, higher=more nested)")
 
     # Context
     preceding_toc_page: Optional[int] = Field(None, description="Scan page of preceding ToC entry")
     following_toc_page: Optional[int] = Field(None, description="Scan page of following ToC entry")
+
+
+class MissingCandidateHeading(BaseModel):
+    """Prediction about a heading that should exist but wasn't detected."""
+
+    identifier: str = Field(..., description="Expected identifier (e.g., '9', 'Chapter IX', 'Part III')")
+    predicted_page_range: Tuple[int, int] = Field(..., description="(earliest_possible, latest_possible) scan pages")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in this prediction")
+    reasoning: str = Field(..., description="Why this heading is expected and where it likely is")
+
+
+class ExcludedPageRange(BaseModel):
+    """Page range to exclude from candidate evaluation."""
+
+    start_page: int = Field(..., ge=1, description="First page of excluded range")
+    end_page: int = Field(..., ge=1, description="Last page of excluded range")
+    reason: str = Field(..., description="Why these pages should be excluded (e.g., 'Map pages', 'Notes section', 'Image gallery')")
 
 
 class PatternAnalysis(BaseModel):
@@ -49,6 +66,18 @@ class PatternAnalysis(BaseModel):
     observations: List[str] = Field(
         default_factory=list,
         description="High-level observations about patterns in the candidate headings"
+    )
+
+    # Missing candidate heading predictions
+    missing_candidate_headings: List[MissingCandidateHeading] = Field(
+        default_factory=list,
+        description="Headings expected based on patterns but not detected by label-structure"
+    )
+
+    # Page ranges to exclude from evaluation
+    excluded_page_ranges: List[ExcludedPageRange] = Field(
+        default_factory=list,
+        description="Page ranges that should be excluded from candidate evaluation"
     )
 
     # Confidence

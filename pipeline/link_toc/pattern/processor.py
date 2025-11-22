@@ -1,7 +1,6 @@
-import json
-from infra.llm.client import LLMClient
+from infra.llm.single import LLMSingleCall, LLMSingleCallConfig
 from infra.config import Config
-from ..schemas import LinkedTableOfContents, PatternAnalysis, CandidateHeading
+from ..schemas import LinkedTableOfContents, PatternAnalysis, CandidateHeading, MissingCandidateHeading, ExcludedPageRange
 
 
 PATTERN_SYSTEM_PROMPT = """You analyze book structure to identify patterns in discovered headings.
@@ -10,13 +9,37 @@ You will receive:
 1. The book's Table of Contents (what's already indexed)
 2. Candidate headings discovered in the book that are NOT in the ToC
 
-Your job: Identify patterns that will help evaluation agents decide which candidates are real structural headings vs noise.
+Your job:
+1. Identify patterns that help evaluation agents decide which candidates are real structural headings vs noise
+2. Detect any MISSING chapters (gaps in sequences) and predict where they likely are
 
 Output a JSON object with:
 {
   "observations": [
     "observation 1 about patterns you see",
     "observation 2...",
+    ...
+  ],
+  "missing_candidate_headings": [
+    {
+      "identifier": "9",
+      "predicted_page_range": [120, 135],
+      "confidence": 0.8,
+      "reasoning": "Headings 8 and 10 found at pages 115 and 140, heading 9 should be between them"
+    },
+    ...
+  ],
+  "excluded_page_ranges": [
+    {
+      "start_page": 441,
+      "end_page": 447,
+      "reason": "Map pages with OCR artifacts (scale markers, grid labels)"
+    },
+    {
+      "start_page": 417,
+      "end_page": 454,
+      "reason": "Notes section - chapter headers are organizational dividers, not body headings"
+    },
     ...
   ],
   "reasoning": "brief explanation of your analysis"
@@ -27,6 +50,37 @@ Focus on actionable observations like:
 - "Headings after page X are in the Notes section - likely references, not chapters"
 - "Some headings contain HTML artifacts (<br>) indicating OCR errors"
 - "Pattern: Part I contains chapters 1-4, Part II contains chapters 5-8..."
+
+For missing_candidate_headings, look for:
+- Gaps in numeric sequences (e.g., headings 1-8 then 10-20, missing 9)
+- Missing parts in a series (e.g., Part I, Part II, Part IV - missing Part III)
+- Expected structural headings not found in candidates
+
+STRUCTURAL EVIDENCE FROM BACK MATTER:
+A book's structure may be reflected in multiple places. Notes and Bibliography sections
+are often organized by chapter or part - when you see sequential structural headers in
+back matter (Chapter 1, Chapter 2... or Part I, Part II...), this can reveal the book's
+actual structure even when those headings weren't detected in the body.
+
+Look for:
+- Sequential headers that serve as organizational dividers (not inline citations)
+- Consistent spacing suggesting section boundaries
+- Headers that match the book's structural pattern
+
+When back matter reveals a more complete structure than body candidates, use it to
+identify which chapters are genuinely missing from detection. These back matter
+references are strong evidence - predict where the missing chapters should appear
+in the body based on page ranges and spacing patterns.
+
+EXCLUDING PAGE RANGES:
+Use excluded_page_ranges to flag entire page ranges that should NOT be evaluated as candidates:
+- Map pages (scale markers, grid labels, geographic names from OCR)
+- Image gallery pages (figure captions, plate numbers)
+- Notes/Bibliography sections where chapter headers are organizational dividers
+- Index pages with dense OCR artifacts
+- Any page range with predominantly noise rather than structural headings
+
+This prevents the evaluation phase from wasting effort on obvious non-candidates.
 """
 
 
@@ -131,38 +185,69 @@ def analyze_toc_pattern(tracker, **kwargs):
 
     # Make LLM call to analyze patterns
     observations = []
+    missing_candidate_headings = []
+    excluded_page_ranges = []
     reasoning = "No candidates to analyze"
 
     if candidate_headings:
         logger.info(f"Calling LLM to analyze {len(candidate_headings)} candidates...")
 
-        client = LLMClient(logger=logger)
+        llm = LLMSingleCall(LLMSingleCallConfig(
+            tracker=tracker,
+            model=model,
+            call_name="Pattern analysis",
+            metric_key="pattern_llm"
+        ))
+
         prompt = build_pattern_prompt(toc_entries, candidate_headings, body_range)
 
-        result = client.call(
-            model=model,
+        result = llm.call(
             messages=[
                 {"role": "system", "content": PATTERN_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
-            max_tokens=2000,
+            max_tokens=3000,
         )
 
-        tracker.stage_storage.metrics_manager.record(
-            key="pattern_llm",
-            cost_usd=result.cost_usd,
-            time_seconds=result.execution_time,
-        )
-
-        try:
-            response_data = json.loads(result.content)
-            observations = response_data.get("observations", [])
-            reasoning = response_data.get("reasoning", "")
+        if result.success and result.parsed_json:
+            observations = result.parsed_json.get("observations", [])
+            reasoning = result.parsed_json.get("reasoning", "")
             logger.info(f"LLM identified {len(observations)} observations")
-        except json.JSONDecodeError:
-            logger.warning(f"Failed to parse LLM response: {result.content[:200]}")
-            reasoning = "Failed to parse LLM response"
+
+            # Parse missing candidate heading predictions
+            raw_missing = result.parsed_json.get("missing_candidate_headings", [])
+            for mc in raw_missing:
+                try:
+                    missing_candidate_headings.append(MissingCandidateHeading(
+                        identifier=mc["identifier"],
+                        predicted_page_range=tuple(mc["predicted_page_range"]),
+                        confidence=mc.get("confidence", 0.5),
+                        reasoning=mc.get("reasoning", "")
+                    ))
+                except (KeyError, TypeError) as e:
+                    logger.warning(f"Failed to parse missing candidate heading: {mc}, error: {e}")
+
+            if missing_candidate_headings:
+                logger.info(f"LLM predicted {len(missing_candidate_headings)} missing candidate headings")
+
+            # Parse excluded page ranges
+            raw_excluded = result.parsed_json.get("excluded_page_ranges", [])
+            for ex in raw_excluded:
+                try:
+                    excluded_page_ranges.append(ExcludedPageRange(
+                        start_page=ex["start_page"],
+                        end_page=ex["end_page"],
+                        reason=ex.get("reason", "")
+                    ))
+                except (KeyError, TypeError) as e:
+                    logger.warning(f"Failed to parse excluded page range: {ex}, error: {e}")
+
+            if excluded_page_ranges:
+                logger.info(f"LLM identified {len(excluded_page_ranges)} page ranges to exclude")
+        else:
+            logger.warning(f"Pattern analysis failed: {result.error_message}")
+            reasoning = f"LLM call failed: {result.error_message}"
 
     # Build structure analysis
     toc_levels = [e.level for e in toc_entries]
@@ -200,6 +285,8 @@ def analyze_toc_pattern(tracker, **kwargs):
         discovered_structure=discovered_structure,
         candidate_headings=candidate_headings,
         observations=observations,
+        missing_candidate_headings=missing_candidate_headings,
+        excluded_page_ranges=excluded_page_ranges,
         confidence=0.8 if observations else 0.3,
         reasoning=reasoning
     )
@@ -210,6 +297,6 @@ def analyze_toc_pattern(tracker, **kwargs):
         schema=PatternAnalysis
     )
 
-    logger.info(f"Pattern analysis complete: {len(observations)} observations")
+    logger.info(f"Pattern analysis complete: {len(observations)} observations, {len(missing_candidate_headings)} missing predictions")
     for i, obs in enumerate(observations[:5], 1):
         logger.info(f"  {i}. {obs[:80]}...")

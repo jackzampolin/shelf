@@ -7,7 +7,7 @@ class ToCEntry(BaseModel):
         None,
         description="Entry numbering if present (e.g., '5', 'II', 'A', '1.1')"
     )
-    title: str = Field(..., min_length=1, description="Entry title as shown in ToC")
+    title: str = Field(..., description="Entry title as shown in ToC. Empty string '' for standalone markers like 'PART I'.")
     level: int = Field(1, ge=1, le=3, description="Visual hierarchy level (1=top-level, 2=nested, 3=deeply nested)")
     level_name: Optional[str] = Field(
         None,

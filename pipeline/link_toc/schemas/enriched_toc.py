@@ -8,10 +8,10 @@ class EnrichedToCEntry(BaseModel):
     entry_index: int = Field(..., ge=0, description="Position in flat list")
     title: str = Field(..., min_length=1, description="Entry title")
     scan_page: int = Field(..., ge=1, description="Scan page where entry appears")
-    level: int = Field(..., ge=1, le=3, description="Hierarchy level (1=top, 2=child, 3=grandchild)")
+    level: int = Field(..., ge=1, description="Hierarchy level (1=top, higher=more nested)")
 
     parent_index: Optional[int] = Field(None, description="Index of parent entry (null for top-level)")
-    source: Literal["toc", "discovered"] = Field(..., description="Where did this come from?")
+    source: Literal["toc", "discovered", "missing_found"] = Field(..., description="Where did this come from?")
 
     # Original ToC fields (if source="toc")
     entry_number: Optional[str] = Field(None, description="Entry numbering from ToC")

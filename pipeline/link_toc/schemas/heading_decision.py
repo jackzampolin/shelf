@@ -14,7 +14,7 @@ class HeadingDecision(BaseModel):
 
     # If include=True, enrichment details
     title: Optional[str] = Field(None, description="Cleaned/corrected heading text")
-    level: Optional[int] = Field(None, ge=1, le=3, description="Level in enriched hierarchy")
+    level: Optional[int] = Field(None, ge=1, description="Level in enriched hierarchy")
     entry_number: Optional[str] = Field(None, description="Entry number if numbered (e.g., '5', 'V', 'A')")
     parent_toc_entry_index: Optional[int] = Field(None, description="Index of parent ToC entry")
 
