@@ -19,7 +19,10 @@ from web.data.label_structure_data import (
     get_page_labels as get_structure_page_labels
 )
 from web.data.link_toc_data import get_link_toc_data, get_linked_entries_tree
-from web.data.ocr_pages_data import get_ocr_pages_data, get_all_providers_text, get_page_ocr_text
+from web.data.ocr_pages_data import (
+    get_ocr_pages_data, get_all_providers_text, get_page_ocr_text,
+    get_blend_text, get_blend_status, OCR_PROVIDERS
+)
 
 stage_bp = Blueprint('stage', __name__)
 
@@ -46,11 +49,15 @@ def ocr_pages_view(scan_id: str):
     if not ocr_data:
         abort(404, f"No OCR stages run for '{scan_id}'")
 
+    # Check blend status
+    blend_status = get_blend_status(storage)
+
     return render_template(
         'stage/ocr_pages.html',
         scan_id=scan_id,
         metadata=metadata,
         ocr_data=ocr_data,
+        blend_status=blend_status,
     )
 
 
@@ -86,6 +93,68 @@ def ocr_pages_page_view(scan_id: str, page_num: int):
         page_num=page_num,
         provider_texts=provider_texts,
     )
+
+
+@stage_bp.route('/stage/<scan_id>/ocr-pages/blend/<int:page_num>')
+def ocr_blend_page_view(scan_id: str, page_num: int):
+    """
+    Blend review view for a specific page.
+
+    Shows two view modes:
+    1. Blended text + scan page image side by side
+    2. Blended text + diff between blended and providers
+    """
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    # Get book metadata
+    metadata = library.get_scan_info(scan_id)
+    if not metadata:
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+
+    # Get blend text
+    blend_text = get_blend_text(storage, page_num)
+    if blend_text is None:
+        abort(404, f"No blend data found for page {page_num}")
+
+    # Get provider texts for diff comparison
+    provider_texts = get_all_providers_text(storage, page_num)
+
+    # Get blend status for page range info
+    blend_status = get_blend_status(storage)
+
+    return render_template(
+        'stage/ocr_blend_page.html',
+        scan_id=scan_id,
+        metadata=metadata,
+        page_num=page_num,
+        blend_text=blend_text,
+        provider_texts=provider_texts,
+        providers=OCR_PROVIDERS,
+        blend_status=blend_status,
+    )
+
+
+@stage_bp.route('/api/blend/<scan_id>/<int:page_num>')
+def api_get_blend_text(scan_id: str, page_num: int):
+    """
+    API endpoint to get blend text for a specific page.
+
+    Returns JSON: {"text": "..."}
+    """
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    if not library.get_scan_info(scan_id):
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+    text = get_blend_text(storage, page_num)
+
+    if text is None:
+        abort(404, f"No blend data for page {page_num}")
+
+    return jsonify({"text": text})
 
 
 @stage_bp.route('/stage/<scan_id>/extract-toc')

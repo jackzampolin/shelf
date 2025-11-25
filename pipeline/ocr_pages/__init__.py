@@ -4,7 +4,9 @@ from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import page_batch_tracker, MultiPhaseStatusTracker
 from infra.ocr import OCRBatchProcessor
+from infra.config import Config
 from .provider import MistralOCRProvider, OlmOCRProvider, PaddleOCRProvider
+from . import blend
 from .schemas import (
     MistralOcrPageOutput,
     ImageBBox,
@@ -13,6 +15,8 @@ from .schemas import (
     OlmOcrPageMetrics,
     PaddleOcrPageOutput,
     PaddleOcrPageMetrics,
+    BlendedOcrPageOutput,
+    BlendedOcrPageMetrics,
 )
 
 
@@ -36,8 +40,9 @@ class OcrPagesStage(BaseStage):
         super().__init__(storage)
         self.max_workers = max_workers
         self.include_images = include_images
+        self.blend_model = "x-ai/grok-4.1-fast"
+        self.blend_max_workers = 10
 
-        # Create individual phase trackers for each OCR provider
         def run_mistral(tracker, **kwargs):
             processor = OCRBatchProcessor(
                 provider=MistralOCRProvider(
@@ -89,13 +94,19 @@ class OcrPagesStage(BaseStage):
             use_subdir=True,
         )
 
-        # Wrap in MultiPhaseStatusTracker for sequential execution
+        self.blend_tracker = blend.create_tracker(
+            self.stage_storage,
+            model=self.blend_model,
+            max_workers=self.blend_max_workers,
+        )
+
         self.status_tracker = MultiPhaseStatusTracker(
             stage_storage=self.stage_storage,
             phase_trackers=[
                 self.mistral_tracker,
                 self.olm_tracker,
-                self.paddle_tracker
+                self.paddle_tracker,
+                self.blend_tracker,
             ]
         )
 
@@ -119,4 +130,6 @@ __all__ = [
     "OlmOcrPageMetrics",
     "PaddleOcrPageOutput",
     "PaddleOcrPageMetrics",
+    "BlendedOcrPageOutput",
+    "BlendedOcrPageMetrics",
 ]

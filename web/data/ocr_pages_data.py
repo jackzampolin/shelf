@@ -14,11 +14,17 @@ from web.data.status_reader import get_stage_status_from_disk
 
 
 OCR_PROVIDERS = ['olm-ocr', 'mistral-ocr', 'paddle-ocr']
+# Map provider names to their subdirectory names in ocr-pages stage
+PROVIDER_SUBDIRS = {
+    'olm-ocr': 'olm',
+    'mistral-ocr': 'mistral',
+    'paddle-ocr': 'paddle',
+}
 
 
 def get_ocr_aggregate_status(storage: BookStorage) -> Dict[str, Any]:
     """
-    Get aggregate status for all OCR providers.
+    Get aggregate status for all OCR providers from unified ocr-pages stage.
 
     Returns:
         {
@@ -41,38 +47,46 @@ def get_ocr_aggregate_status(storage: BookStorage) -> Dict[str, Any]:
         'total_pages_processed': 0
     }
 
+    # Get unified ocr-pages stage status
+    stage_status = get_stage_status_from_disk(storage, 'ocr-pages')
+    stage_storage = storage.stage('ocr-pages')
+
+    # Get total pages from source
+    source_dir = storage.book_dir / "source"
+    total_pages = len(list(source_dir.glob("page_*.png"))) if source_dir.exists() else 0
+
     completed_count = 0
     in_progress_count = 0
     not_started_count = 0
 
     for provider in OCR_PROVIDERS:
-        status = get_stage_status_from_disk(storage, provider)
+        subdir = PROVIDER_SUBDIRS.get(provider)
+        provider_dir = stage_storage.output_dir / subdir if subdir else None
 
-        if status:
-            provider_status = status.get('status', 'not_started')
-            metrics = status.get('metrics', {})
+        if provider_dir and provider_dir.exists():
+            pages_processed = len(list(provider_dir.glob("page_*.json")))
 
-            provider_data = {
-                'status': provider_status,
-                'cost_usd': metrics.get('total_cost_usd', 0.0),
-                'runtime_seconds': metrics.get('stage_runtime_seconds', 0.0),
-                'pages_processed': metrics.get('pages_processed', 0)
-            }
-
-            aggregate['providers'][provider] = provider_data
-            aggregate['total_cost_usd'] += provider_data['cost_usd']
-            aggregate['total_runtime_seconds'] += provider_data['runtime_seconds']
-            aggregate['total_pages_processed'] = max(
-                aggregate['total_pages_processed'],
-                provider_data['pages_processed']
-            )
-
-            if provider_status == 'completed':
+            if pages_processed >= total_pages and total_pages > 0:
+                provider_status = 'completed'
                 completed_count += 1
-            elif provider_status == 'in_progress':
+            elif pages_processed > 0:
+                provider_status = 'in_progress'
                 in_progress_count += 1
             else:
+                provider_status = 'not_started'
                 not_started_count += 1
+
+            aggregate['providers'][provider] = {
+                'status': provider_status,
+                'cost_usd': 0.0,  # Cost is tracked at stage level, not provider
+                'runtime_seconds': 0.0,
+                'pages_processed': pages_processed
+            }
+
+            aggregate['total_pages_processed'] = max(
+                aggregate['total_pages_processed'],
+                pages_processed
+            )
         else:
             aggregate['providers'][provider] = {
                 'status': 'not_started',
@@ -82,10 +96,13 @@ def get_ocr_aggregate_status(storage: BookStorage) -> Dict[str, Any]:
             }
             not_started_count += 1
 
-    # Determine aggregate status:
-    # - All completed → 'completed'
-    # - Any in progress or mix of completed/not_started → 'in_progress'
-    # - All not started → 'not_started'
+    # Get cost/runtime from stage-level metrics
+    if stage_status:
+        metrics = stage_status.get('metrics', {})
+        aggregate['total_cost_usd'] = metrics.get('total_cost_usd', 0.0)
+        aggregate['total_runtime_seconds'] = metrics.get('stage_runtime_seconds', 0.0)
+
+    # Determine aggregate status
     if completed_count == len(OCR_PROVIDERS):
         aggregate['status'] = 'completed'
     elif completed_count > 0 or in_progress_count > 0:
@@ -141,6 +158,8 @@ def get_page_ocr_text(storage: BookStorage, provider: str, page_num: int) -> Opt
     """
     Get OCR text for a specific page from a specific provider.
 
+    Uses the unified ocr-pages stage with provider subdirectories.
+
     Args:
         storage: BookStorage instance
         provider: Provider name (olm-ocr, mistral-ocr, paddle-ocr)
@@ -152,8 +171,12 @@ def get_page_ocr_text(storage: BookStorage, provider: str, page_num: int) -> Opt
     if provider not in OCR_PROVIDERS:
         return None
 
-    stage_storage = storage.stage(provider)
-    page_file = stage_storage.output_dir / f"page_{page_num:04d}.json"
+    subdir = PROVIDER_SUBDIRS.get(provider)
+    if not subdir:
+        return None
+
+    stage_storage = storage.stage('ocr-pages')
+    page_file = stage_storage.output_dir / subdir / f"page_{page_num:04d}.json"
 
     if not page_file.exists():
         return None
@@ -194,3 +217,60 @@ def get_all_providers_text(storage: BookStorage, page_num: int) -> Dict[str, Opt
         provider: get_page_ocr_text(storage, provider, page_num)
         for provider in OCR_PROVIDERS
     }
+
+
+def get_blend_text(storage: BookStorage, page_num: int) -> Optional[str]:
+    """
+    Get blended OCR text for a specific page.
+
+    Args:
+        storage: BookStorage instance
+        page_num: Page number (1-indexed)
+
+    Returns:
+        Blended markdown text or None if not found
+    """
+    stage_storage = storage.stage("ocr-pages")
+    page_file = stage_storage.output_dir / "blend" / f"page_{page_num:04d}.json"
+
+    if not page_file.exists():
+        return None
+
+    try:
+        with open(page_file, 'r') as f:
+            data = json.load(f)
+            return data.get('markdown', '')
+    except Exception:
+        return None
+
+
+def get_blend_status(storage: BookStorage) -> Dict[str, Any]:
+    """
+    Get blend status for ocr-pages stage.
+
+    Returns:
+        {
+            'has_blend': bool,
+            'pages_blended': int,
+            'total_pages': int
+        }
+    """
+    stage_storage = storage.stage("ocr-pages")
+    blend_dir = stage_storage.output_dir / "blend"
+
+    if not blend_dir.exists():
+        return {'has_blend': False, 'pages_blended': 0, 'total_pages': 0}
+
+    blend_files = list(blend_dir.glob("page_*.json"))
+
+    # Get total pages from source directory
+    source_dir = storage.book_dir / "source"
+    total_pages = len(list(source_dir.glob("page_*.png"))) if source_dir.exists() else 0
+
+    return {
+        'has_blend': len(blend_files) > 0,
+        'pages_blended': len(blend_files),
+        'total_pages': total_pages
+    }
+
+

@@ -178,6 +178,38 @@
     font-weight: 600;
     color: #212529;
 }
+
+.blend-link {
+    display: inline-block;
+    padding: 10px 20px;
+    background: #28a745;
+    color: white;
+    text-decoration: none;
+    border-radius: 6px;
+    font-weight: 500;
+    margin-left: 15px;
+}
+
+.blend-link:hover {
+    background: #218838;
+    color: white;
+}
+
+.blend-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+    border-radius: 8px;
+}
+
+.blend-info-text {
+    color: #155724;
+    font-weight: 500;
+}
 </style>
 {% endblock %}
 
@@ -216,6 +248,17 @@
             {% endfor %}
         </div>
     </div>
+
+    {% if blend_status and blend_status.has_blend %}
+    <div class="blend-info">
+        <span class="blend-info-text">
+            Blend available: {{ blend_status.pages_blended }} of {{ blend_status.total_pages }} pages blended
+        </span>
+        <a href="/stage/{{ scan_id }}/ocr-pages/blend/1" class="blend-link">
+            Review Blend
+        </a>
+    </div>
+    {% endif %}
 
     <div class="page-selector">
         <label for="pageNumber">Go to page:</label>
