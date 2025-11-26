@@ -13,6 +13,14 @@ class FlushingFileHandler(logging.FileHandler):
 
 
 class JSONFormatter(logging.Formatter):
+    # Standard LogRecord attributes to exclude from extra fields
+    RESERVED_ATTRS = {
+        'name', 'msg', 'args', 'created', 'filename', 'funcName', 'levelname',
+        'levelno', 'lineno', 'module', 'msecs', 'pathname', 'process',
+        'processName', 'relativeCreated', 'stack_info', 'exc_info', 'exc_text',
+        'thread', 'threadName', 'taskName', 'message'
+    }
+
     def format(self, record: logging.LogRecord) -> str:
         log_data = {
             "timestamp": datetime.now().astimezone().isoformat(),
@@ -20,20 +28,10 @@ class JSONFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
-        if hasattr(record, 'scan_id'):
-            log_data['scan_id'] = record.scan_id
-        if hasattr(record, 'stage'):
-            log_data['stage'] = record.stage
-        if hasattr(record, 'page'):
-            log_data['page'] = record.page
-        if hasattr(record, 'cost_usd'):
-            log_data['cost_usd'] = record.cost_usd
-        if hasattr(record, 'tokens'):
-            log_data['tokens'] = record.tokens
-        if hasattr(record, 'duration_seconds'):
-            log_data['duration_seconds'] = record.duration_seconds
-        if hasattr(record, 'error'):
-            log_data['error'] = record.error
+        # Include all custom attributes passed via extra={}
+        for key, value in record.__dict__.items():
+            if key not in self.RESERVED_ATTRS and not key.startswith('_'):
+                log_data[key] = value
 
         return json.dumps(log_data)
 

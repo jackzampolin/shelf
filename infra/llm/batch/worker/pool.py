@@ -164,7 +164,8 @@ class WorkerPool:
 
                 # Execute with thread-level timeout enforcement
                 # This prevents hung requests from blocking workers forever
-                thread_timeout = request.timeout if request.timeout else 120
+                # Default 500s allows slow vision requests to complete
+                thread_timeout = request.timeout if request.timeout else 500
                 try:
                     with ThreadPoolExecutor(max_workers=1) as timeout_executor:
                         future = timeout_executor.submit(self.executor.execute_request, request)
