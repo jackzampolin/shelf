@@ -15,8 +15,8 @@ class LLMBatchClient:
         model: str,
         max_workers: Optional[int] = None,
         rate_limit: Optional[int] = None,
-        max_retries: int = 5,
-        retry_jitter: tuple = (1.0, 3.0),
+        max_retries: int = 7,
+        retry_jitter: tuple = (0.1, 0.5),
         logger=None,
     ):
         if logger is None:

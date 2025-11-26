@@ -44,7 +44,7 @@ class RetryPolicy:
 
             except MalformedResponseError as e:
                 if attempt < max(1, self.max_retries) - 1:
-                    delay = 2.0 + random.uniform(-1.5, 1.5)
+                    delay = 0.5 + random.uniform(-0.2, 0.3)
                     self.logger.debug(
                         f"Malformed response, retrying in {delay:.1f}s",
                         model=model,
@@ -77,7 +77,7 @@ class RetryPolicy:
                     )
                     raise
 
-                delay = 2.0 + random.uniform(-1.5, 1.5)
+                delay = 0.5 + random.uniform(-0.2, 0.3)
 
                 if status_code in [413, 422]:
                     self._inject_nonce(payload, status_code, attempt)
@@ -97,7 +97,7 @@ class RetryPolicy:
 
             except requests.exceptions.Timeout:
                 if attempt < max(1, self.max_retries) - 1:
-                    delay = 2.0 + random.uniform(-1.5, 1.5)
+                    delay = 0.5 + random.uniform(-0.2, 0.3)
                     self.logger.debug(
                         f"Request timeout, retrying in {delay:.1f}s",
                         model=model,

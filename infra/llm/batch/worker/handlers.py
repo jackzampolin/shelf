@@ -83,8 +83,13 @@ def handle_retry(
         execution_time=result.execution_time_seconds
     )
 
-    jitter = random.uniform(*worker_pool.retry_jitter)
-    time.sleep(jitter)
+    # Immediate retry (100ms) for transient errors that don't need backoff
+    transient_errors = {'json_parse', 'null_response', 'thread_timeout'}
+    if result.error_type in transient_errors:
+        time.sleep(0.1)
+    else:
+        jitter = random.uniform(*worker_pool.retry_jitter)
+        time.sleep(jitter)
     queue.put(request)
 
     with worker_pool.request_tracking_lock:
