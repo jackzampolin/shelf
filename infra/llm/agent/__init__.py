@@ -3,7 +3,7 @@ from .schemas import AgentResult, AgentEvent
 from .metrics import agent_result_to_metrics, record_agent_result
 
 from .single import AgentConfig, AgentClient, AgentProgressDisplay
-from .batch import AgentBatchConfig, AgentBatchClient, AgentBatchResult, MultiAgentProgressDisplay
+from .batch import AgentBatchConfig, AgentBatchClient, AgentBatchResult
 
 __all__ = [
     'AgentTools',
@@ -17,5 +17,4 @@ __all__ = [
     'agent_result_to_metrics',
     'record_agent_result',
     'AgentProgressDisplay',
-    'MultiAgentProgressDisplay',
 ]

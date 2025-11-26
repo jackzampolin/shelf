@@ -9,4 +9,5 @@ from ..single import AgentConfig
 class AgentBatchConfig:
     tracker: PhaseStatusTracker
     agent_configs: List[AgentConfig]
+    batch_name: str = "agent-batch"
     max_workers: int = 10

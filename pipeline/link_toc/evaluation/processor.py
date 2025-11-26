@@ -112,6 +112,7 @@ def search_missing_candidates(
     batch_config = AgentBatchConfig(
         tracker=tracker,
         agent_configs=configs,
+        batch_name="link-toc-missing-search",
         max_workers=len(configs)  # All in parallel
     )
 

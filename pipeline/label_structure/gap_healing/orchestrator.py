@@ -151,6 +151,7 @@ def heal_all_clusters(tracker: PhaseStatusTracker, **kwargs):
     batch_config = AgentBatchConfig(
         tracker=tracker,
         agent_configs=configs,
+        batch_name="label-structure-gap-healing",
         max_workers=max_workers
     )
 

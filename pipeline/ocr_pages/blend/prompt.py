@@ -7,20 +7,20 @@ You will receive:
 The IMAGE is your source of truth. When OCR outputs conflict, look at the image to determine correct text and markdown structure.
 
 OCR source characteristics:
-- **Mistral**: The only output that contains native markdown structure. May trim page numbers or have text errors or miss markdown structure.
-- **OlmOCR**: High accuracy text but plain text only, no formatting. generally excludes headers and page numbers.
-- **PaddleOCR**: Reliable page numbers and headers. Plain text only. Rare failure modes of repeated text.
+- **Mistral**: The only output that contains native markdown structure. Generally excludes headers and page numbers.
+- **OlmOCR**: High accuracy text but plain text only, no formatting. Generally excludes headers and page numbers.
+- **PaddleOCR**: Generally includes page numbers and headers. Plain text only. Rare failure modes of repeated text.
 
 Markdown patterns to use:
 - Headings: #, ##, ###, ####
 - Footnotes: ${ }^{1}$, ${ }^{2}$, etc. (LaTeX superscript)
 - Images: ![img-N.jpeg](img-N.jpeg)
-- Tables: | col | col | with :--: alignment
-- Bold: **text**
 - Lists: - item
 
 Quality checks:
 - If one output differs substantially from the other two, verify against the IMAGE
+- When labeling headings, confirm with the IMAGE
+- Running headers don't need markdown formatting, but should be included
 - Ensure all text from the OCR outputs is included unless clearly erroneous
 - Maintain original spelling and punctuation from the OCR outputs
 - Keep logical paragraph breaks

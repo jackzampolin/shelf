@@ -3,7 +3,7 @@ from typing import Dict, Any
 from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import page_batch_tracker, MultiPhaseStatusTracker
-from infra.ocr import OCRBatchProcessor
+from infra.ocr import OCRBatchProcessor, OCRBatchConfig
 from infra.config import Config
 from .provider import MistralOCRProvider, OlmOCRProvider, PaddleOCRProvider
 from . import blend
@@ -44,30 +44,30 @@ class OcrPagesStage(BaseStage):
         self.blend_max_workers = 10
 
         def run_mistral(tracker, **kwargs):
-            processor = OCRBatchProcessor(
+            processor = OCRBatchProcessor(OCRBatchConfig(
+                tracker=tracker,
                 provider=MistralOCRProvider(
                     tracker.stage_storage,
                     include_images=self.include_images
                 ),
-                status_tracker=tracker,
                 max_workers=self.max_workers,
-            )
+            ))
             return processor.process_batch()
 
         def run_olm(tracker, **kwargs):
-            processor = OCRBatchProcessor(
+            processor = OCRBatchProcessor(OCRBatchConfig(
+                tracker=tracker,
                 provider=OlmOCRProvider(tracker.stage_storage),
-                status_tracker=tracker,
                 max_workers=self.max_workers,
-            )
+            ))
             return processor.process_batch()
 
         def run_paddle(tracker, **kwargs):
-            processor = OCRBatchProcessor(
+            processor = OCRBatchProcessor(OCRBatchConfig(
+                tracker=tracker,
                 provider=PaddleOCRProvider(tracker.stage_storage),
-                status_tracker=tracker,
                 max_workers=self.max_workers,
-            )
+            ))
             return processor.process_batch()
 
         self.mistral_tracker = page_batch_tracker(

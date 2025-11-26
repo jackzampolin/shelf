@@ -194,6 +194,7 @@ def find_all_toc_entries(tracker, **kwargs):
     batch_config = AgentBatchConfig(
         tracker=tracker,
         agent_configs=configs,
+        batch_name="link-toc-find-entries",
         max_workers=10
     )
 

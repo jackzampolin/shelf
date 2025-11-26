@@ -5,9 +5,12 @@ from PIL import Image
 import json
 from pathlib import Path
 
-from infra.llm.rate_limiter import RateLimiter
 from rich.progress import Progress, BarColumn, TextColumn, TaskProgressColumn, TimeRemainingColumn
-from .provider import OCRProvider
+from rich.console import Console
+
+from infra.llm.rate_limiter import RateLimiter
+from infra.llm.batch.progress.display import format_batch_summary
+from .config import OCRBatchConfig
 
 
 def _log_failure(logs_dir: Path, page_num: int, error: str, attempt: int, max_retries: int):
@@ -35,36 +38,31 @@ def _log_failure(logs_dir: Path, page_num: int, error: str, attempt: int, max_re
 
 
 class OCRBatchProcessor:
-    def __init__(
-        self,
-        provider: OCRProvider,
-        status_tracker,
-        max_workers: int = 10,
-    ):
-        self.provider = provider
-        self.status_tracker = status_tracker
-        self.storage = status_tracker.storage
-        self.logger = status_tracker.logger
-        self.max_workers = max_workers
+    def __init__(self, config: OCRBatchConfig):
+        self.config = config
+        self.provider = config.provider
+        self.tracker = config.tracker
+        self.storage = config.tracker.storage
+        self.logger = config.tracker.logger
+        self.max_workers = config.max_workers
+        self.batch_name = config.batch_name or config.provider.name
 
-        # Use tracker's stage_storage and phase info
-        self.stage_storage = status_tracker.stage_storage
-        self.subdir = status_tracker.phase_name  # e.g., "mistral", "olm", "paddle"
-        self.metrics_manager = status_tracker.metrics_manager
-        self.metrics_prefix = status_tracker.metrics_prefix
+        self.stage_storage = config.tracker.stage_storage
+        self.subdir = config.tracker.phase_name
+        self.metrics_manager = config.tracker.metrics_manager
+        self.metrics_prefix = config.tracker.metrics_prefix
 
-        if provider.requests_per_second != float('inf'):
-            requests_per_minute = int(provider.requests_per_second * 60)
+        if self.provider.requests_per_second != float('inf'):
+            requests_per_minute = int(self.provider.requests_per_second * 60)
             self.rate_limiter = RateLimiter(requests_per_minute=requests_per_minute)
         else:
             self.rate_limiter = None
 
     def process_batch(self) -> Dict[str, Any]:
-        page_nums = self.status_tracker.get_remaining_items()
+        page_nums = self.tracker.get_remaining_items()
 
         source_storage = self.storage.stage("source")
-        # Use tracker's phase_dir for logs
-        logs_dir = self.status_tracker.phase_dir / "logs"
+        logs_dir = self.tracker.phase_dir / "logs"
 
         pages_processed = 0
         total_cost = 0.0
@@ -78,14 +76,11 @@ class OCRBatchProcessor:
             else "unlimited"
         )
 
-        self.logger.info(f"=== {self.provider.name.upper()} OCR: Processing {len(page_nums)} pages ===")
-        self.logger.info(f"Provider: {self.provider.name}")
-        self.logger.info(f"Workers: {self.max_workers}")
-        self.logger.info(f"Rate limit: {rate_limit_str}")
-        self.logger.info(f"Max retries: {self.provider.max_retries}")
+        self.logger.info(f"Processing {len(page_nums)} pages with {self.provider.name}")
+        self.logger.info(f"Workers: {self.max_workers}, Rate limit: {rate_limit_str}")
 
         progress = Progress(
-            TextColumn(f"{self.provider.name}-ocr{{task.description}}"),
+            TextColumn("   {task.description}"),
             BarColumn(bar_width=40),
             TaskProgressColumn(),
             TextColumn("•"),
@@ -94,8 +89,6 @@ class OCRBatchProcessor:
             TextColumn("{task.fields[suffix]}", justify="right"),
             transient=True
         )
-        progress.__enter__()
-        task_id = progress.add_task("", total=len(page_nums), suffix="")
 
         def process_single_page(page_num: int) -> Dict[str, Any]:
             nonlocal pages_processed, total_cost, total_chars, total_time
@@ -108,7 +101,6 @@ class OCRBatchProcessor:
                 _log_failure(logs_dir, page_num, error_msg, attempt=0, max_retries=self.provider.max_retries)
                 return {"success": False, "page_num": page_num, "error": error_msg}
 
-            # Load image
             try:
                 image = Image.open(page_file)
             except Exception as e:
@@ -117,106 +109,84 @@ class OCRBatchProcessor:
                 _log_failure(logs_dir, page_num, error_msg, attempt=0, max_retries=self.provider.max_retries)
                 return {"success": False, "page_num": page_num, "error": error_msg}
 
-            # Retry loop with exponential backoff
             result = None
             for attempt in range(self.provider.max_retries + 1):
                 try:
-                    # Rate limiting
                     if self.rate_limiter:
                         self.rate_limiter.consume()
 
-                    # Call provider
                     result = self.provider.process_image(image, page_num)
 
-                    # Check if successful
                     if result.success:
                         result.retry_count = attempt
                         break
                     else:
-                        # Provider returned failure, retry if attempts remain
                         if attempt < self.provider.max_retries:
                             delay = self.provider.retry_delay_base ** attempt
                             time.sleep(delay)
                             continue
                         else:
-                            # Out of retries
                             _log_failure(logs_dir, page_num, result.error_message, attempt, self.provider.max_retries)
                             return {"success": False, "page_num": page_num, "error": result.error_message}
 
                 except Exception as e:
                     error_msg = str(e)
                     if attempt < self.provider.max_retries:
-                        # Retry after backoff
                         delay = self.provider.retry_delay_base ** attempt
                         time.sleep(delay)
                         continue
                     else:
-                        # Out of retries
                         _log_failure(logs_dir, page_num, error_msg, attempt, self.provider.max_retries)
                         return {"success": False, "page_num": page_num, "error": error_msg}
 
-            # Success - let provider handle result (save + metrics)
             if result and result.success:
-                # Pass subdir and metrics_prefix to provider
                 self.provider.handle_result(page_num, result, subdir=self.subdir, metrics_prefix=self.metrics_prefix)
 
-                # Update aggregates
                 pages_processed += 1
                 total_cost += result.cost_usd
                 total_chars += len(result.text)
                 total_time += result.execution_time_seconds
 
-                # Update progress bar
-                avg_time = total_time / pages_processed if pages_processed > 0 else 0
-                progress.update(
-                    task_id,
-                    completed=pages_processed,
-                    suffix=f"{pages_processed}/{len(page_nums)} • ${total_cost:.4f} • {total_chars:,} chars • {avg_time:.1f}s/page"
-                )
-
                 return {"success": True, "page_num": page_num}
             else:
                 return {"success": False, "page_num": page_num, "error": "Unknown error"}
 
-        # Process pages in parallel
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = {executor.submit(process_single_page, page_num): page_num for page_num in page_nums}
+        with progress:
+            task_id = progress.add_task("", total=len(page_nums), suffix="starting...")
 
-            for future in as_completed(futures):
-                result = future.result()
-                if not result["success"]:
-                    failed_pages.append(result["page_num"])
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = {executor.submit(process_single_page, page_num): page_num for page_num in page_nums}
 
-        # Finish progress bar
-        progress.__exit__(None, None, None)
+                for future in as_completed(futures):
+                    result = future.result()
+                    if not result["success"]:
+                        failed_pages.append(result["page_num"])
 
-        # Log completion summary (mistral-ocr style)
-        summary_lines = [
-            "",
-            "=" * 80,
-            f"{self.provider.name.upper()} OCR Complete",
-            "=" * 80,
-            f"Pages processed: {pages_processed}/{len(page_nums)}" + (f" ({len(failed_pages)} failed)" if failed_pages else ""),
-            f"Total cost:     ${total_cost:.4f}",
-            f"Total chars:    {total_chars:,}",
-            f"Total time:     {total_time:.1f}s",
-        ]
+                    avg_time = total_time / pages_processed if pages_processed > 0 else 0
+                    progress.update(
+                        task_id,
+                        completed=pages_processed + len(failed_pages),
+                        suffix=f"{pages_processed}/{len(page_nums)} • ${total_cost:.4f} • {avg_time:.1f}s/pg"
+                    )
 
-        if pages_processed > 0:
-            summary_lines.append(f"Avg time/page:  {total_time / pages_processed:.1f}s")
+        summary_text = format_batch_summary(
+            batch_name=self.batch_name,
+            completed=pages_processed,
+            total=len(page_nums),
+            time_seconds=total_time,
+            prompt_tokens=0,
+            completion_tokens=0,
+            reasoning_tokens=0,
+            cost_usd=total_cost,
+            unit="pages"
+        )
+        Console().print(summary_text)
 
-        if self.rate_limiter:
-            wait_stats = self.rate_limiter.get_status()
-            if wait_stats['total_waited_sec'] > 0:
-                summary_lines.append(f"Rate limit wait: {wait_stats['total_waited_sec']:.1f}s")
+        self.logger.info(
+            f"{self.batch_name} complete: {pages_processed}/{len(page_nums)} pages, "
+            f"${total_cost:.4f}, {total_chars:,} chars"
+        )
 
-        summary_lines.append("=" * 80)
-
-        # Log to both progress bar display and file
-        summary_text = "\n".join(summary_lines)
-        self.logger.info(summary_text)
-
-        # Determine status
         if pages_processed == len(page_nums):
             status = "success"
         elif pages_processed > 0:
