@@ -9,7 +9,7 @@ from rich.progress import Progress, BarColumn, TextColumn, TaskProgressColumn, T
 from rich.console import Console
 
 from infra.llm.rate_limiter import RateLimiter
-from infra.llm.batch.progress.display import format_batch_summary
+from infra.llm.batch.progress.display import format_ocr_summary
 from .config import OCRBatchConfig
 
 
@@ -169,16 +169,13 @@ class OCRBatchProcessor:
                         suffix=f"{pages_processed}/{len(page_nums)} • ${total_cost:.4f} • {avg_time:.1f}s/pg"
                     )
 
-        summary_text = format_batch_summary(
+        summary_text = format_ocr_summary(
             batch_name=self.batch_name,
             completed=pages_processed,
             total=len(page_nums),
             time_seconds=total_time,
-            prompt_tokens=0,
-            completion_tokens=0,
-            reasoning_tokens=0,
+            total_chars=total_chars,
             cost_usd=total_cost,
-            unit="pages"
         )
         Console().print(summary_text)
 

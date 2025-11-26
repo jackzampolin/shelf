@@ -1,7 +1,39 @@
 from rich.text import Text
 from rich.console import Console
 
-from infra.llm.display_format import format_token_string
+from infra.llm.display_format import format_token_string, format_token_count
+
+
+def format_ocr_summary(
+    batch_name: str,
+    completed: int,
+    total: int,
+    time_seconds: float,
+    total_chars: int,
+    cost_usd: float,
+    description_width: int = 40
+) -> Text:
+    """Format OCR batch summary with char count and timing."""
+    text = Text()
+    text.append("✅ ", style="green")
+
+    description = f"{batch_name}: {completed}/{total} pages"
+    text.append(f"{description:<{description_width}}", style="")
+
+    text.append(f"({time_seconds:5.1f}s)", style="dim")
+
+    # Char count using same K/M formatting as tokens
+    char_str = f"({format_token_count(total_chars)})chars"
+    text.append(f" {char_str}", style="cyan")
+
+    # Avg time per page
+    avg_time = time_seconds / completed if completed > 0 else 0
+    text.append(f" {avg_time:.2f}s/pg", style="dim")
+
+    cost_cents = cost_usd * 100
+    text.append(f" {cost_cents:5.2f}¢", style="yellow")
+
+    return text
 
 
 def format_batch_summary(
