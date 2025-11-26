@@ -65,14 +65,14 @@ KEYWORD_CATEGORIES = {
 
 
 def extract_text_from_page(storage: BookStorage, page_num: int) -> str:
-    """Extract OCR text from ocr-pages (olm provider)."""
-    from pipeline.ocr_pages.schemas import OlmOcrPageOutput
+    """Extract blended OCR text from ocr-pages."""
+    from pipeline.ocr_pages.schemas import BlendedOcrPageOutput
 
     ocr_stage = storage.stage('ocr-pages')
-    page_data = ocr_stage.load_page(page_num, schema=OlmOcrPageOutput, subdir="olm")
+    page_data = ocr_stage.load_page(page_num, schema=BlendedOcrPageOutput, subdir="blend")
     if not page_data:
-        raise FileNotFoundError(f"OCR data for page {page_num} not found")
-    return page_data.get("text", "")
+        raise FileNotFoundError(f"Blended OCR data for page {page_num} not found")
+    return page_data.get("markdown", "")
 
 
 def search_categorized_patterns(text: str) -> Dict[str, List[str]]:

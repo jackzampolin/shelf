@@ -76,7 +76,7 @@ class TocFinderTools(AgentTools):
                 "type": "function",
                 "function": {
                     "name": "load_ocr_text",
-                    "description": "Load OCR text (both Mistral and OLM) for the CURRENTLY loaded page. Use this AFTER load_page_image to see clean text extraction. This helps analyze structure accurately (indentation levels, numbering patterns, entry hierarchy). Only works if a page is currently loaded.",
+                    "description": "Load blended OCR text for the CURRENTLY loaded page. Use this AFTER load_page_image to see clean text extraction. This helps analyze structure accurately (indentation levels, numbering patterns, entry hierarchy). Only works if a page is currently loaded.",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -250,7 +250,7 @@ class TocFinderTools(AgentTools):
             return json.dumps({"error": f"Failed to load page image: {str(e)}"})
 
     def load_ocr_text(self) -> str:
-        """Load OCR text (both Mistral and OLM) for the currently loaded page."""
+        """Load blended OCR text for the currently loaded page."""
         try:
             if self._current_page_num is None:
                 return json.dumps({
@@ -259,40 +259,26 @@ class TocFinderTools(AgentTools):
 
             page_num = self._current_page_num
 
-            # Load Mistral OCR
-            mistral_ocr = None
+            # Load blended OCR (synthesized from mistral, olm, paddle)
+            blended_ocr = None
             try:
-                mistral_data = self.storage.stage('ocr-pages').load_page(page_num, subdir="mistral")
-                mistral_ocr = mistral_data.get('markdown', '')
+                blended_data = self.storage.stage('ocr-pages').load_page(page_num, subdir="blend")
+                blended_ocr = blended_data.get('markdown', '')
             except FileNotFoundError:
                 pass
 
-            # Load OLM OCR
-            olm_ocr = None
-            try:
-                olm_data = self.storage.stage('ocr-pages').load_page(page_num, subdir="olm")
-                olm_ocr = olm_data.get('text', '') or olm_data.get('markdown', '')
-            except FileNotFoundError:
-                pass
-
-            if not mistral_ocr and not olm_ocr:
+            if not blended_ocr:
                 return json.dumps({
-                    "error": f"No OCR data found for page {page_num}. Ensure ocr-pages stage has run."
+                    "error": f"No blended OCR data found for page {page_num}. Ensure ocr-pages stage has run."
                 })
 
             response = {
                 "success": True,
                 "page_num": page_num,
-                "message": f"OCR text loaded for page {page_num}"
+                "message": f"Blended OCR text loaded for page {page_num}",
+                "ocr_text": blended_ocr,
+                "char_count": len(blended_ocr)
             }
-
-            if mistral_ocr:
-                response["mistral_ocr"] = mistral_ocr
-                response["mistral_char_count"] = len(mistral_ocr)
-
-            if olm_ocr:
-                response["olm_ocr"] = olm_ocr
-                response["olm_char_count"] = len(olm_ocr)
 
             return json.dumps(response, indent=2)
 

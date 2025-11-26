@@ -1,6 +1,6 @@
 from infra.llm.models import LLMRequest
 from infra.pipeline.storage.book_storage import BookStorage
-from pipeline.ocr_pages.schemas import OlmOcrPageOutput, MistralOcrPageOutput
+from pipeline.ocr_pages.schemas import BlendedOcrPageOutput
 from ..schemas import PageRange
 from .prompts import SYSTEM_PROMPT, build_user_prompt
 from .schemas import PageExtractionOutput
@@ -27,13 +27,8 @@ def prepare_toc_request(
     )
 
     ocr_stage = storage.stage('ocr-pages')
-    olm_page = ocr_stage.load_page(page_num, schema=OlmOcrPageOutput, subdir="olm")
-    mistral_page = ocr_stage.load_page(page_num, schema=MistralOcrPageOutput, subdir="mistral")
-
-    mistral_text = mistral_page.get("markdown", "") if mistral_page else ""
-    olm_text = olm_page.get("text", "") if olm_page else ""
-
-    ocr_text = mistral_text if len(mistral_text) > len(olm_text) else olm_text
+    blended_page = ocr_stage.load_page(page_num, schema=BlendedOcrPageOutput, subdir="blend")
+    ocr_text = blended_page.get("markdown", "") if blended_page else ""
 
     page_structure_notes = structure_notes_from_finder.get(page_num, None)
 
