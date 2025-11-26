@@ -9,26 +9,51 @@ if TYPE_CHECKING:
     from infra.pipeline.storage.book_storage import BookStorage
 
 class StageStorage:
+    """Storage for a single pipeline stage.
+
+    Directories and loggers are created lazily to avoid creating
+    empty folders when just reading status.
+    """
     def __init__(self, storage: 'BookStorage', name: str):
         self.storage = storage
         self.name = name
         self._lock = threading.RLock()
 
-        from infra.pipeline.storage.metrics import MetricsManager
-        from infra.pipeline.logger import create_logger
-
+        # output_dir is a path but NOT created until needed
         self.output_dir = storage.book_dir / name
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.metrics_manager = MetricsManager(self.output_dir / 'metrics.json')
 
-        # Create logger for this stage
-        log_dir = storage.book_dir / 'logs'
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_level = "DEBUG" if os.environ.get("DEBUG", "").lower() in ("true", "1", "yes") else "INFO"
-        self._logger = create_logger(storage.scan_id, name, log_dir=log_dir, level=log_level)
+        # Lazy initialization
+        self._metrics_manager = None
+        self._logger = None
+
+    def _ensure_output_dir(self):
+        """Create output directory if it doesn't exist."""
+        if not self.output_dir.exists():
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def metrics_manager(self):
+        """Get metrics manager, creating lazily."""
+        if self._metrics_manager is None:
+            from infra.pipeline.storage.metrics import MetricsManager
+            self._metrics_manager = MetricsManager(self.output_dir / 'metrics.json')
+        return self._metrics_manager
 
     def logger(self):
-        """Get logger instance for this stage."""
+        """Get logger instance for this stage, creating lazily.
+
+        Log file is written to {book}/{stage}/log.jsonl
+        """
+        if self._logger is None:
+            from infra.pipeline.logger import create_logger
+            log_level = "DEBUG" if os.environ.get("DEBUG", "").lower() in ("true", "1", "yes") else "INFO"
+            self._logger = create_logger(
+                self.storage.scan_id,
+                self.name,
+                log_dir=self.output_dir,
+                level=log_level,
+                filename="log.jsonl"
+            )
         return self._logger
 
     def save_page(
@@ -69,6 +94,9 @@ class StageStorage:
         with self._lock:
             output_file = self.output_dir / filename
             temp_file = output_file.with_suffix('.tmp')
+
+            # Ensure parent directories exist (lazy creation)
+            output_file.parent.mkdir(parents=True, exist_ok=True)
 
             try:
                 with open(temp_file, 'w', encoding='utf-8') as f:
@@ -121,11 +149,6 @@ class StageStorage:
             page_nums.append(int(page_num_str))
 
         return sorted(page_nums)
-
-    def get_log_dir(self) -> Path:
-        log_dir = self.output_dir / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        return log_dir
 
     def clean(self):
         import shutil

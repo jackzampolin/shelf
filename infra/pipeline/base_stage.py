@@ -1,8 +1,6 @@
-import os
 from typing import Dict, List, Any
 
 from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.logger import create_logger
 from infra.pipeline.registry import get_stage_class
 
 class BaseStage:
@@ -14,11 +12,10 @@ class BaseStage:
         self.storage = storage
         self.stage_storage = storage.stage(self.name)
 
-        logs_dir = self.stage_storage.output_dir / "logs"
-        logs_dir.mkdir(parents=True, exist_ok=True)
-
-        log_level = "DEBUG" if os.environ.get("DEBUG", "").lower() in ("true", "1") else "INFO"
-        self.logger = create_logger(storage.scan_id, self.name, log_dir=logs_dir, level=log_level)
+    @property
+    def logger(self):
+        """Get logger from stage_storage (single source of truth)."""
+        return self.stage_storage.logger()
 
     @classmethod
     def default_kwargs(cls, **overrides):

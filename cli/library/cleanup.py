@@ -1,13 +1,16 @@
 """
-Cleanup script to remove unexpected directories from library.
+Cleanup script to remove unexpected directories and files from library.
 
-Instead of hardcoding deprecated stages, this script:
-1. Gets current registered stages from the registry
-2. Defines expected non-stage directories (source, logs, etc.)
-3. Removes anything that doesn't match either list
+Handles:
+1. Unexpected directories (not registered stages or expected dirs)
+2. Old timestamped log files (replaced by single append-only logs)
+3. Legacy centralized logs directory (book/logs/ - now each stage has log.jsonl)
+4. Empty files
+5. macOS .DS_Store files
 """
 
 import shutil
+import re
 from pathlib import Path
 from typing import Dict, Any, List, Set
 from rich.console import Console
@@ -23,8 +26,11 @@ console = Console()
 # Expected non-stage directories in book directories
 EXPECTED_NON_STAGES = {
     "source",       # Source PDF/images
-    "web_logs",     # Web UI logs
+    "web_logs",     # Web UI logs (may deprecate later)
 }
+
+# Pattern for old timestamped log files: stage_YYYYMMDD_HHMMSS.jsonl
+TIMESTAMPED_LOG_PATTERN = re.compile(r'^.+_\d{8}_\d{6}\.jsonl$')
 
 def get_expected_directories() -> Set[str]:
     """Get set of all expected directory names in a book."""
@@ -202,6 +208,178 @@ def cleanup_root_stubs(storage_root: Path, dry_run: bool = False) -> Dict[str, A
         }
 
 
+def cleanup_logs(storage_root: Path, dry_run: bool = False) -> Dict[str, Any]:
+    """Clean up legacy log files and directories.
+
+    Removes:
+    1. Legacy centralized logs directory (book/logs/) - now logs live in book/stage/log.jsonl
+    2. Old timestamped log files (*_YYYYMMDD_HHMMSS.jsonl) anywhere
+    3. Nested logs directories inside stages (book/stage/logs/)
+    4. Empty log files
+
+    Args:
+        storage_root: Library storage root path
+        dry_run: If True, only report what would be done
+
+    Returns:
+        Dict with cleanup stats
+    """
+    stats = {
+        "legacy_logs_dirs": [],
+        "timestamped_logs": [],
+        "nested_logs_dirs": [],
+        "empty_files": [],
+        "total_size": 0,
+    }
+
+    # Find all log-related cleanup targets
+    for book_dir in storage_root.iterdir():
+        if not book_dir.is_dir() or book_dir.name.startswith('.'):
+            continue
+
+        # 1. Find legacy centralized logs directory (book/logs/)
+        legacy_logs_dir = book_dir / "logs"
+        if legacy_logs_dir.exists() and legacy_logs_dir.is_dir():
+            size = get_directory_size(legacy_logs_dir)
+            stats["legacy_logs_dirs"].append({
+                "path": legacy_logs_dir,
+                "size": size,
+            })
+            stats["total_size"] += size
+
+        # 2. Find nested logs directories (book/stage/logs/)
+        for stage_dir in book_dir.iterdir():
+            if not stage_dir.is_dir():
+                continue
+            if stage_dir.name in EXPECTED_NON_STAGES or stage_dir.name == "logs":
+                continue
+
+            nested_logs = stage_dir / "logs"
+            if nested_logs.exists() and nested_logs.is_dir():
+                size = get_directory_size(nested_logs)
+                stats["nested_logs_dirs"].append({
+                    "path": nested_logs,
+                    "size": size,
+                })
+                stats["total_size"] += size
+
+        # 3. Find old timestamped log files anywhere in book
+        for jsonl_file in book_dir.rglob("*.jsonl"):
+            if TIMESTAMPED_LOG_PATTERN.match(jsonl_file.name):
+                size = jsonl_file.stat().st_size
+                stats["timestamped_logs"].append({
+                    "path": jsonl_file,
+                    "size": size,
+                })
+                stats["total_size"] += size
+
+        # 4. Find empty .jsonl files (but not log.jsonl which may be legitimately empty)
+        for jsonl_file in book_dir.rglob("*.jsonl"):
+            if jsonl_file.stat().st_size == 0 and jsonl_file.name != "log.jsonl":
+                stats["empty_files"].append({"path": jsonl_file, "size": 0})
+
+    total_items = (
+        len(stats["legacy_logs_dirs"]) +
+        len(stats["timestamped_logs"]) +
+        len(stats["nested_logs_dirs"]) +
+        len(stats["empty_files"])
+    )
+
+    if total_items == 0:
+        return {"status": "skipped", "reason": "nothing_to_clean"}
+
+    if dry_run:
+        return {
+            "status": "would_clean",
+            "legacy_logs_dirs_count": len(stats["legacy_logs_dirs"]),
+            "timestamped_logs_count": len(stats["timestamped_logs"]),
+            "nested_logs_dirs_count": len(stats["nested_logs_dirs"]),
+            "empty_files_count": len(stats["empty_files"]),
+            "total_size": stats["total_size"],
+        }
+
+    # Perform cleanup
+    removed = {"legacy_logs_dirs": 0, "timestamped_logs": 0, "nested_logs_dirs": 0, "empty_files": 0}
+
+    try:
+        # Remove legacy logs directories
+        for item in stats["legacy_logs_dirs"]:
+            shutil.rmtree(item["path"])
+            removed["legacy_logs_dirs"] += 1
+
+        # Remove timestamped logs
+        for item in stats["timestamped_logs"]:
+            if item["path"].exists():  # May have been removed with legacy dir
+                item["path"].unlink()
+                removed["timestamped_logs"] += 1
+
+        # Remove nested logs directories
+        for item in stats["nested_logs_dirs"]:
+            shutil.rmtree(item["path"])
+            removed["nested_logs_dirs"] += 1
+
+        # Remove empty files
+        for item in stats["empty_files"]:
+            if item["path"].exists():  # May have been removed with legacy dir
+                item["path"].unlink()
+                removed["empty_files"] += 1
+
+        return {
+            "status": "success",
+            "removed_legacy_logs_dirs": removed["legacy_logs_dirs"],
+            "removed_timestamped_logs": removed["timestamped_logs"],
+            "removed_nested_logs_dirs": removed["nested_logs_dirs"],
+            "removed_empty_files": removed["empty_files"],
+            "total_size": stats["total_size"],
+        }
+
+    except Exception as e:
+        return {
+            "status": "partial",
+            "removed_legacy_logs_dirs": removed["legacy_logs_dirs"],
+            "removed_timestamped_logs": removed["timestamped_logs"],
+            "removed_nested_logs_dirs": removed["nested_logs_dirs"],
+            "removed_empty_files": removed["empty_files"],
+            "error": str(e),
+        }
+
+
+def cleanup_ds_store(storage_root: Path, dry_run: bool = False) -> Dict[str, Any]:
+    """Remove .DS_Store files from library.
+
+    Args:
+        storage_root: Library storage root path
+        dry_run: If True, only report what would be done
+
+    Returns:
+        Dict with cleanup stats
+    """
+    ds_files = list(storage_root.rglob(".DS_Store"))
+
+    if not ds_files:
+        return {"status": "skipped", "reason": "nothing_to_clean"}
+
+    total_size = sum(f.stat().st_size for f in ds_files)
+
+    if dry_run:
+        return {
+            "status": "would_clean",
+            "count": len(ds_files),
+            "total_size": total_size,
+        }
+
+    try:
+        for f in ds_files:
+            f.unlink()
+        return {
+            "status": "success",
+            "removed_count": len(ds_files),
+            "total_size": total_size,
+        }
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
+
+
 def cmd_cleanup(args):
     """Clean up unexpected directories from library."""
     library = Library(storage_root=Config.book_storage_root)
@@ -269,6 +447,20 @@ def cmd_cleanup(args):
     elif stub_result["status"] == "would_clean":
         total_size_cleaned += stub_result["total_size"]
 
+    # Clean up logs (timestamped files, nested dirs, empty files)
+    console.print("\n[bold]Cleaning logs...[/bold]")
+    logs_result = cleanup_logs(library.storage_root, dry_run=args.dry_run)
+
+    if logs_result["status"] in ("success", "would_clean", "partial"):
+        total_size_cleaned += logs_result.get("total_size", 0)
+
+    # Clean up .DS_Store files
+    console.print("\n[bold]Cleaning .DS_Store files...[/bold]")
+    ds_result = cleanup_ds_store(library.storage_root, dry_run=args.dry_run)
+
+    if ds_result["status"] in ("success", "would_clean"):
+        total_size_cleaned += ds_result.get("total_size", 0)
+
     # Print summary
     console.print("\n[bold]Cleanup Summary[/bold]")
     console.print("=" * 80)
@@ -293,6 +485,17 @@ def cmd_cleanup(args):
             console.print(f"\n[cyan]Would clean root stubs:[/cyan]")
             console.print(f"  Directories: {', '.join(stub_result['stubs'])}")
             console.print(f"  Size: {format_size(stub_result['total_size'])}")
+
+        if logs_result["status"] == "would_clean":
+            console.print(f"\n[cyan]Would clean logs:[/cyan]")
+            console.print(f"  Legacy logs directories (book/logs/): {logs_result['legacy_logs_dirs_count']}")
+            console.print(f"  Timestamped log files: {logs_result['timestamped_logs_count']}")
+            console.print(f"  Nested logs directories: {logs_result['nested_logs_dirs_count']}")
+            console.print(f"  Empty files: {logs_result['empty_files_count']}")
+            console.print(f"  Size: {format_size(logs_result['total_size'])}")
+
+        if ds_result["status"] == "would_clean":
+            console.print(f"\n[cyan]Would clean .DS_Store files: {ds_result['count']}[/cyan]")
 
         if results["skipped"]:
             console.print(f"\n[yellow]Would skip {len(results['skipped'])} books (nothing to clean)[/yellow]")
@@ -319,6 +522,19 @@ def cmd_cleanup(args):
             console.print(f"\n[green]Cleaned root stubs:[/green]")
             console.print(f"  Removed: {', '.join(stub_result['removed_stubs'])}")
             console.print(f"  Size: {format_size(stub_result['total_size'])}")
+
+        if logs_result["status"] in ("success", "partial"):
+            console.print(f"\n[green]Cleaned logs:[/green]")
+            console.print(f"  Legacy logs directories removed: {logs_result.get('removed_legacy_logs_dirs', 0)}")
+            console.print(f"  Timestamped log files removed: {logs_result.get('removed_timestamped_logs', 0)}")
+            console.print(f"  Nested logs directories removed: {logs_result.get('removed_nested_logs_dirs', 0)}")
+            console.print(f"  Empty files removed: {logs_result.get('removed_empty_files', 0)}")
+            console.print(f"  Size: {format_size(logs_result.get('total_size', 0))}")
+            if logs_result["status"] == "partial":
+                console.print(f"  [yellow]Warning: {logs_result.get('error', 'unknown error')}[/yellow]")
+
+        if ds_result["status"] == "success":
+            console.print(f"\n[green]Cleaned .DS_Store files: {ds_result['removed_count']}[/green]")
 
         if results["skipped"]:
             console.print(f"\n[yellow]Skipped {len(results['skipped'])} books (nothing to clean)[/yellow]")

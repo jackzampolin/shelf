@@ -38,6 +38,11 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_data)
 
 class PipelineLogger:
+    """Logger that writes to a single append-only JSONL file per stage.
+
+    File handlers are created lazily on first log message to avoid
+    creating empty log files when nothing is logged.
+    """
     def __init__(
         self,
         scan_id: str,
@@ -45,33 +50,55 @@ class PipelineLogger:
         log_dir: Path,
         console_output: bool = False,
         json_output: bool = True,
-        level: str = "INFO"
+        level: str = "INFO",
+        filename: str = None
     ):
         self.scan_id = scan_id
         self.stage = stage
-
         self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.console_output = console_output
+        self.json_output = json_output
+        self.level = level
+        self.filename = filename or f"{stage}.jsonl"
 
-        logger_name = f"pipeline.{scan_id}.{stage}.{id(self)}"
-        self.logger = logging.getLogger(logger_name)
-        self.logger.setLevel(getattr(logging, level.upper()))
-        self.logger.propagate = False
+        # Lazy initialization - handlers created on first log
+        self._logger = None
+        self._initialized = False
+        self.log_file = None
 
-        if console_output:
+    def _ensure_initialized(self):
+        """Initialize logger and handlers on first use."""
+        if self._initialized:
+            return
+
+        logger_name = f"pipeline.{self.scan_id}.{self.stage}.{id(self)}"
+        self._logger = logging.getLogger(logger_name)
+        self._logger.setLevel(getattr(logging, self.level.upper()))
+        self._logger.propagate = False
+
+        if self.console_output:
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
-            self.logger.addHandler(console_handler)
+            self._logger.addHandler(console_handler)
 
-        if json_output:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            json_file = self.log_dir / f"{stage}_{timestamp}.jsonl"
-            # Ensure parent directory exists (in case log_dir was just created)
-            json_file.parent.mkdir(parents=True, exist_ok=True)
-            json_handler = FlushingFileHandler(json_file)
+        if self.json_output:
+            # Create log directory only when we actually need to write
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+            # Single append-only file (no timestamp in filename)
+            json_file = self.log_dir / self.filename
+            # mode='a' for append
+            json_handler = FlushingFileHandler(json_file, mode='a')
             json_handler.setFormatter(JSONFormatter())
-            self.logger.addHandler(json_handler)
+            self._logger.addHandler(json_handler)
             self.log_file = json_file
+
+        self._initialized = True
+
+    @property
+    def logger(self):
+        """Get the underlying logger, initializing if needed."""
+        self._ensure_initialized()
+        return self._logger
 
     def _log(self, level: str, message: str, **kwargs):
         # Extract reserved logging parameters
@@ -109,9 +136,11 @@ class PipelineLogger:
         self._log('ERROR', message, **kwargs)
 
     def close(self):
-        for handler in self.logger.handlers[:]:
-            handler.close()
-            self.logger.removeHandler(handler)
+        # Only close if we actually initialized handlers
+        if self._initialized and self._logger:
+            for handler in self._logger.handlers[:]:
+                handler.close()
+                self._logger.removeHandler(handler)
 
     def __enter__(self):
         return self
