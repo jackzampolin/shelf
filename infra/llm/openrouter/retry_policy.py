@@ -115,6 +115,28 @@ class RetryPolicy:
                     )
                     raise
 
+            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
+                if attempt < max(1, self.max_retries) - 1:
+                    delay = 1.0 + random.uniform(0, 1.0)
+                    self.logger.warning(
+                        f"Connection error ({type(e).__name__}), retrying in {delay:.1f}s",
+                        model=model,
+                        attempt=attempt+1,
+                        max_retries=self.max_retries,
+                        delay_seconds=delay,
+                        error=str(e)
+                    )
+                    time.sleep(delay)
+                    continue
+                else:
+                    self.logger.error(
+                        f"Connection error on final attempt, raising",
+                        model=model,
+                        attempt=attempt+1,
+                        error=str(e)
+                    )
+                    raise
+
             except Exception as e:
                 self.logger.error(
                     f"Unexpected error during LLM call (not retryable)",
