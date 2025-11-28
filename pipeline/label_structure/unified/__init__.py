@@ -1,13 +1,13 @@
-from .processor import process_structural_metadata
+from .processor import process_unified_extraction
 from infra.pipeline.status import page_batch_tracker
 
 
 def create_tracker(stage_storage, model: str, max_workers: int):
-    """Create the structural metadata extraction phase tracker."""
+    """Create the unified structure + annotations extraction phase tracker."""
     return page_batch_tracker(
         stage_storage=stage_storage,
-        phase_name="structure",
-        run_fn=process_structural_metadata,
+        phase_name="unified",
+        run_fn=process_unified_extraction,
         use_subdir=True,
         run_kwargs={
             "model": model,
@@ -17,6 +17,6 @@ def create_tracker(stage_storage, model: str, max_workers: int):
 
 
 __all__ = [
-    "process_structural_metadata",
+    "process_unified_extraction",
     "create_tracker",
 ]

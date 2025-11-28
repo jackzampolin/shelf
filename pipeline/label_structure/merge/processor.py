@@ -5,11 +5,15 @@ from infra.pipeline.status import PhaseStatusTracker
 from infra.pipeline.storage.book_storage import BookStorage
 from ..schemas.merged_output import LabelStructurePageOutput
 from ..schemas.mechanical import MechanicalExtractionOutput
-from ..schemas.structure import StructuralMetadataOutput
-from ..schemas.annotations import AnnotationsOutput
+from ..schemas.unified import UnifiedExtractionOutput
 
 
-def _merge_three_sources(stage_storage, page_num: int) -> LabelStructurePageOutput:
+def _merge_two_sources(stage_storage, page_num: int) -> LabelStructurePageOutput:
+    """Merge mechanical + unified outputs into final page output.
+
+    Uses unified output (combined structure + annotations from single LLM call)
+    instead of separate structure and annotations phases.
+    """
     page_filename = f"page_{page_num:04d}.json"
 
     try:
@@ -21,36 +25,28 @@ def _merge_three_sources(stage_storage, page_num: int) -> LabelStructurePageOutp
         raise ValueError(f"Failed to load mechanical output for page {page_num}: {type(e).__name__}: {e}")
 
     try:
-        structure_data = stage_storage.load_file(f"structure/{page_filename}")
-        structure = StructuralMetadataOutput(**structure_data)
+        unified_data = stage_storage.load_file(f"unified/{page_filename}")
+        unified = UnifiedExtractionOutput(**unified_data)
     except FileNotFoundError:
-        raise FileNotFoundError(f"Missing structure output: structure/{page_filename}")
+        raise FileNotFoundError(f"Missing unified output: unified/{page_filename}")
     except Exception as e:
-        raise ValueError(f"Failed to load structure output for page {page_num}: {type(e).__name__}: {e}")
-
-    try:
-        annotations_data = stage_storage.load_file(f"annotations/{page_filename}")
-        annotations = AnnotationsOutput(**annotations_data)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Missing annotations output: annotations/{page_filename}")
-    except Exception as e:
-        raise ValueError(f"Failed to load annotations output for page {page_num}: {type(e).__name__}: {e}")
+        raise ValueError(f"Failed to load unified output for page {page_num}: {type(e).__name__}: {e}")
 
     return LabelStructurePageOutput(
         headings_present=mechanical.headings_present,
         headings=mechanical.headings,
         pattern_hints=mechanical.pattern_hints,
-        header=structure.header,
-        footer=structure.footer,
-        page_number=structure.page_number,
-        markers_present=annotations.markers_present,
-        markers=annotations.markers,
-        footnotes_present=annotations.footnotes_present,
-        footnotes=annotations.footnotes,
-        cross_references_present=annotations.cross_references_present,
-        cross_references=annotations.cross_references,
-        has_horizontal_rule=annotations.has_horizontal_rule,
-        has_small_text_at_bottom=annotations.has_small_text_at_bottom,
+        header=unified.header,
+        footer=unified.footer,
+        page_number=unified.page_number,
+        markers_present=unified.markers_present,
+        markers=unified.markers,
+        footnotes_present=unified.footnotes_present,
+        footnotes=unified.footnotes,
+        cross_references_present=unified.cross_references_present,
+        cross_references=unified.cross_references,
+        has_horizontal_rule=unified.has_horizontal_rule,
+        has_small_text_at_bottom=unified.has_small_text_at_bottom,
     )
 
 
@@ -102,12 +98,12 @@ def _load_patch_if_exists(phase_dir: Path, page_num: int, logger=None, phase_nam
 
 def get_base_merged_page(storage: BookStorage, scan_page: int) -> LabelStructurePageOutput:
     stage_storage = storage.stage("label-structure")
-    return _merge_three_sources(stage_storage, scan_page)
+    return _merge_two_sources(stage_storage, scan_page)
 
 
 def get_simple_fixes_merged_page(storage: BookStorage, scan_page: int) -> LabelStructurePageOutput:
     stage_storage = storage.stage("label-structure")
-    merged = _merge_three_sources(stage_storage, scan_page)
+    merged = _merge_two_sources(stage_storage, scan_page)
     simple_patch = _load_patch_if_exists(stage_storage.output_dir / "simple_gap_healing", scan_page)
     if simple_patch:
         merged = _apply_patch(merged, simple_patch)
@@ -116,7 +112,7 @@ def get_simple_fixes_merged_page(storage: BookStorage, scan_page: int) -> LabelS
 
 def get_merged_page(storage: BookStorage, scan_page: int) -> LabelStructurePageOutput:
     stage_storage = storage.stage("label-structure")
-    merged = _merge_three_sources(stage_storage, scan_page)
+    merged = _merge_two_sources(stage_storage, scan_page)
     simple_patch = _load_patch_if_exists(stage_storage.output_dir / "simple_gap_healing", scan_page)
     if simple_patch:
         merged = _apply_patch(merged, simple_patch)

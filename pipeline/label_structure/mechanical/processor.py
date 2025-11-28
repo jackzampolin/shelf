@@ -8,6 +8,12 @@ def process_mechanical_extraction(
     tracker: PhaseStatusTracker,
     **kwargs: Optional[Dict[str, Any]],
 ) -> None:
+    """Process mechanical pattern extraction using blended OCR output.
+
+    Extracts headings, footnote markers, symbols, and other patterns
+    from the high-quality blended markdown. OLM text is loaded separately
+    only for chart tag detection.
+    """
     tracker.logger.info(f"mechanical pattern extraction starting")
     remaining_pages = tracker.get_remaining_items()
     if not remaining_pages:
@@ -22,18 +28,21 @@ def process_mechanical_extraction(
     for page_num in remaining_pages:
         try:
             ocr_stage = tracker.storage.stage("ocr-pages")
-            mistral_data = ocr_stage.load_page(page_num, subdir="mistral")
-            olm_data = ocr_stage.load_page(page_num, subdir="olm")
-            paddle_data = ocr_stage.load_page(page_num, subdir="paddle")
 
-            mistral_markdown = mistral_data.get("markdown", "")
-            olm_text = olm_data.get("text", "")
-            paddle_text = paddle_data.get("text", "")
+            # Load blended OCR (primary source)
+            blend_data = ocr_stage.load_page(page_num, subdir="blend")
+            blended_markdown = blend_data.get("markdown", "")
+
+            # Load OLM text only for chart tag detection
+            try:
+                olm_data = ocr_stage.load_page(page_num, subdir="olm")
+                olm_text = olm_data.get("text", "")
+            except FileNotFoundError:
+                olm_text = ""
 
             result = extract_mechanical_patterns(
-                mistral_markdown=mistral_markdown,
+                blended_markdown=blended_markdown,
                 olm_text=olm_text,
-                paddle_text=paddle_text
             )
 
             tracker.storage.stage("label-structure").save_file(

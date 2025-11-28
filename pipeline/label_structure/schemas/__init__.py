@@ -11,6 +11,7 @@ from .annotations import (
     CrossReference,
     AnnotationsOutput,
 )
+from .unified import UnifiedExtractionOutput
 from .merged_output import LabelStructurePageOutput
 from .page_report import LabelStructurePageReport
 
@@ -23,16 +24,18 @@ __all__ = [
     "HeadingItem",
     "PatternHints",
     "MechanicalExtractionOutput",
-    # Structural metadata
+    # Structural metadata (shared types used by unified)
     "HeaderObservation",
     "FooterObservation",
     "PageNumberObservation",
-    "StructuralMetadataOutput",
-    # Content annotations
+    "StructuralMetadataOutput",  # Legacy - kept for backwards compat
+    # Content annotations (shared types used by unified)
     "ReferenceMarker",
     "FootnoteContent",
     "CrossReference",
-    "AnnotationsOutput",
+    "AnnotationsOutput",  # Legacy - kept for backwards compat
+    # Unified extraction (replaces separate structure + annotations)
+    "UnifiedExtractionOutput",
     # Merged output
     "LabelStructurePageOutput",
     # Report
