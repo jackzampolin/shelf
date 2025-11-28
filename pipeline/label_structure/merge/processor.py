@@ -8,12 +8,8 @@ from ..schemas.mechanical import MechanicalExtractionOutput
 from ..schemas.unified import UnifiedExtractionOutput
 
 
-def _merge_two_sources(stage_storage, page_num: int) -> LabelStructurePageOutput:
-    """Merge mechanical + unified outputs into final page output.
-
-    Uses unified output (combined structure + annotations from single LLM call)
-    instead of separate structure and annotations phases.
-    """
+def _merge_sources(stage_storage, page_num: int) -> LabelStructurePageOutput:
+    """Merge mechanical + unified outputs into final page output."""
     page_filename = f"page_{page_num:04d}.json"
 
     try:
@@ -98,12 +94,12 @@ def _load_patch_if_exists(phase_dir: Path, page_num: int, logger=None, phase_nam
 
 def get_base_merged_page(storage: BookStorage, scan_page: int) -> LabelStructurePageOutput:
     stage_storage = storage.stage("label-structure")
-    return _merge_two_sources(stage_storage, scan_page)
+    return _merge_sources(stage_storage, scan_page)
 
 
 def get_simple_fixes_merged_page(storage: BookStorage, scan_page: int) -> LabelStructurePageOutput:
     stage_storage = storage.stage("label-structure")
-    merged = _merge_two_sources(stage_storage, scan_page)
+    merged = _merge_sources(stage_storage, scan_page)
     simple_patch = _load_patch_if_exists(stage_storage.output_dir / "simple_gap_healing", scan_page)
     if simple_patch:
         merged = _apply_patch(merged, simple_patch)
@@ -112,7 +108,7 @@ def get_simple_fixes_merged_page(storage: BookStorage, scan_page: int) -> LabelS
 
 def get_merged_page(storage: BookStorage, scan_page: int) -> LabelStructurePageOutput:
     stage_storage = storage.stage("label-structure")
-    merged = _merge_two_sources(stage_storage, scan_page)
+    merged = _merge_sources(stage_storage, scan_page)
     simple_patch = _load_patch_if_exists(stage_storage.output_dir / "simple_gap_healing", scan_page)
     if simple_patch:
         merged = _apply_patch(merged, simple_patch)
