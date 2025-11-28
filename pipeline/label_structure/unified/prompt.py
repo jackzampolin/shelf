@@ -12,10 +12,6 @@ Extract structural metadata (headers, footers, page numbers) and content annotat
 {blended_text}
 </blended_ocr>
 
-<paddle_ocr>
-{paddle_text}
-</paddle_ocr>
-
 <headings>
 {headings_json}
 </headings>
@@ -26,15 +22,17 @@ Extract structural metadata (headers, footers, page numbers) and content annotat
 </input>
 
 <context>
-**OCR Sources:**
-- `blended_ocr`: High-quality synthesized markdown from vision model (primary source)
-- `paddle_ocr`: Raw OCR that often captures headers/page numbers others miss
+**OCR Source:**
+The blended_ocr is a high-quality synthesized markdown created by a vision model
+that verified the text against the original page image. It includes:
+- Proper markdown structure (headings, footnotes, images)
+- Running headers and page numbers
+- All text from the page
 
 **Pattern Hints (from mechanical extraction):**
 - `has_mistral_footnote_refs`: Detected [^N] footnote markers
 - `has_mistral_endnote_refs`: Detected ${{}}^{{N}}$ endnote markers
 - `has_repeated_symbols`: Multiple *, †, ‡ (footnote indicators)
-- `has_olm_chart_tags`: Detected <></> chart/table tags
 - `has_mistral_images`: Detected ![alt](img.jpeg) image references
 
 **Headings:** Already extracted mechanically, exclude from annotation detection.
@@ -52,19 +50,20 @@ If OCR is corrupted (repetitive garbage, random characters, nonsensical):
 ## Part 1: Structural Metadata
 
 **1. Headers (running headers in top margin)**
-- First lines in Paddle that are MISSING from blended OCR = header
-- Typically: book title, chapter name, section name
+- Look at the FIRST line(s) of the blended OCR
+- Running headers are typically: book title, chapter name, section name
+- They appear on most pages and are NOT part of the body content
 - If top text matches a heading from mechanical extraction, it's a chapter title, not a running header
 
 **2. Footers (running footers in bottom margin)**
-- Last lines in Paddle that are MISSING from blended OCR = footer
-- Typically: book title, chapter name, author name
+- Look at the LAST line(s) of the blended OCR
+- Running footers are typically: book title, chapter name, author name
 - NOT footnote content (check pattern hints for footnote indicators)
 
 **3. Page Numbers**
-- Look ONLY in header/footer text identified above
+- Look in header/footer regions identified above
 - Patterns: "Page 34", "- 34 -", "34", "xiv" (Roman numerals)
-- Location: header, footer, or margin
+- Location: header, footer, or standalone at top/bottom
 - NOT body text references: "see page 42" are references, not page numbers
 
 ## Part 2: Content Annotations
@@ -79,7 +78,7 @@ Marker types:
 - Numeric superscript: ¹, ², ³ or small raised numbers
 - Symbols: *, †, ‡, §, ¶ (may be superscript)
 - Bracketed: [1], [2] or (1), (2)
-- LaTeX: ${{}}^{{1}}$, ${{}}^{{2}}$ (from blended OCR)
+- LaTeX: ${{}}^{{1}}$, ${{}}^{{2}}$
 
 Output per marker:
 - marker_text: "17"
@@ -90,7 +89,7 @@ Output per marker:
 
 **2. Footnote Content at Bottom**
 
-Look for footnote content at BOTTOM of page:
+Look for footnote content at BOTTOM of page (before any footer):
 
 Indicators:
 - Horizontal rule or separator (———, ___, whitespace gap)
@@ -104,7 +103,7 @@ Output per footnote:
 - marker: "17"
 - content: "Full footnote text..."
 - confidence: "high" | "medium" | "low"
-- source_provider: "blend" (always use "blend" for blended OCR source)
+- source_provider: "blend"
 
 **3. Cross-References**
 
@@ -173,7 +172,5 @@ Annotation fields:
 - medium: Some ambiguity, acceptable OCR
 - low: Poor OCR, uncertain detections
 
-**source_provider values:**
-- For structure fields: "paddle" (headers/footers typically from paddle) or "blend"
-- For footnotes: always "blend"
+**source_provider:** Always use "blend" for all fields.
 </output_requirements>"""

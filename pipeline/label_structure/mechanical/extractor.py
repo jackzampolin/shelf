@@ -1,6 +1,6 @@
 import re
 from collections import Counter
-from typing import Tuple, Optional
+from typing import Tuple
 from ..schemas.mechanical import (
     HeadingItem,
     PatternHints,
@@ -75,13 +75,6 @@ def detect_endnote_refs(markdown: str) -> Tuple[bool, list[str]]:
     return len(unique_markers) > 0, unique_markers
 
 
-def detect_olm_chart_tags(olm_text: str) -> Tuple[bool, int]:
-    """Detect OLM-specific chart tags (<></>)."""
-    pattern = re.compile(r'<></>')
-    matches = pattern.findall(olm_text)
-    return len(matches) > 0, len(matches)
-
-
 def detect_images(markdown: str) -> Tuple[bool, list[str]]:
     """Detect markdown image references (![alt](file))."""
     pattern = re.compile(r'!\[([^\]]*)\]\(([^\)]+)\)')
@@ -92,46 +85,36 @@ def detect_images(markdown: str) -> Tuple[bool, list[str]]:
 
 def extract_mechanical_patterns(
     blended_markdown: str,
-    olm_text: Optional[str] = None,
 ) -> MechanicalExtractionOutput:
     """Extract mechanical patterns from blended OCR output.
 
-    Uses the blended markdown as primary source for pattern detection.
-    OLM text is optional, used only for OLM-specific chart tag detection.
+    Uses the blended markdown as the sole source for pattern detection.
 
     Args:
         blended_markdown: High-quality synthesized markdown from blend stage
-        olm_text: Optional raw OLM OCR output for chart tag detection
     """
     blended_markdown = blended_markdown or ""
-    olm_text = olm_text or ""
 
     headings_present, headings = extract_headings(blended_markdown)
     pattern_hints = PatternHints()
 
-    # Footnote refs from blended markdown
+    # Footnote refs
     has_fn_refs, fn_count = detect_footnote_refs(blended_markdown)
     pattern_hints.has_mistral_footnote_refs = has_fn_refs
     pattern_hints.mistral_footnote_count = fn_count
 
-    # Repeated symbols from blended markdown
+    # Repeated symbols
     has_symbols, symbol, symbol_count = detect_repeated_symbols(blended_markdown)
     pattern_hints.has_repeated_symbols = has_symbols
     pattern_hints.repeated_symbol = symbol
     pattern_hints.repeated_symbol_count = symbol_count
 
-    # Endnote refs from blended markdown
+    # Endnote refs
     has_en_refs, en_markers = detect_endnote_refs(blended_markdown)
     pattern_hints.has_mistral_endnote_refs = has_en_refs
     pattern_hints.mistral_endnote_markers = en_markers
 
-    # OLM chart tags (only if OLM text provided)
-    if olm_text:
-        has_charts, chart_count = detect_olm_chart_tags(olm_text)
-        pattern_hints.has_olm_chart_tags = has_charts
-        pattern_hints.olm_chart_count = chart_count
-
-    # Image refs from blended markdown
+    # Image refs
     has_images, image_refs = detect_images(blended_markdown)
     pattern_hints.has_mistral_images = has_images
     pattern_hints.mistral_image_refs = image_refs
