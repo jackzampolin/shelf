@@ -17,3 +17,4 @@ class AgentConfig:
     max_tokens: Optional[int] = None
     images: Optional[List[Any]] = None
     max_iterations: int = 15
+    timeout: int = 300  # Per-request timeout in seconds

@@ -109,6 +109,7 @@ class AgentClient:
                         tools=self.config.tools.get_tools(),
                         temperature=self.config.temperature,
                         max_tokens=self.config.max_tokens,
+                        timeout=self.config.timeout,
                         images=images
                     )
 
