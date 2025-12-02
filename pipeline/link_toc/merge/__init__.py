@@ -9,7 +9,7 @@ def create_tracker(stage_storage):
         phase_name="merge",
         artifact_filename="enriched_toc.json",
         run_fn=merge_enriched_toc,
-        use_subdir=True,
+        use_subdir=False,  # Output at stage root for easy access by UI
     )
 
 
