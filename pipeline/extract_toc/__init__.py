@@ -7,9 +7,7 @@ from infra.config import Config
 
 from .schemas import PageRange, TableOfContents, ToCEntry, ExtractTocBookOutput
 from . import find
-from . import detection
-from . import validation
-from . import finalize
+from . import extract
 
 
 class ExtractTocStage(BaseStage):
@@ -50,25 +48,15 @@ class ExtractTocStage(BaseStage):
             max_attempts=max_find_attempts
         )
 
-        # Phase 2: Extract ToC entries from pages
-        self.extract_tracker = detection.create_detection_tracker(self.stage_storage, self.model)
+        # Phase 2: Extract complete ToC (single call)
+        self.extract_tracker = extract.create_extract_tracker(self.stage_storage, self.model)
 
-        # Phase 3: Validate and propose corrections
-        self.validate_tracker = validation.create_validation_tracker(
-            self.stage_storage, self.model, self.max_iterations
-        )
-
-        # Phase 4: Apply corrections and build final ToC
-        self.finalize_tracker = finalize.create_finalize_tracker(self.stage_storage)
-
-        # Multi-phase tracker
+        # Multi-phase tracker (simplified: find → extract)
         self.status_tracker = MultiPhaseStatusTracker(
             stage_storage=self.stage_storage,
             phase_trackers=[
                 self.find_tracker,
                 self.extract_tracker,
-                self.validate_tracker,
-                self.finalize_tracker,
             ]
         )
 
