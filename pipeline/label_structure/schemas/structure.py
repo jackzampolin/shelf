@@ -7,7 +7,7 @@ class HeaderObservation(BaseModel):
     present: bool
     text: Optional[str] = Field(default="", description="Header text if present")
     confidence: Literal["high", "medium", "low"]
-    source_provider: Literal["mistral", "olm", "paddle"]
+    source_provider: Literal["blend"]
 
 
 class FooterObservation(BaseModel):
@@ -15,16 +15,16 @@ class FooterObservation(BaseModel):
     present: bool
     text: Optional[str] = Field(default="", description="Footer text if present")
     confidence: Literal["high", "medium", "low"]
-    source_provider: Literal["mistral", "olm", "paddle"]
+    source_provider: Literal["blend"]
 
 
 class PageNumberObservation(BaseModel):
     """Page number detection from header/footer."""
     present: bool
     number: Optional[str] = Field(default="", description="Page number value")
-    location: Optional[Literal["header", "footer", "margin"]] = None
+    location: Optional[Literal["header", "footer", "margin", ""]] = None
     confidence: Literal["high", "medium", "low"]
-    source_provider: Literal["mistral", "olm", "paddle", "gap_healing_simple", "agent_healed"]
+    source_provider: Literal["blend", "gap_healing_simple", "agent_healed"]
 
 
 class StructuralMetadataOutput(BaseModel):

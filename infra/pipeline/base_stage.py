@@ -21,12 +21,12 @@ class BaseStage:
     def default_kwargs(cls, **overrides):
         return {}
 
-    def get_status(self) -> Dict[Any, Any]:
+    def get_status(self, metrics: bool = False) -> Dict[Any, Any]:
         if not self.status_tracker:
             raise RuntimeError(
                 f"{self.__class__.__name__} must set status_tracker in __init__"
             )
-        return self.status_tracker.get_status()
+        return self.status_tracker.get_status(metrics=metrics)
 
     def check_source_exists(self) -> None:
         source_stage = self.storage.stage("source")

@@ -45,7 +45,7 @@ class EpubOutputStage(BaseStage):
             return [f"{storage.scan_id}.epub"]
 
         def validate_epub(item, phase_dir):
-            epub_path = storage.root_dir / item
+            epub_path = storage.book_dir / item
             return epub_path.exists()
 
         from infra.pipeline.status import PhaseStatusTracker
@@ -63,7 +63,7 @@ class EpubOutputStage(BaseStage):
         storage = tracker.storage
         logger = tracker.logger
 
-        epub_path = storage.root_dir / f"{storage.scan_id}.epub"
+        epub_path = storage.book_dir / f"{storage.scan_id}.epub"
 
         start_time = datetime.now(timezone.utc)
 

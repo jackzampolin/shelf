@@ -18,7 +18,7 @@ class FootnoteContent(BaseModel):
     marker: str = Field(..., description="Matching marker (e.g., '1', '*')")
     content: str = Field(..., description="Full footnote text content")
     confidence: Literal["high", "medium", "low"]
-    source_provider: Literal["mistral", "olm", "paddle"]
+    source_provider: Literal["blend"]
 
 
 class CrossReference(BaseModel):

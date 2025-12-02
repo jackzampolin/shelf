@@ -1,142 +1,55 @@
 """
-Read stage status directly from disk.
+Read stage status using the same mechanism as CLI.
 
-Avoids importing heavy Stage dependencies by reading MetricsManager
-data directly from filesystem.
-
+Uses stage.get_status() for accurate status - same source of truth as CLI.
 Ground truth from disk (ADR 001).
 """
 
 from typing import Dict, Any, Optional
-from pathlib import Path
 
 from infra.pipeline.storage.book_storage import BookStorage
-
-
-def _is_stage_completed(storage: BookStorage, stage_name: str, stage_storage) -> bool:
-    """
-    Check if a stage is completed based on its specific completion markers.
-
-    Each stage has different completion criteria:
-    - ocr-pages: All source pages have outputs in all three provider subdirs
-    - extract-toc: toc.json exists
-    - label-structure: report.csv exists
-    """
-    if stage_name == 'ocr-pages':
-        # New unified OCR stage with subdirectories (mistral/, olm/, paddle/)
-        # Complete when all three providers have processed all pages
-        source_stage = storage.stage("source")
-        source_pages = source_stage.list_pages(extension="png")
-        total_pages = len(source_pages)
-
-        if total_pages == 0:
-            return False
-
-        # Check all three provider subdirectories
-        for provider in ['mistral', 'olm', 'paddle']:
-            provider_dir = stage_storage.output_dir / provider
-            if not provider_dir.exists():
-                return False
-
-            # Count completed pages in this provider
-            completed = 0
-            for page_num in range(1, total_pages + 1):
-                page_path = provider_dir / f"page_{page_num:04d}.json"
-                if page_path.exists():
-                    completed += 1
-
-            # If any provider is incomplete, stage is incomplete
-            if completed != total_pages:
-                return False
-
-        # All three providers complete
-        return True
-
-    elif stage_name == 'extract-toc':
-        # Complete when toc.json exists
-        return (stage_storage.output_dir / 'toc.json').exists()
-
-    elif stage_name == 'label-structure':
-        # Complete when report.csv exists
-        return (stage_storage.output_dir / 'report.csv').exists()
-
-    else:
-        # Unknown stage - check for report.csv as fallback
-        return (stage_storage.output_dir / 'report.csv').exists()
+from infra.pipeline.registry import get_stage_instance
 
 
 def get_stage_status_from_disk(storage: BookStorage, stage_name: str) -> Optional[Dict[str, Any]]:
     """
-    Read stage status directly from MetricsManager without instantiating Stage.
+    Get stage status by instantiating the stage and calling get_status().
 
-    This avoids heavy imports required by Stage classes.
-    Status is read from the stage's metrics file on disk.
+    This uses the same mechanism as the CLI, ensuring consistent status
+    reporting between web UI and command line.
 
     Returns:
         Dict with:
-        - status: str ('completed', 'in_progress', 'not_started')
+        - status: str ('completed', 'in_progress', 'not_started', etc.)
         - metrics: dict (total_cost_usd, stage_runtime_seconds, etc.)
-        or None if stage has no data
+        or None if stage doesn't exist
     """
-    stage_storage = storage.stage(stage_name)
-
-    # Check if stage directory exists
-    if not stage_storage.output_dir.exists():
-        return None
-
-    # Check for completion markers (each stage has different markers)
-    completed = _is_stage_completed(storage, stage_name, stage_storage)
-
-    # Try to get metrics from MetricsManager
-    total_cost = 0.0
-    stage_runtime = 0.0
-
+    stage = None
     try:
-        metrics_manager = stage_storage.metrics_manager
-        all_metrics = metrics_manager.get_all()
+        stage = get_stage_instance(storage, stage_name)
+        status = stage.get_status(metrics=True)
 
-        if all_metrics:
-            # Get stage runtime (actual batch processing time)
-            # Stored as special key 'stage_runtime' with 'time_seconds' value
-            runtime_metrics = metrics_manager.get("stage_runtime")
-            stage_runtime = runtime_metrics.get("time_seconds", 0.0) if runtime_metrics else 0.0
+        # Extract metrics from status
+        status_metrics = status.get('metrics', {})
+        total_cost = status_metrics.get('total_cost_usd', 0.0)
+        stage_runtime = status_metrics.get('stage_runtime_seconds', 0.0)
 
-            # Calculate total cost from all metrics
-            for key, metrics_data in all_metrics.items():
-                total_cost += metrics_data.get('cost_usd', 0.0)
-
-    except Exception:
-        # No metrics yet - that's OK, stage might be starting
-        pass
-
-    # Determine status
-    # Stage is in_progress if:
-    # - Directory exists with content (not just empty)
-    # - Not yet completed
-    if completed:
-        status = 'completed'
-    elif total_cost > 0 or stage_runtime > 0:
-        status = 'in_progress'
-    else:
-        # Check if stage has any output files (indicates work started)
-        has_output = False
-        if stage_storage.output_dir.exists():
-            # Check for any files/dirs besides logs
-            contents = [
-                p for p in stage_storage.output_dir.iterdir()
-                if p.name != 'logs' and p.name != '.gitkeep'
-            ]
-            has_output = len(contents) > 0
-
-        if has_output:
-            status = 'in_progress'
-        else:
-            return None  # No data at all
-
-    return {
-        'status': status,
-        'metrics': {
-            'total_cost_usd': total_cost,
-            'stage_runtime_seconds': stage_runtime,
+        return {
+            'status': status.get('status', 'not_started'),
+            'metrics': {
+                'total_cost_usd': total_cost,
+                'stage_runtime_seconds': stage_runtime,
+            }
         }
-    }
+    except ValueError:
+        # Stage not found in registry
+        return None
+    except Exception:
+        # Stage exists but failed to get status
+        return None
+    finally:
+        if stage is not None:
+            try:
+                stage.logger.close()
+            except Exception:
+                pass

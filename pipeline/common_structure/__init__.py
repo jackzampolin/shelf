@@ -158,7 +158,7 @@ class CommonStructureStage(BaseStage):
     def _build_metadata(self, storage, total_pages: int) -> BookMetadata:
         scan_id = storage.scan_id
 
-        metadata_file = storage.root_dir / "metadata.json"
+        metadata_file = storage.book_dir / "metadata.json"
         existing_metadata = {}
         if metadata_file.exists():
             with open(metadata_file, "r") as f:

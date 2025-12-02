@@ -129,9 +129,10 @@ class LLMBatchProcessor:
             self.logger.error(f"{self.batch_name}: No valid requests prepared")
             return BatchStats()
 
-        # Get total items from tracker (source of truth for phase totals)
+        # Get phase totals for progress display (show full phase progress)
         tracker_status = self.tracker.get_status()
         total_items_in_phase = tracker_status['progress']['total_items']
+        already_completed = tracker_status['progress']['completed_items']
 
         if is_headless():
             # No progress display in headless mode - just run batch processing
@@ -168,6 +169,7 @@ class LLMBatchProcessor:
             return batch_stats
 
         # Normal mode with progress display
+        # Show full phase progress: start at already_completed, go to total_items_in_phase
         progress = Progress(
             TextColumn("   {task.description}"),
             BarColumn(bar_width=40),
@@ -176,7 +178,12 @@ class LLMBatchProcessor:
             transient=True
         )
         progress.__enter__()
-        progress_task = progress.add_task("", total=len(requests), suffix="starting...")
+        progress_task = progress.add_task(
+            "",
+            total=total_items_in_phase,
+            completed=already_completed,
+            suffix=f"{already_completed}/{total_items_in_phase} starting..."
+        )
 
         progress_handler = create_progress_handler(
             progress_bar=progress,
@@ -187,7 +194,8 @@ class LLMBatchProcessor:
             total_requests=total_items_in_phase,
             start_time=start_time,
             batch_start_time=self.batch_client.batch_start_time or start_time,
-            metric_prefix=self.metric_prefix
+            metric_prefix=self.metric_prefix,
+            tracker=self.tracker,
         )
 
         stop_polling = threading.Event()

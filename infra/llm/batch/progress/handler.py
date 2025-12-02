@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from infra.llm.batch.worker import WorkerPool
     from infra.llm.rate_limiter import RateLimiter
+    from infra.pipeline.status import PhaseStatusTracker
 
 from .rollups import aggregate_batch_stats
 from infra.llm.display_format import format_token_string
@@ -18,7 +19,8 @@ def create_progress_handler(
     total_requests: int,
     start_time: float,
     batch_start_time: float,
-    metric_prefix: str = None
+    metric_prefix: str = None,
+    tracker: 'PhaseStatusTracker' = None,
 ):
 
     def handle_progress():
@@ -31,19 +33,27 @@ def create_progress_handler(
             metric_prefix=metric_prefix
         )
 
+        # Get completed count from tracker (counts files on disk, not metrics)
+        # This is the source of truth for phase completion
+        if tracker:
+            tracker_status = tracker.get_status()
+            completed = tracker_status['progress']['completed_items']
+        else:
+            completed = batch_stats.completed
+
         elapsed = time.time() - start_time
         elapsed_mins = int(elapsed // 60)
         elapsed_secs = int(elapsed % 60)
         elapsed_str = f"{elapsed_mins}:{elapsed_secs:02d}"
 
-        parts = [f"{batch_stats.completed}/{total_requests}"]
+        parts = [f"{completed}/{total_requests}"]
 
         # Throughput
         if batch_stats.requests_per_second > 0:
             parts.append(f"{batch_stats.requests_per_second:.1f}/s")
 
         # Time and ETA
-        remaining = total_requests - batch_stats.completed
+        remaining = total_requests - completed
         if batch_stats.requests_per_second > 0 and remaining > 0:
             eta_seconds = remaining / batch_stats.requests_per_second
             eta_mins = int(eta_seconds // 60)
@@ -66,6 +76,6 @@ def create_progress_handler(
         parts.append(f"${batch_stats.total_cost_usd:.2f}")
 
         suffix = " • ".join(parts)
-        progress_bar.update(progress_task, completed=batch_stats.completed, suffix=suffix)
+        progress_bar.update(progress_task, completed=completed, suffix=suffix)
 
     return handle_progress

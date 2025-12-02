@@ -126,14 +126,15 @@ def merge_outputs(tracker: PhaseStatusTracker, **kwargs) -> None:
         return
 
     tracker.logger.info(f"Merging {len(remaining_pages)} pages")
-    stage_storage = tracker.storage.stage("label-structure")
+    book_storage = tracker.storage
+    stage_storage = book_storage.stage("label-structure")
     merged_count = 0
     failed_pages = []
 
     for page_num in remaining_pages:
         page_filename = f"page_{page_num:04d}.json"
         try:
-            merged = get_merged_page(stage_storage, page_num)
+            merged = get_merged_page(book_storage, page_num)
             stage_storage.save_file(page_filename, merged.model_dump(), schema=LabelStructurePageOutput)
             merged_count += 1
             tracker.logger.debug(f"✓ Merged page_{page_num:04d}")
