@@ -251,8 +251,8 @@ def get_page_ocr(
     """
     Get full OCR text for a specific page.
 
-    Uses both OLM and Mistral OCR providers, returning the longer text
-    (which likely captured more content).
+    Uses the blended OCR output which synthesizes high-quality markdown
+    from multiple providers.
 
     Args:
         page_num: Scan page number
@@ -260,33 +260,16 @@ def get_page_ocr(
         logger: Optional logger for warnings
 
     Returns:
-        Full OCR text (best of OLM and Mistral), or empty string if not found
+        Full OCR text from blend, or empty string if not found
     """
-    from pipeline.ocr_pages.schemas import OlmOcrPageOutput, MistralOcrPageOutput
-
     ocr_stage = storage.stage("ocr-pages")
 
-    olm_text = ""
-    mistral_text = ""
-
     try:
-        olm_data = ocr_stage.load_page(page_num, schema=OlmOcrPageOutput, subdir="olm")
-        olm_text = olm_data.get('text', '') if olm_data else ""
+        blend_data = ocr_stage.load_page(page_num, subdir="blend")
+        return blend_data.get("markdown", "")
     except FileNotFoundError:
-        pass
-
-    try:
-        mistral_data = ocr_stage.load_page(page_num, schema=MistralOcrPageOutput, subdir="mistral")
-        mistral_text = mistral_data.get('markdown', '') if mistral_data else ""
-    except FileNotFoundError:
-        pass
-
-    # Return the longer one (likely captured more content)
-    if not olm_text and not mistral_text:
         if logger:
             logger.warning(
-                f"OCR data missing for page {page_num} - returning empty text"
+                f"Blend OCR data missing for page {page_num} - returning empty text"
             )
         return ""
-
-    return mistral_text if len(mistral_text) > len(olm_text) else olm_text
