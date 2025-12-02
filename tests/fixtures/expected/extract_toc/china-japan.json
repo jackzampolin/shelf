@@ -1,0 +1,274 @@
+{
+  "scan_id": "china-japan",
+  "finder_result": {
+    "toc_found": true,
+    "toc_page_range": {
+      "start_page": 4,
+      "end_page": 5
+    },
+    "structure_summary": {
+      "total_levels": 2,
+      "level_patterns": {
+        "1": {
+          "visual": "Flush left, bold, larger font",
+          "numbering": "null",
+          "has_page_numbers": false,
+          "semantic_type": "part"
+        },
+        "2": {
+          "visual": "Indented approximately 0.5-1 inch, standard font",
+          "numbering": "Arabic numerals (1-19)",
+          "has_page_numbers": true,
+          "semantic_type": "chapter"
+        }
+      },
+      "consistency_notes": [
+        "Consistent indentation and numbering across all parts; leader tabs between titles and page numbers; front matter sections on page 4 precede main hierarchy but follow similar list format without numbering."
+      ]
+    }
+  },
+  "toc": {
+    "toc": {
+      "entries": [
+        {
+          "entry_number": null,
+          "title": "List of Illustrations",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "xi"
+        },
+        {
+          "entry_number": null,
+          "title": "List of Maps",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "xiv"
+        },
+        {
+          "entry_number": null,
+          "title": "Acknowledgements",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "xv"
+        },
+        {
+          "entry_number": null,
+          "title": "Dramatis Personae",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "xvii"
+        },
+        {
+          "entry_number": null,
+          "title": "Pronunciation Guide",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "xix"
+        },
+        {
+          "entry_number": null,
+          "title": "List of Abbreviations",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "xx"
+        },
+        {
+          "entry_number": null,
+          "title": "City on Fire",
+          "level": 1,
+          "level_name": "prologue",
+          "printed_page_number": "1"
+        },
+        {
+          "entry_number": "ONE",
+          "title": "The Path to War",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "1",
+          "title": "As Close as Lips and Teeth: China's Fall, Japan's Rise",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "17"
+        },
+        {
+          "entry_number": "2",
+          "title": "A New Revolution",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "34"
+        },
+        {
+          "entry_number": "3",
+          "title": "The Path to Confrontation",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "49"
+        },
+        {
+          "entry_number": "TWO",
+          "title": "Disaster",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "4",
+          "title": "Thirty-Seven Days in Summer: The Outbreak of War",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "73"
+        },
+        {
+          "entry_number": "5",
+          "title": "The Battle for Shanghai",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "92"
+        },
+        {
+          "entry_number": "6",
+          "title": "Refugees and Resistance",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "103"
+        },
+        {
+          "entry_number": "7",
+          "title": "Massacre at Nanjing",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "119"
+        },
+        {
+          "entry_number": "8",
+          "title": "The Battle of Taierzhuang",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "141"
+        },
+        {
+          "entry_number": "9",
+          "title": "The Deadly River",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "155"
+        },
+        {
+          "entry_number": "THREE",
+          "title": "Resisting Alone",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "10",
+          "title": "'A sort of wartime normal'",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "171"
+        },
+        {
+          "entry_number": "11",
+          "title": "Flight into the Unknown",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "196"
+        },
+        {
+          "entry_number": "12",
+          "title": "The Road to Pearl Harbor",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "210"
+        },
+        {
+          "entry_number": "FOUR",
+          "title": "The Poisoned Alliance",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "13",
+          "title": "Destination Burma",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "239"
+        },
+        {
+          "entry_number": "14",
+          "title": "Hunger in Henan",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "264"
+        },
+        {
+          "entry_number": "15",
+          "title": "States of Terror",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "282"
+        },
+        {
+          "entry_number": "16",
+          "title": "Conference at Cairo",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "298"
+        },
+        {
+          "entry_number": "17",
+          "title": "One War, Two Fronts",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "318"
+        },
+        {
+          "entry_number": "18",
+          "title": "Showdown with Stilwell",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "338"
+        },
+        {
+          "entry_number": "19",
+          "title": "Unexpected Victory",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "351"
+        },
+        {
+          "entry_number": null,
+          "title": "The Enduring War",
+          "level": 1,
+          "level_name": "epilogue",
+          "printed_page_number": "372"
+        },
+        {
+          "entry_number": null,
+          "title": "Further Reading",
+          "level": 1,
+          "level_name": "further reading",
+          "printed_page_number": "389"
+        },
+        {
+          "entry_number": null,
+          "title": "Notes",
+          "level": 1,
+          "level_name": "notes",
+          "printed_page_number": "397"
+        },
+        {
+          "entry_number": null,
+          "title": "Index",
+          "level": 1,
+          "level_name": "index",
+          "printed_page_number": "437"
+        }
+      ]
+    }
+  }
+}

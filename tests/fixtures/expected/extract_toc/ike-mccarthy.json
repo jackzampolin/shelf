@@ -1,0 +1,205 @@
+{
+  "scan_id": "ike-mccarthy",
+  "finder_result": {
+    "toc_found": true,
+    "toc_page_range": {
+      "start_page": 3,
+      "end_page": 4
+    },
+    "structure_summary": {
+      "total_levels": 2,
+      "level_patterns": {
+        "1": {
+          "visual": "Flush left, bold, larger font",
+          "numbering": "PART followed by Arabic (1-3)",
+          "has_page_numbers": false,
+          "semantic_type": "part"
+        },
+        "2": {
+          "visual": "Indented ~0.5 inch, standard font",
+          "numbering": "Arabic sequential (1-15)",
+          "has_page_numbers": true,
+          "semantic_type": "chapter"
+        }
+      },
+      "consistency_notes": [
+        "Chapters numbered continuously 1-15 across three parts.",
+        "Front and back matter entries (Preface, Epilogue, etc.) use flush left without sub-entries."
+      ]
+    }
+  },
+  "toc": {
+    "toc": {
+      "entries": [
+        {
+          "entry_number": null,
+          "title": "Preface",
+          "level": 1,
+          "level_name": "preface",
+          "printed_page_number": "ix"
+        },
+        {
+          "entry_number": null,
+          "title": "Prologue",
+          "level": 1,
+          "level_name": "prologue",
+          "printed_page_number": "1"
+        },
+        {
+          "entry_number": "1",
+          "title": "1953: Priorities",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "1",
+          "title": "The First Confrontation",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "9"
+        },
+        {
+          "entry_number": "2",
+          "title": "\"Don't Join the Book Burners!\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "27"
+        },
+        {
+          "entry_number": "3",
+          "title": "\"You're in the Army Now!\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "45"
+        },
+        {
+          "entry_number": "4",
+          "title": "The Secretary and the Senator",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "64"
+        },
+        {
+          "entry_number": "5",
+          "title": "The Turning Point",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "82"
+        },
+        {
+          "entry_number": "2",
+          "title": "1954: Mobilization",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "6",
+          "title": "\"Eisenhower's First Move\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "107"
+        },
+        {
+          "entry_number": "7",
+          "title": "\"Not Fit to Wear That Uniform\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "124"
+        },
+        {
+          "entry_number": "8",
+          "title": "Saving Robert Stevens",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "143"
+        },
+        {
+          "entry_number": "9",
+          "title": "Eisenhower in Command",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "161"
+        },
+        {
+          "entry_number": "10",
+          "title": "A Political D-Day",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "180"
+        },
+        {
+          "entry_number": "3",
+          "title": "1954: Vindication",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "11",
+          "title": "\"A War of Maneuver\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "199"
+        },
+        {
+          "entry_number": "12",
+          "title": "Countdown",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "217"
+        },
+        {
+          "entry_number": "13",
+          "title": "The Eisenhower-McCarthy Hearings",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "233"
+        },
+        {
+          "entry_number": "14",
+          "title": "Protecting the President",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "251"
+        },
+        {
+          "entry_number": "15",
+          "title": "\"No Sense of Decency?\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "271"
+        },
+        {
+          "entry_number": null,
+          "title": "Epilogue",
+          "level": 1,
+          "level_name": "epilogue",
+          "printed_page_number": "289"
+        },
+        {
+          "entry_number": null,
+          "title": "Acknowledgments",
+          "level": 1,
+          "level_name": "acknowledgments",
+          "printed_page_number": "299"
+        },
+        {
+          "entry_number": null,
+          "title": "Notes",
+          "level": 1,
+          "level_name": "notes",
+          "printed_page_number": "303"
+        },
+        {
+          "entry_number": null,
+          "title": "Index",
+          "level": 1,
+          "level_name": "index",
+          "printed_page_number": "369"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "scan_id": "american-caesar",
+  "finder_result": {
+    "toc_found": true,
+    "toc_page_range": {
+      "start_page": 5,
+      "end_page": 5
+    },
+    "structure_summary": {
+      "total_levels": 1,
+      "level_patterns": {
+        "1": {
+          "visual": "Flush left titles with leader dots to right-aligned page numbers",
+          "numbering": "Roman numerals (I-XI)",
+          "has_page_numbers": true,
+          "semantic_type": "chapter"
+        }
+      },
+      "consistency_notes": [
+        "Consistent single-level structure throughout; includes unnumbered front matter (Preamble, Prologue) and back matter entries"
+      ]
+    }
+  },
+  "toc": {
+    "toc": {
+      "entries": [
+        {
+          "entry_number": null,
+          "title": "Illustrations",
+          "level": 1,
+          "level_name": "illustrations",
+          "printed_page_number": "viii"
+        },
+        {
+          "entry_number": null,
+          "title": "Chronology",
+          "level": 1,
+          "level_name": "chronology",
+          "printed_page_number": "xii"
+        },
+        {
+          "entry_number": null,
+          "title": "Preamble: Reveille",
+          "level": 1,
+          "level_name": "preamble",
+          "printed_page_number": "3"
+        },
+        {
+          "entry_number": null,
+          "title": "Prologue: First Call",
+          "level": 1,
+          "level_name": "prologue",
+          "printed_page_number": "13"
+        },
+        {
+          "entry_number": "I",
+          "title": "Ruffles and Flourishes (1880-1917)",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "39"
+        },
+        {
+          "entry_number": "II",
+          "title": "Charge (1917-1918)",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "80"
+        },
+        {
+          "entry_number": "III",
+          "title": "Call to Quarters (1919-1935)",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "116"
+        },
+        {
+          "entry_number": "IV",
+          "title": "To the Colors (1935-1941)",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "161"
+        },
+        {
+          "entry_number": "V",
+          "title": "Retreat (1941-1942)",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "205"
+        },
+        {
+          "entry_number": "VI",
+          "title": "The Green War (1942-1944)",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "277"
+        },
+        {
+          "entry_number": "VII",
+          "title": "At High Port (1944-1945)",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "374"
+        },
+        {
+          "entry_number": "VIII",
+          "title": "Last Post (1945-1950)",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "459"
+        },
+        {
+          "entry_number": "IX",
+          "title": "Sunset Gun (1950-1951)",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "545"
+        },
+        {
+          "entry_number": "X",
+          "title": "Recall (1951)",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "629"
+        },
+        {
+          "entry_number": "XI",
+          "title": "Taps (1951-1964)",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "678"
+        },
+        {
+          "entry_number": null,
+          "title": "Acknowledgments",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "711"
+        },
+        {
+          "entry_number": null,
+          "title": "Notes",
+          "level": 1,
+          "level_name": "notes",
+          "printed_page_number": "713"
+        },
+        {
+          "entry_number": null,
+          "title": "Bibliography",
+          "level": 1,
+          "level_name": "bibliography",
+          "printed_page_number": "745"
+        },
+        {
+          "entry_number": null,
+          "title": "Copyright Acknowledgments",
+          "level": 1,
+          "level_name": "copyright_acknowledgments",
+          "printed_page_number": "763"
+        },
+        {
+          "entry_number": null,
+          "title": "Index",
+          "level": 1,
+          "level_name": "index",
+          "printed_page_number": "765"
+        }
+      ]
+    }
+  }
+}

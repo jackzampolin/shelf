@@ -42,13 +42,20 @@ tests/fixtures/**/extracted_text/
 tests/fixtures/**/fulltext_*.txt
 tests/validation_reports/
 
-# ToC ground truth - exclude copyrighted book content (OCR, images)
-# Keep setup scripts and Python utilities
-tests/fixtures/toc_ground_truth/*/
-!tests/fixtures/toc_ground_truth/README.md
-!tests/fixtures/toc_ground_truth/setup_ground_truth.sh
-!tests/fixtures/toc_ground_truth/__init__.py
+# Old extract-toc fixtures (will be removed) - exclude copyrighted book content
+tests/fixtures/extract_toc/*/
+!tests/fixtures/extract_toc/README.md
+!tests/fixtures/extract_toc/setup_ground_truth.sh
+!tests/fixtures/extract_toc/__init__.py
+
+# New expected results - INCLUDE these (small JSON files only)
+# These are ground truth test expectations, not copyrighted content
+!tests/fixtures/expected/
 
 # Test results tracking - gitignored for local iteration
 # Results are saved with git metadata for correlation
 test_results/
+
+# Test outputs - temporary workspaces for running tests
+# Tests read from library, write outputs here (cleaned after tests)
+test_outputs/

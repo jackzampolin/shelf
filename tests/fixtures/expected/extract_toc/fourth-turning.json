@@ -1,0 +1,210 @@
+{
+  "scan_id": "fourth-turning",
+  "finder_result": {
+    "toc_found": true,
+    "toc_page_range": {
+      "start_page": 4,
+      "end_page": 4
+    },
+    "structure_summary": {
+      "total_levels": 3,
+      "level_patterns": {
+        "1": {
+          "visual": "All caps, flush left",
+          "numbering": "Number Words (One, Two, etc.)",
+          "has_page_numbers": false,
+          "semantic_type": "part"
+        },
+        "2": {
+          "visual": "Flush left with chapter numbers",
+          "numbering": "Arabic (1-10)",
+          "has_page_numbers": true,
+          "semantic_type": "chapter"
+        },
+        "3": {
+          "visual": "Indented under chapters",
+          "numbering": "null",
+          "has_page_numbers": true,
+          "semantic_type": "section"
+        }
+      },
+      "consistency_notes": [
+        "Subsections appear only under Chapter 9; rest is two-level"
+      ]
+    }
+  },
+  "toc": {
+    "toc": {
+      "entries": [
+        {
+          "entry_number": null,
+          "title": "Preface",
+          "level": 2,
+          "level_name": "preface",
+          "printed_page_number": "ix"
+        },
+        {
+          "entry_number": "1",
+          "title": "Winter Is Here",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "1"
+        },
+        {
+          "entry_number": "One",
+          "title": "Seasons of History",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "2",
+          "title": "Seasons of Time",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "39"
+        },
+        {
+          "entry_number": "3",
+          "title": "Seasons of Life",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "68"
+        },
+        {
+          "entry_number": "4",
+          "title": "Seasons of American History",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "103"
+        },
+        {
+          "entry_number": "5",
+          "title": "Complexity, Anomalies, and Global History",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "148"
+        },
+        {
+          "entry_number": "Two",
+          "title": "Climax of Winter",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "6",
+          "title": "A Winter Chronology",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "185"
+        },
+        {
+          "entry_number": "7",
+          "title": "The Millennial Crisis",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "225"
+        },
+        {
+          "entry_number": "8",
+          "title": "How Our Society Will Change",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "275"
+        },
+        {
+          "entry_number": "9",
+          "title": "How Our Lives Will Change",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "313"
+        },
+        {
+          "entry_number": null,
+          "title": "Generations of Late Elders",
+          "level": 3,
+          "level_name": "subsection",
+          "printed_page_number": "319"
+        },
+        {
+          "entry_number": null,
+          "title": "Boomer Elders",
+          "level": 3,
+          "level_name": "subsection",
+          "printed_page_number": "332"
+        },
+        {
+          "entry_number": null,
+          "title": "Gen X in Midlife",
+          "level": 3,
+          "level_name": "subsection",
+          "printed_page_number": "348"
+        },
+        {
+          "entry_number": null,
+          "title": "Millennial Rising Adults",
+          "level": 3,
+          "level_name": "subsection",
+          "printed_page_number": "364"
+        },
+        {
+          "entry_number": null,
+          "title": "Homelander Youth",
+          "level": 3,
+          "level_name": "subsection",
+          "printed_page_number": "384"
+        },
+        {
+          "entry_number": "Three",
+          "title": "Coming of Spring",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "10",
+          "title": "A New Saeculum Is Born",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "403"
+        },
+        {
+          "entry_number": null,
+          "title": "Epilogue",
+          "level": 2,
+          "level_name": "epilogue",
+          "printed_page_number": "453"
+        },
+        {
+          "entry_number": null,
+          "title": "Acknowledgments",
+          "level": 2,
+          "level_name": "acknowledgments",
+          "printed_page_number": "463"
+        },
+        {
+          "entry_number": null,
+          "title": "Notes",
+          "level": 2,
+          "level_name": "notes",
+          "printed_page_number": "467"
+        },
+        {
+          "entry_number": null,
+          "title": "Bibliography",
+          "level": 2,
+          "level_name": "bibliography",
+          "printed_page_number": "521"
+        },
+        {
+          "entry_number": null,
+          "title": "Index",
+          "level": 2,
+          "level_name": "index",
+          "printed_page_number": "539"
+        }
+      ]
+    }
+  }
+}

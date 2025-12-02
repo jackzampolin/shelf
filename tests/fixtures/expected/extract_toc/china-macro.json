@@ -1,0 +1,220 @@
+{
+  "scan_id": "china-macro",
+  "finder_result": {
+    "toc_found": true,
+    "toc_page_range": {
+      "start_page": 4,
+      "end_page": 5
+    },
+    "structure_summary": {
+      "total_levels": 1,
+      "level_patterns": {
+        "1": {
+          "visual": "Flush left titles with leader dots to right-aligned page numbers",
+          "numbering": "Arabic numerals (1-21) for chapters, Roman for front matter, null for back matter",
+          "has_page_numbers": true,
+          "semantic_type": "chapter"
+        }
+      },
+      "consistency_notes": [
+        "Consistent formatting across ToC pages",
+        "No nesting or indentation observed"
+      ]
+    }
+  },
+  "toc": {
+    "toc": {
+      "entries": [
+        {
+          "entry_number": null,
+          "title": "Maps and Chronological Tables",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "vii"
+        },
+        {
+          "entry_number": null,
+          "title": "Preface to the Turn of the Century Edition",
+          "level": 1,
+          "level_name": "preface",
+          "printed_page_number": "ix"
+        },
+        {
+          "entry_number": null,
+          "title": "Original Preface to the 1988 Edition",
+          "level": 1,
+          "level_name": "preface",
+          "printed_page_number": "xvii"
+        },
+        {
+          "entry_number": "1",
+          "title": "Xi'an and the Loess Land",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "3"
+        },
+        {
+          "entry_number": "2",
+          "title": "The Second Sage and the First Emperor",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "12"
+        },
+        {
+          "entry_number": "3",
+          "title": "Soil, Wind, and Water",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "23"
+        },
+        {
+          "entry_number": "4",
+          "title": "Behind the Terracotta Army",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "31"
+        },
+        {
+          "entry_number": "5",
+          "title": "The First Empire: Establishing the Standard",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "41"
+        },
+        {
+          "entry_number": "6",
+          "title": "Literati Turned Warlords",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "55"
+        },
+        {
+          "entry_number": "7",
+          "title": "Prolonged Disunity",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "69"
+        },
+        {
+          "entry_number": "8",
+          "title": "When Historical Components Sprawled Far and Wide",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "78"
+        },
+        {
+          "entry_number": "9",
+          "title": "On the Road to Reunification",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "87"
+        },
+        {
+          "entry_number": "10",
+          "title": "The Second Empire: A Breakthrough That Failed to Materialize",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "98"
+        },
+        {
+          "entry_number": "11",
+          "title": "The Northern Song: A Daring Experiment",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "120"
+        },
+        {
+          "entry_number": "12",
+          "title": "West Lake and the Southern Song",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "138"
+        },
+        {
+          "entry_number": "13",
+          "title": "The Mongolian Interlude",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "156"
+        },
+        {
+          "entry_number": "14",
+          "title": "The Ming: An Introverted and Noncompetitive State",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "169"
+        },
+        {
+          "entry_number": "15",
+          "title": "The Late Ming",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "186"
+        },
+        {
+          "entry_number": "16",
+          "title": "The Role of the Manchus",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "204"
+        },
+        {
+          "entry_number": "17",
+          "title": "1800: A Point for Reflection",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "218"
+        },
+        {
+          "entry_number": "18",
+          "title": "From the Opium War to the Self-Strengthening Movement",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "227"
+        },
+        {
+          "entry_number": "19",
+          "title": "The \"Hundred Days,\" the Republic, and May Fourth",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "242"
+        },
+        {
+          "entry_number": "20",
+          "title": "Contemporary China and Its Place in the World",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "265"
+        },
+        {
+          "entry_number": "21",
+          "title": "Taiwan, Hong Kong, and Macao",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "295"
+        },
+        {
+          "entry_number": null,
+          "title": "Observations at the Closing of the Century",
+          "level": 1,
+          "level_name": "chapter",
+          "printed_page_number": "303"
+        },
+        {
+          "entry_number": null,
+          "title": "A Brief Note on Bibliography",
+          "level": 1,
+          "level_name": "bibliography",
+          "printed_page_number": "312"
+        },
+        {
+          "entry_number": null,
+          "title": "Index",
+          "level": 1,
+          "level_name": "index",
+          "printed_page_number": "323"
+        }
+      ]
+    }
+  }
+}

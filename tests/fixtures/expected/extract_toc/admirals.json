@@ -1,0 +1,358 @@
+{
+  "scan_id": "admirals",
+  "finder_result": {
+    "toc_found": true,
+    "toc_page_range": {
+      "start_page": 4,
+      "end_page": 6
+    },
+    "structure_summary": {
+      "total_levels": 2,
+      "level_patterns": {
+        "1": {
+          "visual": "Flush left, bold heading",
+          "numbering": "null",
+          "has_page_numbers": false,
+          "semantic_type": "part"
+        },
+        "2": {
+          "visual": "Indented with leader dots to right-aligned page numbers",
+          "numbering": "Arabic numerals (1-25) for chapters; letters (A-I) for appendices",
+          "has_page_numbers": true,
+          "semantic_type": "chapter"
+        }
+      },
+      "consistency_notes": [
+        "Prologue entries are flat before parts. Appendices treated as additional level 1 'Appendixes' with lettered level 2 entries. Overall consistent 2-level hierarchy throughout."
+      ]
+    }
+  },
+  "toc": {
+    "toc": {
+      "entries": [
+        {
+          "entry_number": null,
+          "title": "List of Maps",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "xiii"
+        },
+        {
+          "entry_number": null,
+          "title": "The Banks of the Severn",
+          "level": 1,
+          "level_name": "prologue",
+          "printed_page_number": "3"
+        },
+        {
+          "entry_number": null,
+          "title": "Saturday, December 6, 1941",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "4"
+        },
+        {
+          "entry_number": "One",
+          "title": "Sailors, 1897-1918",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "1",
+          "title": "Leahy: \"The Judge\u201d\u2014Annapolis, Class of 1897",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "11"
+        },
+        {
+          "entry_number": "2",
+          "title": "King: \"Rey\u201d\u2014Annapolis, Class of 1901",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "26"
+        },
+        {
+          "entry_number": "3",
+          "title": "Halsey: \"Pudge\"-Annapolis, Class of 1904",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "41"
+        },
+        {
+          "entry_number": "4",
+          "title": "Nimitz: \"Nim-i-tiz\"-Annapolis, Class of 1905",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "53"
+        },
+        {
+          "entry_number": "5",
+          "title": "First Commands",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "66"
+        },
+        {
+          "entry_number": "6",
+          "title": "Dress Rehearsal",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "79"
+        },
+        {
+          "entry_number": "Two",
+          "title": "Ships, 1918-1941",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "7",
+          "title": "Battleships",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "99"
+        },
+        {
+          "entry_number": "8",
+          "title": "Submarines",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "113"
+        },
+        {
+          "entry_number": "9",
+          "title": "Aircraft Carriers",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "127"
+        },
+        {
+          "entry_number": "10",
+          "title": "First Stars",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "144"
+        },
+        {
+          "entry_number": "11",
+          "title": "Projecting Power",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "161"
+        },
+        {
+          "entry_number": "12",
+          "title": "At War All but in Name",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "183"
+        },
+        {
+          "entry_number": "Three",
+          "title": "Admirals, 1941-1945",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "13",
+          "title": "Searching for Scapegoats and Heroes",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "209"
+        },
+        {
+          "entry_number": "14",
+          "title": "Spread Thin",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "228"
+        },
+        {
+          "entry_number": "15",
+          "title": "Deciding the Course",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "257"
+        },
+        {
+          "entry_number": "16",
+          "title": "Fighting the Japanese - and MacArthur",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "279"
+        },
+        {
+          "entry_number": "17",
+          "title": "From Casablanca to Teheran",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "306"
+        },
+        {
+          "entry_number": "18",
+          "title": "Take Care, My Boy",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "335"
+        },
+        {
+          "entry_number": "19",
+          "title": "Driving It Home",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "346"
+        },
+        {
+          "entry_number": "20",
+          "title": "The Crippling Blow: Submarines or Airpower?",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "369"
+        },
+        {
+          "entry_number": "21",
+          "title": "Halsey's Luck",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "376"
+        },
+        {
+          "entry_number": "22",
+          "title": "Two Typhoons and Five Stars",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "404"
+        },
+        {
+          "entry_number": "23",
+          "title": "Interim President",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "423"
+        },
+        {
+          "entry_number": "24",
+          "title": "Toward Tokyo Bay",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "440"
+        },
+        {
+          "entry_number": "25",
+          "title": "Measures of Men",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "458"
+        },
+        {
+          "entry_number": null,
+          "title": "Acknowledgments",
+          "level": 1,
+          "level_name": "acknowledgments",
+          "printed_page_number": "475"
+        },
+        {
+          "entry_number": null,
+          "title": "Appendixes",
+          "level": 1,
+          "level_name": "appendix",
+          "printed_page_number": null
+        },
+        {
+          "entry_number": "A",
+          "title": "Comparative Ranks of Commissioned Officers in U.S. Military Services",
+          "level": 2,
+          "level_name": "appendix",
+          "printed_page_number": "479"
+        },
+        {
+          "entry_number": "B",
+          "title": "World War II-Era General Protocols for Naming U.S. Navy Ships",
+          "level": 2,
+          "level_name": "appendix",
+          "printed_page_number": "480"
+        },
+        {
+          "entry_number": "C",
+          "title": "Comparative Tonnages and Armaments of Selected Ships",
+          "level": 2,
+          "level_name": "appendix",
+          "printed_page_number": "481"
+        },
+        {
+          "entry_number": "D",
+          "title": "Chiefs of Naval Operations, 1915-1947",
+          "level": 2,
+          "level_name": "appendix",
+          "printed_page_number": "483"
+        },
+        {
+          "entry_number": "E",
+          "title": "Commanders in Chief, U.S. Fleet, 1936-1945",
+          "level": 2,
+          "level_name": "appendix",
+          "printed_page_number": "484"
+        },
+        {
+          "entry_number": "F",
+          "title": "World War II-Era U.S. Battleships",
+          "level": 2,
+          "level_name": "appendix",
+          "printed_page_number": "486"
+        },
+        {
+          "entry_number": "G",
+          "title": "World War II-Era U.S. Aircraft Carriers",
+          "level": 2,
+          "level_name": "appendix",
+          "printed_page_number": "489"
+        },
+        {
+          "entry_number": "H",
+          "title": "Ships Named for the Fleet Admirals",
+          "level": 2,
+          "level_name": "appendix",
+          "printed_page_number": "491"
+        },
+        {
+          "entry_number": "I",
+          "title": "Major World War II Conferences and Operations with Code Names",
+          "level": 2,
+          "level_name": "appendix",
+          "printed_page_number": "493"
+        },
+        {
+          "entry_number": null,
+          "title": "Notes",
+          "level": 1,
+          "level_name": "notes",
+          "printed_page_number": "495"
+        },
+        {
+          "entry_number": null,
+          "title": "Bibliography",
+          "level": 1,
+          "level_name": "bibliography",
+          "printed_page_number": "533"
+        },
+        {
+          "entry_number": null,
+          "title": "Index",
+          "level": 1,
+          "level_name": "index",
+          "printed_page_number": "545"
+        },
+        {
+          "entry_number": null,
+          "title": "Reading Group Guide",
+          "level": 1,
+          "level_name": "reading_group_guide",
+          "printed_page_number": "563"
+        }
+      ]
+    }
+  }
+}

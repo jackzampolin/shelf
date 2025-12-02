@@ -2,12 +2,25 @@
 Integration test: Run extract-toc on ground truth and measure accuracy.
 
 This test COSTS MONEY - it runs actual LLM calls on all 19 books.
-Books are processed IN PARALLEL (10 concurrent workers) for faster execution.
+Books are processed IN PARALLEL (30 concurrent workers) for faster execution.
 
 Usage:
-    pytest tests/test_extract_toc_accuracy.py -v -s
+    # Run the test
+    pytest tests/extract_toc/test_accuracy.py -v -s
+
+    # Compare with previous run
+    python tests/extract_toc/compare_accuracy.py
+
+    # Show details for specific book
+    python tests/extract_toc/compare_accuracy.py --book accidental-president
+
+    # List all test runs
+    python tests/extract_toc/compare_accuracy.py --list
 
 The -s flag is important to see the detailed report output.
+
+Results are saved to test_results/extract-toc/runs/{timestamp}_{commit}/
+with per-book JSON files for detailed analysis and historical tracking.
 
 Expected runtime: ~4-5 minutes (parallel) vs ~40 minutes (sequential)
 """
@@ -23,7 +36,12 @@ import threading
 
 from infra.pipeline.storage.book_storage import BookStorage
 from pipeline.extract_toc import ExtractTocStage
-from tests.fixtures.toc_ground_truth import load_all_books, GroundTruthBook
+from tests.fixtures.expected.extract_toc import (
+    load_all_expected_results,
+    ExpectedExtractTocResult
+)
+from tests.test_results_manager import ResultsManager
+from tests.test_storage_helper import create_test_storage, cleanup_test_outputs
 
 
 @dataclass
@@ -73,9 +91,9 @@ class BookTestResult:
     error: Optional[str] = None
 
 
-def compare_find_phase(book: GroundTruthBook, actual: Dict[str, Any]) -> FindPhaseComparison:
+def compare_find_phase(expected_result: ExpectedExtractTocResult, actual: Dict[str, Any]) -> FindPhaseComparison:
     """Compare find phase output to expected."""
-    expected = book.expected_finder_result
+    expected = expected_result.finder_result
     differences = []
 
     # Compare toc_found
@@ -113,7 +131,7 @@ def compare_find_phase(book: GroundTruthBook, actual: Dict[str, Any]) -> FindPha
     matches = toc_found_match and page_range_match and structure_summary_match
 
     return FindPhaseComparison(
-        book_id=book.scan_id,
+        book_id=expected_result.scan_id,
         matches=matches,
         toc_found_match=toc_found_match,
         page_range_match=page_range_match,
@@ -124,9 +142,48 @@ def compare_find_phase(book: GroundTruthBook, actual: Dict[str, Any]) -> FindPha
     )
 
 
-def compare_finalize_phase(book: GroundTruthBook, actual: Dict[str, Any]) -> FinalizePhaseComparison:
+def result_to_dict(result: BookTestResult) -> Dict[str, Any]:
+    """Convert BookTestResult to dictionary for storage."""
+    data = {
+        "book_id": result.book_id,
+        "success": result.success,
+        "error": result.error
+    }
+
+    # Add find phase if present
+    if result.find_comparison:
+        fc = result.find_comparison
+        data["find_phase"] = {
+            "matches": fc.matches,
+            "toc_found_match": fc.toc_found_match,
+            "page_range_match": fc.page_range_match,
+            "structure_summary_match": fc.structure_summary_match,
+            "expected_page_range": fc.expected_page_range,
+            "actual_page_range": fc.actual_page_range,
+            "differences": fc.differences
+        }
+
+    # Add finalize phase if present
+    if result.finalize_comparison:
+        fc = result.finalize_comparison
+        data["finalize_phase"] = {
+            "matches": fc.matches,
+            "entry_count_match": fc.entry_count_match,
+            "perfect_entry_match": fc.perfect_entry_match,
+            "expected_count": fc.expected_count,
+            "actual_count": fc.actual_count,
+            "title_match_rate": fc.title_match_rate,
+            "entry_match_rate": fc.entry_match_rate,
+            "mismatched_entries": fc.mismatched_entries,
+            "differences": fc.differences
+        }
+
+    return data
+
+
+def compare_finalize_phase(expected_result: ExpectedExtractTocResult, actual: Dict[str, Any]) -> FinalizePhaseComparison:
     """Compare finalize phase output to expected."""
-    expected_toc = book.expected_toc.get("toc", book.expected_toc)
+    expected_toc = expected_result.toc.get("toc", expected_result.toc)
     actual_toc = actual.get("toc", actual)
 
     expected_entries = expected_toc.get("entries", [])
@@ -190,7 +247,7 @@ def compare_finalize_phase(book: GroundTruthBook, actual: Dict[str, Any]) -> Fin
     matches = perfect_entry_match
 
     return FinalizePhaseComparison(
-        book_id=book.scan_id,
+        book_id=expected_result.scan_id,
         matches=matches,
         entry_count_match=entry_count_match,
         perfect_entry_match=perfect_entry_match,
@@ -203,19 +260,11 @@ def compare_finalize_phase(book: GroundTruthBook, actual: Dict[str, Any]) -> Fin
     )
 
 
-def run_extract_toc_and_compare(book: GroundTruthBook) -> BookTestResult:
-    """Run extract-toc on a ground truth book and compare results."""
+def run_extract_toc_and_compare(expected: ExpectedExtractTocResult) -> BookTestResult:
+    """Run extract-toc on a book and compare results to expected."""
     try:
-        # Setup: Point to ground truth directory
-        storage = BookStorage(
-            book.scan_id,
-            storage_root=Path("tests/fixtures/toc_ground_truth")
-        )
-
-        # Clean any existing extract-toc output
-        extract_dir = storage.stage("extract-toc").output_dir
-        if extract_dir.exists():
-            shutil.rmtree(extract_dir)
+        # Create test storage (reads from library, writes to test_outputs/)
+        storage = create_test_storage(expected.scan_id, clean=True)
 
         # Run extract-toc stage
         stage = ExtractTocStage(storage)
@@ -226,13 +275,13 @@ def run_extract_toc_and_compare(book: GroundTruthBook) -> BookTestResult:
         actual_toc = storage.stage("extract-toc").load_file("toc.json")
 
         # Compare
-        find_comparison = compare_find_phase(book, actual_finder)
-        finalize_comparison = compare_finalize_phase(book, actual_toc)
+        find_comparison = compare_find_phase(expected, actual_finder)
+        finalize_comparison = compare_finalize_phase(expected, actual_toc)
 
         success = find_comparison.matches and finalize_comparison.matches
 
         return BookTestResult(
-            book_id=book.scan_id,
+            book_id=expected.scan_id,
             success=success,
             find_comparison=find_comparison,
             finalize_comparison=finalize_comparison,
@@ -240,7 +289,7 @@ def run_extract_toc_and_compare(book: GroundTruthBook) -> BookTestResult:
 
     except Exception as e:
         return BookTestResult(
-            book_id=book.scan_id,
+            book_id=expected.scan_id,
             success=False,
             find_comparison=None,
             finalize_comparison=None,
@@ -383,16 +432,29 @@ def test_extract_toc_full_library():
     The test will:
     1. Run extract-toc on each book IN PARALLEL
     2. Compare outputs to expected results
-    3. Generate comprehensive report
-    4. Fail if any book doesn't match perfectly
+    3. Save per-book results to test_results/ directory
+    4. Generate comprehensive report
+    5. Fail if any book doesn't match perfectly
 
     Use this to measure prompt improvements over time.
+
+    Results are saved to test_results/extract-toc/runs/{timestamp}_{commit}/
+    with per-book JSON files for detailed analysis.
+
+    Test data comes from the real library (~/Documents/book_scans) but outputs
+    are written to test_outputs/ to avoid overwriting production data.
     """
-    books = load_all_books()
+    expected_results = load_all_expected_results()
+
+    # Initialize results manager
+    results_manager = ResultsManager(test_name="extract-toc")
+    test_run = results_manager.start_run()
 
     print(f"\n{'='*80}")
-    print(f"Running extract-toc on {len(books)} books in PARALLEL...")
+    print(f"Running extract-toc on {len(expected_results)} books in PARALLEL...")
     print(f"WARNING: This will cost money (LLM calls)")
+    print(f"Reading from library, writing to: test_outputs/")
+    print(f"Results will be saved to: {test_run.run_dir}")
     print(f"{'='*80}\n")
 
     # Enable headless mode to disable Rich Live displays (they conflict in parallel)
@@ -402,9 +464,9 @@ def test_extract_toc_full_library():
     results_lock = threading.Lock()
     completed_count = [0]  # Use list for mutable reference in closure
 
-    def process_book(book):
+    def process_book(expected):
         """Process a single book and return result."""
-        return run_extract_toc_and_compare(book)
+        return run_extract_toc_and_compare(expected)
 
     # Run all books in parallel with limited concurrency
     max_workers = 30  # High concurrency - API has good rate limits
@@ -412,19 +474,19 @@ def test_extract_toc_full_library():
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all books
         future_to_book = {
-            executor.submit(process_book, book): book
-            for book in books
+            executor.submit(process_book, expected): expected
+            for expected in expected_results
         }
 
         # Collect results as they complete
         for future in as_completed(future_to_book):
-            book = future_to_book[future]
+            expected = future_to_book[future]
             try:
                 result = future.result()
             except Exception as e:
                 # Handle unexpected errors
                 result = BookTestResult(
-                    book_id=book.scan_id,
+                    book_id=expected.scan_id,
                     success=False,
                     find_comparison=None,
                     finalize_comparison=None,
@@ -436,6 +498,9 @@ def test_extract_toc_full_library():
                 completed_count[0] += 1
                 count = completed_count[0]
 
+                # Save per-book result immediately
+                test_run.add_book_result(result_to_dict(result))
+
             # Print progress
             if result.success:
                 status = "✅"
@@ -444,14 +509,23 @@ def test_extract_toc_full_library():
             else:
                 status = "⚠️  PARTIAL"
 
-            print(f"[{count}/{len(books)}] {book.scan_id}: {status}")
+            print(f"[{count}/{len(expected_results)}] {expected.scan_id}: {status}")
 
     # Sort results by book_id for consistent report ordering
     results.sort(key=lambda r: r.book_id)
 
+    # Finalize run and save summary
+    summary_file = test_run.finalize()
+
     # Generate and print report
     report = generate_report(results)
     print(report)
+
+    # Print results location
+    print(f"\n📊 Detailed results saved to: {test_run.run_dir}")
+    print(f"   Summary: {summary_file}")
+    print(f"   Per-book: {test_run.books_dir}")
+    print(f"   Latest: {results_manager.test_dir / 'latest'}")
 
     # Fail if any books had issues
     failed = [r for r in results if not r.success]
