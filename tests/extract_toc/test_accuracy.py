@@ -264,7 +264,8 @@ def run_extract_toc_and_compare(expected: ExpectedExtractTocResult) -> BookTestR
     """Run extract-toc on a book and compare results to expected."""
     try:
         # Create test storage (reads from library, writes to test_outputs/)
-        storage = create_test_storage(expected.scan_id, clean=True)
+        # Don't symlink extract-toc since we're testing it
+        storage = create_test_storage(expected.scan_id, clean=True, stage_under_test="extract-toc")
 
         # Run extract-toc stage
         stage = ExtractTocStage(storage)

@@ -32,7 +32,8 @@ def get_test_output_root() -> Path:
 def create_test_storage(
     book_id: str,
     clean: bool = True,
-    library_root: Optional[Path] = None
+    library_root: Optional[Path] = None,
+    stage_under_test: Optional[str] = None
 ) -> BookStorage:
     """
     Create isolated test storage for a book.
@@ -46,6 +47,7 @@ def create_test_storage(
         book_id: Book scan ID
         clean: If True, remove existing test workspace first
         library_root: Override library location (default: ~/Documents/book_scans)
+        stage_under_test: Stage being tested (won't symlink this stage's outputs)
 
     Returns:
         BookStorage pointing to test workspace
@@ -85,6 +87,10 @@ def create_test_storage(
     ]
 
     for item in readonly_items:
+        # Don't symlink the stage being tested (we're creating fresh outputs)
+        if stage_under_test and item == stage_under_test:
+            continue
+
         src = library_book_dir / item
         dst = test_book_dir / item
 
