@@ -32,7 +32,7 @@ class ScanshelfConfig(BaseModel):
     )
 
     vision_model_primary: str = Field(
-        default="x-ai/grok-4.1-fast",
+        default="",
         description="Primary vision model (fast, cheap)"
     )
 
@@ -69,7 +69,7 @@ def _load_config() -> ScanshelfConfig:
         datalab_api_key=os.getenv('DATALAB_API_KEY', ''),
         deepseek_api_key=os.getenv('DEEPSEEK_API_KEY', ''),
         deepinfra_api_key=os.getenv('DEEPINFRA_API_KEY', ''),
-        vision_model_primary=os.getenv('VISION_MODEL_PRIMARY', os.getenv('VISION_MODEL', 'x-ai/grok-4.1-fast')),
+        vision_model_primary=os.getenv('VISION_MODEL_PRIMARY', ''),
         book_storage_root=Path(os.getenv('BOOK_STORAGE_ROOT', '~/Documents/book_scans')),
     )
 
