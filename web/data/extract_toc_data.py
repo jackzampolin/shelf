@@ -28,19 +28,33 @@ def get_extract_toc_data(storage: BookStorage) -> Optional[Dict[str, Any]]:
 
     toc_data = extract_toc_storage.load_file("toc.json")
 
-    if not toc_data or not toc_data.get('toc'):
+    if not toc_data:
         return None
 
-    toc = toc_data['toc']
-
-    return {
-        'toc_entries': toc.get('entries', []),
-        'toc_metadata': {
+    # Handle both old format (nested under 'toc') and new format (flat)
+    if 'toc' in toc_data:
+        # Old format: entries nested under 'toc' key
+        toc = toc_data['toc']
+        entries = toc.get('entries', [])
+        metadata = {
             'total_chapters': toc.get('total_chapters', 0),
             'total_sections': toc.get('total_sections', 0),
             'parsing_confidence': toc.get('parsing_confidence', 0.0),
             'notes': toc.get('notes', []),
         }
+    else:
+        # New format: entries at root level
+        entries = toc_data.get('entries', [])
+        metadata = {
+            'total_entries': toc_data.get('total_entries', len(entries)),
+            'extraction_method': toc_data.get('extraction_method', 'unknown'),
+            'toc_page_range': toc_data.get('toc_page_range'),
+            'notes': toc_data.get('notes', []),
+        }
+
+    return {
+        'toc_entries': entries,
+        'toc_metadata': metadata
     }
 
 

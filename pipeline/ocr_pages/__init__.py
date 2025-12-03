@@ -40,7 +40,7 @@ class OcrPagesStage(BaseStage):
         super().__init__(storage)
         self.max_workers = max_workers
         self.include_images = include_images
-        self.blend_model = "x-ai/grok-4.1-fast"
+        self.blend_model = Config.vision_model_primary
         self.blend_max_workers = 10
 
         def run_mistral(tracker, **kwargs):

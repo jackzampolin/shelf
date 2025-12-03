@@ -2,16 +2,27 @@
 Extract: Single-call complete ToC extraction.
 
 Loads all ToC pages and extracts complete structure in one API call.
+Uses structured outputs to guarantee valid JSON.
 """
 
-import json
+import os
 import time
-from typing import Dict, List
+from typing import Dict
+from rich.console import Console
+from rich.live import Live
+from rich.text import Text
 from infra.pipeline.status import PhaseStatusTracker
-from infra.llm.openrouter import OpenRouterTransport
-from infra.llm.openrouter.pricing import CostCalculator
+from infra.llm import LLMClient
+from infra.llm.display_format import format_token_string
+from infra.config import Config
 from ..schemas import PageRange
 from .prompts import SYSTEM_PROMPT, build_user_prompt
+from .schemas import ToCExtractionOutput
+
+
+def is_headless():
+    """Check if running in headless mode."""
+    return os.environ.get('SCANSHELF_HEADLESS', '').lower() in ('1', 'true', 'yes')
 
 
 def extract_complete_toc(tracker: PhaseStatusTracker, **kwargs) -> Dict:
@@ -54,7 +65,7 @@ def extract_complete_toc(tracker: PhaseStatusTracker, **kwargs) -> Dict:
         blended_stage = storage.stage("ocr-pages")
         try:
             blended_data = blended_stage.load_file(f"blend/page_{page_num:04d}.json")
-            ocr_text = blended_data.get("text", "")
+            ocr_text = blended_data.get("markdown") or blended_data.get("text", "")
         except FileNotFoundError:
             tracker.logger.warning(f"Missing blended OCR for page {page_num}")
             # Fallback to single OCR engine
@@ -77,89 +88,127 @@ def extract_complete_toc(tracker: PhaseStatusTracker, **kwargs) -> Dict:
     # Build prompt with all pages
     user_prompt = build_user_prompt(toc_pages, structure_summary)
 
-    # Make single API call
+    # Make single API call with structured output
     tracker.logger.info(f"Making single API call for {len(toc_pages)} pages...")
 
-    model = "anthropic/claude-3.5-sonnet"  # Better for complex extraction
+    model = Config.vision_model_primary
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt}
     ]
 
-    payload = {
-        "model": model,
-        "messages": messages,
-        "response_format": {"type": "json_object"}
+    # Use structured output - OpenRouter guarantees valid JSON
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "toc_extraction",
+            "strict": True,
+            "schema": ToCExtractionOutput.model_json_schema()
+        }
     }
 
-    # Call API
-    transport = OpenRouterTransport(logger=tracker.logger)
+    client = LLMClient(logger=tracker.logger)
+    console = Console()
     start_time = time.time()
 
-    try:
-        response = transport.post(payload, timeout=180)
-    except Exception as e:
-        tracker.logger.error(f"API call failed: {e}")
-        return {"status": "error", "reason": f"API error: {str(e)}"}
+    # Show progress spinner during API call
+    def make_progress_text(elapsed: float) -> Text:
+        text = Text()
+        text.append("⏳ ", style="yellow")
+        text.append(f"toc-extract: extracting from {len(toc_pages)} pages", style="")
+        text.append(f" ({elapsed:.1f}s)", style="dim")
+        return text
+
+    result = None
+    error = None
+
+    if is_headless():
+        # No progress display in headless mode
+        try:
+            result = client.call(
+                model=model,
+                messages=messages,
+                response_format=response_format,
+                timeout=300
+            )
+        except Exception as e:
+            error = e
+    else:
+        # Show live progress
+        with Live(make_progress_text(0), console=console, refresh_per_second=2, transient=True) as live:
+            try:
+                # Update progress in background would be nice, but for now just show spinner
+                result = client.call(
+                    model=model,
+                    messages=messages,
+                    response_format=response_format,
+                    timeout=300
+                )
+            except Exception as e:
+                error = e
 
     elapsed_time = time.time() - start_time
 
-    # Extract result
-    result = response["choices"][0]["message"]
-    usage = response.get("usage", {})
-
-    # Calculate cost
-    input_tokens = usage.get("prompt_tokens", 0)
-    output_tokens = usage.get("completion_tokens", 0)
-    cost_calculator = CostCalculator()
-    cost_usd = cost_calculator.calculate_cost(model, input_tokens, output_tokens)
+    if error:
+        tracker.logger.error(f"API call failed: {error}")
+        return {"status": "error", "reason": f"API error: {str(error)}"}
 
     # Record metrics
     tracker.metrics_manager.record(
         key=f"{tracker.metrics_prefix}extract",
-        cost_usd=cost_usd,
+        cost_usd=result.cost_usd,
         time_seconds=elapsed_time,
         custom_metrics={
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
+            "input_tokens": result.prompt_tokens,
+            "output_tokens": result.completion_tokens,
             "toc_pages": len(toc_pages)
         }
     )
 
-    # Parse response (handle preamble text before JSON)
-    try:
-        content = result.get("content", "{}")
-        # Find the first { which starts the JSON
-        json_start = content.find("{")
-        if json_start > 0:
-            content = content[json_start:]
-        toc_data = json.loads(content)
-        entries = toc_data.get("entries", [])
+    if not result.success:
+        tracker.logger.error(f"LLM call failed: {result.error_message}")
+        # Print error summary
+        error_text = Text()
+        error_text.append("❌ ", style="red")
+        error_text.append(f"toc-extract: failed", style="red")
+        error_text.append(f" ({elapsed_time:.1f}s)", style="dim")
+        console.print(error_text)
+        return {"status": "error", "reason": result.error_message}
 
-        if not entries:
-            tracker.logger.warning("No entries extracted from ToC")
-        else:
-            tracker.logger.info(f"Extracted {len(entries)} entries")
+    # Structured output guarantees valid JSON
+    entries = result.parsed_json.get("entries", [])
 
-        # Build final ToC structure
-        final_toc = {
-            "entries": entries,
-            "toc_page_range": {
-                "start_page": toc_range.start_page,
-                "end_page": toc_range.end_page
-            },
-            "total_entries": len(entries),
-            "extraction_method": "single_call"
-        }
+    # Print success summary line (same format as agent progress)
+    summary = Text()
+    summary.append("✅ ", style="green")
+    desc = f"toc-extract: {len(entries)} entries from {len(toc_pages)} pages"
+    summary.append(f"{desc:<45}", style="")
+    summary.append(f" ({elapsed_time:4.1f}s)", style="dim")
+    token_str = format_token_string(result.prompt_tokens, result.completion_tokens, result.reasoning_tokens or 0)
+    summary.append(f" {token_str:>22}", style="cyan")
+    cost_cents = result.cost_usd * 100
+    summary.append(f" {cost_cents:5.2f}¢", style="yellow")
+    console.print(summary)
 
-        # Save to toc.json
-        stage_storage.save_file("toc.json", final_toc)
+    if not entries:
+        tracker.logger.warning("No entries extracted from ToC")
+    else:
+        tracker.logger.info(f"Extracted {len(entries)} entries")
 
-        tracker.logger.info(f"Saved complete ToC: {len(entries)} entries")
+    # Build final ToC structure
+    final_toc = {
+        "entries": entries,
+        "toc_page_range": {
+            "start_page": toc_range.start_page,
+            "end_page": toc_range.end_page
+        },
+        "total_entries": len(entries),
+        "extraction_method": "single_call"
+    }
 
-        return final_toc
+    # Save to toc.json
+    stage_storage.save_file("toc.json", final_toc)
 
-    except json.JSONDecodeError as e:
-        tracker.logger.error(f"Failed to parse LLM response as JSON: {e}")
-        tracker.logger.error(f"Response: {result.get('content', '')[:500]}...")
-        return {"status": "error", "reason": "Invalid JSON response"}
+    tracker.logger.info(f"Saved complete ToC: {len(entries)} entries")
+
+    return final_toc

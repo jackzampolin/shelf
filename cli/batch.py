@@ -93,7 +93,7 @@ def cmd_batch(args):
         print(f"\nPhase 2: Running {current_stage} stage on {len(books_to_process)} books...\n")
         processed_count = 0
 
-        from cli.book import cmd_run_stage
+        from cli.book.stage import cmd_stage_run
 
         for idx, scan_id in enumerate(books_to_process, 1):
             print(f"\n{'='*60}")
@@ -106,13 +106,13 @@ def cmd_batch(args):
 
                 run_args = argparse.Namespace(
                     scan_id=scan_id,
-                    stage=current_stage,
+                    stage_name=current_stage,
                     model=getattr(args, 'model', None),
                     workers=getattr(args, 'workers', None),
-                    clean=False
+                    delete_outputs=False
                 )
 
-                cmd_run_stage(run_args)
+                cmd_stage_run(run_args)
 
                 print(f"  ✅ Completed: {scan_id}")
                 processed_count += 1

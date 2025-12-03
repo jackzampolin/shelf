@@ -1,365 +1,486 @@
 #!/usr/bin/env python3
 """
-Compare extract-toc test runs to track accuracy improvements over time.
+Compare extract-toc outputs in the library against expected results.
 
 Usage:
-    # Compare latest run with previous run
+    # Compare all books with expected results
     python tests/extract_toc/compare_accuracy.py
 
-    # Compare two specific runs
-    python tests/extract_toc/compare_accuracy.py 20250102_143022_a1b2c3d 20250102_151030_b2c3d4e
-
-    # Show details for specific book
+    # Compare specific book
     python tests/extract_toc/compare_accuracy.py --book accidental-president
 
-    # List all runs
-    python tests/extract_toc/compare_accuracy.py --list
+    # Show only failures
+    python tests/extract_toc/compare_accuracy.py --failures
+
+    # Verbose output (show all entry differences)
+    python tests/extract_toc/compare_accuracy.py --verbose
 """
 
 import sys
-import argparse
 from pathlib import Path
-from typing import Optional, List
+
+# Add project root to path for imports
+_project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(_project_root))
+
+import argparse
 import json
+from typing import Dict, Any, List, Optional
+from dataclasses import dataclass, field
 
-from tests.test_results_manager import ResultsManager
+from infra.pipeline.storage.book_storage import BookStorage
+from tests.fixtures.expected.extract_toc import (
+    load_all_expected_results,
+    load_expected_result,
+    list_books,
+    ExpectedExtractTocResult
+)
 
 
-def list_runs(manager: ResultsManager):
-    """List all test runs with summary stats."""
-    runs_dir = manager.test_dir / "runs"
-    if not runs_dir.exists():
-        print("No test runs found.")
-        return
+def normalize_text(text: str) -> str:
+    """
+    Normalize text for comparison by standardizing typographic variations.
 
-    runs = sorted(runs_dir.iterdir(), key=lambda p: p.name, reverse=True)
-    if not runs:
-        print("No test runs found.")
-        return
+    Converts:
+    - Em-dashes (—) and en-dashes (–) to hyphens (-)
+    - Spaced hyphens ( - ) to hyphens (-)
+    - Curly apostrophes (' ') to straight apostrophes (')
+    - Curly quotes (" ") to straight quotes (")
+    """
+    if not text:
+        return text
 
-    print(f"\n{'='*80}")
-    print(f"TEST RUNS FOR: {manager.test_name}")
-    print(f"{'='*80}\n")
+    # Normalize dashes
+    text = text.replace('—', '-')  # em-dash
+    text = text.replace('–', '-')  # en-dash
+    text = text.replace(' - ', '-')  # spaced hyphen
 
-    for run_dir in runs:
-        summary_file = run_dir / "summary.json"
-        if not summary_file.exists():
+    # Normalize apostrophes
+    text = text.replace(''', "'")  # right single quote (U+2019)
+    text = text.replace(''', "'")  # left single quote (U+2018)
+    text = text.replace('\u2019', "'")  # right single quote explicit
+    text = text.replace('\u2018', "'")  # left single quote explicit
+
+    # Normalize quotes
+    text = text.replace('"', '"')  # left double quote (U+201C)
+    text = text.replace('"', '"')  # right double quote (U+201D)
+    text = text.replace('\u201c', '"')  # left double quote explicit
+    text = text.replace('\u201d', '"')  # right double quote explicit
+
+    return text
+
+
+@dataclass
+class FindPhaseComparison:
+    """Comparison result for find phase."""
+    matches: bool
+    toc_found_match: bool
+    page_range_match: bool
+    expected_range: Dict[str, int]
+    actual_range: Optional[Dict[str, int]]
+    differences: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ExtractPhaseComparison:
+    """Comparison result for extract phase."""
+    matches: bool
+    entry_count_match: bool
+    perfect_entry_match: bool
+    expected_count: int
+    actual_count: int
+    title_match_rate: float
+    entry_match_rate: float
+    mismatched_entries: List[Dict[str, Any]] = field(default_factory=list)
+    differences: List[str] = field(default_factory=list)
+
+
+@dataclass
+class BookComparison:
+    """Complete comparison result for one book."""
+    book_id: str
+    success: bool
+    find_phase: Optional[FindPhaseComparison] = None
+    extract_phase: Optional[ExtractPhaseComparison] = None
+    error: Optional[str] = None
+
+
+def compare_find_phase(expected: ExpectedExtractTocResult, actual_finder: Dict[str, Any]) -> FindPhaseComparison:
+    """Compare find phase output to expected."""
+    exp_finder = expected.finder_result
+    differences = []
+
+    # Compare toc_found
+    toc_found_match = exp_finder.get("toc_found") == actual_finder.get("toc_found")
+    if not toc_found_match:
+        differences.append(f"toc_found: expected {exp_finder.get('toc_found')}, got {actual_finder.get('toc_found')}")
+
+    # Compare page range
+    exp_range = exp_finder.get("toc_page_range", {})
+    act_range = actual_finder.get("toc_page_range", {})
+
+    page_range_match = (
+        exp_range.get("start_page") == act_range.get("start_page") and
+        exp_range.get("end_page") == act_range.get("end_page")
+    )
+    if not page_range_match:
+        differences.append(
+            f"page_range: expected {exp_range.get('start_page')}-{exp_range.get('end_page')}, "
+            f"got {act_range.get('start_page')}-{act_range.get('end_page')}"
+        )
+
+    matches = toc_found_match and page_range_match
+
+    return FindPhaseComparison(
+        matches=matches,
+        toc_found_match=toc_found_match,
+        page_range_match=page_range_match,
+        expected_range=exp_range,
+        actual_range=act_range,
+        differences=differences,
+    )
+
+
+def compare_extract_phase(expected: ExpectedExtractTocResult, actual_toc: Dict[str, Any]) -> ExtractPhaseComparison:
+    """Compare extract phase output to expected."""
+    # Handle both old format (nested under 'toc') and new format (flat)
+    expected_toc = expected.toc.get("toc", expected.toc)
+    actual_toc_data = actual_toc.get("toc", actual_toc)
+
+    expected_entries = expected_toc.get("entries", [])
+    actual_entries = actual_toc_data.get("entries", [])
+
+    differences = []
+    mismatched_entries = []
+
+    # Compare entry counts
+    entry_count_match = len(expected_entries) == len(actual_entries)
+    if not entry_count_match:
+        differences.append(
+            f"entry_count: expected {len(expected_entries)}, got {len(actual_entries)}"
+        )
+
+    # Compare entries
+    title_matches = 0
+    perfect_matches = 0
+
+    for i, exp_entry in enumerate(expected_entries):
+        if i >= len(actual_entries):
+            mismatched_entries.append({
+                "index": i,
+                "reason": "missing",
+                "expected": exp_entry,
+                "actual": None,
+            })
             continue
 
-        with open(summary_file) as f:
-            summary = json.load(f)
+        act_entry = actual_entries[i]
 
-        stats = summary["stats"]
-        git = summary["git"]
+        # Check if entries match (case-insensitive, normalized for title)
+        exp_title = normalize_text((exp_entry.get("title") or "").lower())
+        act_title = normalize_text((act_entry.get("title") or "").lower())
 
-        timestamp = summary["timestamp"][:19]  # Remove milliseconds
-        commit = git["commit_short"]
-        branch = git["branch"]
-        dirty = "⚠️ dirty" if git["is_dirty"] else ""
+        # Note: level_name excluded from accuracy - it's informational only
+        entry_matches = (
+            exp_entry.get("entry_number") == act_entry.get("entry_number") and
+            exp_title == act_title and
+            exp_entry.get("level") == act_entry.get("level") and
+            exp_entry.get("printed_page_number") == act_entry.get("printed_page_number")
+        )
 
-        perfect = stats["perfect_match"]
-        total = stats["total_books"]
-        pct = stats["perfect_match_pct"]
+        if entry_matches:
+            perfect_matches += 1
+        else:
+            mismatched_entries.append({
+                "index": i,
+                "expected": exp_entry,
+                "actual": act_entry,
+            })
 
-        print(f"{run_dir.name}")
-        print(f"  {timestamp}  |  {commit} ({branch}) {dirty}")
-        print(f"  Accuracy: {perfect}/{total} perfect ({pct:.1f}%)  |  "
-              f"Title: {stats['avg_title_match']:.1f}%  |  "
-              f"Entry: {stats['avg_entry_match']:.1f}%")
-        print()
+        # Track title matches separately (more lenient, case-insensitive, normalized)
+        if exp_title == act_title:
+            title_matches += 1
+
+    # Check for extra entries in actual
+    if len(actual_entries) > len(expected_entries):
+        for i in range(len(expected_entries), len(actual_entries)):
+            mismatched_entries.append({
+                "index": i,
+                "reason": "extra",
+                "expected": None,
+                "actual": actual_entries[i],
+            })
+
+    title_match_rate = title_matches / len(expected_entries) if expected_entries else 1.0
+    entry_match_rate = perfect_matches / len(expected_entries) if expected_entries else 1.0
+
+    perfect_entry_match = len(mismatched_entries) == 0 and entry_count_match
+    matches = perfect_entry_match
+
+    return ExtractPhaseComparison(
+        matches=matches,
+        entry_count_match=entry_count_match,
+        perfect_entry_match=perfect_entry_match,
+        expected_count=len(expected_entries),
+        actual_count=len(actual_entries),
+        title_match_rate=title_match_rate,
+        entry_match_rate=entry_match_rate,
+        mismatched_entries=mismatched_entries,
+        differences=differences,
+    )
 
 
-def show_book_details(manager: ResultsManager, book_id: str, run_name: Optional[str] = None):
-    """Show detailed results for a specific book."""
-    if run_name:
-        run_dir = manager.runs_dir / run_name
-        if not run_dir.exists():
-            print(f"Run not found: {run_name}")
-            return
-    else:
-        # Use latest run
-        latest_link = manager.test_dir / "latest"
-        if not latest_link.exists():
-            print("No test runs found.")
-            return
-        run_dir = latest_link.resolve()
+def compare_book(book_id: str) -> BookComparison:
+    """Compare a book's extract-toc output against expected results."""
+    try:
+        # Load expected
+        expected = load_expected_result(book_id)
 
-    book_file = run_dir / "books" / f"{book_id}.json"
-    if not book_file.exists():
-        print(f"Book not found in this run: {book_id}")
+        # Load actual from library
+        storage = BookStorage(book_id)
+        stage_storage = storage.stage("extract-toc")
+
+        # Check if outputs exist
+        finder_path = stage_storage.output_dir / "finder_result.json"
+        toc_path = stage_storage.output_dir / "toc.json"
+
+        if not finder_path.exists():
+            return BookComparison(
+                book_id=book_id,
+                success=False,
+                error="finder_result.json not found - stage not run?"
+            )
+
+        if not toc_path.exists():
+            return BookComparison(
+                book_id=book_id,
+                success=False,
+                error="toc.json not found - extraction not complete?"
+            )
+
+        # Load actual results
+        actual_finder = stage_storage.load_file("finder_result.json")
+        actual_toc = stage_storage.load_file("toc.json")
+
+        # Compare
+        find_comparison = compare_find_phase(expected, actual_finder)
+        extract_comparison = compare_extract_phase(expected, actual_toc)
+
+        success = find_comparison.matches and extract_comparison.matches
+
+        return BookComparison(
+            book_id=book_id,
+            success=success,
+            find_phase=find_comparison,
+            extract_phase=extract_comparison,
+        )
+
+    except Exception as e:
+        return BookComparison(
+            book_id=book_id,
+            success=False,
+            error=str(e),
+        )
+
+
+def print_book_result(result: BookComparison, verbose: bool = False):
+    """Print detailed results for a book."""
+    print(f"\n{'='*70}")
+    print(f"BOOK: {result.book_id}")
+    print(f"{'='*70}")
+
+    if result.error:
+        print(f"\n❌ ERROR: {result.error}")
         return
 
-    with open(book_file) as f:
-        result = json.load(f)
-
-    # Load summary for context
-    with open(run_dir / "summary.json") as f:
-        summary = json.load(f)
-
-    print(f"\n{'='*80}")
-    print(f"BOOK: {book_id}")
-    print(f"{'='*80}")
-    print(f"\nRun: {run_dir.name}")
-    print(f"Timestamp: {summary['timestamp'][:19]}")
-    print(f"Git: {summary['git']['commit_short']} ({summary['git']['branch']})")
-
-    print(f"\nOVERALL: {'✅ PASS' if result['success'] else '❌ FAIL'}")
-
-    if result.get("error"):
-        print(f"\nERROR: {result['error']}")
-        return
+    print(f"\nOVERALL: {'✅ PASS' if result.success else '❌ FAIL'}")
 
     # Find phase
-    if result.get("find_phase"):
-        fp = result["find_phase"]
-        print(f"\nFIND PHASE: {'✅' if fp['matches'] else '❌'}")
-        print(f"  ToC Found: {'✅' if fp['toc_found_match'] else '❌'}")
-        print(f"  Page Range: {'✅' if fp['page_range_match'] else '❌'}")
-        print(f"    Expected: {fp['expected_page_range'].get('start_page')}-{fp['expected_page_range'].get('end_page')}")
-        if fp['actual_page_range']:
-            print(f"    Actual:   {fp['actual_page_range'].get('start_page')}-{fp['actual_page_range'].get('end_page')}")
-        print(f"  Structure: {'✅' if fp['structure_summary_match'] else '❌'}")
+    if result.find_phase:
+        fp = result.find_phase
+        print(f"\nFIND PHASE: {'✅' if fp.matches else '❌'}")
+        print(f"  ToC Found: {'✅' if fp.toc_found_match else '❌'}")
+        print(f"  Page Range: {'✅' if fp.page_range_match else '❌'}")
+        if not fp.page_range_match:
+            print(f"    Expected: {fp.expected_range.get('start_page')}-{fp.expected_range.get('end_page')}")
+            if fp.actual_range:
+                print(f"    Actual:   {fp.actual_range.get('start_page')}-{fp.actual_range.get('end_page')}")
 
-        if fp['differences']:
-            print(f"\n  Differences:")
-            for diff in fp['differences']:
-                print(f"    - {diff}")
+    # Extract phase
+    if result.extract_phase:
+        ep = result.extract_phase
+        print(f"\nEXTRACT PHASE: {'✅' if ep.matches else '❌'}")
+        print(f"  Entry Count: {'✅' if ep.entry_count_match else '❌'} ({ep.actual_count} vs {ep.expected_count} expected)")
+        print(f"  Perfect Match: {'✅' if ep.perfect_entry_match else '❌'}")
+        print(f"  Title Match Rate: {ep.title_match_rate*100:.1f}%")
+        print(f"  Entry Match Rate: {ep.entry_match_rate*100:.1f}%")
 
-    # Finalize phase
-    if result.get("finalize_phase"):
-        fp = result["finalize_phase"]
-        print(f"\nFINALIZE PHASE: {'✅' if fp['matches'] else '❌'}")
-        print(f"  Entry Count: {'✅' if fp['entry_count_match'] else '❌'} "
-              f"({fp['actual_count']} vs {fp['expected_count']} expected)")
-        print(f"  Perfect Match: {'✅' if fp['perfect_entry_match'] else '❌'}")
-        print(f"  Title Match Rate: {fp['title_match_rate']*100:.1f}%")
-        print(f"  Entry Match Rate: {fp['entry_match_rate']*100:.1f}%")
-
-        if fp['differences']:
-            print(f"\n  Differences:")
-            for diff in fp['differences']:
-                print(f"    - {diff}")
-
-        # Show mismatched entries
-        if fp['mismatched_entries']:
-            print(f"\n  Mismatched Entries ({len(fp['mismatched_entries'])} total):")
-
-            # Categorize issues
-            issues = {
-                'entry_number': [],
-                'title_exact': [],
-                'title_case': [],
-                'level': [],
-                'level_name': [],
-                'page': [],
-                'missing': []
-            }
-
-            for m in fp['mismatched_entries']:
-                idx = m['index']
-                exp = m['expected']
-                act = m.get('actual')
-
-                if not act:
-                    issues['missing'].append(idx)
-                    continue
-
-                # Check each field
-                if exp.get('entry_number') != act.get('entry_number'):
-                    issues['entry_number'].append(f"#{idx}: {exp.get('entry_number')}→{act.get('entry_number')}")
-
-                exp_title = exp.get('title') or ''
-                act_title = act.get('title') or ''
-                if exp_title != act_title:
-                    if exp_title.lower() == act_title.lower():
-                        issues['title_case'].append(f"#{idx}: case difference")
-                    else:
-                        issues['title_exact'].append(f"#{idx}: '{exp_title}' → '{act_title}'")
-
-                if exp.get('level') != act.get('level'):
-                    issues['level'].append(f"#{idx}: L{exp.get('level')}→L{act.get('level')}")
-
-                if exp.get('level_name') != act.get('level_name'):
-                    issues['level_name'].append(f"#{idx}: {exp.get('level_name')}→{act.get('level_name')}")
-
-                if exp.get('printed_page_number') != act.get('printed_page_number'):
-                    issues['page'].append(f"#{idx}: {exp.get('printed_page_number')}→{act.get('printed_page_number')}")
-
-            # Print by category
-            for issue_type, items in issues.items():
-                if items:
-                    print(f"\n    {issue_type.replace('_', ' ').title()}:")
-                    for item in items[:15]:  # Show first 15
-                        print(f"      {item}")
-                    if len(items) > 15:
-                        print(f"      ... and {len(items) - 15} more")
-
-    print(f"\n{'='*80}\n")
+        if ep.mismatched_entries and (verbose or len(ep.mismatched_entries) <= 10):
+            print(f"\n  Mismatched Entries ({len(ep.mismatched_entries)}):")
+            print_mismatched_entries(ep.mismatched_entries, verbose)
+        elif ep.mismatched_entries:
+            print(f"\n  Mismatched Entries: {len(ep.mismatched_entries)} (use --verbose to see details)")
+            # Show summary by category
+            print_mismatch_summary(ep.mismatched_entries)
 
 
-def compare_two_runs(manager: ResultsManager, run1_name: Optional[str], run2_name: Optional[str]):
-    """Compare two test runs."""
-    # Get runs
-    if run1_name:
-        run1_dir = manager.runs_dir / run1_name
-        if not run1_dir.exists():
-            print(f"Run not found: {run1_name}")
-            return
-    else:
-        # Get second-latest run
-        runs = sorted(manager.runs_dir.iterdir(), key=lambda p: p.name, reverse=True)
-        if len(runs) < 2:
-            print("Need at least 2 test runs to compare.")
-            return
-        run1_dir = runs[1]
+def print_mismatched_entries(mismatches: List[Dict], verbose: bool):
+    """Print mismatched entries."""
+    for m in mismatches[:20] if not verbose else mismatches:
+        idx = m['index']
+        exp = m.get('expected')
+        act = m.get('actual')
+        reason = m.get('reason')
 
-    if run2_name:
-        run2_dir = manager.runs_dir / run2_name
-        if not run2_dir.exists():
-            print(f"Run not found: {run2_name}")
-            return
-    else:
-        # Get latest run
-        latest_link = manager.test_dir / "latest"
-        if not latest_link.exists():
-            print("No test runs found.")
-            return
-        run2_dir = latest_link.resolve()
+        if reason == 'missing':
+            print(f"    #{idx}: MISSING - expected '{exp.get('title')}'")
+        elif reason == 'extra':
+            print(f"    #{idx}: EXTRA - got '{act.get('title')}'")
+        else:
+            # Show differences
+            diffs = []
+            if exp.get('entry_number') != act.get('entry_number'):
+                diffs.append(f"num: {exp.get('entry_number')}→{act.get('entry_number')}")
+            exp_title_norm = normalize_text((exp.get('title') or '').lower())
+            act_title_norm = normalize_text((act.get('title') or '').lower())
+            if exp_title_norm != act_title_norm:
+                diffs.append(f"title: '{exp.get('title')}'→'{act.get('title')}'")
+            if exp.get('level') != act.get('level'):
+                diffs.append(f"level: {exp.get('level')}→{act.get('level')}")
+            if exp.get('printed_page_number') != act.get('printed_page_number'):
+                diffs.append(f"page: {exp.get('printed_page_number')}→{act.get('printed_page_number')}")
 
-    # Load summaries
-    with open(run1_dir / "summary.json") as f:
-        summary1 = json.load(f)
+            print(f"    #{idx}: {'; '.join(diffs)}")
 
-    with open(run2_dir / "summary.json") as f:
-        summary2 = json.load(f)
+    if len(mismatches) > 20 and not verbose:
+        print(f"    ... and {len(mismatches) - 20} more")
 
-    # Print comparison
-    print(f"\n{'='*80}")
-    print(f"COMPARING TEST RUNS")
-    print(f"{'='*80}\n")
 
-    print(f"BEFORE: {run1_dir.name}")
-    print(f"  Timestamp: {summary1['timestamp'][:19]}")
-    print(f"  Git: {summary1['git']['commit_short']} ({summary1['git']['branch']})")
+def print_mismatch_summary(mismatches: List[Dict]):
+    """Print summary of mismatches by category."""
+    issues = {
+        'entry_number': 0,
+        'title': 0,
+        'level': 0,
+        'page': 0,
+        'missing': 0,
+        'extra': 0,
+    }
+
+    for m in mismatches:
+        reason = m.get('reason')
+        if reason == 'missing':
+            issues['missing'] += 1
+        elif reason == 'extra':
+            issues['extra'] += 1
+        else:
+            exp = m['expected']
+            act = m['actual']
+            if exp.get('entry_number') != act.get('entry_number'):
+                issues['entry_number'] += 1
+            exp_title_norm = normalize_text((exp.get('title') or '').lower())
+            act_title_norm = normalize_text((act.get('title') or '').lower())
+            if exp_title_norm != act_title_norm:
+                issues['title'] += 1
+            if exp.get('level') != act.get('level'):
+                issues['level'] += 1
+            if exp.get('printed_page_number') != act.get('printed_page_number'):
+                issues['page'] += 1
+
+    summary_parts = [f"{k}: {v}" for k, v in issues.items() if v > 0]
+    print(f"    Summary: {', '.join(summary_parts)}")
+
+
+def compare_all_books(failures_only: bool = False, verbose: bool = False):
+    """Compare all books with expected results."""
+    book_ids = list_books()
+
+    print(f"\n{'='*70}")
+    print(f"EXTRACT-TOC ACCURACY COMPARISON")
+    print(f"Comparing {len(book_ids)} books against expected results")
+    print(f"{'='*70}")
+
+    results = []
+    for book_id in book_ids:
+        result = compare_book(book_id)
+        results.append(result)
+
+        # Print progress
+        status = "✅" if result.success else "❌"
+        if result.extract_phase:
+            rate = f"{result.extract_phase.entry_match_rate*100:.0f}%"
+        else:
+            rate = "N/A"
+        print(f"  {status} {book_id}: {rate}")
+
+    # Summary
+    total = len(results)
+    perfect = len([r for r in results if r.success])
+    errors = len([r for r in results if r.error])
+
+    print(f"\n{'='*70}")
+    print(f"SUMMARY")
+    print(f"{'='*70}")
+    print(f"  Perfect Match: {perfect}/{total} ({perfect/total*100:.1f}%)")
+    print(f"  Errors: {errors}")
+
+    # Calculate average rates
+    extract_results = [r.extract_phase for r in results if r.extract_phase]
+    if extract_results:
+        avg_title = sum(r.title_match_rate for r in extract_results) / len(extract_results)
+        avg_entry = sum(r.entry_match_rate for r in extract_results) / len(extract_results)
+        print(f"  Avg Title Match: {avg_title*100:.1f}%")
+        print(f"  Avg Entry Match: {avg_entry*100:.1f}%")
+
+    # Show failures
+    failures = [r for r in results if not r.success]
+    if failures:
+        print(f"\n{'='*70}")
+        print(f"FAILURES ({len(failures)})")
+        print(f"{'='*70}")
+        for result in failures:
+            if failures_only or verbose:
+                print_book_result(result, verbose)
+            else:
+                if result.error:
+                    print(f"  ❌ {result.book_id}: {result.error}")
+                elif result.extract_phase:
+                    ep = result.extract_phase
+                    print(f"  ❌ {result.book_id}: {ep.actual_count}/{ep.expected_count} entries, "
+                          f"{ep.entry_match_rate*100:.0f}% match")
+
     print()
-
-    print(f"AFTER:  {run2_dir.name}")
-    print(f"  Timestamp: {summary2['timestamp'][:19]}")
-    print(f"  Git: {summary2['git']['commit_short']} ({summary2['git']['branch']})")
-
-    # Overall stats comparison
-    stats1 = summary1["stats"]
-    stats2 = summary2["stats"]
-
-    print(f"\nOVERALL ACCURACY:")
-    print(f"  Perfect Match:")
-    print(f"    Before: {stats1['perfect_match']}/{stats1['total_books']} ({stats1['perfect_match_pct']:.1f}%)")
-    print(f"    After:  {stats2['perfect_match']}/{stats2['total_books']} ({stats2['perfect_match_pct']:.1f}%)")
-    delta = stats2['perfect_match'] - stats1['perfect_match']
-    print(f"    Delta:  {'+' if delta >= 0 else ''}{delta}")
-
-    print(f"\n  Average Title Match Rate:")
-    print(f"    Before: {stats1['avg_title_match']:.1f}%")
-    print(f"    After:  {stats2['avg_title_match']:.1f}%")
-    delta = stats2['avg_title_match'] - stats1['avg_title_match']
-    print(f"    Delta:  {'+' if delta >= 0 else ''}{delta:.1f}%")
-
-    print(f"\n  Average Entry Match Rate:")
-    print(f"    Before: {stats1['avg_entry_match']:.1f}%")
-    print(f"    After:  {stats2['avg_entry_match']:.1f}%")
-    delta = stats2['avg_entry_match'] - stats1['avg_entry_match']
-    print(f"    Delta:  {'+' if delta >= 0 else ''}{delta:.1f}%")
-
-    # Per-book changes
-    books1 = {r["book_id"]: r for r in summary1["book_results"]}
-    books2 = {r["book_id"]: r for r in summary2["book_results"]}
-
-    improved = []
-    regressed = []
-
-    for book_id in sorted(set(books1.keys()) | set(books2.keys())):
-        result1 = books1.get(book_id)
-        result2 = books2.get(book_id)
-
-        if result1 and result2:
-            # Check for status changes
-            if not result1["success"] and result2["success"]:
-                improved.append(book_id)
-            elif result1["success"] and not result2["success"]:
-                regressed.append(book_id)
-
-    if improved or regressed:
-        print(f"\nPER-BOOK CHANGES:")
-        if improved:
-            print(f"\n  Improved ({len(improved)}):")
-            for book_id in improved:
-                print(f"    ✅ {book_id}")
-
-        if regressed:
-            print(f"\n  Regressed ({len(regressed)}):")
-            for book_id in regressed:
-                print(f"    ❌ {book_id}")
-
-                # Show what changed
-                result2 = books2[book_id]
-                if result2.get("error"):
-                    print(f"       Error: {result2['error']}")
-                else:
-                    issues = []
-                    if not result2.get("find_matches"):
-                        issues.append("find phase")
-                    if not result2.get("finalize_matches"):
-                        issues.append("finalize phase")
-                    if issues:
-                        print(f"       Issues in: {', '.join(issues)}")
-    else:
-        print(f"\n  No per-book changes")
-
-    print(f"\n{'='*80}\n")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compare extract-toc test runs",
+        description="Compare extract-toc outputs against expected results",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
 
     parser.add_argument(
-        "run1",
-        nargs="?",
-        help="First run name (default: second-latest)"
-    )
-    parser.add_argument(
-        "run2",
-        nargs="?",
-        help="Second run name (default: latest)"
-    )
-    parser.add_argument(
         "--book",
-        help="Show detailed results for a specific book"
+        help="Compare specific book only"
     )
     parser.add_argument(
-        "--list",
+        "--failures",
         action="store_true",
-        help="List all test runs"
+        help="Show detailed output for failures only"
     )
     parser.add_argument(
-        "--test-name",
-        default="extract-toc",
-        help="Test name (default: extract-toc)"
+        "--verbose", "-v",
+        action="store_true",
+        help="Show all entry differences"
     )
 
     args = parser.parse_args()
 
-    manager = ResultsManager(test_name=args.test_name)
-
-    if args.list:
-        list_runs(manager)
-    elif args.book:
-        show_book_details(manager, args.book, args.run1)
+    if args.book:
+        result = compare_book(args.book)
+        print_book_result(result, args.verbose)
     else:
-        compare_two_runs(manager, args.run1, args.run2)
+        compare_all_books(args.failures, args.verbose)
 
 
 if __name__ == "__main__":

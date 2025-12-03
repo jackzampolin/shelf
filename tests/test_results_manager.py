@@ -200,7 +200,7 @@ class TestRun:
         run_dir: Path,
         timestamp: datetime,
         git_metadata: Dict[str, Any],
-        manager: TestResultsManager,
+        manager: 'ResultsManager',
         is_loaded: bool = False
     ):
         self.run_dir = Path(run_dir)
