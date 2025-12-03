@@ -42,8 +42,20 @@ Output a JSON object with:
     },
     ...
   ],
+  "requires_evaluation": true,
   "reasoning": "brief explanation of your analysis"
 }
+
+REQUIRES_EVALUATION FIELD:
+Set "requires_evaluation" to false when ALL candidates are noise and evaluation would be wasteful:
+- All candidates are running headers (chapter titles repeated at top of pages)
+- All candidates are OCR artifacts or formatting noise
+- All candidates fall within excluded page ranges
+- The ToC already appears complete with no gaps to fill
+- All candidates are back matter section dividers (Notes, Bibliography, Index headers)
+
+When requires_evaluation is false, the evaluation phase will be skipped entirely, saving time and cost.
+Default to true if there are ANY candidates that might be real structural headings worth evaluating.
 
 Focus on actionable observations like:
 - "Candidates 1-21 appear to be chapter numbers (1, 2, 3...) between Parts"
@@ -187,6 +199,7 @@ def analyze_toc_pattern(tracker, **kwargs):
     observations = []
     missing_candidate_headings = []
     excluded_page_ranges = []
+    requires_evaluation = True
     reasoning = "No candidates to analyze"
 
     if candidate_headings:
@@ -195,7 +208,7 @@ def analyze_toc_pattern(tracker, **kwargs):
         llm = LLMSingleCall(LLMSingleCallConfig(
             tracker=tracker,
             model=model,
-            call_name="Pattern analysis",
+            call_name="pattern",
             metric_key="pattern_llm"
         ))
 
@@ -213,6 +226,7 @@ def analyze_toc_pattern(tracker, **kwargs):
         if result.success and result.parsed_json:
             observations = result.parsed_json.get("observations", [])
             reasoning = result.parsed_json.get("reasoning", "")
+            requires_evaluation = result.parsed_json.get("requires_evaluation", True)
             logger.info(f"LLM identified {len(observations)} observations")
 
             # Parse missing candidate heading predictions
@@ -245,6 +259,9 @@ def analyze_toc_pattern(tracker, **kwargs):
 
             if excluded_page_ranges:
                 logger.info(f"LLM identified {len(excluded_page_ranges)} page ranges to exclude")
+
+            if not requires_evaluation:
+                logger.info("LLM determined evaluation not needed - all candidates are noise")
         else:
             logger.warning(f"Pattern analysis failed: {result.error_message}")
             reasoning = f"LLM call failed: {result.error_message}"
@@ -288,7 +305,8 @@ def analyze_toc_pattern(tracker, **kwargs):
         missing_candidate_headings=missing_candidate_headings,
         excluded_page_ranges=excluded_page_ranges,
         confidence=0.8 if observations else 0.3,
-        reasoning=reasoning
+        reasoning=reasoning,
+        requires_evaluation=requires_evaluation
     )
 
     storage.stage("link-toc").save_file(

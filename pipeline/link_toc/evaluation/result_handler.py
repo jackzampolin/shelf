@@ -50,7 +50,7 @@ def create_evaluation_handler(
 
                 result.record_to_metrics(
                     metrics_manager=stage_storage.metrics_manager,
-                    key=f"eval_{result.request.id}",
+                    key=f"evaluation_{result.request.id}",
                     extra_fields={'include': include}
                 )
 

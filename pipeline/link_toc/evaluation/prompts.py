@@ -53,21 +53,36 @@ EXCLUDE if:
 - It's a running header, page number, or figure caption
 - It's a subtitle or epigraph, not a structural heading
 - Pattern observations indicate this page range is noise
+- It duplicates a nearby ToC entry title (Part/Section titles often repeat as running headers on subsequent pages)
+
+CRITICAL - Running Header Detection:
+Part and section titles commonly appear as running headers at the top of pages AFTER their initial occurrence.
+If a heading matches or closely matches a PRECEDING ToC entry title (especially Parts), it's almost certainly a running header, NOT a new chapter.
+Look for: Same or similar text appearing on multiple consecutive pages after a Part/Section start.
 
 Use the pattern observations to guide your decision - they provide context about what's real structure vs noise in this specific book.
 """
 
 
-def build_evaluation_prompt(candidate, observations, toc_context):
+def build_evaluation_prompt(candidate, observations, toc_context, nearby_toc_entries=""):
     """Build user prompt for evaluating a candidate heading."""
 
     obs_text = "\n".join(f"- {obs}" for obs in observations) if observations else "No specific observations"
+
+    # Build nearby ToC entries section for running header detection
+    nearby_section = ""
+    if nearby_toc_entries:
+        nearby_section = f"""
+
+## Nearby ToC Entries (CHECK FOR DUPLICATES!)
+{nearby_toc_entries}
+⚠️ If this candidate's heading text matches or is very similar to a PRECEDING ToC entry, it's likely a RUNNING HEADER, not a new chapter."""
 
     return f"""## Pattern Observations
 {obs_text}
 
 ## ToC Context
-{toc_context}
+{toc_context}{nearby_section}
 
 ## Candidate to Evaluate
 - Page: {candidate.scan_page}
@@ -76,7 +91,8 @@ def build_evaluation_prompt(candidate, observations, toc_context):
 - Preceding ToC entry page: {candidate.preceding_toc_page}
 - Following ToC entry page: {candidate.following_toc_page}
 
-Look at the page image. Is this heading a real structural element that belongs in the enriched ToC?"""
+Look at the page image. Is this heading a real structural element that belongs in the enriched ToC?
+Remember: If this heading matches a nearby ToC entry title (especially preceding), it's a running header - EXCLUDE it."""
 
 
 def build_missing_search_prompt(missing, page_num):

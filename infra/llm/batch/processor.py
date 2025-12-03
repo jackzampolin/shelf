@@ -6,9 +6,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .client import LLMBatchClient
 from .progress import create_progress_handler
-from .progress.display import display_summary
 from .schemas import BatchStats, LLMBatchConfig
-from rich.progress import Progress, BarColumn, TextColumn, TaskProgressColumn, TimeRemainingColumn
+from rich.progress import Progress, BarColumn, TextColumn, TaskProgressColumn
+from infra.llm.display import DisplayStats, print_phase_complete
 
 
 def is_headless():
@@ -100,15 +100,16 @@ class LLMBatchProcessor:
                     if request:
                         requests.append(request)
         else:
+            # Preparation progress bar with hourglass
             prep_progress = Progress(
-                TextColumn("{task.description}"),
+                TextColumn(f"⏳ {self.batch_name} (preparing)"),
                 BarColumn(bar_width=40),
                 TaskProgressColumn(),
                 TextColumn("{task.fields[suffix]}", justify="right"),
                 transient=True
             )
             with prep_progress:
-                prep_task = prep_progress.add_task("", total=len(items), suffix="loading...")
+                prep_task = prep_progress.add_task("", total=len(items), suffix="")
                 prepared = 0
 
                 with ThreadPoolExecutor(max_workers=prep_workers) as executor:
@@ -119,10 +120,9 @@ class LLMBatchProcessor:
                             requests.append(request)
 
                         prepared += 1
-                        prep_progress.update(prep_task, completed=prepared, suffix=f"{prepared}/{len(items)} prepared")
+                        prep_progress.update(prep_task, completed=prepared, suffix=f"{prepared}/{len(items)}")
 
         prep_elapsed = time.time() - prep_start
-        print(f"✅ Prepared {len(requests)} requests in {prep_elapsed:.1f}s")
         self.logger.info(f"{self.batch_name}: Prepared {len(requests)}/{len(items)} requests in {prep_elapsed:.1f}s")
 
         if not requests:
@@ -150,15 +150,18 @@ class LLMBatchProcessor:
                 total_items = tracker_status['progress']['total_items']
                 completed_items = tracker_status['progress']['completed_items']
 
-                display_summary(
-                    batch_name=self.batch_name,
-                    batch_stats=batch_stats,
-                    elapsed=elapsed,
-                    total_items=total_items,
-                    completed_items=completed_items,
-                    metrics_manager=self.metrics_manager,
-                    metric_prefix=self.metric_prefix
-                )
+                # Get cumulative metrics for accurate token counts
+                cumulative = self.metrics_manager.get_cumulative_metrics(prefix=self.metric_prefix)
+
+                print_phase_complete(self.batch_name, DisplayStats(
+                    completed=completed_items,
+                    total=total_items,
+                    time_seconds=elapsed,
+                    prompt_tokens=cumulative.get('total_prompt_tokens', batch_stats.total_prompt_tokens),
+                    completion_tokens=cumulative.get('total_completion_tokens', batch_stats.total_completion_tokens),
+                    reasoning_tokens=cumulative.get('total_reasoning_tokens', batch_stats.total_reasoning_tokens),
+                    cost_usd=cumulative.get('total_cost_usd', batch_stats.total_cost_usd),
+                ))
 
                 self.logger.info(
                     f"{self.batch_name} complete: {batch_stats.completed} completed, "
@@ -171,7 +174,7 @@ class LLMBatchProcessor:
         # Normal mode with progress display
         # Show full phase progress: start at already_completed, go to total_items_in_phase
         progress = Progress(
-            TextColumn("   {task.description}"),
+            TextColumn(f"⏳ {self.batch_name}"),
             BarColumn(bar_width=40),
             TaskProgressColumn(),
             TextColumn("{task.fields[suffix]}", justify="right"),
@@ -182,7 +185,7 @@ class LLMBatchProcessor:
             "",
             total=total_items_in_phase,
             completed=already_completed,
-            suffix=f"{already_completed}/{total_items_in_phase} starting..."
+            suffix=f"{already_completed}/{total_items_in_phase}"
         )
 
         progress_handler = create_progress_handler(
@@ -236,15 +239,18 @@ class LLMBatchProcessor:
             total_items = tracker_status['progress']['total_items']
             completed_items = tracker_status['progress']['completed_items']
 
-            display_summary(
-                batch_name=self.batch_name,
-                batch_stats=batch_stats,
-                elapsed=elapsed,
-                total_items=total_items,
-                completed_items=completed_items,
-                metrics_manager=self.metrics_manager,
-                metric_prefix=self.metric_prefix
-            )
+            # Get cumulative metrics for accurate token counts
+            cumulative = self.metrics_manager.get_cumulative_metrics(prefix=self.metric_prefix)
+
+            print_phase_complete(self.batch_name, DisplayStats(
+                completed=completed_items,
+                total=total_items,
+                time_seconds=elapsed,
+                prompt_tokens=cumulative.get('total_prompt_tokens', batch_stats.total_prompt_tokens),
+                completion_tokens=cumulative.get('total_completion_tokens', batch_stats.total_completion_tokens),
+                reasoning_tokens=cumulative.get('total_reasoning_tokens', batch_stats.total_reasoning_tokens),
+                cost_usd=cumulative.get('total_cost_usd', batch_stats.total_cost_usd),
+            ))
 
             self.logger.info(
                 f"{self.batch_name} complete: {batch_stats.completed} completed, "

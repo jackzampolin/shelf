@@ -8,9 +8,9 @@ class LinkedToCEntry(BaseModel):
     All fields from extract-toc ToCEntry plus scan page link.
     """
 
-    # FROM EXTRACT-TOC (original entry)
+    # FROM EXTRACT-TOC (original entry) - must match ToCEntry constraints
     entry_number: Optional[str] = Field(None, description="Entry numbering (e.g., '5', 'II', 'A', '1.1')")
-    title: str = Field(..., min_length=1, description="Entry title from ToC")
+    title: str = Field(..., description="Entry title from ToC. Empty string '' for standalone markers like 'PART I'.")
     level: int = Field(..., ge=1, description="Hierarchy level (1=top, higher=more nested)")
     level_name: Optional[str] = Field(None, description="Semantic type: 'chapter', 'part', 'section', etc")
     printed_page_number: Optional[str] = Field(None, description="Printed page number from ToC")

@@ -107,7 +107,7 @@ def _create_linked_entry_from_result(toc_entry: Dict, agent_result, tools) -> Li
         result_data = tools._pending_result
         return LinkedToCEntry(
             entry_number=toc_entry.get('entry_number'),
-            title=toc_entry['title'],
+            title=toc_entry.get('title', ''),
             level=toc_entry.get('level', 1),
             level_name=toc_entry.get('level_name'),
             printed_page_number=toc_entry.get('printed_page_number'),
@@ -117,7 +117,7 @@ def _create_linked_entry_from_result(toc_entry: Dict, agent_result, tools) -> Li
     else:
         return LinkedToCEntry(
             entry_number=toc_entry.get('entry_number'),
-            title=toc_entry['title'],
+            title=toc_entry.get('title', ''),
             level=toc_entry.get('level', 1),
             level_name=toc_entry.get('level_name'),
             printed_page_number=toc_entry.get('printed_page_number'),
@@ -202,7 +202,7 @@ def find_all_toc_entries(tracker, **kwargs):
     batch_config = AgentBatchConfig(
         tracker=tracker,
         agent_configs=configs,
-        batch_name="link-toc-find-entries",
+        batch_name="find-entries",
         max_workers=10
     )
 

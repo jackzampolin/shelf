@@ -125,24 +125,27 @@ class MetricsManager:
 
             stage_runtime = self._state["metrics"].get("stage_runtime", {})
 
-            total_input = sum(entry.get("input_tokens", 0) for entry in all_entries)
-            total_output = sum(entry.get("output_tokens", 0) for entry in all_entries)
+            # Support both old (input/output) and new (prompt/completion) field names
+            total_prompt = sum(
+                entry.get("prompt_tokens", 0) or entry.get("input_tokens", 0)
+                for entry in all_entries
+            )
+            total_completion = sum(
+                entry.get("completion_tokens", 0) or entry.get("output_tokens", 0)
+                for entry in all_entries
+            )
             total_reasoning = sum(entry.get("reasoning_tokens", 0) for entry in all_entries)
 
             result = {
                 "total_cost_usd": self.get_total_cost(),
                 "total_time_seconds": self.get_total_time(),
+                "total_prompt_tokens": total_prompt,
+                "total_completion_tokens": total_completion,
+                "total_reasoning_tokens": total_reasoning,
             }
 
             if stage_runtime:
                 result["stage_runtime_seconds"] = stage_runtime.get("time_seconds", 0)
-
-            if total_input > 0:
-                result["total_input_tokens"] = total_input
-            if total_output > 0:
-                result["total_output_tokens"] = total_output
-            if total_reasoning > 0:
-                result["total_reasoning_tokens"] = total_reasoning
 
             return result
 

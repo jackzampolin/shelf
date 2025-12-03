@@ -5,6 +5,7 @@ import json
 from infra.pipeline.storage.library import Library
 from infra.pipeline.runner import run_stage
 from infra.config import Config
+from infra.llm.display import DisplayStats, print_stage_complete
 from cli.helpers import (
     clean_stage_directory,
     get_stage_status,
@@ -44,11 +45,23 @@ def cmd_stage_run(args):
 
     stage = stage_map[args.stage_name]
 
-    print(f"\nRunning stage: {stage.name}")
+    print(f"▶️  {stage.name}")
 
     try:
         stats = run_stage(stage)
-        print(f"Stage complete: {stage.name}")
+
+        # Get aggregated metrics from the stage
+        aggregated = stage.stage_storage.metrics_manager.get_aggregated()
+
+        print_stage_complete(stage.name, DisplayStats(
+            completed=1,
+            total=1,
+            time_seconds=aggregated.get("stage_runtime_seconds", aggregated.get("total_time_seconds", 0)),
+            prompt_tokens=aggregated.get("total_prompt_tokens", 0),
+            completion_tokens=aggregated.get("total_completion_tokens", 0),
+            reasoning_tokens=aggregated.get("total_reasoning_tokens", 0),
+            cost_usd=aggregated.get("total_cost_usd", 0),
+        ))
     except Exception as e:
         import traceback
         print(f"Stage failed: {e}")

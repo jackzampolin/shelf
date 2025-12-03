@@ -14,7 +14,11 @@ class MultiPhaseStatusTracker:
         self.phase_trackers = phase_trackers
 
     def is_completed(self) -> bool:
-        return all(tracker.is_completed() for tracker in self.phase_trackers)
+        # Check phases sequentially - if any phase is incomplete, stage is not complete
+        for tracker in self.phase_trackers:
+            if not tracker.is_completed():
+                return False
+        return True
 
     def list_phases(self) -> List[str]:
         """Return list of phase names in order."""
@@ -52,6 +56,8 @@ class MultiPhaseStatusTracker:
         completed_phases = []
         all_metrics = {}
 
+        # Check phases sequentially - stop at first incomplete phase
+        # This prevents calling discoverers on later phases that depend on earlier outputs
         for tracker in self.phase_trackers:
             if tracker.is_completed():
                 completed_phases.append(tracker.phase_name)
@@ -59,6 +65,9 @@ class MultiPhaseStatusTracker:
                 if metrics:
                     phase_metrics = tracker.get_phase_metrics()
                     self._merge_metrics(all_metrics, phase_metrics)
+            else:
+                # Found incomplete phase - don't check later phases
+                break
 
         if len(completed_phases) == 0:
             status = "not_started"

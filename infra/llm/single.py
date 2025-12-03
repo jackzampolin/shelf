@@ -1,13 +1,10 @@
 import time
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Any, Callable
-
-from rich.text import Text
-from rich.console import Console
+from typing import List, Dict, Optional
 
 from infra.llm.client import LLMClient
-from infra.llm.models import LLMRequest, LLMResult
-from infra.llm.display_format import format_token_string
+from infra.llm.models import LLMResult
+from infra.llm.display import DisplayStats, print_phase_complete, print_phase_error, SingleCallSpinner
 from infra.pipeline.status import PhaseStatusTracker
 
 
@@ -53,15 +50,28 @@ class LLMSingleCall:
         """Execute the LLM call with automatic metrics and display."""
         start_time = time.time()
 
-        result = self.client.call(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout=timeout,
-            response_format=response_format,
-            images=images,
-        )
+        # Show spinner while waiting for response
+        if self.config.show_display:
+            with SingleCallSpinner(self.call_name):
+                result = self.client.call(
+                    model=self.model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    timeout=timeout,
+                    response_format=response_format,
+                    images=images,
+                )
+        else:
+            result = self.client.call(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                response_format=response_format,
+                images=images,
+            )
 
         elapsed = time.time() - start_time
 
@@ -80,27 +90,15 @@ class LLMSingleCall:
 
     def _display_summary(self, result: LLMResult, elapsed: float):
         """Display summary line matching batch format."""
-        text = Text()
-
         if result.success:
-            text.append("✅ ", style="green")
+            print_phase_complete(self.call_name, DisplayStats(
+                completed=1,
+                total=1,
+                time_seconds=elapsed,
+                prompt_tokens=result.prompt_tokens,
+                completion_tokens=result.completion_tokens,
+                reasoning_tokens=result.reasoning_tokens,
+                cost_usd=result.cost_usd,
+            ))
         else:
-            text.append("❌ ", style="red")
-
-        description = f"{self.call_name}"
-        text.append(f"{description:<45}", style="")
-
-        text.append(f" ({elapsed:4.1f}s)", style="dim")
-
-        token_str = format_token_string(
-            result.prompt_tokens,
-            result.completion_tokens,
-            result.reasoning_tokens
-        )
-        text.append(f" {token_str:>22}", style="cyan")
-
-        cost_cents = result.cost_usd * 100
-        text.append(f" {cost_cents:5.2f}¢", style="yellow")
-
-        console = Console()
-        console.print(text)
+            print_phase_error(self.call_name, result.error_message or "Unknown error")

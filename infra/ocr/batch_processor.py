@@ -6,10 +6,9 @@ import json
 from pathlib import Path
 
 from rich.progress import Progress, BarColumn, TextColumn, TaskProgressColumn, TimeRemainingColumn
-from rich.console import Console
 
 from infra.llm.rate_limiter import RateLimiter
-from infra.llm.batch.progress.display import format_ocr_summary
+from infra.llm.display import DisplayStats, print_ocr_complete
 from .config import OCRBatchConfig
 
 
@@ -80,7 +79,7 @@ class OCRBatchProcessor:
         self.logger.info(f"Workers: {self.max_workers}, Rate limit: {rate_limit_str}")
 
         progress = Progress(
-            TextColumn("   {task.description}"),
+            TextColumn(f"⏳ {self.batch_name}"),
             BarColumn(bar_width=40),
             TaskProgressColumn(),
             TextColumn("•"),
@@ -169,15 +168,15 @@ class OCRBatchProcessor:
                         suffix=f"{pages_processed}/{len(page_nums)} • ${total_cost:.4f} • {avg_time:.1f}s/pg"
                     )
 
-        summary_text = format_ocr_summary(
-            batch_name=self.batch_name,
+        avg_time_per_page = total_time / pages_processed if pages_processed > 0 else 0
+        print_ocr_complete(self.batch_name, DisplayStats(
             completed=pages_processed,
             total=len(page_nums),
             time_seconds=total_time,
-            total_chars=total_chars,
             cost_usd=total_cost,
-        )
-        Console().print(summary_text)
+            chars=total_chars,
+            avg_time_per_item=avg_time_per_page,
+        ))
 
         self.logger.info(
             f"{self.batch_name} complete: {pages_processed}/{len(page_nums)} pages, "

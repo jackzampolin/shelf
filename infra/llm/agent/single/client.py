@@ -19,7 +19,8 @@ class AgentClient:
         self.log_dir = self.tracker.stage_storage.output_dir / 'logs' / 'agents'
         self.log_filename = f"{config.agent_id}.json"
         self.metrics_manager = self.tracker.stage_storage.metrics_manager
-        self.metrics_key_prefix = self.tracker.metrics_prefix
+        # Use agent_id in metrics key to avoid collisions when running multiple agents in parallel
+        self.metrics_key_prefix = f"{self.tracker.metrics_prefix}{config.agent_id}_"
         self.iteration_count = 0
         self.total_cost = 0.0
         self.total_prompt_tokens = 0

@@ -1,21 +1,96 @@
+from typing import List
+from pathlib import Path
+
 from .processor import evaluate_candidates
-from infra.pipeline.status import artifact_tracker
+from infra.pipeline.status import PhaseStatusTracker
+
+
+def _should_skip_evaluation(stage_storage) -> bool:
+    """Check if pattern analysis says to skip evaluation entirely."""
+    try:
+        pattern_data = stage_storage.load_file("pattern/pattern_analysis.json")
+        if not pattern_data:
+            return False
+        return not pattern_data.get("requires_evaluation", True)
+    except FileNotFoundError:
+        return False
+
+
+def _discover_candidate_pages(stage_storage) -> List[int]:
+    """Discover candidate pages from pattern analysis."""
+    try:
+        pattern_data = stage_storage.load_file("pattern/pattern_analysis.json")
+    except FileNotFoundError:
+        # Pattern phase hasn't run yet - no candidates to evaluate
+        return []
+
+    if not pattern_data:
+        return []
+
+    # If pattern says skip, return empty (phase will be marked complete by validator)
+    if not pattern_data.get("requires_evaluation", True):
+        return []
+
+    candidates = pattern_data.get("candidate_headings", [])
+    excluded_ranges = pattern_data.get("excluded_page_ranges", [])
+
+    # Filter out excluded pages
+    def is_excluded(page: int) -> bool:
+        for ex in excluded_ranges:
+            if ex.get("start_page", 0) <= page <= ex.get("end_page", 0):
+                return True
+        return False
+
+    return [c["scan_page"] for c in candidates if not is_excluded(c["scan_page"])]
+
+
+def _create_validator(stage_storage):
+    """Create validator that handles both skip condition and normal completion."""
+    def validator(page_num: int, phase_dir: Path) -> bool:
+        # If pattern says skip evaluation, everything is "complete"
+        if _should_skip_evaluation(stage_storage):
+            return True
+        # Otherwise check for output file
+        return (phase_dir / f"heading_{page_num:04d}.json").exists()
+    return validator
 
 
 def create_tracker(stage_storage, model: str = None):
     """Create the evaluation phase tracker."""
 
     def run_evaluation(tracker, **kwargs):
+        # Check if we should skip
+        if _should_skip_evaluation(stage_storage):
+            tracker.logger.info("Evaluation skipped - pattern determined no useful candidates")
+            _save_skip_summary(stage_storage)
+            return
+
         evaluate_candidates(tracker, model=model, **kwargs)
         _save_summary(tracker.stage_storage)
 
-    return artifact_tracker(
+    return PhaseStatusTracker(
         stage_storage=stage_storage,
         phase_name="evaluation",
-        artifact_filename="evaluation_summary.json",
+        discoverer=lambda phase_dir: _discover_candidate_pages(stage_storage),
+        output_path_fn=lambda page_num, phase_dir: phase_dir / f"heading_{page_num:04d}.json",
         run_fn=run_evaluation,
         use_subdir=True,
+        validator_override=_create_validator(stage_storage),
     )
+
+
+def _save_skip_summary(stage_storage):
+    """Save summary when evaluation is skipped."""
+    summary = {
+        "skipped": True,
+        "reason": "Pattern analysis determined evaluation not needed",
+        "total_evaluated": 0,
+        "included": 0,
+        "excluded": 0,
+        "missing_searched": 0,
+        "missing_found": 0,
+    }
+    stage_storage.save_file("evaluation/evaluation_summary.json", summary)
 
 
 def _save_summary(stage_storage):

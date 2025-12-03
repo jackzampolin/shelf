@@ -112,7 +112,7 @@ def search_missing_candidates(
     batch_config = AgentBatchConfig(
         tracker=tracker,
         agent_configs=configs,
-        batch_name="link-toc-missing-search",
+        batch_name="missing-search",
         max_workers=len(configs)  # All in parallel
     )
 
@@ -143,14 +143,41 @@ def search_missing_candidates(
                 decision.model_dump()
             )
         else:
-            # Not found - just log it, don't save a decision file
-            # (We'll search again next time if needed)
+            # Not found - save a marker file so we know it was searched
             reason = result_data.get("reasoning", "Not found in predicted range") if result_data else "Agent did not complete"
             logger.info(f"Missing '{missing.identifier}' not found: {reason}")
+
+            decision = HeadingDecision(
+                scan_page=0,  # 0 indicates not found
+                heading_text=missing.identifier,
+                include=False,
+                title=missing.identifier,
+                level=1,
+                entry_number=missing.identifier,
+                parent_toc_entry_index=None,
+                reasoning=f"Searched predicted range {missing.predicted_page_range} but not found. {reason}"
+            )
+            stage_storage.save_file(
+                f"evaluation/missing_{missing.identifier.replace(' ', '_')}.json",
+                decision.model_dump()
+            )
 
     logger.info(f"Missing search complete: {found_count}/{len(candidates_to_search)} found")
 
     return found_count
+
+
+def _build_toc_entries_by_page(stage_storage) -> Dict[int, str]:
+    """Build lookup of ToC entry titles by scan page for running header detection."""
+    linked_toc_data = stage_storage.load_file("linked_toc.json")
+    if not linked_toc_data:
+        return {}
+
+    entries_by_page = {}
+    for entry in linked_toc_data.get("entries", []):
+        if entry and entry.get("scan_page"):
+            entries_by_page[entry["scan_page"]] = entry.get("title", "")
+    return entries_by_page
 
 
 def evaluate_candidates(
@@ -173,6 +200,9 @@ def evaluate_candidates(
         return {}
 
     pattern = PatternAnalysis(**pattern_data)
+
+    # Build ToC entries lookup for running header detection
+    toc_entries_by_page = _build_toc_entries_by_page(stage_storage)
 
     # Filter out excluded page ranges
     excluded_ranges = pattern.excluded_page_ranges
@@ -200,6 +230,7 @@ def evaluate_candidates(
     result = {}
 
     # Evaluate candidate headings (if any)
+    # Tracker now discovers candidates from pattern_analysis.json and tracks by page number
     if candidates_to_eval:
         logger.info(f"Evaluating {len(candidates_to_eval)} candidate headings with vision...")
 
@@ -207,44 +238,28 @@ def evaluate_candidates(
         observations = pattern.observations
         toc_summary = f"ToC has {pattern.toc_structure.get('count', 0)} entries, body range: {pattern.body_range}"
 
-        # Create lookup for result handler
+        # Create lookup for result handler and request builder
         candidates_by_page = {c["scan_page"]: c for c in candidates_to_eval}
 
-        # Override tracker's get_remaining_items to return our filtered candidates
-        original_get_remaining = tracker.get_remaining_items
-
-        def get_filtered_candidates():
-            # Check which are already done
-            remaining = []
-            for candidate in candidates_to_eval:
-                decision_file = stage_storage.output_dir / "evaluation" / f"heading_{candidate['scan_page']:04d}.json"
-                if not decision_file.exists():
-                    remaining.append(candidate)
-            return remaining
-
-        tracker.get_remaining_items = get_filtered_candidates
-
-        try:
-            result = LLMBatchProcessor(LLMBatchConfig(
-                tracker=tracker,
-                model=model,
-                batch_name="Heading evaluation",
-                request_builder=lambda item, storage, **kw: prepare_evaluation_request(
-                    item=item,
-                    storage=storage,
-                    observations=observations,
-                    toc_summary=toc_summary
-                ),
-                result_handler=create_evaluation_handler(
-                    stage_storage=stage_storage,
-                    logger=logger,
-                    candidates_by_page=candidates_by_page
-                ),
-                max_workers=10,
-                max_retries=3,
-            )).process()
-        finally:
-            tracker.get_remaining_items = original_get_remaining
+        result = LLMBatchProcessor(LLMBatchConfig(
+            tracker=tracker,
+            model=model,
+            batch_name="evaluation",
+            request_builder=lambda item, storage, **kw: prepare_evaluation_request(
+                item=candidates_by_page[item],  # item is page number from tracker
+                storage=storage,
+                observations=observations,
+                toc_summary=toc_summary,
+                toc_entries_by_page=toc_entries_by_page
+            ),
+            result_handler=create_evaluation_handler(
+                stage_storage=stage_storage,
+                logger=logger,
+                candidates_by_page=candidates_by_page
+            ),
+            max_workers=10,
+            max_retries=3,
+        )).process()
     else:
         logger.info("No candidate headings to evaluate")
 

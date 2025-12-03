@@ -102,7 +102,6 @@ def cmd_batch(args):
 
             try:
                 storage = library.get_book_storage(scan_id)
-                print(f"  ▶️  Running {current_stage} stage...")
 
                 run_args = argparse.Namespace(
                     scan_id=scan_id,
@@ -113,8 +112,6 @@ def cmd_batch(args):
                 )
 
                 cmd_stage_run(run_args)
-
-                print(f"  ✅ Completed: {scan_id}")
                 processed_count += 1
 
             except KeyboardInterrupt:

@@ -83,3 +83,9 @@ class PatternAnalysis(BaseModel):
     # Confidence
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in pattern analysis")
     reasoning: str = Field(..., description="Why this pattern was identified")
+
+    # Evaluation control
+    requires_evaluation: bool = Field(
+        default=True,
+        description="Whether evaluation phase should run. Set False if all candidates are noise (running headers, OCR artifacts, section dividers)."
+    )
