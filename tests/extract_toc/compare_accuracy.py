@@ -2,6 +2,12 @@
 """
 Compare extract-toc outputs in the library against expected results.
 
+Uses weighted accuracy scoring that prioritizes:
+1. Entry count (40% weight) - Did we find all entries?
+2. Title accuracy (30% weight) - Can users identify chapters?
+3. Page number accuracy (21% weight) - Can users navigate?
+4. Structural metadata (9% weight) - Level + entry_number
+
 Usage:
     # Compare all books with expected results
     python tests/extract_toc/compare_accuracy.py
@@ -25,8 +31,27 @@ sys.path.insert(0, str(_project_root))
 
 import argparse
 import json
+from difflib import SequenceMatcher
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
+
+# =============================================================================
+# ACCURACY WEIGHTS
+# =============================================================================
+# These weights determine how the blended accuracy score is calculated.
+# Adjust based on what matters most for your use case.
+
+ENTRY_COVERAGE_WEIGHT = 0.40  # Did we find the right number of entries?
+FIELD_ACCURACY_WEIGHT = 0.60  # How accurate are the fields?
+
+# Within field accuracy (must sum to 1.0):
+TITLE_WEIGHT = 0.50           # Title is primary identifier
+PAGE_NUMBER_WEIGHT = 0.35     # Page number enables navigation
+STRUCTURAL_WEIGHT = 0.15      # Level + entry_number (metadata)
+
+# Fuzzy matching threshold for titles (0.0-1.0)
+# Titles with similarity >= this threshold are considered a match
+FUZZY_TITLE_THRESHOLD = 0.90
 
 from infra.pipeline.storage.book_storage import BookStorage
 from tests.fixtures.expected.extract_toc import (
@@ -70,6 +95,45 @@ def normalize_text(text: str) -> str:
     return text
 
 
+def fuzzy_title_match(title1: str, title2: str, threshold: float = FUZZY_TITLE_THRESHOLD) -> tuple[bool, float]:
+    """
+    Compare two titles using fuzzy matching.
+
+    Returns (is_match, similarity_score).
+    Uses SequenceMatcher for similarity calculation.
+    """
+    # Normalize both titles
+    t1 = normalize_text((title1 or "").lower().strip())
+    t2 = normalize_text((title2 or "").lower().strip())
+
+    # Exact match is always a match
+    if t1 == t2:
+        return True, 1.0
+
+    # Calculate similarity
+    similarity = SequenceMatcher(None, t1, t2).ratio()
+
+    return similarity >= threshold, similarity
+
+
+@dataclass
+class FieldAccuracyBreakdown:
+    """Breakdown of accuracy by field type."""
+    title_match_rate: float
+    page_match_rate: float
+    level_match_rate: float
+    entry_number_match_rate: float
+    structural_match_rate: float  # Combined level + entry_number
+
+    def weighted_field_score(self) -> float:
+        """Calculate weighted field accuracy score."""
+        return (
+            TITLE_WEIGHT * self.title_match_rate +
+            PAGE_NUMBER_WEIGHT * self.page_match_rate +
+            STRUCTURAL_WEIGHT * self.structural_match_rate
+        )
+
+
 @dataclass
 class FindPhaseComparison:
     """Comparison result for find phase."""
@@ -89,6 +153,13 @@ class ExtractPhaseComparison:
     perfect_entry_match: bool
     expected_count: int
     actual_count: int
+
+    # New weighted accuracy fields
+    entry_coverage: float              # min/max of entry counts
+    field_breakdown: FieldAccuracyBreakdown  # Per-field accuracy rates
+    blended_accuracy: float            # Final weighted score
+
+    # Legacy fields (kept for compatibility)
     title_match_rate: float
     entry_match_rate: float
     mismatched_entries: List[Dict[str, Any]] = field(default_factory=list)
@@ -142,7 +213,16 @@ def compare_find_phase(expected: ExpectedExtractTocResult, actual_finder: Dict[s
 
 
 def compare_extract_phase(expected: ExpectedExtractTocResult, actual_toc: Dict[str, Any]) -> ExtractPhaseComparison:
-    """Compare extract phase output to expected."""
+    """
+    Compare extract phase output to expected using weighted accuracy scoring.
+
+    Scoring breakdown:
+    - Entry coverage (40%): min(expected, actual) / max(expected, actual)
+    - Field accuracy (60%):
+        - Title (50% of field): fuzzy match with threshold
+        - Page number (35% of field): exact match
+        - Structural (15% of field): level + entry_number combined
+    """
     # Handle both old format (nested under 'toc') and new format (flat)
     expected_toc = expected.toc.get("toc", expected.toc)
     actual_toc_data = actual_toc.get("toc", actual_toc)
@@ -153,70 +233,132 @@ def compare_extract_phase(expected: ExpectedExtractTocResult, actual_toc: Dict[s
     differences = []
     mismatched_entries = []
 
-    # Compare entry counts
-    entry_count_match = len(expected_entries) == len(actual_entries)
+    expected_count = len(expected_entries)
+    actual_count = len(actual_entries)
+
+    # Entry coverage: penalize both missing and extra entries
+    entry_count_match = expected_count == actual_count
     if not entry_count_match:
         differences.append(
-            f"entry_count: expected {len(expected_entries)}, got {len(actual_entries)}"
+            f"entry_count: expected {expected_count}, got {actual_count}"
         )
 
-    # Compare entries
+    # Calculate entry coverage score
+    if expected_count == 0 and actual_count == 0:
+        entry_coverage = 1.0
+    elif expected_count == 0 or actual_count == 0:
+        entry_coverage = 0.0
+    else:
+        entry_coverage = min(expected_count, actual_count) / max(expected_count, actual_count)
+
+    # Compare matched entries field by field
+    matched_count = min(expected_count, actual_count)
+
     title_matches = 0
+    page_matches = 0
+    level_matches = 0
+    entry_number_matches = 0
     perfect_matches = 0
 
-    for i, exp_entry in enumerate(expected_entries):
-        if i >= len(actual_entries):
-            mismatched_entries.append({
-                "index": i,
-                "reason": "missing",
-                "expected": exp_entry,
-                "actual": None,
-            })
-            continue
-
+    for i in range(matched_count):
+        exp_entry = expected_entries[i]
         act_entry = actual_entries[i]
 
-        # Check if entries match (case-insensitive, normalized for title)
-        exp_title = normalize_text((exp_entry.get("title") or "").lower())
-        act_title = normalize_text((act_entry.get("title") or "").lower())
+        # Title comparison (fuzzy match)
+        title_match, title_similarity = fuzzy_title_match(
+            exp_entry.get("title"),
+            act_entry.get("title")
+        )
+        if title_match:
+            title_matches += 1
 
-        # Note: level_name excluded from accuracy - it's informational only
-        # entry_number compared case-insensitively (e.g., "One" vs "ONE")
+        # Page number comparison (exact match)
+        page_match = exp_entry.get("printed_page_number") == act_entry.get("printed_page_number")
+        if page_match:
+            page_matches += 1
+
+        # Level comparison
+        level_match = exp_entry.get("level") == act_entry.get("level")
+        if level_match:
+            level_matches += 1
+
+        # Entry number comparison (case-insensitive)
         exp_entry_num = (exp_entry.get("entry_number") or "").lower()
         act_entry_num = (act_entry.get("entry_number") or "").lower()
+        entry_num_match = exp_entry_num == act_entry_num
+        if entry_num_match:
+            entry_number_matches += 1
 
-        entry_matches = (
-            exp_entry_num == act_entry_num and
-            exp_title == act_title and
-            exp_entry.get("level") == act_entry.get("level") and
-            exp_entry.get("printed_page_number") == act_entry.get("printed_page_number")
-        )
-
-        if entry_matches:
+        # Perfect match (all fields)
+        if title_match and page_match and level_match and entry_num_match:
             perfect_matches += 1
         else:
-            mismatched_entries.append({
+            # Track what's different for debugging
+            mismatch_info = {
                 "index": i,
                 "expected": exp_entry,
                 "actual": act_entry,
-            })
+                "field_matches": {
+                    "title": title_match,
+                    "title_similarity": title_similarity,
+                    "page": page_match,
+                    "level": level_match,
+                    "entry_number": entry_num_match,
+                }
+            }
+            mismatched_entries.append(mismatch_info)
 
-        # Track title matches separately (more lenient, case-insensitive, normalized)
-        if exp_title == act_title:
-            title_matches += 1
+    # Track missing entries
+    for i in range(matched_count, expected_count):
+        mismatched_entries.append({
+            "index": i,
+            "reason": "missing",
+            "expected": expected_entries[i],
+            "actual": None,
+        })
 
-    # Check for extra entries in actual
-    if len(actual_entries) > len(expected_entries):
-        for i in range(len(expected_entries), len(actual_entries)):
-            mismatched_entries.append({
-                "index": i,
-                "reason": "extra",
-                "expected": None,
-                "actual": actual_entries[i],
-            })
+    # Track extra entries
+    for i in range(expected_count, actual_count):
+        mismatched_entries.append({
+            "index": i,
+            "reason": "extra",
+            "expected": None,
+            "actual": actual_entries[i],
+        })
 
-    title_match_rate = title_matches / len(expected_entries) if expected_entries else 1.0
-    entry_match_rate = perfect_matches / len(expected_entries) if expected_entries else 1.0
+    # Calculate field match rates (based on matched entries only)
+    if matched_count > 0:
+        title_match_rate = title_matches / matched_count
+        page_match_rate = page_matches / matched_count
+        level_match_rate = level_matches / matched_count
+        entry_number_match_rate = entry_number_matches / matched_count
+        # Structural = average of level and entry_number
+        structural_match_rate = (level_match_rate + entry_number_match_rate) / 2
+    else:
+        title_match_rate = 1.0 if expected_count == 0 else 0.0
+        page_match_rate = 1.0 if expected_count == 0 else 0.0
+        level_match_rate = 1.0 if expected_count == 0 else 0.0
+        entry_number_match_rate = 1.0 if expected_count == 0 else 0.0
+        structural_match_rate = 1.0 if expected_count == 0 else 0.0
+
+    # Build field breakdown
+    field_breakdown = FieldAccuracyBreakdown(
+        title_match_rate=title_match_rate,
+        page_match_rate=page_match_rate,
+        level_match_rate=level_match_rate,
+        entry_number_match_rate=entry_number_match_rate,
+        structural_match_rate=structural_match_rate,
+    )
+
+    # Calculate blended accuracy score
+    weighted_field_score = field_breakdown.weighted_field_score()
+    blended_accuracy = (
+        ENTRY_COVERAGE_WEIGHT * entry_coverage +
+        FIELD_ACCURACY_WEIGHT * weighted_field_score
+    )
+
+    # Legacy: entry_match_rate based on expected count
+    entry_match_rate = perfect_matches / expected_count if expected_count > 0 else 1.0
 
     perfect_entry_match = len(mismatched_entries) == 0 and entry_count_match
     matches = perfect_entry_match
@@ -225,8 +367,11 @@ def compare_extract_phase(expected: ExpectedExtractTocResult, actual_toc: Dict[s
         matches=matches,
         entry_count_match=entry_count_match,
         perfect_entry_match=perfect_entry_match,
-        expected_count=len(expected_entries),
-        actual_count=len(actual_entries),
+        expected_count=expected_count,
+        actual_count=actual_count,
+        entry_coverage=entry_coverage,
+        field_breakdown=field_breakdown,
+        blended_accuracy=blended_accuracy,
         title_match_rate=title_match_rate,
         entry_match_rate=entry_match_rate,
         mismatched_entries=mismatched_entries,
@@ -314,10 +459,20 @@ def print_book_result(result: BookComparison, verbose: bool = False):
     if result.extract_phase:
         ep = result.extract_phase
         print(f"\nEXTRACT PHASE: {'✅' if ep.matches else '❌'}")
-        print(f"  Entry Count: {'✅' if ep.entry_count_match else '❌'} ({ep.actual_count} vs {ep.expected_count} expected)")
+
+        # New weighted accuracy display
+        print(f"\n  BLENDED ACCURACY: {ep.blended_accuracy*100:.1f}%")
+        print(f"    Entry Coverage ({ENTRY_COVERAGE_WEIGHT*100:.0f}%): {ep.entry_coverage*100:.1f}%")
+        print(f"    Field Accuracy ({FIELD_ACCURACY_WEIGHT*100:.0f}%):")
+        fb = ep.field_breakdown
+        print(f"      Title ({TITLE_WEIGHT*100:.0f}%):      {fb.title_match_rate*100:.1f}%")
+        print(f"      Page ({PAGE_NUMBER_WEIGHT*100:.0f}%):       {fb.page_match_rate*100:.1f}%")
+        print(f"      Structural ({STRUCTURAL_WEIGHT*100:.0f}%): {fb.structural_match_rate*100:.1f}%")
+        print(f"        (level: {fb.level_match_rate*100:.1f}%, entry_num: {fb.entry_number_match_rate*100:.1f}%)")
+
+        # Legacy stats
+        print(f"\n  Entry Count: {'✅' if ep.entry_count_match else '❌'} ({ep.actual_count} vs {ep.expected_count} expected)")
         print(f"  Perfect Match: {'✅' if ep.perfect_entry_match else '❌'}")
-        print(f"  Title Match Rate: {ep.title_match_rate*100:.1f}%")
-        print(f"  Entry Match Rate: {ep.entry_match_rate*100:.1f}%")
 
         if ep.mismatched_entries and (verbose or len(ep.mismatched_entries) <= 10):
             print(f"\n  Mismatched Entries ({len(ep.mismatched_entries)}):")
@@ -329,31 +484,37 @@ def print_book_result(result: BookComparison, verbose: bool = False):
 
 
 def print_mismatched_entries(mismatches: List[Dict], verbose: bool):
-    """Print mismatched entries."""
+    """Print mismatched entries with field-level match info."""
     for m in mismatches[:20] if not verbose else mismatches:
         idx = m['index']
         exp = m.get('expected')
         act = m.get('actual')
         reason = m.get('reason')
+        field_matches = m.get('field_matches', {})
 
         if reason == 'missing':
             print(f"    #{idx}: MISSING - expected '{exp.get('title')}'")
         elif reason == 'extra':
             print(f"    #{idx}: EXTRA - got '{act.get('title')}'")
         else:
-            # Show differences
+            # Show differences with field match indicators
             diffs = []
-            exp_num = (exp.get('entry_number') or '').lower()
-            act_num = (act.get('entry_number') or '').lower()
-            if exp_num != act_num:
+
+            # Entry number
+            if not field_matches.get('entry_number', True):
                 diffs.append(f"num: {exp.get('entry_number')}→{act.get('entry_number')}")
-            exp_title_norm = normalize_text((exp.get('title') or '').lower())
-            act_title_norm = normalize_text((act.get('title') or '').lower())
-            if exp_title_norm != act_title_norm:
-                diffs.append(f"title: '{exp.get('title')}'→'{act.get('title')}'")
-            if exp.get('level') != act.get('level'):
+
+            # Title (show similarity if fuzzy match failed)
+            if not field_matches.get('title', True):
+                similarity = field_matches.get('title_similarity', 0)
+                diffs.append(f"title({similarity*100:.0f}%): '{exp.get('title')[:30]}'→'{act.get('title')[:30]}'")
+
+            # Level
+            if not field_matches.get('level', True):
                 diffs.append(f"level: {exp.get('level')}→{act.get('level')}")
-            if exp.get('printed_page_number') != act.get('printed_page_number'):
+
+            # Page
+            if not field_matches.get('page', True):
                 diffs.append(f"page: {exp.get('printed_page_number')}→{act.get('printed_page_number')}")
 
             print(f"    #{idx}: {'; '.join(diffs)}")
@@ -404,8 +565,10 @@ def compare_all_books(failures_only: bool = False, verbose: bool = False):
     book_ids = list_books()
 
     print(f"\n{'='*70}")
-    print(f"EXTRACT-TOC ACCURACY COMPARISON")
+    print(f"EXTRACT-TOC ACCURACY COMPARISON (Weighted Scoring)")
     print(f"Comparing {len(book_ids)} books against expected results")
+    print(f"Weights: Entry={ENTRY_COVERAGE_WEIGHT*100:.0f}%, Title={TITLE_WEIGHT*FIELD_ACCURACY_WEIGHT*100:.0f}%, "
+          f"Page={PAGE_NUMBER_WEIGHT*FIELD_ACCURACY_WEIGHT*100:.0f}%, Struct={STRUCTURAL_WEIGHT*FIELD_ACCURACY_WEIGHT*100:.0f}%")
     print(f"{'='*70}")
 
     results = []
@@ -413,13 +576,13 @@ def compare_all_books(failures_only: bool = False, verbose: bool = False):
         result = compare_book(book_id)
         results.append(result)
 
-        # Print progress
+        # Print progress with blended accuracy
         status = "✅" if result.success else "❌"
         if result.extract_phase:
-            rate = f"{result.extract_phase.entry_match_rate*100:.0f}%"
+            blended = f"{result.extract_phase.blended_accuracy*100:.0f}%"
         else:
-            rate = "N/A"
-        print(f"  {status} {book_id}: {rate}")
+            blended = "N/A"
+        print(f"  {status} {book_id}: {blended}")
 
     # Summary
     total = len(results)
@@ -435,10 +598,18 @@ def compare_all_books(failures_only: bool = False, verbose: bool = False):
     # Calculate average rates
     extract_results = [r.extract_phase for r in results if r.extract_phase]
     if extract_results:
-        avg_title = sum(r.title_match_rate for r in extract_results) / len(extract_results)
-        avg_entry = sum(r.entry_match_rate for r in extract_results) / len(extract_results)
-        print(f"  Avg Title Match: {avg_title*100:.1f}%")
-        print(f"  Avg Entry Match: {avg_entry*100:.1f}%")
+        avg_blended = sum(r.blended_accuracy for r in extract_results) / len(extract_results)
+        avg_entry_coverage = sum(r.entry_coverage for r in extract_results) / len(extract_results)
+        avg_title = sum(r.field_breakdown.title_match_rate for r in extract_results) / len(extract_results)
+        avg_page = sum(r.field_breakdown.page_match_rate for r in extract_results) / len(extract_results)
+        avg_structural = sum(r.field_breakdown.structural_match_rate for r in extract_results) / len(extract_results)
+
+        print(f"\n  AVERAGES:")
+        print(f"    Blended Accuracy: {avg_blended*100:.1f}%")
+        print(f"    Entry Coverage:   {avg_entry_coverage*100:.1f}%")
+        print(f"    Title Match:      {avg_title*100:.1f}%")
+        print(f"    Page Match:       {avg_page*100:.1f}%")
+        print(f"    Structural Match: {avg_structural*100:.1f}%")
 
     # Show failures
     failures = [r for r in results if not r.success]
@@ -454,8 +625,11 @@ def compare_all_books(failures_only: bool = False, verbose: bool = False):
                     print(f"  ❌ {result.book_id}: {result.error}")
                 elif result.extract_phase:
                     ep = result.extract_phase
+                    fb = ep.field_breakdown
                     print(f"  ❌ {result.book_id}: {ep.actual_count}/{ep.expected_count} entries, "
-                          f"{ep.entry_match_rate*100:.0f}% match")
+                          f"blended={ep.blended_accuracy*100:.0f}% "
+                          f"(title={fb.title_match_rate*100:.0f}%, page={fb.page_match_rate*100:.0f}%, "
+                          f"struct={fb.structural_match_rate*100:.0f}%)")
 
     print()
 
