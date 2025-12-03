@@ -1,0 +1,235 @@
+{
+  "scan_id": "wise-men",
+  "finder_result": {
+    "toc_found": true,
+    "toc_page_range": {
+      "start_page": 4,
+      "end_page": 5
+    },
+    "structure_summary": {
+      "total_levels": 2,
+      "level_patterns": {
+        "1": {
+          "visual": "Flush left, header style (## in OCR, likely bold/caps)",
+          "numbering": "Spelled out (One, Two, Three)",
+          "has_page_numbers": true,
+          "semantic_type": "part"
+        },
+        "2": {
+          "visual": "Standard list entries, possibly slight indent",
+          "numbering": "Arabic (1-24 sequential)",
+          "has_page_numbers": true,
+          "semantic_type": "chapter"
+        }
+      },
+      "consistency_notes": [
+        "Chapter numbering continuous across parts",
+        "Initial entry 'Architects of the American Century' p.17 as level 1 prologue/part",
+        "Consistent use of leader dots '.....' and subtitles in chapter titles",
+        "Minor OCR variations but clear patterns"
+      ]
+    }
+  },
+  "toc": {
+    "toc": {
+      "entries": [
+        {
+          "entry_number": null,
+          "title": "Architects of the American Century",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "17"
+        },
+        {
+          "entry_number": "One",
+          "title": "GATHERING",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "37"
+        },
+        {
+          "entry_number": "1",
+          "title": "World of Their Own/To the manner born",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "39"
+        },
+        {
+          "entry_number": "2",
+          "title": "Tap Days/\"To run with the swift\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "65"
+        },
+        {
+          "entry_number": "3",
+          "title": "Joint Ventures/Harriman and Lovett on Wall Street",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "98"
+        },
+        {
+          "entry_number": "4",
+          "title": "World Courts/McCloy and Acheson before the bar",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "119"
+        },
+        {
+          "entry_number": "5",
+          "title": "A Pretty Good Club/Kennan and Bohlen in the Foreign Service",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "140"
+        },
+        {
+          "entry_number": "6",
+          "title": "On Active Service/Enlisting in a noble cause",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "179"
+        },
+        {
+          "entry_number": "7",
+          "title": "Heavenly Twins/McCloy and Lovett at the War Department",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "191"
+        },
+        {
+          "entry_number": "8",
+          "title": "Missions to Moscow/Harriman, Acheson, Bohlen and Kennan wrestle with a biting bear",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "210"
+        },
+        {
+          "entry_number": "Two",
+          "title": "CREATION",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "251"
+        },
+        {
+          "entry_number": "9",
+          "title": "Words of One Syllable/The education of Harry Truman",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "253"
+        },
+        {
+          "entry_number": "10",
+          "title": "Line down the Middle/Splitting Germany and the atom",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "288"
+        },
+        {
+          "entry_number": "11",
+          "title": "The Blinding Dawn/Diplomacy in an atomic age",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "314"
+        },
+        {
+          "entry_number": "12",
+          "title": "Containment/Sensitive to the logic of force",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "347"
+        },
+        {
+          "entry_number": "13",
+          "title": "Order from Chaos/\"Like apples in a barrel\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "386"
+        },
+        {
+          "entry_number": "14",
+          "title": "\"Simple Honest Men\"/The selling of the Marshall Plan",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "419"
+        },
+        {
+          "entry_number": "15",
+          "title": "Crisis/\"Will Russia move first?\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "439"
+        },
+        {
+          "entry_number": "16",
+          "title": "\"A Different World\"/Of Super bombs and primitives",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "480"
+        },
+        {
+          "entry_number": "17",
+          "title": "War/\"No weakness of purpose here\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "505"
+        },
+        {
+          "entry_number": "18",
+          "title": "Nadir/Disaster at the Yalu",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "535"
+        },
+        {
+          "entry_number": "19",
+          "title": "Exile/The wilderness years",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "559"
+        },
+        {
+          "entry_number": "Three",
+          "title": "WISE MEN",
+          "level": 1,
+          "level_name": "part",
+          "printed_page_number": "587"
+        },
+        {
+          "entry_number": "20",
+          "title": "Passing the Torch/\"No, sir, my bearings are burnt out\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "589"
+        },
+        {
+          "entry_number": "21",
+          "title": "Twilight Struggles/Reunion at the brink",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "605"
+        },
+        {
+          "entry_number": "22",
+          "title": "LBJ's Establishment/\"I told the President he was wholly right\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "642"
+        },
+        {
+          "entry_number": "23",
+          "title": "Judgment Days/Last Supper of the Wise Men",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "676"
+        },
+        {
+          "entry_number": "24",
+          "title": "Legacy/\"Never in such good company\"",
+          "level": 2,
+          "level_name": "chapter",
+          "printed_page_number": "714"
+        }
+      ]
+    }
+  }
+}

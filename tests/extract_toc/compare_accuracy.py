@@ -181,8 +181,12 @@ def compare_extract_phase(expected: ExpectedExtractTocResult, actual_toc: Dict[s
         act_title = normalize_text((act_entry.get("title") or "").lower())
 
         # Note: level_name excluded from accuracy - it's informational only
+        # entry_number compared case-insensitively (e.g., "One" vs "ONE")
+        exp_entry_num = (exp_entry.get("entry_number") or "").lower()
+        act_entry_num = (act_entry.get("entry_number") or "").lower()
+
         entry_matches = (
-            exp_entry.get("entry_number") == act_entry.get("entry_number") and
+            exp_entry_num == act_entry_num and
             exp_title == act_title and
             exp_entry.get("level") == act_entry.get("level") and
             exp_entry.get("printed_page_number") == act_entry.get("printed_page_number")
@@ -339,7 +343,9 @@ def print_mismatched_entries(mismatches: List[Dict], verbose: bool):
         else:
             # Show differences
             diffs = []
-            if exp.get('entry_number') != act.get('entry_number'):
+            exp_num = (exp.get('entry_number') or '').lower()
+            act_num = (act.get('entry_number') or '').lower()
+            if exp_num != act_num:
                 diffs.append(f"num: {exp.get('entry_number')}→{act.get('entry_number')}")
             exp_title_norm = normalize_text((exp.get('title') or '').lower())
             act_title_norm = normalize_text((act.get('title') or '').lower())
@@ -376,7 +382,9 @@ def print_mismatch_summary(mismatches: List[Dict]):
         else:
             exp = m['expected']
             act = m['actual']
-            if exp.get('entry_number') != act.get('entry_number'):
+            exp_num = (exp.get('entry_number') or '').lower()
+            act_num = (act.get('entry_number') or '').lower()
+            if exp_num != act_num:
                 issues['entry_number'] += 1
             exp_title_norm = normalize_text((exp.get('title') or '').lower())
             act_title_norm = normalize_text((act.get('title') or '').lower())

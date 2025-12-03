@@ -39,7 +39,7 @@
         {
           "entry_number": null,
           "title": "Preface",
-          "level": 2,
+          "level": 1,
           "level_name": "preface",
           "printed_page_number": "ix"
         },
@@ -172,35 +172,35 @@
         {
           "entry_number": null,
           "title": "Epilogue",
-          "level": 2,
+          "level": 1,
           "level_name": "epilogue",
           "printed_page_number": "453"
         },
         {
           "entry_number": null,
           "title": "Acknowledgments",
-          "level": 2,
+          "level": 1,
           "level_name": "acknowledgments",
           "printed_page_number": "463"
         },
         {
           "entry_number": null,
           "title": "Notes",
-          "level": 2,
+          "level": 1,
           "level_name": "notes",
           "printed_page_number": "467"
         },
         {
           "entry_number": null,
           "title": "Bibliography",
-          "level": 2,
+          "level": 1,
           "level_name": "bibliography",
           "printed_page_number": "521"
         },
         {
           "entry_number": null,
           "title": "Index",
-          "level": 2,
+          "level": 1,
           "level_name": "index",
           "printed_page_number": "539"
         }

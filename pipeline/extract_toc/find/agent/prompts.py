@@ -92,7 +92,8 @@ GENERAL APPROACH:
   - ToCs often span multiple pages (2-5 pages common)
   - Look for: Sequential numbering continues, same formatting, no new section title
   - If next page continues ToC, include it in range and keep checking
-  - Stop when: Different content type, new section starts, or reach page ~10 without continuation
+  - Stop when: Page has no entries with page numbers, or body text/new section begins
+  - Include back matter pages (Notes, Index, Appendices) - they're still ToC entries
 • Determine ToC boundaries (start/end pages)
 • Synthesize global structure summary
 
