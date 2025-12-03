@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from infra.pipeline.storage.stage_storage import StageStorage
 from .phase_tracker import PhaseStatusTracker
 
@@ -15,6 +15,25 @@ class MultiPhaseStatusTracker:
 
     def is_completed(self) -> bool:
         return all(tracker.is_completed() for tracker in self.phase_trackers)
+
+    def list_phases(self) -> List[str]:
+        """Return list of phase names in order."""
+        return [tracker.phase_name for tracker in self.phase_trackers]
+
+    def get_phase_tracker(self, phase_name: str) -> Optional[PhaseStatusTracker]:
+        """Get a phase tracker by name."""
+        for tracker in self.phase_trackers:
+            if tracker.phase_name == phase_name:
+                return tracker
+        return None
+
+    def clean_phase(self, phase_name: str) -> Dict[str, Any]:
+        """Clean a specific phase by name."""
+        tracker = self.get_phase_tracker(phase_name)
+        if tracker is None:
+            available = self.list_phases()
+            raise ValueError(f"Phase '{phase_name}' not found. Available: {available}")
+        return tracker.clean()
 
     def get_phase_metrics(self, details: bool = False) -> Dict[str, Any]:
         if details:

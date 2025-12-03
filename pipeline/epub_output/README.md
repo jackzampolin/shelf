@@ -48,13 +48,9 @@ The stage can be configured via keyword arguments:
 
 ```bash
 # Generate ePub with default settings
-uv run python shelf.py book <scan-id> run-stage epub-output
+uv run python shelf.py book <scan-id> stage epub-output run
 
-# Generate with custom configuration
-uv run python shelf.py book <scan-id> run-stage epub-output \
-    --ocr-source olm-ocr \
-    --css-theme sans-serif \
-    --footnote-placement end_of_book
+# Note: Custom configuration is set programmatically (see below)
 ```
 
 ### Programmatically
@@ -200,8 +196,8 @@ epubcheck ~/Documents/book_scans/my-book/my-book.epub
 
 **Solution:**
 ```bash
-uv run python shelf.py book <scan-id> run-stage common-structure
-uv run python shelf.py book <scan-id> run-stage epub-output
+uv run python shelf.py book <scan-id> stage common-structure run
+uv run python shelf.py book <scan-id> stage epub-output run
 ```
 
 ### "OCR data not found"
@@ -210,10 +206,7 @@ uv run python shelf.py book <scan-id> run-stage epub-output
 **Solution:**
 ```bash
 # Run the OCR stage first
-uv run python shelf.py book <scan-id> run-stage mistral-ocr
-
-# Or specify a different OCR source
-uv run python shelf.py book <scan-id> run-stage epub-output --ocr-source olm-ocr
+uv run python shelf.py book <scan-id> stage ocr-pages run
 ```
 
 ### "epubcheck not installed"
@@ -222,11 +215,6 @@ uv run python shelf.py book <scan-id> run-stage epub-output --ocr-source olm-ocr
 **Solution:**
 ```bash
 uv pip install epubcheck
-```
-
-Or disable validation:
-```bash
-uv run python shelf.py book <scan-id> run-stage epub-output --no-validate
 ```
 
 ### ePub won't open in reader

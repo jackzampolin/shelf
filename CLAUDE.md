@@ -5,12 +5,14 @@
 
 NEVER run these operations without explicit user approval:
 - `shelf.py book <scan-id> process` - Full pipeline processing
-- `shelf.py book <scan-id> run-stage <stage>` - Single stage processing
+- `shelf.py book <scan-id> stage <stage> run` - Single stage processing
 - `shelf.py batch <stage>` - Library-wide batch stage processing
-- Any command that spawns LLM API calls (ocr-pages, find-toc, extract-toc, label-pages, link-toc)
+- Any command that spawns LLM API calls
 
 Safe operations (can run freely):
 - `shelf.py library list`, `shelf.py book <scan-id> info`, `pytest tests/`
+- `shelf.py book <scan-id> stage <stage> info` - View stage status
+- `shelf.py book <scan-id> stage <stage> phase <phase> info` - View phase status
 - Reading files, grepping, analyzing code
 
 **Always ask first**
@@ -91,72 +93,58 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - NEVER force-push to main
 </git_workflow>
 
-<prompts>
-## Prompt Engineering
+<pipeline>
+## Pipeline Architecture
 
-**See `docs/prompts/handbook.md` for complete guide.**
+**Stages (in order):**
+1. `ocr-pages` - Vision OCR using OlmOCR (per-page JSON output)
+2. `label-structure` - Classify page content blocks (body, footnotes, headers)
+3. `extract-toc` - Extract table of contents from identified ToC pages
+4. `link-toc` - Link ToC entries to page numbers
+5. `common-structure` - Build unified structure from ToC and labels
+6. `epub-output` - Generate ePub 3.0 from structure
 
-**5 Core Principles:**
-1. **Information Hygiene** - Structure for clarity (XML tags, clear scope)
-2. **Teach Generalization** - Principles transfer, examples don't
-3. **Triangulate Truth** - Cross-verify sources (grep + vision + OCR)
-4. **Anticipate Failure** - Name pitfalls explicitly, calibrate confidence
-5. **Economics-Aware** - Cost shapes strategy (FREE → CHEAP → EXPENSIVE)
+**CLI hierarchy:**
+```bash
+# Stage operations
+shelf book <scan-id> stage <stage> run [--workers N] [--model M]
+shelf book <scan-id> stage <stage> info
+shelf book <scan-id> stage <stage> clean -y
+shelf book <scan-id> stage <stage> report [--filter "key=value"]
 
-**CRITICAL - Avoid overfitting:**
-- NEVER use actual book content in examples
-- Use generic placeholders: "Ancient World", "Medieval Period"
-- Test: Would this example work for ANY book?
-
-**Example of overfitting (WRONG):**
+# Phase operations (within a stage)
+shelf book <scan-id> stage <stage> phase <phase> info
+shelf book <scan-id> stage <stage> phase <phase> clean -y
 ```
-Example: "Part I: April 12, 1945" followed by "The First Days ... 15"
-```
-→ Teaches model to recognize THIS BOOK, not the pattern.
 
-**Example of proper teaching (RIGHT):**
-```
-Pattern: Parent entries without page numbers
-Visual signs: No page # + indented children below with page #s
-Example: "Part I: Ancient World" → "Chapter 1: Early Civilizations ... 1"
-```
-→ Teaches WHAT TO LOOK FOR, generalizes to all books.
+**Stage Registry:**
+`infra/pipeline/registry.py` - Single source of truth for all stages
 
-**Detailed techniques:** `docs/prompts/techniques/`
-- `generic-examples.md` - Avoid overfitting
-- `pattern-based-teaching.md` - Teach visual signs
-- `xml-structure.md` - Structure long prompts
-- `cost-awareness.md` - Optimize expensive operations
-- [8 more technique files]
-
-**Before finalizing:** Would it work on unseen books?
-</prompts>
+**Reference implementations:**
+- Simple: `pipeline/ocr_pages/`
+- Multi-phase: `pipeline/extract_toc/`
+- Non-LLM: `pipeline/common_structure/`
+</pipeline>
 
 <quick_reference>
 ## Quick Reference
 
 **Architecture Decisions:**
+`docs/decisions/` contains ADRs that explain WHY the code is designed this way.
 
 **Start here: `docs/decisions/000-information-hygiene.md`**
 
-This is THE foundational principle. Everything else flows from it:
-- Designed for AI-human pair programming
-- Optimize all organization for rapid context acquisition
-- Explains the "why" behind the code you see
-
-The rest of `docs/decisions/` (001-007) implement this principle. Read 000 first, others as needed.
+Core ADRs:
+- **000 (Information Hygiene)** - Context clarity as first principle
+- **001 (Think Data First)** - Ground truth from disk
+- **002 (Stage Independence)** - Communicate through files
+- **003 (Cost Tracking)** - Economics shape architecture
+- **006 (File Organization)** - Small files, clear purpose
+- **007 (Naming Conventions)** - Hyphens for stage names, underscores for modules
 
 ---
 
-**Stage Implementation:**
-See `docs/guides/implementing-a-stage.md` for complete guide.
-
-Reference implementations:
-- Simple: `pipeline/ocr_pages/`
-- Complex: `pipeline/label_pages/`
-- Non-LLM: `pipeline/find_toc/`
-
-Core principles (from ADRs):
+**Core principles (from ADRs):**
 - **Ground truth from disk** (ADR 001) - Files are reality, not in-memory state
 - **If-gates for resume** - Check progress, refresh, continue
 - **Incremental metrics** - Record after each page via MetricsManager
@@ -164,17 +152,10 @@ Core principles (from ADRs):
 - **One schema per file** (ADR 006) - Easy to find, easy to modify
 
 **Naming convention (CRITICAL):**
-- Stage names use hyphens: `ocr-pages`, `find-toc`, `extract-toc`
+- Stage names use hyphens: `ocr-pages`, `extract-toc`, `label-structure`
 - NEVER use underscores in stage names (causes lookup failures)
+- Python modules use underscores: `pipeline/ocr_pages/`, `pipeline/extract_toc/`
 - See ADR 007 for full rationale
-
-**Stage Registry:**
-`infra/pipeline/registry.py` - Single source of truth for all stages
-
----
-
-**Prompt Engineering:**
-See `docs/prompts/handbook.md` for 5 core principles + techniques
 
 ---
 
@@ -205,7 +186,7 @@ uv run python -m pytest tests/
 **1. COST AWARENESS (ADR 003)**
 - ALWAYS ask before running expensive operations
 - Test on samples, not full books
-- See `cost-awareness.md` technique for prompts
+- Check `stage info` before running to see what will be processed
 
 **2. GIT WORKFLOW**
 - Direct to main for solo work; branch for major refactors
@@ -213,27 +194,21 @@ uv run python -m pytest tests/
 - One logical change per commit (may touch many files)
 - ALWAYS include AI collaboration attribution
 
-**3. STAGE IMPLEMENTATION (ADR 001, 002)**
-- Read `docs/guides/implementing-a-stage.md` first
-- Reference implementations: `pipeline/ocr_pages/`, `pipeline/label_pages/`
+**3. STAGE/PHASE IMPLEMENTATION (ADR 001, 002)**
+- Reference implementations: `pipeline/ocr_pages/`, `pipeline/extract_toc/`
 - Stage names use HYPHENS: `ocr-pages` not `ocr_pages` (ADR 007)
 - Ground truth from disk (ADR 001)
 - Stage independence - files, not imports (ADR 002)
 - If-gates for resume, incremental metrics
+- Phases use `PhaseStatusTracker` / `MultiPhaseStatusTracker`
 
-**4. PROMPTS**
-- See `docs/prompts/handbook.md` for 5 core principles
-- CRITICAL: Never use actual book content in examples (avoid overfitting)
-- Use generic examples: "Ancient World", "Medieval Period"
-- Teach patterns (visual signs) not formats (enumeration)
-
-**5. CODE HYGIENE (ADR 000, 006)**
+**4. CODE HYGIENE (ADR 000, 006)**
 - Small files, one concept per file (ADR 006)
 - Comments explain WHY, not WHAT (prefer obvious code)
 - Delete dead code aggressively (git preserves history)
 - Simplicity over cleverness
 
-**6. DOCUMENTATION**
+**5. DOCUMENTATION**
 - Update with code changes (not after)
 - Code is source of truth
 - Point to code rather than duplicate it

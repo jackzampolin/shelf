@@ -25,15 +25,11 @@ def healing_directory_tracker(
 
         return [cluster['cluster_id'] for cluster in data.get('clusters', [])]
 
-    def validate_cluster_healed(cluster_id: str, phase_dir: Path):
-        marker_path = phase_dir / f"cluster_{cluster_id}.json"
-        return marker_path.exists()
-
     return PhaseStatusTracker(
         stage_storage=stage_storage,
         phase_name=phase_name,
         discoverer=discover_clusters,
-        validator=validate_cluster_healed,
+        output_path_fn=lambda cluster_id, phase_dir: phase_dir / f"cluster_{cluster_id}.json",
         run_fn=run_fn,
         use_subdir=True,
         run_kwargs=run_kwargs,

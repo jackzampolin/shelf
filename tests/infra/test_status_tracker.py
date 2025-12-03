@@ -21,9 +21,9 @@ def simple_discoverer(output_dir: Path):
     return [1, 2, 3, 4, 5]
 
 
-def file_validator(item, output_dir: Path):
-    """Check if output file exists for this item."""
-    return (output_dir / f"page_{item:04d}.json").exists()
+def file_output_path(item, output_dir: Path):
+    """Return output path for this item."""
+    return output_dir / f"page_{item:04d}.json"
 
 
 def create_output_file(output_dir: Path, item: int):
@@ -42,7 +42,7 @@ class TestPhaseStatusTrackerBasics:
             stage_storage=stage_storage,
             phase_name="test-phase",
             discoverer=simple_discoverer,
-            validator=file_validator,
+            output_path_fn=file_output_path,
             run_fn=lambda t: None
         )
 
@@ -58,7 +58,7 @@ class TestPhaseStatusTrackerBasics:
             stage_storage=stage_storage,
             phase_name="test-phase",
             discoverer=simple_discoverer,
-            validator=file_validator,
+            output_path_fn=file_output_path,
             run_fn=lambda t: None
         )
 
@@ -78,7 +78,7 @@ class TestPhaseStatusTrackerBasics:
             stage_storage=stage_storage,
             phase_name="test-phase",
             discoverer=simple_discoverer,
-            validator=file_validator,
+            output_path_fn=file_output_path,
             run_fn=lambda t: None
         )
 
@@ -98,7 +98,7 @@ class TestPhaseStatusTrackerBasics:
             stage_storage=stage_storage,
             phase_name="test-phase",
             discoverer=simple_discoverer,
-            validator=file_validator,
+            output_path_fn=file_output_path,
             run_fn=lambda t: None
         )
 
@@ -120,7 +120,7 @@ class TestPhaseStatusTrackerRemaining:
             stage_storage=stage_storage,
             phase_name="test-phase",
             discoverer=simple_discoverer,
-            validator=file_validator,
+            output_path_fn=file_output_path,
             run_fn=lambda t: None
         )
 
@@ -142,7 +142,7 @@ class TestPhaseStatusTrackerSubdir:
             stage_storage=stage_storage,
             phase_name="nested-phase",
             discoverer=simple_discoverer,
-            validator=file_validator,
+            output_path_fn=file_output_path,
             run_fn=lambda t: None,
             use_subdir=True
         )
@@ -166,7 +166,7 @@ class TestPhaseStatusTrackerRun:
             stage_storage=stage_storage,
             phase_name="run-test",
             discoverer=simple_discoverer,
-            validator=file_validator,
+            output_path_fn=file_output_path,
             run_fn=my_run_fn
         )
 
@@ -185,7 +185,7 @@ class TestPhaseStatusTrackerRun:
             stage_storage=stage_storage,
             phase_name="kwargs-test",
             discoverer=simple_discoverer,
-            validator=file_validator,
+            output_path_fn=file_output_path,
             run_fn=my_run_fn,
             run_kwargs={"batch_size": 10, "parallel": True}
         )
@@ -208,7 +208,7 @@ class TestMultiPhaseStatusTracker:
             stage_storage=stage_storage,
             phase_name=name,
             discoverer=discoverer,
-            validator=file_validator,
+            output_path_fn=file_output_path,
             run_fn=lambda t: None,
             use_subdir=True
         )
@@ -288,7 +288,7 @@ class TestMultiPhaseStatusTracker:
             stage_storage=stage_storage,
             phase_name="phase1",
             discoverer=lambda d: [1],
-            validator=file_validator,
+            output_path_fn=file_output_path,
             run_fn=make_run_fn("phase1"),
             use_subdir=True
         )
@@ -296,7 +296,7 @@ class TestMultiPhaseStatusTracker:
             stage_storage=stage_storage,
             phase_name="phase2",
             discoverer=lambda d: [1],
-            validator=file_validator,
+            output_path_fn=file_output_path,
             run_fn=make_run_fn("phase2"),
             use_subdir=True
         )
@@ -310,3 +310,236 @@ class TestMultiPhaseStatusTracker:
         # phase1 should be skipped, phase2 should run
         assert run_tracker["phase1"] == 0
         assert run_tracker["phase2"] == 1
+
+
+class TestPhaseStatusTrackerOutputPath:
+    """Test output_path method."""
+
+    def test_output_path_returns_correct_path(self, stage_storage):
+        """output_path should return the expected file path for an item."""
+        tracker = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="test-phase",
+            discoverer=simple_discoverer,
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None
+        )
+
+        path = tracker.output_path(1)
+
+        assert path == tracker.phase_dir / "page_0001.json"
+
+    def test_output_path_with_subdir(self, stage_storage):
+        """output_path should use phase_dir when use_subdir=True."""
+        tracker = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="nested-phase",
+            discoverer=simple_discoverer,
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None,
+            use_subdir=True
+        )
+
+        path = tracker.output_path(42)
+
+        expected = stage_storage.output_dir / "nested-phase" / "page_0042.json"
+        assert path == expected
+
+
+class TestPhaseStatusTrackerClean:
+    """Test clean method."""
+
+    def test_clean_removes_output_files(self, stage_storage):
+        """clean() should remove all output files for discovered items."""
+        tracker = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="test-phase",
+            discoverer=simple_discoverer,
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None
+        )
+
+        # Create some output files
+        create_output_file(tracker.phase_dir, 1)
+        create_output_file(tracker.phase_dir, 2)
+        create_output_file(tracker.phase_dir, 3)
+
+        # Verify files exist
+        assert (tracker.phase_dir / "page_0001.json").exists()
+        assert (tracker.phase_dir / "page_0002.json").exists()
+        assert (tracker.phase_dir / "page_0003.json").exists()
+
+        result = tracker.clean()
+
+        # Verify files are deleted
+        assert not (tracker.phase_dir / "page_0001.json").exists()
+        assert not (tracker.phase_dir / "page_0002.json").exists()
+        assert not (tracker.phase_dir / "page_0003.json").exists()
+
+        # Verify result
+        assert result["phase"] == "test-phase"
+        assert result["deleted_count"] == 3
+
+    def test_clean_with_subdir_removes_empty_dir(self, stage_storage):
+        """clean() should remove empty phase subdir when use_subdir=True."""
+        tracker = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="nested-phase",
+            discoverer=lambda d: [1],  # Only one item
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None,
+            use_subdir=True
+        )
+
+        # Create output file
+        create_output_file(tracker.phase_dir, 1)
+        assert tracker.phase_dir.exists()
+
+        tracker.clean()
+
+        # Subdir should be removed since it's empty
+        assert not tracker.phase_dir.exists()
+
+    def test_clean_handles_nonexistent_files(self, stage_storage):
+        """clean() should handle missing files gracefully."""
+        tracker = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="test-phase",
+            discoverer=simple_discoverer,
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None
+        )
+
+        # No files created - clean should still work
+        result = tracker.clean()
+
+        assert result["deleted_count"] == 0
+
+    def test_status_after_clean(self, stage_storage):
+        """After clean(), status should be not_started."""
+        tracker = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="test-phase",
+            discoverer=simple_discoverer,
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None
+        )
+
+        # Complete all items
+        for i in [1, 2, 3, 4, 5]:
+            create_output_file(tracker.phase_dir, i)
+
+        assert tracker.get_status()["status"] == "completed"
+
+        tracker.clean()
+
+        assert tracker.get_status()["status"] == "not_started"
+
+
+class TestMultiPhaseStatusTrackerClean:
+    """Test MultiPhaseStatusTracker clean methods."""
+
+    def test_list_phases(self, stage_storage):
+        """list_phases should return phase names in order."""
+        phase1 = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="alpha",
+            discoverer=lambda d: [1],
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None,
+            use_subdir=True
+        )
+        phase2 = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="beta",
+            discoverer=lambda d: [1],
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None,
+            use_subdir=True
+        )
+
+        multi = MultiPhaseStatusTracker(stage_storage, [phase1, phase2])
+
+        assert multi.list_phases() == ["alpha", "beta"]
+
+    def test_get_phase_tracker(self, stage_storage):
+        """get_phase_tracker should return the correct tracker."""
+        phase1 = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="alpha",
+            discoverer=lambda d: [1],
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None,
+            use_subdir=True
+        )
+        phase2 = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="beta",
+            discoverer=lambda d: [1],
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None,
+            use_subdir=True
+        )
+
+        multi = MultiPhaseStatusTracker(stage_storage, [phase1, phase2])
+
+        assert multi.get_phase_tracker("alpha") is phase1
+        assert multi.get_phase_tracker("beta") is phase2
+        assert multi.get_phase_tracker("nonexistent") is None
+
+    def test_clean_phase(self, stage_storage):
+        """clean_phase should clean only the specified phase."""
+        phase1 = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="alpha",
+            discoverer=lambda d: [1, 2],
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None,
+            use_subdir=True
+        )
+        phase2 = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="beta",
+            discoverer=lambda d: [1, 2],
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None,
+            use_subdir=True
+        )
+
+        # Create output files for both phases
+        create_output_file(phase1.phase_dir, 1)
+        create_output_file(phase1.phase_dir, 2)
+        create_output_file(phase2.phase_dir, 1)
+        create_output_file(phase2.phase_dir, 2)
+
+        multi = MultiPhaseStatusTracker(stage_storage, [phase1, phase2])
+
+        # Clean only alpha
+        result = multi.clean_phase("alpha")
+
+        # Alpha should be cleaned
+        assert result["phase"] == "alpha"
+        assert result["deleted_count"] == 2
+        assert not phase1.is_completed()
+
+        # Beta should still be complete
+        assert phase2.is_completed()
+
+    def test_clean_phase_invalid_name(self, stage_storage):
+        """clean_phase should raise ValueError for invalid phase name."""
+        phase1 = PhaseStatusTracker(
+            stage_storage=stage_storage,
+            phase_name="alpha",
+            discoverer=lambda d: [1],
+            output_path_fn=file_output_path,
+            run_fn=lambda t: None,
+            use_subdir=True
+        )
+
+        multi = MultiPhaseStatusTracker(stage_storage, [phase1])
+
+        with pytest.raises(ValueError) as exc_info:
+            multi.clean_phase("nonexistent")
+
+        assert "nonexistent" in str(exc_info.value)
+        assert "alpha" in str(exc_info.value)

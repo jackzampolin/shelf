@@ -20,15 +20,21 @@ Examples:
   shelf library stats
   shelf library delete old-book --yes
 
-  # Single book operations
-  shelf book modest-lovelace info
-  shelf book modest-lovelace info --json
-  shelf book modest-lovelace info --stage ocr-pages
-  shelf book modest-lovelace report --stage label-pages --filter "printed_page_number="
-  shelf book modest-lovelace run-stage ocr-pages --workers 20
-  shelf book modest-lovelace process
-  shelf book modest-lovelace process --clean
-  shelf book modest-lovelace clean --stage ocr-pages
+  # Book operations
+  shelf book my-book info
+  shelf book my-book info --json
+  shelf book my-book process
+  shelf book my-book process --delete-outputs
+
+  # Stage operations
+  shelf book my-book stage ocr-pages run --workers 20
+  shelf book my-book stage ocr-pages info
+  shelf book my-book stage ocr-pages clean -y
+  shelf book my-book stage label-structure report --filter "page_num=5"
+
+  # Phase operations (granular control within a stage)
+  shelf book my-book stage ocr-pages phase blend info
+  shelf book my-book stage ocr-pages phase blend clean -y
 
   # Library-wide batch operations
   shelf batch label-pages

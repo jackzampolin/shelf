@@ -83,7 +83,8 @@ def create_find_tracker(stage_storage: StageStorage, model: str, max_attempts: i
         stage_storage=stage_storage,
         phase_name="find",
         discoverer=lambda phase_dir: ["finder_result.json"],
-        validator=validate_toc_found,
+        output_path_fn=lambda item, phase_dir: phase_dir / item,
         run_fn=run_find_toc,
         use_subdir=False,
+        validator_override=validate_toc_found,
     )

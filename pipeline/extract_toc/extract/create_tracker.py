@@ -44,8 +44,9 @@ def create_extract_tracker(
         stage_storage=stage_storage,
         phase_name="extract",
         discoverer=lambda phase_dir: ["toc.json"],
-        validator=validate_toc_extracted,
+        output_path_fn=lambda item, phase_dir: phase_dir / item,
         run_fn=run_extract_toc,
         use_subdir=False,
-        run_kwargs={"model": model}
+        run_kwargs={"model": model},
+        validator_override=validate_toc_extracted,
     )

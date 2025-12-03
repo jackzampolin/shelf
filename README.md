@@ -53,44 +53,56 @@ Process individual books through pipeline stages:
 ```bash
 # View book status and pipeline progress
 uv run python shelf.py book <scan-id> info
-uv run python shelf.py book <scan-id> info --stage ocr-pages
 uv run python shelf.py book <scan-id> info --json
 
 # Run full pipeline
 uv run python shelf.py book <scan-id> process
-uv run python shelf.py book <scan-id> process --clean  # Clean all stages first
-
-# Run single stage
-uv run python shelf.py book <scan-id> run-stage tesseract
-uv run python shelf.py book <scan-id> run-stage ocr-pages --workers 30
-uv run python shelf.py book <scan-id> run-stage find-toc --model gpt-4o
-uv run python shelf.py book <scan-id> run-stage extract-toc
+uv run python shelf.py book <scan-id> process --delete-outputs  # Delete all outputs first
 ```
 
-**Modern Pipeline:**
-1. **tesseract** - Fast, free OCR with paragraph-level output (PSM 3, local processing)
-2. **ocr-pages** - High-quality vision OCR using OlmOCR (paid API, better accuracy)
-3. **find-toc** - Locate table of contents pages using vision analysis
-4. **extract-toc** - Extract structured ToC entries from identified pages
+### Stage Operations
+
+```bash
+# View stage status (shows phases)
+uv run python shelf.py book <scan-id> stage ocr-pages info
+uv run python shelf.py book <scan-id> stage extract-toc status  # 'status' is alias for 'info'
+
+# Run a single stage
+uv run python shelf.py book <scan-id> stage ocr-pages run --workers 30
+uv run python shelf.py book <scan-id> stage extract-toc run --model gpt-4o
+
+# Clean stage outputs
+uv run python shelf.py book <scan-id> stage ocr-pages clean -y
+```
+
+### Phase Operations
+
+Phases are sub-units within stages. Clean individual phases to re-run specific parts:
+
+```bash
+# View phase status
+uv run python shelf.py book <scan-id> stage ocr-pages phase blend info
+
+# Clean a single phase (then re-run the stage to resume from that phase)
+uv run python shelf.py book <scan-id> stage ocr-pages phase blend clean -y
+uv run python shelf.py book <scan-id> stage ocr-pages run  # Resumes at blend phase
+```
+
+**Pipeline Stages:**
+1. **ocr-pages** - Vision OCR using OlmOCR (API-based)
+2. **label-structure** - Classify content blocks (body, footnotes, headers)
+3. **extract-toc** - Extract table of contents entries
+4. **link-toc** - Link ToC entries to page numbers
+5. **common-structure** - Build unified book structure
+6. **epub-output** - Generate ePub 3.0 file
 
 **Pipeline Flow:**
 ```
-PDF → Split Pages → [tesseract OR ocr-pages] → find-toc → extract-toc
+PDF → Split → OCR → Label → Extract ToC → Link ToC → Structure → ePub
 ```
-
-**Choose your OCR:**
-- **tesseract**: Free, fast (~1min for 500 pages), good for basic scans
-- **ocr-pages**: Paid (~$0.20/book), slow (~10min for 500 pages), excellent accuracy
 
 **Note:** All stages auto-resume from progress if interrupted. Metrics tracked for cost and time.
 
-### Stage Cleanup
-
-```bash
-# Clean a stage to restart from scratch
-uv run python shelf.py book <scan-id> clean --stage ocr-pages
-uv run python shelf.py book <scan-id> clean --stage tesseract --yes  # Skip confirmation
-```
 
 ### Library-wide Batch Processing
 
@@ -99,14 +111,14 @@ Run stages across all books in your library:
 ```bash
 # Run a stage across all books (persistent random order)
 uv run python shelf.py batch ocr-pages
-uv run python shelf.py batch find-toc --model x-ai/grok-vision-beta
+uv run python shelf.py batch label-structure --model gpt-4o
 
 # Control processing order
 uv run python shelf.py batch ocr-pages --reshuffle  # Create new random order
 uv run python shelf.py batch ocr-pages --force      # Regenerate completed books
 
 # Customize workers for parallel processing
-uv run python shelf.py batch tesseract --workers 10
+uv run python shelf.py batch ocr-pages --workers 10
 ```
 
 **Batch features:**
@@ -114,35 +126,29 @@ uv run python shelf.py batch tesseract --workers 10
 - **Smart resume** - Skips already-completed books
 - **Auto-sync** - Adding/deleting books automatically updates shuffle orders
 
-### Debugging & Review
+### Web Interface
 
-Debug and visually review pipeline outputs with the Shelf Viewer web interface:
+Debug and visually review pipeline outputs:
 
 ```bash
-# Start web viewer (Flask + HTMX)
-python tools/shelf_viewer.py
+# Start web viewer
+uv run python shelf.py serve
 
-# Then open http://127.0.0.1:5001 in your browser
+# Or with custom port
+uv run python shelf.py serve --port 8080
 ```
-
-**Available viewers:**
-- **📖 ToC Viewer** - Review table of contents extraction with page images
-- **📊 Stats Viewer** - Aggregate statistics and confidence metrics
-
-**Features:**
-- Side-by-side image and data comparison
-- HTMX-powered smooth navigation (no full page reloads)
-- Responsive design with proper template inheritance
 
 ---
 
 ## Current Status
 
-✅ **Modern Pipeline (ADR-compliant):**
-- **tesseract** - Simple, fast, free local OCR
-- **ocr-pages** - High-quality vision OCR via OlmOCR
-- **find-toc** - Vision-based ToC page detection
-- **extract-toc** - Phase-based ToC extraction
+✅ **Pipeline Stages (ADR-compliant):**
+- **ocr-pages** - Vision OCR via OlmOCR
+- **label-structure** - Block classification (body, footnotes, headers)
+- **extract-toc** - Multi-phase ToC extraction
+- **link-toc** - ToC to page linking
+- **common-structure** - Unified structure building
+- **epub-output** - ePub 3.0 generation
 
 **Current Focus:** Testing pipeline on diverse books and improving extraction quality
 
@@ -163,27 +169,23 @@ uv run python -m pytest tests/tools/ -v
 
 ## Documentation
 
-### For Users
-- [CLAUDE.md](CLAUDE.md) - AI workflow guide for contributors
-- [docs/MCP_SETUP.md](docs/MCP_SETUP.md) - Claude Desktop integration
-
-### Architecture Documentation
-- [Stage Abstraction](docs/architecture/stage-abstraction.md) - Core pipeline design pattern
-- [Storage System](docs/architecture/storage-system.md) - Three-tier storage architecture
-- [Checkpoint & Resume](docs/architecture/checkpoint-resume.md) - Resumable processing design
-- [Logging & Metrics](docs/architecture/logging-metrics.md) - Observability system
-
-### Developer Guides
-- [Implementing a Stage](docs/guides/implementing-a-stage.md) - Step-by-step guide for new stages
-- [Troubleshooting](docs/guides/troubleshooting.md) - Common issues and recovery
+### For Contributors
+- [CLAUDE.md](CLAUDE.md) - AI workflow guide and codebase conventions
 
 ### Architectural Decision Records (ADRs)
 - [ADR 000: Information Hygiene](docs/decisions/000-information-hygiene.md) - Context clarity as first principle
 - [ADR 001: Think Data First](docs/decisions/001-think-data-first.md) - Ground truth from disk
 - [ADR 002: Stage Independence](docs/decisions/002-stage-independence.md) - Unix philosophy applied
 - [ADR 003: Cost Tracking](docs/decisions/003-cost-tracking-first-class.md) - Economics shape architecture
+- [ADR 004: OpenRouter API](docs/decisions/004-openrouter-api.md) - LLM provider choice
+- [ADR 005: Clean Working Tree](docs/decisions/005-clean-working-tree.md) - Git discipline
 - [ADR 006: File Organization](docs/decisions/006-file-organization.md) - Small files, clear purpose
 - [ADR 007: Naming Conventions](docs/decisions/007-naming-conventions.md) - Consistency prevents bugs
+
+### Reference Implementations
+- **Simple stage:** `pipeline/ocr_pages/`
+- **Multi-phase stage:** `pipeline/extract_toc/`
+- **Non-LLM stage:** `pipeline/common_structure/`
 
 ---
 
@@ -206,19 +208,21 @@ Scanshelf uses a **Stage abstraction pattern** for composable, resumable, testab
 - **Independent** - Stages evolve separately, communicate via files (ADR 002)
 - **Testable** - Test stages in isolation with mock data
 
-See [Stage Abstraction](docs/architecture/stage-abstraction.md) and ADRs for detailed design philosophy.
+See ADRs in `docs/decisions/` for detailed design philosophy.
 
 ### Pipeline Flow
 
 ```
-PDF → Split Pages → [Tesseract OR OlmOCR] → Find ToC → Extract ToC
+PDF → Split → OCR → Label → Extract ToC → Link ToC → Structure → ePub
 ```
 
 **Stages:**
-- **tesseract** - Local Tesseract OCR (free, fast, paragraph-level) → `tesseract/page_*.json`
-- **ocr-pages** - OlmOCR vision API (paid, accurate, paragraph-level) → `ocr-pages/page_*.json`
-- **find-toc** - Vision LLM locates ToC pages → `find-toc/finder_result.json`
-- **extract-toc** - Multi-phase ToC extraction → `extract-toc/toc.json`
+1. **ocr-pages** - Vision OCR using OlmOCR → `ocr-pages/page_NNNN.json`
+2. **label-structure** - Classify blocks (body, footnotes, headers) → `label-structure/page_NNNN.json`
+3. **extract-toc** - Multi-phase ToC extraction → `extract-toc/toc.json`
+4. **link-toc** - Link ToC entries to pages → `link-toc/linked_toc.json`
+5. **common-structure** - Build unified structure → `common-structure/structure.json`
+6. **epub-output** - Generate ePub 3.0 → `{scan-id}.epub`
 
 Each stage:
 - Validates inputs in `before()` hook
@@ -230,29 +234,30 @@ Each stage:
 
 ```
 ~/Documents/book_scans/
-├── .library.json             # Library-wide operational state (shuffle orders)
+├── .library.json             # Library-wide operational state
 ├── {scan-id}/                # Per-book directory (BookStorage)
-│   ├── metadata.json         # Book metadata (title, author, year, etc.)
+│   ├── metadata.json         # Book metadata (title, author, year)
+│   ├── {scan-id}.epub        # Generated ePub output
 │   ├── source/               # Original page images
-│   ├── tesseract/            # Tesseract OCR outputs
-│   │   ├── page_NNNN.json    # TesseractPageOutput schema
-│   │   ├── metrics.json      # Progress tracking and timing
+│   ├── ocr-pages/            # Vision OCR outputs
+│   │   ├── page_NNNN.json    # Per-page OCR results
+│   │   ├── metrics.json      # Progress, cost, timing
 │   │   └── logs/
-│   ├── ocr-pages/            # OlmOCR outputs
-│   │   ├── page_NNNN.json    # OcrPagesPageOutput schema
-│   │   ├── metrics.json      # Progress tracking, cost, timing
-│   │   └── logs/
-│   ├── find-toc/             # ToC finder outputs
-│   │   ├── finder_result.json # ToC page range detection
+│   ├── label-structure/      # Block classification outputs
+│   │   ├── page_NNNN.json
 │   │   ├── metrics.json
 │   │   └── logs/
-│   └── extract-toc/          # ToC extractor outputs
-│       ├── structure.json    # ToC structure observations
-│       ├── toc_unchecked.json # Raw ToC entries
-│       ├── toc_diff.json     # Validation and corrections
-│       ├── toc.json          # Final ToC output
-│       ├── metrics.json
-│       └── logs/
+│   ├── extract-toc/          # ToC extraction outputs
+│   │   ├── toc.json          # Final ToC
+│   │   ├── metrics.json
+│   │   └── logs/
+│   ├── link-toc/             # ToC linking outputs
+│   │   ├── linked_toc.json
+│   │   └── metrics.json
+│   ├── common-structure/     # Unified structure
+│   │   └── structure.json
+│   └── epub-output/          # ePub generation metadata
+│       └── metadata.json
 ```
 
 **Key points:**
@@ -262,8 +267,3 @@ Each stage:
 - MetricsManager provides atomic progress tracking
 - Resume from disk state, not in-memory state
 
-See [Storage System](docs/architecture/storage-system.md) for three-tier design details.
-
----
-
-**Powered by Claude Sonnet 4.5, Tesseract OCR, and OlmOCR**

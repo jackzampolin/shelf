@@ -53,7 +53,7 @@ def extract_complete_toc(tracker: PhaseStatusTracker, **kwargs) -> Dict:
         # Use blended OCR (combined mistral + olm + paddle)
         blended_stage = storage.stage("ocr-pages")
         try:
-            blended_data = blended_stage.load_file(f"blended/page_{page_num:04d}.json")
+            blended_data = blended_stage.load_file(f"blend/page_{page_num:04d}.json")
             ocr_text = blended_data.get("text", "")
         except FileNotFoundError:
             tracker.logger.warning(f"Missing blended OCR for page {page_num}")
@@ -126,9 +126,14 @@ def extract_complete_toc(tracker: PhaseStatusTracker, **kwargs) -> Dict:
         }
     )
 
-    # Parse response
+    # Parse response (handle preamble text before JSON)
     try:
-        toc_data = json.loads(result.get("content", "{}"))
+        content = result.get("content", "{}")
+        # Find the first { which starts the JSON
+        json_start = content.find("{")
+        if json_start > 0:
+            content = content[json_start:]
+        toc_data = json.loads(content)
         entries = toc_data.get("entries", [])
 
         if not entries:

@@ -23,7 +23,7 @@ def cmd_process(args):
     storage = library.get_book_storage(args.scan_id)
 
     # Clean BEFORE creating stage instances (which create loggers)
-    if args.clean:
+    if args.delete_outputs:
         print(f"\n🧹 Cleaning all stages before processing")
         for stage_name in CORE_STAGES:
             clean_stage_directory(storage, stage_name)

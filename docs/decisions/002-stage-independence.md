@@ -37,7 +37,7 @@ If independent: change one, test alone, inspect outputs, iterate fast.
 
 Independence makes stages:
 1. **Testable:** Mock filesystem, no other stage instantiation
-2. **Runnable:** `shelf.py book <id> run-stage ocr` works alone
+2. **Runnable:** `shelf.py book <id> stage ocr-pages run` works alone
 3. **Attributable:** Each stage owns its metrics/logs/outputs
 4. **Debuggable:** Files = inspection points, standard tools work
 

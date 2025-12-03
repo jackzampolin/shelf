@@ -1,7 +1,9 @@
 from typing import Any, Callable, Dict, List, Optional, Set
 from pathlib import Path
+import shutil
 
 from infra.pipeline.storage.stage_storage import StageStorage
+
 
 class PhaseStatusTracker:
     def __init__(
@@ -9,16 +11,18 @@ class PhaseStatusTracker:
         stage_storage: StageStorage,
         phase_name: str,
         discoverer: Callable[[Path], List[Any]],
-        validator: Callable[[Any, Path], bool],
+        output_path_fn: Callable[[Any, Path], Path],
         run_fn: Callable[['PhaseStatusTracker', Any], None],
         use_subdir: bool = False,
         run_kwargs: Optional[Dict[str, Any]] = None,
+        validator_override: Optional[Callable[[Any, Path], bool]] = None,
     ):
         self.stage_storage = stage_storage
         self.logger = stage_storage.logger()
         self.phase_name = phase_name
         self.storage = stage_storage.storage
         self.metrics_manager = stage_storage.metrics_manager
+        self.use_subdir = use_subdir
 
         if use_subdir:
             self.phase_dir = stage_storage.output_dir / phase_name
@@ -30,7 +34,13 @@ class PhaseStatusTracker:
         self.metrics_prefix = f"{phase_name}_"
 
         self._discoverer = lambda: discoverer(self.phase_dir)
-        self._validator = lambda item: validator(item, self.phase_dir)
+        self._output_path_fn = lambda item: output_path_fn(item, self.phase_dir)
+
+        if validator_override:
+            self._validator = lambda item: validator_override(item, self.phase_dir)
+        else:
+            self._validator = lambda item: self._output_path_fn(item).exists()
+
         self._run_fn = run_fn
         self._run_kwargs = run_kwargs or {}
 
@@ -90,3 +100,28 @@ class PhaseStatusTracker:
 
     def run(self) -> None:
         self._run_fn(self, **self._run_kwargs)
+
+    def output_path(self, item: Any) -> Path:
+        """Get the output path for an item."""
+        return self._output_path_fn(item)
+
+    def clean(self) -> Dict[str, Any]:
+        """Clean all outputs for this phase."""
+        items = self._discoverer()
+        deleted = []
+
+        for item in items:
+            path = self._output_path_fn(item)
+            if path.exists():
+                path.unlink()
+                deleted.append(str(path))
+
+        # Remove phase subdir if empty and using subdir
+        if self.use_subdir and self.phase_dir.exists():
+            try:
+                if not any(self.phase_dir.iterdir()):
+                    self.phase_dir.rmdir()
+            except OSError:
+                pass  # Directory not empty or other issue
+
+        return {"phase": self.phase_name, "deleted_count": len(deleted), "deleted": deleted}

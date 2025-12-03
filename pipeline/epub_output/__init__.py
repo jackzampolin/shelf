@@ -40,20 +40,19 @@ class EpubOutputStage(BaseStage):
             return self._generate_epub(tracker)
 
         # The epub file is generated in the book's root directory, not the stage directory
-        # So we use a custom validator that checks the root directory
         def discover_epub(phase_dir):
             return [f"{storage.scan_id}.epub"]
 
-        def validate_epub(item, phase_dir):
-            epub_path = storage.book_dir / item
-            return epub_path.exists()
+        # Output path ignores phase_dir and uses book root
+        def output_path_for_epub(item, phase_dir):
+            return storage.book_dir / item
 
         from infra.pipeline.status import PhaseStatusTracker
         self.status_tracker = PhaseStatusTracker(
             stage_storage=self.stage_storage,
             phase_name="generate_epub",
             discoverer=discover_epub,
-            validator=validate_epub,
+            output_path_fn=output_path_for_epub,
             run_fn=generate_epub,
             use_subdir=False,
         )
