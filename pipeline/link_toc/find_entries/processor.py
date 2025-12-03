@@ -141,9 +141,17 @@ def find_all_toc_entries(tracker, **kwargs):
     # Load ToC entries from extract-toc
     extract_toc_output = storage.stage("extract-toc").load_file("toc.json")
 
-    toc_data = extract_toc_output.get('toc', {}) if extract_toc_output else {}
+    if not extract_toc_output:
+        logger.warning("No ToC data found in extract-toc output")
+        return
 
-    if not toc_data or not toc_data.get('entries'):
+    # Handle both old format (nested under 'toc') and new format (flat)
+    if 'toc' in extract_toc_output and 'entries' in extract_toc_output.get('toc', {}):
+        toc_data = extract_toc_output['toc']
+    else:
+        toc_data = extract_toc_output
+
+    if not toc_data.get('entries'):
         logger.warning("No ToC entries found in extract-toc output")
         return
 

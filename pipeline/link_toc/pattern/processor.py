@@ -109,7 +109,7 @@ def analyze_toc_pattern(tracker, **kwargs):
     storage = tracker.storage
     logger = tracker.logger
     stage_storage = tracker.stage_storage
-    model = kwargs.get('model') or Config.default_model
+    model = kwargs.get('model') or Config.vision_model_primary
 
     linked_toc_data = stage_storage.load_file("linked_toc.json")
     if not linked_toc_data:
