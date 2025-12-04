@@ -12,8 +12,6 @@ def create_evaluation_handler(
     logger: PipelineLogger,
     candidates_by_page: dict,
 ):
-    """Create result handler for evaluation phase."""
-
     def on_result(result: LLMResult):
         if result.success:
             page_num = int(result.request.id.split('_')[1])
@@ -32,7 +30,6 @@ def create_evaluation_handler(
                         title=response_data.get("title", candidate.get("heading_text", "")),
                         level=response_data.get("level", candidate.get("heading_level", 1)),
                         entry_number=response_data.get("entry_number"),
-                        parent_toc_entry_index=None,
                         reasoning=response_data.get("reasoning", "")
                     )
                 else:

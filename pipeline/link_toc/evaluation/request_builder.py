@@ -7,7 +7,6 @@ from .prompts import EVALUATION_SYSTEM_PROMPT, build_evaluation_prompt
 
 
 def _get_nearby_toc_context(candidate: dict, toc_entries_by_page: Dict[int, str]) -> str:
-    """Get context about nearby ToC entries for running header detection."""
     if not toc_entries_by_page:
         return ""
 
@@ -37,23 +36,18 @@ def prepare_evaluation_request(
     toc_summary: str,
     toc_entries_by_page: Optional[Dict[int, str]] = None,
 ) -> LLMRequest:
-    """Build LLM request to evaluate a candidate heading."""
-
-    candidate = item  # item is a CandidateHeading dict
+    candidate = item
     toc_entries_by_page = toc_entries_by_page or {}
 
-    # Load page image
     image = storage.source().load_page_image(
         page_num=candidate["scan_page"],
         downsample=True,
         max_payload_kb=400
     )
 
-    # Build prompt with observations context
     from ..schemas import CandidateHeading
     candidate_obj = CandidateHeading(**candidate)
 
-    # Get nearby ToC entry context for running header detection
     nearby_toc_context = _get_nearby_toc_context(candidate, toc_entries_by_page)
 
     user_prompt = build_evaluation_prompt(

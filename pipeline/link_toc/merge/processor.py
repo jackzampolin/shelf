@@ -167,8 +167,6 @@ def merge_enriched_toc(tracker, **kwargs):
         original_toc_count=len(valid_toc_entries),
         discovered_count=total_discovered,
         total_entries=len(enriched_entries),
-        pattern_confidence=pattern.confidence if pattern else 0.0,
-        pattern_description=pattern.pattern_description if pattern else "No pattern analysis"
     )
 
     stage_storage.save_file("enriched_toc.json", enriched_toc.model_dump())

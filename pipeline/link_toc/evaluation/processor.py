@@ -13,7 +13,6 @@ from .agent import MissingHeadingSearchTools, SEARCHER_SYSTEM_PROMPT, build_sear
 
 
 def is_in_excluded_range(page_num: int, excluded_ranges: list) -> bool:
-    """Check if a page is in any excluded range."""
     for ex_range in excluded_ranges:
         if ex_range.start_page <= page_num <= ex_range.end_page:
             return True
@@ -25,15 +24,12 @@ def _get_excluded_pages_for_candidate(
     excluded_ranges: list,
     stage_storage
 ) -> List[int]:
-    """Get list of pages to exclude for a missing candidate search."""
     excluded = []
     start_page, end_page = missing.predicted_page_range
 
     for page_num in range(start_page, end_page + 1):
-        # Exclude if in excluded range
         if is_in_excluded_range(page_num, excluded_ranges):
             excluded.append(page_num)
-        # Exclude if already evaluated in main batch
         existing_eval = stage_storage.output_dir / "evaluation" / f"heading_{page_num:04d}.json"
         if existing_eval.exists():
             excluded.append(page_num)
@@ -46,13 +42,6 @@ def search_missing_candidates(
     pattern: PatternAnalysis,
     model: str,
 ) -> int:
-    """Search for predicted missing headings using parallel agents.
-
-    Each missing candidate gets its own agent that searches pages in the predicted range.
-    All agents run in parallel.
-
-    Returns the number of missing headings found.
-    """
     storage = tracker.storage
     logger = tracker.logger
     stage_storage = tracker.stage_storage
@@ -61,7 +50,6 @@ def search_missing_candidates(
     if not missing_candidates:
         return 0
 
-    # Filter out already-processed missing candidates
     candidates_to_search = []
     for missing in missing_candidates:
         found_file = stage_storage.output_dir / "evaluation" / f"missing_{missing.identifier.replace(' ', '_')}.json"
@@ -72,16 +60,14 @@ def search_missing_candidates(
         logger.info("Missing candidate search: all already processed")
         return 0
 
-    logger.info(f"Searching for {len(candidates_to_search)} predicted missing headings...")
+    logger.info(f"Searching for {len(candidates_to_search)} missing heading candidates...")
 
-    # Build agent configs for each missing candidate
     configs = []
     tools_list = []
 
     for missing in candidates_to_search:
         agent_id = f"search-{missing.identifier.replace(' ', '-')}"
 
-        # Get excluded pages for this candidate's range
         excluded_pages = _get_excluded_pages_for_candidate(
             missing, pattern.excluded_page_ranges, stage_storage
         )
@@ -105,21 +91,19 @@ def search_missing_candidates(
             tools=tools,
             tracker=tracker,
             agent_id=agent_id,
-            max_iterations=15  # Enough to check several pages
+            max_iterations=15
         ))
 
-    # Run all agents in parallel
     batch_config = AgentBatchConfig(
         tracker=tracker,
         agent_configs=configs,
         batch_name="missing-search",
-        max_workers=len(configs)  # All in parallel
+        max_workers=len(configs)
     )
 
     batch = AgentBatchClient(batch_config)
     batch_result = batch.run()
 
-    # Process results and save decisions (results are in same order as configs)
     found_count = 0
 
     for agent_result, tools, missing in zip(batch_result.results, tools_list, candidates_to_search):
@@ -131,10 +115,9 @@ def search_missing_candidates(
                 heading_text=result_data.get("heading_text", missing.identifier),
                 include=True,
                 title=result_data.get("heading_text", missing.identifier),
-                level=1,  # Missing headings are typically top-level chapters
+                level=1,
                 entry_number=missing.identifier,
-                parent_toc_entry_index=None,
-                reasoning=f"Found predicted missing heading '{missing.identifier}'. {result_data.get('reasoning', '')}"
+                reasoning=f"Found heading '{missing.identifier}' in search range. {result_data.get('reasoning', '')}"
             )
             found_count += 1
 
@@ -143,19 +126,17 @@ def search_missing_candidates(
                 decision.model_dump()
             )
         else:
-            # Not found - save a marker file so we know it was searched
-            reason = result_data.get("reasoning", "Not found in predicted range") if result_data else "Agent did not complete"
+            reason = result_data.get("reasoning", "Not found in search range") if result_data else "Agent did not complete"
             logger.info(f"Missing '{missing.identifier}' not found: {reason}")
 
             decision = HeadingDecision(
-                scan_page=None,  # None indicates not found
+                scan_page=None,
                 heading_text=missing.identifier,
                 include=False,
                 title=missing.identifier,
                 level=1,
                 entry_number=missing.identifier,
-                parent_toc_entry_index=None,
-                reasoning=f"Searched predicted range {missing.predicted_page_range} but not found. {reason}"
+                reasoning=f"Searched range {missing.predicted_page_range} but not found. {reason}"
             )
             stage_storage.save_file(
                 f"evaluation/missing_{missing.identifier.replace(' ', '_')}.json",
@@ -168,7 +149,6 @@ def search_missing_candidates(
 
 
 def _build_toc_entries_by_page(stage_storage) -> Dict[int, str]:
-    """Build lookup of ToC entry titles by scan page for running header detection."""
     linked_toc_data = stage_storage.load_file("linked_toc.json")
     if not linked_toc_data:
         return {}
@@ -185,15 +165,12 @@ def evaluate_candidates(
     model: str = None,
     **kwargs
 ) -> Dict[str, Any]:
-    """Evaluate candidate headings using vision LLM."""
-
     storage = tracker.storage
     logger = tracker.logger
     stage_storage = tracker.stage_storage
 
     model = model or Config.vision_model_primary
 
-    # Load pattern analysis
     pattern_data = stage_storage.load_file("pattern/pattern_analysis.json")
     if not pattern_data:
         logger.info("No pattern analysis found - skipping evaluation")
@@ -201,10 +178,8 @@ def evaluate_candidates(
 
     pattern = PatternAnalysis(**pattern_data)
 
-    # Build ToC entries lookup for running header detection
     toc_entries_by_page = _build_toc_entries_by_page(stage_storage)
 
-    # Filter out excluded page ranges
     excluded_ranges = pattern.excluded_page_ranges
     candidates_to_eval = []
     excluded_count = 0
@@ -219,7 +194,6 @@ def evaluate_candidates(
         if excluded_count > 0:
             logger.info(f"Excluded {excluded_count} candidates in excluded page ranges")
 
-    # Check if there's anything to do
     has_candidates = len(candidates_to_eval) > 0
     has_missing = len(pattern.missing_candidate_headings) > 0
 
@@ -229,16 +203,12 @@ def evaluate_candidates(
 
     result = {}
 
-    # Evaluate candidate headings (if any)
-    # Tracker now discovers candidates from pattern_analysis.json and tracks by page number
     if candidates_to_eval:
         logger.info(f"Evaluating {len(candidates_to_eval)} candidate headings with vision...")
 
-        # Build context for requests
         observations = pattern.observations
-        toc_summary = f"ToC has {pattern.toc_structure.get('count', 0)} entries, body range: {pattern.body_range}"
+        toc_summary = f"Body range: pages {pattern.body_range[0]}-{pattern.body_range[1]}"
 
-        # Create lookup for result handler and request builder
         candidates_by_page = {c["scan_page"]: c for c in candidates_to_eval}
 
         result = LLMBatchProcessor(LLMBatchConfig(
@@ -246,7 +216,7 @@ def evaluate_candidates(
             model=model,
             batch_name="evaluation",
             request_builder=lambda item, storage, **kw: prepare_evaluation_request(
-                item=candidates_by_page[item],  # item is page number from tracker
+                item=candidates_by_page[item],
                 storage=storage,
                 observations=observations,
                 toc_summary=toc_summary,
@@ -263,10 +233,8 @@ def evaluate_candidates(
     else:
         logger.info("No candidate headings to evaluate")
 
-    # Search for predicted missing headings
     missing_found = search_missing_candidates(tracker, pattern, model)
 
-    # Count results
     eval_dir = stage_storage.output_dir / "evaluation"
     if eval_dir.exists():
         included = 0
@@ -287,6 +255,6 @@ def evaluate_candidates(
 
         logger.info(f"Evaluation complete: {included} candidates included, {excluded} excluded")
         if missing_included > 0 or pattern.missing_candidate_headings:
-            logger.info(f"Missing heading search: {missing_included}/{len(pattern.missing_candidate_headings)} predicted headings found")
+            logger.info(f"Missing heading search: {missing_included}/{len(pattern.missing_candidate_headings)} candidates found")
 
     return result
