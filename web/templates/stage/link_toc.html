@@ -411,7 +411,6 @@
     <!-- Metadata Summary -->
     <div class="link-toc-metadata">
         {% if toc_data.is_enriched %}
-            <!-- Enriched ToC metadata -->
             <div class="metadata-item">
                 <strong>📖 Total Entries:</strong>
                 <span class="value">{{ toc_data.metadata.total_entries }}</span>
@@ -423,10 +422,6 @@
             <div class="metadata-item">
                 <strong>✨ Discovered:</strong>
                 <span class="value success">{{ toc_data.metadata.discovered_count }}</span>
-            </div>
-            <div class="metadata-item">
-                <strong>🎯 Pattern Confidence:</strong>
-                <span class="value">{{ "%.0f"|format(toc_data.metadata.pattern_confidence * 100) }}%</span>
             </div>
         {% else %}
             <!-- Linked ToC metadata (fallback) -->
@@ -458,14 +453,6 @@
             <div class="expandable-content">
                 <div class="pattern-info">
                     <div class="pattern-row">
-                        <strong>Pattern Description:</strong>
-                        <span>{{ toc_data.pattern_analysis.pattern_description }}</span>
-                    </div>
-                    <div class="pattern-row">
-                        <strong>Relationship:</strong>
-                        <span>{{ toc_data.pattern_analysis.expected_relationship }}</span>
-                    </div>
-                    <div class="pattern-row">
                         <strong>Body Range:</strong>
                         <span>Pages {{ toc_data.pattern_analysis.body_range[0] }} - {{ toc_data.pattern_analysis.body_range[1] }}</span>
                     </div>
@@ -473,14 +460,28 @@
                         <strong>Candidate Headings:</strong>
                         <span>{{ toc_data.pattern_analysis.candidate_headings|length }} discovered</span>
                     </div>
+                    {% if toc_data.pattern_analysis.missing_candidate_headings %}
                     <div class="pattern-row">
-                        <strong>Confidence:</strong>
-                        <span>{{ "%.0f"|format(toc_data.pattern_analysis.confidence * 100) }}%</span>
+                        <strong>Missing Candidates:</strong>
+                        <span>{{ toc_data.pattern_analysis.missing_candidate_headings|length }} predicted</span>
                     </div>
+                    {% endif %}
+                    {% if toc_data.pattern_analysis.observations %}
+                    <div class="pattern-row">
+                        <strong>Observations:</strong>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            {% for obs in toc_data.pattern_analysis.observations %}
+                            <li>{{ obs }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                    {% if toc_data.pattern_analysis.reasoning %}
                     <div class="pattern-row">
                         <strong>Reasoning:</strong>
                         <span>{{ toc_data.pattern_analysis.reasoning }}</span>
                     </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
