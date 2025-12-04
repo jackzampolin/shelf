@@ -7,6 +7,7 @@ from ..merge import get_merged_page
 
 
 def _save_patch(tracker: PhaseStatusTracker, scan_page: int, patch_data: dict) -> None:
+    tracker.phase_dir.mkdir(parents=True, exist_ok=True)
     patch_file = tracker.phase_dir / f"page_{scan_page:04d}.json"
     patch_file.write_text(json.dumps(patch_data, indent=2))
 
