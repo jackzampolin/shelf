@@ -1,3 +1,5 @@
+import bisect
+
 from infra.llm.single import LLMSingleCall, LLMSingleCallConfig
 from infra.config import Config
 from ..schemas import LinkedTableOfContents, PatternAnalysis, CandidateHeading, MissingCandidateHeading, ExcludedPageRange
@@ -31,9 +33,9 @@ def analyze_toc_pattern(tracker, **kwargs):
         return
 
     body_range = (min(toc_pages), max(toc_pages))
-    toc_page_set = set(toc_pages)
+    toc_titles_by_page = {e.scan_page: e.title for e in toc_entries if e.scan_page}
 
-    candidate_headings = _build_candidates(all_headings, body_range, toc_page_set, toc_pages)
+    candidate_headings = _build_candidates(all_headings, body_range, toc_pages, toc_titles_by_page)
     logger.info(f"ToC: {len(toc_pages)} pages, Candidates: {len(candidate_headings)} headings in body")
 
     observations, missing, excluded, requires_eval, reasoning = _analyze_with_llm(
@@ -83,32 +85,38 @@ def _load_all_headings(storage, logger):
     return all_headings
 
 
-def _build_candidates(all_headings, body_range, toc_page_set, toc_pages):
+def _build_candidates(all_headings, body_range, toc_pages, toc_titles_by_page):
     candidates = []
     for h in all_headings:
-        if not (body_range[0] <= h["scan_page"] <= body_range[1]):
-            continue
-        if h["scan_page"] in toc_page_set:
+        page = h["scan_page"]
+        if not (body_range[0] <= page <= body_range[1]):
             continue
 
-        preceding = None
-        following = None
-        for toc_page in toc_pages:
-            if toc_page < h["scan_page"]:
-                preceding = toc_page
-            elif toc_page > h["scan_page"] and following is None:
-                following = toc_page
-                break
+        toc_entry_on_page = toc_titles_by_page.get(page)
+        if toc_entry_on_page and _text_matches(h["text"], toc_entry_on_page):
+            continue
+
+        idx = bisect.bisect_left(toc_pages, page)
+        preceding = toc_pages[idx - 1] if idx > 0 else None
+        if idx < len(toc_pages) and toc_pages[idx] == page:
+            following = toc_pages[idx + 1] if idx + 1 < len(toc_pages) else None
+        else:
+            following = toc_pages[idx] if idx < len(toc_pages) else None
 
         candidates.append(CandidateHeading(
-            scan_page=h["scan_page"],
+            scan_page=page,
             heading_text=h["text"],
             heading_level=h["level"],
             preceding_toc_page=preceding,
-            following_toc_page=following
+            following_toc_page=following,
+            toc_entry_on_page=toc_entry_on_page
         ))
 
     return candidates
+
+
+def _text_matches(heading_text, toc_title):
+    return heading_text.lower().strip() == toc_title.lower().strip()
 
 
 def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, body_range):

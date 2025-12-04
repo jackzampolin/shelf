@@ -8,6 +8,7 @@ class CandidateHeading(BaseModel):
     heading_level: int = Field(..., ge=1)
     preceding_toc_page: Optional[int] = None
     following_toc_page: Optional[int] = None
+    toc_entry_on_page: Optional[str] = None
 
 
 class MissingCandidateHeading(BaseModel):

@@ -1,54 +1,37 @@
-PATTERN_SYSTEM_PROMPT = """You analyze candidate headings discovered in a book to help downstream evaluation.
+PATTERN_SYSTEM_PROMPT = """You analyze candidate headings to help downstream evaluation decide what belongs in the enriched ToC.
+
+All page numbers are SCAN pages (physical position in the PDF), not printed page numbers.
 
 You receive:
 1. Table of Contents entries (already linked to scan pages)
 2. Candidate headings found in the book body that are NOT in the ToC
 
-Your job: Identify patterns and flag what needs attention.
+Your job: Identify patterns, predict gaps, and flag noise.
 
-Output JSON:
-{
-  "observations": ["pattern 1", "pattern 2", ...],
-  "missing_candidate_headings": [
-    {"identifier": "9", "predicted_page_range": [120, 135], "confidence": 0.8, "reasoning": "..."}
-  ],
-  "excluded_page_ranges": [
-    {"start_page": 441, "end_page": 447, "reason": "Map pages with OCR artifacts"}
-  ],
-  "requires_evaluation": true,
-  "reasoning": "brief summary"
-}
+## observations
+Actionable patterns for the evaluation phase:
+- "Chapters 1-21 appear between Parts - these are real structure"
+- "Pages 400+ are Notes section - headers are organizational dividers"
+- "Running headers repeat chapter titles on consecutive pages"
+- "HTML artifacts (<br>) indicate OCR errors - not real headings"
 
-<observations>
-Actionable patterns like:
-- "Candidates 1-21 are chapter numbers between Parts"
-- "Pages 400+ are Notes section - headers are dividers not chapters"
-- "HTML artifacts (<br>) indicate OCR errors"
-- "Running headers repeat on every page - not real chapters"
-</observations>
+## missing_candidate_headings
+Gaps in sequences suggest missing chapters that evaluation should search for:
+- Headings 1-8 then 10-20 → predict missing 9 with page range and confidence
+- Part I, Part II, Part IV → predict missing Part III
+Use surrounding page numbers to predict the range.
 
-<missing_candidate_headings>
-Gaps in sequences suggest missing chapters:
-- Headings 1-8 then 10-20 → missing 9
-- Part I, Part II, Part IV → missing Part III
-Predict page range based on surrounding entries.
-</missing_candidate_headings>
+## excluded_page_ranges
+Page ranges evaluation should skip entirely (start_page, end_page, reason):
+- Map/image pages (OCR noise, not headings)
+- Notes/Bibliography/Index (organizational dividers, not body chapters)
 
-<excluded_page_ranges>
-Page ranges to skip entirely:
-- Map/image pages (OCR noise)
-- Notes/Bibliography (dividers not chapters)
-- Index pages
-</excluded_page_ranges>
+## requires_evaluation
+Set false ONLY when ALL candidates are clearly noise and evaluation would waste effort.
+Default true if ANY candidate might be a real structural heading.
 
-<requires_evaluation>
-Set false ONLY when ALL candidates are noise:
-- All running headers
-- All OCR artifacts
-- All in excluded ranges
-- ToC already complete
-Default true if ANY candidate might be real.
-</requires_evaluation>"""
+## reasoning
+Brief summary of your analysis."""
 
 
 def build_pattern_prompt(toc_entries, candidate_headings, body_range):

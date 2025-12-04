@@ -3,8 +3,6 @@ from infra.pipeline.status import artifact_tracker
 
 
 def create_tracker(stage_storage, model: str = None):
-    """Create the pattern analysis phase tracker."""
-
     def run_pattern_analysis(tracker, **kwargs):
         return analyze_toc_pattern(tracker=tracker, model=model)
 
