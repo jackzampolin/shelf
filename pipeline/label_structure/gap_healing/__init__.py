@@ -59,7 +59,7 @@ def create_clusters_tracker(stage_storage):
 def create_agent_healing_tracker(stage_storage, model: str, max_workers: int):
     return healing_directory_tracker(
         stage_storage=stage_storage,
-        phase_name="agent_healing",
+        phase_name="agent-healing",
         run_fn=heal_all_clusters,
         run_kwargs={
             "model": model,

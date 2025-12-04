@@ -148,7 +148,7 @@ def search_missing_candidates(
             logger.info(f"Missing '{missing.identifier}' not found: {reason}")
 
             decision = HeadingDecision(
-                scan_page=0,  # 0 indicates not found
+                scan_page=None,  # None indicates not found
                 heading_text=missing.identifier,
                 include=False,
                 title=missing.identifier,

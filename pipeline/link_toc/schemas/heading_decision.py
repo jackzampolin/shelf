@@ -6,7 +6,7 @@ class HeadingDecision(BaseModel):
     """Decision on whether to include a candidate heading in enriched ToC."""
 
     # Input (what was evaluated)
-    scan_page: int = Field(..., ge=1, description="Page where heading appears")
+    scan_page: Optional[int] = Field(..., ge=1, description="Page where heading appears. None if searched but not found.")
     heading_text: str = Field(..., description="Heading text from label-structure")
 
     # Decision

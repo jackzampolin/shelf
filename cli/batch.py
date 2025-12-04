@@ -95,7 +95,7 @@ def cmd_batch(args):
         from cli.book.stage import cmd_stage_run
 
         for idx, scan_id in enumerate(books_to_process, 1):
-            print(f"\n📖 {idx}. {scan_id}: processing")
+            console.print(f"\n📖 [bold cyan]{idx}. {scan_id}[/bold cyan]: processing")
 
             try:
                 storage = library.get_book_storage(scan_id)

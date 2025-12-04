@@ -179,11 +179,7 @@ def print_stage_deleted(stage_name: str):
 
 def print_stage_running(stage_name: str):
     """Print stage running message."""
-    text = Text()
-    text.append("▶️  ", style="blue")
-    text.append(f"{stage_name}: ", style="bold")
-    text.append("running", style="blue")
-    Console().print(text)
+    Console().print(f"▶️  {stage_name}: running")
 
 
 def print_stage_separator():

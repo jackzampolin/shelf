@@ -13,7 +13,7 @@ def process_blend(tracker: PhaseStatusTracker, **kwargs) -> Dict[str, Any]:
     return LLMBatchProcessor(LLMBatchConfig(
         tracker=tracker,
         model=model,
-        batch_name="ocr-pages-blend",
+        batch_name=tracker.phase_name,
         request_builder=prepare_blend_request,
         result_handler=create_result_handler(tracker),
         max_workers=max_workers,

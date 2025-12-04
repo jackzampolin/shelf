@@ -30,7 +30,7 @@ def create_detection_tracker(stage_storage: StageStorage, model: str):
 
     return PhaseStatusTracker(
         stage_storage=stage_storage,
-        phase_name="extract_entries",
+        phase_name="extract-entries",
         discoverer=discover_toc_pages,  # Load ToC pages dynamically
         output_path_fn=lambda page_num, phase_dir: phase_dir / f"page_{page_num:04d}.json",
         run_fn=process_toc_pages,

@@ -9,7 +9,7 @@ import threading
 import os
 
 from infra.llm.display_format import format_token_string
-from infra.llm.batch.progress.display import format_batch_summary
+from infra.llm.display import format_phase_complete, DisplayStats
 from ..schemas import AgentEvent
 
 
@@ -55,16 +55,17 @@ class AgentProgressDisplay:
     def _render(self):
         with self.lock:
             if self.collapsed:
-                summary = format_batch_summary(
-                    batch_name=self.agent_name,
-                    completed=self.total_iterations,
-                    total=self.total_iterations,
-                    time_seconds=self.execution_time,
-                    prompt_tokens=self.total_prompt_tokens,
-                    completion_tokens=self.total_completion_tokens,
-                    reasoning_tokens=self.total_reasoning_tokens,
-                    cost_usd=self.total_cost,
-                    unit="iterations"
+                summary = format_phase_complete(
+                    phase_name=self.agent_name,
+                    stats=DisplayStats(
+                        completed=self.total_iterations,
+                        total=self.total_iterations,
+                        time_seconds=self.execution_time,
+                        prompt_tokens=self.total_prompt_tokens,
+                        completion_tokens=self.total_completion_tokens,
+                        reasoning_tokens=self.total_reasoning_tokens,
+                        cost_usd=self.total_cost,
+                    )
                 )
                 return summary
 

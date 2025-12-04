@@ -13,7 +13,7 @@ from rich.live import Live
 from rich.text import Text
 from infra.pipeline.status import PhaseStatusTracker
 from infra.llm import LLMClient
-from infra.llm.display_format import format_token_string
+from infra.llm.display import DisplayStats, print_phase_complete
 from infra.config import Config
 from ..schemas import PageRange
 from .prompts import SYSTEM_PROMPT, build_user_prompt
@@ -178,17 +178,16 @@ def extract_complete_toc(tracker: PhaseStatusTracker, **kwargs) -> Dict:
     # Structured output guarantees valid JSON
     entries = result.parsed_json.get("entries", [])
 
-    # Print success summary line (same format as agent progress)
-    summary = Text()
-    summary.append("✅ ", style="green")
-    desc = f"toc-extract: {len(entries)} entries from {len(toc_pages)} pages"
-    summary.append(f"{desc:<45}", style="")
-    summary.append(f" ({elapsed_time:4.1f}s)", style="dim")
-    token_str = format_token_string(result.prompt_tokens, result.completion_tokens, result.reasoning_tokens or 0)
-    summary.append(f" {token_str:>22}", style="cyan")
-    cost_cents = result.cost_usd * 100
-    summary.append(f" {cost_cents:5.2f}¢", style="yellow")
-    console.print(summary)
+    # Print success summary using standard format
+    print_phase_complete("toc-extract", DisplayStats(
+        completed=len(entries),
+        total=len(entries),
+        time_seconds=elapsed_time,
+        prompt_tokens=result.prompt_tokens,
+        completion_tokens=result.completion_tokens,
+        reasoning_tokens=result.reasoning_tokens or 0,
+        cost_usd=result.cost_usd,
+    ))
 
     if not entries:
         tracker.logger.warning("No entries extracted from ToC")

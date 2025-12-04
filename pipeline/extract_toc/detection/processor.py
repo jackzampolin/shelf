@@ -23,7 +23,7 @@ def process_toc_pages(
     return LLMBatchProcessor(LLMBatchConfig(
         tracker=tracker,
         model=model,
-        batch_name="extract-toc",
+        batch_name=tracker.phase_name,
         request_builder=prepare_toc_request,
         result_handler=create_toc_handler(
             book_storage,

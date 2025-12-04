@@ -97,7 +97,7 @@ def process_unified_extraction(
         return LLMBatchProcessor(LLMBatchConfig(
             tracker=tracker,
             model=model,
-            batch_name="label-structure-unified",
+            batch_name=tracker.phase_name,
             request_builder=prepare_unified_request,
             result_handler=create_result_handler(
                 tracker.storage,
