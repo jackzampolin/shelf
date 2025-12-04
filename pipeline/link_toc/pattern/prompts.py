@@ -9,11 +9,14 @@ You receive:
 Your job: Identify patterns, predict gaps, and flag noise.
 
 ## observations
-Actionable patterns for the evaluation phase:
-- "Chapters 1-21 appear between Parts - these are real structure"
-- "Pages 400+ are Notes section - headers are organizational dividers"
-- "Running headers repeat chapter titles on consecutive pages"
-- "HTML artifacts (<br>) indicate OCR errors - not real headings"
+Actionable patterns for evaluation. MUST start with INCLUDE or EXCLUDE:
+- "INCLUDE: Chapters 1-21 (numbers only) are real chapter divisions not in printed ToC"
+- "EXCLUDE: Pages 400+ are Notes section - organizational dividers, not body chapters"
+- "EXCLUDE: Running headers repeat chapter titles on consecutive pages"
+- "EXCLUDE: HTML artifacts (<br>) indicate OCR errors"
+
+The purpose of enrichment is to ADD valid structure missing from the printed ToC.
+If chapter numbers or section titles exist in the body but not in the ToC, mark them INCLUDE.
 
 ## missing_candidate_headings
 Gaps in sequences suggest missing chapters that evaluation should search for:

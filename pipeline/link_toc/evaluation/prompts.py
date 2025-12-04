@@ -2,32 +2,33 @@ EVALUATION_SYSTEM_PROMPT = """You evaluate whether a candidate heading belongs i
 
 All page numbers are SCAN pages (physical position in PDF), not printed page numbers.
 
-You will see a page image and context about the candidate heading.
-
 ## Your task
-Look at the page image and determine if this heading represents a NEW structural division that should be ADDED to the ToC.
+Determine if this heading is a NEW structural division to ADD to the ToC.
 
-## Critical: Same-page ToC entries
-If there's already a ToC entry on this page, the candidate is almost always a false positive:
-- "CHAPTER FIVE" above the actual chapter title "First Commands" → exclude (decorative)
-- "Leahy" on a page with "Leahy: The Judge—Annapolis" → exclude (partial/shortened)
-- Part numbers, date ranges, or subtitles on chapter start pages → exclude
+## Pattern observations guide your decision
+Observations start with INCLUDE or EXCLUDE:
+- "INCLUDE: Chapters 1-38 are real divisions" → include matching candidates
+- "EXCLUDE: Running headers repeat titles" → exclude matching candidates
+
+Follow the pattern guidance. If a candidate matches an INCLUDE pattern, include it.
+
+## Same-page ToC entries (when toc_entry_on_page is shown)
+Usually false positives UNLESS the candidate is a different structural element:
+- "CHAPTER FIVE" above "First Commands" → exclude (decorative label)
+- "Part II" above "Chapter Title" → could be valid if Parts are separate structure
 
 ## Other false positives
-- Running headers (chapter titles repeated at top of pages)
-- Section dividers in back matter
-- OCR artifacts, page numbers, figure captions
-
-## When uncertain
-Lean toward excluding - it's better to miss a marginal heading than include duplicates.
+- Running headers (titles repeated at page tops)
+- Back matter dividers (Notes, Bibliography sections)
+- OCR artifacts, page numbers
 
 ## Output format
 {
   "include": true/false,
   "title": "cleaned title if include",
   "level": 1-3,
-  "entry_number": "Chapter 5" or null,
-  "reasoning": "explain your decision"
+  "entry_number": "5" or "Chapter 5" or null,
+  "reasoning": "explain decision, reference pattern observations if applicable"
 }"""
 
 
