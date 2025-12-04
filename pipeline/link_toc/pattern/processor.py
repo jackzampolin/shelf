@@ -33,9 +33,9 @@ def analyze_toc_pattern(tracker, **kwargs):
         return
 
     body_range = (min(toc_pages), max(toc_pages))
-    toc_titles_by_page = {e.scan_page: e.title for e in toc_entries if e.scan_page}
+    toc_entries_by_page = {e.scan_page: e for e in toc_entries if e.scan_page}
 
-    candidate_headings = _build_candidates(all_headings, body_range, toc_pages, toc_titles_by_page)
+    candidate_headings = _build_candidates(all_headings, body_range, toc_pages, toc_entries_by_page)
     logger.info(f"ToC: {len(toc_pages)} pages, Candidates: {len(candidate_headings)} headings in body")
 
     observations, missing, excluded, requires_eval, reasoning = _analyze_with_llm(
@@ -85,15 +85,15 @@ def _load_all_headings(storage, logger):
     return all_headings
 
 
-def _build_candidates(all_headings, body_range, toc_pages, toc_titles_by_page):
+def _build_candidates(all_headings, body_range, toc_pages, toc_entries_by_page):
     candidates = []
     for h in all_headings:
         page = h["scan_page"]
         if not (body_range[0] <= page <= body_range[1]):
             continue
 
-        toc_entry_on_page = toc_titles_by_page.get(page)
-        if toc_entry_on_page and _text_matches(h["text"], toc_entry_on_page):
+        toc_entry = toc_entries_by_page.get(page)
+        if toc_entry and _matches_toc_entry(h["text"], toc_entry):
             continue
 
         idx = bisect.bisect_left(toc_pages, page)
@@ -102,6 +102,8 @@ def _build_candidates(all_headings, body_range, toc_pages, toc_titles_by_page):
             following = toc_pages[idx + 1] if idx + 1 < len(toc_pages) else None
         else:
             following = toc_pages[idx] if idx < len(toc_pages) else None
+
+        toc_entry_on_page = _format_toc_entry(toc_entry) if toc_entry else None
 
         candidates.append(CandidateHeading(
             scan_page=page,
@@ -115,8 +117,27 @@ def _build_candidates(all_headings, body_range, toc_pages, toc_titles_by_page):
     return candidates
 
 
-def _text_matches(heading_text, toc_title):
-    return heading_text.lower().strip() == toc_title.lower().strip()
+def _format_toc_entry(entry):
+    parts = []
+    if entry.level_name and entry.entry_number:
+        parts.append(f"{entry.level_name.title()} {entry.entry_number}")
+    elif entry.entry_number:
+        parts.append(entry.entry_number)
+    if entry.title:
+        parts.append(f'"{entry.title}"')
+    return ": ".join(parts) if parts else entry.title
+
+
+def _matches_toc_entry(heading_text, entry):
+    text = heading_text.lower().strip()
+    if entry.title and text == entry.title.lower().strip():
+        return True
+    if entry.entry_number:
+        num = entry.entry_number.lower().strip()
+        level = (entry.level_name or "").lower()
+        if text == num or text == f"{level} {num}":
+            return True
+    return False
 
 
 def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, body_range):
