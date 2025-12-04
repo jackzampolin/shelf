@@ -61,7 +61,7 @@
     background: var(--white);
     border-radius: 8px;
     padding: 25px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px var(--shadow);
 }
 
 .split-panel h3 {
@@ -92,7 +92,7 @@
 
 .page-number-label {
     background: var(--dark);
-    color: white;
+    color: var(--bg);
     padding: 8px 12px;
     font-size: 0.85em;
     font-weight: 600;
@@ -101,7 +101,7 @@
 .page-image {
     width: 100%;
     display: block;
-    background: white;
+    background: var(--white);
 }
 
 /* TOC Panel - Rendered Structure */

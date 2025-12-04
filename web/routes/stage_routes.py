@@ -1,18 +1,9 @@
-"""
-Stage detail view routes.
-
-Provides views for individual stage outputs:
-- /stage/<scan_id>/<stage_name> - Stage detail view
-- /image/<scan_id>/source/<page_num> - Serve source page image
-"""
-
-from flask import Blueprint, render_template, send_file, abort, jsonify
-from pathlib import Path
+from flask import Blueprint, render_template, send_file, abort, jsonify, redirect, url_for
 
 from web.config import Config
 from infra.pipeline.storage.library import Library
 from web.data.extract_toc_data import get_extract_toc_data, get_validation_data
-from web.data.find_toc_data import get_find_toc_data, get_toc_page_numbers
+from web.data.find_toc_data import get_toc_page_numbers
 from web.data.label_pages_data import get_label_pages_report, get_page_labels
 from web.data.label_structure_data import (
     get_label_structure_report,
@@ -20,129 +11,45 @@ from web.data.label_structure_data import (
 )
 from web.data.link_toc_data import get_link_toc_data, get_linked_entries_tree
 from web.data.ocr_pages_data import (
-    get_ocr_pages_data, get_all_providers_text, get_page_ocr_text,
-    get_blend_text, get_blend_status, OCR_PROVIDERS
+    get_ocr_pages_data, get_page_ocr_text, get_blend_text
 )
 
 stage_bp = Blueprint('stage', __name__)
 
 
 @stage_bp.route('/stage/<scan_id>/ocr-pages')
-def ocr_pages_view(scan_id: str):
-    """
-    OCR pages stage detail view.
+def ocr_pages_redirect(scan_id: str):
+    return redirect(f'/stage/{scan_id}/ocr-pages/1')
 
-    Shows aggregate status for all OCR providers with links to individual pages.
-    """
+
+@stage_bp.route('/stage/<scan_id>/ocr-pages/<int:page_num>')
+def ocr_pages_view(scan_id: str, page_num: int):
     library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
 
-    # Get book metadata
     metadata = library.get_scan_info(scan_id)
     if not metadata:
         abort(404, f"Book '{scan_id}' not found")
 
     storage = library.get_book_storage(scan_id)
-
-    # Load OCR data from disk
     ocr_data = get_ocr_pages_data(storage)
 
     if not ocr_data:
         abort(404, f"No OCR stages run for '{scan_id}'")
 
-    # Check blend status
-    blend_status = get_blend_status(storage)
+    min_page, max_page = ocr_data['page_range']
+    page_num = max(min_page, min(page_num, max_page))
 
     return render_template(
         'stage/ocr_pages.html',
         scan_id=scan_id,
         metadata=metadata,
         ocr_data=ocr_data,
-        blend_status=blend_status,
-    )
-
-
-@stage_bp.route('/stage/<scan_id>/ocr-pages/page/<int:page_num>')
-def ocr_pages_page_view(scan_id: str, page_num: int):
-    """
-    Individual page view for OCR pages stage.
-
-    Shows:
-    - Page image on left
-    - Tabbed view of OCR text from each provider on right
-    """
-    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
-
-    # Get book metadata
-    metadata = library.get_scan_info(scan_id)
-    if not metadata:
-        abort(404, f"Book '{scan_id}' not found")
-
-    storage = library.get_book_storage(scan_id)
-
-    # Get OCR text from all providers
-    provider_texts = get_all_providers_text(storage, page_num)
-
-    # Check if any provider has data for this page
-    if not any(text is not None for text in provider_texts.values()):
-        abort(404, f"No OCR data found for page {page_num}")
-
-    return render_template(
-        'stage/ocr_pages_page.html',
-        scan_id=scan_id,
-        metadata=metadata,
-        page_num=page_num,
-        provider_texts=provider_texts,
-    )
-
-
-@stage_bp.route('/stage/<scan_id>/ocr-pages/blend/<int:page_num>')
-def ocr_blend_page_view(scan_id: str, page_num: int):
-    """
-    Blend review view for a specific page.
-
-    Shows two view modes:
-    1. Blended text + scan page image side by side
-    2. Blended text + diff between blended and providers
-    """
-    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
-
-    # Get book metadata
-    metadata = library.get_scan_info(scan_id)
-    if not metadata:
-        abort(404, f"Book '{scan_id}' not found")
-
-    storage = library.get_book_storage(scan_id)
-
-    # Get blend text
-    blend_text = get_blend_text(storage, page_num)
-    if blend_text is None:
-        abort(404, f"No blend data found for page {page_num}")
-
-    # Get provider texts for diff comparison
-    provider_texts = get_all_providers_text(storage, page_num)
-
-    # Get blend status for page range info
-    blend_status = get_blend_status(storage)
-
-    return render_template(
-        'stage/ocr_blend_page.html',
-        scan_id=scan_id,
-        metadata=metadata,
-        page_num=page_num,
-        blend_text=blend_text,
-        provider_texts=provider_texts,
-        providers=OCR_PROVIDERS,
-        blend_status=blend_status,
+        initial_page=page_num,
     )
 
 
 @stage_bp.route('/api/blend/<scan_id>/<int:page_num>')
 def api_get_blend_text(scan_id: str, page_num: int):
-    """
-    API endpoint to get blend text for a specific page.
-
-    Returns JSON: {"text": "..."}
-    """
     library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
 
     if not library.get_scan_info(scan_id):
@@ -159,37 +66,19 @@ def api_get_blend_text(scan_id: str, page_num: int):
 
 @stage_bp.route('/stage/<scan_id>/extract-toc')
 def extract_toc_view(scan_id: str):
-    """
-    Extract-toc stage detail view.
-
-    Shows:
-    - TOC page images on the left (from find phase)
-    - Finder analysis (confidence, reasoning, structure summary)
-    - Parsed TOC structure (from extract phase)
-    - Validation analysis (from validate phase)
-    """
     library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
 
-    # Get book metadata (returns None if book doesn't exist)
     metadata = library.get_scan_info(scan_id)
     if not metadata:
         abort(404, f"Book '{scan_id}' not found")
 
     storage = library.get_book_storage(scan_id)
-
-    # Load extract-toc data from disk
     toc_data = get_extract_toc_data(storage)
 
     if not toc_data:
         abort(404, f"Extract-toc stage not run for '{scan_id}'")
 
-    # Load finder data (from find phase)
-    finder_data = get_find_toc_data(storage)
-
-    # Load validation data (corrections and analysis)
     validation_data = get_validation_data(storage)
-
-    # Get page numbers for images (from find phase)
     page_numbers = get_toc_page_numbers(storage)
 
     return render_template(
@@ -197,7 +86,6 @@ def extract_toc_view(scan_id: str):
         scan_id=scan_id,
         metadata=metadata,
         toc_data=toc_data,
-        finder_data=finder_data,
         validation_data=validation_data,
         page_numbers=page_numbers,
     )
@@ -308,8 +196,6 @@ def label_pages_page_view(scan_id: str, page_num: int):
 
 @stage_bp.route('/stage/<scan_id>/label-structure')
 def label_structure_view(scan_id: str):
-    from flask import request
-
     library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
 
     metadata = library.get_scan_info(scan_id)
@@ -317,18 +203,13 @@ def label_structure_view(scan_id: str):
         abort(404, f"Book '{scan_id}' not found")
 
     storage = library.get_book_storage(scan_id)
-
-    report_type = request.args.get('report', 'full')
-    if report_type not in ['base', 'simple', 'full']:
-        report_type = 'full'
-
-    report = get_label_structure_report(storage, report_type)
+    report = get_label_structure_report(storage)
 
     if not report:
         abort(404, f"Label-structure stage not run for '{scan_id}'")
 
     stage_storage = storage.stage("label-structure")
-    clusters_path = stage_storage.output_dir / "clusters" / "clusters.json"
+    clusters_path = stage_storage.output_dir / "gap_analysis" / "clusters.json"
     has_clusters = clusters_path.exists()
 
     return render_template(
@@ -337,14 +218,11 @@ def label_structure_view(scan_id: str):
         metadata=metadata,
         report=report,
         has_clusters=has_clusters,
-        current_report=report_type,
     )
 
 
 @stage_bp.route('/stage/<scan_id>/label-structure/page/<int:page_num>')
 def label_structure_page_view(scan_id: str, page_num: int):
-    from flask import request
-
     library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
 
     metadata = library.get_scan_info(scan_id)
@@ -352,12 +230,7 @@ def label_structure_page_view(scan_id: str, page_num: int):
         abort(404, f"Book '{scan_id}' not found")
 
     storage = library.get_book_storage(scan_id)
-
-    report_type = request.args.get('report', 'full')
-    if report_type not in ['base', 'simple', 'full']:
-        report_type = 'full'
-
-    labels = get_structure_page_labels(storage, page_num, report_type)
+    labels = get_structure_page_labels(storage, page_num)
 
     if not labels:
         abort(404, f"Page {page_num} not found in label-structure report")
@@ -368,7 +241,6 @@ def label_structure_page_view(scan_id: str, page_num: int):
         metadata=metadata,
         page_num=page_num,
         labels=labels,
-        current_report=report_type,
     )
 
 
@@ -382,7 +254,7 @@ def label_structure_clusters_view(scan_id: str):
 
     storage = library.get_book_storage(scan_id)
     stage_storage = storage.stage("label-structure")
-    clusters_path = stage_storage.output_dir / "clusters" / "clusters.json"
+    clusters_path = stage_storage.output_dir / "gap_analysis" / "clusters.json"
 
     if not clusters_path.exists():
         abort(404, f"Clusters not found for '{scan_id}'")
@@ -401,20 +273,12 @@ def label_structure_clusters_view(scan_id: str):
 
 @stage_bp.route('/api/ocr/<scan_id>/<provider>/<int:page_num>')
 def api_get_ocr_text(scan_id: str, provider: str, page_num: int):
-    """
-    API endpoint to get OCR text for a specific page from a specific provider.
-
-    Returns JSON: {"text": "..."}
-    """
     library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
 
-    # Check book exists
     if not library.get_scan_info(scan_id):
         abort(404, f"Book '{scan_id}' not found")
 
     storage = library.get_book_storage(scan_id)
-
-    # Get OCR text
     text = get_page_ocr_text(storage, provider, page_num)
 
     if text is None:
@@ -425,21 +289,13 @@ def api_get_ocr_text(scan_id: str, provider: str, page_num: int):
 
 @stage_bp.route('/image/<scan_id>/source/<int:page_num>')
 def serve_source_image(scan_id: str, page_num: int):
-    """
-    Serve source page image.
-
-    Returns PNG image from source/ directory.
-    """
     library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
 
-    # Check book exists
     if not library.get_scan_info(scan_id):
         abort(404, f"Book '{scan_id}' not found")
 
     storage = library.get_book_storage(scan_id)
     source_dir = storage.book_dir / "source"
-
-    # Format page number: page_0001.png
     image_filename = f"page_{page_num:04d}.png"
     image_path = source_dir / image_filename
 

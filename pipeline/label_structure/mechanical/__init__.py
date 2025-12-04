@@ -4,7 +4,6 @@ from infra.pipeline.status import page_batch_tracker
 
 
 def create_tracker(stage_storage):
-    """Create the mechanical extraction phase tracker."""
     return page_batch_tracker(
         stage_storage=stage_storage,
         phase_name="mechanical",

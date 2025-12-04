@@ -3,6 +3,7 @@ import json
 
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.llm.agent import AgentTools
+from ...merge import get_gap_analysis_merged_page
 
 
 class GapHealingTools(AgentTools):
@@ -26,7 +27,7 @@ class GapHealingTools(AgentTools):
                 "type": "function",
                 "function": {
                     "name": "get_page_metadata",
-                    "description": "Read full page metadata (page_*.json) for pages OUTSIDE the cluster. Use to check context pages when needed. The cluster pages are already provided in your initial context.",
+                    "description": "Read full page metadata for any page. Cluster pages are already in your initial context, but use this to check surrounding pages.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -64,7 +65,7 @@ class GapHealingTools(AgentTools):
                 "type": "function",
                 "function": {
                     "name": "heal_page",
-                    "description": "Heal ONE specific page by updating its page number and/or chapter marker. Call this multiple times to heal multiple pages in a gap. You must call finish_cluster when done.",
+                    "description": "Heal ONE specific page by updating its page number. Call this multiple times to heal multiple pages in a gap. You must call finish_cluster when done.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -84,38 +85,12 @@ class GapHealingTools(AgentTools):
                                         "type": "string",
                                         "description": "Location: 'header', 'footer', 'margin'"
                                     },
-                                    "confidence": {
-                                        "type": "string",
-                                        "description": "Confidence: 'high', 'medium', 'low'"
-                                    },
                                     "source_provider": {
                                         "type": "string",
                                         "description": "Always use 'agent_healed'"
                                     }
                                 },
                                 "required": ["number", "source_provider"]
-                            },
-                            "chapter_marker": {
-                                "type": "object",
-                                "description": "Optional: Chapter metadata if this is a chapter title page",
-                                "properties": {
-                                    "chapter_num": {
-                                        "type": "integer",
-                                        "description": "Chapter number"
-                                    },
-                                    "chapter_title": {
-                                        "type": "string",
-                                        "description": "Chapter title text"
-                                    },
-                                    "confidence": {
-                                        "type": "number",
-                                        "description": "Confidence (0.0-1.0)"
-                                    },
-                                    "detected_from": {
-                                        "type": "string",
-                                        "description": "Source: 'heading', 'header', 'visual'"
-                                    }
-                                }
                             },
                             "reasoning": {
                                 "type": "string",
@@ -157,8 +132,7 @@ class GapHealingTools(AgentTools):
                 self._pages_examined.append(page_num)
 
             try:
-                from ...merge import get_simple_fixes_merged_page
-                page_output = get_simple_fixes_merged_page(self.storage, page_num)
+                page_output = get_gap_analysis_merged_page(self.storage, page_num)
                 return json.dumps({
                     "page_num": page_num,
                     "metadata": page_output.model_dump()
@@ -173,18 +147,13 @@ class GapHealingTools(AgentTools):
 
         elif tool_name == "heal_page":
             scan_page = tool_input["scan_page"]
-            reasoning = tool_input["reasoning"]
             page_number = tool_input["page_number"]
-            chapter_marker = tool_input.get("chapter_marker")
+            page_number["reasoning"] = tool_input["reasoning"]
 
             patch = {
                 "agent_id": self.agent_id,
-                "reasoning": reasoning,
                 "page_number": page_number
             }
-
-            if chapter_marker:
-                patch["chapter_marker"] = chapter_marker
 
             decision_path = self.healing_dir / f"page_{scan_page:04d}.json"
             with open(decision_path, 'w') as f:

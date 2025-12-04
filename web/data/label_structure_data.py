@@ -1,63 +1,58 @@
-"""
-Label-structure stage data access.
-
-Ground truth from disk (ADR 001).
-"""
-
 from typing import Optional, List, Dict, Any
 from infra.pipeline.storage.book_storage import BookStorage
-from pipeline.label_structure.merge.processor import (
-    get_base_merged_page,
-    get_simple_fixes_merged_page,
-    get_merged_page
-)
-from pipeline.label_structure.tools.report_generator import (
-    generate_report_for_stage,
-    calculate_sequence_validation
-)
-from pathlib import Path
-import tempfile
-import csv
+from pipeline.label_structure.merge.processor import get_merged_page
+from pipeline.label_structure.gap_analysis.processor import parse_page_number
 
 
-def _generate_report_from_merge_fn(storage: BookStorage, merge_fn) -> Optional[List[Dict[str, Any]]]:
-    from infra.pipeline.logger import PipelineLogger
+def _calculate_sequence(rows: List[Dict]) -> List[Dict]:
+    prev_type = None
+    prev_value = None
 
-    log_dir = storage.book_dir / "web_logs"
-    logger = PipelineLogger(storage.scan_id, "web", log_dir, console_output=False)
+    for row in rows:
+        page_num_str = row.get("page_num_value", "")
+        num_type, num_value = parse_page_number(page_num_str)
 
-    with tempfile.NamedTemporaryFile(mode='w+', suffix='.csv', delete=False) as tmp:
-        tmp_path = Path(tmp.name)
+        row["sequence_status"] = "unknown"
+        row["sequence_gap"] = 0
+        row["expected_value"] = ""
+        row["needs_review"] = False
 
-    try:
-        generate_report_for_stage(
-            storage=storage,
-            output_path=tmp_path,
-            merge_fn=merge_fn,
-            logger=logger,
-            stage_name="web"
-        )
+        if num_type == "none":
+            row["sequence_status"] = "no_number"
+        elif num_value is None:
+            row["sequence_status"] = "unparseable"
+            row["needs_review"] = True
+        elif prev_value is None:
+            row["sequence_status"] = "first_page"
+            prev_type = num_type
+            prev_value = num_value
+        elif num_type != prev_type:
+            row["sequence_status"] = "type_change"
+            row["expected_value"] = str(prev_value + 1)
+            prev_type = num_type
+            prev_value = num_value
+        else:
+            gap = num_value - prev_value
+            row["sequence_gap"] = gap
+            row["expected_value"] = str(prev_value + 1)
 
-        rows = []
-        with open(tmp_path, 'r') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                row['page_num'] = int(row['page_num'])
-                row['header_present'] = row['header_present'].lower() == 'true'
-                row['footer_present'] = row['footer_present'].lower() == 'true'
-                row['page_num_present'] = row['page_num_present'].lower() == 'true'
-                row['headings_present'] = row['headings_present'].lower() == 'true'
-                row['headings_count'] = int(row['headings_count']) if row.get('headings_count') else 0
-                row['sequence_gap'] = int(row['sequence_gap']) if row.get('sequence_gap') else 0
-                row['needs_review'] = row.get('needs_review', '').lower() == 'true'
-                rows.append(row)
+            if gap < 0:
+                row["sequence_status"] = "backward_jump"
+                row["needs_review"] = True
+            elif gap == 1:
+                row["sequence_status"] = "ok"
+            else:
+                row["sequence_status"] = f"gap_{gap - 1}"
+                if gap > 3:
+                    row["needs_review"] = True
 
-        return rows
-    finally:
-        tmp_path.unlink(missing_ok=True)
+            prev_type = num_type
+            prev_value = num_value
+
+    return rows
 
 
-def get_label_structure_report(storage: BookStorage, report_type: str = "full") -> Optional[List[Dict[str, Any]]]:
+def get_label_structure_report(storage: BookStorage) -> Optional[List[Dict[str, Any]]]:
     stage_storage = storage.stage("label-structure")
 
     if not stage_storage.output_dir.exists():
@@ -67,20 +62,45 @@ def get_label_structure_report(storage: BookStorage, report_type: str = "full") 
     if not mechanical_dir.exists() or not list(mechanical_dir.glob("page_*.json")):
         return None
 
-    if report_type == "base":
-        return _generate_report_from_merge_fn(storage, get_base_merged_page)
-    elif report_type == "simple":
-        return _generate_report_from_merge_fn(storage, get_simple_fixes_merged_page)
-    else:
-        return _generate_report_from_merge_fn(storage, get_merged_page)
+    source_pages = storage.stage("source").list_pages(extension="png")
+
+    rows = []
+    for page_num in source_pages:
+        try:
+            page_output = get_merged_page(storage, page_num)
+            data = page_output.model_dump()
+
+            row = {
+                "page_num": page_num,
+                "headings_present": data.get("headings_present", False),
+                "headings_count": len(data.get("headings", [])),
+                "headings_text": data["headings"][0]["text"] if data.get("headings") else "",
+                "header_present": data.get("running_header", {}).get("present", False),
+                "header_text": data.get("running_header", {}).get("text", ""),
+                "page_num_present": data.get("page_number", {}).get("present", False),
+                "page_num_value": data.get("page_number", {}).get("number", ""),
+                "page_num_location": data.get("page_number", {}).get("location", ""),
+            }
+            rows.append(row)
+        except Exception:
+            rows.append({
+                "page_num": page_num,
+                "headings_present": False,
+                "headings_count": 0,
+                "headings_text": "",
+                "header_present": False,
+                "header_text": "",
+                "page_num_present": False,
+                "page_num_value": "",
+                "page_num_location": "",
+            })
+
+    return _calculate_sequence(rows)
 
 
-def get_page_labels(storage: BookStorage, page_num: int, report_type: str = "full") -> Optional[Dict[str, Any]]:
-    if report_type == "base":
-        page_output = get_base_merged_page(storage, page_num)
-    elif report_type == "simple":
-        page_output = get_simple_fixes_merged_page(storage, page_num)
-    else:
+def get_page_labels(storage: BookStorage, page_num: int) -> Optional[Dict[str, Any]]:
+    try:
         page_output = get_merged_page(storage, page_num)
-
-    return page_output.model_dump()
+        return page_output.model_dump()
+    except Exception:
+        return None

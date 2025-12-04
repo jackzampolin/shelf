@@ -27,15 +27,15 @@
 .status-table {
     width: 100%;
     border-collapse: collapse;
-    background: white;
+    background: var(--white);
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px var(--shadow);
 }
 
 .status-table thead {
     background: var(--dark);
-    color: white;
+    color: var(--bg);
 }
 
 .status-table th {
@@ -53,7 +53,7 @@
 }
 
 .status-table tbody tr:hover {
-    background: #f8f9fa;
+    background: var(--table-hover);
 }
 
 /* Book Name */
@@ -76,5 +76,5 @@
 
 .status-link:hover .status-badge {
     transform: scale(1.05);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 4px var(--shadow-strong);
 }

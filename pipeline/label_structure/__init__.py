@@ -5,12 +5,9 @@ from infra.config import Config
 from . import mechanical
 from . import unified
 from . import merge
+from . import gap_analysis
 from . import gap_healing
-from .schemas import (
-    LabelStructurePageOutput,
-    LabelStructurePageReport,
-    StructureExtractionResponse,
-)
+from .schemas import LabelStructurePageOutput
 
 
 class LabelStructureStage(BaseStage):
@@ -21,29 +18,15 @@ class LabelStructureStage(BaseStage):
     def default_kwargs(cls, **overrides):
         return {}
 
-    def __init__(
-        self,
-        storage: BookStorage,
-    ):
+    def __init__(self, storage: BookStorage):
         super().__init__(storage)
 
         self.model = Config.vision_model_primary
         self.max_workers = 30
-        self.max_retries = 5
 
-        # Phase 1: Mechanical Extraction (headings, pattern hints from blend OCR)
         self.mechanical_tracker = mechanical.create_tracker(self.stage_storage)
-
-        # Phase 2: Unified Extraction (structure + annotations in single LLM call)
         self.unified_tracker = unified.create_tracker(self.stage_storage, self.model, self.max_workers)
-
-        # Phase 3: Simple Gap Healing
-        self.simple_gap_healing_tracker = gap_healing.create_simple_gap_healing_tracker(self.stage_storage)
-
-        # Phase 4: Clusters Gap Healing
-        self.clusters_tracker = gap_healing.create_clusters_tracker(self.stage_storage)
-
-        # Phase 5: Agent Healing
+        self.gap_analysis_tracker = gap_analysis.create_tracker(self.stage_storage)
         self.agent_healing_tracker = gap_healing.create_agent_healing_tracker(
             self.stage_storage, self.model, self.max_workers
         )
@@ -53,8 +36,7 @@ class LabelStructureStage(BaseStage):
             phase_trackers=[
                 self.mechanical_tracker,
                 self.unified_tracker,
-                self.simple_gap_healing_tracker,
-                self.clusters_tracker,
+                self.gap_analysis_tracker,
                 self.agent_healing_tracker,
             ]
         )
@@ -63,6 +45,4 @@ class LabelStructureStage(BaseStage):
 __all__ = [
     "LabelStructureStage",
     "LabelStructurePageOutput",
-    "LabelStructurePageReport",
-    "StructureExtractionResponse",
 ]

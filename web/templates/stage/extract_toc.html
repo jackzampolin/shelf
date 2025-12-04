@@ -5,20 +5,28 @@
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/stage.css') }}">
 <style>
-    /* Two-column layout: TOC pages on left, parsed structure on right */
+    .back-link {
+        font-size: 0.9em;
+        color: #6c757d;
+        text-decoration: none;
+    }
+
+    .back-link:hover {
+        color: #007bff;
+    }
+
     .toc-viewer-layout {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 2rem;
         margin-top: 2rem;
-        height: calc(100vh - 250px); /* Fixed height for independent scrolling */
+        height: calc(100vh - 250px);
     }
 
-    /* Left column: TOC page images */
     .toc-pages-column {
         border-right: 2px solid #e0e0e0;
         padding-right: 2rem;
-        overflow-y: auto; /* Independent scrolling */
+        overflow-y: auto;
     }
 
     .toc-pages-column h3 {
@@ -36,10 +44,17 @@
     }
 
     .page-number-label {
+        display: block;
         font-weight: bold;
         margin-bottom: 0.5rem;
-        color: #333;
+        color: #007bff;
         font-size: 1rem;
+        text-decoration: none;
+    }
+
+    .page-number-label:hover {
+        color: #0056b3;
+        text-decoration: underline;
     }
 
     .page-image {
@@ -51,10 +66,9 @@
         border-radius: 4px;
     }
 
-    /* Right column: Parsed TOC structure */
     .toc-structure-column {
         padding-left: 2rem;
-        overflow-y: auto; /* Independent scrolling */
+        overflow-y: auto;
     }
 
     .toc-structure-column h3 {
@@ -63,7 +77,6 @@
         color: #333;
     }
 
-    /* TOC Metadata Summary */
     .toc-metadata {
         background: #f0f8ff;
         padding: 1rem;
@@ -96,7 +109,6 @@
         color: #00aa00;
     }
 
-    /* TOC Entries */
     .toc-entries {
         background: white;
         border: 1px solid #e0e0e0;
@@ -177,7 +189,6 @@
         font-style: italic;
     }
 
-    /* Empty states */
     .empty-state {
         text-align: center;
         padding: 3rem;
@@ -209,7 +220,6 @@
         margin-bottom: 0.25rem;
     }
 
-    /* Validation Analysis Section */
     .validation-analysis {
         background: #f0fff4;
         border: 1px solid #a7f3d0;
@@ -330,38 +340,26 @@
 
 {% block content %}
 <div class="container-wide">
-    <!-- Header -->
     <div class="stage-header">
-        <div class="breadcrumb">
-            <a href="/">← Library</a>
-            <span class="separator">/</span>
-            <span>{{ scan_id }}</span>
-            <span class="separator">/</span>
-            <span class="current">extract-toc</span>
-        </div>
-
-        <h2>📑 Table of Contents</h2>
-
+        <a href="/" class="back-link">← Library</a>
+        <h2>Extract ToC - {{ scan_id }}</h2>
         <div class="book-info">
-            <strong>{{ metadata.title }}</strong>
+            <span><strong>Title:</strong> {{ metadata.title }}</span>
             {% if metadata.author %}
-                <span class="author">by {{ metadata.author }}</span>
-            {% endif %}
-            {% if metadata.year %}
-                <span class="year">({{ metadata.year }})</span>
+                <span><strong>Author:</strong> {{ metadata.author }}</span>
             {% endif %}
         </div>
     </div>
 
-    <!-- Two-column layout: TOC pages left, parsed structure right -->
     <div class="toc-viewer-layout">
-        <!-- Left Column: TOC Page Images -->
         <div class="toc-pages-column">
-            <h3>TOC Pages</h3>
+            <h3>TOC Pages{% if page_numbers %} ({{ page_numbers[0] }}-{{ page_numbers[-1] }}){% endif %}</h3>
             {% if page_numbers %}
                 {% for page_num in page_numbers %}
                     <div class="page-image-container">
-                        <div class="page-number-label">Page {{ page_num }}</div>
+                        <a href="/stage/{{ scan_id }}/ocr-pages/{{ page_num }}" class="page-number-label">
+                            Page {{ page_num }} →
+                        </a>
                         <img
                             src="{{ url_for('stage.serve_source_image', scan_id=scan_id, page_num=page_num) }}"
                             alt="Page {{ page_num }}"
@@ -376,11 +374,9 @@
             {% endif %}
         </div>
 
-        <!-- Right Column: Parsed TOC Structure -->
         <div class="toc-structure-column">
             <h3>Parsed Structure</h3>
 
-            <!-- Validation Analysis -->
             {% if validation_data and validation_data.analysis %}
             <div class="validation-analysis">
                 <div class="validation-header">
@@ -429,7 +425,6 @@
             {% endif %}
 
             {% if toc_data.toc_entries %}
-                <!-- TOC Entries -->
                 <div class="toc-entries">
                     {% for entry in toc_data.toc_entries %}
                     <div class="toc-entry level-{{ entry.level }}">
@@ -455,7 +450,6 @@
                     {% endfor %}
                 </div>
 
-                <!-- Parsing Notes -->
                 {% if toc_data.toc_metadata and toc_data.toc_metadata.notes %}
                 <div class="toc-notes">
                     <h4>Parsing Notes</h4>

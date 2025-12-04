@@ -1,45 +1,16 @@
 from .mechanical import HeadingItem, PatternHints, MechanicalExtractionOutput
-from .structure import (
-    HeaderObservation,
-    FooterObservation,
-    PageNumberObservation,
-    StructuralMetadataOutput,
-)
-from .annotations import (
-    ReferenceMarker,
-    FootnoteContent,
-    CrossReference,
-    AnnotationsOutput,
-)
-from .unified import UnifiedExtractionOutput
-from .merged_output import LabelStructurePageOutput
-from .page_report import LabelStructurePageReport
-
-# Legacy schemas (will be removed after migration)
-from .llm_response import StructureExtractionResponse
+from .unified import UnifiedExtractionOutput, PageNumberExtraction, RunningHeaderExtraction
+from .merged_output import LabelStructurePageOutput, PageNumberObservation, RunningHeaderObservation
 
 
 __all__ = [
-    # Mechanical extraction
     "HeadingItem",
     "PatternHints",
     "MechanicalExtractionOutput",
-    # Structural metadata (shared types used by unified)
-    "HeaderObservation",
-    "FooterObservation",
-    "PageNumberObservation",
-    "StructuralMetadataOutput",  # Legacy - kept for backwards compat
-    # Content annotations (shared types used by unified)
-    "ReferenceMarker",
-    "FootnoteContent",
-    "CrossReference",
-    "AnnotationsOutput",  # Legacy - kept for backwards compat
-    # Unified extraction (replaces separate structure + annotations)
     "UnifiedExtractionOutput",
-    # Merged output
+    "PageNumberExtraction",
+    "RunningHeaderExtraction",
     "LabelStructurePageOutput",
-    # Report
-    "LabelStructurePageReport",
-    # Legacy
-    "StructureExtractionResponse",
+    "PageNumberObservation",
+    "RunningHeaderObservation",
 ]

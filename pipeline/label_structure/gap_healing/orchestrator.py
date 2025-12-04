@@ -1,6 +1,4 @@
-import csv
 import time
-from pathlib import Path
 from typing import Dict, List
 
 from infra.pipeline.status import PhaseStatusTracker
@@ -8,20 +6,11 @@ from infra.llm.agent import AgentConfig, AgentBatchConfig, AgentBatchClient
 
 from .agent.healer_tools import GapHealingTools
 from .agent.prompts import HEALER_SYSTEM_PROMPT, build_healer_user_prompt
-from ..merge import get_simple_fixes_merged_page
-from .clustering import generate_report_data
+from ..merge import get_gap_analysis_merged_page
+from ..gap_analysis.processor import parse_page_number
 
 
-def _load_report_data(tracker: PhaseStatusTracker) -> Dict[int, Dict]:
-    rows = generate_report_data(tracker.storage, tracker.logger)
-    report_data = {}
-    for row in rows:
-        page_num = row['scan_page']
-        report_data[page_num] = row
-    return report_data
-
-
-def _get_sequence_context(cluster: Dict, report_data: Dict[int, Dict], context_size: int = 3) -> List[Dict]:
+def _build_sequence_context(tracker: PhaseStatusTracker, cluster: Dict, context_size: int = 3) -> List[Dict]:
     scan_pages = cluster['scan_pages']
     min_page = min(scan_pages)
     max_page = max(scan_pages)
@@ -29,10 +18,62 @@ def _get_sequence_context(cluster: Dict, report_data: Dict[int, Dict], context_s
     start_page = max(1, min_page - context_size)
     end_page = max_page + context_size
 
+    source_pages = tracker.storage.stage("source").list_pages(extension="png")
+    end_page = min(end_page, max(source_pages))
+
     context = []
+    prev_value = None
+    prev_type = None
+
     for page_num in range(start_page, end_page + 1):
-        if page_num in report_data:
-            context.append(report_data[page_num])
+        try:
+            page_output = get_gap_analysis_merged_page(tracker.storage, page_num)
+            detected_raw = page_output.page_number.number if page_output.page_number.present else None
+            num_type, num_value = parse_page_number(detected_raw or "")
+
+            status = "unknown"
+            expected = None
+            gap = 0
+
+            if num_type == "none":
+                status = "no_number"
+            elif num_value is None:
+                status = "unparseable"
+            elif prev_value is None:
+                status = "first_page"
+            elif num_type != prev_type:
+                status = "type_change"
+                expected = prev_value + 1
+            else:
+                gap = num_value - prev_value
+                expected = prev_value + 1
+                if gap < 0:
+                    status = "backward_jump"
+                elif gap == 1:
+                    status = "ok"
+                else:
+                    status = f"gap_{gap - 1}"
+
+            context.append({
+                "page_num": page_num,
+                "page_num_value": detected_raw or "",
+                "sequence_status": status,
+                "sequence_gap": gap,
+                "expected_value": str(expected) if expected else "",
+            })
+
+            if num_value is not None:
+                prev_value = num_value
+                prev_type = num_type
+
+        except Exception:
+            context.append({
+                "page_num": page_num,
+                "page_num_value": "",
+                "sequence_status": "error",
+                "sequence_gap": 0,
+                "expected_value": "",
+            })
 
     return context
 
@@ -43,7 +84,7 @@ def _get_page_data_for_cluster(tracker: PhaseStatusTracker, cluster: Dict) -> Di
 
     for page_num in cluster['scan_pages']:
         try:
-            page_output = get_simple_fixes_merged_page(tracker.storage, page_num)
+            page_output = get_gap_analysis_merged_page(tracker.storage, page_num)
             page_data_map[page_num] = page_output.model_dump()
         except Exception as e:
             tracker.logger.error(
@@ -63,8 +104,6 @@ def _get_page_data_for_cluster(tracker: PhaseStatusTracker, cluster: Dict) -> Di
     return page_data_map
 
 
-
-
 def _get_completed_clusters(tracker: PhaseStatusTracker, clusters: List[Dict]) -> List[str]:
     stage_storage = tracker.storage.stage("label-structure")
     healing_dir = stage_storage.output_dir / "agent_healing"
@@ -73,11 +112,9 @@ def _get_completed_clusters(tracker: PhaseStatusTracker, clusters: List[Dict]) -
         return []
 
     completed = []
-
     for cluster in clusters:
         cluster_id = cluster['cluster_id']
         marker_path = healing_dir / f"cluster_{cluster_id}.json"
-
         if marker_path.exists():
             completed.append(cluster_id)
 
@@ -88,23 +125,21 @@ def heal_all_clusters(tracker: PhaseStatusTracker, **kwargs):
     model = kwargs.get("model")
     max_iterations = kwargs.get("max_iterations", 10)
     max_workers = kwargs.get("max_workers", 10)
-    verbose = kwargs.get("verbose", False)
 
     start_time = time.time()
-
     stage_storage = tracker.storage.stage("label-structure")
 
     try:
-        cluster_data = stage_storage.load_file("clusters/clusters.json")
+        cluster_data = stage_storage.load_file("gap_analysis/clusters.json")
     except Exception as e:
         tracker.logger.error(f"Failed to load clusters.json: {e}")
-        raise ValueError(f"Agent healing requires clusters.json - run clustering phase first: {e}")
+        raise ValueError(f"Agent healing requires gap_analysis/clusters.json - run gap_analysis phase first: {e}")
 
     clusters = cluster_data.get('clusters', [])
     total_clusters = len(clusters)
 
     if not clusters:
-        tracker.logger.warning("No clusters found in clusters.json")
+        tracker.logger.info("No clusters found - nothing to heal")
         return
 
     completed_cluster_ids = _get_completed_clusters(tracker, clusters)
@@ -119,8 +154,6 @@ def heal_all_clusters(tracker: PhaseStatusTracker, **kwargs):
 
     tracker.logger.info(f"Dispatching {len(remaining_clusters)} gap healing agents")
 
-    report_data = _load_report_data(tracker)
-
     configs = []
     tools_by_cluster_id = {}
 
@@ -129,7 +162,7 @@ def heal_all_clusters(tracker: PhaseStatusTracker, **kwargs):
         agent_id = f"heal_{cluster_id}"
 
         page_data_map = _get_page_data_for_cluster(tracker, cluster)
-        sequence_context = _get_sequence_context(cluster, report_data, context_size=3)
+        sequence_context = _build_sequence_context(tracker, cluster, context_size=3)
 
         tools = GapHealingTools(tracker.storage, cluster)
         tools_by_cluster_id[cluster_id] = tools
@@ -169,7 +202,6 @@ def heal_all_clusters(tracker: PhaseStatusTracker, **kwargs):
 
         if agent_result.success and tools.is_complete():
             healed_pages += len(pages_healed)
-
             if pages_healed:
                 tracker.logger.info(
                     f"✓ {cluster_id}: {len(pages_healed)} pages healed "

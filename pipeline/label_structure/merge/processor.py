@@ -3,13 +3,12 @@ from pathlib import Path
 import json
 from infra.pipeline.status import PhaseStatusTracker
 from infra.pipeline.storage.book_storage import BookStorage
-from ..schemas.merged_output import LabelStructurePageOutput
+from ..schemas.merged_output import LabelStructurePageOutput, PageNumberObservation, RunningHeaderObservation
 from ..schemas.mechanical import MechanicalExtractionOutput
 from ..schemas.unified import UnifiedExtractionOutput
 
 
 def _merge_sources(stage_storage, page_num: int) -> LabelStructurePageOutput:
-    """Merge mechanical + unified outputs into final page output."""
     page_filename = f"page_{page_num:04d}.json"
 
     try:
@@ -18,7 +17,7 @@ def _merge_sources(stage_storage, page_num: int) -> LabelStructurePageOutput:
     except FileNotFoundError:
         raise FileNotFoundError(f"Missing mechanical output: mechanical/{page_filename}")
     except Exception as e:
-        raise ValueError(f"Failed to load mechanical output for page {page_num}: {type(e).__name__}: {e}")
+        raise ValueError(f"Failed to load mechanical for page {page_num}: {e}")
 
     try:
         unified_data = stage_storage.load_file(f"unified/{page_filename}")
@@ -26,23 +25,24 @@ def _merge_sources(stage_storage, page_num: int) -> LabelStructurePageOutput:
     except FileNotFoundError:
         raise FileNotFoundError(f"Missing unified output: unified/{page_filename}")
     except Exception as e:
-        raise ValueError(f"Failed to load unified output for page {page_num}: {type(e).__name__}: {e}")
+        raise ValueError(f"Failed to load unified for page {page_num}: {e}")
 
     return LabelStructurePageOutput(
         headings_present=mechanical.headings_present,
         headings=mechanical.headings,
         pattern_hints=mechanical.pattern_hints,
-        header=unified.header,
-        footer=unified.footer,
-        page_number=unified.page_number,
-        markers_present=unified.markers_present,
-        markers=unified.markers,
-        footnotes_present=unified.footnotes_present,
-        footnotes=unified.footnotes,
-        cross_references_present=unified.cross_references_present,
-        cross_references=unified.cross_references,
-        has_horizontal_rule=unified.has_horizontal_rule,
-        has_small_text_at_bottom=unified.has_small_text_at_bottom,
+        page_number=PageNumberObservation(
+            present=unified.page_number.present,
+            number=unified.page_number.number,
+            location=unified.page_number.location,
+            reasoning=unified.page_number.reasoning,
+            source_provider="blend",
+        ),
+        running_header=RunningHeaderObservation(
+            present=unified.running_header.present,
+            text=unified.running_header.text,
+            reasoning=unified.running_header.reasoning,
+        ),
     )
 
 
@@ -97,21 +97,21 @@ def get_base_merged_page(storage: BookStorage, scan_page: int) -> LabelStructure
     return _merge_sources(stage_storage, scan_page)
 
 
-def get_simple_fixes_merged_page(storage: BookStorage, scan_page: int) -> LabelStructurePageOutput:
+def get_gap_analysis_merged_page(storage: BookStorage, scan_page: int) -> LabelStructurePageOutput:
     stage_storage = storage.stage("label-structure")
     merged = _merge_sources(stage_storage, scan_page)
-    simple_patch = _load_patch_if_exists(stage_storage.output_dir / "simple_gap_healing", scan_page)
-    if simple_patch:
-        merged = _apply_patch(merged, simple_patch)
+    gap_patch = _load_patch_if_exists(stage_storage.output_dir / "gap_analysis", scan_page)
+    if gap_patch:
+        merged = _apply_patch(merged, gap_patch)
     return merged
 
 
 def get_merged_page(storage: BookStorage, scan_page: int) -> LabelStructurePageOutput:
     stage_storage = storage.stage("label-structure")
     merged = _merge_sources(stage_storage, scan_page)
-    simple_patch = _load_patch_if_exists(stage_storage.output_dir / "simple_gap_healing", scan_page)
-    if simple_patch:
-        merged = _apply_patch(merged, simple_patch)
+    gap_patch = _load_patch_if_exists(stage_storage.output_dir / "gap_analysis", scan_page)
+    if gap_patch:
+        merged = _apply_patch(merged, gap_patch)
     agent_patch = _load_patch_if_exists(stage_storage.output_dir / "agent_healing", scan_page)
     if agent_patch:
         merged = _apply_patch(merged, agent_patch)
