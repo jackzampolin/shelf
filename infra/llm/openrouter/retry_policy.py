@@ -115,7 +115,7 @@ class RetryPolicy:
                     )
                     raise
 
-            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
+            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError) as e:
                 if attempt < max(1, self.max_retries) - 1:
                     delay = 1.0 + random.uniform(0, 1.0)
                     self.logger.warning(
