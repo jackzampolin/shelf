@@ -1,18 +1,15 @@
 import time
-from typing import Tuple, Dict, List
+from typing import Dict, List
 
 from infra.pipeline.storage.book_storage import BookStorage
-from infra.pipeline.logger import PipelineLogger
 from infra.llm.agent import AgentConfig, AgentBatchConfig, AgentBatchClient
 
 from ..schemas import LinkedTableOfContents, LinkedToCEntry
-from .agent.finder import TocEntryFinderAgent
 from .agent.finder_tools import TocEntryFinderTools
 from .agent.prompts import FINDER_SYSTEM_PROMPT, build_finder_user_prompt
 
 
 def _get_completed_entry_indices(storage: BookStorage) -> List[int]:
-    """Return list of entry indices that have already been processed."""
     linked_toc_path = storage.stage("link-toc").output_dir / "linked_toc.json"
     if not linked_toc_path.exists():
         return []
@@ -23,20 +20,16 @@ def _get_completed_entry_indices(storage: BookStorage) -> List[int]:
     if not linked_toc or not linked_toc.entries:
         return []
 
-    # Return indices of non-None entries
     return [idx for idx, entry in enumerate(linked_toc.entries) if entry is not None]
 
 
 def _update_linked_entry(storage: BookStorage, entry_index: int, linked_entry: LinkedToCEntry):
-    """Update a single entry in linked_toc.json for incremental progress."""
     stage_storage = storage.stage("link-toc")
     linked_toc_path = stage_storage.output_dir / "linked_toc.json"
 
-    # Load or create linked_toc structure
     if linked_toc_path.exists():
         data = stage_storage.load_file("linked_toc.json")
     else:
-        # Initialize empty structure
         data = {
             "entries": [],
             "toc_page_range": {},
@@ -49,18 +42,14 @@ def _update_linked_entry(storage: BookStorage, entry_index: int, linked_entry: L
             "total_time_seconds": 0.0,
         }
 
-    # Update or append entry
     entries = data.get("entries", [])
     entry_dict = linked_entry.model_dump()
 
-    # Pad list if needed and insert at index
     while len(entries) <= entry_index:
         entries.append(None)
     entries[entry_index] = entry_dict
-
     data["entries"] = entries
 
-    # Save using existing infrastructure (already has locking)
     stage_storage.save_file("linked_toc.json", data)
 
 
@@ -75,17 +64,13 @@ def _finalize_linked_toc_metadata(
     total_cost_usd: float,
     total_time_seconds: float,
 ):
-    """Update metadata fields in linked_toc.json after all entries processed."""
     stage_storage = storage.stage("link-toc")
     linked_toc_path = stage_storage.output_dir / "linked_toc.json"
 
     if not linked_toc_path.exists():
         return
 
-    # Load existing data
     data = stage_storage.load_file("linked_toc.json")
-
-    # Update metadata
     data.update({
         "toc_page_range": toc_page_range,
         "entries_by_level": entries_by_level,
@@ -96,13 +81,10 @@ def _finalize_linked_toc_metadata(
         "total_cost_usd": total_cost_usd,
         "total_time_seconds": total_time_seconds,
     })
-
-    # Save using existing infrastructure (already has locking)
     stage_storage.save_file("linked_toc.json", data)
 
 
 def _create_linked_entry_from_result(toc_entry: Dict, agent_result, tools) -> LinkedToCEntry:
-    """Create LinkedToCEntry from agent result, handling success and failure cases."""
     if agent_result.success and tools._pending_result:
         result_data = tools._pending_result
         return LinkedToCEntry(
@@ -129,23 +111,17 @@ def _create_linked_entry_from_result(toc_entry: Dict, agent_result, tools) -> Li
 def find_all_toc_entries(tracker, **kwargs):
     model = kwargs.get('model')
     max_iterations = kwargs.get('max_iterations', 15)
-    verbose = kwargs.get('verbose', False)
-
     start_time = time.time()
 
-    # Access storage and logger through tracker
     storage = tracker.storage
     logger = tracker.logger
     stage_storage = tracker.stage_storage
 
-    # Load ToC entries from extract-toc
     extract_toc_output = storage.stage("extract-toc").load_file("toc.json")
-
     if not extract_toc_output:
         logger.warning("No ToC data found in extract-toc output")
         return
 
-    # Handle both old format (nested under 'toc') and new format (flat)
     if 'toc' in extract_toc_output and 'entries' in extract_toc_output.get('toc', {}):
         toc_data = extract_toc_output['toc']
     else:
@@ -156,7 +132,6 @@ def find_all_toc_entries(tracker, **kwargs):
         return
 
     toc_entries = toc_data['entries']
-
     total_entries = len(toc_entries)
 
     completed_indices = _get_completed_entry_indices(storage)
@@ -164,38 +139,27 @@ def find_all_toc_entries(tracker, **kwargs):
 
     if completed_indices:
         logger.info(f"Resuming: {len(completed_indices)}/{total_entries} entries already complete")
-
     logger.info(f"Processing {len(remaining_indices)} remaining ToC entries")
 
-    metadata = storage.load_metadata()
-    total_pages = metadata.get('total_pages', 0)
+    total_pages = storage.load_metadata().get('total_pages', 0)
 
     configs = []
     tools_by_idx = {}
 
     for idx in remaining_indices:
         toc_entry = toc_entries[idx]
-        agent_id = f"entry-{idx:03d}"
-
-        tools = TocEntryFinderTools(
-            storage=storage,
-            toc_entry=toc_entry,
-            total_pages=total_pages,
-            logger=logger
-        )
+        tools = TocEntryFinderTools(storage, toc_entry, total_pages, logger)
         tools_by_idx[idx] = tools
-
-        initial_messages = [
-            {"role": "system", "content": FINDER_SYSTEM_PROMPT},
-            {"role": "user", "content": build_finder_user_prompt(toc_entry, idx, total_pages)}
-        ]
 
         configs.append(AgentConfig(
             model=model,
-            initial_messages=initial_messages,
+            initial_messages=[
+                {"role": "system", "content": FINDER_SYSTEM_PROMPT},
+                {"role": "user", "content": build_finder_user_prompt(toc_entry, idx, total_pages)}
+            ],
             tools=tools,
             tracker=tracker,
-            agent_id=agent_id,
+            agent_id=f"entry-{idx:03d}",
             max_iterations=max_iterations
         ))
 
@@ -206,16 +170,12 @@ def find_all_toc_entries(tracker, **kwargs):
         max_workers=10
     )
 
-    batch = AgentBatchClient(batch_config)
-    batch_result = batch.run()
+    batch_result = AgentBatchClient(batch_config).run()
 
     for agent_result, idx in zip(batch_result.results, remaining_indices):
-        toc_entry = toc_entries[idx]
-        tools = tools_by_idx[idx]
-        linked_entry = _create_linked_entry_from_result(toc_entry, agent_result, tools)
+        linked_entry = _create_linked_entry_from_result(toc_entries[idx], agent_result, tools_by_idx[idx])
         _update_linked_entry(storage, idx, linked_entry)
 
-    # Load final linked_toc
     data = stage_storage.load_file("linked_toc.json")
     linked_toc = LinkedTableOfContents(**data) if data else None
 
@@ -224,16 +184,12 @@ def find_all_toc_entries(tracker, **kwargs):
         return
 
     linked_entries = [e for e in linked_toc.entries if e is not None]
-
     linked_count = sum(1 for e in linked_entries if e.scan_page is not None)
     unlinked_count = len(linked_entries) - linked_count
 
-    all_metrics = stage_storage.metrics_manager.get_all()
-
-    total_cost_usd = sum(m.get('cost_usd', 0.0) for m in all_metrics.values())
+    total_cost_usd = sum(m.get('cost_usd', 0.0) for m in stage_storage.metrics_manager.get_all().values())
     total_time_seconds = time.time() - start_time
 
-    # Finalize metadata in linked_toc.json
     _finalize_linked_toc_metadata(
         storage=storage,
         toc_page_range=toc_data.get('toc_page_range', {}),
@@ -246,15 +202,11 @@ def find_all_toc_entries(tracker, **kwargs):
         total_time_seconds=total_time_seconds,
     )
 
-    # Record metrics
     stage_storage.metrics_manager.record(
         key="find_entries",
         cost_usd=total_cost_usd,
         time_seconds=total_time_seconds,
-        custom_metrics={
-            "total_entries": len(linked_entries),
-            "found_entries": linked_count,
-        }
+        custom_metrics={"total_entries": len(linked_entries), "found_entries": linked_count}
     )
 
     logger.info(

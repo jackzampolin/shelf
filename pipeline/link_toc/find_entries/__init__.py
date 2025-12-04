@@ -3,15 +3,8 @@ from infra.pipeline.status import artifact_tracker
 
 
 def create_tracker(stage_storage, model: str, max_iterations: int, verbose: bool):
-    """Create the find_entries phase tracker."""
-
     def run_find_entries(tracker, **kwargs):
-        return find_all_toc_entries(
-            tracker=tracker,
-            model=model,
-            max_iterations=max_iterations,
-            verbose=verbose
-        )
+        return find_all_toc_entries(tracker=tracker, model=model, max_iterations=max_iterations, verbose=verbose)
 
     return artifact_tracker(
         stage_storage=stage_storage,
@@ -21,7 +14,4 @@ def create_tracker(stage_storage, model: str, max_iterations: int, verbose: bool
     )
 
 
-__all__ = [
-    "find_all_toc_entries",
-    "create_tracker",
-]
+__all__ = ["find_all_toc_entries", "create_tracker"]

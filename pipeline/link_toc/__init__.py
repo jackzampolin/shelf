@@ -4,7 +4,7 @@ from infra.config import Config
 
 from . import find_entries, pattern, evaluation, merge
 from .schemas import (
-    AgentResult, LinkedToCEntry, LinkedTableOfContents, LinkTocReportEntry,
+    LinkedToCEntry, LinkedTableOfContents, LinkTocReportEntry,
     PatternAnalysis, CandidateHeading, HeadingDecision,
     EnrichedToCEntry, EnrichedTableOfContents
 )
@@ -66,7 +66,6 @@ class LinkTocStage(BaseStage):
 
 __all__ = [
     "LinkTocStage",
-    "AgentResult",
     "LinkedToCEntry",
     "LinkedTableOfContents",
     "LinkTocReportEntry",
