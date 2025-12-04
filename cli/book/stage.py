@@ -5,7 +5,7 @@ import json
 from infra.pipeline.storage.library import Library
 from infra.pipeline.runner import run_stage
 from infra.config import Config
-from infra.llm.display import DisplayStats, print_stage_complete
+from infra.llm.display import DisplayStats, print_stage_complete, print_stage_deleted, print_stage_running
 from cli.helpers import (
     clean_stage_directory,
     get_stage_status,
@@ -26,11 +26,6 @@ def cmd_stage_run(args):
 
     storage = library.get_book_storage(args.scan_id)
 
-    if args.delete_outputs:
-        print(f"\nCleaning stage before processing: {args.stage_name}")
-        clean_stage_directory(storage, args.stage_name)
-        print(f"   Cleaned {args.stage_name}\n")
-
     stage_map = get_stage_map(
         storage,
         model=args.model,
@@ -45,7 +40,11 @@ def cmd_stage_run(args):
 
     stage = stage_map[args.stage_name]
 
-    print(f"▶️  {stage.name}")
+    if args.delete_outputs:
+        clean_stage_directory(storage, args.stage_name)
+        print_stage_deleted(stage.name)
+
+    print_stage_running(stage.name)
 
     try:
         stats = run_stage(stage)

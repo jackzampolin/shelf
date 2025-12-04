@@ -6,7 +6,7 @@ class EnrichedToCEntry(BaseModel):
     """Entry in enriched ToC (flat structure with parent pointers)."""
 
     entry_index: int = Field(..., ge=0, description="Position in flat list")
-    title: str = Field(..., min_length=1, description="Entry title")
+    title: str = Field(..., description="Entry title. Empty string '' for standalone markers like 'PART I'.")
     scan_page: int = Field(..., ge=1, description="Scan page where entry appears")
     level: int = Field(..., ge=1, description="Hierarchy level (1=top, higher=more nested)")
 

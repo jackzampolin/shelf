@@ -140,12 +140,12 @@ def format_stage_complete(stage_name: str, stats: DisplayStats) -> Text:
     """
     Format a stage completion line (sums all phases).
 
-    Output: ✅ Stage complete: {stage-name}          ({time}) {tokens} {cost}¢
+    Output: 🏆 {stage-name}: complete                ({time}) {tokens} {cost}¢
     """
     text = Text()
-    text.append("✅ ", style="green")
+    text.append("🏆 ", style="yellow")
 
-    description = f"Stage complete: {stage_name}"
+    description = f"{stage_name}: complete"
     text.append(f"{description:<{DESCRIPTION_WIDTH}}", style="bold")
 
     text.append(f"({stats.time_seconds:6.1f}s)", style="dim")
@@ -164,8 +164,36 @@ def format_stage_complete(stage_name: str, stats: DisplayStats) -> Text:
     return text
 
 
+# Line width matches phase output: emoji(2) + desc(45) + time(9) + tokens(34) + cost(8) = 99 chars
+STAGE_LINE_WIDTH = 99
+
+
+def print_stage_deleted(stage_name: str):
+    """Print stage deletion message."""
+    text = Text()
+    text.append("🗑️  ", style="red")
+    text.append(f"{stage_name}: ", style="bold")
+    text.append("deleted outputs", style="red")
+    Console().print(text)
+
+
+def print_stage_running(stage_name: str):
+    """Print stage running message."""
+    text = Text()
+    text.append("▶️  ", style="blue")
+    text.append(f"{stage_name}: ", style="bold")
+    text.append("running", style="blue")
+    Console().print(text)
+
+
+def print_stage_separator():
+    """Print separator line before stage completion."""
+    Console().print("─" * STAGE_LINE_WIDTH, style="dim")
+
+
 def print_stage_complete(stage_name: str, stats: DisplayStats):
     """Print a stage completion line to console."""
+    print_stage_separator()
     Console().print(format_stage_complete(stage_name, stats))
 
 

@@ -1,10 +1,13 @@
 import sys
 import argparse
 
+from rich.console import Console
 from infra.pipeline.storage.library import Library
 from infra.config import Config
 from cli.helpers import get_stage_status, clean_stage_directory
 from cli.constants import CORE_STAGES
+
+console = Console()
 
 
 def cmd_batch(args):
@@ -15,21 +18,21 @@ def cmd_batch(args):
     stages = args.stages if isinstance(args.stages, list) else [args.stages]
 
     if len(stages) > 1:
-        print(f"\n🧹 Sweeping {len(stages)} stages across {len(scan_ids)} books")
-        print(f"   Stages: {' → '.join(stages)}")
+        print(f"\n📚 {len(stages)} stages × {len(scan_ids)} books")
+        print(f"   {' → '.join(stages)}\n")
     else:
-        print(f"\n🧹 Sweeping '{stages[0]}' stage across {len(scan_ids)} books")
-    print(f"   Press Ctrl+C to stop at any time\n")
+        print(f"\n📚 {stages[0]} × {len(scan_ids)} books\n")
 
     # Process each stage in sequence (stage-by-stage across all books)
     for stage_idx, current_stage in enumerate(stages, 1):
         if len(stages) > 1:
-            print(f"\n{'='*70}")
+            print(f"\n{'─'*50}")
             print(f"Stage {stage_idx}/{len(stages)}: {current_stage}")
-            print(f"{'='*70}\n")
+            print(f"{'─'*50}\n")
 
         books_to_process = []
         skipped_count = 0
+        resumed_count = 0
 
         if args.delete_outputs:
             if stage_idx == 1:  # Only warn once for multi-stage
@@ -43,62 +46,56 @@ def cmd_batch(args):
                     except (EOFError, KeyboardInterrupt):
                         print("\nCancelled.")
                         sys.exit(0)
-            print(f"\nPhase 1: Checking status and cleaning {current_stage}...")
-        else:
-            print(f"Phase 1: Checking {current_stage} status (resume mode)...")
+                print()
 
-        for idx, scan_id in enumerate(scan_ids, 1):
+        for scan_id in scan_ids:
             try:
                 storage = library.get_book_storage(scan_id)
 
                 if args.delete_outputs:
-                    print(f"  [{idx}/{len(scan_ids)}] 🧹 {scan_id}: Cleaning {current_stage} stage...")
                     clean_stage_directory(storage, current_stage)
+                    console.print(f"🧹 [red]{scan_id}[/red]")
                 else:
                     status = get_stage_status(storage, current_stage)
+                    progress = status.get('progress', {}) if status else {}
+                    completed = len(progress.get('completed_phases', []))
+                    total = progress.get('total_phases', 0)
+                    current_phase = progress.get('current_phase', '')
+                    phase_str = f"({completed}/{total})" if total > 0 else ""
+
                     if status and status.get('status') == 'completed':
-                        print(f"  [{idx}/{len(scan_ids)}] ⏭️  {scan_id}: Already completed - skipping")
+                        console.print(f"⏭️  {phase_str} [dim]{scan_id}[/dim]")
                         skipped_count += 1
                         continue
 
                     if status and status.get('status') not in ['not_started', 'completed']:
-                        remaining = len(status.get('remaining_pages', []))
-                        total = status.get('total_pages', 0)
-                        completed = total - remaining
-                        print(f"  [{idx}/{len(scan_ids)}] ▶️  {scan_id}: Resuming ({completed}/{total} complete)")
+                        console.print(f"🔄 {phase_str} [yellow]{scan_id}[/yellow] - resume {current_phase}")
+                        resumed_count += 1
                     else:
-                        print(f"  [{idx}/{len(scan_ids)}] ▶️  {scan_id}: Will process")
+                        console.print(f"▶️  {phase_str} [green]{scan_id}[/green]")
 
                 books_to_process.append(scan_id)
 
             except KeyboardInterrupt:
-                print(f"\n\n⚠️  Interrupted during Phase 1")
-                print(f"   Queued: {len(books_to_process)}, Skipped: {skipped_count}, Remaining: {len(scan_ids) - idx}")
-                if args.delete_outputs:
-                    print(f"   Note: {len(books_to_process)} books were cleaned and need processing")
+                print(f"\n\n⚠️  Interrupted")
                 sys.exit(0)
             except Exception as e:
-                print(f"  [{idx}/{len(scan_ids)}] ❌ {scan_id}: Error during Phase 1: {e}")
+                print(f"❌ {scan_id}: {e}")
                 continue
 
-        if args.delete_outputs:
-            print(f"\nPhase 1 complete: Cleaned {len(books_to_process)} books, skipped {skipped_count}")
+        # Summary line
+        if books_to_process:
+            print(f"\n📖 {len(books_to_process)} books to process")
         else:
-            print(f"\nPhase 1 complete: {len(books_to_process)} books to process, {skipped_count} skipped")
-
-        if not books_to_process:
-            print(f"\n✅ No books need processing for {current_stage} stage")
+            print(f"\n✅ All books complete\n")
             continue  # Move to next stage
 
-        print(f"\nPhase 2: Running {current_stage} stage on {len(books_to_process)} books...\n")
         processed_count = 0
 
         from cli.book.stage import cmd_stage_run
 
         for idx, scan_id in enumerate(books_to_process, 1):
-            print(f"\n{'='*60}")
-            print(f"[{idx}/{len(books_to_process)}] Processing: {scan_id}")
-            print(f"{'='*60}")
+            print(f"\n📖 {idx}. {scan_id}: processing")
 
             try:
                 storage = library.get_book_storage(scan_id)
@@ -115,25 +112,16 @@ def cmd_batch(args):
                 processed_count += 1
 
             except KeyboardInterrupt:
-                print(f"\n\n⚠️  Interrupted by user. Stopping...")
-                print(f"   Stage {stage_idx}/{len(stages)}: {current_stage}")
-                print(f"   Processed: {processed_count}, Skipped: {skipped_count}, Remaining: {len(books_to_process) - idx}")
-                print(f"   Note: Run without --delete-outputs to continue from where you left off")
+                print(f"\n\n⚠️  Interrupted ({processed_count}/{len(books_to_process)} complete)")
                 sys.exit(0)
             except Exception as e:
-                print(f"  ❌ Error processing {scan_id}: {e}")
-                print(f"     Continuing to next book...")
+                print(f"❌ {scan_id}: {e}")
                 continue
 
-        print(f"\n{'='*60}")
-        print(f"✅ Stage {stage_idx}/{len(stages)} complete: {current_stage}")
-        print(f"   Processed: {processed_count}, Skipped: {skipped_count}, Total: {len(scan_ids)}")
-        print(f"{'='*60}\n")
+        print(f"\n🏁 {current_stage}: {processed_count} processed, {skipped_count} skipped\n")
 
     if len(stages) > 1:
-        print(f"\n{'='*70}")
-        print(f"✅ Multi-stage batch complete: {len(stages)} stages processed")
-        print(f"{'='*70}\n")
+        print(f"✅ Batch complete: {len(stages)} stages")
 
 
 def setup_batch_parser(subparsers):
