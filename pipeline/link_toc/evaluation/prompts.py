@@ -20,16 +20,7 @@ Usually false positives UNLESS the candidate is a different structural element:
 ## Other false positives
 - Running headers (titles repeated at page tops)
 - Back matter dividers (Notes, Bibliography sections)
-- OCR artifacts, page numbers
-
-## Output format
-{
-  "include": true/false,
-  "title": "cleaned title if include",
-  "level": 1-3,
-  "entry_number": "5" or "Chapter 5" or null,
-  "reasoning": "explain decision, reference pattern observations if applicable"
-}"""
+- OCR artifacts, page numbers"""
 
 
 def build_evaluation_prompt(candidate, observations, toc_context, nearby_toc_entries=""):

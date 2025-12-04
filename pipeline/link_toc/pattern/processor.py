@@ -137,7 +137,58 @@ def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, b
             {"role": "system", "content": PATTERN_SYSTEM_PROMPT},
             {"role": "user", "content": build_pattern_prompt(toc_entries, candidate_headings, body_range)}
         ],
-        response_format={"type": "json_object"},
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "pattern_analysis",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "observations": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        },
+                        "missing_candidate_headings": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "identifier": {"type": "string"},
+                                    "predicted_page_range": {
+                                        "type": "array",
+                                        "items": {"type": "integer"},
+                                        "minItems": 2,
+                                        "maxItems": 2
+                                    },
+                                    "confidence": {"type": "number"},
+                                    "reasoning": {"type": "string"}
+                                },
+                                "required": ["identifier", "predicted_page_range", "confidence", "reasoning"],
+                                "additionalProperties": False
+                            }
+                        },
+                        "excluded_page_ranges": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "start_page": {"type": "integer"},
+                                    "end_page": {"type": "integer"},
+                                    "reason": {"type": "string"}
+                                },
+                                "required": ["start_page", "end_page", "reason"],
+                                "additionalProperties": False
+                            }
+                        },
+                        "requires_evaluation": {"type": "boolean"},
+                        "reasoning": {"type": "string"}
+                    },
+                    "required": ["observations", "missing_candidate_headings", "excluded_page_ranges", "requires_evaluation", "reasoning"],
+                    "additionalProperties": False
+                }
+            }
+        },
         max_tokens=3000,
     )
 
@@ -146,8 +197,7 @@ def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, b
         return [], [], [], True, f"LLM call failed: {result.error_message}"
 
     data = result.parsed_json
-    raw_observations = data.get("observations", [])
-    observations = raw_observations if isinstance(raw_observations, list) else [raw_observations] if raw_observations else []
+    observations = data.get("observations", [])
     reasoning = data.get("reasoning", "")
     requires_eval = data.get("requires_evaluation", True)
 

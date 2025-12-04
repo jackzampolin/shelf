@@ -65,6 +65,24 @@ def prepare_evaluation_request(
         ],
         images=[image],
         temperature=0.0,
-        response_format={"type": "json_object"},
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "heading_evaluation",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "include": {"type": "boolean"},
+                        "title": {"type": ["string", "null"]},
+                        "level": {"type": ["integer", "null"]},
+                        "entry_number": {"type": ["string", "null"]},
+                        "reasoning": {"type": "string"}
+                    },
+                    "required": ["include", "reasoning"],
+                    "additionalProperties": False
+                }
+            }
+        },
         timeout=120
     )
