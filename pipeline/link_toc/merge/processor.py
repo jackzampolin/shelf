@@ -3,11 +3,6 @@ from ..schemas import EnrichedToCEntry, EnrichedTableOfContents
 
 
 def find_parent_toc_entry(scan_page: int, toc_entries: list, toc_index_map: dict):
-    """Find the parent ToC entry for a discovered heading based on page range.
-
-    Returns (parent_index, parent_level) or (None, 1) if no parent found.
-    """
-    # Find the ToC entry that precedes this page (parent container)
     parent_entry = None
     parent_original_idx = None
 
@@ -19,7 +14,6 @@ def find_parent_toc_entry(scan_page: int, toc_entries: list, toc_index_map: dict
             break
 
     if parent_entry and parent_original_idx is not None:
-        # Get the enriched index for this parent
         enriched_idx = toc_index_map.get(parent_original_idx)
         return enriched_idx, parent_entry.level
 
@@ -50,7 +44,6 @@ def merge_enriched_toc(tracker, **kwargs):
     missing_headings_found = []
 
     if eval_dir.exists():
-        # Load approved candidate headings
         for decision_file in sorted(eval_dir.glob("heading_*.json")):
             decision_data = storage.stage("link-toc").load_file(f"evaluation/{decision_file.name}")
             if decision_data:
@@ -58,7 +51,6 @@ def merge_enriched_toc(tracker, **kwargs):
                 if decision.include:
                     approved_headings.append(decision)
 
-        # Load found missing headings (predicted headings that were located)
         for decision_file in sorted(eval_dir.glob("missing_*.json")):
             decision_data = storage.stage("link-toc").load_file(f"evaluation/{decision_file.name}")
             if decision_data:
@@ -76,7 +68,6 @@ def merge_enriched_toc(tracker, **kwargs):
 
     toc_entries = [e for e in linked_toc.entries if e is not None]
 
-    # Validate: Filter out entries without scan_page
     valid_toc_entries = []
     invalid_toc_entries = []
 
@@ -95,7 +86,6 @@ def merge_enriched_toc(tracker, **kwargs):
             f"These entries will be EXCLUDED from the enriched ToC. Unlinked entries: {[e.title for e in invalid_toc_entries]}"
         )
 
-    # Build map from original ToC index to enriched index
     toc_index_map = {}
 
     for i, toc_entry in enumerate(valid_toc_entries):
@@ -112,7 +102,6 @@ def merge_enriched_toc(tracker, **kwargs):
         ))
         entry_index += 1
 
-    # Add discovered headings (from candidate evaluation) with proper parent relationships
     for heading in approved_headings:
         parent_idx, parent_level = find_parent_toc_entry(
             heading.scan_page,
@@ -120,8 +109,6 @@ def merge_enriched_toc(tracker, **kwargs):
             toc_index_map
         )
 
-        # Discovered headings are children of their parent ToC entry
-        # Level = parent_level + 1 (one level below the parent)
         child_level = parent_level + 1
 
         enriched_entries.append(EnrichedToCEntry(
@@ -137,10 +124,7 @@ def merge_enriched_toc(tracker, **kwargs):
         ))
         entry_index += 1
 
-    # Add missing headings (predicted chapters that were found)
-    # These are typically top-level entries that weren't in the original ToC
     for heading in missing_headings_found:
-        # Missing headings are usually chapters, so use level 1 (or the level from the decision)
         heading_level = heading.level if heading.level else 1
 
         enriched_entries.append(EnrichedToCEntry(
@@ -148,7 +132,7 @@ def merge_enriched_toc(tracker, **kwargs):
             title=heading.title or heading.heading_text,
             scan_page=heading.scan_page,
             level=heading_level,
-            parent_index=None,  # Top-level missing chapters don't have parents
+            parent_index=None,
             source="missing_found",
             entry_number=heading.entry_number,
             discovery_reasoning=heading.reasoning,
@@ -156,7 +140,6 @@ def merge_enriched_toc(tracker, **kwargs):
         ))
         entry_index += 1
 
-    # Sort by page number
     enriched_entries.sort(key=lambda e: e.scan_page)
 
     for i, entry in enumerate(enriched_entries):
