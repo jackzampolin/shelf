@@ -31,7 +31,16 @@ Set false ONLY when ALL candidates are clearly noise and evaluation would waste 
 Default true if ANY candidate might be a real structural heading.
 
 ## reasoning
-Brief summary of your analysis."""
+Brief summary of your analysis.
+
+## Output format
+{
+  "observations": ["observation 1", "observation 2", ...],
+  "missing_candidate_headings": [{"identifier": "Chapter 9", "predicted_page_range": [150, 160], "confidence": 0.8, "reasoning": "..."}],
+  "excluded_page_ranges": [{"start_page": 400, "end_page": 450, "reason": "Notes section"}],
+  "requires_evaluation": true,
+  "reasoning": "..."
+}"""
 
 
 def build_pattern_prompt(toc_entries, candidate_headings, body_range):

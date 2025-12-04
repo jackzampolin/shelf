@@ -146,7 +146,8 @@ def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, b
         return [], [], [], True, f"LLM call failed: {result.error_message}"
 
     data = result.parsed_json
-    observations = data.get("observations", [])
+    raw_observations = data.get("observations", [])
+    observations = raw_observations if isinstance(raw_observations, list) else [raw_observations] if raw_observations else []
     reasoning = data.get("reasoning", "")
     requires_eval = data.get("requires_evaluation", True)
 

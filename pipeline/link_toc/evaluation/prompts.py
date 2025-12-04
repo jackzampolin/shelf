@@ -19,7 +19,16 @@ If there's already a ToC entry on this page, the candidate is almost always a fa
 - OCR artifacts, page numbers, figure captions
 
 ## When uncertain
-Lean toward excluding - it's better to miss a marginal heading than include duplicates."""
+Lean toward excluding - it's better to miss a marginal heading than include duplicates.
+
+## Output format
+{
+  "include": true/false,
+  "title": "cleaned title if include",
+  "level": 1-3,
+  "entry_number": "Chapter 5" or null,
+  "reasoning": "explain your decision"
+}"""
 
 
 def build_evaluation_prompt(candidate, observations, toc_context, nearby_toc_entries=""):
