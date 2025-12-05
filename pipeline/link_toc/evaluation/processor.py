@@ -209,14 +209,20 @@ def evaluate_candidates(
         observations = pattern.observations
         toc_summary = f"Body range: pages {pattern.body_range[0]}-{pattern.body_range[1]}"
 
-        candidates_by_page = {c["scan_page"]: c for c in candidates_to_eval}
+        # Build list of (index, candidate) for all non-excluded candidates
+        all_candidates = pattern.candidate_headings
+        candidates_by_index = {}
+        for i, c in enumerate(all_candidates):
+            if not is_in_excluded_range(c.scan_page, excluded_ranges):
+                candidates_by_index[i] = c.model_dump()
 
         result = LLMBatchProcessor(LLMBatchConfig(
             tracker=tracker,
             model=model,
             batch_name="evaluation",
             request_builder=lambda item, storage, **kw: prepare_evaluation_request(
-                item=candidates_by_page[item],
+                item=item,
+                candidate=candidates_by_index[item],
                 storage=storage,
                 observations=observations,
                 toc_summary=toc_summary,
@@ -225,7 +231,7 @@ def evaluate_candidates(
             result_handler=create_evaluation_handler(
                 stage_storage=stage_storage,
                 logger=logger,
-                candidates_by_page=candidates_by_page
+                candidates_by_index=candidates_by_index
             ),
             max_workers=10,
             max_retries=3,

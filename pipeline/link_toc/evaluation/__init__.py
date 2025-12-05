@@ -15,7 +15,8 @@ def _should_skip_evaluation(stage_storage) -> bool:
         return False
 
 
-def _discover_candidate_pages(stage_storage) -> List[int]:
+def _discover_candidate_indices(stage_storage) -> List[int]:
+    """Return indices of candidates that need evaluation (not page numbers)."""
     try:
         pattern_data = stage_storage.load_file("pattern/pattern_analysis.json")
     except FileNotFoundError:
@@ -36,14 +37,15 @@ def _discover_candidate_pages(stage_storage) -> List[int]:
                 return True
         return False
 
-    return [c["scan_page"] for c in candidates if not is_excluded(c["scan_page"])]
+    # Return indices of non-excluded candidates
+    return [i for i, c in enumerate(candidates) if not is_excluded(c["scan_page"])]
 
 
 def _create_validator(stage_storage):
-    def validator(page_num: int, phase_dir: Path) -> bool:
+    def validator(candidate_idx: int, phase_dir: Path) -> bool:
         if _should_skip_evaluation(stage_storage):
             return True
-        return (phase_dir / f"heading_{page_num:04d}.json").exists()
+        return (phase_dir / f"heading_{candidate_idx:04d}.json").exists()
     return validator
 
 
@@ -60,8 +62,8 @@ def create_tracker(stage_storage, model: str = None):
     return PhaseStatusTracker(
         stage_storage=stage_storage,
         phase_name="evaluation",
-        discoverer=lambda phase_dir: _discover_candidate_pages(stage_storage),
-        output_path_fn=lambda page_num, phase_dir: phase_dir / f"heading_{page_num:04d}.json",
+        discoverer=lambda phase_dir: _discover_candidate_indices(stage_storage),
+        output_path_fn=lambda candidate_idx, phase_dir: phase_dir / f"heading_{candidate_idx:04d}.json",
         run_fn=run_evaluation,
         use_subdir=True,
         validator_override=_create_validator(stage_storage),

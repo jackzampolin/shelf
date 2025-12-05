@@ -10,12 +10,14 @@ from ..schemas import HeadingDecision
 def create_evaluation_handler(
     stage_storage: StageStorage,
     logger: PipelineLogger,
-    candidates_by_page: dict,
+    candidates_by_index: dict,
 ):
     def on_result(result: LLMResult):
         if result.success:
-            page_num = int(result.request.id.split('_')[1])
-            candidate = candidates_by_page.get(page_num, {})
+            # Extract index from request ID (e.g., "heading_0005" -> 5)
+            candidate_idx = int(result.request.id.split('_')[1])
+            candidate = candidates_by_index.get(candidate_idx, {})
+            page_num = candidate.get("scan_page")
 
             try:
                 response_data = json.loads(result.response)
@@ -56,7 +58,7 @@ def create_evaluation_handler(
 
             except Exception as e:
                 logger.error(
-                    f"Failed to parse evaluation result for page {page_num}",
+                    f"Failed to parse evaluation result for candidate {candidate_idx}",
                     error=str(e)
                 )
         else:

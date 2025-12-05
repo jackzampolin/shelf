@@ -30,13 +30,23 @@ def _get_nearby_toc_context(candidate: dict, toc_entries_by_page: Dict[int, str]
 
 
 def prepare_evaluation_request(
-    item: dict,
+    item: int,
+    candidate: dict,
     storage: BookStorage,
     observations: list,
     toc_summary: str,
     toc_entries_by_page: Optional[Dict[int, str]] = None,
 ) -> LLMRequest:
-    candidate = item
+    """Prepare evaluation request for a candidate heading.
+
+    Args:
+        item: The candidate index (used for unique ID)
+        candidate: The candidate heading dict
+        storage: Book storage
+        observations: Pattern observations
+        toc_summary: ToC summary context
+        toc_entries_by_page: Map of page numbers to ToC entry titles
+    """
     toc_entries_by_page = toc_entries_by_page or {}
 
     image = storage.source().load_page_image(
@@ -58,7 +68,7 @@ def prepare_evaluation_request(
     )
 
     return LLMRequest(
-        id=f"heading_{candidate['scan_page']:04d}",
+        id=f"heading_{item:04d}",
         messages=[
             {"role": "system", "content": EVALUATION_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}
