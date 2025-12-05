@@ -1,0 +1,194 @@
+{
+  "scan_id": "american-caesar",
+  "enriched_toc": {
+    "entries": [
+      {
+        "title": "Illustrations",
+        "scan_page": 6,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "viii"
+      },
+      {
+        "title": "Chronology",
+        "scan_page": 10,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "xii"
+      },
+      {
+        "title": "Reveille",
+        "scan_page": 14,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "3"
+      },
+      {
+        "title": "PREAMBLE",
+        "scan_page": 14,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "REVEILLE",
+        "scan_page": 22,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "First Call",
+        "scan_page": 23,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "13"
+      },
+      {
+        "title": "PROLOGUE",
+        "scan_page": 23,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "First Call",
+        "scan_page": 33,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Ruffles and Flourishes (1880-1917)",
+        "scan_page": 49,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "I",
+        "printed_page_number": "39"
+      },
+      {
+        "title": "Charge (1917-1918)",
+        "scan_page": 90,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "II",
+        "printed_page_number": "80"
+      },
+      {
+        "title": "Call to Quarters (1919-1935)",
+        "scan_page": 126,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "III",
+        "printed_page_number": "116"
+      },
+      {
+        "title": "To the Colors (1935-1941)",
+        "scan_page": 171,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "IV",
+        "printed_page_number": "161"
+      },
+      {
+        "title": "Retreat (1941-1942)",
+        "scan_page": 215,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "V",
+        "printed_page_number": "205"
+      },
+      {
+        "title": "The Green War (1942-1944)",
+        "scan_page": 287,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "VI",
+        "printed_page_number": "277"
+      },
+      {
+        "title": "At High Port (1944-1945)",
+        "scan_page": 384,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "VII",
+        "printed_page_number": "374"
+      },
+      {
+        "title": "Last Post (1945-1950)",
+        "scan_page": 477,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "VIII",
+        "printed_page_number": "459"
+      },
+      {
+        "title": "Sunset Gun (1950-1951)",
+        "scan_page": 563,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "IX",
+        "printed_page_number": "545"
+      },
+      {
+        "title": "Recall (1951)",
+        "scan_page": 647,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "X",
+        "printed_page_number": "629"
+      },
+      {
+        "title": "Taps (1951-1964)",
+        "scan_page": 696,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "XI",
+        "printed_page_number": "678"
+      },
+      {
+        "title": "Acknowledgments",
+        "scan_page": 728,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "711"
+      },
+      {
+        "title": "Notes",
+        "scan_page": 730,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "713"
+      },
+      {
+        "title": "Bibliography",
+        "scan_page": 762,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "745"
+      },
+      {
+        "title": "Copyright Acknowledgments",
+        "scan_page": 780,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "763"
+      }
+    ],
+    "original_toc_count": 19,
+    "discovered_count": 4,
+    "total_entries": 23
+  }
+}

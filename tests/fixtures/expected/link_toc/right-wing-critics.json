@@ -1,0 +1,762 @@
+{
+  "scan_id": "right-wing-critics",
+  "enriched_toc": {
+    "entries": [
+      {
+        "title": "Preface to the Paperback Edition",
+        "scan_page": 4,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "ix"
+      },
+      {
+        "title": "Acknowledgments",
+        "scan_page": 7,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "xiii"
+      },
+      {
+        "title": "Introduction",
+        "scan_page": 9,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "1"
+      },
+      {
+        "title": "The Twilight of the Old Right and the Birth and Rise of the American Conservative Movement",
+        "scan_page": 13,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "1",
+        "printed_page_number": "5"
+      },
+      {
+        "title": "Problems of Definition",
+        "scan_page": 14,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "The Old Right and the \"Superfluous Men\"",
+        "scan_page": 21,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "The Origins of American Conservatism",
+        "scan_page": 27,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "The Neoconservatives",
+        "scan_page": 35,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "The Political Rise of the Conservative Movement",
+        "scan_page": 38,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Conclusion",
+        "scan_page": 43,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Defining Conservatism's Boundaries: A History of Conservative Purges",
+        "scan_page": 45,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "2",
+        "printed_page_number": "37"
+      },
+      {
+        "title": "The Rise and Fall of the John Birch Society",
+        "scan_page": 48,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Ayn Rand and the Objectivists",
+        "scan_page": 53,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Mel Bradford",
+        "scan_page": 56,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "The Rejection of David Duke",
+        "scan_page": 59,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Pat Buchanan\u2019s Failed Insurgence",
+        "scan_page": 64,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Other Paleos: Joseph Sobran and Sam Francis",
+        "scan_page": 69,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Iraq and the Attack on \"Unpatriotic Conservatives\"",
+        "scan_page": 73,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "The Final (?) Expulsion of the Openly Racist Right",
+        "scan_page": 75,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Will the Conservative Movement Maintain Control of Itself?",
+        "scan_page": 78,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Small Is Beautiful: Localism as a Challenge to Left and Right",
+        "scan_page": 82,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "3",
+        "printed_page_number": "74"
+      },
+      {
+        "title": "Agrarianism and the South in the Early Twentieth Century",
+        "scan_page": 84,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Wendell Berry: Kentucky Poet, Farmer, and Localist",
+        "scan_page": 88,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Robert Nisbet and The Quest for Community",
+        "scan_page": 90,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Christopher Lasch: Communitarian Socialist",
+        "scan_page": 93,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Localist Economists in the Age of Globalization",
+        "scan_page": 97,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Rod Dreher: Crunchy Conservative",
+        "scan_page": 103,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Bill Kauffman: Front Porch Anarchist",
+        "scan_page": 105,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Conclusion",
+        "scan_page": 107,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Godless Conservatism: The Challenge of the Secular Right",
+        "scan_page": 110,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "4",
+        "printed_page_number": "102"
+      },
+      {
+        "title": "Religion and the Early Conservative Movement",
+        "scan_page": 111,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Religion and US Politics Today",
+        "scan_page": 114,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Is There a Secular Case for Conservatism?",
+        "scan_page": 115,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Secular Conservatives Today",
+        "scan_page": 117,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Conclusion",
+        "scan_page": 121,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Ready for Prime Time? The Mainstream Libertarians",
+        "scan_page": 124,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "5",
+        "printed_page_number": "116"
+      },
+      {
+        "title": "What Is Libertarianism?",
+        "scan_page": 125,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Conservatism's Favorite Libertarian: Milton Friedman",
+        "scan_page": 131,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Funding a Movement: The Koch Brothers",
+        "scan_page": 133,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "The Cato Institute",
+        "scan_page": 137,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Reason",
+        "scan_page": 139,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Fighting for Liberty Inside the Republican Party: The Paul Family",
+        "scan_page": 141,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Libertarian Youth Organizations",
+        "scan_page": 146,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Is the Tea Party Libertarian?",
+        "scan_page": 150,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Conclusion",
+        "scan_page": 151,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Enemies of the State: Radical Libertarians",
+        "scan_page": 153,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "6",
+        "printed_page_number": "145"
+      },
+      {
+        "title": "Key Divisions within Libertarianism",
+        "scan_page": 154,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Nineteenth-Century American Anarchists",
+        "scan_page": 160,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Austrian Economics",
+        "scan_page": 163,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Murray Rothbard",
+        "scan_page": 167,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Hans-Hermann Hoppe",
+        "scan_page": 175,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Lew Rockwell and the Ludwig von Mises Institute",
+        "scan_page": 178,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "The Libertarian Party",
+        "scan_page": 179,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Against the State and Individual Liberty?",
+        "scan_page": 182,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Conclusion",
+        "scan_page": 184,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Nostalgia as a Political Platform: The Paleoconservatives",
+        "scan_page": 186,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "7",
+        "printed_page_number": "178"
+      },
+      {
+        "title": "Remnants of the Old Right",
+        "scan_page": 189,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Mel Bradford",
+        "scan_page": 191,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Pat Buchanan",
+        "scan_page": 194,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Thomas Fleming and Chronicles",
+        "scan_page": 198,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Samuel T. Francis",
+        "scan_page": 201,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "The Paleo Alliance",
+        "scan_page": 204,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Paul Gottfried",
+        "scan_page": 209,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Was Russell Kirk a Paleoconservative?",
+        "scan_page": 211,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Conclusion",
+        "scan_page": 212,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Against Capitalism, Christianity, and America: The European New Right",
+        "scan_page": 215,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "8",
+        "printed_page_number": "207"
+      },
+      {
+        "title": "The Conservative Revolution",
+        "scan_page": 218,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "CARL SCHMITT",
+        "scan_page": 219,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "OSWALD SPENGLER",
+        "scan_page": 221,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "ERNST J\u00dcNGER",
+        "scan_page": 224,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "ARTHUR MOELLER VAN DEN BRUCK",
+        "scan_page": 227,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Ren\u00e9 Gu\u00e9non, Julius Evola, and the World of Tradition",
+        "scan_page": 230,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Alain de Benoist and GRECE",
+        "scan_page": 237,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Guillaume Faye and Archeofuturism",
+        "scan_page": 241,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Alexander Dugin and the Fourth Political Theory",
+        "scan_page": 243,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "The American Right's Reaction to the European New Right",
+        "scan_page": 246,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Conclusion",
+        "scan_page": 249,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Voices of the Radical Right: White Nationalism in the United States",
+        "scan_page": 251,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "9",
+        "printed_page_number": "243"
+      },
+      {
+        "title": "Racialism in the Progressive Era",
+        "scan_page": 256,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Science and Race Today",
+        "scan_page": 259,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "The Decline and Endurance of the White Racial Organizations",
+        "scan_page": 262,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "White Nationalism Online",
+        "scan_page": 267,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Kevin MacDonald on the Jews",
+        "scan_page": 270,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "The European New Right and White Nationalism in America",
+        "scan_page": 272,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Conclusion: The Crisis of Conservatism",
+        "scan_page": 275,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "10",
+        "printed_page_number": "267"
+      },
+      {
+        "title": "THE BUSH YEARS",
+        "scan_page": 278,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "THE DECLINE OF RELIGION",
+        "scan_page": 279,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "THE DECLINE OF MARRIAGE",
+        "scan_page": 281,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "THE GROWING NONWHITE POPULATION",
+        "scan_page": 283,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "DIMINISHING RETURNS FOR CONSERVATIVE POLICIES",
+        "scan_page": 287,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "THE INTELLECTUAL CRISIS",
+        "scan_page": 291,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Looking Ahead",
+        "scan_page": 296,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "Notes",
+        "scan_page": 302,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "295"
+      },
+      {
+        "title": "Index",
+        "scan_page": 346,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "339"
+      }
+    ],
+    "original_toc_count": 15,
+    "discovered_count": 79,
+    "total_entries": 94
+  }
+}

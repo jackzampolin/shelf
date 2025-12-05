@@ -1,0 +1,610 @@
+{
+  "scan_id": "bitter-revolution",
+  "enriched_toc": {
+    "entries": [
+      {
+        "title": "Preface",
+        "scan_page": 7,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "x"
+      },
+      {
+        "title": "List of Illustrations",
+        "scan_page": 10,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "xiii"
+      },
+      {
+        "title": "Chronology",
+        "scan_page": 12,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "xv"
+      },
+      {
+        "title": "Pronunciation, Transliterations, and Names",
+        "scan_page": 15,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "xviii"
+      },
+      {
+        "title": "SHOCK",
+        "scan_page": 17,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "I",
+        "printed_page_number": null
+      },
+      {
+        "title": "Flashpoint: 4 May 1919: The Making of a New China",
+        "scan_page": 18,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "1",
+        "printed_page_number": "3"
+      },
+      {
+        "title": "Why was May Fourth Important?",
+        "scan_page": 27,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "12"
+      },
+      {
+        "title": "The Fall of the Chinese Empire",
+        "scan_page": 41,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "26"
+      },
+      {
+        "title": "Uneasy Birth: The Chinese Republic",
+        "scan_page": 50,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "35"
+      },
+      {
+        "title": "A Tale of Two Cities: Beijing, Shanghai, and the May Fourth Generation",
+        "scan_page": 56,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "2",
+        "printed_page_number": "41"
+      },
+      {
+        "title": "Beijing: Intellectual Centre of the Movement",
+        "scan_page": 58,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "43"
+      },
+      {
+        "title": "Shanghai: China's Modern Challenge",
+        "scan_page": 64,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "49"
+      },
+      {
+        "title": "People: The May Fourth Generation",
+        "scan_page": 69,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "54"
+      },
+      {
+        "title": "Subcultures",
+        "scan_page": 80,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "65"
+      },
+      {
+        "title": "Experiments in Happiness: Life and Love in New Culture China",
+        "scan_page": 84,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "3",
+        "printed_page_number": "69"
+      },
+      {
+        "title": "New Classes, New Opportunities",
+        "scan_page": 85,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "70"
+      },
+      {
+        "title": "Print, Commerce, and Culture",
+        "scan_page": 91,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "76"
+      },
+      {
+        "title": "Love, Labour, and Liberty",
+        "scan_page": 92,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "77"
+      },
+      {
+        "title": "Ask Taofen!",
+        "scan_page": 95,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "80"
+      },
+      {
+        "title": "The May Fourth Entrepreneur",
+        "scan_page": 105,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "90"
+      },
+      {
+        "title": "Saving the Nation, Making a Profit",
+        "scan_page": 108,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "93"
+      },
+      {
+        "title": "End of an Era?",
+        "scan_page": 114,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "99"
+      },
+      {
+        "title": "Goodbye Confucius: New Culture, New Politics",
+        "scan_page": 117,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "4",
+        "printed_page_number": "102"
+      },
+      {
+        "title": "Iconoclasm",
+        "scan_page": 123,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "108"
+      },
+      {
+        "title": "Goodbye Confucius?",
+        "scan_page": 125,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "110"
+      },
+      {
+        "title": "China's Road to Nationalism",
+        "scan_page": 132,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "117"
+      },
+      {
+        "title": "Internationalism, Cosmopolitism, and Nationalism",
+        "scan_page": 138,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "123"
+      },
+      {
+        "title": "Looking East in Europe",
+        "scan_page": 142,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "127"
+      },
+      {
+        "title": "Not Just West and East: Thinking Beyond Europe",
+        "scan_page": 144,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "129"
+      },
+      {
+        "title": "Japan's Promise, Japan's Menace",
+        "scan_page": 148,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "133"
+      },
+      {
+        "title": "Party Politics",
+        "scan_page": 149,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "134"
+      },
+      {
+        "title": "The Communists",
+        "scan_page": 150,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "135"
+      },
+      {
+        "title": "The Nationalists",
+        "scan_page": 153,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "138"
+      },
+      {
+        "title": "Nationalists and Communists, United and Divided",
+        "scan_page": 157,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "142"
+      },
+      {
+        "title": "The Question of Woman",
+        "scan_page": 161,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "146"
+      },
+      {
+        "title": "Conclusion: Goodbye May Fourth?",
+        "scan_page": 164,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "149"
+      },
+      {
+        "title": "AFTERSHOCK",
+        "scan_page": 168,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "II",
+        "printed_page_number": null
+      },
+      {
+        "title": "A Land of Death: Darkness over China",
+        "scan_page": 169,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "5",
+        "printed_page_number": "155"
+      },
+      {
+        "title": "China Changes Shape, 1931-7",
+        "scan_page": 171,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "157"
+      },
+      {
+        "title": "The Choices of the May Fourth Generation",
+        "scan_page": 177,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "163"
+      },
+      {
+        "title": "China Falls Apart, 1937-45",
+        "scan_page": 181,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "167"
+      },
+      {
+        "title": "War and Confrontation",
+        "scan_page": 192,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "178"
+      },
+      {
+        "title": "The New World",
+        "scan_page": 195,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "181"
+      },
+      {
+        "title": "The Cold War",
+        "scan_page": 204,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "190"
+      },
+      {
+        "title": "The Great Leap Forward",
+        "scan_page": 208,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "194"
+      },
+      {
+        "title": "Conclusion: May Fourth in Abeyance",
+        "scan_page": 212,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "198"
+      },
+      {
+        "title": "Tomorrow the Whole World Will Be Red: The Cultural Revolution and the Distortions of May Fourth",
+        "scan_page": 214,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "6",
+        "printed_page_number": "200"
+      },
+      {
+        "title": "Considering the Cultural Revolution",
+        "scan_page": 221,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "207"
+      },
+      {
+        "title": "What was the Cultural Revolution?",
+        "scan_page": 224,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "210"
+      },
+      {
+        "title": "The Cold War and the Cultural Revolution",
+        "scan_page": 228,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "214"
+      },
+      {
+        "title": "Life and Death during the Red Guard Period",
+        "scan_page": 231,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "217"
+      },
+      {
+        "title": "Changing the Guard",
+        "scan_page": 240,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "226"
+      },
+      {
+        "title": "May Fourth or Not?",
+        "scan_page": 244,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "230"
+      },
+      {
+        "title": "The Cold War and the Romance of Technology",
+        "scan_page": 247,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "233"
+      },
+      {
+        "title": "Divisions: Red, Black, Men, Women",
+        "scan_page": 252,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "238"
+      },
+      {
+        "title": "Conclusion: A Strange May Fourth",
+        "scan_page": 254,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "240"
+      },
+      {
+        "title": "Ugly Chinamen and Dead Rivers: Reform and the 'New May Fourth'",
+        "scan_page": 258,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "7",
+        "printed_page_number": "244"
+      },
+      {
+        "title": "The Late Cold War",
+        "scan_page": 260,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "246"
+      },
+      {
+        "title": "Life and Liberty in the 'New Era'",
+        "scan_page": 262,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "248"
+      },
+      {
+        "title": "Xiahai: 'Jumping into the Sea' of the New Society",
+        "scan_page": 269,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "255"
+      },
+      {
+        "title": "What Sort of Crisis?",
+        "scan_page": 272,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "258"
+      },
+      {
+        "title": "The Culture Fever Debates",
+        "scan_page": 274,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "260"
+      },
+      {
+        "title": "The Ugly Chinaman and Hesbang",
+        "scan_page": 276,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "262"
+      },
+      {
+        "title": "Echoes of May Fourth: The Different Crises",
+        "scan_page": 283,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "269"
+      },
+      {
+        "title": "Tian'anmen and the End of an Era",
+        "scan_page": 286,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "272"
+      },
+      {
+        "title": "The Nature of the New Era: Towards Chinese Democracy?",
+        "scan_page": 294,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "280"
+      },
+      {
+        "title": "Learning to Let Go: The May Fourth Legacy in the New Millennium",
+        "scan_page": 299,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "8",
+        "printed_page_number": "285"
+      },
+      {
+        "title": "The Two Cities Revisited",
+        "scan_page": 303,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "289"
+      },
+      {
+        "title": "Coping with the Past",
+        "scan_page": 309,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "295"
+      },
+      {
+        "title": "New Thinking",
+        "scan_page": 315,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "301"
+      },
+      {
+        "title": "Across the Straits",
+        "scan_page": 319,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "305"
+      },
+      {
+        "title": "Searching for a New Story",
+        "scan_page": 322,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "308"
+      },
+      {
+        "title": "Guide to Further Reading",
+        "scan_page": 329,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "315"
+      },
+      {
+        "title": "Notes",
+        "scan_page": 339,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "325"
+      },
+      {
+        "title": "Index",
+        "scan_page": 359,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "345"
+      }
+    ],
+    "original_toc_count": 75,
+    "discovered_count": 0,
+    "total_entries": 75
+  }
+}

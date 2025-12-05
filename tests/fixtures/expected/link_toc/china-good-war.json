@@ -1,0 +1,98 @@
+{
+  "scan_id": "china-good-war",
+  "enriched_toc": {
+    "entries": [
+      {
+        "title": "War, Memory, and Nationalism in China",
+        "scan_page": 7,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "1"
+      },
+      {
+        "title": "Hot War, Cold War: China's Conflicts, 1937-1978",
+        "scan_page": 33,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "1",
+        "printed_page_number": "27"
+      },
+      {
+        "title": "History Wars: How Historical Research Shaped China's Politics",
+        "scan_page": 68,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "2",
+        "printed_page_number": "62"
+      },
+      {
+        "title": "Memory, Nostalgia, Subversion: How China's Public Sphere Embraced World War II",
+        "scan_page": 113,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "3",
+        "printed_page_number": "107"
+      },
+      {
+        "title": "Old Memories, New Media: Wartime History Online and Onscreen",
+        "scan_page": 150,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "4",
+        "printed_page_number": "144"
+      },
+      {
+        "title": "From Chongqing to Yan'an: Regional Memory and Wartime Identity",
+        "scan_page": 175,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "5",
+        "printed_page_number": "169"
+      },
+      {
+        "title": "The Cairo Syndrome: World War II and China's Contemporary International Relations",
+        "scan_page": 218,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "6",
+        "printed_page_number": "212"
+      },
+      {
+        "title": "China's Long Postwar",
+        "scan_page": 256,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "250"
+      },
+      {
+        "title": "Notes",
+        "scan_page": 268,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "263"
+      },
+      {
+        "title": "Acknowledgments",
+        "scan_page": 302,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "297"
+      },
+      {
+        "title": "Index",
+        "scan_page": 305,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "301"
+      }
+    ],
+    "original_toc_count": 11,
+    "discovered_count": 0,
+    "total_entries": 11
+  }
+}

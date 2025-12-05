@@ -1,0 +1,338 @@
+{
+  "scan_id": "asia-wars",
+  "enriched_toc": {
+    "entries": [
+      {
+        "title": "List of Maps",
+        "scan_page": 6,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "ix"
+      },
+      {
+        "title": "Acknowledgments",
+        "scan_page": 7,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "xi"
+      },
+      {
+        "title": "Technical Note",
+        "scan_page": 11,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "xv"
+      },
+      {
+        "title": "FEAR AND AMBITION: JAPAN, CHINA, AND RUSSIA",
+        "scan_page": 13,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "I",
+        "printed_page_number": null
+      },
+      {
+        "title": "Japan 1931\u20131936: The Containment of Russia and National Restoration",
+        "scan_page": 24,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "2",
+        "printed_page_number": "13"
+      },
+      {
+        "title": "Economic Depression and Communist Expansion",
+        "scan_page": 25,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "14"
+      },
+      {
+        "title": "State Building and Economic Development in Manchukuo",
+        "scan_page": 36,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "25"
+      },
+      {
+        "title": "Japan\u2019s Warlords Abroad and at Home",
+        "scan_page": 45,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "34"
+      },
+      {
+        "title": "China 1926\u20131936: Chaos and the Quest for the Mandate of Heaven",
+        "scan_page": 60,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "3",
+        "printed_page_number": "49"
+      },
+      {
+        "title": "The Reunification of China",
+        "scan_page": 61,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "50"
+      },
+      {
+        "title": "State Building during the Nanjing Decade",
+        "scan_page": 68,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "57"
+      },
+      {
+        "title": "The Dilemmas of Appeasement",
+        "scan_page": 81,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "70"
+      },
+      {
+        "title": "Russia 1917\u20131936: Impending Two-Front War and World Revolution",
+        "scan_page": 88,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "4",
+        "printed_page_number": "77"
+      },
+      {
+        "title": "The Russian Revolution and the Russian Empire",
+        "scan_page": 88,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "77"
+      },
+      {
+        "title": "Mounting Pressure for a Second United Front",
+        "scan_page": 101,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "90"
+      },
+      {
+        "title": "Preventing a Two-Front War",
+        "scan_page": 110,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "99"
+      },
+      {
+        "title": "NESTED WARS: A CIVIL WAR WITHIN A REGIONAL WAR WITHIN A GLOBAL WAR",
+        "scan_page": 117,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "II",
+        "printed_page_number": null
+      },
+      {
+        "title": "Flashback to 1911 and the Beginning of the Long Chinese Civil War",
+        "scan_page": 118,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "5",
+        "printed_page_number": "109"
+      },
+      {
+        "title": "Regional War: The Second Sino-Japanese War",
+        "scan_page": 131,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "6",
+        "printed_page_number": "123"
+      },
+      {
+        "title": "Japan in Search of a Quick Decisive Victory",
+        "scan_page": 133,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "125"
+      },
+      {
+        "title": "Operational Victory and Strategic Stalemate",
+        "scan_page": 146,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "138"
+      },
+      {
+        "title": "Insurgency and Pacification",
+        "scan_page": 158,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "150"
+      },
+      {
+        "title": "From a Limited to an Unlimited Policy Objective",
+        "scan_page": 166,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "158"
+      },
+      {
+        "title": "Global War: World War II",
+        "scan_page": 179,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "7",
+        "printed_page_number": "171"
+      },
+      {
+        "title": "The Pearl Harbor Solution to the China Quagmire",
+        "scan_page": 181,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "173"
+      },
+      {
+        "title": "A War of Many Fronts",
+        "scan_page": 194,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "186"
+      },
+      {
+        "title": "The Generals' War",
+        "scan_page": 204,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "196"
+      },
+      {
+        "title": "War Termination",
+        "scan_page": 212,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "204"
+      },
+      {
+        "title": "The Final Act of the Long Chinese Civil War",
+        "scan_page": 230,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "8",
+        "printed_page_number": "223"
+      },
+      {
+        "title": "State Building and Unbuilding",
+        "scan_page": 231,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "224"
+      },
+      {
+        "title": "Resumption of the Civil War",
+        "scan_page": 240,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "233"
+      },
+      {
+        "title": "The Manchurian Theater",
+        "scan_page": 249,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "242"
+      },
+      {
+        "title": "The Mandate of Heaven",
+        "scan_page": 263,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "256"
+      },
+      {
+        "title": "Conclusion: Civil War as the Prologue and Epilogue to Regional and Global Wars",
+        "scan_page": 278,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "9",
+        "printed_page_number": "271"
+      },
+      {
+        "title": "Fear, Ambition, Dilemmas, Nested Wars, and Pivotal Decisions",
+        "scan_page": 279,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "272"
+      },
+      {
+        "title": "The Rest of the Story",
+        "scan_page": 289,
+        "level": 3,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "282"
+      },
+      {
+        "title": "Chronology",
+        "scan_page": 307,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "301"
+      },
+      {
+        "title": "Introduction: The Asian Roots of World War II",
+        "scan_page": 319,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "1",
+        "printed_page_number": "3"
+      },
+      {
+        "title": "Notes",
+        "scan_page": 319,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "313"
+      },
+      {
+        "title": "Bibliography",
+        "scan_page": 420,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "415"
+      },
+      {
+        "title": "Index",
+        "scan_page": 473,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "469"
+      }
+    ],
+    "original_toc_count": 41,
+    "discovered_count": 0,
+    "total_entries": 41
+  }
+}

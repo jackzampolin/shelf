@@ -1,0 +1,410 @@
+{
+  "scan_id": "accidental-president",
+  "enriched_toc": {
+    "entries": [
+      {
+        "title": "Introduction",
+        "scan_page": 8,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "ix"
+      },
+      {
+        "title": "Timeline",
+        "scan_page": 11,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "xii"
+      },
+      {
+        "title": "1945: Truman's First Four Months",
+        "scan_page": 13,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": null,
+        "printed_page_number": null
+      },
+      {
+        "title": "April 12, 1945",
+        "scan_page": 16,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "I",
+        "printed_page_number": "1"
+      },
+      {
+        "title": "1",
+        "scan_page": 17,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "1",
+        "printed_page_number": null
+      },
+      {
+        "title": "2",
+        "scan_page": 28,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "2",
+        "printed_page_number": null
+      },
+      {
+        "title": "3",
+        "scan_page": 37,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "3",
+        "printed_page_number": null
+      },
+      {
+        "title": "4",
+        "scan_page": 49,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "4",
+        "printed_page_number": null
+      },
+      {
+        "title": "The Political Education of Harry S. Truman",
+        "scan_page": 53,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "II",
+        "printed_page_number": "39"
+      },
+      {
+        "title": "5",
+        "scan_page": 54,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "5",
+        "printed_page_number": null
+      },
+      {
+        "title": "6",
+        "scan_page": 60,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "6",
+        "printed_page_number": null
+      },
+      {
+        "title": "7",
+        "scan_page": 68,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "7",
+        "printed_page_number": null
+      },
+      {
+        "title": "8",
+        "scan_page": 75,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "8",
+        "printed_page_number": null
+      },
+      {
+        "title": "\"9",
+        "scan_page": 85,
+        "level": 1,
+        "source": "missing_found",
+        "entry_number": "9",
+        "printed_page_number": null
+      },
+      {
+        "title": "10",
+        "scan_page": 93,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "10",
+        "printed_page_number": null
+      },
+      {
+        "title": "11",
+        "scan_page": 104,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "11",
+        "printed_page_number": null
+      },
+      {
+        "title": "12",
+        "scan_page": 114,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "12",
+        "printed_page_number": null
+      },
+      {
+        "title": "13",
+        "scan_page": 120,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "13",
+        "printed_page_number": null
+      },
+      {
+        "title": "April-May 1945",
+        "scan_page": 128,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "III",
+        "printed_page_number": "115"
+      },
+      {
+        "title": "14",
+        "scan_page": 129,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "14",
+        "printed_page_number": null
+      },
+      {
+        "title": "15",
+        "scan_page": 141,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "15",
+        "printed_page_number": null
+      },
+      {
+        "title": "16",
+        "scan_page": 151,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "16",
+        "printed_page_number": null
+      },
+      {
+        "title": "17",
+        "scan_page": 158,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "17",
+        "printed_page_number": null
+      },
+      {
+        "title": "18",
+        "scan_page": 173,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "18",
+        "printed_page_number": null
+      },
+      {
+        "title": "19",
+        "scan_page": 180,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "19",
+        "printed_page_number": null
+      },
+      {
+        "title": "20",
+        "scan_page": 190,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "20",
+        "printed_page_number": null
+      },
+      {
+        "title": "21",
+        "scan_page": 196,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "21",
+        "printed_page_number": null
+      },
+      {
+        "title": "22",
+        "scan_page": 207,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "22",
+        "printed_page_number": null
+      },
+      {
+        "title": "23",
+        "scan_page": 223,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "23",
+        "printed_page_number": null
+      },
+      {
+        "title": "24",
+        "scan_page": 234,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "24",
+        "printed_page_number": null
+      },
+      {
+        "title": "25",
+        "scan_page": 240,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "25",
+        "printed_page_number": null
+      },
+      {
+        "title": "June-July 1945",
+        "scan_page": 248,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "IV",
+        "printed_page_number": "229"
+      },
+      {
+        "title": "26",
+        "scan_page": 249,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "26",
+        "printed_page_number": null
+      },
+      {
+        "title": "27",
+        "scan_page": 258,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "27",
+        "printed_page_number": null
+      },
+      {
+        "title": "28",
+        "scan_page": 265,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "28",
+        "printed_page_number": null
+      },
+      {
+        "title": "29",
+        "scan_page": 274,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "29",
+        "printed_page_number": null
+      },
+      {
+        "title": "30",
+        "scan_page": 285,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "30",
+        "printed_page_number": null
+      },
+      {
+        "title": "31",
+        "scan_page": 292,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "31",
+        "printed_page_number": null
+      },
+      {
+        "title": "32",
+        "scan_page": 301,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "32",
+        "printed_page_number": null
+      },
+      {
+        "title": "Little Boy, Fat Man, and Potsdam",
+        "scan_page": 310,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "V",
+        "printed_page_number": "293"
+      },
+      {
+        "title": "33",
+        "scan_page": 311,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "33",
+        "printed_page_number": null
+      },
+      {
+        "title": "\"34",
+        "scan_page": 320,
+        "level": 1,
+        "source": "missing_found",
+        "entry_number": "34",
+        "printed_page_number": null
+      },
+      {
+        "title": "35",
+        "scan_page": 329,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "35",
+        "printed_page_number": null
+      },
+      {
+        "title": "36",
+        "scan_page": 337,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "36",
+        "printed_page_number": null
+      },
+      {
+        "title": "37",
+        "scan_page": 346,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "37",
+        "printed_page_number": null
+      },
+      {
+        "title": "38",
+        "scan_page": 358,
+        "level": 2,
+        "source": "discovered",
+        "entry_number": "38",
+        "printed_page_number": null
+      },
+      {
+        "title": "Epilogue",
+        "scan_page": 371,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "355"
+      },
+      {
+        "title": "Acknowledgments",
+        "scan_page": 377,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "361"
+      },
+      {
+        "title": "Notes",
+        "scan_page": 379,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "363"
+      },
+      {
+        "title": "Index",
+        "scan_page": 439,
+        "level": 1,
+        "source": "toc",
+        "entry_number": null,
+        "printed_page_number": "423"
+      }
+    ],
+    "original_toc_count": 11,
+    "discovered_count": 39,
+    "total_entries": 50
+  }
+}

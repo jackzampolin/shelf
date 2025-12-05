@@ -2,7 +2,7 @@
 """
 Generate expected result fixtures for link-toc accuracy tests.
 
-Reads actual link-toc outputs from the library and creates fixture files.
+Reads enriched_toc.json from the library and creates fixture files.
 Run this after manually verifying link-toc outputs are correct.
 
 Usage:
@@ -34,18 +34,6 @@ from infra.pipeline.storage.library import Library
 FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "expected" / "link_toc"
 
 
-def strip_linked_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
-    """Strip verbose fields from linked entry, keeping comparison-relevant fields."""
-    return {
-        "entry_number": entry.get("entry_number"),
-        "title": entry.get("title", ""),
-        "level": entry.get("level", 1),
-        "level_name": entry.get("level_name"),
-        "printed_page_number": entry.get("printed_page_number"),
-        "scan_page": entry.get("scan_page"),
-    }
-
-
 def strip_enriched_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
     """Strip verbose fields from enriched entry, keeping comparison-relevant fields."""
     return {
@@ -71,51 +59,33 @@ def generate_fixture(book_id: str) -> Optional[Dict[str, Any]]:
     storage = BookStorage(book_id)
     stage_storage = storage.stage("link-toc")
 
-    # Check for required outputs
-    linked_toc_path = stage_storage.output_dir / "linked_toc.json"
+    # Check for enriched_toc output
     enriched_toc_path = stage_storage.output_dir / "enriched_toc.json"
-
-    if not linked_toc_path.exists():
-        print(f"  Skipping {book_id}: linked_toc.json not found")
-        return None
 
     if not enriched_toc_path.exists():
         print(f"  Skipping {book_id}: enriched_toc.json not found")
         return None
 
-    # Load outputs
-    linked_toc = stage_storage.load_file("linked_toc.json")
+    # Load output
     enriched_toc = stage_storage.load_file("enriched_toc.json")
 
-    if not linked_toc or not enriched_toc:
-        print(f"  Skipping {book_id}: failed to load outputs")
+    if not enriched_toc:
+        print(f"  Skipping {book_id}: failed to load enriched_toc.json")
         return None
 
     # Strip verbose fields
-    linked_entries = [strip_linked_entry(e) for e in linked_toc.get("entries", []) if e is not None]
     enriched_entries = [strip_enriched_entry(e) for e in enriched_toc.get("entries", [])]
 
-    # Count linked vs unlinked
-    linked_count = sum(1 for e in linked_entries if e.get("scan_page") is not None)
-    unlinked_count = len(linked_entries) - linked_count
-
-    # Count by source in enriched
+    # Count by source
     toc_count = sum(1 for e in enriched_entries if e.get("source") == "toc")
-    discovered_count = sum(1 for e in enriched_entries if e.get("source") == "discovered")
-    missing_found_count = sum(1 for e in enriched_entries if e.get("source") == "missing_found")
+    discovered_count = sum(1 for e in enriched_entries if e.get("source") in ("discovered", "missing_found"))
 
     fixture = {
         "scan_id": book_id,
-        "linked_toc": {
-            "entries": linked_entries,
-            "total_entries": len(linked_entries),
-            "linked_entries": linked_count,
-            "unlinked_entries": unlinked_count,
-        },
         "enriched_toc": {
             "entries": enriched_entries,
             "original_toc_count": toc_count,
-            "discovered_count": discovered_count + missing_found_count,
+            "discovered_count": discovered_count,
             "total_entries": len(enriched_entries),
         },
     }
@@ -129,10 +99,9 @@ def save_fixture(book_id: str, fixture: Dict[str, Any], dry_run: bool = False):
 
     if dry_run:
         print(f"  [DRY RUN] Would write: {fixture_path}")
-        print(f"    linked_toc: {fixture['linked_toc']['total_entries']} entries "
-              f"({fixture['linked_toc']['linked_entries']} linked)")
         print(f"    enriched_toc: {fixture['enriched_toc']['total_entries']} entries "
-              f"({fixture['enriched_toc']['discovered_count']} discovered)")
+              f"({fixture['enriched_toc']['original_toc_count']} toc, "
+              f"{fixture['enriched_toc']['discovered_count']} discovered)")
         return
 
     # Ensure directory exists
@@ -142,10 +111,9 @@ def save_fixture(book_id: str, fixture: Dict[str, Any], dry_run: bool = False):
         json.dump(fixture, f, indent=2)
 
     print(f"  Wrote: {fixture_path}")
-    print(f"    linked_toc: {fixture['linked_toc']['total_entries']} entries "
-          f"({fixture['linked_toc']['linked_entries']} linked)")
     print(f"    enriched_toc: {fixture['enriched_toc']['total_entries']} entries "
-          f"({fixture['enriched_toc']['discovered_count']} discovered)")
+          f"({fixture['enriched_toc']['original_toc_count']} toc, "
+          f"{fixture['enriched_toc']['discovered_count']} discovered)")
 
 
 def list_books_with_link_toc() -> List[str]:
@@ -159,10 +127,9 @@ def list_books_with_link_toc() -> List[str]:
         storage = BookStorage(book_id)
         stage_storage = storage.stage("link-toc")
 
-        linked_toc_path = stage_storage.output_dir / "linked_toc.json"
         enriched_toc_path = stage_storage.output_dir / "enriched_toc.json"
 
-        if linked_toc_path.exists() and enriched_toc_path.exists():
+        if enriched_toc_path.exists():
             books_with_output.append(book_id)
 
     return books_with_output
