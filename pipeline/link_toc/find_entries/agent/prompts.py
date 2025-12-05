@@ -47,13 +47,18 @@ Call write_result with:
 
 
 def build_finder_user_prompt(toc_entry: dict, toc_entry_index: int, total_pages: int) -> str:
-    title = toc_entry['title']
+    title = toc_entry.get('title', '')
+    entry_number = toc_entry.get('entry_number', '')
+    level_name = toc_entry.get('level_name') or f"level {toc_entry.get('level', '?')}"
     printed_page = toc_entry.get('printed_page_number') or toc_entry.get('page_number')
-    level = toc_entry.get('level_name') or f"level {toc_entry.get('level', '?')}"
 
-    parts = [f'Find: "{title}"']
+    # Give agent all the info: "Find: chapter 5 The Beginning"
+    search_parts = [level_name, entry_number, title]
+    search_term = ' '.join(p for p in search_parts if p).strip()
+
+    parts = [f'Find: "{search_term}"']
     if printed_page:
         parts.append(f"(printed page {printed_page}, but use scan pages)")
-    parts.append(f"[{level}, {total_pages} pages in book]")
+    parts.append(f"[{total_pages} pages in book]")
 
     return " ".join(parts)
