@@ -27,44 +27,12 @@
         "printed_page_number": "3"
       },
       {
-        "title": "PREAMBLE",
-        "scan_page": 14,
-        "level": 2,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
-        "title": "REVEILLE",
-        "scan_page": 22,
-        "level": 2,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
         "title": "First Call",
         "scan_page": 23,
         "level": 1,
         "source": "toc",
         "entry_number": null,
         "printed_page_number": "13"
-      },
-      {
-        "title": "PROLOGUE",
-        "scan_page": 23,
-        "level": 2,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
-        "title": "First Call",
-        "scan_page": 33,
-        "level": 2,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
       },
       {
         "title": "Ruffles and Flourishes (1880-1917)",
@@ -188,7 +156,7 @@
       }
     ],
     "original_toc_count": 19,
-    "discovered_count": 4,
-    "total_entries": 23
+    "discovered_count": 0,
+    "total_entries": 19
   }
 }

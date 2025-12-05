@@ -114,14 +114,7 @@
         "entry_number": "9",
         "printed_page_number": "127"
       },
-      {
-        "title": "CHAPTER NINE",
-        "scan_page": 131,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "9",
-        "printed_page_number": null
-      },
+
       {
         "title": "First Stars",
         "scan_page": 148,
@@ -130,14 +123,7 @@
         "entry_number": "10",
         "printed_page_number": "144"
       },
-      {
-        "title": "CHAPTER TEN",
-        "scan_page": 148,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "10",
-        "printed_page_number": null
-      },
+
       {
         "title": "Projecting Power",
         "scan_page": 165,
@@ -178,14 +164,7 @@
         "entry_number": "14",
         "printed_page_number": "228"
       },
-      {
-        "title": "CHAPTER FOURTEEN",
-        "scan_page": 230,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "FOURTEEN",
-        "printed_page_number": null
-      },
+
       {
         "title": "Deciding the Course",
         "scan_page": 275,
@@ -194,14 +173,7 @@
         "entry_number": "15",
         "printed_page_number": "257"
       },
-      {
-        "title": "CHAPTER FIFTEEN",
-        "scan_page": 275,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "15",
-        "printed_page_number": null
-      },
+
       {
         "title": "Fighting the Japanese\u2014and MacArthur",
         "scan_page": 297,
@@ -218,14 +190,7 @@
         "entry_number": "17",
         "printed_page_number": "306"
       },
-      {
-        "title": "CHAPTER SEVENTEEN",
-        "scan_page": 324,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "SEVENTEEN",
-        "printed_page_number": null
-      },
+
       {
         "title": "Take Care, My Boy",
         "scan_page": 353,
@@ -234,14 +199,7 @@
         "entry_number": "18",
         "printed_page_number": "335"
       },
-      {
-        "title": "CHAPTER EIGHTEEN",
-        "scan_page": 353,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "18",
-        "printed_page_number": null
-      },
+
       {
         "title": "Driving It Home",
         "scan_page": 364,
@@ -250,14 +208,7 @@
         "entry_number": "19",
         "printed_page_number": "346"
       },
-      {
-        "title": "CHAPTER NINETEEN",
-        "scan_page": 364,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "19",
-        "printed_page_number": null
-      },
+
       {
         "title": "The Crippling Blow: Submarines or Airpower?",
         "scan_page": 387,
@@ -282,14 +233,7 @@
         "entry_number": "22",
         "printed_page_number": "404"
       },
-      {
-        "title": "Chapter Twenty-Two",
-        "scan_page": 422,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "22",
-        "printed_page_number": null
-      },
+
       {
         "title": "Interim President",
         "scan_page": 441,
@@ -298,14 +242,7 @@
         "entry_number": "23",
         "printed_page_number": "423"
       },
-      {
-        "title": "CHAPTER TWENTY-THREE",
-        "scan_page": 441,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "TWENTY-THREE",
-        "printed_page_number": null
-      },
+
       {
         "title": "Toward Tokyo Bay",
         "scan_page": 458,
@@ -322,14 +259,7 @@
         "entry_number": "25",
         "printed_page_number": "458"
       },
-      {
-        "title": "CHAPTER TWENTY-FIVE",
-        "scan_page": 476,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "25",
-        "printed_page_number": null
-      },
+
       {
         "title": "Acknowledgments",
         "scan_page": 493,
@@ -444,7 +374,7 @@
       }
     ],
     "original_toc_count": 45,
-    "discovered_count": 10,
-    "total_entries": 55
+    "discovered_count": 0,
+    "total_entries": 45
   }
 }

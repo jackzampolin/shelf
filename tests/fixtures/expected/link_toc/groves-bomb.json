@@ -11,11 +11,11 @@
         "printed_page_number": "xiii"
       },
       {
-        "title": "PART I",
+        "title": "",
         "scan_page": 19,
-        "level": 2,
-        "source": "discovered",
-        "entry_number": null,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "I",
         "printed_page_number": null
       },
       {
@@ -155,11 +155,11 @@
         "printed_page_number": "230"
       },
       {
-        "title": "PART II",
+        "title": "",
         "scan_page": 276,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
+        "level": 1,
+        "source": "toc",
+        "entry_number": "II",
         "printed_page_number": null
       },
       {
@@ -227,9 +227,9 @@
         "printed_page_number": "341"
       },
       {
-        "title": "PART III",
+        "title": "",
         "scan_page": 380,
-        "level": 3,
+        "level": 1,
         "source": "discovered",
         "entry_number": "III",
         "printed_page_number": null
@@ -356,7 +356,7 @@
       }
     ],
     "original_toc_count": 34,
-    "discovered_count": 10,
+    "discovered_count": 7,
     "total_entries": 44
   }
 }

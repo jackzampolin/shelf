@@ -107,14 +107,6 @@
         "printed_page_number": "73"
       },
       {
-        "title": "PART TWO: DISASTER",
-        "scan_page": 99,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
         "title": "The Battle for Shanghai",
         "scan_page": 105,
         "level": 2,
@@ -131,28 +123,12 @@
         "printed_page_number": "103"
       },
       {
-        "title": "PART TWO: DISASTER",
-        "scan_page": 117,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "2",
-        "printed_page_number": null
-      },
-      {
         "title": "Massacre at Nanjing",
         "scan_page": 132,
         "level": 2,
         "source": "toc",
         "entry_number": "7",
         "printed_page_number": "119"
-      },
-      {
-        "title": "PART TWO: DISASTER",
-        "scan_page": 133,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
       },
       {
         "title": "The Battle of Taierzhuang",
@@ -169,14 +145,6 @@
         "source": "toc",
         "entry_number": "9",
         "printed_page_number": "155"
-      },
-      {
-        "title": "PART TWO: DISASTER",
-        "scan_page": 179,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
       },
       {
         "title": "Resisting Alone",
@@ -211,14 +179,6 @@
         "printed_page_number": "210"
       },
       {
-        "title": "PART THREE: RESISTING ALONE",
-        "scan_page": 243,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "3",
-        "printed_page_number": null
-      },
-      {
         "title": "The Poisoned Alliance",
         "scan_page": 255,
         "level": 1,
@@ -235,60 +195,12 @@
         "printed_page_number": "239"
       },
       {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 257,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 263,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 265,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
         "title": "Hunger in Henan",
         "scan_page": 281,
         "level": 2,
         "source": "toc",
         "entry_number": "14",
         "printed_page_number": "264"
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 285,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "FOUR",
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 287,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "FOUR",
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 291,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
       },
       {
         "title": "States of Terror",
@@ -299,60 +211,12 @@
         "printed_page_number": "282"
       },
       {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 301,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "FOUR",
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 311,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
         "title": "Conference at Cairo",
         "scan_page": 315,
         "level": 2,
         "source": "toc",
         "entry_number": "16",
         "printed_page_number": "298"
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 319,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 325,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 331,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 341,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
       },
       {
         "title": "One War, Two Fronts",
@@ -363,30 +227,6 @@
         "printed_page_number": "318"
       },
       {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 345,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 347,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 357,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
         "title": "Showdown with Stilwell",
         "scan_page": 363,
         "level": 2,
@@ -395,60 +235,12 @@
         "printed_page_number": "338"
       },
       {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 369,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "FOUR",
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 373,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "FOUR",
-        "printed_page_number": null
-      },
-      {
         "title": "Unexpected Victory",
         "scan_page": 376,
         "level": 2,
         "source": "toc",
         "entry_number": "19",
         "printed_page_number": "351"
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 377,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "4",
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 383,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": "4",
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 391,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
-        "title": "PART FOUR: THE POISONED ALLIANCE",
-        "scan_page": 395,
-        "level": 3,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
       },
       {
         "title": "The Enduring War",
@@ -484,7 +276,7 @@
       }
     ],
     "original_toc_count": 34,
-    "discovered_count": 26,
-    "total_entries": 60
+    "discovered_count": 0,
+    "total_entries": 34
   }
 }

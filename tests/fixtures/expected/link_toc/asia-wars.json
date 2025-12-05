@@ -35,6 +35,14 @@
         "printed_page_number": null
       },
       {
+        "title": "Introduction: The Asian Roots of World War II",
+        "scan_page": 14,
+        "level": 2,
+        "source": "toc",
+        "entry_number": "1",
+        "printed_page_number": "3"
+      },
+      {
         "title": "Japan 1931\u20131936: The Containment of Russia and National Restoration",
         "scan_page": 24,
         "level": 2,
@@ -297,14 +305,6 @@
         "source": "toc",
         "entry_number": null,
         "printed_page_number": "301"
-      },
-      {
-        "title": "Introduction: The Asian Roots of World War II",
-        "scan_page": 319,
-        "level": 2,
-        "source": "toc",
-        "entry_number": "1",
-        "printed_page_number": "3"
       },
       {
         "title": "Notes",

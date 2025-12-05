@@ -43,14 +43,6 @@
         "printed_page_number": null
       },
       {
-        "title": "NIMITZ AT WAR",
-        "scan_page": 22,
-        "level": 2,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
         "title": "CHAPTER 2",
         "scan_page": 29,
         "level": 2,
@@ -139,11 +131,11 @@
         "printed_page_number": null
       },
       {
-        "title": "CHAPTER 12</parameter name=",
+        "title": "CHAPTER 12",
         "scan_page": 187,
         "level": 1,
         "source": "missing_found",
-        "entry_number": "CHAPTER 12",
+        "entry_number": "12",
         "printed_page_number": null
       },
       {
@@ -211,11 +203,19 @@
         "printed_page_number": null
       },
       {
-        "title": "Chapter 20",
+        "title": "CHAPTER 20",
         "scan_page": 309,
         "level": 2,
         "source": "discovered",
         "entry_number": "20",
+        "printed_page_number": null
+      },
+      {
+        "title": "CHAPTER 21",
+        "scan_page": 328,
+        "level": 2,
+        "source": "missing_found",
+        "entry_number": "21",
         "printed_page_number": null
       },
       {

@@ -19,14 +19,6 @@
         "printed_page_number": "xii"
       },
       {
-        "title": "1945: Truman's First Four Months",
-        "scan_page": 13,
-        "level": 2,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
         "title": "April 12, 1945",
         "scan_page": 16,
         "level": 1,
@@ -107,9 +99,9 @@
         "printed_page_number": null
       },
       {
-        "title": "\"9",
+        "title": "9",
         "scan_page": 85,
-        "level": 1,
+        "level": 2,
         "source": "missing_found",
         "entry_number": "9",
         "printed_page_number": null
@@ -331,9 +323,9 @@
         "printed_page_number": null
       },
       {
-        "title": "\"34",
+        "title": "34",
         "scan_page": 320,
-        "level": 1,
+        "level": 2,
         "source": "missing_found",
         "entry_number": "34",
         "printed_page_number": null
@@ -404,7 +396,7 @@
       }
     ],
     "original_toc_count": 11,
-    "discovered_count": 39,
-    "total_entries": 50
+    "discovered_count": 38,
+    "total_entries": 49
   }
 }

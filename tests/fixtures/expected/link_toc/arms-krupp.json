@@ -11,14 +11,6 @@
         "printed_page_number": "3"
       },
       {
-        "title": "Prologue",
-        "scan_page": 14,
-        "level": 2,
-        "source": "discovered",
-        "entry_number": null,
-        "printed_page_number": null
-      },
-      {
         "title": "The Walled City",
         "scan_page": 34,
         "level": 1,
@@ -212,7 +204,7 @@
       },
       {
         "title": "Krupp . . . You Have Been Convicted",
-        "scan_page": 636,
+        "scan_page": 632,
         "level": 1,
         "source": "toc",
         "entry_number": "25",
@@ -284,7 +276,7 @@
       }
     ],
     "original_toc_count": 34,
-    "discovered_count": 1,
-    "total_entries": 35
+    "discovered_count": 0,
+    "total_entries": 34
   }
 }
