@@ -153,7 +153,9 @@ def list_books_with_link_toc() -> List[str]:
     library = Library()
     books_with_output = []
 
-    for book_id in library.list_books():
+    for book_info in library.list_books():
+        # Library.list_books() returns dicts with 'scan_id' key
+        book_id = book_info["scan_id"]
         storage = BookStorage(book_id)
         stage_storage = storage.stage("link-toc")
 
