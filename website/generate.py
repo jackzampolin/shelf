@@ -27,9 +27,18 @@ from infra.pipeline.registry import get_all_stage_metadata
 FIXED_CONTENT = {
     "project_name": "shelf",
     "tagline": "Scans to structured text",
-    "hero_description": "Transform scanned books into structured, searchable digital text with AI-powered OCR and intelligent document analysis.",
     "github_repo": "jackzampolin/shelf",
     "domain": "shelf.dev",
+
+    # Project background - the "why" behind shelf
+    "project_background": """Not every book is available as an audiobook. Military history, academic texts, out-of-print nonfiction—if you want to listen to them, you have to make them yourself.
+
+Raw OCR gets you text, but text mixed with garbage—page numbers read aloud, running headers interrupting every page, image captions scattered through the text, footnote numbers with no footnotes. The result is technically an audiobook, but not one you'd want to listen to.
+
+Getting something close to the quality of a professionally produced Audible audiobook—with no user discernible issues—turns out to be an unsolved problem. Those audiobooks have human editors. Getting that quality with software alone, with little to no human intervention, is the challenge shelf is designed to solve.""",
+
+    # Pipeline explanation - what shelf does with a scan
+    "pipeline_explanation": """Once you have a book scan (either from a sheet-fed scanner after cutting the spine, or a non-destructive overhead scanner), shelf runs it through a multi-stage AI pipeline. Each stage builds on the last: multiple OCR providers extract the text, LLMs classify and label the structure (body text vs headers vs footnotes vs page numbers), the table of contents is extracted and linked to actual pages, and finally clean ePub files are produced—text that flows when read aloud.""",
 }
 
 # The prompt template for Claude
@@ -38,15 +47,15 @@ PROMPT_TEMPLATE = '''You are generating the landing page HTML for shelf.dev.
 ## Fixed Content (use exactly as provided)
 - Project name: {project_name}
 - Tagline: {tagline}
-- Hero description: {hero_description}
-- GitHub repo: {github_repo}
 
-## Pipeline Stages (extracted from code)
+## Project Background (use this prose in the hero section)
+{project_background}
+
+## Pipeline Explanation (use this to introduce the pipeline section)
+{pipeline_explanation}
+
+## Pipeline Stages (extracted from code - show all stages with their phases)
 {stages_json}
-
-## GitHub Stats
-- Stars: {stars}
-- Open issues: {open_issues}
 
 ## Project Stats
 - Lines of Python: {loc}
@@ -60,12 +69,17 @@ PROMPT_TEMPLATE = '''You are generating the landing page HTML for shelf.dev.
 - Self-contained HTML (all CSS inline, no external files except fonts)
 
 ## Required Sections
-1. **Navigation** - Logo, links to sections, GitHub button
-2. **Hero** - Badge "Open Source", tagline, description, CTA buttons
-3. **Pipeline** - Visual flow showing all {num_stages} stages with icons and descriptions
-4. **Features** - 6 feature cards derived from stage capabilities (AI OCR, structure detection, etc.)
-5. **Quick Start** - Terminal-style code block with install commands
-6. **Footer** - Links, copyright
+1. **Navigation** - Just the logo "shelf" on the left. No other nav links or buttons.
+2. **Hero** - The tagline "{tagline}" as the main heading, then the project_background prose below it. NO buttons (no "Get Started", no "Learn More", no GitHub links).
+3. **Pipeline** - First show the pipeline_explanation paragraph, then the visual flow of all {num_stages} stages. For each stage show the icon, name, description, and list its phases with their descriptions.
+4. **Footer** - Simple footer with just "shelf" and the current year. No external links.
+
+## What NOT to include
+- No GitHub links or buttons anywhere
+- No "Open Source" badges or messaging
+- No "Get Started" or "Learn More" buttons
+- No Quick Start / installation instructions
+- No feature cards section (the pipeline IS the features)
 
 ## Output
 Generate ONLY valid HTML. No markdown, no explanation, no code fences.
