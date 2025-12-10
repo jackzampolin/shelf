@@ -4,345 +4,219 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>shelf - Scans to structured text</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-
+        
         body {
             font-family: 'Inter', sans-serif;
             background-color: #0a0a0a;
             color: #ffffff;
             line-height: 1.6;
         }
-
+        
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 0 20px;
         }
-
+        
         /* Navigation */
         nav {
-            padding: 1rem 0;
-            border-bottom: 1px solid #1a1a1a;
+            padding: 2rem 0;
+            border-bottom: 1px solid #1f1f1f;
         }
-
+        
         .nav-content {
             display: flex;
-            justify-content: space-between;
             align-items: center;
         }
-
+        
         .logo {
-            font-weight: 700;
             font-size: 1.5rem;
-            color: #3b82f6;
-        }
-
-        .nav-links {
-            display: flex;
-            gap: 2rem;
-            list-style: none;
-        }
-
-        .nav-links a {
-            color: #d1d5db;
-            text-decoration: none;
-            transition: color 0.3s;
-        }
-
-        .nav-links a:hover {
-            color: #3b82f6;
-        }
-
-        .github-btn {
-            background: #1a1a1a;
-            color: #ffffff;
-            padding: 0.5rem 1rem;
-            border-radius: 0.375rem;
-            text-decoration: none;
-            transition: background 0.3s;
-        }
-
-        .github-btn:hover {
-            background: #2a2a2a;
-        }
-
-        /* Hero */
-        .hero {
-            text-align: center;
-            padding: 4rem 0;
-        }
-
-        .badge {
-            display: inline-block;
-            background: #1e3a8a;
-            color: #ffffff;
-            padding: 0.25rem 0.75rem;
-            border-radius: 1rem;
-            font-size: 0.875rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .hero h1 {
-            font-size: 3rem;
             font-weight: 700;
-            margin-bottom: 1rem;
-            color: #ffffff;
+            color: #3b82f6;
         }
-
-        .hero p {
-            font-size: 1.25rem;
-            color: #d1d5db;
-            margin-bottom: 2rem;
-            max-width: 600px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .cta-buttons {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-
-        .btn-primary {
-            background: #3b82f6;
-            color: #ffffff;
-            padding: 0.75rem 1.5rem;
-            border-radius: 0.375rem;
-            text-decoration: none;
-            font-weight: 600;
-            transition: background 0.3s;
-        }
-
-        .btn-primary:hover {
-            background: #2563eb;
-        }
-
-        .btn-secondary {
-            background: transparent;
-            color: #d1d5db;
-            padding: 0.75rem 1.5rem;
-            border: 1px solid #374151;
-            border-radius: 0.375rem;
-            text-decoration: none;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-
-        .btn-secondary:hover {
-            background: #1a1a1a;
-            color: #ffffff;
-        }
-
-        /* Pipeline */
-        .pipeline {
-            padding: 4rem 0;
-            background: #0f0f0f;
-        }
-
-        .section-title {
+        
+        /* Hero Section */
+        .hero {
+            padding: 6rem 0;
             text-align: center;
+        }
+        
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 2rem;
+            background: linear-gradient(135deg, #ffffff 0%, #a0a0a0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .hero-description {
+            max-width: 800px;
+            margin: 0 auto;
+            font-size: 1.125rem;
+            color: #d1d5db;
+            text-align: left;
+        }
+        
+        /* Pipeline Section */
+        .pipeline {
+            padding: 6rem 0;
+        }
+        
+        .pipeline h2 {
             font-size: 2.5rem;
             font-weight: 700;
+            text-align: center;
             margin-bottom: 3rem;
+            color: #3b82f6;
         }
-
+        
+        .pipeline-intro {
+            max-width: 800px;
+            margin: 0 auto 4rem auto;
+            font-size: 1.125rem;
+            color: #d1d5db;
+            text-align: center;
+        }
+        
         .pipeline-flow {
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 2rem;
+            margin-top: 3rem;
         }
-
-        .pipeline-stage {
-            background: #1a1a1a;
-            border-radius: 0.5rem;
-            padding: 1.5rem;
-            position: relative;
+        
+        .stage-card {
+            background: #111111;
+            border: 1px solid #1f1f1f;
+            border-radius: 12px;
+            padding: 2rem;
+            transition: transform 0.2s ease, border-color 0.2s ease;
         }
-
+        
+        .stage-card:hover {
+            transform: translateY(-4px);
+            border-color: #3b82f6;
+        }
+        
         .stage-header {
             display: flex;
             align-items: center;
-            gap: 1rem;
             margin-bottom: 1rem;
         }
-
+        
         .stage-icon {
             font-size: 2rem;
+            margin-right: 1rem;
         }
-
+        
         .stage-title {
             font-size: 1.25rem;
             font-weight: 600;
+            color: #ffffff;
         }
-
+        
         .stage-description {
-            color: #d1d5db;
-            margin-bottom: 1rem;
+            color: #9ca3af;
+            margin-bottom: 1.5rem;
         }
-
+        
         .phases {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
+            margin-top: 1.5rem;
         }
-
-        .phase {
-            background: #2a2a2a;
-            padding: 1rem;
-            border-radius: 0.375rem;
-        }
-
-        .phase-name {
+        
+        .phases-title {
+            font-size: 0.875rem;
             font-weight: 600;
             color: #3b82f6;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
-
+        
+        .phase-item {
+            margin-bottom: 0.75rem;
+            padding-left: 1rem;
+            border-left: 2px solid #1f1f1f;
+        }
+        
+        .phase-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #3b82f6;
+            margin-bottom: 0.25rem;
+        }
+        
         .phase-description {
             font-size: 0.875rem;
             color: #9ca3af;
         }
-
-        /* Features */
-        .features {
-            padding: 4rem 0;
-        }
-
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-        }
-
-        .feature-card {
-            background: #1a1a1a;
-            padding: 2rem;
-            border-radius: 0.5rem;
-            text-align: center;
-        }
-
-        .feature-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }
-
-        .feature-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-        }
-
-        .feature-description {
-            color: #d1d5db;
-        }
-
-        /* Quick Start */
-        .quick-start {
-            padding: 4rem 0;
-            background: #0f0f0f;
-        }
-
-        .terminal {
-            background: #000000;
-            border-radius: 0.5rem;
-            padding: 1.5rem;
-            font-family: 'JetBrains Mono', monospace;
-            margin-top: 2rem;
-            position: relative;
-        }
-
-        .terminal-header {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .terminal-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-        }
-
-        .dot-red { background: #ef4444; }
-        .dot-yellow { background: #eab308; }
-        .dot-green { background: #22c55e; }
-
-        .terminal-content {
-            color: #22c55e;
-        }
-
-        .terminal-line {
-            margin-bottom: 0.5rem;
-        }
-
-        .prompt {
-            color: #3b82f6;
-        }
-
+        
         /* Footer */
         footer {
+            border-top: 1px solid #1f1f1f;
             padding: 3rem 0;
-            border-top: 1px solid #1a1a1a;
             text-align: center;
         }
-
+        
         .footer-content {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 2rem;
-        }
-
-        .footer-links {
-            display: flex;
-            gap: 2rem;
-            list-style: none;
-        }
-
-        .footer-links a {
-            color: #9ca3af;
-            text-decoration: none;
-        }
-
-        .footer-links a:hover {
-            color: #3b82f6;
-        }
-
-        .copyright {
             color: #6b7280;
         }
-
-        /* Mobile Responsiveness */
+        
+        .footer-logo {
+            color: #3b82f6;
+            font-weight: 600;
+        }
+        
+        /* Responsive */
         @media (max-width: 768px) {
-            .nav-links {
-                display: none;
+            .hero h1 {
+                font-size: 2.5rem;
             }
-
+            
+            .hero-description {
+                font-size: 1rem;
+            }
+            
+            .pipeline h2 {
+                font-size: 2rem;
+            }
+            
+            .pipeline-flow {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                padding: 0 16px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .hero {
+                padding: 4rem 0;
+            }
+            
             .hero h1 {
                 font-size: 2rem;
             }
-
-            .cta-buttons {
-                flex-direction: column;
-                align-items: center;
+            
+            .pipeline {
+                padding: 4rem 0;
             }
-
-            .footer-content {
-                flex-direction: column;
-                text-align: center;
-            }
-
-            .phases {
-                grid-template-columns: 1fr;
+            
+            .stage-card {
+                padding: 1.5rem;
             }
         }
     </style>
@@ -352,158 +226,175 @@
         <div class="container">
             <div class="nav-content">
                 <div class="logo">shelf</div>
-                <ul class="nav-links">
-                    <li><a href="#pipeline">Pipeline</a></li>
-                    <li><a href="#features">Features</a></li>
-                    <li><a href="#quick-start">Quick Start</a></li>
-                </ul>
-                <a href="https://github.com/jackzampolin/shelf" class="github-btn">GitHub</a>
             </div>
         </div>
     </nav>
 
     <section class="hero">
         <div class="container">
-            <span class="badge">Open Source</span>
             <h1>Scans to structured text</h1>
-            <p>Transform scanned books into structured, searchable digital text with AI-powered OCR and intelligent document analysis.</p>
-            <div class="cta-buttons">
-                <a href="https://github.com/jackzampolin/shelf" class="btn-primary">Get Started</a>
-                <a href="#pipeline" class="btn-secondary">Learn More</a>
+            <div class="hero-description">
+                <p>Not every book is available as an audiobook. Military history, academic texts, out-of-print nonfiction—if you want to listen to them, you have to make them yourself.</p>
+                
+                <p>Raw OCR gets you text, but text mixed with garbage—page numbers read aloud, running headers interrupting every page, image captions scattered through the text, footnote numbers with no footnotes. The result is technically an audiobook, but not one you'd want to listen to.</p>
+                
+                <p>Getting something close to the quality of a professionally produced Audible audiobook—with no user discernible issues—turns out to be an unsolved problem. Those audiobooks have human editors. Getting that quality with software alone, with little to no human intervention, is the challenge shelf is designed to solve.</p>
             </div>
         </div>
     </section>
 
-    <section id="pipeline" class="pipeline">
+    <section class="pipeline">
         <div class="container">
-            <h2 class="section-title">Processing Pipeline</h2>
+            <h2>Pipeline</h2>
+            <div class="pipeline-intro">
+                <p>Once you have a book scan (either from a sheet-fed scanner after cutting the spine, or a non-destructive overhead scanner), shelf runs it through a multi-stage AI pipeline. Each stage builds on the last: multiple OCR providers extract the text, LLMs classify and label the structure (body text vs headers vs footnotes vs page numbers), the table of contents is extracted and linked to actual pages, and finally clean ePub files are produced—text that flows when read aloud.</p>
+            </div>
+            
             <div class="pipeline-flow">
-                <div class="pipeline-stage">
+                <div class="stage-card">
                     <div class="stage-header">
-                        <span class="stage-icon">📷</span>
-                        <h3 class="stage-title">OCR Pages</h3>
+                        <div class="stage-icon">📷</div>
+                        <div class="stage-title">OCR Pages</div>
                     </div>
-                    <p class="stage-description">Extract text from scanned page images using vision AI models</p>
+                    <div class="stage-description">
+                        Extract text from scanned page images using vision AI models
+                    </div>
                     <div class="phases">
-                        <div class="phase">
+                        <div class="phases-title">Phases</div>
+                        <div class="phase-item">
                             <div class="phase-name">mistral</div>
                             <div class="phase-description">Extract text using Mistral vision model</div>
                         </div>
-                        <div class="phase">
+                        <div class="phase-item">
                             <div class="phase-name">olm</div>
                             <div class="phase-description">Extract text using OLM OCR model</div>
                         </div>
-                        <div class="phase">
+                        <div class="phase-item">
                             <div class="phase-name">paddle</div>
                             <div class="phase-description">Extract text using PaddleOCR</div>
                         </div>
-                        <div class="phase">
+                        <div class="phase-item">
                             <div class="phase-name">blend</div>
                             <div class="phase-description">Combine OCR outputs into best-quality text</div>
                         </div>
                     </div>
                 </div>
-
-                <div class="pipeline-stage">
+                
+                <div class="stage-card">
                     <div class="stage-header">
-                        <span class="stage-icon">🏷️</span>
-                        <h3 class="stage-title">Label Structure</h3>
+                        <div class="stage-icon">🏷️</div>
+                        <div class="stage-title">Label Structure</div>
                     </div>
-                    <p class="stage-description">Classify content blocks as body text, headers, footnotes, or page numbers</p>
+                    <div class="stage-description">
+                        Classify content blocks as body text, headers, footnotes, or page numbers
+                    </div>
                     <div class="phases">
-                        <div class="phase">
+                        <div class="phases-title">Phases</div>
+                        <div class="phase-item">
                             <div class="phase-name">mechanical</div>
                             <div class="phase-description">Extract patterns using regex and heuristics</div>
                         </div>
-                        <div class="phase">
+                        <div class="phase-item">
                             <div class="phase-name">unified</div>
                             <div class="phase-description">Classify page elements with vision LLM</div>
                         </div>
-                        <div class="phase">
+                        <div class="phase-item">
                             <div class="phase-name">gap_analysis</div>
                             <div class="phase-description">Identify pages with missing or uncertain labels</div>
                         </div>
-                        <div class="phase">
+                        <div class="phase-item">
                             <div class="phase-name">agent_healing</div>
                             <div class="phase-description">Fix classification gaps using LLM agent</div>
                         </div>
                     </div>
                 </div>
-
-                <div class="pipeline-stage">
+                
+                <div class="stage-card">
                     <div class="stage-header">
-                        <span class="stage-icon">📑</span>
-                        <h3 class="stage-title">Extract ToC</h3>
+                        <div class="stage-icon">📑</div>
+                        <div class="stage-title">Extract ToC</div>
                     </div>
-                    <p class="stage-description">Identify and extract the table of contents from OCR output</p>
+                    <div class="stage-description">
+                        Identify and extract the table of contents from OCR output
+                    </div>
                     <div class="phases">
-                        <div class="phase">
+                        <div class="phases-title">Phases</div>
+                        <div class="phase-item">
                             <div class="phase-name">find</div>
                             <div class="phase-description">Locate ToC pages using vision agent</div>
                         </div>
-                        <div class="phase">
+                        <div class="phase-item">
                             <div class="phase-name">extract</div>
                             <div class="phase-description">Parse ToC entries from identified pages</div>
                         </div>
                     </div>
                 </div>
-
-                <div class="pipeline-stage">
+                
+                <div class="stage-card">
                     <div class="stage-header">
-                        <span class="stage-icon">🔗</span>
-                        <h3 class="stage-title">Link ToC</h3>
+                        <div class="stage-icon">🔗</div>
+                        <div class="stage-title">Link ToC</div>
                     </div>
-                    <p class="stage-description">Map table of contents entries to their corresponding page numbers</p>
+                    <div class="stage-description">
+                        Map table of contents entries to their corresponding page numbers
+                    </div>
                     <div class="phases">
-                        <div class="phase">
+                        <div class="phases-title">Phases</div>
+                        <div class="phase-item">
                             <div class="phase-name">find_entries</div>
                             <div class="phase-description">Locate each ToC entry in page content</div>
                         </div>
-                        <div class="phase">
+                        <div class="phase-item">
                             <div class="phase-name">pattern</div>
                             <div class="phase-description">Analyze heading patterns to find candidates</div>
                         </div>
-                        <div class="phase">
+                        <div class="phase-item">
                             <div class="phase-name">evaluation</div>
                             <div class="phase-description">Evaluate candidate headings with vision LLM</div>
                         </div>
-                        <div class="phase">
+                        <div class="phase-item">
                             <div class="phase-name">merge</div>
                             <div class="phase-description">Merge results into enriched ToC</div>
                         </div>
                     </div>
                 </div>
-
-                <div class="pipeline-stage">
+                
+                <div class="stage-card">
                     <div class="stage-header">
-                        <span class="stage-icon">🏗️</span>
-                        <h3 class="stage-title">Build Structure</h3>
+                        <div class="stage-icon">🏗️</div>
+                        <div class="stage-title">Build Structure</div>
                     </div>
-                    <p class="stage-description">Assemble unified document structure with chapter text and metadata</p>
+                    <div class="stage-description">
+                        Assemble unified document structure with chapter text and metadata
+                    </div>
                     <div class="phases">
-                        <div class="phase">
+                        <div class="phases-title">Phases</div>
+                        <div class="phase-item">
                             <div class="phase-name">build_structure</div>
                             <div class="phase-description">Build document skeleton from ToC and detected headings</div>
                         </div>
-                        <div class="phase">
+                        <div class="phase-item">
                             <div class="phase-name">polish_entries</div>
                             <div class="phase-description">Extract and polish chapter text with LLM (parallel)</div>
                         </div>
-                        <div class="phase">
+                        <div class="phase-item">
                             <div class="phase-name">merge</div>
                             <div class="phase-description">Merge polished entries into final structure.json</div>
                         </div>
                     </div>
                 </div>
-
-                <div class="pipeline-stage">
+                
+                <div class="stage-card">
                     <div class="stage-header">
-                        <span class="stage-icon">📖</span>
-                        <h3 class="stage-title">Generate Output</h3>
+                        <div class="stage-icon">📖</div>
+                        <div class="stage-title">Generate Output</div>
                     </div>
-                    <p class="stage-description">Create ePub files, audiobook scripts, or structured API output</p>
+                    <div class="stage-description">
+                        Create ePub files, audiobook scripts, or structured API output
+                    </div>
                     <div class="phases">
-                        <div class="phase">
+                        <div class="phases-title">Phases</div>
+                        <div class="phase-item">
                             <div class="phase-name">generate_epub</div>
                             <div class="phase-description">Build and validate ePub 3.0 file</div>
                         </div>
@@ -513,75 +404,10 @@
         </div>
     </section>
 
-    <section id="features" class="features">
-        <div class="container">
-            <h2 class="section-title">Features</h2>
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">🤖</div>
-                    <h3 class="feature-title">AI-Powered OCR</h3>
-                    <p class="feature-description">Multiple vision models including Mistral, OLM, and PaddleOCR work together to extract the highest quality text from scanned pages.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🧠</div>
-                    <h3 class="feature-title">Intelligent Structure Detection</h3>
-                    <p class="feature-description">Automatically classify content as headers, body text, footnotes, and page numbers using advanced pattern recognition.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">📚</div>
-                    <h3 class="feature-title">Table of Contents Extraction</h3>
-                    <p class="feature-description">Locate, extract, and link table of contents to create a navigable document structure.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🔧</div>
-                    <h3 class="feature-title">Self-Healing Pipeline</h3>
-                    <p class="feature-description">Agent-based healing automatically identifies and fixes gaps in document classification and structure.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">📱</div>
-                    <h3 class="feature-title">Multiple Output Formats</h3>
-                    <p class="feature-description">Generate ePub files, structured JSON, or audiobook scripts from your processed documents.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
-                    <h3 class="feature-title">Parallel Processing</h3>
-                    <p class="feature-description">Built with performance in mind, processing multiple stages and chapters in parallel for maximum efficiency.</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section id="quick-start" class="quick-start">
-        <div class="container">
-            <h2 class="section-title">Quick Start</h2>
-            <div class="terminal">
-                <div class="terminal-header">
-                    <div class="terminal-dot dot-red"></div>
-                    <div class="terminal-dot dot-yellow"></div>
-                    <div class="terminal-dot dot-green"></div>
-                </div>
-                <div class="terminal-content">
-                    <div class="terminal-line"><span class="prompt">$</span> git clone https://github.com/jackzampolin/shelf.git</div>
-                    <div class="terminal-line"><span class="prompt">$</span> cd shelf</div>
-                    <div class="terminal-line"><span class="prompt">$</span> pip install -r requirements.txt</div>
-                    <div class="terminal-line"><span class="prompt">$</span> python -m shelf.cli process /path/to/scanned/pages</div>
-                    <div class="terminal-line">✓ Processing complete! Generated structure.json and output.epub</div>
-                </div>
-            </div>
-        </div>
-    </section>
-
     <footer>
         <div class="container">
             <div class="footer-content">
-                <ul class="footer-links">
-                    <li><a href="https://github.com/jackzampolin/shelf">GitHub</a></li>
-                    <li><a href="https://github.com/jackzampolin/shelf/issues">Issues</a></li>
-                    <li><a href="https://github.com/jackzampolin/shelf/blob/main/README.md">Documentation</a></li>
-                </ul>
-                <div class="copyright">
-                    © 2024 shelf. Open source project with 24,770 lines of Python across 6 processing stages.
-                </div>
+                <span class="footer-logo">shelf</span> © 2024
             </div>
         </div>
     </footer>
