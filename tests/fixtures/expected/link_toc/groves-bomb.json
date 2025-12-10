@@ -4,7 +4,7 @@
     "entries": [
       {
         "title": "FOREWORD",
-        "scan_page": 15,
+        "scan_page": 13,
         "level": 1,
         "source": "toc",
         "entry_number": null,
@@ -230,7 +230,7 @@
         "title": "",
         "scan_page": 380,
         "level": 1,
-        "source": "discovered",
+        "source": "toc",
         "entry_number": "III",
         "printed_page_number": null
       },

@@ -346,10 +346,10 @@ def compare_book(book_id: str) -> BookComparison:
 
         comparison = compare_enriched_toc(expected, actual_enriched)
 
-        # Success = high accuracy
+        # Success = perfect accuracy
         success = (
-            comparison.toc_accuracy >= 0.95 and
-            comparison.discovered_accuracy >= 0.90
+            comparison.toc_accuracy >= 1.0 and
+            comparison.discovered_accuracy >= 1.0
         )
 
         return BookComparison(
@@ -373,11 +373,11 @@ def print_book_result(result: BookComparison, verbose: bool = False):
     print(f"{'='*70}")
 
     if result.error:
-        print(f"\n  ERROR: {result.error}")
+        print(f"\n❌ ERROR: {result.error}")
         return
 
     c = result.comparison
-    print(f"\nOVERALL: {'PASS' if result.success else 'FAIL'}")
+    print(f"\nOVERALL: {'✅ PASS' if result.success else '❌ FAIL'}")
     print(f"BLENDED ACCURACY: {c.blended_accuracy*100:.1f}%")
 
     print(f"\nENTRIES:")
@@ -432,7 +432,7 @@ def compare_all_books(failures_only: bool = False, verbose: bool = False):
         results.append(result)
 
         # Print progress
-        status = "PASS" if result.success else "FAIL"
+        status = "✅" if result.success else "❌"
         if result.comparison:
             c = result.comparison
             print(f"  {status} {book_id}: {c.blended_accuracy*100:.0f}% "
@@ -476,10 +476,10 @@ def compare_all_books(failures_only: bool = False, verbose: bool = False):
                 print_book_result(result, verbose)
             else:
                 if result.error:
-                    print(f"  FAIL {result.book_id}: {result.error}")
+                    print(f"  ❌ {result.book_id}: {result.error}")
                 elif result.comparison:
                     c = result.comparison
-                    print(f"  FAIL {result.book_id}: toc={c.toc_accuracy*100:.0f}%, "
+                    print(f"  ❌ {result.book_id}: toc={c.toc_accuracy*100:.0f}%, "
                           f"disc={c.discovered_accuracy*100:.0f}%, "
                           f"missing={c.missing}, extra={c.extra}")
 

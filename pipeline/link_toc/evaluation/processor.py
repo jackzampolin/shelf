@@ -6,10 +6,51 @@ from infra.llm.agent import AgentConfig, AgentBatchConfig, AgentBatchClient
 from infra.pipeline.status import PhaseStatusTracker
 from infra.config import Config
 
-from ..schemas import PatternAnalysis, HeadingDecision, MissingCandidateHeading
+from ..schemas import PatternAnalysis, HeadingDecision, MissingEntry, DiscoveredPattern
 from .request_builder import prepare_evaluation_request
 from .result_handler import create_evaluation_handler
 from .agent import MissingHeadingSearchTools, SEARCHER_SYSTEM_PROMPT, build_searcher_user_prompt
+
+
+def _extract_missing_entries(patterns: List[DiscoveredPattern], body_range: Tuple[int, int]) -> List[MissingEntry]:
+    """Extract all missing entries from discovered patterns, enriched with parent context."""
+    missing = []
+    body_pages = body_range[1] - body_range[0] + 1
+
+    for pattern in patterns:
+        if pattern.pattern_type == "sequential" and pattern.action == "include":
+            # Calculate pattern stats
+            pattern_desc = f"{pattern.level_name or 'entries'} {pattern.range_start}-{pattern.range_end}"
+
+            # Estimate expected count from range
+            try:
+                start = int(pattern.range_start) if pattern.range_start.isdigit() else 1
+                end = int(pattern.range_end) if pattern.range_end.isdigit() else start
+                expected = end - start + 1
+            except (ValueError, AttributeError):
+                expected = None
+
+            # Found count from confidence
+            found = None
+            if pattern.confidence and expected:
+                found = int(pattern.confidence * expected)
+
+            # Avg pages per entry
+            avg_pages = body_pages // expected if expected else None
+
+            for entry in pattern.missing_entries:
+                enriched = MissingEntry(
+                    identifier=entry.identifier,
+                    predicted_page_range=entry.predicted_page_range,
+                    level_name=entry.level_name or pattern.level_name,
+                    level=entry.level or pattern.level,
+                    pattern_description=pattern_desc,
+                    pattern_found=found,
+                    pattern_expected=expected,
+                    avg_pages_per_entry=avg_pages,
+                )
+                missing.append(enriched)
+    return missing
 
 
 def is_in_excluded_range(page_num: int, excluded_ranges: list) -> bool:
@@ -20,7 +61,7 @@ def is_in_excluded_range(page_num: int, excluded_ranges: list) -> bool:
 
 
 def _get_excluded_pages_for_candidate(
-    missing: MissingCandidateHeading,
+    missing: MissingEntry,
     excluded_ranges: list,
     stage_storage
 ) -> List[int]:
@@ -46,7 +87,7 @@ def search_missing_candidates(
     logger = tracker.logger
     stage_storage = tracker.stage_storage
 
-    missing_candidates = pattern.missing_candidate_headings
+    missing_candidates = _extract_missing_entries(pattern.discovered_patterns, pattern.body_range)
     if not missing_candidates:
         return 0
 
@@ -109,13 +150,20 @@ def search_missing_candidates(
     for agent_result, tools, missing in zip(batch_result.results, tools_list, candidates_to_search):
         result_data = tools._pending_result
 
+        # Build title from pattern context (e.g., "Chapter 9" not raw OCR)
+        if missing.level_name:
+            title = f"{missing.level_name.title()} {missing.identifier}"
+        else:
+            title = missing.identifier
+        level = missing.level or 1
+
         if result_data and result_data.get("found") and result_data.get("scan_page"):
             decision = HeadingDecision(
                 scan_page=result_data["scan_page"],
-                heading_text=result_data.get("heading_text", missing.identifier),
+                heading_text=title,
                 include=True,
-                title=result_data.get("heading_text", missing.identifier),
-                level=1,
+                title=title,
+                level=level,
                 entry_number=missing.identifier,
                 reasoning=f"Found heading '{missing.identifier}' in search range. {result_data.get('reasoning', '')}"
             )
@@ -131,10 +179,10 @@ def search_missing_candidates(
 
             decision = HeadingDecision(
                 scan_page=None,
-                heading_text=missing.identifier,
+                heading_text=title,
                 include=False,
-                title=missing.identifier,
-                level=1,
+                title=title,
+                level=level,
                 entry_number=missing.identifier,
                 reasoning=f"Searched range {missing.predicted_page_range} but not found. {reason}"
             )
@@ -195,7 +243,8 @@ def evaluate_candidates(
             logger.info(f"Excluded {excluded_count} candidates in excluded page ranges")
 
     has_candidates = len(candidates_to_eval) > 0
-    has_missing = len(pattern.missing_candidate_headings) > 0
+    missing_entries = _extract_missing_entries(pattern.discovered_patterns, pattern.body_range)
+    has_missing = len(missing_entries) > 0
 
     if not has_candidates and not has_missing:
         logger.info("No candidate headings and no missing predictions - nothing to evaluate")
@@ -206,7 +255,7 @@ def evaluate_candidates(
     if candidates_to_eval:
         logger.info(f"Evaluating {len(candidates_to_eval)} candidate headings with vision...")
 
-        observations = pattern.observations
+        patterns = pattern.discovered_patterns
         toc_summary = f"Body range: pages {pattern.body_range[0]}-{pattern.body_range[1]}"
 
         # Build list of (index, candidate) for all non-excluded candidates
@@ -224,7 +273,7 @@ def evaluate_candidates(
                 item=item,
                 candidate=candidates_by_index[item],
                 storage=storage,
-                observations=observations,
+                patterns=patterns,
                 toc_summary=toc_summary,
                 toc_entries_by_page=toc_entries_by_page
             ),
@@ -260,7 +309,7 @@ def evaluate_candidates(
                 missing_included += 1
 
         logger.info(f"Evaluation complete: {included} candidates included, {excluded} excluded")
-        if missing_included > 0 or pattern.missing_candidate_headings:
-            logger.info(f"Missing heading search: {missing_included}/{len(pattern.missing_candidate_headings)} candidates found")
+        if missing_included > 0 or missing_entries:
+            logger.info(f"Missing heading search: {missing_included}/{len(missing_entries)} candidates found")
 
     return result

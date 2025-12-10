@@ -13,7 +13,8 @@ You have four tools. They complement each other:
    - Shows where text appears across the ENTIRE book
    - KEY INSIGHT: Running headers create clusters. Books repeat chapter titles at the top of every page.
    - If "Chapter V" appears on pages 45-62, page 45 is the chapter START
-   - First page of a dense cluster = chapter start
+   - CAUTION: Dense clusters can also be body text mentions, not just running headers
+   - Always verify the first match has the CHAPTER HEADING (number + title), not just a text mention
 
 3. get_page_ocr → Verify candidates
    - Read actual text before committing
@@ -33,7 +34,15 @@ You have four tools. They complement each other:
 </workflow>
 
 <patterns>
-Density Pattern: grep shows pages 45-62 all have matches → chapter starts at 45
+Density Pattern: grep shows pages 45-62 all have matches → chapter likely starts at 45
+  - BUT verify page 45 has the chapter HEADING (number + title at top), not just a text mention
+  - If page 45 is mid-paragraph, check earlier pages for the actual heading
+
+Chapter Start Signs:
+  - Chapter number appears prominently (e.g., "25", "CHAPTER V", "FÜNFUNDZWANZIG")
+  - New section begins (not continuation of previous paragraph)
+  - Heading formatting (centered, bold, larger text)
+
 Sequence Pattern: headings show VII → ??? → IX → the gap is VIII
 OCR Error Pattern: "Chapter Vil" is probably "Chapter VII" - use vision to verify
 Not Found: No matches in grep, no heading matches → report scan_page: null

@@ -72,6 +72,18 @@ class MissingHeadingSearchTools(AgentTools):
             {
                 "type": "function",
                 "function": {
+                    "name": "get_range_ocr",
+                    "description": "Get OCR text for entire search range. Use to find chapter breaks from content flow when grep fails.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "view_page_image",
                     "description": "View page image. Use when OCR is unclear.",
                     "parameters": {
@@ -109,6 +121,8 @@ class MissingHeadingSearchTools(AgentTools):
             return self._grep_text(tool_input["query"])
         elif tool_name == "get_page_ocr":
             return self._get_page_ocr(tool_input["page_num"])
+        elif tool_name == "get_range_ocr":
+            return self._get_range_ocr()
         elif tool_name == "view_page_image":
             return self._view_page_image(tool_input["page_num"])
         elif tool_name == "write_result":
@@ -158,6 +172,36 @@ class MissingHeadingSearchTools(AgentTools):
             "ocr_text": get_page_ocr(page_num, self.storage, self.logger),
         }, indent=2)
 
+    def _get_range_ocr(self) -> str:
+        """Get OCR text for entire search range to analyze content flow."""
+        start_page, end_page = self.missing_candidate.predicted_page_range
+
+        # Build human-readable output with clear page delimiters
+        lines = [
+            f"## OCR Text for Pages {start_page}-{end_page}",
+            "",
+            "HINT: Chapter start pages often have LESS text (heading + partial first paragraph).",
+            "Look for pages with unusually short text - they may be chapter boundaries.",
+            ""
+        ]
+
+        for page_num in range(start_page, end_page + 1):
+            if page_num in self.excluded_pages:
+                continue
+            ocr_text = get_page_ocr(page_num, self.storage, self.logger)
+            text_len = len(ocr_text) if ocr_text else 0
+
+            if page_num not in self._pages_checked:
+                self._pages_checked.append(page_num)
+
+            lines.append(f"{'='*60}")
+            lines.append(f"PAGE {page_num} ({text_len} chars)")
+            lines.append(f"{'='*60}")
+            lines.append(ocr_text or "(empty)")
+            lines.append("")
+
+        return "\n".join(lines)
+
     def _view_page_image(self, page_num: int) -> str:
         start_page, end_page = self.missing_candidate.predicted_page_range
         buffer = 5
@@ -170,7 +214,7 @@ class MissingHeadingSearchTools(AgentTools):
             self._current_images = [self.storage.source().load_page_image(
                 page_num=page_num,
                 downsample=True,
-                max_payload_kb=400
+                max_payload_kb=1000
             )]
             self._current_page_num = page_num
             if page_num not in self._pages_checked:

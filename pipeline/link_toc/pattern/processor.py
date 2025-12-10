@@ -2,7 +2,14 @@ import bisect
 
 from infra.llm.single import LLMSingleCall, LLMSingleCallConfig
 from infra.config import Config
-from ..schemas import LinkedTableOfContents, PatternAnalysis, CandidateHeading, MissingCandidateHeading, ExcludedPageRange
+from ..schemas import (
+    LinkedTableOfContents,
+    PatternAnalysis,
+    CandidateHeading,
+    DiscoveredPattern,
+    MissingEntry,
+    ExcludedPageRange,
+)
 from .prompts import PATTERN_SYSTEM_PROMPT, build_pattern_prompt
 
 
@@ -28,25 +35,24 @@ def analyze_toc_pattern(tracker, **kwargs):
         logger.warning("No ToC entries with scan_pages - skipping")
         return
 
-    all_headings = _load_all_headings(storage, logger)
+    all_headings, unified_by_page = _load_all_headings(storage, logger)
     if not all_headings:
         return
 
     body_range = (min(toc_pages), max(toc_pages))
     toc_entries_by_page = {e.scan_page: e for e in toc_entries if e.scan_page}
 
-    candidate_headings = _build_candidates(all_headings, body_range, toc_pages, toc_entries_by_page)
+    candidate_headings = _build_candidates(all_headings, body_range, toc_pages, toc_entries_by_page, unified_by_page)
     logger.info(f"ToC: {len(toc_pages)} pages, Candidates: {len(candidate_headings)} headings in body")
 
-    observations, missing, excluded, requires_eval, reasoning = _analyze_with_llm(
+    patterns, excluded, requires_eval, reasoning = _analyze_with_llm(
         tracker, model, logger, toc_entries, candidate_headings, body_range
     )
 
     pattern_analysis = PatternAnalysis(
         body_range=body_range,
         candidate_headings=candidate_headings,
-        observations=observations,
-        missing_candidate_headings=missing,
+        discovered_patterns=patterns,
         excluded_page_ranges=excluded,
         requires_evaluation=requires_eval,
         reasoning=reasoning
@@ -58,22 +64,32 @@ def analyze_toc_pattern(tracker, **kwargs):
         schema=PatternAnalysis
     )
 
-    logger.info(f"Pattern analysis: {len(observations)} observations, {len(missing)} missing predictions")
+    # Count missing entries across all patterns
+    missing_count = sum(len(p.missing_entries) for p in patterns)
+    logger.info(f"Pattern analysis: {len(patterns)} patterns, {missing_count} missing predictions")
 
 
 def _load_all_headings(storage, logger):
     mechanical_dir = storage.stage("label-structure").output_dir / "mechanical"
     if not mechanical_dir.exists():
         logger.warning("label-structure mechanical output not found")
-        return []
+        return [], {}
 
     all_headings = []
+    unified_by_page = {}
+
     for page_file in sorted(mechanical_dir.glob("page_*.json")):
         page_data = storage.stage("label-structure").load_file(f"mechanical/{page_file.name}")
         if not page_data:
             continue
 
         page_num = int(page_file.stem.split("_")[1])
+
+        # Also load unified classification for this page
+        unified_data = storage.stage("label-structure").load_file(f"unified/{page_file.name}")
+        if unified_data:
+            unified_by_page[page_num] = unified_data
+
         for heading in page_data.get("headings", []):
             all_headings.append({
                 "scan_page": page_num,
@@ -82,10 +98,10 @@ def _load_all_headings(storage, logger):
             })
 
     logger.info(f"Found {len(all_headings)} headings in label-structure")
-    return all_headings
+    return all_headings, unified_by_page
 
 
-def _build_candidates(all_headings, body_range, toc_pages, toc_entries_by_page):
+def _build_candidates(all_headings, body_range, toc_pages, toc_entries_by_page, unified_by_page):
     candidates = []
     for h in all_headings:
         page = h["scan_page"]
@@ -105,13 +121,23 @@ def _build_candidates(all_headings, body_range, toc_pages, toc_entries_by_page):
 
         toc_entry_on_page = _format_toc_entry(toc_entry) if toc_entry else None
 
+        # Extract label-structure unified classification
+        unified = unified_by_page.get(page, {})
+        running_header = unified.get("running_header", {})
+        page_number = unified.get("page_number", {})
+
+        label_running_header = running_header.get("text") if running_header.get("present") else None
+        label_page_number = page_number.get("number") if page_number.get("present") else None
+
         candidates.append(CandidateHeading(
             scan_page=page,
             heading_text=h["text"],
             heading_level=h["level"],
             preceding_toc_page=preceding,
             following_toc_page=following,
-            toc_entry_on_page=toc_entry_on_page
+            toc_entry_on_page=toc_entry_on_page,
+            label_running_header=label_running_header,
+            label_page_number=label_page_number,
         ))
 
     return candidates
@@ -142,7 +168,7 @@ def _matches_toc_entry(heading_text, entry):
 
 def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, body_range):
     if not candidate_headings:
-        return [], [], [], True, "No candidates to analyze"
+        return [], [], True, "No candidates to analyze"
 
     logger.info(f"Calling LLM to analyze {len(candidate_headings)} candidates...")
 
@@ -166,26 +192,38 @@ def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, b
                 "schema": {
                     "type": "object",
                     "properties": {
-                        "observations": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        },
-                        "missing_candidate_headings": {
+                        "discovered_patterns": {
                             "type": "array",
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "identifier": {"type": "string"},
-                                    "predicted_page_range": {
+                                    "pattern_type": {"type": "string", "enum": ["sequential", "named"]},
+                                    "level_name": {"type": ["string", "null"]},
+                                    "range_start": {"type": ["string", "null"]},
+                                    "range_end": {"type": ["string", "null"]},
+                                    "level": {"type": ["integer", "null"]},
+                                    "action": {"type": "string", "enum": ["include", "exclude"]},
+                                    "confidence": {"type": ["number", "null"]},
+                                    "missing_entries": {
                                         "type": "array",
-                                        "items": {"type": "integer"},
-                                        "minItems": 2,
-                                        "maxItems": 2
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "identifier": {"type": "string"},
+                                                "predicted_page_range": {
+                                                    "type": "array",
+                                                    "items": {"type": "integer"},
+                                                    "minItems": 2,
+                                                    "maxItems": 2
+                                                }
+                                            },
+                                            "required": ["identifier", "predicted_page_range"],
+                                            "additionalProperties": False
+                                        }
                                     },
-                                    "confidence": {"type": "number"},
                                     "reasoning": {"type": "string"}
                                 },
-                                "required": ["identifier", "predicted_page_range", "confidence", "reasoning"],
+                                "required": ["pattern_type", "action", "reasoning"],
                                 "additionalProperties": False
                             }
                         },
@@ -205,7 +243,7 @@ def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, b
                         "requires_evaluation": {"type": "boolean"},
                         "reasoning": {"type": "string"}
                     },
-                    "required": ["observations", "missing_candidate_headings", "excluded_page_ranges", "requires_evaluation", "reasoning"],
+                    "required": ["discovered_patterns", "excluded_page_ranges", "requires_evaluation", "reasoning"],
                     "additionalProperties": False
                 }
             }
@@ -215,24 +253,35 @@ def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, b
 
     if not result.success or not result.parsed_json:
         logger.warning(f"Pattern analysis failed: {result.error_message}")
-        return [], [], [], True, f"LLM call failed: {result.error_message}"
+        return [], [], True, f"LLM call failed: {result.error_message}"
 
     data = result.parsed_json
-    observations = data.get("observations", [])
     reasoning = data.get("reasoning", "")
     requires_eval = data.get("requires_evaluation", True)
 
-    missing = []
-    for mc in data.get("missing_candidate_headings", []):
+    patterns = []
+    for p in data.get("discovered_patterns", []):
         try:
-            missing.append(MissingCandidateHeading(
-                identifier=mc["identifier"],
-                predicted_page_range=tuple(mc["predicted_page_range"]),
-                confidence=mc.get("confidence", 0.5),
-                reasoning=mc.get("reasoning", "")
+            missing_entries = []
+            for me in p.get("missing_entries", []):
+                missing_entries.append(MissingEntry(
+                    identifier=me["identifier"],
+                    predicted_page_range=tuple(me["predicted_page_range"])
+                ))
+
+            patterns.append(DiscoveredPattern(
+                pattern_type=p["pattern_type"],
+                level_name=p.get("level_name"),
+                range_start=p.get("range_start"),
+                range_end=p.get("range_end"),
+                level=p.get("level"),
+                action=p["action"],
+                confidence=p.get("confidence"),
+                missing_entries=missing_entries,
+                reasoning=p.get("reasoning", "")
             ))
-        except (KeyError, TypeError):
-            pass
+        except (KeyError, TypeError) as e:
+            logger.warning(f"Failed to parse pattern: {e}")
 
     excluded = []
     for ex in data.get("excluded_page_ranges", []):
@@ -245,8 +294,9 @@ def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, b
         except (KeyError, TypeError):
             pass
 
-    logger.info(f"LLM: {len(observations)} observations, {len(missing)} missing, {len(excluded)} excluded")
+    missing_count = sum(len(p.missing_entries) for p in patterns)
+    logger.info(f"LLM: {len(patterns)} patterns, {missing_count} missing, {len(excluded)} excluded")
     if not requires_eval:
         logger.info("LLM determined evaluation not needed - all candidates are noise")
 
-    return observations, missing, excluded, requires_eval, reasoning
+    return patterns, excluded, requires_eval, reasoning

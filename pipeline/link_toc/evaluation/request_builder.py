@@ -1,9 +1,10 @@
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from infra.llm.models import LLMRequest
 from infra.pipeline.storage.book_storage import BookStorage
 
 from .prompts import EVALUATION_SYSTEM_PROMPT, build_evaluation_prompt
+from ..schemas import DiscoveredPattern
 
 
 def _get_nearby_toc_context(candidate: dict, toc_entries_by_page: Dict[int, str]) -> str:
@@ -33,7 +34,7 @@ def prepare_evaluation_request(
     item: int,
     candidate: dict,
     storage: BookStorage,
-    observations: list,
+    patterns: List[DiscoveredPattern],
     toc_summary: str,
     toc_entries_by_page: Optional[Dict[int, str]] = None,
 ) -> LLMRequest:
@@ -43,7 +44,7 @@ def prepare_evaluation_request(
         item: The candidate index (used for unique ID)
         candidate: The candidate heading dict
         storage: Book storage
-        observations: Pattern observations
+        patterns: Discovered structural patterns
         toc_summary: ToC summary context
         toc_entries_by_page: Map of page numbers to ToC entry titles
     """
@@ -62,7 +63,7 @@ def prepare_evaluation_request(
 
     user_prompt = build_evaluation_prompt(
         candidate=candidate_obj,
-        observations=observations,
+        patterns=patterns,
         toc_context=toc_summary,
         nearby_toc_entries=nearby_toc_context
     )

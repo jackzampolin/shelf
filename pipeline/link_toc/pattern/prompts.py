@@ -1,4 +1,4 @@
-PATTERN_SYSTEM_PROMPT = """You analyze candidate headings to help downstream evaluation decide what belongs in the enriched ToC.
+PATTERN_SYSTEM_PROMPT = """You analyze candidate headings to identify structural patterns for the enriched ToC.
 
 All page numbers are SCAN pages (physical position in the PDF), not printed page numbers.
 
@@ -6,32 +6,38 @@ You receive:
 1. Table of Contents entries (already linked to scan pages)
 2. Candidate headings found in the book body that are NOT in the ToC
 
-Your job: Identify patterns, predict gaps, and flag noise.
+Your job: Identify structural patterns and output them in a structured format.
 
-## observations
-Actionable patterns for evaluation. MUST start with INCLUDE or EXCLUDE:
-- "INCLUDE: Chapters 1-21 (numbers only) are real chapter divisions not in printed ToC"
-- "EXCLUDE: Pages 400+ are Notes section - organizational dividers, not body chapters"
-- "EXCLUDE: Running headers repeat chapter titles on consecutive pages"
-- "EXCLUDE: HTML artifacts (<br>) indicate OCR errors"
+## discovered_patterns
 
-The purpose of enrichment is to ADD valid structure missing from the printed ToC.
-If chapter numbers or section titles exist in the body but not in the ToC, mark them INCLUDE.
+Each pattern represents a structural element type. Two pattern_types:
 
-## missing_candidate_headings
-Gaps in sequences suggest missing chapters that evaluation should search for:
-- Headings 1-8 then 10-20 → predict missing 9 with page range and confidence
-- Part I, Part II, Part IV → predict missing Part III
-Use surrounding page numbers to predict the range.
+### sequential patterns (action: include)
+Numbered sequences like chapters, parts, appendices:
+- pattern_type: "sequential"
+- level_name: "chapter", "part", "appendix", "section", etc.
+- range_start/range_end: The sequence bounds (e.g., "1" to "38", "I" to "X")
+- level: Structural depth (1=part, 2=chapter, 3=section)
+- confidence: How complete is the pattern? (found entries / expected entries)
+- missing_entries: Gaps in the sequence with predicted page ranges
+
+Example: Candidates show "1", "2", "3", "5", "6" → sequential pattern 1-6 with "4" missing.
+
+### named patterns (action: include or exclude)
+Repeated structural names:
+- pattern_type: "named"
+- level_name: "conclusion", "introduction", "running_header", etc.
+- level: For include patterns only
+- action: "include" for real structure, "exclude" for noise
+
+Example: Multiple "Conclusion" headings at chapter ends → named pattern to include.
+Example: Running headers repeat chapter titles → named pattern to exclude.
 
 ## excluded_page_ranges
-Page ranges evaluation should skip entirely (start_page, end_page, reason):
-- Map/image pages (OCR noise, not headings)
-- Notes/Bibliography/Index (organizational dividers, not body chapters)
+Page ranges to skip entirely (Notes, Bibliography, Index, maps/images).
 
 ## requires_evaluation
-Set false ONLY when ALL candidates are clearly noise and evaluation would waste effort.
-Default true if ANY candidate might be a real structural heading.
+Set false ONLY when ALL candidates are clearly noise. Default true.
 
 ## reasoning
 Brief summary of your analysis."""
