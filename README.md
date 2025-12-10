@@ -1,4 +1,4 @@
-# Scanshelf - Turn Physical Books into Digital Libraries
+# Shelf - Turn Physical Books into Digital Libraries
 
 A vision-powered pipeline that transforms scanned books into structured digital text using local OCR and multimodal LLMs.
 
@@ -8,8 +8,8 @@ A vision-powered pipeline that transforms scanned books into structured digital 
 
 ```bash
 # Setup
-git clone https://github.com/jackzampolin/scanshelf
-cd scanshelf
+git clone https://github.com/jackzampolin/shelf
+cd shelf
 
 uv venv
 source .venv/bin/activate
@@ -193,7 +193,7 @@ uv run python -m pytest tests/tools/ -v
 
 ### High-Level Design
 
-Scanshelf uses a **Stage abstraction pattern** for composable, resumable, testable pipeline processing:
+Shelf uses a **Stage abstraction pattern** for composable, resumable, testable pipeline processing:
 
 **Core Components:**
 1. **BaseStage** - Three-hook lifecycle (before/run/after) with schema-driven validation

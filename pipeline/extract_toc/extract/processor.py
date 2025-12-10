@@ -22,7 +22,7 @@ from .schemas import ToCExtractionOutput
 
 def is_headless():
     """Check if running in headless mode."""
-    return os.environ.get('SCANSHELF_HEADLESS', '').lower() in ('1', 'true', 'yes')
+    return os.environ.get('SHELF_HEADLESS', '').lower() in ('1', 'true', 'yes')
 
 
 def extract_complete_toc(tracker: PhaseStatusTracker, **kwargs) -> Dict:

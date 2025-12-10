@@ -9,7 +9,7 @@ from infra.config import Config
 class PricingCache:
     def __init__(self, cache_dir: Path = None, cache_ttl_hours: int = 24):
         if cache_dir is None:
-            cache_dir = Path.home() / ".cache" / "scanshelf"
+            cache_dir = Path.home() / ".cache" / "shelf"
 
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)

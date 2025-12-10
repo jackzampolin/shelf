@@ -10,7 +10,7 @@ def cmd_serve(args):
 
     app = create_app()
 
-    print(f"\n🚀 Scanshelf Web starting on http://{args.host}:{args.port}")
+    print(f"\n🚀 Shelf Web starting on http://{args.host}:{args.port}")
     print(f"📁 Library: {Config.BOOK_STORAGE_ROOT}\n")
     print(f"✨ Open http://{args.host}:{args.port} in your browser\n")
 

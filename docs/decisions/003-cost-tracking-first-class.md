@@ -18,7 +18,7 @@ This is a hobby project funded out-of-pocket. Current investment: **a few hundre
 - ABBYY FineReader: $199 license + $0.40/book
 - olmOCR: ~$0.20/book (GPU costs)
 - Commercial services: $150-650/book
-- **Scanshelf: $5-15/book** (break-even vs ABBYY at 50-100 books)
+- **Shelf: $5-15/book** (break-even vs ABBYY at 50-100 books)
 
 If there's a market for this, users need:
 1. **Cost visibility** - Know what they're spending
@@ -66,7 +66,7 @@ Record costs after every API call (MetricsManager). Display in CLI (`shelf.py bo
 
 ## Market Reality & Future
 
-**At scale, cost matters:** 100 books: Scanshelf ($500-1500) vs ABBYY ($240) vs Services ($15K-65K)
+**At scale, cost matters:** 100 books: Shelf ($500-1500) vs ABBYY ($240) vs Services ($15K-65K)
 
 **Future:** Local inference (chandra, DeepSeek-OCR, moondream2) eliminates API costs. Break-even at ~50-100 books. Abstraction layer (`infra/llm/`) enables transition.
 

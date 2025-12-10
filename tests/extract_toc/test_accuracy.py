@@ -459,7 +459,7 @@ def test_extract_toc_full_library():
     print(f"{'='*80}\n")
 
     # Enable headless mode to disable Rich Live displays (they conflict in parallel)
-    os.environ['SCANSHELF_HEADLESS'] = '1'
+    os.environ['SHELF_HEADLESS'] = '1'
 
     results = []
     results_lock = threading.Lock()

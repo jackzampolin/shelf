@@ -8,7 +8,7 @@ from infra.pipeline.storage.stage_storage import StageStorage
 
 def is_headless():
     """Check if running in headless mode (no Rich Live displays)."""
-    return os.environ.get('SCANSHELF_HEADLESS', '').lower() in ('1', 'true', 'yes')
+    return os.environ.get('SHELF_HEADLESS', '').lower() in ('1', 'true', 'yes')
 
 
 def create_find_tracker(stage_storage: StageStorage, model: str, max_attempts: int = 3):

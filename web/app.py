@@ -1,5 +1,5 @@
 """
-Scanshelf Web Frontend
+Shelf Web Frontend
 
 Minimalist Flask application for visualizing book processing pipeline.
 Follows ADR 000 (Information Hygiene), ADR 001 (Think Data First),
@@ -37,7 +37,7 @@ def create_app():
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Scanshelf Web Frontend")
+    parser = argparse.ArgumentParser(description="Shelf Web Frontend")
     parser.add_argument("--port", type=int, default=Config.PORT)
     parser.add_argument("--host", default=Config.HOST)
     parser.add_argument("--debug", action="store_true", default=Config.DEBUG)
@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     app = create_app()
 
-    print(f"\n🚀 Scanshelf Web starting on http://{args.host}:{args.port}")
+    print(f"\n🚀 Shelf Web starting on http://{args.host}:{args.port}")
     print(f"📁 Library: {Config.BOOK_STORAGE_ROOT}\n")
     print(f"✨ Open http://{args.host}:{args.port} in your browser\n")
 

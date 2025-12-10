@@ -8,7 +8,7 @@ from cli.serve import setup_serve_parser
 def create_parser():
     parser = argparse.ArgumentParser(
         prog='shelf',
-        description='Scanshelf - Turn physical books into digital libraries',
+        description='Shelf - Turn physical books into digital libraries',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

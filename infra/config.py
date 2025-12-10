@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-class ScanshelfConfig(BaseModel):
+class ShelfConfig(BaseModel):
     openrouter_api_key: str = Field(
         ...,
         description="OpenRouter API key (REQUIRED)"
@@ -62,8 +62,8 @@ class ScanshelfConfig(BaseModel):
     }
 
 
-def _load_config() -> ScanshelfConfig:
-    return ScanshelfConfig(
+def _load_config() -> ShelfConfig:
+    return ShelfConfig(
         openrouter_api_key=(os.getenv('OPENROUTER_API_KEY', '')),
         mistral_api_key=os.getenv('MISTRAL_API_KEY', ''),
         datalab_api_key=os.getenv('DATALAB_API_KEY', ''),

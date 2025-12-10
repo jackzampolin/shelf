@@ -8,8 +8,8 @@ class OpenRouterTransport:
     def __init__(self, logger: Optional[logging.Logger] = None, site_url: str = None, site_name: str = None):
         self.logger = logger or logging.getLogger(__name__)
         self.api_key = Config.openrouter_api_key
-        self.site_url = site_url or "https://github.com/jackzampolin/scanshelf"
-        self.site_name = site_name or "Scanshelf"
+        self.site_url = site_url or "https://github.com/jackzampolin/shelf"
+        self.site_name = site_name or "Shelf"
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
 
     def post(self, payload: Dict[str, Any], timeout: int = 120) -> Dict[str, Any]:

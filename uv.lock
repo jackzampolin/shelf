@@ -3663,73 +3663,6 @@ torch = [
 ]
 
 [[package]]
-name = "scanshelf"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "beautifulsoup4" },
-    { name = "datalab-python-sdk" },
-    { name = "docker" },
-    { name = "docling" },
-    { name = "ebooklib" },
-    { name = "epubcheck" },
-    { name = "flask" },
-    { name = "jiwer" },
-    { name = "lxml" },
-    { name = "matplotlib" },
-    { name = "mcp" },
-    { name = "mistralai" },
-    { name = "mlx-vlm" },
-    { name = "numpy" },
-    { name = "olmocr" },
-    { name = "openai" },
-    { name = "opencv-python" },
-    { name = "pandas" },
-    { name = "pdf2image" },
-    { name = "pillow" },
-    { name = "pypdf2" },
-    { name = "pytesseract" },
-    { name = "pytest" },
-    { name = "python-dotenv" },
-    { name = "rapidfuzz" },
-    { name = "requests" },
-    { name = "rich" },
-    { name = "watchdog" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "beautifulsoup4", specifier = ">=4.12.0" },
-    { name = "datalab-python-sdk", specifier = ">=0.1.0" },
-    { name = "docker", specifier = ">=7.0.0" },
-    { name = "docling", specifier = ">=2.0.0" },
-    { name = "ebooklib", specifier = ">=0.18" },
-    { name = "epubcheck", specifier = ">=5.1.0" },
-    { name = "flask", specifier = ">=3.0.0" },
-    { name = "jiwer", specifier = ">=3.0.0" },
-    { name = "lxml", specifier = ">=5.0.0" },
-    { name = "matplotlib", specifier = ">=3.10.7" },
-    { name = "mcp", specifier = ">=0.1.0" },
-    { name = "mistralai", specifier = ">=1.9.0" },
-    { name = "mlx-vlm", specifier = ">=0.3.0" },
-    { name = "numpy", specifier = ">=1.24.0" },
-    { name = "olmocr", specifier = ">=0.4.4" },
-    { name = "openai", specifier = ">=1.0.0" },
-    { name = "opencv-python", specifier = ">=4.8.0" },
-    { name = "pandas", specifier = ">=2.3.3" },
-    { name = "pdf2image", specifier = ">=1.17.0" },
-    { name = "pillow", specifier = ">=10.0.0" },
-    { name = "pypdf2", specifier = ">=3.0.0" },
-    { name = "pytesseract", specifier = ">=0.3.10" },
-    { name = "pytest", specifier = ">=7.4.0" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "rapidfuzz", specifier = ">=3.0.0" },
-    { name = "requests", specifier = ">=2.31.0" },
-    { name = "rich", specifier = ">=13.0.0" },
-    { name = "watchdog", specifier = ">=6.0.0" },
-]
-
-[[package]]
 name = "scikit-image"
 version = "0.25.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3890,6 +3823,73 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/7c/75/c24ed871c576d7e2b64b04b1fe3d075157f6eb54e59670d3f5ffb36e25c7/shapely-2.1.2-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:361b6d45030b4ac64ddd0a26046906c8202eb60d0f9f53085f5179f1d23021a0", size = 4169511 },
     { url = "https://files.pythonhosted.org/packages/b1/f7/b3d1d6d18ebf55236eec1c681ce5e665742aab3c0b7b232720a7d43df7b6/shapely-2.1.2-cp314-cp314t-win32.whl", hash = "sha256:b54df60f1fbdecc8ebc2c5b11870461a6417b3d617f555e5033f1505d36e5735", size = 1602607 },
     { url = "https://files.pythonhosted.org/packages/9a/f6/f09272a71976dfc138129b8faf435d064a811ae2f708cb147dccdf7aacdb/shapely-2.1.2-cp314-cp314t-win_amd64.whl", hash = "sha256:0036ac886e0923417932c2e6369b6c52e38e0ff5d9120b90eef5cd9a5fc5cae9", size = 1796682 },
+]
+
+[[package]]
+name = "shelf"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "datalab-python-sdk" },
+    { name = "docker" },
+    { name = "docling" },
+    { name = "ebooklib" },
+    { name = "epubcheck" },
+    { name = "flask" },
+    { name = "jiwer" },
+    { name = "lxml" },
+    { name = "matplotlib" },
+    { name = "mcp" },
+    { name = "mistralai" },
+    { name = "mlx-vlm" },
+    { name = "numpy" },
+    { name = "olmocr" },
+    { name = "openai" },
+    { name = "opencv-python" },
+    { name = "pandas" },
+    { name = "pdf2image" },
+    { name = "pillow" },
+    { name = "pypdf2" },
+    { name = "pytesseract" },
+    { name = "pytest" },
+    { name = "python-dotenv" },
+    { name = "rapidfuzz" },
+    { name = "requests" },
+    { name = "rich" },
+    { name = "watchdog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "beautifulsoup4", specifier = ">=4.12.0" },
+    { name = "datalab-python-sdk", specifier = ">=0.1.0" },
+    { name = "docker", specifier = ">=7.0.0" },
+    { name = "docling", specifier = ">=2.0.0" },
+    { name = "ebooklib", specifier = ">=0.18" },
+    { name = "epubcheck", specifier = ">=5.1.0" },
+    { name = "flask", specifier = ">=3.0.0" },
+    { name = "jiwer", specifier = ">=3.0.0" },
+    { name = "lxml", specifier = ">=5.0.0" },
+    { name = "matplotlib", specifier = ">=3.10.7" },
+    { name = "mcp", specifier = ">=0.1.0" },
+    { name = "mistralai", specifier = ">=1.9.0" },
+    { name = "mlx-vlm", specifier = ">=0.3.0" },
+    { name = "numpy", specifier = ">=1.24.0" },
+    { name = "olmocr", specifier = ">=0.4.4" },
+    { name = "openai", specifier = ">=1.0.0" },
+    { name = "opencv-python", specifier = ">=4.8.0" },
+    { name = "pandas", specifier = ">=2.3.3" },
+    { name = "pdf2image", specifier = ">=1.17.0" },
+    { name = "pillow", specifier = ">=10.0.0" },
+    { name = "pypdf2", specifier = ">=3.0.0" },
+    { name = "pytesseract", specifier = ">=0.3.10" },
+    { name = "pytest", specifier = ">=7.4.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "rapidfuzz", specifier = ">=3.0.0" },
+    { name = "requests", specifier = ">=2.31.0" },
+    { name = "rich", specifier = ">=13.0.0" },
+    { name = "watchdog", specifier = ">=6.0.0" },
 ]
 
 [[package]]

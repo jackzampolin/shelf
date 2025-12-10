@@ -1,7 +1,7 @@
 # OCR Text Comparison and Merging Techniques
 
 **Research Date:** 2025-11-11
-**Context:** Scanshelf project has 3 OCR providers (Mistral, OlmOCR, PaddleOCR) producing markdown text from the same source images. This research explores standard techniques for comparing and merging their outputs to achieve optimal results.
+**Context:** Shelf project has 3 OCR providers (Mistral, OlmOCR, PaddleOCR) producing markdown text from the same source images. This research explores standard techniques for comparing and merging their outputs to achieve optimal results.
 
 **Key Constraint:** We operate WITHOUT ground truth - no reference text exists to compare against.
 
@@ -1072,7 +1072,7 @@ TE-HATINHAT
 | BioPython | ⭐⭐⭐ | Alignment with gaps | High | pip |
 | Ocromore | N/A | OCR-specific merging | High | Manual |
 
-**Recommended Stack for Scanshelf:**
+**Recommended Stack for Shelf:**
 1. **RapidFuzz** - Primary similarity/distance calculations
 2. **diff-match-patch** - Full-text comparison and visualization
 3. **difflib** - Quick debugging (already available)
@@ -1630,7 +1630,7 @@ if __name__ == "__main__":
 
 ## Summary
 
-**Key Takeaways for Scanshelf Strategy A:**
+**Key Takeaways for Shelf Strategy A:**
 
 1. **ROVER-inspired voting** is the proven approach (20-50% error reduction with 3 OCR systems)
 

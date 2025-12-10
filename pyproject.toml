@@ -1,5 +1,5 @@
 [project]
-name = "scanshelf"
+name = "shelf"
 version = "0.1.0"
 description = "Turn physical books into digital libraries - OCR, correction, and structure extraction pipeline"
 requires-python = ">=3.12"
