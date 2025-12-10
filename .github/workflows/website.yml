@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:  # Allow manual trigger
 
+permissions:
+  contents: write  # Required for pushing to gh-pages
+
 jobs:
   generate:
     runs-on: ubuntu-latest
