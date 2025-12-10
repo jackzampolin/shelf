@@ -18,6 +18,12 @@ class LinkTocStage(BaseStage):
     icon = "🔗"
     short_name = "Link ToC"
     description = "Map table of contents entries to their corresponding page numbers"
+    phases = [
+        {"name": "find_entries", "description": "Locate each ToC entry in page content"},
+        {"name": "pattern", "description": "Analyze heading patterns to find candidates"},
+        {"name": "evaluation", "description": "Evaluate candidate headings with vision LLM"},
+        {"name": "merge", "description": "Merge results into enriched ToC"},
+    ]
 
     @classmethod
     def default_kwargs(cls, **overrides):

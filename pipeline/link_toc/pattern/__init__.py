@@ -12,6 +12,7 @@ def create_tracker(stage_storage, model: str = None):
         artifact_filename="pattern_analysis.json",
         run_fn=run_pattern_analysis,
         use_subdir=True,
+        description="Analyze heading patterns to find candidates",
     )
 
 

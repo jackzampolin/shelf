@@ -28,6 +28,12 @@ class OcrPagesStage(BaseStage):
     icon = "📷"
     short_name = "OCR Pages"
     description = "Extract text from scanned page images using vision AI models"
+    phases = [
+        {"name": "mistral", "description": "Extract text using Mistral vision model"},
+        {"name": "olm", "description": "Extract text using OLM OCR model"},
+        {"name": "paddle", "description": "Extract text using PaddleOCR"},
+        {"name": "blend", "description": "Combine OCR outputs into best-quality text"},
+    ]
 
     @classmethod
     def default_kwargs(cls, **overrides):
@@ -81,6 +87,7 @@ class OcrPagesStage(BaseStage):
             run_fn=run_mistral,
             extension="json",
             use_subdir=True,
+            description="Extract text using Mistral vision model",
         )
 
         self.olm_tracker = page_batch_tracker(
@@ -89,6 +96,7 @@ class OcrPagesStage(BaseStage):
             run_fn=run_olm,
             extension="json",
             use_subdir=True,
+            description="Extract text using OLM OCR model",
         )
 
         self.paddle_tracker = page_batch_tracker(
@@ -97,6 +105,7 @@ class OcrPagesStage(BaseStage):
             run_fn=run_paddle,
             extension="json",
             use_subdir=True,
+            description="Extract text using PaddleOCR",
         )
 
         self.blend_tracker = blend.create_tracker(

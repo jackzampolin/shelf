@@ -21,6 +21,9 @@ class EpubOutputStage(BaseStage):
     icon = "📖"
     short_name = "Generate Output"
     description = "Create ePub files, audiobook scripts, or structured API output"
+    phases = [
+        {"name": "generate_epub", "description": "Build and validate ePub 3.0 file"},
+    ]
 
     @classmethod
     def default_kwargs(cls, **overrides):
@@ -60,6 +63,7 @@ class EpubOutputStage(BaseStage):
             output_path_fn=output_path_for_epub,
             run_fn=generate_epub,
             use_subdir=False,
+            description="Build and validate ePub 3.0 file",
         )
 
 

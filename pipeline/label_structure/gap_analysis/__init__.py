@@ -9,6 +9,7 @@ def create_tracker(stage_storage):
         artifact_filename="clusters.json",
         run_fn=analyze_gaps,
         use_subdir=True,
+        description="Identify pages with missing or uncertain labels",
     )
 
 

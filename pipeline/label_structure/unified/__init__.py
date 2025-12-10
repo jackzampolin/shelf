@@ -9,6 +9,7 @@ def create_tracker(stage_storage, model: str, max_workers: int):
         run_fn=process_unified_extraction,
         use_subdir=True,
         run_kwargs={"model": model, "max_workers": max_workers},
+        description="Classify page elements with vision LLM",
     )
 
 

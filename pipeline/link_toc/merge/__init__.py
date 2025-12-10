@@ -9,6 +9,7 @@ def create_tracker(stage_storage):
         artifact_filename="enriched_toc.json",
         run_fn=merge_enriched_toc,
         use_subdir=False,
+        description="Merge results into enriched ToC",
     )
 
 

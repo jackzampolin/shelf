@@ -18,6 +18,10 @@ class ExtractTocStage(BaseStage):
     icon = "📑"
     short_name = "Extract ToC"
     description = "Identify and extract the table of contents from OCR output"
+    phases = [
+        {"name": "find", "description": "Locate ToC pages using vision agent"},
+        {"name": "extract", "description": "Parse ToC entries from identified pages"},
+    ]
 
     @classmethod
     def default_kwargs(cls, **overrides):

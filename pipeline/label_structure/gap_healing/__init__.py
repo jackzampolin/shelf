@@ -30,6 +30,7 @@ def _cluster_tracker(
         run_fn=run_fn,
         use_subdir=True,
         run_kwargs=run_kwargs,
+        description="Fix classification gaps using LLM agent",
     )
 
 

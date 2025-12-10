@@ -18,6 +18,12 @@ class LabelStructureStage(BaseStage):
     icon = "🏷️"
     short_name = "Label Structure"
     description = "Classify content blocks as body text, headers, footnotes, or page numbers"
+    phases = [
+        {"name": "mechanical", "description": "Extract patterns using regex and heuristics"},
+        {"name": "unified", "description": "Classify page elements with vision LLM"},
+        {"name": "gap_analysis", "description": "Identify pages with missing or uncertain labels"},
+        {"name": "agent_healing", "description": "Fix classification gaps using LLM agent"},
+    ]
 
     @classmethod
     def default_kwargs(cls, **overrides):

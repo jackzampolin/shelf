@@ -49,4 +49,5 @@ def create_extract_tracker(
         use_subdir=False,
         run_kwargs={"model": model},
         validator_override=validate_toc_extracted,
+        description="Parse ToC entries from identified pages",
     )

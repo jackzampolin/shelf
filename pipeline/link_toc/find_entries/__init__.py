@@ -11,6 +11,7 @@ def create_tracker(stage_storage, model: str, max_iterations: int, verbose: bool
         phase_name="find_entries",
         artifact_filename="linked_toc.json",
         run_fn=run_find_entries,
+        description="Locate each ToC entry in page content",
     )
 
 

@@ -9,6 +9,7 @@ def create_tracker(stage_storage):
         phase_name="mechanical",
         run_fn=process_mechanical_extraction,
         use_subdir=True,
+        description="Extract patterns using regex and heuristics",
     )
 
 

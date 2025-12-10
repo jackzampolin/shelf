@@ -87,4 +87,5 @@ def create_find_tracker(stage_storage: StageStorage, model: str, max_attempts: i
         run_fn=run_find_toc,
         use_subdir=False,
         validator_override=validate_toc_found,
+        description="Locate ToC pages using vision agent",
     )

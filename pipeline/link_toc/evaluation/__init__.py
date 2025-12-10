@@ -67,6 +67,7 @@ def create_tracker(stage_storage, model: str = None):
         run_fn=run_evaluation,
         use_subdir=True,
         validator_override=_create_validator(stage_storage),
+        description="Evaluate candidate headings with vision LLM",
     )
 
 

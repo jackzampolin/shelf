@@ -11,7 +11,8 @@ def create_tracker(stage_storage, model: str, max_workers: int):
         run_kwargs={
             "model": model,
             "max_workers": max_workers,
-        }
+        },
+        description="Combine OCR outputs into best-quality text",
     )
 
 
