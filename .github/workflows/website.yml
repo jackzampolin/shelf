@@ -30,6 +30,7 @@ jobs:
       - name: Generate website
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENROUTER_API_KEY: dummy-not-used-for-website-generation
         run: |
           source .venv/bin/activate
           python website/generate.py --output website/dist/index.html
