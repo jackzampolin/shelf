@@ -88,4 +88,5 @@ def create_build_tracker(stage_storage: StageStorage, model: str):
         run_fn=build_structure,
         use_subdir=True,
         run_kwargs={"model": model},
+        description="Build document skeleton from ToC and detected headings",
     )

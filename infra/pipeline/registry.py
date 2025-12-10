@@ -42,5 +42,6 @@ def get_all_stage_metadata():
             'short_name': getattr(stage_class, 'short_name', stage_def['name']),
             'description': getattr(stage_class, 'description', ''),
             'dependencies': getattr(stage_class, 'dependencies', []),
+            'phases': getattr(stage_class, 'phases', []),
         })
     return stages

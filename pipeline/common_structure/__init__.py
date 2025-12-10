@@ -36,6 +36,11 @@ class CommonStructureStage(BaseStage):
     icon = "🏗️"
     short_name = "Build Structure"
     description = "Assemble unified document structure with chapter text and metadata"
+    phases = [
+        {"name": "build_structure", "description": "Build document skeleton from ToC and detected headings"},
+        {"name": "polish_entries", "description": "Extract and polish chapter text with LLM (parallel)"},
+        {"name": "merge", "description": "Merge polished entries into final structure.json"},
+    ]
 
     @classmethod
     def default_kwargs(cls, **overrides):

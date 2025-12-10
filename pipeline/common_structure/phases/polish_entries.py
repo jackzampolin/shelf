@@ -156,6 +156,7 @@ def create_polish_tracker(stage_storage: StageStorage, model: str, max_workers: 
         run_fn=process_entries,
         use_subdir=True,
         run_kwargs={"model": model, "max_workers": max_workers},
+        description="Extract and polish chapter text with LLM (parallel)",
     )
 
 

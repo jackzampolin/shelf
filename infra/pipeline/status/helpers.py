@@ -12,6 +12,7 @@ def artifact_tracker(
     use_subdir: bool = False,
     run_kwargs: Optional[Dict[str, Any]] = None,
     validator_override: Optional[Callable[[Any, Path], bool]] = None,
+    description: str = "",
 ) -> PhaseStatusTracker:
     return PhaseStatusTracker(
         stage_storage=stage_storage,
@@ -22,6 +23,7 @@ def artifact_tracker(
         use_subdir=use_subdir,
         run_kwargs=run_kwargs,
         validator_override=validator_override,
+        description=description,
     )
 
 
@@ -33,6 +35,7 @@ def page_batch_tracker(
     use_subdir: bool = False,
     run_kwargs: Optional[Dict[str, Any]] = None,
     validator_override: Optional[Callable[[Any, Path], bool]] = None,
+    description: str = "",
 ) -> PhaseStatusTracker:
     book_storage = stage_storage.storage
     source_pages = book_storage.stage("source").list_pages(extension="png")
@@ -46,4 +49,5 @@ def page_batch_tracker(
         use_subdir=use_subdir,
         run_kwargs=run_kwargs,
         validator_override=validator_override,
+        description=description,
     )

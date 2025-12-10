@@ -16,10 +16,12 @@ class PhaseStatusTracker:
         use_subdir: bool = False,
         run_kwargs: Optional[Dict[str, Any]] = None,
         validator_override: Optional[Callable[[Any, Path], bool]] = None,
+        description: str = "",
     ):
         self.stage_storage = stage_storage
         self.logger = stage_storage.logger()
         self.phase_name = phase_name
+        self.description = description
         self.storage = stage_storage.storage
         self.metrics_manager = stage_storage.metrics_manager
         self.use_subdir = use_subdir

@@ -13,6 +13,7 @@ class BaseStage:
     icon: str = "📦"  # Override in subclass
     short_name: str = None  # Override in subclass
     description: str = None  # Override in subclass
+    phases: list = []  # List of {"name": str, "description": str}
 
     def __init__(self, storage: BookStorage):
         self.storage = storage

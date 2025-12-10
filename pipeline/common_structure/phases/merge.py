@@ -80,6 +80,7 @@ def create_merge_tracker(stage_storage: StageStorage):
         artifact_filename="structure.json",
         run_fn=merge_entries,
         use_subdir=True,
+        description="Merge polished entries into final structure.json",
     )
 
 
