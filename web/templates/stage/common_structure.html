@@ -32,6 +32,52 @@
         margin-top: 0.25rem;
     }
 
+    .progress-banner {
+        background: linear-gradient(135deg, #fff3e0 0%, #ffecb3 100%);
+        border: 1px solid #ffb74d;
+        border-radius: 8px;
+        padding: 1rem 1.5rem;
+        margin: 1.5rem 0;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .progress-banner .spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid #ffb74d;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .progress-banner .progress-text {
+        flex: 1;
+    }
+
+    .progress-banner .progress-text strong {
+        color: #e65100;
+    }
+
+    .progress-bar-container {
+        width: 200px;
+        height: 8px;
+        background: #ffe0b2;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .progress-bar {
+        height: 100%;
+        background: #ff9800;
+        transition: width 0.3s ease;
+    }
+
     .entries-table {
         width: 100%;
         border-collapse: collapse;
@@ -63,6 +109,15 @@
         background-color: #f0f7ff;
     }
 
+    .entries-table tbody tr.pending {
+        background-color: #fafafa;
+        cursor: default;
+    }
+
+    .entries-table tbody tr.pending:hover {
+        background-color: #fafafa;
+    }
+
     .entries-table td {
         padding: 0.75rem;
         font-size: 0.9rem;
@@ -71,6 +126,10 @@
     .entry-title {
         font-weight: 600;
         color: #0066cc;
+    }
+
+    .entry-title.pending {
+        color: #999;
     }
 
     .entry-type {
@@ -112,6 +171,23 @@
         color: #2e7d32;
     }
 
+    .status-badge {
+        display: inline-block;
+        padding: 0.15rem 0.4rem;
+        border-radius: 10px;
+        font-size: 0.75rem;
+    }
+
+    .status-badge.done {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .status-badge.pending {
+        background: #fff3e0;
+        color: #ef6c00;
+    }
+
     .text-muted {
         color: #999;
     }
@@ -147,6 +223,19 @@
         </div>
     </div>
 
+    {% if not summary.is_complete %}
+    <div class="progress-banner">
+        <div class="spinner"></div>
+        <div class="progress-text">
+            <strong>Processing in progress...</strong>
+            Polishing {{ summary.polished_count }} / {{ summary.total_entries }} entries
+        </div>
+        <div class="progress-bar-container">
+            <div class="progress-bar" style="width: {{ (summary.polished_count / summary.total_entries * 100) if summary.total_entries > 0 else 0 }}%"></div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="summary-grid">
         <div class="summary-card">
             <div class="value">{{ summary.total_entries }}</div>
@@ -164,6 +253,7 @@
             <div class="value">{{ summary.total_pages }}</div>
             <div class="label">Pages</div>
         </div>
+        {% if summary.is_complete %}
         <div class="summary-card">
             <div class="value">${{ "%.2f"|format(summary.cost_usd) }}</div>
             <div class="label">Cost</div>
@@ -172,6 +262,12 @@
             <div class="value">{{ "%.0f"|format(summary.processing_time_seconds) }}s</div>
             <div class="label">Time</div>
         </div>
+        {% else %}
+        <div class="summary-card">
+            <div class="value">{{ summary.polished_count }}/{{ summary.total_entries }}</div>
+            <div class="label">Polished</div>
+        </div>
+        {% endif %}
     </div>
 
     <table class="entries-table">
@@ -181,18 +277,18 @@
                 <th>Type</th>
                 <th>Pages</th>
                 <th>Words</th>
-                <th>Edits</th>
+                <th>{% if summary.is_complete %}Edits{% else %}Status{% endif %}</th>
             </tr>
         </thead>
         <tbody>
             {% for entry in entries %}
-            <tr onclick="window.location='{{ url_for('stage.common_structure_entry_view', scan_id=scan_id, entry_id=entry.entry_id) }}'">
+            <tr {% if entry.is_polished %}onclick="window.location='{{ url_for('stage.common_structure_entry_view', scan_id=scan_id, entry_id=entry.entry_id) }}'"{% else %}class="pending"{% endif %}>
                 <td>
                     <span class="level-indent level-{{ entry.level }}">
                         {% if entry.entry_number %}
                             <span class="text-muted">{{ entry.entry_number }}.</span>
                         {% endif %}
-                        <span class="entry-title">{{ entry.title }}</span>
+                        <span class="entry-title {% if not entry.is_polished %}pending{% endif %}">{{ entry.title }}</span>
                     </span>
                 </td>
                 <td>
@@ -205,13 +301,25 @@
                     <span class="text-muted">({{ entry.page_count }})</span>
                 </td>
                 <td>
-                    <span class="word-count">{{ "{:,}".format(entry.word_count) }}</span>
-                </td>
-                <td>
-                    {% if entry.edits_count > 0 %}
-                        <span class="edits-badge">{{ entry.edits_count }} edits</span>
+                    {% if entry.is_polished %}
+                        <span class="word-count">{{ "{:,}".format(entry.word_count) }}</span>
                     {% else %}
                         <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if summary.is_complete %}
+                        {% if entry.edits_count > 0 %}
+                            <span class="edits-badge">{{ entry.edits_count }} edits</span>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    {% else %}
+                        {% if entry.is_polished %}
+                            <span class="status-badge done">✓ Done</span>
+                        {% else %}
+                            <span class="status-badge pending">⏳ Pending</span>
+                        {% endif %}
                     {% endif %}
                 </td>
             </tr>
@@ -219,4 +327,13 @@
         </tbody>
     </table>
 </div>
+
+{% if not summary.is_complete %}
+<script>
+// Auto-refresh every 5 seconds while processing
+setTimeout(function() {
+    location.reload();
+}, 5000);
+</script>
+{% endif %}
 {% endblock %}

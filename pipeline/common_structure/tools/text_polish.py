@@ -163,14 +163,75 @@ def polish_section_text(
     return section_text
 
 
-def apply_edits(text: str, edits: List[TextEdit], logger) -> str:
+def apply_edits(text: str, edits: List[TextEdit], logger=None) -> str:
     """Apply a list of edits to text."""
     result = text
 
     for edit in edits:
         if edit.old_text in result:
             result = result.replace(edit.old_text, edit.new_text, 1)
-        else:
+        elif logger:
             logger.warning(f"Edit not applied - old_text not found: '{edit.old_text[:50]}...'")
 
     return result
+
+
+# --- Batch processing helpers ---
+
+POLISH_JSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "text_edits",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "edits": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "old_text": {"type": "string"},
+                            "new_text": {"type": "string"},
+                            "reason": {"type": "string"}
+                        },
+                        "required": ["old_text", "new_text", "reason"],
+                        "additionalProperties": False
+                    }
+                }
+            },
+            "required": ["edits"],
+            "additionalProperties": False
+        }
+    }
+}
+
+
+def build_polish_request(section_title: str, text: str) -> dict:
+    """Build request dict for LLMBatchProcessor."""
+    return {
+        "messages": [
+            {"role": "system", "content": POLISH_SYSTEM_PROMPT},
+            {"role": "user", "content": build_polish_prompt(section_title, text)}
+        ],
+        "response_format": POLISH_JSON_SCHEMA,
+        "max_tokens": 2000,
+    }
+
+
+def parse_polish_result(parsed_json: dict, original_text: str) -> List[TextEdit]:
+    """Parse LLM result and return list of TextEdit objects."""
+    edits_data = parsed_json.get("edits", [])
+    edits: List[TextEdit] = []
+
+    for edit_data in edits_data:
+        try:
+            edits.append(TextEdit(
+                old_text=edit_data["old_text"],
+                new_text=edit_data["new_text"],
+                reason=edit_data["reason"]
+            ))
+        except (KeyError, TypeError):
+            continue
+
+    return edits
