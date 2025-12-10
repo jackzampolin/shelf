@@ -4,9 +4,15 @@ from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.registry import get_stage_class
 
 class BaseStage:
+    # Stage identity
     name: str = None
     dependencies: List[str] = []
     status_tracker: Any = None
+
+    # Stage metadata (for website generation)
+    icon: str = "📦"  # Override in subclass
+    short_name: str = None  # Override in subclass
+    description: str = None  # Override in subclass
 
     def __init__(self, storage: BookStorage):
         self.storage = storage

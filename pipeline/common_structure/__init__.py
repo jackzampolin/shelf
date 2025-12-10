@@ -32,6 +32,11 @@ class CommonStructureStage(BaseStage):
     name = "common-structure"
     dependencies = ["link-toc", "label-structure", "ocr-pages"]
 
+    # Metadata
+    icon = "🏗️"
+    short_name = "Build Structure"
+    description = "Assemble unified document structure with chapter text and metadata"
+
     @classmethod
     def default_kwargs(cls, **overrides):
         kwargs = {'model': None, 'max_workers': 10}

@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>shelf - Transform Book Scans into Structured Digital Text</title>
+    <meta name="description" content="An open-source pipeline that transforms scanned books into structured, searchable digital text using AI-powered OCR and intelligent document analysis.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --bg-subtle: #141414;
+            --bg-card: #1a1a1a;
+            --text: #fafafa;
+            --text-muted: #a1a1a1;
+            --accent: #3b82f6;
+            --accent-hover: #60a5fa;
+            --border: #2a2a2a;
+            --success: #22c55e;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(10, 10, 10, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            z-index: 100;
+        }
+
+        nav .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 64px;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .logo-icon {
+            font-size: 1.75rem;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 32px;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-outline {
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        .btn-outline:hover {
+            border-color: var(--text-muted);
+            background: var(--bg-subtle);
+        }
+
+        /* Hero */
+        .hero {
+            padding: 160px 0 120px;
+            text-align: center;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 24px;
+        }
+
+        .hero-badge .dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .hero h1 {
+            font-size: clamp(3rem, 8vw, 5rem);
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            margin-bottom: 24px;
+            background: linear-gradient(135deg, var(--text) 0%, var(--text-muted) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 640px;
+            margin: 0 auto 40px;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        /* Pipeline */
+        .pipeline {
+            padding: 80px 0;
+        }
+
+        .section-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 16px;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            letter-spacing: -0.02em;
+        }
+
+        .section-desc {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            max-width: 600px;
+            margin-bottom: 48px;
+        }
+
+        .pipeline-flow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding: 40px 0;
+        }
+
+        .pipeline-stage {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            padding: 20px 24px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            min-width: 140px;
+            transition: all 0.2s;
+        }
+
+        .pipeline-stage:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .pipeline-stage .icon {
+            font-size: 1.5rem;
+        }
+
+        .pipeline-stage .name {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .pipeline-stage .desc {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        .pipeline-arrow {
+            color: var(--text-muted);
+            font-size: 1.25rem;
+        }
+
+        /* Features */
+        .features {
+            padding: 80px 0;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+        }
+
+        .feature-card {
+            padding: 32px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            transition: all 0.2s;
+        }
+
+        .feature-card:hover {
+            border-color: var(--border);
+            background: var(--bg-subtle);
+        }
+
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 16px;
+        }
+
+        .feature-card h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .feature-card p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        /* Code Example */
+        .code-section {
+            padding: 80px 0;
+        }
+
+        .code-block {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .code-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: var(--bg-subtle);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .code-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .code-dot.red { background: #ff5f57; }
+        .code-dot.yellow { background: #febc2e; }
+        .code-dot.green { background: #28c840; }
+
+        .code-content {
+            padding: 24px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            line-height: 1.8;
+            overflow-x: auto;
+        }
+
+        .code-content .comment {
+            color: #6b7280;
+        }
+
+        .code-content .command {
+            color: var(--accent);
+        }
+
+        .code-content .string {
+            color: #22c55e;
+        }
+
+        .code-content .prompt {
+            color: var(--text-muted);
+            user-select: none;
+        }
+
+        /* Footer */
+        footer {
+            padding: 48px 0;
+            border-top: 1px solid var(--border);
+            margin-top: 80px;
+        }
+
+        footer .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 24px;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 24px;
+        }
+
+        .footer-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+
+        .footer-links a:hover {
+            color: var(--text);
+        }
+
+        .footer-copy {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+            }
+
+            .hero {
+                padding: 120px 0 80px;
+            }
+
+            .pipeline-flow {
+                flex-direction: column;
+            }
+
+            .pipeline-arrow {
+                transform: rotate(90deg);
+            }
+
+            footer .container {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="container">
+            <a href="/" class="logo">
+                <span class="logo-icon">📚</span>
+                <span>shelf</span>
+            </a>
+            <div class="nav-links">
+                <a href="#pipeline">Pipeline</a>
+                <a href="#features">Features</a>
+                <a href="#quickstart">Quick Start</a>
+                <a href="https://github.com/jackzampolin/shelf" class="btn btn-outline">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                    GitHub
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <section class="hero">
+            <div class="container">
+                <div class="hero-badge">
+                    <span class="dot"></span>
+                    Open Source
+                </div>
+                <h1>Scans to structured text</h1>
+                <p>Transform scanned books into structured, searchable digital text with AI-powered OCR and intelligent document analysis.</p>
+                <div class="hero-buttons">
+                    <a href="https://github.com/jackzampolin/shelf" class="btn btn-primary">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                        View on GitHub
+                    </a>
+                    <a href="#quickstart" class="btn btn-outline">Get Started</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="pipeline" id="pipeline">
+            <div class="container">
+                <p class="section-label">How it works</p>
+                <h2 class="section-title">A six-stage pipeline</h2>
+                <p class="section-desc">Each stage builds on the last, transforming raw scans into rich, structured content.</p>
+
+                <div class="pipeline-flow">
+                    <div class="pipeline-stage">
+                        <span class="icon">📷</span>
+                        <span class="name">OCR Pages</span>
+                        <span class="desc">Vision-based text extraction</span>
+                    </div>
+                    <span class="pipeline-arrow">→</span>
+                    <div class="pipeline-stage">
+                        <span class="icon">🏷️</span>
+                        <span class="name">Label Structure</span>
+                        <span class="desc">Classify content blocks</span>
+                    </div>
+                    <span class="pipeline-arrow">→</span>
+                    <div class="pipeline-stage">
+                        <span class="icon">📑</span>
+                        <span class="name">Extract ToC</span>
+                        <span class="desc">Find table of contents</span>
+                    </div>
+                    <span class="pipeline-arrow">→</span>
+                    <div class="pipeline-stage">
+                        <span class="icon">🔗</span>
+                        <span class="name">Link ToC</span>
+                        <span class="desc">Map entries to pages</span>
+                    </div>
+                    <span class="pipeline-arrow">→</span>
+                    <div class="pipeline-stage">
+                        <span class="icon">🏗️</span>
+                        <span class="name">Build Structure</span>
+                        <span class="desc">Unified document model</span>
+                    </div>
+                    <span class="pipeline-arrow">→</span>
+                    <div class="pipeline-stage">
+                        <span class="icon">📖</span>
+                        <span class="name">Generate Output</span>
+                        <span class="desc">ePub, audiobook, API</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="features" id="features">
+            <div class="container">
+                <p class="section-label">Features</p>
+                <h2 class="section-title">Built for quality</h2>
+                <p class="section-desc">Production-ready tools for digitizing physical books at scale.</p>
+
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">🤖</div>
+                        <h3>AI-Powered OCR</h3>
+                        <p>Uses vision language models for accurate text extraction, even from challenging scans with complex layouts.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">📊</div>
+                        <h3>Intelligent Structure</h3>
+                        <p>Automatically identifies chapters, sections, footnotes, and other structural elements.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">✨</div>
+                        <h3>LLM Polish</h3>
+                        <p>AI-assisted text cleaning fixes OCR artifacts, page-break issues, and formatting inconsistencies.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">💰</div>
+                        <h3>Cost Tracking</h3>
+                        <p>Built-in metrics track API costs per page and per stage. Know exactly what each book costs to process.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">⏸️</div>
+                        <h3>Resumable Pipeline</h3>
+                        <p>Checkpointing at every stage. Resume processing after interruptions without re-doing completed work.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🌐</div>
+                        <h3>Web Interface</h3>
+                        <p>Built-in web UI for reviewing output, inspecting pages, and monitoring progress across your library.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="code-section" id="quickstart">
+            <div class="container">
+                <p class="section-label">Quick Start</p>
+                <h2 class="section-title">Up and running in minutes</h2>
+                <p class="section-desc">Install shelf and process your first book scan.</p>
+
+                <div class="code-block">
+                    <div class="code-header">
+                        <span class="code-dot red"></span>
+                        <span class="code-dot yellow"></span>
+                        <span class="code-dot green"></span>
+                    </div>
+                    <div class="code-content">
+                        <div><span class="comment"># Clone and install</span></div>
+                        <div><span class="prompt">$ </span><span class="command">git clone</span> https://github.com/jackzampolin/shelf.git</div>
+                        <div><span class="prompt">$ </span><span class="command">cd</span> shelf && <span class="command">uv</span> venv && <span class="command">source</span> .venv/bin/activate</div>
+                        <div><span class="prompt">$ </span><span class="command">uv</span> pip install -e .</div>
+                        <div style="margin-top: 16px"><span class="comment"># Add your OpenRouter API key</span></div>
+                        <div><span class="prompt">$ </span><span class="command">echo</span> <span class="string">"OPENROUTER_API_KEY=sk-..."</span> > .env</div>
+                        <div style="margin-top: 16px"><span class="comment"># Ingest a book scan (folder of page images)</span></div>
+                        <div><span class="prompt">$ </span><span class="command">shelf</span> ingest /path/to/scans --title <span class="string">"My Book"</span></div>
+                        <div style="margin-top: 16px"><span class="comment"># Process the book through all stages</span></div>
+                        <div><span class="prompt">$ </span><span class="command">shelf</span> book my-book process</div>
+                        <div style="margin-top: 16px"><span class="comment"># Launch the web UI to review</span></div>
+                        <div><span class="prompt">$ </span><span class="command">shelf</span> serve --port 8080</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <div class="footer-links">
+                <a href="https://github.com/jackzampolin/shelf">GitHub</a>
+                <a href="https://github.com/jackzampolin/shelf/issues">Issues</a>
+                <a href="https://github.com/jackzampolin/shelf/blob/main/LICENSE">License</a>
+            </div>
+            <p class="footer-copy">MIT License &copy; 2025</p>
+        </div>
+    </footer>
+</body>
+</html>

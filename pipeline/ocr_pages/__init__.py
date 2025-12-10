@@ -24,6 +24,11 @@ class OcrPagesStage(BaseStage):
     name = "ocr-pages"
     dependencies = []
 
+    # Metadata
+    icon = "📷"
+    short_name = "OCR Pages"
+    description = "Extract text from scanned page images using vision AI models"
+
     @classmethod
     def default_kwargs(cls, **overrides):
         return {

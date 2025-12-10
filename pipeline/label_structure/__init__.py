@@ -14,6 +14,11 @@ class LabelStructureStage(BaseStage):
     name = "label-structure"
     dependencies = ["ocr-pages"]
 
+    # Metadata
+    icon = "🏷️"
+    short_name = "Label Structure"
+    description = "Classify content blocks as body text, headers, footnotes, or page numbers"
+
     @classmethod
     def default_kwargs(cls, **overrides):
         return {}

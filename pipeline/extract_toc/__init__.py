@@ -11,9 +11,13 @@ from . import extract
 
 
 class ExtractTocStage(BaseStage):
-
     name = "extract-toc"
     dependencies = ["ocr-pages"]
+
+    # Metadata
+    icon = "📑"
+    short_name = "Extract ToC"
+    description = "Identify and extract the table of contents from OCR output"
 
     @classmethod
     def default_kwargs(cls, **overrides):

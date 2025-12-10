@@ -17,6 +17,11 @@ class EpubOutputStage(BaseStage):
     name = "epub-output"
     dependencies = ["common-structure", "label-structure"]
 
+    # Metadata
+    icon = "📖"
+    short_name = "Generate Output"
+    description = "Create ePub files, audiobook scripts, or structured API output"
+
     @classmethod
     def default_kwargs(cls, **overrides):
         defaults = {

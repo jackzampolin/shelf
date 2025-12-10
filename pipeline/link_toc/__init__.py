@@ -14,6 +14,11 @@ class LinkTocStage(BaseStage):
     name = "link-toc"
     dependencies = ["extract-toc", "label-structure", "ocr-pages"]
 
+    # Metadata
+    icon = "🔗"
+    short_name = "Link ToC"
+    description = "Map table of contents entries to their corresponding page numbers"
+
     @classmethod
     def default_kwargs(cls, **overrides):
         kwargs = {'max_iterations': 15, 'verbose': False}

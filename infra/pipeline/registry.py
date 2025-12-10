@@ -29,3 +29,18 @@ def get_stage_map(storage, **overrides):
         stage_def['name']: get_stage_instance(storage, stage_def['name'], **overrides)
         for stage_def in STAGE_DEFINITIONS
     }
+
+
+def get_all_stage_metadata():
+    """Get metadata from all stage classes (for website generation)."""
+    stages = []
+    for stage_def in STAGE_DEFINITIONS:
+        stage_class = get_stage_class(stage_def['name'])
+        stages.append({
+            'name': stage_def['name'],
+            'icon': getattr(stage_class, 'icon', '📦'),
+            'short_name': getattr(stage_class, 'short_name', stage_def['name']),
+            'description': getattr(stage_class, 'description', ''),
+            'dependencies': getattr(stage_class, 'dependencies', []),
+        })
+    return stages
