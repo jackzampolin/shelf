@@ -23,7 +23,7 @@ def create_merge_tracker(stage_storage: StageStorage):
         entries_data = skeleton.get("entries", [])
 
         # Load polished entries
-        polish_dir = tracker.stage_storage.storage.stage("common-structure").stage_dir / "polish_entries"
+        polish_dir = storage.stage("common-structure").output_dir / "polish_entries"
 
         entries = []
         for entry_data in entries_data:

@@ -20,6 +20,9 @@ from ..schemas import StructureEntry, SectionText
 
 
 def create_polish_tracker(stage_storage: StageStorage, model: str, max_workers: int = 10):
+    # Sections to skip (redundant in structured digital form)
+    SKIP_SEMANTIC_TYPES = {"index"}
+
     def discover_entries(phase_dir: Path) -> List[str]:
         """Discover entry IDs from the skeleton."""
         try:
@@ -29,8 +32,11 @@ def create_polish_tracker(stage_storage: StageStorage, model: str, max_workers: 
         if not skeleton:
             return []
         entries = skeleton.get("entries", [])
-        # Only entries with page ranges
-        return [e["entry_id"] for e in entries if e.get("scan_page_end")]
+        # Only entries with page ranges, skip Index (redundant with search)
+        return [
+            e["entry_id"] for e in entries
+            if e.get("scan_page_end") and e.get("semantic_type") not in SKIP_SEMANTIC_TYPES
+        ]
 
     def output_path_fn(entry_id: str, phase_dir: Path) -> Path:
         return phase_dir / f"{entry_id}.json"
