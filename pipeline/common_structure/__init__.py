@@ -1,32 +1,49 @@
 import json
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import artifact_tracker
+from infra.config import Config
 
-from .schemas import CommonStructureOutput, BookMetadata, PageReference, StructureEntry
+from .schemas import CommonStructureOutput, BookMetadata, PageReference, StructureEntry, SectionText
 from .tools import (
     detect_boundaries,
-    classify_front_back_matter,
+    classify_front_back_matter_from_entries,
     extract_headings_from_labels,
     reconcile_toc_with_headings,
     build_structure_entries,
-    calculate_hierarchy_stats
+    calculate_hierarchy_stats,
+    extract_section_text,
+    polish_section_text,
+    classify_entries,
+    EntryForClassification,
 )
 
 
 class CommonStructureStage(BaseStage):
     name = "common-structure"
-    dependencies = ["link-toc", "label-structure"]
+    dependencies = ["link-toc", "label-structure", "ocr-pages"]
 
     @classmethod
     def default_kwargs(cls, **overrides):
-        return {}
+        kwargs = {'model': None, 'skip_polish': False}
+        if 'model' in overrides and overrides['model']:
+            kwargs['model'] = overrides['model']
+        if 'skip_polish' in overrides:
+            kwargs['skip_polish'] = overrides['skip_polish']
+        return kwargs
 
-    def __init__(self, storage: BookStorage):
+    def __init__(
+        self,
+        storage: BookStorage,
+        model: Optional[str] = None,
+        skip_polish: bool = False
+    ):
         super().__init__(storage)
+        self.model = model or Config.vision_model_primary
+        self.skip_polish = skip_polish
 
         def extract_structure(tracker, **kwargs):
             return self._extract_structure(tracker)
@@ -45,7 +62,7 @@ class CommonStructureStage(BaseStage):
 
         start_time = datetime.now(timezone.utc)
 
-        total_pages = storage.metadata.get("total_pages", 0)
+        total_pages = storage.load_metadata().get("total_pages", 0)
         if not total_pages:
             raise ValueError("total_pages not found in book metadata")
 
@@ -78,20 +95,79 @@ class CommonStructureStage(BaseStage):
             f"{stats['total_chapters']} chapters, {stats['total_sections']} sections"
         )
 
-        logger.info("Phase 5: Building page references...")
+        logger.info("Phase 5: Classifying entries as front/body/back matter (LLM)...")
+        entries_for_classification = [
+            EntryForClassification(
+                entry_id=entry.entry_id,
+                title=entry.title,
+                position=i + 1,
+                total_entries=len(structure_entries),
+                scan_page_start=entry.scan_page_start
+            )
+            for i, entry in enumerate(structure_entries)
+        ]
+
+        classifications = classify_entries(tracker, entries_for_classification, self.model)
+
+        for entry in structure_entries:
+            if entry.entry_id in classifications:
+                entry.matter_type = classifications[entry.entry_id]
+
+        matter_counts = {"front_matter": 0, "body": 0, "back_matter": 0}
+        for entry in structure_entries:
+            matter_counts[entry.matter_type] += 1
+        logger.info(
+            f"✓ Classified: {matter_counts['front_matter']} front, "
+            f"{matter_counts['body']} body, {matter_counts['back_matter']} back"
+        )
+
+        logger.info("Phase 6: Building page references...")
         page_references = self._build_page_references(storage, total_pages)
         logger.info(f"✓ Built {len(page_references)} page references")
 
-        logger.info("Phase 6: Classifying front/back matter...")
-        front_matter, back_matter = classify_front_back_matter(reconciled_boundaries, total_pages)
+        logger.info("Phase 7: Computing front/back matter page lists...")
+        front_matter, back_matter = classify_front_back_matter_from_entries(structure_entries, total_pages)
         logger.info(
             f"✓ Front matter: {len(front_matter)} pages, Back matter: {len(back_matter)} pages"
         )
+
+        logger.info("Phase 8: Extracting text content for each section...")
+        total_words = 0
+        for entry in structure_entries:
+            section_text = extract_section_text(
+                storage, logger,
+                entry.scan_page_start,
+                entry.scan_page_end
+            )
+            entry.content = section_text
+            total_words += section_text.word_count
+
+        logger.info(f"✓ Extracted text for {len(structure_entries)} sections ({total_words:,} words)")
+
+        if not self.skip_polish:
+            logger.info("Phase 9: LLM polish (generating edits)...")
+            total_edits = 0
+            for entry in structure_entries:
+                if entry.content and entry.content.mechanical_text:
+                    entry.content = polish_section_text(
+                        tracker, entry.title, entry.content, self.model
+                    )
+                    total_edits += len(entry.content.edits_applied)
+
+            logger.info(f"✓ Applied {total_edits} edits across {len(structure_entries)} sections")
+        else:
+            logger.info("Phase 9: Skipping LLM polish (--skip-polish)")
+            for entry in structure_entries:
+                if entry.content:
+                    entry.content.final_text = entry.content.mechanical_text
 
         metadata = self._build_metadata(storage, total_pages)
 
         end_time = datetime.now(timezone.utc)
         processing_time = (end_time - start_time).total_seconds()
+
+        # Calculate total cost from metrics
+        total_cost = tracker.metrics_manager.get_total_cost() if hasattr(tracker, 'metrics_manager') else 0.0
 
         output = CommonStructureOutput(
             metadata=metadata,
@@ -104,7 +180,7 @@ class CommonStructureStage(BaseStage):
             total_parts=stats["total_parts"],
             total_sections=stats["total_sections"],
             extracted_at=end_time.isoformat(),
-            cost_usd=0.0,
+            cost_usd=total_cost,
             processing_time_seconds=processing_time
         )
 
@@ -113,8 +189,8 @@ class CommonStructureStage(BaseStage):
         with open(structure_path, "w") as f:
             json.dump(output.model_dump(), f, indent=2)
 
-        logger.info(f"✓ Structure reconciliation complete in {processing_time:.1f}s")
-        logger.info(f"  → {stats['total_entries']} entries, {len(page_references)} pages")
+        logger.info(f"✓ Structure extraction complete in {processing_time:.1f}s")
+        logger.info(f"  → {stats['total_entries']} entries, {total_words:,} words, ${total_cost:.4f}")
 
         return {"status": "success"}
 
@@ -125,7 +201,8 @@ class CommonStructureStage(BaseStage):
         label_structure_storage = storage.stage("label-structure")
 
         for page_num in range(1, total_pages + 1):
-            page_data = label_structure_storage.load_page(page_num)
+            # Load from unified subdirectory where page numbers are stored
+            page_data = label_structure_storage.load_file(f"unified/page_{page_num:04d}.json")
 
             if not page_data:
                 page_refs.append(PageReference(
@@ -136,7 +213,7 @@ class CommonStructureStage(BaseStage):
                 continue
 
             page_num_data = page_data.get("page_number", {})
-            printed_page = page_num_data.get("number")
+            printed_page = page_num_data.get("number") if page_num_data.get("present") else None
 
             numbering_style = "none"
             if printed_page:

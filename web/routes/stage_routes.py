@@ -13,6 +13,9 @@ from web.data.link_toc_data import get_link_toc_data, get_linked_entries_tree
 from web.data.ocr_pages_data import (
     get_ocr_pages_data, get_page_ocr_text, get_blend_text
 )
+from web.data.common_structure_data import (
+    get_structure_summary, get_structure_entries, get_entry_detail
+)
 
 stage_bp = Blueprint('stage', __name__)
 
@@ -303,3 +306,79 @@ def serve_source_image(scan_id: str, page_num: int):
         abort(404, f"Page image not found: {image_filename}")
 
     return send_file(str(image_path), mimetype='image/png')
+
+
+@stage_bp.route('/stage/<scan_id>/common-structure')
+def common_structure_view(scan_id: str):
+    """
+    Common-structure stage view.
+
+    Shows:
+    - Summary stats (entries, chapters, word counts)
+    - List of all structure entries with text preview
+    - Click entry to see full text content
+    """
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    metadata = library.get_scan_info(scan_id)
+    if not metadata:
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+
+    summary = get_structure_summary(storage)
+    if not summary:
+        abort(404, f"Common-structure stage not run for '{scan_id}'")
+
+    entries = get_structure_entries(storage)
+
+    return render_template(
+        'stage/common_structure.html',
+        scan_id=scan_id,
+        metadata=metadata,
+        summary=summary,
+        entries=entries,
+    )
+
+
+@stage_bp.route('/stage/<scan_id>/common-structure/entry/<entry_id>')
+def common_structure_entry_view(scan_id: str, entry_id: str):
+    """
+    Individual entry view for common-structure.
+
+    Shows:
+    - Full final text
+    - Edits applied
+    - Per-page breakdown
+    - Page images on the side
+    """
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    metadata = library.get_scan_info(scan_id)
+    if not metadata:
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+
+    entry = get_entry_detail(storage, entry_id)
+    if not entry:
+        abort(404, f"Entry '{entry_id}' not found")
+
+    # Get all entries for navigation
+    all_entries = get_structure_entries(storage)
+
+    # Find prev/next
+    entry_ids = [e['entry_id'] for e in all_entries]
+    current_idx = entry_ids.index(entry_id) if entry_id in entry_ids else -1
+    prev_entry = entry_ids[current_idx - 1] if current_idx > 0 else None
+    next_entry = entry_ids[current_idx + 1] if current_idx < len(entry_ids) - 1 else None
+
+    return render_template(
+        'stage/common_structure_entry.html',
+        scan_id=scan_id,
+        metadata=metadata,
+        entry=entry,
+        all_entries=all_entries,
+        prev_entry=prev_entry,
+        next_entry=next_entry,
+    )

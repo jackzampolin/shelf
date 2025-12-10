@@ -33,13 +33,14 @@
     <table class="status-table">
         <thead>
             <tr>
-                <th style="width: 15%;">Book</th>
-                <th style="width: 8%;">Total Time</th>
-                <th style="width: 8%;">Total Cost</th>
-                <th style="width: 10%;">OCR Pages</th>
-                <th style="width: 10%;">Extract ToC</th>
-                <th style="width: 10%;">Label Structure</th>
-                <th style="width: 10%;">Link ToC</th>
+                <th style="width: 14%;">Book</th>
+                <th style="width: 7%;">Total Time</th>
+                <th style="width: 7%;">Total Cost</th>
+                <th style="width: 9%;">OCR Pages</th>
+                <th style="width: 9%;">Extract ToC</th>
+                <th style="width: 9%;">Label Structure</th>
+                <th style="width: 9%;">Link ToC</th>
+                <th style="width: 9%;">Structure</th>
             </tr>
         </thead>
         <tbody>
@@ -118,6 +119,18 @@
                     {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
                     {% if status in ['completed', 'in_progress'] %}
                         {% set link = '/stage/' ~ book.scan_id ~ '/link-toc' %}
+                    {% endif %}
+                    {% include 'components/status_badge.html' %}
+                </td>
+
+                <!-- Common Structure Status -->
+                <td>
+                    {% set stage_data = book.stages.get('common-structure', {}) %}
+                    {% set status = stage_data.get('status', 'not_started') %}
+                    {% set cost_usd = stage_data.get('cost_usd', 0.0) %}
+                    {% set runtime_seconds = stage_data.get('runtime_seconds', 0.0) %}
+                    {% if status in ['completed', 'in_progress'] %}
+                        {% set link = '/stage/' ~ book.scan_id ~ '/common-structure' %}
                     {% endif %}
                     {% include 'components/status_badge.html' %}
                 </td>

@@ -20,12 +20,23 @@ class ChapterBoundary:
 def detect_semantic_type(title: str, level: int, entry_number: Optional[str]) -> str:
     title_lower = title.lower()
 
-    if any(x in title_lower for x in ["preface", "foreword", "introduction", "prologue"]):
-        return title_lower.split()[0]
+    # Front matter types
+    front_matter_keywords = ["preface", "foreword", "introduction", "prologue", "timeline"]
+    for keyword in front_matter_keywords:
+        if keyword in title_lower:
+            return keyword
 
-    if any(x in title_lower for x in ["epilogue", "afterword", "appendix", "index"]):
-        return title_lower.split()[0]
+    # Back matter types
+    back_matter_keywords = [
+        "epilogue", "afterword", "appendix", "index", "notes", "endnotes",
+        "acknowledgments", "acknowledgements", "bibliography", "references",
+        "glossary", "about the author"
+    ]
+    for keyword in back_matter_keywords:
+        if keyword in title_lower:
+            return keyword.replace(" ", "_")
 
+    # Default based on hierarchy
     if level == 1:
         return "part"
     elif level == 2:
@@ -111,10 +122,42 @@ def detect_boundaries(
     return boundaries
 
 
+def classify_front_back_matter_from_entries(
+    entries: List,  # List[StructureEntry] - avoids circular import
+    total_pages: int
+) -> Tuple[List[int], List[int]]:
+    """
+    Classify pages as front or back matter based on LLM-classified entry matter_type.
+
+    front_matter_pages: Pages BEFORE the first entry (title pages, copyright, etc.)
+    back_matter_pages: Pages belonging to entries classified as back_matter
+
+    Note: back_matter_pages will overlap with entries - this is intentional.
+    The matter_type on each entry indicates its classification.
+    """
+    front_matter_pages = []
+    back_matter_pages = []
+
+    if entries:
+        first_entry_start = entries[0].scan_page_start
+        if first_entry_start > 1:
+            front_matter_pages = list(range(1, first_entry_start))
+
+    for entry in entries:
+        if entry.matter_type == "back_matter":
+            back_matter_pages.extend(
+                range(entry.scan_page_start, entry.scan_page_end + 1)
+            )
+
+    return front_matter_pages, back_matter_pages
+
+
+# Keep old function for backwards compatibility
 def classify_front_back_matter(
     boundaries: List[ChapterBoundary],
     total_pages: int
 ) -> Tuple[List[int], List[int]]:
+    """DEPRECATED: Use classify_front_back_matter_from_entries with LLM-classified entries."""
     front_matter_pages = []
     back_matter_pages = []
 
@@ -123,9 +166,14 @@ def classify_front_back_matter(
         if first_chapter_start > 1:
             front_matter_pages = list(range(1, first_chapter_start))
 
-    back_matter_types = {"epilogue", "afterword", "appendix", "index"}
+    # Old keyword-based approach - kept for backwards compatibility
+    back_matter_keywords = {
+        "epilogue", "afterword", "appendix", "index", "notes", "endnotes",
+        "acknowledgments", "acknowledgements", "bibliography", "references",
+        "glossary", "about_the_author"
+    }
     for boundary in boundaries:
-        if boundary.semantic_type in back_matter_types:
+        if boundary.semantic_type in back_matter_keywords:
             back_matter_pages.extend(
                 range(boundary.scan_page_start, boundary.scan_page_end + 1)
             )

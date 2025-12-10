@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}{{ scan_id }} - Common Structure{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/stage.css') }}">
+<style>
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        margin: 2rem 0;
+    }
+
+    .summary-card {
+        background: white;
+        padding: 1.25rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+
+    .summary-card .value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #333;
+    }
+
+    .summary-card .label {
+        font-size: 0.85rem;
+        color: #666;
+        margin-top: 0.25rem;
+    }
+
+    .entries-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 2rem;
+        background: white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .entries-table thead {
+        background: #f5f5f5;
+        border-bottom: 2px solid #e0e0e0;
+    }
+
+    .entries-table th {
+        padding: 0.75rem;
+        text-align: left;
+        font-weight: 600;
+        color: #333;
+        font-size: 0.9rem;
+    }
+
+    .entries-table tbody tr {
+        border-bottom: 1px solid #e0e0e0;
+        transition: background-color 0.2s;
+        cursor: pointer;
+    }
+
+    .entries-table tbody tr:hover {
+        background-color: #f0f7ff;
+    }
+
+    .entries-table td {
+        padding: 0.75rem;
+        font-size: 0.9rem;
+    }
+
+    .entry-title {
+        font-weight: 600;
+        color: #0066cc;
+    }
+
+    .entry-type {
+        display: inline-block;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        background: #e3f2fd;
+        color: #1565c0;
+    }
+
+    .entry-type.part {
+        background: #fce4ec;
+        color: #c2185b;
+    }
+
+    .entry-type.chapter {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .entry-type.section {
+        background: #fff3e0;
+        color: #ef6c00;
+    }
+
+    .word-count {
+        color: #666;
+        font-size: 0.85rem;
+    }
+
+    .edits-badge {
+        display: inline-block;
+        padding: 0.15rem 0.4rem;
+        border-radius: 10px;
+        font-size: 0.75rem;
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .text-muted {
+        color: #999;
+    }
+
+    .level-indent {
+        display: inline-block;
+    }
+
+    .level-indent.level-1 { padding-left: 0; }
+    .level-indent.level-2 { padding-left: 1.5rem; }
+    .level-indent.level-3 { padding-left: 3rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-wide">
+    <div class="stage-header">
+        <div class="breadcrumb">
+            <a href="/">← Library</a>
+            <span class="separator">/</span>
+            <span>{{ scan_id }}</span>
+            <span class="separator">/</span>
+            <span class="current">common-structure</span>
+        </div>
+
+        <h2>Book Structure</h2>
+
+        <div class="book-info">
+            <strong>{{ summary.metadata.title or scan_id }}</strong>
+            {% if summary.metadata.author and summary.metadata.author != 'Unknown' %}
+                <span class="author">by {{ summary.metadata.author }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="summary-grid">
+        <div class="summary-card">
+            <div class="value">{{ summary.total_entries }}</div>
+            <div class="label">Sections</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">{{ summary.total_parts }}</div>
+            <div class="label">Parts</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">{{ summary.total_chapters }}</div>
+            <div class="label">Chapters</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">{{ summary.total_pages }}</div>
+            <div class="label">Pages</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">${{ "%.2f"|format(summary.cost_usd) }}</div>
+            <div class="label">Cost</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">{{ "%.0f"|format(summary.processing_time_seconds) }}s</div>
+            <div class="label">Time</div>
+        </div>
+    </div>
+
+    <table class="entries-table">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Type</th>
+                <th>Pages</th>
+                <th>Words</th>
+                <th>Edits</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in entries %}
+            <tr onclick="window.location='{{ url_for('stage.common_structure_entry_view', scan_id=scan_id, entry_id=entry.entry_id) }}'">
+                <td>
+                    <span class="level-indent level-{{ entry.level }}">
+                        {% if entry.entry_number %}
+                            <span class="text-muted">{{ entry.entry_number }}.</span>
+                        {% endif %}
+                        <span class="entry-title">{{ entry.title }}</span>
+                    </span>
+                </td>
+                <td>
+                    <span class="entry-type {{ entry.semantic_type }}">
+                        {{ entry.semantic_type }}
+                    </span>
+                </td>
+                <td>
+                    {{ entry.scan_page_start }}–{{ entry.scan_page_end }}
+                    <span class="text-muted">({{ entry.page_count }})</span>
+                </td>
+                <td>
+                    <span class="word-count">{{ "{:,}".format(entry.word_count) }}</span>
+                </td>
+                <td>
+                    {% if entry.edits_count > 0 %}
+                        <span class="edits-badge">{{ entry.edits_count }} edits</span>
+                    {% else %}
+                        <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
