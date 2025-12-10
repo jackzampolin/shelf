@@ -442,7 +442,7 @@ def test_extract_toc_full_library():
     Results are saved to test_results/extract-toc/runs/{timestamp}_{commit}/
     with per-book JSON files for detailed analysis.
 
-    Test data comes from the real library (~/Documents/book_scans) but outputs
+    Test data comes from the real library (~/Documents/shelf) but outputs
     are written to test_outputs/ to avoid overwriting production data.
     """
     expected_results = load_all_expected_results()

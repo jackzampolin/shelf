@@ -172,7 +172,7 @@ uv run python -m pytest tests/
 
 **Secrets (.env):**
 - `OPENROUTER_API_KEY` - For LLM API calls
-- `BOOK_STORAGE_ROOT` (optional) - Defaults to `~/Documents/book_scans`
+- `BOOK_STORAGE_ROOT` (optional) - Defaults to `~/Documents/shelf`
 </quick_reference>
 
 <remember>

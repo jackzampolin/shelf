@@ -21,7 +21,7 @@ def get_library_root() -> Path:
         return Path(env_root).expanduser()
 
     # Default location
-    return Path.home() / "Documents" / "book_scans"
+    return Path.home() / "Documents" / "shelf"
 
 
 def get_test_output_root() -> Path:
@@ -46,7 +46,7 @@ def create_test_storage(
     Args:
         book_id: Book scan ID
         clean: If True, remove existing test workspace first
-        library_root: Override library location (default: ~/Documents/book_scans)
+        library_root: Override library location (default: ~/Documents/shelf)
         stage_under_test: Stage being tested (won't symlink this stage's outputs)
 
     Returns:

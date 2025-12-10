@@ -12,7 +12,7 @@ class Config:
     """Web app configuration."""
 
     BOOK_STORAGE_ROOT = Path(
-        os.getenv("BOOK_STORAGE_ROOT", "~/Documents/book_scans")
+        os.getenv("BOOK_STORAGE_ROOT", "~/Documents/shelf")
     ).expanduser()
 
     HOST = os.getenv("WEB_HOST", "127.0.0.1")

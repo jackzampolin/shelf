@@ -9,7 +9,7 @@ from infra.pipeline.storage.source_storage import SourceStorage
 class BookStorage:
     def __init__(self, scan_id: str, storage_root: Optional[Path] = None):
         self._scan_id = scan_id
-        self._storage_root = Path(storage_root or Path.home() / "Documents" / "book_scans").expanduser()
+        self._storage_root = Path(storage_root or Path.home() / "Documents" / "shelf").expanduser()
         self._book_dir = self._storage_root / scan_id
 
         self._stage_cache: Dict[str, StageStorage] = {}

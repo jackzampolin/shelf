@@ -233,7 +233,7 @@ Each stage:
 ### Storage Structure
 
 ```
-~/Documents/book_scans/
+~/Documents/shelf/
 ├── .library.json             # Library-wide operational state
 ├── {scan-id}/                # Per-book directory (BookStorage)
 │   ├── metadata.json         # Book metadata (title, author, year)

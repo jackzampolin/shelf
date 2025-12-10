@@ -37,7 +37,7 @@ class ShelfConfig(BaseModel):
     )
 
     book_storage_root: Path = Field(
-        default=Path.home() / "Documents" / "book_scans",
+        default=Path.home() / "Documents" / "shelf",
         description="Root directory for book storage"
     )
 
@@ -70,7 +70,7 @@ def _load_config() -> ShelfConfig:
         deepseek_api_key=os.getenv('DEEPSEEK_API_KEY', ''),
         deepinfra_api_key=os.getenv('DEEPINFRA_API_KEY', ''),
         vision_model_primary=os.getenv('VISION_MODEL_PRIMARY', ''),
-        book_storage_root=Path(os.getenv('BOOK_STORAGE_ROOT', '~/Documents/book_scans')),
+        book_storage_root=Path(os.getenv('BOOK_STORAGE_ROOT', '~/Documents/shelf')),
     )
 
 Config = _load_config()

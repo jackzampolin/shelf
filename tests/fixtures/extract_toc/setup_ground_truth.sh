@@ -4,7 +4,7 @@
 
 set -e
 
-BOOK_STORAGE="${BOOK_STORAGE_ROOT:-$HOME/Documents/book_scans}"
+BOOK_STORAGE="${BOOK_STORAGE_ROOT:-$HOME/Documents/shelf}"
 GT_ROOT="tests/fixtures/toc_ground_truth"
 
 BOOKS=(
