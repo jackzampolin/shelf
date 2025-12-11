@@ -1,5 +1,111 @@
+from typing import List, Optional
 from ..schemas import LinkedTableOfContents, PatternAnalysis, HeadingDecision
 from ..schemas import EnrichedToCEntry, EnrichedTableOfContents
+
+
+def _deduplicate_by_entry_number(
+    headings: List[HeadingDecision],
+    pattern: Optional[PatternAnalysis],
+    logger
+) -> List[HeadingDecision]:
+    """
+    Deduplicate headings that claim the same entry_number.
+
+    For sequential patterns (chapters 1-38), each number should appear only once.
+    When duplicates exist, keep the one with better positional fit.
+    """
+    if not pattern or not headings:
+        return headings
+
+    # Group headings by entry_number
+    by_number = {}
+    no_number = []
+
+    for h in headings:
+        if h.entry_number:
+            if h.entry_number not in by_number:
+                by_number[h.entry_number] = []
+            by_number[h.entry_number].append(h)
+        else:
+            no_number.append(h)
+
+    # For each group with duplicates, pick the best one
+    deduped = []
+    body_start, body_end = pattern.body_range
+    body_size = body_end - body_start
+
+    # Find sequential include patterns to determine expected positions
+    sequential_patterns = [
+        p for p in pattern.discovered_patterns
+        if p.pattern_type == "sequential" and p.action == "include"
+    ]
+
+    for entry_num, candidates in by_number.items():
+        if len(candidates) == 1:
+            deduped.append(candidates[0])
+        else:
+            # Multiple candidates for same entry_number - pick best positional fit
+            logger.info(f"Deduplicating entry_number '{entry_num}': {len(candidates)} candidates")
+
+            # Try to determine expected position from pattern
+            best = _pick_best_positional_fit(
+                entry_num, candidates, sequential_patterns, body_start, body_size, logger
+            )
+            deduped.append(best)
+
+    # Add headings without entry_number
+    deduped.extend(no_number)
+
+    return deduped
+
+
+def _pick_best_positional_fit(
+    entry_num: str,
+    candidates: List[HeadingDecision],
+    sequential_patterns: list,
+    body_start: int,
+    body_size: int,
+    logger
+) -> HeadingDecision:
+    """Pick the candidate with best positional fit for the entry number."""
+
+    # Try to parse entry_num as integer for position calculation
+    try:
+        num = int(entry_num)
+    except ValueError:
+        # Non-numeric entry_number - just pick first by page order
+        candidates.sort(key=lambda h: h.scan_page)
+        logger.info(f"  Non-numeric '{entry_num}', keeping first: p{candidates[0].scan_page}")
+        return candidates[0]
+
+    # Find the pattern this number belongs to
+    for pat in sequential_patterns:
+        try:
+            start = int(pat.range_start) if pat.range_start and pat.range_start.isdigit() else 1
+            end = int(pat.range_end) if pat.range_end and pat.range_end.isdigit() else start
+
+            if start <= num <= end:
+                # Calculate expected page position
+                total_entries = end - start + 1
+                position_fraction = (num - start) / total_entries
+                expected_page = body_start + int(position_fraction * body_size)
+
+                # Pick candidate closest to expected position
+                best = min(candidates, key=lambda h: abs(h.scan_page - expected_page))
+
+                for c in candidates:
+                    if c != best:
+                        logger.info(f"  Rejecting p{c.scan_page} '{c.title}' (expected ~p{expected_page})")
+                logger.info(f"  Keeping p{best.scan_page} '{best.title}' (closest to expected ~p{expected_page})")
+
+                return best
+        except (ValueError, TypeError):
+            continue
+
+    # No matching pattern found - keep first by page order
+    candidates.sort(key=lambda h: h.scan_page)
+    logger.info(f"  No pattern match for '{entry_num}', keeping first: p{candidates[0].scan_page}")
+    return candidates[0]
 
 
 def find_parent_toc_entry(scan_page: int, toc_entries: list, toc_index_map: dict):
@@ -104,6 +210,10 @@ def merge_enriched_toc(tracker, **kwargs):
 
     # Build set of pages that already have ToC entries - NEVER add duplicates
     toc_pages = {e.scan_page for e in valid_toc_entries}
+
+    # Deduplicate by entry_number - if multiple headings claim the same number,
+    # keep the one with the best positional fit for sequential patterns
+    approved_headings = _deduplicate_by_entry_number(approved_headings, pattern, logger)
 
     skipped_duplicates = 0
     for heading in approved_headings:
