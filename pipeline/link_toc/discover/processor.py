@@ -128,18 +128,20 @@ def discover_pattern_entries(tracker: PhaseStatusTracker, model: str = None, **k
         result_data = tools._pending_result
 
         if result_data and result_data.get("scan_page"):
-            # Found - generate title deterministically from pattern format
-            heading_format = entry.get("heading_format")
-            if heading_format:
-                # Use the pattern format: "CHAPTER {n}" -> "CHAPTER 1"
-                title = heading_format.replace("{n}", entry["identifier"]).replace("{roman}", entry["identifier"]).replace("{letter}", entry["identifier"])
+            # Found - construct title from level_name + identifier (like extract-toc does)
+            # e.g., level_name="chapter", identifier="1" -> title="Chapter 1"
+            level_name = entry.get("level_name", "")
+            identifier = entry["identifier"]
+
+            if level_name:
+                # Capitalize level_name: "chapter" -> "Chapter"
+                title = f"{level_name.capitalize()} {identifier}"
             else:
-                # No format specified - just use identifier
-                title = entry["identifier"]
+                title = identifier
 
             discovery_result = {
-                "identifier": entry["identifier"],
-                "level_name": entry["level_name"],
+                "identifier": identifier,
+                "level_name": level_name,
                 "level": entry["level"],
                 "scan_page": result_data["scan_page"],
                 "title": title,
@@ -184,7 +186,6 @@ def _generate_pattern_entries(
 
     level_name = pattern.level_name or "entry"
     level = pattern.level or 2
-    heading_format = pattern.heading_format  # e.g., "CHAPTER {n}", "{n}", "Chapter {n}"
 
     # Parse range
     start = pattern.range_start
@@ -211,7 +212,6 @@ def _generate_pattern_entries(
                 "identifier": str(i),
                 "level_name": level_name,
                 "level": level,
-                "heading_format": heading_format,
                 "search_range": (predicted_start, predicted_end),
                 "file_key": f"{level_name}_{i:03d}",
             })
@@ -238,7 +238,6 @@ def _generate_pattern_entries(
                 "identifier": roman,
                 "level_name": level_name,
                 "level": level,
-                "heading_format": heading_format,
                 "search_range": (predicted_start, predicted_end),
                 "file_key": f"{level_name}_{i:03d}",
             })
@@ -265,7 +264,6 @@ def _generate_pattern_entries(
                 "identifier": letter,
                 "level_name": level_name,
                 "level": level,
-                "heading_format": heading_format,
                 "search_range": (predicted_start, predicted_end),
                 "file_key": f"{level_name}_{letter}",
             })

@@ -68,19 +68,13 @@ def build_finder_user_prompt(entry: dict, total_pages: int) -> str:
     """Build the user prompt for finding a specific entry."""
     identifier = entry["identifier"]
     level_name = entry["level_name"]
-    heading_format = entry.get("heading_format")
     search_range = entry.get("search_range", (1, total_pages))
 
-    # Build expected heading text from format
-    if heading_format:
-        expected_heading = heading_format.replace("{n}", identifier).replace("{roman}", identifier).replace("{letter}", identifier)
-        format_note = f'Expected heading format: "{expected_heading}" (based on pattern: "{heading_format}")'
-    else:
-        expected_heading = f"{level_name.title()} {identifier}" if level_name else identifier
-        format_note = f"No specific format detected - try variations like \"{expected_heading}\", \"{identifier}\", etc."
+    # Build search term from level_name + identifier
+    search_term = f"{level_name.title()} {identifier}" if level_name else identifier
 
-    return f"""Find: {level_name.title()} {identifier}
-{format_note}
+    return f"""Find: {search_term}
+Search for variations: "{search_term}", "{level_name.upper()} {identifier}", "{identifier}", etc.
 Predicted location: pages {search_range[0]}-{search_range[1]} (search here first, but expand if not found)
 Book has {total_pages} total pages.
 TIP: Use grep_text to search the full book if not found in predicted range."""
