@@ -102,7 +102,6 @@ class PatternEntryFinderTools(AgentTools):
                         "type": "object",
                         "properties": {
                             "scan_page": {"type": ["integer", "null"], "description": "Scan page where found (null if not found)"},
-                            "heading_text": {"type": ["string", "null"], "description": "The actual heading text found (e.g., 'CHAPTER 1', '1', 'Chapter XIV')"},
                             "reasoning": {"type": "string", "description": "How you found it or why not found"}
                         },
                         "required": ["scan_page", "reasoning"]
@@ -154,7 +153,6 @@ class PatternEntryFinderTools(AgentTools):
                 })
             self._pending_result = {
                 "scan_page": scan_page,
-                "heading_text": tool_input.get("heading_text"),  # Actual heading found, e.g., "CHAPTER 1"
                 "reasoning": tool_input["reasoning"],
             }
             return json.dumps({"status": "success"})

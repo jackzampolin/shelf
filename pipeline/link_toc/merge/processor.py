@@ -98,8 +98,8 @@ def merge_enriched_toc(tracker, **kwargs):
             scan_page, valid_toc_entries, toc_index_map
         )
 
-        # Use heading_text if available (from agent or pattern format), otherwise identifier
-        title = entry.get("heading_text") or entry.get("identifier", "")
+        # Use title from discover (generated from pattern format), otherwise identifier
+        title = entry.get("title") or entry.get("identifier", "")
         identifier = entry.get("identifier", "")
 
         enriched_entries.append(EnrichedToCEntry(
