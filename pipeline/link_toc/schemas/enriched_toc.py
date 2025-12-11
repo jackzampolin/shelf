@@ -8,7 +8,7 @@ class EnrichedToCEntry(BaseModel):
     scan_page: int = Field(..., ge=1)
     level: int = Field(..., ge=1)
     parent_index: Optional[int] = None
-    source: Literal["toc", "discovered", "missing_found"]
+    source: Literal["toc", "discovered", "missing_found", "gap_fix"]
     entry_number: Optional[str] = None
     printed_page_number: Optional[str] = None
     discovery_reasoning: Optional[str] = None
