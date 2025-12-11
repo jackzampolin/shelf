@@ -36,9 +36,19 @@ def find_gaps(
     min_gap_size: int = 1
 ) -> List[PageGap]:
     """
-    Find all page gaps in the enriched ToC.
+    Find page coverage gaps in the enriched ToC.
 
-    A gap is any range of pages not covered by an entry.
+    IMPORTANT: Each entry "owns" the pages from its scan_page until the next
+    entry's scan_page - 1. So consecutive entries have NO gaps between them
+    by definition - that's just the entry's content.
+
+    True gaps are:
+    1. Pages before the first entry (if body_start < first_entry.scan_page)
+    2. Duplicate entries on the same page (indicates a problem)
+
+    This is NOT about finding missing chapters - that's what the pattern
+    analysis and missing search phases do. This is about validating that
+    the page attribution is complete.
     """
     if not entries:
         return [PageGap(
@@ -70,32 +80,8 @@ def find_gaps(
                 entry_after_page=first_entry.scan_page,
             ))
 
-    # Check gaps between entries
-    for i in range(len(sorted_entries) - 1):
-        current = sorted_entries[i]
-        next_entry = sorted_entries[i + 1]
-
-        # Gap is between current entry's page and next entry's page
-        # An entry "owns" from its scan_page to next entry's scan_page - 1
-        # So gap is only if there's more than 1 page difference that seems wrong
-        gap_start = current.scan_page + 1
-        gap_end = next_entry.scan_page - 1
-
-        if gap_end >= gap_start:
-            gap_size = gap_end - gap_start + 1
-            if gap_size >= min_gap_size:
-                gaps.append(PageGap(
-                    start_page=gap_start,
-                    end_page=gap_end,
-                    size=gap_size,
-                    entry_before=current.title,
-                    entry_before_page=current.scan_page,
-                    entry_after=next_entry.title,
-                    entry_after_page=next_entry.scan_page,
-                ))
-
-    # Check gap after last entry (this is usually the last entry's content, not a gap)
-    # We don't flag this as a gap since the last entry extends to body_end
+    # No gaps between entries - each entry owns from its page to the next entry's page - 1
+    # That's by definition how ToC coverage works.
 
     return gaps
 
