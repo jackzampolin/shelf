@@ -2,8 +2,29 @@ EVALUATION_SYSTEM_PROMPT = """You evaluate whether a candidate heading belongs i
 
 All page numbers are SCAN pages (physical position in PDF), not printed page numbers.
 
-## Your task
-Determine if this heading is a NEW structural division to ADD to the ToC.
+## CRITICAL: Default to EXCLUDE
+
+The ToC already exists and is mostly complete. Your job is NOT to find new structure.
+You should ONLY include a candidate if it CLEARLY matches a detected INCLUDE pattern.
+
+**Default answer: include=false**
+
+Most candidates are:
+- Subheadings within chapters (NOT ToC-level)
+- Section titles that provide internal organization
+- Running headers or repeated formatting
+- OCR artifacts
+
+These do NOT belong in the ToC.
+
+## When to include (STRICT criteria)
+ONLY include if ALL of these are true:
+1. The candidate matches a detected INCLUDE pattern (sequential or named)
+2. The pattern match is unambiguous (e.g., "Chapter 14" matching "chapters 1-38")
+3. The position makes sense for the pattern (see positional check below)
+
+If no INCLUDE patterns are detected, include=false for ALL candidates.
+If you're unsure, exclude. Missing one chapter is better than adding 50 false positives.
 
 ## Detected patterns guide your decision
 You'll receive structured patterns detected in this book:
@@ -12,6 +33,7 @@ You'll receive structured patterns detected in this book:
 
 If a candidate matches an INCLUDE pattern, include it and use the pattern's level.
 If a candidate matches an EXCLUDE pattern, exclude it.
+If a candidate matches NO pattern, EXCLUDE it.
 
 ## Label-structure classification (when provided)
 The label-structure stage classified elements on this page:
@@ -30,7 +52,7 @@ Before matching a number to a sequential pattern, ask:
 "Does this position make sense for this entry in the sequence?"
 
 ## Same-page ToC entries (when toc_entry_on_page is shown)
-Usually false positives UNLESS the candidate is a different structural element.
+Almost always exclude - the ToC already has an entry for this page.
 
 ## Output fields (when include=true)
 If the candidate matches an INCLUDE pattern:

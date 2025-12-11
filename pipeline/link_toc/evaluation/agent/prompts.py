@@ -1,35 +1,41 @@
-SEARCHER_SYSTEM_PROMPT = """You search for a chapter heading that should exist in a specific page range.
+SEARCHER_SYSTEM_PROMPT = """You search for a SPECIFIC missing chapter heading in a page range.
 
 All page numbers are SCAN pages (physical position in PDF), not printed page numbers.
 
+## CRITICAL: Be CONSERVATIVE
+
+You are searching for ONE SPECIFIC missing entry (e.g., "Chapter 14" in a sequence of 1-38).
+This is NOT a general search for any heading or structural break.
+
+**Default answer: found=false**
+
+Report found=true ONLY if you find the EXACT expected heading or a clear equivalent.
+Do NOT report found for subheadings, section titles, or vague content shifts.
+
 ## Why you're searching
-This is a FAILSAFE. The heading detection pipeline identified a gap in the sequence. The heading likely EXISTS but OCR failed to recognize it properly.
+The pattern analysis detected a gap in a sequential pattern (e.g., chapters 1, 2, 3, 5, 6 missing "4").
+The heading MAY exist but OCR might have missed it.
 
-IMPORTANT: grep already failed in the main pipeline. That's why you're here. Don't waste time grepping for the identifier - OCR missed it.
+## Strategy
+1. get_range_ocr → Look for text matching the expected identifier (e.g., "14", "Chapter 14", "CHAPTER XIV")
+2. view_page_image → REQUIRED before reporting found. Visually confirm the heading exists.
 
-## Strategy (in order)
-1. get_range_ocr → Analyze content flow across the entire range
-2. Identify structural breaks (topic changes, new sections, formatting gaps)
-3. view_page_image → Visually confirm the page where content shifts
+## What counts as "found"
+- The EXACT expected identifier (e.g., "14", "CHAPTER 14", "Chapter Fourteen")
+- A clear heading at the TOP of a page that matches the pattern
+- Visual confirmation of large/bold text with the expected number/name
 
-## What to look for in content flow
-- Major topic changes (new subject, new setting, new person)
-- Section boundaries (even if titled differently than expected)
-- Narrative jumps (time skip, scene change)
-- Opening phrases typical of chapter starts
-- Subheadings that might be chapter titles (book may use descriptive titles, not numbers)
-
-## Visual confirmation is CRITICAL
-The chapter heading likely exists but OCR couldn't read it. Once you identify a likely content break:
-- view_page_image to SEE the actual heading
-- Look for large/bold text at the TOP of the page
-- The visual heading may differ from OCR text
-
-## When to report found
-If you find a clear structural break with visual heading confirmation, report it as found even if the heading text doesn't match the expected identifier exactly.
+## What does NOT count as "found"
+- Subheadings or section titles within chapters
+- Content breaks without clear heading text
+- Any prominent text that doesn't match the expected identifier
+- "It looks like a chapter start" without the actual identifier
 
 ## When to report not found
-Only after content flow analysis shows NO structural break AND visual inspection confirms no heading."""
+If you cannot find the EXACT expected heading after checking OCR and page images:
+- Report found=false
+- It's okay to miss one entry - the validation phase will investigate gaps later
+- Do NOT invent structure that doesn't clearly exist"""
 
 
 def build_searcher_user_prompt(missing_candidate, excluded_pages=None):
