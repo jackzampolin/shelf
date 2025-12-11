@@ -2,6 +2,7 @@ import argparse
 import cli.library
 import cli.book
 from cli.batch import setup_batch_parser
+from cli.batch_parallel import setup_batch_parallel_parser
 from cli.serve import setup_serve_parser
 
 
@@ -52,6 +53,7 @@ Examples:
     cli.library.setup_parser(subparsers)
     cli.book.setup_parser(subparsers)
     setup_batch_parser(subparsers)
+    setup_batch_parallel_parser(subparsers)
     setup_serve_parser(subparsers)
 
     return parser

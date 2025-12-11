@@ -9,6 +9,7 @@ All LLM operations (single, batch, agent, OCR) should use these functions
 for consistent terminal output.
 """
 
+import os
 from dataclasses import dataclass
 from typing import Optional
 from rich.text import Text
@@ -16,6 +17,11 @@ from rich.console import Console
 from rich.progress import Progress, BarColumn, TextColumn, TaskProgressColumn, SpinnerColumn
 
 from .display_format import format_token_string, format_token_count
+
+
+def is_headless():
+    """Check if running in headless mode (no Rich displays)."""
+    return os.environ.get('SHELF_HEADLESS', '').lower() in ('1', 'true', 'yes')
 
 
 # Standard widths for consistent alignment
@@ -294,8 +300,11 @@ class SingleCallSpinner:
         self.call_name = call_name
         self.progress = None
         self.task_id = None
+        self._headless = is_headless()
 
     def __enter__(self):
+        if self._headless:
+            return self
         self.progress = Progress(
             TextColumn(f"⏳ {self.call_name}: waiting for response..."),
             transient=True
