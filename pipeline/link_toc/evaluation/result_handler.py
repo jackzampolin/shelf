@@ -11,6 +11,7 @@ def create_evaluation_handler(
     stage_storage: StageStorage,
     logger: PipelineLogger,
     candidates_by_index: dict,
+    metrics_prefix: str = "evaluation_",
 ):
     def on_result(result: LLMResult):
         if result.success:
@@ -49,7 +50,7 @@ def create_evaluation_handler(
 
                 result.record_to_metrics(
                     metrics_manager=stage_storage.metrics_manager,
-                    key=f"evaluation_{result.request.id}",
+                    key=f"{metrics_prefix}{result.request.id}",
                     extra_fields={'include': include}
                 )
 

@@ -28,7 +28,7 @@ def process_toc_pages(
         result_handler=create_toc_handler(
             book_storage,
             tracker.logger,
-            phase_name=tracker.phase_name,
+            metrics_prefix=tracker.metrics_prefix,
         ),
         max_workers=max_workers,
         max_retries=max_retries,

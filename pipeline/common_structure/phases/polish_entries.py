@@ -121,7 +121,7 @@ def create_polish_tracker(stage_storage: StageStorage, model: str, max_workers: 
 
                 result.record_to_metrics(
                     metrics_manager=tracker.stage_storage.metrics_manager,
-                    key=f"polish_{entry_id}",
+                    key=f"{tracker.metrics_prefix}{entry_id}",
                 )
                 logger.info(f"✓ {entry_id}: {len(edits)} edits, {section_text.word_count} words")
             else:

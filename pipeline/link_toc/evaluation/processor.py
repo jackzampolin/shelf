@@ -280,7 +280,8 @@ def evaluate_candidates(
             result_handler=create_evaluation_handler(
                 stage_storage=stage_storage,
                 logger=logger,
-                candidates_by_index=candidates_by_index
+                candidates_by_index=candidates_by_index,
+                metrics_prefix=tracker.metrics_prefix,
             ),
             max_workers=10,
             max_retries=3,

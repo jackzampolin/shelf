@@ -1,9 +1,11 @@
 from infra.llm.models import LLMResult
+from infra.pipeline.status import PhaseStatusTracker
 from ..schemas.unified import UnifiedExtractionOutput
 
 
-def create_result_handler(storage, logger):
-    stage_storage = storage.stage("label-structure")
+def create_result_handler(tracker: PhaseStatusTracker):
+    stage_storage = tracker.stage_storage
+    logger = tracker.logger
 
     def on_result(result: LLMResult):
         if result.success:
@@ -19,7 +21,7 @@ def create_result_handler(storage, logger):
 
             result.record_to_metrics(
                 metrics_manager=stage_storage.metrics_manager,
-                key=f"unified_{result.request.id}",
+                key=f"{tracker.metrics_prefix}{result.request.id}",
             )
 
             data = result.parsed_json
