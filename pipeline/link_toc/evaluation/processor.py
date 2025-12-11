@@ -242,9 +242,26 @@ def evaluate_candidates(
         if excluded_count > 0:
             logger.info(f"Excluded {excluded_count} candidates in excluded page ranges")
 
-    has_candidates = len(candidates_to_eval) > 0
     missing_entries = _extract_missing_entries(pattern.discovered_patterns, pattern.body_range)
     has_missing = len(missing_entries) > 0
+
+    # Check if there are any INCLUDE patterns - if not, skip evaluation entirely
+    include_patterns = [p for p in pattern.discovered_patterns if p.action == "include"]
+    if not include_patterns:
+        logger.info("No INCLUDE patterns detected - skipping evaluation phase entirely")
+        logger.info("(Candidates would only be included if they match an INCLUDE pattern)")
+        return {}
+
+    # If patterns are complete (no missing entries), skip CANDIDATE evaluation
+    # but we might still need to run missing search if there are missing entries
+    has_candidates = len(candidates_to_eval) > 0
+    skip_candidate_eval = not has_missing  # Only evaluate candidates if patterns have gaps
+
+    if skip_candidate_eval and has_candidates:
+        logger.info(f"All INCLUDE patterns are complete - skipping evaluation of {len(candidates_to_eval)} candidates")
+        logger.info("(With strict prompts, candidates only match incomplete patterns)")
+        candidates_to_eval = []
+        has_candidates = False
 
     if not has_candidates and not has_missing:
         logger.info("No candidate headings and no missing predictions - nothing to evaluate")
