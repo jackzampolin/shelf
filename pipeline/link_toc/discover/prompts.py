@@ -4,6 +4,12 @@ FINDER_SYSTEM_PROMPT = """You find where a specific chapter/section heading appe
 
 Given an entry identifier (like "Chapter 14" or "Part III"), find the scan page where it begins.
 
+IMPORTANT: Books use many different heading styles:
+- "Chapter 14", "CHAPTER 14", "Chapter XIV"
+- "14", "# 14", "XIV" (number only, no "Chapter" text)
+- "CHAPTER FOURTEEN", "Chapter Fourteen"
+All of these are valid chapter starts. If you find "# 14" at the top of a page followed by body text, that IS Chapter 14 even if the word "Chapter" doesn't appear.
+
 ## Interpreting Tool Results
 
 **grep_text results:**
@@ -26,25 +32,27 @@ Given an entry identifier (like "Chapter 14" or "Part III"), find the scan page 
 
 ## Search Strategy
 
-1. Try grep_text with query variations:
+1. Start with get_heading_pages on the predicted range to find numbered headings
+2. Try grep_text with query variations:
+   - Just the number: "# 14", "14" (many books use number-only headings!)
    - Numeric: "chapter 14", "CHAPTER 14"
-   - Spelled out: "CHAPTER FOURTEEN", "Chapter Fourteen"
-   - Roman: "CHAPTER XIV"
-   - Just the identifier with context: "14" (verify it's a chapter heading)
+   - Roman: "XIV", "CHAPTER XIV"
+   - Spelled out: "CHAPTER FOURTEEN"
 
-2. Analyze the results:
+3. Analyze the results:
    - Clusters of matches → first page is chapter start
-   - Single high-page match with in_back_matter=true → footnote reference, try other queries
-   - No matches → try alternative query variations
+   - Single high-page match with in_back_matter=true → footnote reference
+   - No matches for "Chapter X" but found "# X" → that IS the chapter
 
-3. Verify before submitting:
+4. Verify before submitting:
    - Use get_page_ocr or view_page_image to confirm
-   - Check it's the actual chapter start, not just a mention
+   - Check it's the actual chapter start: number/heading at TOP, body text follows
 
 ## What IS a Chapter Start
-- Chapter number/title appears prominently at page top
+- Chapter number/title appears prominently at page top (may be just a number like "14")
 - New section begins (not mid-paragraph)
 - Body text (narrative prose) follows
+- "# 14" or "14" at page top followed by narrative = Chapter 14
 
 ## What is NOT a Chapter Start
 - Footnotes/Notes section (dense citations like "1. Smith, History of...")
@@ -60,10 +68,19 @@ def build_finder_user_prompt(entry: dict, total_pages: int) -> str:
     """Build the user prompt for finding a specific entry."""
     identifier = entry["identifier"]
     level_name = entry["level_name"]
+    heading_format = entry.get("heading_format")
     search_range = entry.get("search_range", (1, total_pages))
 
-    search_term = f"{level_name.title()} {identifier}" if level_name else identifier
+    # Build expected heading text from format
+    if heading_format:
+        expected_heading = heading_format.replace("{n}", identifier).replace("{roman}", identifier).replace("{letter}", identifier)
+        format_note = f'Expected heading format: "{expected_heading}" (based on pattern: "{heading_format}")'
+    else:
+        expected_heading = f"{level_name.title()} {identifier}" if level_name else identifier
+        format_note = f"No specific format detected - try variations like \"{expected_heading}\", \"{identifier}\", etc."
 
-    return f"""Find: "{search_term}"
-Expected location: pages {search_range[0]}-{search_range[1]}
-Book has {total_pages} total pages."""
+    return f"""Find: {level_name.title()} {identifier}
+{format_note}
+Predicted location: pages {search_range[0]}-{search_range[1]} (search here first, but expand if not found)
+Book has {total_pages} total pages.
+TIP: Use grep_text to search the full book if not found in predicted range."""

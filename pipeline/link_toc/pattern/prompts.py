@@ -18,11 +18,21 @@ Numbered sequences like chapters, parts, appendices:
 - level_name: "chapter", "part", "appendix", "section", etc.
 - range_start/range_end: The FULL sequence bounds (e.g., "1" to "38")
 - level: Structural depth (1=part, 2=chapter, 3=section)
+- heading_format: The EXACT heading format used in the book, with {n} for number:
+  - "CHAPTER {n}" (all caps with number)
+  - "{n}" (number only)
+  - "Chapter {n}" (title case)
+  - "PART {roman}" (Roman numerals: I, II, III)
+  - "Appendix {letter}" (letters: A, B, C)
 - reasoning: Why you believe this pattern exists
 
 IMPORTANT: Output the FULL expected range, not just what you see in candidates.
 If you see chapters 1, 2, 3, 5, 6 → output range "1" to "6" (we'll search for all).
 If evidence suggests chapters go to 38 → output range "1" to "38".
+
+The heading_format is CRITICAL - look at the actual heading text in the candidates.
+If headings are "1", "2", "3" → format is "{n}"
+If headings are "CHAPTER 1" → format is "CHAPTER {n}"
 
 Look at:
 - The ToC structure (does it have Parts I-V suggesting chapters within?)

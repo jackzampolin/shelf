@@ -98,13 +98,9 @@ def merge_enriched_toc(tracker, **kwargs):
             scan_page, valid_toc_entries, toc_index_map
         )
 
-        # Build title from level_name + identifier
-        level_name = entry.get("level_name", "")
+        # Use heading_text if available (from agent or pattern format), otherwise identifier
+        title = entry.get("heading_text") or entry.get("identifier", "")
         identifier = entry.get("identifier", "")
-        if level_name:
-            title = f"{level_name.title()} {identifier}"
-        else:
-            title = identifier
 
         enriched_entries.append(EnrichedToCEntry(
             entry_index=entry_index,
