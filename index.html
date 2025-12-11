@@ -4,196 +4,218 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>shelf - Scans to structured text</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: 'Inter', sans-serif;
             background-color: #0a0a0a;
             color: #ffffff;
             line-height: 1.6;
         }
-        
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 0 20px;
         }
-        
-        nav {
+
+        .nav {
             padding: 20px 0;
-            border-bottom: 1px solid #1f1f1f;
+            border-bottom: 1px solid #1a1a1a;
         }
-        
+
         .nav-content {
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-        
+
         .logo {
             font-size: 24px;
             font-weight: 700;
-            color: #3b82f6;
-            text-decoration: none;
-        }
-        
-        .github-link {
-            background-color: #1f1f1f;
             color: #ffffff;
             text-decoration: none;
-            padding: 8px 16px;
+        }
+
+        .github-link {
+            background-color: #3b82f6;
+            color: #ffffff;
+            padding: 10px 20px;
             border-radius: 6px;
+            text-decoration: none;
             font-weight: 500;
             transition: background-color 0.2s;
-            border: 1px solid #2a2a2a;
         }
-        
+
         .github-link:hover {
-            background-color: #2a2a2a;
+            background-color: #2563eb;
         }
-        
+
         .hero {
             padding: 80px 0;
             text-align: center;
         }
-        
+
         .hero h1 {
-            font-size: 3.5rem;
+            font-size: 48px;
             font-weight: 700;
-            color: #ffffff;
             margin-bottom: 40px;
-            letter-spacing: -0.02em;
+            color: #ffffff;
         }
-        
-        .hero-description {
-            font-size: 1.125rem;
-            color: #a1a1aa;
-            max-width: 900px;
+
+        .hero-text {
+            font-size: 18px;
+            line-height: 1.7;
+            color: #d1d5db;
+            max-width: 800px;
             margin: 0 auto;
             text-align: left;
         }
-        
+
         .pipeline {
             padding: 80px 0;
+            background-color: #111111;
         }
-        
+
+        .pipeline h2 {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 30px;
+            color: #ffffff;
+            text-align: center;
+        }
+
         .pipeline-intro {
-            font-size: 1.125rem;
-            color: #a1a1aa;
-            margin-bottom: 60px;
-            max-width: 900px;
+            font-size: 18px;
+            line-height: 1.7;
+            color: #d1d5db;
+            max-width: 800px;
+            margin: 0 auto 60px;
+            text-align: left;
         }
-        
+
         .pipeline-flow {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 40px;
+            gap: 30px;
             margin-top: 40px;
         }
-        
+
         .stage {
-            background-color: #111111;
-            border: 1px solid #1f1f1f;
+            background-color: #1a1a1a;
+            border: 1px solid #2a2a2a;
             border-radius: 12px;
             padding: 30px;
             transition: border-color 0.2s;
         }
-        
+
         .stage:hover {
             border-color: #3b82f6;
         }
-        
+
         .stage-header {
             display: flex;
             align-items: center;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
         }
-        
+
         .stage-icon {
-            font-size: 24px;
-            margin-right: 12px;
+            font-size: 28px;
+            margin-right: 15px;
         }
-        
+
         .stage-title {
-            font-size: 1.25rem;
+            font-size: 20px;
             font-weight: 600;
             color: #ffffff;
         }
-        
+
         .stage-description {
-            color: #a1a1aa;
-            margin-bottom: 24px;
+            color: #d1d5db;
+            margin-bottom: 25px;
+            line-height: 1.6;
         }
-        
+
         .phases {
             list-style: none;
         }
-        
+
         .phase {
-            padding: 12px 0;
-            border-bottom: 1px solid #1a1a1a;
+            margin-bottom: 15px;
+            padding-left: 15px;
+            border-left: 2px solid #3b82f6;
         }
-        
+
         .phase:last-child {
-            border-bottom: none;
+            margin-bottom: 0;
         }
-        
+
         .phase-name {
             font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
             font-weight: 500;
             color: #3b82f6;
-            font-size: 0.875rem;
-            margin-bottom: 4px;
+            margin-bottom: 5px;
         }
-        
+
         .phase-description {
-            color: #71717a;
-            font-size: 0.875rem;
+            font-size: 14px;
+            color: #9ca3af;
+            line-height: 1.5;
         }
-        
-        footer {
-            border-top: 1px solid #1f1f1f;
+
+        .footer {
             padding: 40px 0;
+            border-top: 1px solid #1a1a1a;
             text-align: center;
-            margin-top: 80px;
         }
-        
-        .footer-content {
-            color: #71717a;
-            font-size: 0.875rem;
+
+        .footer-text {
+            color: #6b7280;
+            font-size: 14px;
         }
-        
+
         @media (max-width: 768px) {
             .hero h1 {
-                font-size: 2.5rem;
+                font-size: 36px;
             }
-            
-            .hero-description {
-                font-size: 1rem;
-                text-align: left;
+
+            .hero-text {
+                font-size: 16px;
             }
-            
+
+            .pipeline h2 {
+                font-size: 28px;
+            }
+
+            .pipeline-intro {
+                font-size: 16px;
+            }
+
             .pipeline-flow {
                 grid-template-columns: 1fr;
+                gap: 20px;
             }
-            
+
+            .stage {
+                padding: 20px;
+            }
+
             .nav-content {
                 flex-direction: column;
-                gap: 16px;
+                gap: 15px;
             }
         }
     </style>
 </head>
 <body>
-    <nav>
+    <nav class="nav">
         <div class="container">
             <div class="nav-content">
                 <a href="#" class="logo">shelf</a>
@@ -201,11 +223,11 @@
             </div>
         </div>
     </nav>
-    
+
     <section class="hero">
         <div class="container">
             <h1>Scans to structured text</h1>
-            <div class="hero-description">
+            <div class="hero-text">
                 <p>Not every book is available as an audiobook. Military history, academic texts, out-of-print nonfiction—if you want to listen to them, you have to make them yourself.</p>
                 
                 <p>Raw OCR gets you text, but text mixed with garbage—page numbers read aloud, running headers interrupting every page, image captions scattered through the text, footnote numbers with no footnotes. The result is technically an audiobook, but not one you'd want to listen to.</p>
@@ -214,9 +236,10 @@
             </div>
         </div>
     </section>
-    
+
     <section class="pipeline">
         <div class="container">
+            <h2>AI Pipeline</h2>
             <div class="pipeline-intro">
                 <p>Once you have a book scan (either from a sheet-fed scanner after cutting the spine, or a non-destructive overhead scanner), shelf runs it through a multi-stage AI pipeline. Each stage builds on the last: multiple OCR providers extract the text, LLMs classify and label the structure (body text vs headers vs footnotes vs page numbers), the table of contents is extracted and linked to actual pages, and finally clean ePub files are produced—text that flows when read aloud.</p>
             </div>
@@ -247,7 +270,7 @@
                         </li>
                     </ul>
                 </div>
-                
+
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">🏷️</span>
@@ -273,7 +296,7 @@
                         </li>
                     </ul>
                 </div>
-                
+
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">📑</span>
@@ -291,7 +314,7 @@
                         </li>
                     </ul>
                 </div>
-                
+
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">🔗</span>
@@ -321,7 +344,7 @@
                         </li>
                     </ul>
                 </div>
-                
+
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">🏗️</span>
@@ -343,7 +366,7 @@
                         </li>
                     </ul>
                 </div>
-                
+
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">📖</span>
@@ -360,12 +383,10 @@
             </div>
         </div>
     </section>
-    
-    <footer>
+
+    <footer class="footer">
         <div class="container">
-            <div class="footer-content">
-                shelf © 2024
-            </div>
+            <p class="footer-text">shelf © 2024</p>
         </div>
     </footer>
 </body>
