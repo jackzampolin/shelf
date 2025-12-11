@@ -1,66 +1,77 @@
-PATTERN_SYSTEM_PROMPT = """You analyze candidate headings to identify structural patterns for the enriched ToC.
+PATTERN_SYSTEM_PROMPT = """You analyze a book's structure to identify patterns of entries NOT in the Table of Contents.
 
 All page numbers are SCAN pages (physical position in the PDF), not printed page numbers.
 
 You receive:
 1. Table of Contents entries (already linked to scan pages)
-2. Candidate headings found in the book body that are NOT in the ToC
+2. Candidate headings detected in the book body that are NOT in the ToC
 
-Your job: Identify structural patterns and output them in a structured format.
+Your job: Identify sequential patterns (like chapters 1-38) that should be discovered.
 
 ## discovered_patterns
 
-Each pattern represents a structural element type. Two pattern_types:
+Each pattern represents a structural element type that should be searched for.
 
-### sequential patterns (action: include)
+### sequential patterns
 Numbered sequences like chapters, parts, appendices:
 - pattern_type: "sequential"
 - level_name: "chapter", "part", "appendix", "section", etc.
-- range_start/range_end: The sequence bounds (e.g., "1" to "38", "I" to "X")
+- range_start/range_end: The FULL sequence bounds (e.g., "1" to "38")
 - level: Structural depth (1=part, 2=chapter, 3=section)
-- confidence: How complete is the pattern? (found entries / expected entries)
-- missing_entries: Gaps in the sequence with predicted page ranges
+- reasoning: Why you believe this pattern exists
 
-Example: Candidates show "1", "2", "3", "5", "6" → sequential pattern 1-6 with "4" missing.
+IMPORTANT: Output the FULL expected range, not just what you see in candidates.
+If you see chapters 1, 2, 3, 5, 6 → output range "1" to "6" (we'll search for all).
+If evidence suggests chapters go to 38 → output range "1" to "38".
 
-### named patterns (action: include or exclude)
-Repeated structural names:
+Look at:
+- The ToC structure (does it have Parts I-V suggesting chapters within?)
+- The candidate headings (what chapter numbers appear?)
+- Page density (38 chapters across 400 body pages = ~10 pages per chapter)
+
+### named patterns (rarely used)
+Only for specific named sections that repeat:
 - pattern_type: "named"
-- level_name: "conclusion", "introduction", "running_header", etc.
-- level: For include patterns only
-- action: "include" for real structure, "exclude" for noise
-
-Example: Multiple "Conclusion" headings at chapter ends → named pattern to include.
-Example: Running headers repeat chapter titles → named pattern to exclude.
+- level_name: "conclusion", "epilogue", etc.
+- level: Structural depth
 
 ## excluded_page_ranges (CRITICAL)
-Page ranges to skip entirely. **Always exclude**:
-- Notes section (from "Notes" ToC entry to next section)
-- Bibliography section (from "Bibliography" ToC entry to next section)
+Page ranges to skip entirely during discovery. **Always exclude**:
+- Notes/Footnotes section (dense reference text)
+- Bibliography section
 - Index section (from "Index" ToC entry to end)
-- Acknowledgments, Copyright pages
+- Acknowledgments section
+- Photo/Image sections (if clearly separate from text)
 
-Look at the ToC entries to identify these sections and their page ranges.
-Any candidate headings in these ranges will be automatically excluded from evaluation.
-
-## requires_evaluation
-Set false ONLY when ALL candidates are clearly noise. Default true.
+Look at the ToC entries to identify back matter sections and their page ranges.
 
 ## reasoning
-Brief summary of your analysis."""
+Brief summary of your analysis and why you identified these patterns."""
 
 
 def build_pattern_prompt(toc_entries, candidate_headings, body_range):
-    toc_lines = [f"  p{e.scan_page}: {e.entry_number + '. ' if e.entry_number else ''}{e.title}"
-                 for e in toc_entries]
+    toc_lines = []
+    for e in toc_entries:
+        entry_str = f"  p{e.scan_page}: "
+        if e.level_name:
+            entry_str += f"[{e.level_name}] "
+        if e.entry_number:
+            entry_str += f"{e.entry_number}. "
+        entry_str += e.title or "(untitled)"
+        toc_lines.append(entry_str)
 
     candidate_lines = [f"  p{c.scan_page}: \"{c.heading_text}\""
-                       for c in candidate_headings]
+                       for c in candidate_headings[:100]]  # Limit to avoid token overflow
 
-    return f"""## ToC Entries (linked)
+    if len(candidate_headings) > 100:
+        candidate_lines.append(f"  ... and {len(candidate_headings) - 100} more")
+
+    return f"""## ToC Entries (linked to scan pages)
 {chr(10).join(toc_lines)}
 
-## Candidate Headings (NOT in ToC, pages {body_range[0]}-{body_range[1]})
+## Candidate Headings (detected but NOT in ToC)
+Body range: pages {body_range[0]}-{body_range[1]}
 {chr(10).join(candidate_lines)}
 
-Analyze patterns and output JSON."""
+Analyze for sequential patterns (chapters, parts, appendices) and excluded page ranges.
+Output the FULL expected range for any patterns - we will search for every entry."""

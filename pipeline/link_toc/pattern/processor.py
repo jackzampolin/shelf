@@ -7,13 +7,18 @@ from ..schemas import (
     PatternAnalysis,
     CandidateHeading,
     DiscoveredPattern,
-    MissingEntry,
     ExcludedPageRange,
 )
 from .prompts import PATTERN_SYSTEM_PROMPT, build_pattern_prompt
 
 
 def analyze_toc_pattern(tracker, **kwargs):
+    """Analyze ToC and candidate headings to identify patterns for discovery.
+
+    Outputs:
+    - discovered_patterns: Sequential patterns (chapters 1-38) to search for
+    - excluded_page_ranges: Back matter sections to skip
+    """
     storage = tracker.storage
     logger = tracker.logger
     stage_storage = tracker.stage_storage
@@ -35,26 +40,28 @@ def analyze_toc_pattern(tracker, **kwargs):
         logger.warning("No ToC entries with scan_pages - skipping")
         return
 
-    all_headings, unified_by_page = _load_all_headings(storage, logger)
-    if not all_headings:
-        return
+    # Load candidate headings from label-structure
+    all_headings = _load_all_headings(storage, logger)
 
     body_range = (min(toc_pages), max(toc_pages))
     toc_entries_by_page = {e.scan_page: e for e in toc_entries if e.scan_page}
 
-    candidate_headings = _build_candidates(all_headings, body_range, toc_pages, toc_entries_by_page, unified_by_page)
+    # Build candidates (headings not already in ToC)
+    candidate_headings = _build_candidates(all_headings, body_range, toc_pages, toc_entries_by_page)
     logger.info(f"ToC: {len(toc_pages)} pages, Candidates: {len(candidate_headings)} headings in body")
 
-    patterns, excluded, requires_eval, reasoning = _analyze_with_llm(
+    # Call LLM to identify patterns
+    patterns, excluded, reasoning = _analyze_with_llm(
         tracker, model, logger, toc_entries, candidate_headings, body_range
     )
 
+    # Save simplified output
     pattern_analysis = PatternAnalysis(
         body_range=body_range,
-        candidate_headings=candidate_headings,
+        candidate_headings=[],  # No longer storing candidates
         discovered_patterns=patterns,
         excluded_page_ranges=excluded,
-        requires_evaluation=requires_eval,
+        requires_evaluation=False,  # Deprecated - discover phase handles this
         reasoning=reasoning
     )
 
@@ -64,32 +71,28 @@ def analyze_toc_pattern(tracker, **kwargs):
         schema=PatternAnalysis
     )
 
-    # Count missing entries across all patterns
-    missing_count = sum(len(p.missing_entries) for p in patterns)
-    logger.info(f"Pattern analysis: {len(patterns)} patterns, {missing_count} missing predictions")
+    # Log summary
+    for p in patterns:
+        if p.pattern_type == "sequential":
+            logger.info(f"Pattern: {p.level_name} {p.range_start}-{p.range_end} (level {p.level})")
+    if excluded:
+        logger.info(f"Excluded ranges: {len(excluded)}")
 
 
 def _load_all_headings(storage, logger):
+    """Load headings from label-structure mechanical output."""
     mechanical_dir = storage.stage("label-structure").output_dir / "mechanical"
     if not mechanical_dir.exists():
         logger.warning("label-structure mechanical output not found")
-        return [], {}
+        return []
 
     all_headings = []
-    unified_by_page = {}
-
     for page_file in sorted(mechanical_dir.glob("page_*.json")):
         page_data = storage.stage("label-structure").load_file(f"mechanical/{page_file.name}")
         if not page_data:
             continue
 
         page_num = int(page_file.stem.split("_")[1])
-
-        # Also load unified classification for this page
-        unified_data = storage.stage("label-structure").load_file(f"unified/{page_file.name}")
-        if unified_data:
-            unified_by_page[page_num] = unified_data
-
         for heading in page_data.get("headings", []):
             all_headings.append({
                 "scan_page": page_num,
@@ -98,10 +101,11 @@ def _load_all_headings(storage, logger):
             })
 
     logger.info(f"Found {len(all_headings)} headings in label-structure")
-    return all_headings, unified_by_page
+    return all_headings
 
 
-def _build_candidates(all_headings, body_range, toc_pages, toc_entries_by_page, unified_by_page):
+def _build_candidates(all_headings, body_range, toc_pages, toc_entries_by_page):
+    """Build candidate headings that are NOT already in ToC."""
     candidates = []
     for h in all_headings:
         page = h["scan_page"]
@@ -119,42 +123,19 @@ def _build_candidates(all_headings, body_range, toc_pages, toc_entries_by_page, 
         else:
             following = toc_pages[idx] if idx < len(toc_pages) else None
 
-        toc_entry_on_page = _format_toc_entry(toc_entry) if toc_entry else None
-
-        # Extract label-structure unified classification
-        unified = unified_by_page.get(page, {})
-        running_header = unified.get("running_header", {})
-        page_number = unified.get("page_number", {})
-
-        label_running_header = running_header.get("text") if running_header.get("present") else None
-        label_page_number = page_number.get("number") if page_number.get("present") else None
-
         candidates.append(CandidateHeading(
             scan_page=page,
             heading_text=h["text"],
             heading_level=h["level"],
             preceding_toc_page=preceding,
             following_toc_page=following,
-            toc_entry_on_page=toc_entry_on_page,
-            label_running_header=label_running_header,
-            label_page_number=label_page_number,
         ))
 
     return candidates
 
 
-def _format_toc_entry(entry):
-    parts = []
-    if entry.level_name and entry.entry_number:
-        parts.append(f"{entry.level_name.title()} {entry.entry_number}")
-    elif entry.entry_number:
-        parts.append(entry.entry_number)
-    if entry.title:
-        parts.append(f'"{entry.title}"')
-    return ": ".join(parts) if parts else entry.title
-
-
 def _matches_toc_entry(heading_text, entry):
+    """Check if heading matches an existing ToC entry."""
     text = heading_text.lower().strip()
     if entry.title and text == entry.title.lower().strip():
         return True
@@ -167,10 +148,11 @@ def _matches_toc_entry(heading_text, entry):
 
 
 def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, body_range):
+    """Call LLM to identify patterns and excluded ranges."""
     if not candidate_headings:
-        return [], [], True, "No candidates to analyze"
+        logger.info("No candidates to analyze - checking ToC for excluded ranges only")
 
-    logger.info(f"Calling LLM to analyze {len(candidate_headings)} candidates...")
+    logger.info(f"Calling LLM to analyze patterns...")
 
     llm = LLMSingleCall(LLMSingleCallConfig(
         tracker=tracker,
@@ -202,28 +184,9 @@ def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, b
                                     "range_start": {"type": ["string", "null"]},
                                     "range_end": {"type": ["string", "null"]},
                                     "level": {"type": ["integer", "null"]},
-                                    "action": {"type": "string", "enum": ["include", "exclude"]},
-                                    "confidence": {"type": ["number", "null"]},
-                                    "missing_entries": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "identifier": {"type": "string"},
-                                                "predicted_page_range": {
-                                                    "type": "array",
-                                                    "items": {"type": "integer"},
-                                                    "minItems": 2,
-                                                    "maxItems": 2
-                                                }
-                                            },
-                                            "required": ["identifier", "predicted_page_range"],
-                                            "additionalProperties": False
-                                        }
-                                    },
                                     "reasoning": {"type": "string"}
                                 },
-                                "required": ["pattern_type", "action", "reasoning"],
+                                "required": ["pattern_type", "reasoning"],
                                 "additionalProperties": False
                             }
                         },
@@ -240,49 +203,42 @@ def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, b
                                 "additionalProperties": False
                             }
                         },
-                        "requires_evaluation": {"type": "boolean"},
                         "reasoning": {"type": "string"}
                     },
-                    "required": ["discovered_patterns", "excluded_page_ranges", "requires_evaluation", "reasoning"],
+                    "required": ["discovered_patterns", "excluded_page_ranges", "reasoning"],
                     "additionalProperties": False
                 }
             }
         },
-        max_tokens=3000,
+        max_tokens=2000,
     )
 
     if not result.success or not result.parsed_json:
         logger.warning(f"Pattern analysis failed: {result.error_message}")
-        return [], [], True, f"LLM call failed: {result.error_message}"
+        return [], [], f"LLM call failed: {result.error_message}"
 
     data = result.parsed_json
     reasoning = data.get("reasoning", "")
-    requires_eval = data.get("requires_evaluation", True)
 
+    # Parse patterns (simplified - no more missing_entries)
     patterns = []
     for p in data.get("discovered_patterns", []):
         try:
-            missing_entries = []
-            for me in p.get("missing_entries", []):
-                missing_entries.append(MissingEntry(
-                    identifier=me["identifier"],
-                    predicted_page_range=tuple(me["predicted_page_range"])
-                ))
-
             patterns.append(DiscoveredPattern(
                 pattern_type=p["pattern_type"],
                 level_name=p.get("level_name"),
                 range_start=p.get("range_start"),
                 range_end=p.get("range_end"),
                 level=p.get("level"),
-                action=p["action"],
-                confidence=p.get("confidence"),
-                missing_entries=missing_entries,
+                action="include",  # All discovered patterns are include
+                confidence=None,  # Will be calculated after discovery
+                missing_entries=[],  # Not used anymore
                 reasoning=p.get("reasoning", "")
             ))
         except (KeyError, TypeError) as e:
             logger.warning(f"Failed to parse pattern: {e}")
 
+    # Parse excluded ranges
     excluded = []
     for ex in data.get("excluded_page_ranges", []):
         try:
@@ -294,9 +250,5 @@ def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, b
         except (KeyError, TypeError):
             pass
 
-    missing_count = sum(len(p.missing_entries) for p in patterns)
-    logger.info(f"LLM: {len(patterns)} patterns, {missing_count} missing, {len(excluded)} excluded")
-    if not requires_eval:
-        logger.info("LLM determined evaluation not needed - all candidates are noise")
-
-    return patterns, excluded, requires_eval, reasoning
+    logger.info(f"LLM identified {len(patterns)} patterns, {len(excluded)} excluded ranges")
+    return patterns, excluded, reasoning

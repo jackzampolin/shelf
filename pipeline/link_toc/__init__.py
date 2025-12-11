@@ -2,10 +2,10 @@ from infra.pipeline import BaseStage, BookStorage
 from infra.pipeline.status import MultiPhaseStatusTracker
 from infra.config import Config
 
-from . import find_entries, pattern, evaluation, merge, validation
+from . import find_entries, pattern, discover, merge, validation
 from .schemas import (
     LinkedToCEntry, LinkedTableOfContents, LinkTocReportEntry,
-    PatternAnalysis, CandidateHeading, HeadingDecision,
+    PatternAnalysis, CandidateHeading,
     EnrichedToCEntry, EnrichedTableOfContents,
     PageGap, GapInvestigation, CoverageReport
 )
@@ -21,8 +21,8 @@ class LinkTocStage(BaseStage):
     description = "Map table of contents entries to their corresponding page numbers"
     phases = [
         {"name": "find_entries", "description": "Locate each ToC entry in page content"},
-        {"name": "pattern", "description": "Analyze heading patterns to find candidates"},
-        {"name": "evaluation", "description": "Evaluate candidate headings with vision LLM"},
+        {"name": "pattern", "description": "Analyze heading patterns to find chapter sequences"},
+        {"name": "discover", "description": "Search for each entry in detected patterns"},
         {"name": "merge", "description": "Merge results into enriched ToC"},
         {"name": "validation", "description": "Validate page coverage and investigate gaps"},
     ]
@@ -55,16 +55,16 @@ class LinkTocStage(BaseStage):
             verbose=self.verbose
         )
 
-        # Phase 2: Pattern analysis (LLM-based)
+        # Phase 2: Pattern analysis
         self.pattern_tracker = pattern.create_tracker(self.stage_storage, model=self.model)
 
-        # Phase 3: Evaluate candidate headings (vision-based)
-        self.evaluation_tracker = evaluation.create_tracker(self.stage_storage, model=self.model)
+        # Phase 3: Discover pattern entries
+        self.discover_tracker = discover.create_tracker(self.stage_storage, model=self.model)
 
         # Phase 4: Merge into enriched ToC
         self.merge_tracker = merge.create_tracker(self.stage_storage)
 
-        # Phase 5: Validate page coverage and investigate gaps
+        # Phase 5: Validate page coverage
         self.validation_tracker = validation.create_tracker(self.stage_storage, model=self.model)
 
         # Multi-phase tracker
@@ -73,12 +73,11 @@ class LinkTocStage(BaseStage):
             phase_trackers=[
                 self.find_tracker,
                 self.pattern_tracker,
-                self.evaluation_tracker,
+                self.discover_tracker,
                 self.merge_tracker,
                 self.validation_tracker,
             ]
         )
-
 
 
 __all__ = [
