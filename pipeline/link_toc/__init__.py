@@ -2,11 +2,12 @@ from infra.pipeline import BaseStage, BookStorage
 from infra.pipeline.status import MultiPhaseStatusTracker
 from infra.config import Config
 
-from . import find_entries, pattern, evaluation, merge
+from . import find_entries, pattern, evaluation, merge, validation
 from .schemas import (
     LinkedToCEntry, LinkedTableOfContents, LinkTocReportEntry,
     PatternAnalysis, CandidateHeading, HeadingDecision,
-    EnrichedToCEntry, EnrichedTableOfContents
+    EnrichedToCEntry, EnrichedTableOfContents,
+    PageGap, GapInvestigation, CoverageReport
 )
 
 
@@ -23,6 +24,7 @@ class LinkTocStage(BaseStage):
         {"name": "pattern", "description": "Analyze heading patterns to find candidates"},
         {"name": "evaluation", "description": "Evaluate candidate headings with vision LLM"},
         {"name": "merge", "description": "Merge results into enriched ToC"},
+        {"name": "validation", "description": "Validate page coverage and investigate gaps"},
     ]
 
     @classmethod
@@ -62,6 +64,9 @@ class LinkTocStage(BaseStage):
         # Phase 4: Merge into enriched ToC
         self.merge_tracker = merge.create_tracker(self.stage_storage)
 
+        # Phase 5: Validate page coverage and investigate gaps
+        self.validation_tracker = validation.create_tracker(self.stage_storage, model=self.model)
+
         # Multi-phase tracker
         self.status_tracker = MultiPhaseStatusTracker(
             stage_storage=self.stage_storage,
@@ -70,6 +75,7 @@ class LinkTocStage(BaseStage):
                 self.pattern_tracker,
                 self.evaluation_tracker,
                 self.merge_tracker,
+                self.validation_tracker,
             ]
         )
 

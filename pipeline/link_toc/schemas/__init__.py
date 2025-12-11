@@ -11,6 +11,7 @@ from .pattern_analysis import (
 )
 from .heading_decision import HeadingDecision
 from .enriched_toc import EnrichedToCEntry, EnrichedTableOfContents
+from .coverage_report import PageGap, GapInvestigation, CoverageReport
 
 __all__ = [
     "LinkedToCEntry",
@@ -25,4 +26,7 @@ __all__ = [
     "HeadingDecision",
     "EnrichedToCEntry",
     "EnrichedTableOfContents",
+    "PageGap",
+    "GapInvestigation",
+    "CoverageReport",
 ]
