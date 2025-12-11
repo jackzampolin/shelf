@@ -74,6 +74,7 @@ def create_build_tracker(stage_storage: StageStorage, model: str):
         }
 
         # Save skeleton
+        tracker.phase_dir.mkdir(parents=True, exist_ok=True)
         skeleton_path = tracker.phase_dir / "structure_skeleton.json"
         with open(skeleton_path, "w") as f:
             json.dump(skeleton, f, indent=2)

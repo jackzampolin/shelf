@@ -46,19 +46,31 @@ def detect_semantic_type(title: str, level: int, entry_number: Optional[str]) ->
 
 
 def load_linked_toc(storage: BookStorage, logger: PipelineLogger) -> List[dict]:
+    """Load ToC entries, preferring enriched_toc.json (with discovered chapters)."""
     link_toc_storage = storage.stage("link-toc")
+
+    # Prefer enriched_toc.json which includes discovered chapters
+    enriched_toc_path = link_toc_storage.output_dir / "enriched_toc.json"
     linked_toc_path = link_toc_storage.output_dir / "linked_toc.json"
 
-    if not linked_toc_path.exists():
-        raise FileNotFoundError(
-            f"Linked ToC not found at {linked_toc_path}. Run link-toc stage first."
-        )
-
     import json
-    with open(linked_toc_path, "r") as f:
-        linked_toc = json.load(f)
 
-    return linked_toc.get("entries", [])
+    if enriched_toc_path.exists():
+        logger.info("Using enriched_toc.json (includes discovered chapters)")
+        with open(enriched_toc_path, "r") as f:
+            enriched_toc = json.load(f)
+        return enriched_toc.get("entries", [])
+
+    if linked_toc_path.exists():
+        logger.warning("enriched_toc.json not found, falling back to linked_toc.json")
+        with open(linked_toc_path, "r") as f:
+            linked_toc = json.load(f)
+        return linked_toc.get("entries", [])
+
+    raise FileNotFoundError(
+        f"No ToC found. Run link-toc stage first. "
+        f"Looked for: {enriched_toc_path}, {linked_toc_path}"
+    )
 
 
 def detect_boundaries(
