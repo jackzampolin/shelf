@@ -33,8 +33,15 @@ Repeated structural names:
 Example: Multiple "Conclusion" headings at chapter ends → named pattern to include.
 Example: Running headers repeat chapter titles → named pattern to exclude.
 
-## excluded_page_ranges
-Page ranges to skip entirely (Notes, Bibliography, Index, maps/images).
+## excluded_page_ranges (CRITICAL)
+Page ranges to skip entirely. **Always exclude**:
+- Notes section (from "Notes" ToC entry to next section)
+- Bibliography section (from "Bibliography" ToC entry to next section)
+- Index section (from "Index" ToC entry to end)
+- Acknowledgments, Copyright pages
+
+Look at the ToC entries to identify these sections and their page ranges.
+Any candidate headings in these ranges will be automatically excluded from evaluation.
 
 ## requires_evaluation
 Set false ONLY when ALL candidates are clearly noise. Default true.

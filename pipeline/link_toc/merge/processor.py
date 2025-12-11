@@ -102,7 +102,17 @@ def merge_enriched_toc(tracker, **kwargs):
         ))
         entry_index += 1
 
+    # Build set of pages that already have ToC entries - NEVER add duplicates
+    toc_pages = {e.scan_page for e in valid_toc_entries}
+
+    skipped_duplicates = 0
     for heading in approved_headings:
+        # CRITICAL: Never add a discovered heading for a page that already has a ToC entry
+        if heading.scan_page in toc_pages:
+            logger.info(f"Skipping duplicate: '{heading.title}' on page {heading.scan_page} (ToC already has entry)")
+            skipped_duplicates += 1
+            continue
+
         parent_idx, parent_level = find_parent_toc_entry(
             heading.scan_page,
             valid_toc_entries,
@@ -124,7 +134,16 @@ def merge_enriched_toc(tracker, **kwargs):
         ))
         entry_index += 1
 
+    if skipped_duplicates:
+        logger.warning(f"Skipped {skipped_duplicates} discovered headings that duplicated ToC pages")
+
     for heading in missing_headings_found:
+        # Also check missing_found for duplicates
+        if heading.scan_page in toc_pages:
+            logger.info(f"Skipping duplicate missing: '{heading.title}' on page {heading.scan_page} (ToC already has entry)")
+            skipped_duplicates += 1
+            continue
+
         heading_level = heading.level if heading.level else 1
 
         enriched_entries.append(EnrichedToCEntry(

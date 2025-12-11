@@ -52,7 +52,9 @@ Before matching a number to a sequential pattern, ask:
 "Does this position make sense for this entry in the sequence?"
 
 ## Same-page ToC entries (when toc_entry_on_page is shown)
-Almost always exclude - the ToC already has an entry for this page.
+**ALWAYS exclude.** If a page already has a ToC entry, NEVER add another entry.
+Do not rationalize that the candidate is a "higher level" or "parent" heading.
+The existing ToC entry IS the correct entry for that page. include=false.
 
 ## Output fields (when include=true)
 If the candidate matches an INCLUDE pattern:
