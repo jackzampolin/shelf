@@ -45,6 +45,9 @@ def create_polish_tracker(stage_storage: StageStorage, model: str, max_workers: 
         storage = tracker.storage
         logger = tracker.logger
 
+        # Ensure phase directory exists before any writes
+        tracker.phase_dir.mkdir(parents=True, exist_ok=True)
+
         # Load skeleton
         skeleton = storage.stage("common-structure").load_file("build_structure/structure_skeleton.json")
         entries_data = skeleton.get("entries", [])

@@ -7,7 +7,7 @@ from .prompts import EVALUATION_SYSTEM_PROMPT, build_evaluation_prompt
 from ..schemas import DiscoveredPattern
 
 
-def _get_nearby_toc_context(candidate: dict, toc_entries_by_page: Dict[int, str]) -> str:
+def _get_nearby_toc_context(candidate: dict, toc_entries_by_page: Dict[int, str], total_pages: int = 0) -> str:
     if not toc_entries_by_page:
         return ""
 
@@ -15,15 +15,24 @@ def _get_nearby_toc_context(candidate: dict, toc_entries_by_page: Dict[int, str]
     following_page = candidate.get("following_toc_page")
     candidate_page = candidate["scan_page"]
 
+    # Calculate back matter threshold (last 15% of book)
+    back_matter_threshold = int(total_pages * 0.85) if total_pages else 0
+
     context_parts = []
 
     if preceding_page and preceding_page in toc_entries_by_page:
         preceding_title = toc_entries_by_page[preceding_page]
-        context_parts.append(f"- PRECEDING ToC entry (p{preceding_page}): \"{preceding_title}\"")
+        warning = ""
+        if back_matter_threshold and preceding_page >= back_matter_threshold:
+            warning = " ⚠️ SUSPICIOUS: May be footnote reference, not actual chapter"
+        context_parts.append(f"- PRECEDING ToC entry (p{preceding_page}): \"{preceding_title}\"{warning}")
 
     if following_page and following_page in toc_entries_by_page:
         following_title = toc_entries_by_page[following_page]
-        context_parts.append(f"- FOLLOWING ToC entry (p{following_page}): \"{following_title}\"")
+        warning = ""
+        if back_matter_threshold and following_page >= back_matter_threshold:
+            warning = " ⚠️ SUSPICIOUS: May be footnote reference, not actual chapter"
+        context_parts.append(f"- FOLLOWING ToC entry (p{following_page}): \"{following_title}\"{warning}")
 
     if context_parts:
         return "\n".join(context_parts)
@@ -59,7 +68,9 @@ def prepare_evaluation_request(
     from ..schemas import CandidateHeading
     candidate_obj = CandidateHeading(**candidate)
 
-    nearby_toc_context = _get_nearby_toc_context(candidate, toc_entries_by_page)
+    # Get total pages for back matter threshold calculation
+    total_pages = storage.load_metadata().get('total_pages', 0)
+    nearby_toc_context = _get_nearby_toc_context(candidate, toc_entries_by_page, total_pages)
 
     user_prompt = build_evaluation_prompt(
         candidate=candidate_obj,

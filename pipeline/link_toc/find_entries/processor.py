@@ -7,6 +7,7 @@ from infra.llm.agent import AgentConfig, AgentBatchConfig, AgentBatchClient
 from ..schemas import LinkedTableOfContents, LinkedToCEntry
 from .agent.finder_tools import TocEntryFinderTools
 from .agent.prompts import FINDER_SYSTEM_PROMPT, build_finder_user_prompt
+from .agent.tools import get_book_structure
 
 
 def _get_completed_entry_indices(storage: BookStorage) -> List[int]:
@@ -143,6 +144,12 @@ def find_all_toc_entries(tracker, **kwargs):
 
     total_pages = storage.load_metadata().get('total_pages', 0)
 
+    # Get book structure once for all agents
+    book_structure = get_book_structure(storage, logger)
+    back_start = book_structure.get("back_matter", {}).get("start_page")
+    if back_start:
+        logger.info(f"Book structure: back matter starts around page {back_start}")
+
     configs = []
     tools_by_idx = {}
 
@@ -155,7 +162,7 @@ def find_all_toc_entries(tracker, **kwargs):
             model=model,
             initial_messages=[
                 {"role": "system", "content": FINDER_SYSTEM_PROMPT},
-                {"role": "user", "content": build_finder_user_prompt(toc_entry, idx, total_pages)}
+                {"role": "user", "content": build_finder_user_prompt(toc_entry, idx, total_pages, book_structure)}
             ],
             tools=tools,
             tracker=tracker,

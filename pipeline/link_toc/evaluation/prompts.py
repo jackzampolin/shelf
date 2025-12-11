@@ -52,9 +52,24 @@ Before matching a number to a sequential pattern, ask:
 "Does this position make sense for this entry in the sequence?"
 
 ## Same-page ToC entries (when toc_entry_on_page is shown)
-**ALWAYS exclude.** If a page already has a ToC entry, NEVER add another entry.
-Do not rationalize that the candidate is a "higher level" or "parent" heading.
-The existing ToC entry IS the correct entry for that page. include=false.
+If a page already shows a ToC entry, be cautious but evaluate independently.
+The existing entry may be correct, OR it may be from a DIFFERENT page that was
+incorrectly linked here. Use the IMAGE and PATTERNS to make your judgment.
+
+Ask: Does THIS PAGE's image show the chapter/section start that matches the candidate?
+
+## Nearby ToC entries - BE SKEPTICAL
+The "preceding" and "following" ToC entries shown come from an earlier linking phase
+that may have made ERRORS. Common errors:
+- Chapters linked to FOOTNOTES section (very high page numbers like 500+ in a 600-page book)
+- These are footnote REFERENCES to chapter titles, not actual chapter starts
+
+If a "nearby ToC entry" is on a suspiciously high page number (last 15% of book),
+DON'T treat it as authoritative. The candidate you're evaluating might be the
+CORRECT location for that chapter.
+
+Evaluate based on: the IMAGE, the PATTERNS, and positional logic - NOT based on
+assuming nearby ToC entries are correct.
 
 ## Output fields (when include=true)
 If the candidate matches an INCLUDE pattern:

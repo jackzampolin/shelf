@@ -4,7 +4,7 @@ from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.logger import PipelineLogger
 from infra.llm.agent import AgentTools
 
-from .tools import get_heading_pages, grep_text, get_page_ocr
+from .tools import get_heading_pages, grep_text, get_page_ocr, get_book_structure, is_in_back_matter
 
 
 class TocEntryFinderTools(AgentTools):
@@ -19,6 +19,8 @@ class TocEntryFinderTools(AgentTools):
         self._current_page_num: Optional[int] = None
         self._page_observations: List[Dict[str, str]] = []
         self._current_images: Optional[List] = None
+        # Pre-compute book structure for back matter detection
+        self._book_structure = get_book_structure(storage, logger)
 
     def get_tools(self) -> List[Dict]:
         return [
@@ -41,7 +43,7 @@ class TocEntryFinderTools(AgentTools):
                 "type": "function",
                 "function": {
                     "name": "grep_text",
-                    "description": "Search book text for a pattern. Returns pages with match counts. Running headers create clusters of consecutive matches. The first page in a cluster is the chapter start.",
+                    "description": "Search book text for a pattern. Returns pages with match counts and back_matter flag. Running headers create clusters of consecutive matches. The first page in a cluster is the chapter start. WARNING: Results with in_back_matter=true are likely footnote references, not chapter starts!",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -111,6 +113,9 @@ class TocEntryFinderTools(AgentTools):
 
         elif tool_name == "grep_text":
             results = grep_text(tool_input["query"], self.storage, self.logger)
+            # Add back matter flag to each result
+            for r in results:
+                r["in_back_matter"] = is_in_back_matter(r["scan_page"], self._book_structure)
             return json.dumps(results, indent=2)
 
         elif tool_name == "get_page_ocr":

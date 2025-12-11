@@ -6,6 +6,14 @@ from infra.pipeline.status import PhaseStatusTracker
 
 
 def _should_skip_evaluation(stage_storage) -> bool:
+    # Skip if evaluation_summary.json already exists (legacy completion marker)
+    try:
+        summary = stage_storage.load_file("evaluation/evaluation_summary.json")
+        if summary is not None:
+            return True
+    except FileNotFoundError:
+        pass
+
     try:
         pattern_data = stage_storage.load_file("pattern/pattern_analysis.json")
         if not pattern_data:

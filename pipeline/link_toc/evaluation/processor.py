@@ -7,6 +7,7 @@ from infra.pipeline.status import PhaseStatusTracker
 from infra.config import Config
 
 from ..schemas import PatternAnalysis, HeadingDecision, MissingEntry, DiscoveredPattern
+from ..find_entries.agent.tools import get_book_structure
 from .request_builder import prepare_evaluation_request
 from .result_handler import create_evaluation_handler
 from .agent import MissingHeadingSearchTools, SEARCHER_SYSTEM_PROMPT, build_searcher_user_prompt
@@ -196,15 +197,34 @@ def search_missing_candidates(
     return found_count
 
 
-def _build_toc_entries_by_page(stage_storage) -> Dict[int, str]:
+def _build_toc_entries_by_page(stage_storage, book_structure: dict = None) -> Dict[int, str]:
+    """
+    Build map of scan_page -> entry title from linked_toc.
+
+    If book_structure is provided, entries linked to back matter pages
+    are excluded (they're likely wrong - footnote references).
+    """
     linked_toc_data = stage_storage.load_file("linked_toc.json")
     if not linked_toc_data:
         return {}
 
+    # Get back matter boundary if available
+    back_matter_start = None
+    if book_structure:
+        back_matter_start = book_structure.get("back_matter", {}).get("start_page")
+
     entries_by_page = {}
     for entry in linked_toc_data.get("entries", []):
         if entry and entry.get("scan_page"):
-            entries_by_page[entry["scan_page"]] = entry.get("title", "")
+            scan_page = entry["scan_page"]
+
+            # Skip entries that were linked to back matter pages
+            # These are likely wrong (footnote references, not chapter starts)
+            if back_matter_start and scan_page >= back_matter_start:
+                # Don't trust this entry - it's probably a footnote reference
+                continue
+
+            entries_by_page[scan_page] = entry.get("title", "")
     return entries_by_page
 
 
@@ -226,7 +246,9 @@ def evaluate_candidates(
 
     pattern = PatternAnalysis(**pattern_data)
 
-    toc_entries_by_page = _build_toc_entries_by_page(stage_storage)
+    # Get book structure to filter out entries mistakenly linked to back matter
+    book_structure = get_book_structure(storage, logger)
+    toc_entries_by_page = _build_toc_entries_by_page(stage_storage, book_structure)
 
     excluded_ranges = pattern.excluded_page_ranges
     candidates_to_eval = []
