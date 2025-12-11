@@ -69,13 +69,12 @@ PROMPT_TEMPLATE = '''You are generating the landing page HTML for shelf.dev.
 - Self-contained HTML (all CSS inline, no external files except fonts)
 
 ## Required Sections
-1. **Navigation** - Just the logo "shelf" on the left. No other nav links or buttons.
-2. **Hero** - The tagline "{tagline}" as the main heading, then the project_background prose below it. NO buttons (no "Get Started", no "Learn More", no GitHub links).
+1. **Navigation** - Logo "shelf" on the left, GitHub link/button on the right (link to https://github.com/{github_repo})
+2. **Hero** - The tagline "{tagline}" as the main heading, then the project_background prose below it. NO other buttons (no "Get Started", no "Learn More").
 3. **Pipeline** - First show the pipeline_explanation paragraph, then the visual flow of all {num_stages} stages. For each stage show the icon, name, description, and list its phases with their descriptions.
 4. **Footer** - Simple footer with just "shelf" and the current year. No external links.
 
 ## What NOT to include
-- No GitHub links or buttons anywhere
 - No "Open Source" badges or messaging
 - No "Get Started" or "Learn More" buttons
 - No Quick Start / installation instructions
