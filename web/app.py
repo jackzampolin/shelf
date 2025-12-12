@@ -27,9 +27,11 @@ def create_app():
     # Register route blueprints
     from web.routes.library_routes import library_bp
     from web.routes.stage_routes import stage_bp
+    from web.routes.config_routes import config_bp
 
     app.register_blueprint(library_bp)
     app.register_blueprint(stage_bp)
+    app.register_blueprint(config_bp)
 
     return app
 

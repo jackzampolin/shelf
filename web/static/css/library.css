@@ -4,9 +4,29 @@
     margin-bottom: 30px;
 }
 
+.header-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
 .library-header h2 {
     margin-bottom: 10px;
     color: var(--dark);
+}
+
+.settings-link {
+    padding: 8px 16px;
+    background: var(--light);
+    color: var(--dark);
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 0.9em;
+    transition: background 0.2s;
+}
+
+.settings-link:hover {
+    background: var(--gray-light);
 }
 
 .library-stats {

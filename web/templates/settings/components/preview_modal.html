@@ -1,0 +1,44 @@
+<div class="preview-modal">
+    <div class="preview-header">
+        <h4>Review Changes</h4>
+    </div>
+
+    <div class="preview-content">
+        {% if has_changes %}
+        <table class="changes-table">
+            <thead>
+                <tr>
+                    <th>Field</th>
+                    <th>Current</th>
+                    <th>New</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for change in changes %}
+                <tr>
+                    <td class="field-name">{{ change.field }}</td>
+                    <td class="old-value">{{ change.old }}</td>
+                    <td class="new-value">{{ change.new }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="no-changes">No changes detected.</p>
+        {% endif %}
+    </div>
+
+    <div class="preview-actions">
+        <button type="button" class="btn-cancel" onclick="this.closest('.preview-modal').remove()">Cancel</button>
+        {% if has_changes %}
+        <button type="button"
+                class="btn-save"
+                hx-post="/settings/api/save"
+                hx-vals='{"section": "{{ section }}", "data": {{ pending_data|safe }}}'
+                hx-target="closest .preview-modal"
+                hx-swap="outerHTML">
+            Save Changes
+        </button>
+        {% endif %}
+    </div>
+</div>

@@ -12,7 +12,7 @@ from infra.pipeline.storage.library import Library
 from infra.pipeline.storage.book_storage import BookStorage
 from cli.constants import STAGE_NAMES
 from web.data.status_reader import get_stage_status_from_disk
-from web.data.ocr_pages_data import get_ocr_aggregate_status, OCR_PROVIDERS
+from web.data.ocr_pages_data import get_ocr_aggregate_status
 
 
 def get_all_books(storage_root: Path) -> List[Dict[str, Any]]:
@@ -68,8 +68,8 @@ def get_all_books(storage_root: Path) -> List[Dict[str, Any]]:
 
         # Get status for non-OCR stages
         for stage_name in STAGE_NAMES:
-            if stage_name == 'ocr-pages' or stage_name in OCR_PROVIDERS:
-                continue  # Skip - ocr-pages already handled above by get_ocr_aggregate_status
+            if stage_name == 'ocr-pages':
+                continue  # Skip - already handled above by get_ocr_aggregate_status
 
             status = get_stage_status_from_disk(storage, stage_name)
 
