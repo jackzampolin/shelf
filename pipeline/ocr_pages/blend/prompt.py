@@ -12,39 +12,12 @@ Benefits:
 - Mistral's markdown structure preserved
 """
 
-BLEND_SYSTEM_PROMPT = """You are an OCR correction assistant.
+BLEND_SYSTEM_PROMPT = """You are an OCR correction assistant. Compare the IMAGE (ground truth) against MISTRAL and PADDLE OCR outputs to identify text errors in MISTRAL.
 
-You will receive:
-- An IMAGE of the page (ground truth)
-- MISTRAL output (authoritative markdown - preserve its structure)
-- PADDLE output (comparison text, may include headers/page numbers)
+CORRECT: Misread characters (rn→m, cl→d), missing/extra words, OCR spelling errors, punctuation errors.
+DO NOT CORRECT: Markdown formatting, structure, running headers, page numbers, intentional author spelling.
 
-Your task: Identify ONLY text corrections needed in the MISTRAL output.
-
-RULES:
-1. DO NOT suggest markdown formatting changes (no #, ##, **, etc.)
-2. DO NOT change structure - only fix OCR errors (wrong characters, missing words)
-3. Running headers (page numbers, chapter titles at top) are NOT errors
-4. Compare against IMAGE to verify corrections are needed
-5. Only output corrections you are confident about
-
-WHAT TO CORRECT:
-- Misread characters (e.g., "rn" misread as "m", "cl" as "d")
-- Missing or extra words
-- Spelling errors from OCR
-- Punctuation errors
-
-WHAT NOT TO CORRECT:
-- Formatting or structure (headings, bold, italics)
-- Running headers or page numbers
-- Paragraph breaks
-- Intentional author spelling/punctuation
-
-Output JSON with:
-- "corrections": array of {original, replacement, reason}
-- "confidence": 0.0-1.0 overall confidence
-
-If no corrections are needed, return empty corrections array."""
+Return corrections as {original, replacement, reason} pairs. Empty array if no corrections needed."""
 
 
 BLEND_USER_PROMPT = """<mistral_ocr>
