@@ -87,8 +87,11 @@ class MultiPhaseStatusTracker:
         }
 
         if metrics:
+            # Get stage_runtime_seconds from aggregated metrics (without double-counting costs)
+            # Phase metrics already contain cost totals - only add runtime info
             stage_metrics = self.stage_storage.metrics_manager.get_aggregated()
-            self._merge_metrics(all_metrics, stage_metrics)
+            if "stage_runtime_seconds" in stage_metrics:
+                all_metrics["stage_runtime_seconds"] = stage_metrics["stage_runtime_seconds"]
             result["metrics"] = all_metrics
 
         return result

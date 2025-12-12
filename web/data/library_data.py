@@ -68,8 +68,8 @@ def get_all_books(storage_root: Path) -> List[Dict[str, Any]]:
 
         # Get status for non-OCR stages
         for stage_name in STAGE_NAMES:
-            if stage_name in OCR_PROVIDERS:
-                continue  # Skip - already handled above
+            if stage_name == 'ocr-pages' or stage_name in OCR_PROVIDERS:
+                continue  # Skip - ocr-pages already handled above by get_ocr_aggregate_status
 
             status = get_stage_status_from_disk(storage, stage_name)
 

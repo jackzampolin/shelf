@@ -78,7 +78,7 @@ def process_metadata(tracker: PhaseStatusTracker, **kwargs) -> Dict[str, Any]:
     tracker.logger.info(f"Saved metadata to {book_storage.metadata_file}")
 
     # Step 4: Create marker file to track completion
-    marker_path = tracker.stage_storage.stage_dir / MARKER_FILENAME
+    marker_path = tracker.stage_storage.output_dir / MARKER_FILENAME
     import json
     with open(marker_path, "w") as f:
         json.dump({
