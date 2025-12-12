@@ -15,6 +15,7 @@ class OCRProviderConfig(BaseModel):
     """Configuration for an OCR provider (text extraction from images)."""
     type: str = Field(..., description="Provider type: mistral-ocr, deepinfra")
     model: Optional[str] = Field(None, description="Model identifier (for deepinfra)")
+    api_key_ref: Optional[str] = Field(None, description="Reference to api_keys entry (defaults to type)")
     rate_limit: Optional[float] = Field(None, description="Requests per second limit")
     enabled: bool = Field(True, description="Whether this provider is enabled")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Provider-specific settings")

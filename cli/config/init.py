@@ -39,7 +39,7 @@ def cmd_init(args):
     print("\nConfiguration summary:")
     print(f"  Storage root: {storage_root}")
     print(f"  Default OCR providers: {', '.join(config.defaults.ocr_providers)}")
-    print(f"  Default blend model: {config.defaults.blend_model}")
+    print(f"  Default LLM provider: {config.defaults.llm_provider}")
     print(f"  Default max workers: {config.defaults.max_workers}")
 
     # Check API keys
