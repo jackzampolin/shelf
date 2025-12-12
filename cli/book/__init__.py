@@ -4,6 +4,7 @@ from cli.book.process import cmd_process
 from cli.book.stage import cmd_stage_run, cmd_stage_info, cmd_stage_clean, cmd_stage_report
 from cli.book.phase import cmd_phase_info, cmd_phase_clean
 from cli.book.config import cmd_book_config_show, cmd_book_config_set, cmd_book_config_clear
+from cli.book.metadata import cmd_metadata_extract, cmd_metadata_enrich, cmd_metadata_show
 from cli.constants import CORE_STAGES, REPORT_STAGES
 
 
@@ -30,6 +31,33 @@ def setup_parser(subparsers):
     process_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
     process_parser.add_argument('--delete-outputs', action='store_true', help='DELETE all stage outputs before processing (WARNING: irreversible)')
     process_parser.set_defaults(func=cmd_process)
+
+    # =========================================================================
+    # Book metadata commands: book <id> metadata <action>
+    # =========================================================================
+
+    metadata_parser = book_subparsers.add_parser('metadata', help='Book metadata operations')
+    metadata_subparsers = metadata_parser.add_subparsers(dest='metadata_command', help='Metadata command')
+    metadata_subparsers.required = True
+
+    # book <id> metadata show
+    metadata_show_parser = metadata_subparsers.add_parser('show', help='Show current metadata')
+    metadata_show_parser.add_argument('--json', action='store_true', help='Output as JSON')
+    metadata_show_parser.set_defaults(func=cmd_metadata_show)
+
+    # book <id> metadata extract
+    metadata_extract_parser = metadata_subparsers.add_parser('extract', help='Extract metadata using AI')
+    metadata_extract_parser.add_argument('--model', help='LLM model (default: uses web search)')
+    metadata_extract_parser.add_argument('--pages', type=int, default=20, help='Number of pages to analyze')
+    metadata_extract_parser.add_argument('--dry-run', action='store_true', help='Preview without saving')
+    metadata_extract_parser.add_argument('--json', action='store_true', help='Output as JSON')
+    metadata_extract_parser.set_defaults(func=cmd_metadata_extract)
+
+    # book <id> metadata enrich
+    metadata_enrich_parser = metadata_subparsers.add_parser('enrich', help='Enrich with Open Library data')
+    metadata_enrich_parser.add_argument('--dry-run', action='store_true', help='Preview without saving')
+    metadata_enrich_parser.add_argument('--json', action='store_true', help='Output as JSON')
+    metadata_enrich_parser.set_defaults(func=cmd_metadata_enrich)
 
     # =========================================================================
     # Book config commands: book <id> config <action>
@@ -119,5 +147,8 @@ __all__ = [
     'cmd_book_config_show',
     'cmd_book_config_set',
     'cmd_book_config_clear',
+    'cmd_metadata_extract',
+    'cmd_metadata_enrich',
+    'cmd_metadata_show',
     'setup_parser',
 ]
