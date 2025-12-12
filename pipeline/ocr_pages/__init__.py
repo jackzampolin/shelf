@@ -4,7 +4,7 @@ from infra.pipeline.base_stage import BaseStage
 from infra.pipeline.storage.book_storage import BookStorage
 from infra.pipeline.status import MultiPhaseStatusTracker
 from infra.config import LibraryConfig, load_library_config, resolve_book_config
-from infra.config.legacy import Config
+from infra.config import Config
 from .provider import (
     MistralOCRProvider,
     OlmOCRProvider,

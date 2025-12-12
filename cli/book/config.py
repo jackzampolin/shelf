@@ -9,7 +9,7 @@ shelf book <scan-id> config clear
 import json
 
 from infra.config import BookConfigManager, resolve_book_config
-from infra.config.legacy import Config
+from infra.config import Config
 
 
 def cmd_book_config_show(args):

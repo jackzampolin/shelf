@@ -15,9 +15,9 @@ uv venv
 source .venv/bin/activate
 uv pip install -e .
 
-# Configure
-cp .env.example .env
-# Add your OPENROUTER_API_KEY
+# Initialize config
+uv run python shelf.py config init
+# Add your API keys when prompted
 
 # Verify
 uv run python shelf.py --help

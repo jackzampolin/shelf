@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from infra.config import LibraryConfigManager, LibraryConfig
-from infra.config.legacy import Config
+from infra.config import Config
 
 
 def cmd_init(args):

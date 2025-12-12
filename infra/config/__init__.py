@@ -43,14 +43,27 @@ from .book_config import (
     resolve_book_config,
 )
 
-# Legacy config - backward compatibility with .env-based config
-from .legacy import Config, ShelfConfig
+# Runtime config access (single source: config.yaml)
+from .runtime import (
+    Config,
+    ShelfConfig,
+    get_storage_root,
+    get_library_config,
+    get_api_key,
+    get_default_model,
+    reload_config,
+)
 
 
 __all__ = [
-    # Legacy (backward compatible)
+    # Runtime config
     "Config",
     "ShelfConfig",
+    "get_storage_root",
+    "get_library_config",
+    "get_api_key",
+    "get_default_model",
+    "reload_config",
     # Schemas
     "OCRProviderConfig",
     "LLMProviderConfig",

@@ -170,9 +170,10 @@ uv run python shelf.py <command>
 uv run python -m pytest tests/
 ```
 
-**Secrets (.env):**
-- `OPENROUTER_API_KEY` - For LLM API calls
-- `BOOK_STORAGE_ROOT` (optional) - Defaults to `~/Documents/shelf`
+**Configuration:**
+- Run `shelf config init` to create `~/Documents/shelf/config.yaml`
+- API keys stored in config.yaml with `${ENV_VAR}` syntax for security
+- `BOOK_STORAGE_ROOT` env var (optional) - Defaults to `~/Documents/shelf`
 </quick_reference>
 
 <remember>

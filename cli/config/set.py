@@ -5,7 +5,7 @@ shelf config set command - Set configuration values.
 import json
 
 from infra.config import LibraryConfigManager
-from infra.config.legacy import Config
+from infra.config import Config
 
 
 def cmd_config_set(args):

@@ -3,7 +3,7 @@ shelf config provider commands - Manage OCR and LLM providers.
 """
 
 from infra.config import LibraryConfigManager
-from infra.config.legacy import Config
+from infra.config import Config
 
 
 def cmd_provider_list(args):
