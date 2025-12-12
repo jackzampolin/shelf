@@ -184,6 +184,7 @@ def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, b
                                     "range_start": {"type": ["string", "null"]},
                                     "range_end": {"type": ["string", "null"]},
                                     "level": {"type": ["integer", "null"]},
+                                    "heading_format": {"type": ["string", "null"]},
                                     "reasoning": {"type": "string"}
                                 },
                                 "required": ["pattern_type", "reasoning"],
@@ -230,6 +231,7 @@ def _analyze_with_llm(tracker, model, logger, toc_entries, candidate_headings, b
                 range_start=p.get("range_start"),
                 range_end=p.get("range_end"),
                 level=p.get("level"),
+                heading_format=p.get("heading_format"),
                 action="include",  # All discovered patterns are include
                 confidence=None,  # Will be calculated after discovery
                 missing_entries=[],  # Not used anymore

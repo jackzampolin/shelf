@@ -10,9 +10,6 @@ from infra.config import Config
 from cli.helpers import get_stage_status, clean_stage_directory
 from cli.constants import CORE_STAGES
 
-# Disable Rich live displays for parallel processing
-os.environ['SHELF_HEADLESS'] = '1'
-
 console = Console()
 print_lock = Lock()
 
@@ -56,6 +53,9 @@ def process_book(scan_id: str, stage_name: str, library: Library, model: str = N
 
 
 def cmd_batch_parallel(args):
+    # Disable Rich live displays for parallel processing
+    os.environ['SHELF_HEADLESS'] = '1'
+
     library = Library(storage_root=Config.book_storage_root)
     books = library.list_books()
     scan_ids = [book['scan_id'] for book in books]

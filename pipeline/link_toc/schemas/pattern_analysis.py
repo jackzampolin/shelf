@@ -34,6 +34,10 @@ class DiscoveredPattern(BaseModel):
     range_start: Optional[str] = None  # "1", "I", "A" (for sequential)
     range_end: Optional[str] = None  # "38", "X", "F"
     level: Optional[int] = None  # 1=part, 2=chapter, 3=section
+    # The actual heading format observed in the book's candidate headings
+    # e.g., "CHAPTER {n}" if headings are "CHAPTER 1", "CHAPTER 2"
+    # e.g., "{n}" if headings are just "1", "2", "3"
+    heading_format: Optional[str] = None
     action: Literal["include", "exclude"]
     confidence: Optional[float] = Field(None, ge=0.0, le=1.0)  # sequential: found/expected
     missing_entries: List[MissingEntry] = Field(default_factory=list)  # sequential only
