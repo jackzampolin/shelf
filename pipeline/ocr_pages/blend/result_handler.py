@@ -1,55 +1,120 @@
+"""
+Handle blend results by applying corrections to Mistral output.
+"""
+
+from typing import List
+import logging
+
 from infra.llm.models import LLMResult
 from infra.pipeline import PhaseStatusTracker
-from ..schemas.blend import BlendedOcrPageOutput
+from ..schemas.blend import BlendedOcrPageOutput, TextCorrection
+
+
+def apply_corrections(base_text: str, corrections: List[dict], logger=None) -> tuple[str, int]:
+    """
+    Apply corrections to base text.
+
+    Returns: (corrected_text, num_applied)
+    """
+    result = base_text
+    applied = 0
+
+    for correction in corrections:
+        original = correction.get("original", "")
+        replacement = correction.get("replacement", "")
+        reason = correction.get("reason", "")
+
+        if not original:
+            continue
+
+        if original in result:
+            result = result.replace(original, replacement, 1)
+            applied += 1
+            if logger:
+                logger.debug(f"Applied: '{original[:30]}...' → '{replacement[:30]}...' ({reason})")
+        else:
+            if logger:
+                logger.warning(f"Could not find: '{original[:50]}...'")
+
+    return result, applied
 
 
 def create_result_handler(tracker: PhaseStatusTracker):
-    tracker = tracker
+    """Create result handler that applies corrections to Mistral output."""
 
     def on_result(result: LLMResult):
-        if result.success:
-            if result.parsed_json is None:
-                tracker.logger.error(
-                    f"✗ Blend returned None: {result.request.id}",
-                    request_id=result.request.id,
-                    error="LLM returned null/empty response"
-                )
-                return
-
-            page_num = int(result.request.id.split("_")[1])
-            markdown = result.parsed_json.get("markdown", "").strip()
-
-            output = BlendedOcrPageOutput(
-                page_num=page_num,
-                markdown=markdown,
-                char_count=len(markdown),
-                model_used=result.model_used or "unknown",
-            )
-
-            tracker.stage_storage.save_page(
-                page_num,
-                output.model_dump(),
-                schema=BlendedOcrPageOutput,
-                subdir="blend"
-            )
-            
-            result.record_to_metrics(
-                metrics_manager=tracker.stage_storage.metrics_manager,
-                key=f"{tracker.metrics_prefix}{result.request.id}",
-            )
-
-            tracker.logger.info(
-                f"✓ {result.request.id}: blended {output.char_count} chars"
-            )
-        else:
+        if not result.success:
             tracker.logger.error(
                 f"✗ Blend failed: {result.request.id}",
                 request_id=result.request.id,
                 error_type=result.error_type,
                 error=result.error_message,
-                attempts=result.attempts,
-                execution_time=result.execution_time_seconds,
-                model=result.model_used
+            )
+            return
+
+        if result.parsed_json is None:
+            tracker.logger.error(f"✗ Blend returned None: {result.request.id}")
+            return
+
+        page_num = int(result.request.id.split("_")[1])
+
+        # Load Mistral base text
+        ocr_stage = tracker.storage.stage("ocr-pages")
+        try:
+            mistral_data = ocr_stage.load_page(page_num, subdir="mistral")
+            base_text = mistral_data.get("markdown", "")
+            base_source = "mistral"
+        except FileNotFoundError:
+            # Fallback to paddle if mistral missing
+            try:
+                paddle_data = ocr_stage.load_page(page_num, subdir="paddle")
+                base_text = paddle_data.get("text", "")
+                base_source = "paddle"
+            except FileNotFoundError:
+                tracker.logger.error(f"✗ No base OCR for page {page_num}")
+                return
+
+        # Get corrections from LLM response
+        corrections = result.parsed_json.get("corrections", [])
+        confidence = result.parsed_json.get("confidence", 1.0)
+
+        # Apply corrections
+        corrected_text, num_applied = apply_corrections(
+            base_text,
+            corrections,
+            logger=tracker.logger
+        )
+
+        # Save result
+        output = BlendedOcrPageOutput(
+            page_num=page_num,
+            markdown=corrected_text,
+            char_count=len(corrected_text),
+            model_used=result.model_used or "unknown",
+            corrections_applied=num_applied,
+            base_source=base_source,
+        )
+
+        tracker.stage_storage.save_page(
+            page_num,
+            output.model_dump(),
+            schema=BlendedOcrPageOutput,
+            subdir="blend"
+        )
+
+        result.record_to_metrics(
+            metrics_manager=tracker.stage_storage.metrics_manager,
+            key=f"{tracker.metrics_prefix}{result.request.id}",
+        )
+
+        # Log summary
+        if num_applied > 0:
+            tracker.logger.info(
+                f"✓ {result.request.id}: {num_applied} corrections applied ({output.char_count} chars)"
+            )
+        else:
+            tracker.logger.info(
+                f"✓ {result.request.id}: no corrections needed ({output.char_count} chars)"
             )
 
     return on_result

@@ -1,7 +1,7 @@
 from .mistral import MistralOcrPageOutput, ImageBBox, PageDimensions
 from .olm import OlmOcrPageOutput, OlmOcrPageMetrics
 from .paddle import PaddleOcrPageOutput, PaddleOcrPageMetrics
-from .blend import BlendedOcrPageOutput, BlendedOcrPageMetrics
+from .blend import BlendedOcrPageOutput, BlendedOcrPageMetrics, TextCorrection, BlendCorrections
 
 __all__ = [
     "MistralOcrPageOutput",
@@ -13,4 +13,6 @@ __all__ = [
     "PaddleOcrPageMetrics",
     "BlendedOcrPageOutput",
     "BlendedOcrPageMetrics",
+    "TextCorrection",
+    "BlendCorrections",
 ]

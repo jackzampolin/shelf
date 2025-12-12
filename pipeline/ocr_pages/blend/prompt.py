@@ -1,42 +1,99 @@
-BLEND_SYSTEM_PROMPT = """Your task is to produce the best possible markdown transcription of a book page by combining three OCR outputs.
+"""
+Blend prompts for diff-based OCR correction.
+
+Approach:
+1. Mistral output is authoritative (has native markdown structure)
+2. LLM outputs corrections only (not full page rewrite)
+3. Corrections are applied to Mistral output programmatically
+
+Benefits:
+- ~50% reduction in output tokens
+- No spurious formatting (can't add what you're not rewriting)
+- Mistral's markdown structure preserved
+"""
+
+BLEND_SYSTEM_PROMPT = """You are an OCR correction assistant.
 
 You will receive:
-- An IMAGE of the page (this is ground truth - use it to verify accuracy)
-- Three OCR transcriptions of that same page (each with different strengths)
+- An IMAGE of the page (ground truth)
+- MISTRAL output (authoritative markdown - preserve its structure)
+- PADDLE output (comparison text, may include headers/page numbers)
 
-The IMAGE is your source of truth. When OCR outputs conflict, look at the image to determine correct text and markdown structure.
+Your task: Identify ONLY text corrections needed in the MISTRAL output.
 
-OCR source characteristics:
-- **Mistral**: The only output that contains native markdown structure. Generally excludes headers and page numbers.
-- **OlmOCR**: High accuracy text but plain text only, no formatting. Generally excludes headers and page numbers.
-- **PaddleOCR**: Generally includes page numbers and headers. Plain text only. Rare failure modes of repeated text.
+RULES:
+1. DO NOT suggest markdown formatting changes (no #, ##, **, etc.)
+2. DO NOT change structure - only fix OCR errors (wrong characters, missing words)
+3. Running headers (page numbers, chapter titles at top) are NOT errors
+4. Compare against IMAGE to verify corrections are needed
+5. Only output corrections you are confident about
 
-Markdown patterns to use:
-- Headings: #, ##, ###, ####
-- Footnotes: ${ }^{1}$, ${ }^{2}$, etc. (LaTeX superscript)
-- Images: ![img-N.jpeg](img-N.jpeg)
-- Lists: - item
+WHAT TO CORRECT:
+- Misread characters (e.g., "rn" misread as "m", "cl" as "d")
+- Missing or extra words
+- Spelling errors from OCR
+- Punctuation errors
 
-Quality checks:
-- If one output differs substantially from the other two, verify against the IMAGE
-- When labeling headings, confirm with the IMAGE
-- Running headers don't need markdown formatting, but should be included
-- Ensure all text from the OCR outputs is included unless clearly erroneous
-- Maintain original spelling and punctuation from the OCR outputs
-- Keep logical paragraph breaks
+WHAT NOT TO CORRECT:
+- Formatting or structure (headings, bold, italics)
+- Running headers or page numbers
+- Paragraph breaks
+- Intentional author spelling/punctuation
 
-Return JSON with a "markdown" field containing the synthesized markdown. No explanations in the markdown itself.
-"""
+Output JSON with:
+- "corrections": array of {original, replacement, reason}
+- "confidence": 0.0-1.0 overall confidence
+
+If no corrections are needed, return empty corrections array."""
 
 
 BLEND_USER_PROMPT = """<mistral_ocr>
 {mistral_text}
 </mistral_ocr>
 
-<olmocr>
-{olm_text}
-</olmocr>
-
 <paddle_ocr>
 {paddle_text}
 </paddle_ocr>"""
+
+
+CORRECTIONS_JSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "ocr_corrections",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "corrections": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "original": {
+                                "type": "string",
+                                "description": "Exact text to find in Mistral output"
+                            },
+                            "replacement": {
+                                "type": "string",
+                                "description": "Corrected text"
+                            },
+                            "reason": {
+                                "type": "string",
+                                "description": "Brief explanation"
+                            }
+                        },
+                        "required": ["original", "replacement", "reason"],
+                        "additionalProperties": False
+                    },
+                    "description": "List of corrections to apply"
+                },
+                "confidence": {
+                    "type": "number",
+                    "description": "Overall confidence (0.0-1.0)"
+                }
+            },
+            "required": ["corrections", "confidence"],
+            "additionalProperties": False
+        }
+    }
+}
