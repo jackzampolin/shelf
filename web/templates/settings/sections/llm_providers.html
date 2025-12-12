@@ -5,13 +5,20 @@
     <input type="hidden" name="section" value="llm-providers">
 
     <div class="form-description">
-        <p>LLM providers for text processing and correction.</p>
+        <p>LLM providers for text processing and correction. Check "Remove" to delete a provider.</p>
     </div>
 
     {% for name, provider in config.llm_providers.items() %}
-    <div class="provider-card">
+    <div class="provider-card" id="llm-card-{{ name }}">
         <div class="provider-header">
             <span class="provider-name">{{ name }}</span>
+            <label class="remove-toggle">
+                <input type="checkbox"
+                       name="llm_providers.{{ name }}._remove"
+                       value="true"
+                       onchange="toggleProviderRemove('llm-card-{{ name }}', this.checked)">
+                Remove
+            </label>
         </div>
 
         <div class="provider-fields">
@@ -58,9 +65,47 @@
     </div>
     {% endfor %}
 
+    <!-- Add new provider -->
+    <div class="add-provider-section">
+        <h4>Add New Provider</h4>
+        <div class="provider-card new-provider">
+            <div class="field-row">
+                <label>Name *</label>
+                <input type="text"
+                       name="new_llm_provider.name"
+                       placeholder="e.g., grok-fast">
+            </div>
+            <div class="field-row">
+                <label>Type</label>
+                <select name="new_llm_provider.type">
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="ollama">Ollama</option>
+                </select>
+            </div>
+            <div class="field-row">
+                <label>Model *</label>
+                <input type="text"
+                       name="new_llm_provider.model"
+                       placeholder="e.g., xai/grok-4.1-fast">
+            </div>
+        </div>
+    </div>
+
     <div class="form-actions">
         <button type="submit" class="btn-preview">Preview Changes</button>
     </div>
 </form>
 
 <div id="llm-providers-preview"></div>
+
+<script>
+function toggleProviderRemove(cardId, isRemoved) {
+    const card = document.getElementById(cardId);
+    if (isRemoved) {
+        card.classList.add('marked-for-removal');
+    } else {
+        card.classList.remove('marked-for-removal');
+    }
+}
+</script>

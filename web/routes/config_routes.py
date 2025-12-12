@@ -193,11 +193,17 @@ def _parse_form_data(form, section: str) -> dict:
     elif section == 'llm-providers':
         # llm_providers.{name}.{field} = value
         data = {}
+        removals = set()
+
         for key, value in form.items():
             if key.startswith('llm_providers.'):
                 parts = key.replace('llm_providers.', '').split('.', 1)
                 if len(parts) == 2:
                     name, field = parts
+                    # Track removals
+                    if field == '_remove' and value.lower() in ('true', 'on', '1'):
+                        removals.add(name)
+                        continue
                     if name not in data:
                         data[name] = {}
                     # Type conversions
@@ -208,6 +214,21 @@ def _parse_form_data(form, section: str) -> dict:
                             pass
                     if value:
                         data[name][field] = value
+
+        # Remove marked providers
+        for name in removals:
+            data.pop(name, None)
+
+        # Handle new provider
+        new_name = form.get('new_llm_provider.name', '').strip()
+        new_type = form.get('new_llm_provider.type', '').strip()
+        new_model = form.get('new_llm_provider.model', '').strip()
+        if new_name and new_model:
+            data[new_name] = {
+                'type': new_type or 'openrouter',
+                'model': new_model,
+            }
+
         return data
 
     elif section == 'defaults':

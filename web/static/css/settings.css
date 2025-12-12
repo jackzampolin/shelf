@@ -206,7 +206,8 @@
     color: var(--dark);
 }
 
-.enabled-toggle {
+.enabled-toggle,
+.remove-toggle {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -214,9 +215,42 @@
     color: var(--text-secondary);
 }
 
-.enabled-toggle input {
+.enabled-toggle input,
+.remove-toggle input {
     width: 18px;
     height: 18px;
+}
+
+.remove-toggle {
+    color: var(--danger);
+}
+
+/* Marked for removal */
+.provider-card.marked-for-removal {
+    opacity: 0.5;
+    background: #f8d7da;
+    border-color: var(--danger);
+}
+
+[data-theme="dark"] .provider-card.marked-for-removal {
+    background: #3d1f1f;
+}
+
+/* Add provider section */
+.add-provider-section {
+    margin-top: 25px;
+    padding-top: 20px;
+    border-top: 2px dashed var(--border);
+}
+
+.add-provider-section h4 {
+    margin-bottom: 15px;
+    color: var(--dark);
+}
+
+.provider-card.new-provider {
+    background: var(--white);
+    border-style: dashed;
 }
 
 .provider-fields {

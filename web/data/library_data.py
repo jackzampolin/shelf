@@ -12,7 +12,7 @@ from infra.pipeline.storage.library import Library
 from infra.pipeline.storage.book_storage import BookStorage
 from cli.constants import STAGE_NAMES
 from web.data.status_reader import get_stage_status_from_disk
-from web.data.ocr_pages_data import get_ocr_aggregate_status
+from web.data.ocr_pages_data import get_ocr_aggregate_status, get_metadata_status
 
 
 def get_all_books(storage_root: Path) -> List[Dict[str, Any]]:
@@ -42,14 +42,19 @@ def get_all_books(storage_root: Path) -> List[Dict[str, Any]]:
         scan_id = scan['scan_id']
         storage = library.get_book_storage(scan_id)
 
+        # Check if metadata has been extracted
+        metadata_info = get_metadata_status(storage)
+        has_metadata = metadata_info is not None
+
         book = {
             'scan_id': scan_id,
             'metadata': {
-                'title': scan.get('title', 'Unknown'),
-                'author': scan.get('author', 'Unknown'),
+                'title': metadata_info['title'] if has_metadata else scan.get('title', 'Unknown'),
+                'author': ', '.join(metadata_info['authors']) if has_metadata and metadata_info.get('authors') else scan.get('author', 'Unknown'),
                 'year': scan.get('year', 'Unknown'),
                 'pages': scan.get('pages', 0),
             },
+            'has_metadata': has_metadata,
             'stages': {},
             'total_cost_usd': 0.0,
             'total_runtime_seconds': 0.0,

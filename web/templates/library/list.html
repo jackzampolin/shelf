@@ -51,7 +51,14 @@
             <tr>
                 <!-- Book Name -->
                 <td>
+                    {% if book.has_metadata %}
+                    <a href="/book/{{ book.scan_id }}/metadata" class="book-name-link">
+                        <div class="book-name">{{ book.metadata.title }}</div>
+                        <div class="book-author">{{ book.metadata.author }}</div>
+                    </a>
+                    {% else %}
                     <div class="book-name">{{ book.scan_id }}</div>
+                    {% endif %}
                 </td>
 
                 <!-- Total Time -->

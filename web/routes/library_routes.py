@@ -3,11 +3,14 @@ Library routes blueprint.
 
 Mirrors cli/namespace_library.py operations:
 - GET / - List all books with status (like `shelf library list`)
+- GET /book/<scan_id>/metadata - View book metadata
 """
 
-from flask import Blueprint, render_template
+from flask import Blueprint, render_template, abort
 from web.config import Config
 from web.data.library_data import get_all_books
+from web.data.ocr_pages_data import get_metadata_status
+from infra.pipeline.storage.library import Library
 
 library_bp = Blueprint('library', __name__)
 
@@ -32,4 +35,29 @@ def library_list():
         library_total_cost=library_total_cost,
         library_total_runtime=library_total_runtime,
         active='library',
+    )
+
+
+@library_bp.route('/book/<scan_id>/metadata')
+def book_metadata(scan_id: str):
+    """
+    Book metadata detail view.
+
+    Shows all extracted metadata for a book.
+    """
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    if not library.get_scan_info(scan_id):
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+    metadata = get_metadata_status(storage)
+
+    if not metadata:
+        abort(404, f"No metadata extracted for '{scan_id}'")
+
+    return render_template(
+        'book/metadata.html',
+        scan_id=scan_id,
+        metadata=metadata,
     )

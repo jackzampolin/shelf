@@ -84,6 +84,25 @@
     font-size: 0.9em;
 }
 
+.book-name-link {
+    text-decoration: none;
+    display: block;
+}
+
+.book-name-link:hover .book-name {
+    color: #007bff;
+}
+
+.book-name-link .book-name {
+    font-family: inherit;
+}
+
+.book-author {
+    font-size: 0.8em;
+    color: #6c757d;
+    margin-top: 2px;
+}
+
 /* Progress Cell */
 .progress-cell {
     min-width: 150px;
