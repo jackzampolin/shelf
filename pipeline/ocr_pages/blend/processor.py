@@ -8,7 +8,7 @@ from .result_handler import create_result_handler
 def process_blend(tracker: PhaseStatusTracker, **kwargs) -> Dict[str, Any]:
     model = kwargs.get("model")
     max_workers = kwargs.get("max_workers")
-    max_retries = kwargs.get("max_retries", 3)
+    max_retries = kwargs.get("max_retries", 5)
 
     return LLMBatchProcessor(LLMBatchConfig(
         tracker=tracker,

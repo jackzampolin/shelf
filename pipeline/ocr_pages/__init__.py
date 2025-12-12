@@ -129,11 +129,16 @@ class OcrPagesStage(BaseStage):
 
         for name in provider_names:
             try:
+                # Only pass include_images to mistral
+                kwargs = {}
+                if name == "mistral" and self.include_images:
+                    kwargs["include_images"] = True
+
                 provider = get_provider(
                     name,
                     self.stage_storage,
                     config=library_config,
-                    include_images=self.include_images if name == "mistral" else False,
+                    **kwargs,
                 )
                 providers.append(provider)
             except ValueError as e:

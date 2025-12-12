@@ -44,5 +44,5 @@ def prepare_blend_request(item: int, storage) -> LLMRequest:
         images=[source_image],
         response_format=CORRECTIONS_JSON_SCHEMA,
         temperature=0.1,
-        timeout=180,
+        timeout=600,  # 10 minutes - vision + structured output can be slow
     )
