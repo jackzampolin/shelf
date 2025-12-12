@@ -14,6 +14,7 @@ from .provider import (
 )
 from .parallel import create_parallel_ocr_tracker
 from . import blend
+from . import metadata as metadata_phase
 from .schemas import (
     MistralOcrPageOutput,
     ImageBBox,
@@ -47,6 +48,7 @@ class OcrPagesStage(BaseStage):
     phases = [
         {"name": "ocr", "description": "Extract text using multiple OCR providers in parallel"},
         {"name": "blend", "description": "Combine OCR outputs into best-quality text"},
+        {"name": "metadata", "description": "Extract book metadata using AI with web search"},
     ]
 
     @classmethod
@@ -111,11 +113,18 @@ class OcrPagesStage(BaseStage):
             max_workers=self.blend_max_workers,
         )
 
+        # Metadata extraction (uses web-search LLM)
+        self.metadata_tracker = metadata_phase.create_metadata_tracker(
+            self.stage_storage,
+            model=self.blend_model,  # Use same model for metadata
+        )
+
         self.status_tracker = MultiPhaseStatusTracker(
             stage_storage=self.stage_storage,
             phase_trackers=[
                 self.ocr_tracker,
                 self.blend_tracker,
+                self.metadata_tracker,
             ]
         )
 
