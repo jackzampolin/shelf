@@ -22,7 +22,9 @@ Legacy usage (backward compatible):
 """
 
 from .schemas import (
-    ProviderConfig,
+    OCRProviderConfig,
+    LLMProviderConfig,
+    ProviderConfig,  # Backward compat alias for OCRProviderConfig
     DefaultsConfig,
     LibraryConfig,
     BookConfig,
@@ -50,7 +52,9 @@ __all__ = [
     "Config",
     "ShelfConfig",
     # Schemas
-    "ProviderConfig",
+    "OCRProviderConfig",
+    "LLMProviderConfig",
+    "ProviderConfig",  # Backward compat alias
     "DefaultsConfig",
     "LibraryConfig",
     "BookConfig",

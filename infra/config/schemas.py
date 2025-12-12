@@ -11,13 +11,26 @@ import os
 import re
 
 
-class ProviderConfig(BaseModel):
-    """Configuration for an OCR provider."""
-    type: str = Field(..., description="Provider type: mistral-ocr, deepinfra, openrouter")
-    model: Optional[str] = Field(None, description="Model identifier (for deepinfra/openrouter)")
+class OCRProviderConfig(BaseModel):
+    """Configuration for an OCR provider (text extraction from images)."""
+    type: str = Field(..., description="Provider type: mistral-ocr, deepinfra")
+    model: Optional[str] = Field(None, description="Model identifier (for deepinfra)")
     rate_limit: Optional[float] = Field(None, description="Requests per second limit")
     enabled: bool = Field(True, description="Whether this provider is enabled")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Provider-specific settings")
+
+
+class LLMProviderConfig(BaseModel):
+    """Configuration for an LLM provider (inference endpoint + model)."""
+    type: str = Field(..., description="Provider type: openrouter, anthropic, ollama")
+    model: str = Field(..., description="Model identifier (e.g., google/gemini-2.0-flash-001)")
+    api_key_ref: Optional[str] = Field(None, description="Reference to api_keys entry (defaults to type)")
+    rate_limit: Optional[float] = Field(None, description="Requests per second limit")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Provider-specific settings")
+
+
+# Backward compatibility alias
+ProviderConfig = OCRProviderConfig
 
 
 class DefaultsConfig(BaseModel):
@@ -26,9 +39,9 @@ class DefaultsConfig(BaseModel):
         default=["mistral", "paddle"],
         description="OCR providers to use by default"
     )
-    blend_model: str = Field(
-        default="google/gemini-2.0-flash-001",
-        description="Model for blending OCR outputs"
+    llm_provider: str = Field(
+        default="gemini-flash",
+        description="Default LLM provider for inference"
     )
     max_workers: int = Field(
         default=10,
@@ -46,14 +59,24 @@ class LibraryConfig(BaseModel):
         default_factory=dict,
         description="API keys (can use ${ENV_VAR} syntax)"
     )
-    providers: Dict[str, ProviderConfig] = Field(
+    ocr_providers: Dict[str, OCRProviderConfig] = Field(
         default_factory=dict,
-        description="OCR provider definitions"
+        description="OCR provider definitions (text extraction)"
+    )
+    llm_providers: Dict[str, LLMProviderConfig] = Field(
+        default_factory=dict,
+        description="LLM provider definitions (inference)"
     )
     defaults: DefaultsConfig = Field(
         default_factory=DefaultsConfig,
         description="Default settings for new books"
     )
+
+    # Backward compatibility: 'providers' maps to 'ocr_providers'
+    @property
+    def providers(self) -> Dict[str, OCRProviderConfig]:
+        """Backward compatibility alias for ocr_providers."""
+        return self.ocr_providers
 
     def resolve_api_key(self, key_name: str) -> Optional[str]:
         """
@@ -67,9 +90,18 @@ class LibraryConfig(BaseModel):
         value = self.api_keys[key_name]
         return resolve_env_vars(value)
 
-    def get_provider(self, name: str) -> Optional[ProviderConfig]:
-        """Get a provider config by name."""
-        return self.providers.get(name)
+    def get_ocr_provider(self, name: str) -> Optional[OCRProviderConfig]:
+        """Get an OCR provider config by name."""
+        return self.ocr_providers.get(name)
+
+    def get_llm_provider(self, name: str) -> Optional[LLMProviderConfig]:
+        """Get an LLM provider config by name."""
+        return self.llm_providers.get(name)
+
+    # Backward compatibility
+    def get_provider(self, name: str) -> Optional[OCRProviderConfig]:
+        """Backward compatibility alias for get_ocr_provider."""
+        return self.get_ocr_provider(name)
 
     @classmethod
     def with_defaults(cls) -> "LibraryConfig":
@@ -80,19 +112,29 @@ class LibraryConfig(BaseModel):
                 "mistral": "${MISTRAL_API_KEY}",
                 "deepinfra": "${DEEPINFRA_API_KEY}",
             },
-            providers={
-                "mistral": ProviderConfig(
+            ocr_providers={
+                "mistral": OCRProviderConfig(
                     type="mistral-ocr",
                     rate_limit=6.0,
                 ),
-                "paddle": ProviderConfig(
+                "paddle": OCRProviderConfig(
                     type="deepinfra",
                     model="ds-paddleocr-vl",
                 ),
-                "olmocr": ProviderConfig(
+                "olmocr": OCRProviderConfig(
                     type="deepinfra",
                     model="allenai/olmOCR-7B-0225-preview",
                     enabled=False,  # Not in default pipeline
+                ),
+            },
+            llm_providers={
+                "gemini-flash": LLMProviderConfig(
+                    type="openrouter",
+                    model="google/gemini-2.0-flash-001",
+                ),
+                "claude-sonnet": LLMProviderConfig(
+                    type="openrouter",
+                    model="anthropic/claude-3.5-sonnet",
                 ),
             },
             defaults=DefaultsConfig(),
@@ -110,9 +152,9 @@ class BookConfig(BaseModel):
         None,
         description="Override OCR providers for this book"
     )
-    blend_model: Optional[str] = Field(
+    llm_provider: Optional[str] = Field(
         None,
-        description="Override blend model for this book"
+        description="Override LLM provider for this book"
     )
     max_workers: Optional[int] = Field(
         None,
@@ -132,7 +174,7 @@ class ResolvedBookConfig(BaseModel):
     All values are concrete (no Optional).
     """
     ocr_providers: List[str]
-    blend_model: str
+    llm_provider: str
     max_workers: int
     extra: Dict[str, Any] = Field(default_factory=dict)
 
@@ -150,7 +192,7 @@ class ResolvedBookConfig(BaseModel):
 
         return cls(
             ocr_providers=book.ocr_providers or defaults.ocr_providers,
-            blend_model=book.blend_model or defaults.blend_model,
+            llm_provider=book.llm_provider or defaults.llm_provider,
             max_workers=book.max_workers or defaults.max_workers,
             extra=book.extra,
         )

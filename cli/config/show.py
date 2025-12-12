@@ -45,18 +45,24 @@ def cmd_config_show(args):
             display = _mask_key(resolved) if resolved else "(not set)"
         print(f"  {key_name}: {display}")
 
-    # Providers
-    print("\nProviders:")
-    for name, provider in config.providers.items():
+    # OCR Providers
+    print("\nOCR Providers:")
+    for name, provider in config.ocr_providers.items():
         status = "✓" if provider.enabled else "○"
         model_info = f" model={provider.model}" if provider.model else ""
         rate_info = f" rate={provider.rate_limit}/s" if provider.rate_limit else ""
         print(f"  {status} {name}: type={provider.type}{model_info}{rate_info}")
 
+    # LLM Providers
+    print("\nLLM Providers:")
+    for name, provider in config.llm_providers.items():
+        rate_info = f" rate={provider.rate_limit}/s" if provider.rate_limit else ""
+        print(f"  {name}: type={provider.type} model={provider.model}{rate_info}")
+
     # Defaults
     print("\nDefaults:")
     print(f"  ocr_providers: {', '.join(config.defaults.ocr_providers)}")
-    print(f"  blend_model: {config.defaults.blend_model}")
+    print(f"  llm_provider: {config.defaults.llm_provider}")
     print(f"  max_workers: {config.defaults.max_workers}")
     print()
 

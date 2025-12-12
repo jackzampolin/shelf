@@ -101,6 +101,51 @@ class LibraryConfigManager:
         config.api_keys[key_name] = value
         self.save(config)
 
+    def add_ocr_provider(
+        self,
+        name: str,
+        provider_type: str,
+        model: Optional[str] = None,
+        rate_limit: Optional[float] = None,
+        enabled: bool = True,
+        **extra
+    ) -> None:
+        """Add or update an OCR provider in the config."""
+        from .schemas import OCRProviderConfig
+
+        config = self.load()
+        config.ocr_providers[name] = OCRProviderConfig(
+            type=provider_type,
+            model=model,
+            rate_limit=rate_limit,
+            enabled=enabled,
+            extra=extra,
+        )
+        self.save(config)
+
+    def add_llm_provider(
+        self,
+        name: str,
+        provider_type: str,
+        model: str,
+        api_key_ref: Optional[str] = None,
+        rate_limit: Optional[float] = None,
+        **extra
+    ) -> None:
+        """Add or update an LLM provider in the config."""
+        from .schemas import LLMProviderConfig
+
+        config = self.load()
+        config.llm_providers[name] = LLMProviderConfig(
+            type=provider_type,
+            model=model,
+            api_key_ref=api_key_ref,
+            rate_limit=rate_limit,
+            extra=extra,
+        )
+        self.save(config)
+
+    # Backward compatibility
     def add_provider(
         self,
         name: str,
@@ -110,18 +155,15 @@ class LibraryConfigManager:
         enabled: bool = True,
         **extra
     ) -> None:
-        """Add or update a provider in the config."""
-        from .schemas import ProviderConfig
-
-        config = self.load()
-        config.providers[name] = ProviderConfig(
-            type=provider_type,
+        """Backward compatibility alias for add_ocr_provider."""
+        self.add_ocr_provider(
+            name=name,
+            provider_type=provider_type,
             model=model,
             rate_limit=rate_limit,
             enabled=enabled,
-            extra=extra,
+            **extra
         )
-        self.save(config)
 
 
 def _deep_merge(base: dict, updates: dict) -> None:

@@ -50,7 +50,7 @@ def cmd_book_config_show(args):
     # Show resolved config
     print("\nResolved configuration:")
     print(f"  ocr_providers: {', '.join(resolved.ocr_providers)}")
-    print(f"  blend_model: {resolved.blend_model}")
+    print(f"  llm_provider: {resolved.llm_provider}")
     print(f"  max_workers: {resolved.max_workers}")
 
     if resolved.extra:
@@ -78,7 +78,7 @@ def cmd_book_config_set(args):
     parsed_value = _parse_value(value)
 
     # Valid keys for book config
-    valid_keys = ['ocr_providers', 'blend_model', 'max_workers']
+    valid_keys = ['ocr_providers', 'llm_provider', 'max_workers']
     if key not in valid_keys:
         print(f"✗ Invalid key: {key}")
         print(f"  Valid keys: {', '.join(valid_keys)}")
@@ -93,7 +93,7 @@ def cmd_book_config_set(args):
         resolved = manager.resolve()
         print(f"\nResolved configuration:")
         print(f"  ocr_providers: {', '.join(resolved.ocr_providers)}")
-        print(f"  blend_model: {resolved.blend_model}")
+        print(f"  llm_provider: {resolved.llm_provider}")
         print(f"  max_workers: {resolved.max_workers}")
 
     except Exception as e:

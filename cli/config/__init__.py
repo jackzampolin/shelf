@@ -97,16 +97,21 @@ def setup_parser(subparsers):
     )
     provider_add_parser.add_argument(
         'name',
-        help='Provider name (e.g., qwen-vl)'
+        help='Provider name (e.g., qwen-vl, my-claude)'
+    )
+    provider_add_parser.add_argument(
+        '--llm',
+        action='store_true',
+        help='Add as LLM provider (default: OCR provider)'
     )
     provider_add_parser.add_argument(
         '--type',
         required=True,
-        help='Provider type (mistral-ocr, deepinfra, openrouter)'
+        help='Provider type (OCR: mistral-ocr, deepinfra; LLM: openrouter, anthropic, ollama)'
     )
     provider_add_parser.add_argument(
         '--model',
-        help='Model identifier (for deepinfra/openrouter)'
+        help='Model identifier (required for LLM, optional for OCR)'
     )
     provider_add_parser.add_argument(
         '--rate-limit',
@@ -116,7 +121,7 @@ def setup_parser(subparsers):
     provider_add_parser.add_argument(
         '--disabled',
         action='store_true',
-        help='Add provider in disabled state'
+        help='Add OCR provider in disabled state'
     )
     provider_add_parser.set_defaults(func=cmd_provider_add)
 
