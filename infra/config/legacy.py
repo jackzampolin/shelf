@@ -1,3 +1,13 @@
+"""
+Legacy configuration loader.
+
+Loads config from environment variables via .env file.
+This is kept for backward compatibility during migration to the new
+YAML-based config system.
+
+TODO: Migrate all usages to LibraryConfig, then remove this module.
+"""
+
 import os
 from pathlib import Path
 from pydantic import BaseModel, Field, field_validator
@@ -5,7 +15,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class ShelfConfig(BaseModel):
+    """
+    Legacy configuration model.
+
+    Loads from environment variables. Will be replaced by LibraryConfig.
+    """
     openrouter_api_key: str = Field(
         ...,
         description="OpenRouter API key (REQUIRED)"
@@ -63,6 +79,7 @@ class ShelfConfig(BaseModel):
 
 
 def _load_config() -> ShelfConfig:
+    """Load config from environment variables."""
     return ShelfConfig(
         openrouter_api_key=(os.getenv('OPENROUTER_API_KEY', '')),
         mistral_api_key=os.getenv('MISTRAL_API_KEY', ''),
@@ -73,4 +90,6 @@ def _load_config() -> ShelfConfig:
         book_storage_root=Path(os.getenv('BOOK_STORAGE_ROOT', '~/Documents/shelf')),
     )
 
+
+# Singleton instance - loaded once on import
 Config = _load_config()

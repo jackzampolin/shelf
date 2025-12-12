@@ -1,6 +1,7 @@
 import argparse
 import cli.library
 import cli.book
+import cli.config
 from cli.batch import setup_batch_parser
 from cli.batch_parallel import setup_batch_parallel_parser
 from cli.serve import setup_serve_parser
@@ -13,6 +14,14 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Configuration (run first!)
+  shelf init                              # Initialize library config
+  shelf init --migrate                    # Migrate from .env file
+  shelf config show                       # Show current config
+  shelf config set defaults.max_workers 20
+  shelf config provider list              # List OCR providers
+  shelf config provider add qwen --type deepinfra --model Qwen/Qwen2-VL
+
   # Library management
   shelf library add ~/Documents/Scans/book.pdf
   shelf library add ~/Documents/Scans/*.pdf --run-ocr
@@ -50,6 +59,7 @@ Examples:
     subparsers = parser.add_subparsers(dest='command', help='Command namespace')
     subparsers.required = True
 
+    cli.config.setup_parser(subparsers)
     cli.library.setup_parser(subparsers)
     cli.book.setup_parser(subparsers)
     setup_batch_parser(subparsers)

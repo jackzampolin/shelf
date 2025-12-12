@@ -3,6 +3,7 @@ from cli.book.info import cmd_info
 from cli.book.process import cmd_process
 from cli.book.stage import cmd_stage_run, cmd_stage_info, cmd_stage_clean, cmd_stage_report
 from cli.book.phase import cmd_phase_info, cmd_phase_clean
+from cli.book.config import cmd_book_config_show, cmd_book_config_set, cmd_book_config_clear
 from cli.constants import CORE_STAGES, REPORT_STAGES
 
 
@@ -29,6 +30,30 @@ def setup_parser(subparsers):
     process_parser.add_argument('--workers', type=int, default=None, help='Parallel workers')
     process_parser.add_argument('--delete-outputs', action='store_true', help='DELETE all stage outputs before processing (WARNING: irreversible)')
     process_parser.set_defaults(func=cmd_process)
+
+    # =========================================================================
+    # Book config commands: book <id> config <action>
+    # =========================================================================
+
+    config_parser = book_subparsers.add_parser('config', help='Book configuration overrides')
+    config_subparsers = config_parser.add_subparsers(dest='config_command', help='Config command')
+    config_subparsers.required = True
+
+    # book <id> config show
+    config_show_parser = config_subparsers.add_parser('show', help='Show book configuration')
+    config_show_parser.add_argument('--json', action='store_true', help='Output as JSON')
+    config_show_parser.set_defaults(func=cmd_book_config_show)
+
+    # book <id> config set <key> <value>
+    config_set_parser = config_subparsers.add_parser('set', help='Set book configuration')
+    config_set_parser.add_argument('key', help='Config key (ocr_providers, blend_model, max_workers)')
+    config_set_parser.add_argument('value', help='Value to set')
+    config_set_parser.set_defaults(func=cmd_book_config_set)
+
+    # book <id> config clear
+    config_clear_parser = config_subparsers.add_parser('clear', help='Clear book overrides')
+    config_clear_parser.add_argument('-y', '--yes', action='store_true', help='Skip confirmation')
+    config_clear_parser.set_defaults(func=cmd_book_config_clear)
 
     # =========================================================================
     # Stage-level commands: book <id> stage <name> <action>
@@ -91,5 +116,8 @@ __all__ = [
     'cmd_stage_report',
     'cmd_phase_info',
     'cmd_phase_clean',
+    'cmd_book_config_show',
+    'cmd_book_config_set',
+    'cmd_book_config_clear',
     'setup_parser',
 ]
