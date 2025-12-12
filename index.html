@@ -4,233 +4,230 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>shelf - Scans to structured text</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-
+        
         body {
             font-family: 'Inter', sans-serif;
             background-color: #0a0a0a;
             color: #ffffff;
             line-height: 1.6;
         }
-
+        
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 0 20px;
         }
-
-        /* Navigation */
+        
         nav {
+            background-color: #0a0a0a;
             padding: 20px 0;
-            border-bottom: 1px solid #1f1f1f;
+            border-bottom: 1px solid #1a1a1a;
         }
-
-        .nav-content {
+        
+        nav .nav-content {
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-
+        
         .logo {
             font-size: 24px;
             font-weight: 700;
             color: #3b82f6;
             text-decoration: none;
         }
-
+        
         .github-link {
-            background-color: #1f1f1f;
+            background-color: #1a1a1a;
             color: #ffffff;
             padding: 10px 20px;
-            border-radius: 6px;
             text-decoration: none;
+            border-radius: 6px;
             font-weight: 500;
-            border: 1px solid #333;
             transition: background-color 0.2s;
         }
-
+        
         .github-link:hover {
             background-color: #2a2a2a;
         }
-
-        /* Hero Section */
+        
         .hero {
-            padding: 80px 0;
+            padding: 80px 0 120px;
             text-align: center;
         }
-
+        
         .hero h1 {
             font-size: 3.5rem;
             font-weight: 700;
-            margin-bottom: 40px;
-            background: linear-gradient(135deg, #3b82f6, #60a5fa);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            margin-bottom: 30px;
+            color: #ffffff;
         }
-
-        .hero-description {
-            font-size: 1.125rem;
-            color: #d1d5db;
+        
+        .hero-content {
             max-width: 800px;
             margin: 0 auto;
-            line-height: 1.7;
+            font-size: 1.2rem;
+            color: #cccccc;
+            line-height: 1.8;
         }
-
-        /* Pipeline Section */
-        .pipeline {
+        
+        .hero-content p {
+            margin-bottom: 1.5rem;
+        }
+        
+        .pipeline-section {
             padding: 80px 0;
+            background-color: #111111;
         }
-
-        .pipeline h2 {
+        
+        .section-title {
             font-size: 2.5rem;
             font-weight: 700;
             text-align: center;
-            margin-bottom: 40px;
+            margin-bottom: 30px;
+            color: #ffffff;
         }
-
+        
         .pipeline-intro {
-            font-size: 1.125rem;
-            color: #d1d5db;
             max-width: 800px;
             margin: 0 auto 60px;
-            text-align: center;
+            font-size: 1.1rem;
+            color: #cccccc;
             line-height: 1.7;
+            text-align: center;
         }
-
-        .stages {
+        
+        .pipeline-flow {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 30px;
-            margin-top: 40px;
+            margin-top: 50px;
         }
-
+        
         .stage {
-            background-color: #111111;
-            border: 1px solid #1f1f1f;
+            background-color: #1a1a1a;
+            border: 1px solid #2a2a2a;
             border-radius: 12px;
             padding: 30px;
-            transition: border-color 0.2s;
+            transition: transform 0.2s, border-color 0.2s;
         }
-
+        
         .stage:hover {
+            transform: translateY(-4px);
             border-color: #3b82f6;
         }
-
+        
         .stage-header {
             display: flex;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
         }
-
+        
         .stage-icon {
-            font-size: 24px;
+            font-size: 2rem;
+            margin-right: 15px;
         }
-
-        .stage-name {
-            font-size: 1.25rem;
+        
+        .stage-title {
+            font-size: 1.4rem;
             font-weight: 600;
             color: #ffffff;
         }
-
+        
         .stage-description {
-            color: #9ca3af;
-            margin-bottom: 24px;
+            color: #cccccc;
+            margin-bottom: 25px;
             line-height: 1.6;
         }
-
+        
         .phases {
-            space-y: 12px;
+            border-top: 1px solid #2a2a2a;
+            padding-top: 20px;
         }
-
+        
+        .phases-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #3b82f6;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
         .phase {
             margin-bottom: 12px;
+            padding-left: 15px;
+            border-left: 2px solid #2a2a2a;
         }
-
+        
         .phase-name {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.875rem;
+            font-size: 0.9rem;
             color: #3b82f6;
             font-weight: 500;
-            margin-bottom: 4px;
+            margin-bottom: 3px;
         }
-
+        
         .phase-description {
-            font-size: 0.875rem;
-            color: #6b7280;
-            line-height: 1.5;
+            font-size: 0.85rem;
+            color: #888888;
+            line-height: 1.4;
         }
-
-        /* Footer */
+        
         footer {
+            background-color: #0a0a0a;
+            border-top: 1px solid #1a1a1a;
             padding: 40px 0;
-            border-top: 1px solid #1f1f1f;
             text-align: center;
-            color: #6b7280;
-            margin-top: 80px;
         }
-
-        .footer-content {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 8px;
+        
+        footer p {
+            color: #666666;
+            font-size: 0.9rem;
         }
-
-        .footer-logo {
-            color: #3b82f6;
-            font-weight: 600;
-        }
-
-        /* Mobile Responsiveness */
+        
         @media (max-width: 768px) {
             .hero h1 {
                 font-size: 2.5rem;
             }
-
-            .hero-description, .pipeline-intro {
-                font-size: 1rem;
-                padding: 0 10px;
+            
+            .hero-content {
+                font-size: 1.1rem;
             }
-
-            .stages {
+            
+            .pipeline-flow {
                 grid-template-columns: 1fr;
                 gap: 20px;
             }
-
+            
             .stage {
                 padding: 20px;
             }
-
-            .container {
-                padding: 0 15px;
+            
+            .section-title {
+                font-size: 2rem;
             }
         }
-
+        
         @media (max-width: 480px) {
             .hero h1 {
                 font-size: 2rem;
             }
-
-            .pipeline h2 {
-                font-size: 2rem;
+            
+            .hero-content {
+                font-size: 1rem;
             }
-
-            .nav-content {
-                flex-direction: row;
-                justify-content: space-between;
-            }
-
-            .github-link {
-                padding: 8px 16px;
-                font-size: 0.875rem;
+            
+            .container {
+                padding: 0 15px;
             }
         }
     </style>
@@ -248,7 +245,7 @@
     <section class="hero">
         <div class="container">
             <h1>Scans to structured text</h1>
-            <div class="hero-description">
+            <div class="hero-content">
                 <p>Not every book is available as an audiobook. Military history, academic texts, out-of-print nonfiction—if you want to listen to them, you have to make them yourself.</p>
                 
                 <p>Raw OCR gets you text, but text mixed with garbage—page numbers read aloud, running headers interrupting every page, image captions scattered through the text, footnote numbers with no footnotes. The result is technically an audiobook, but not one you'd want to listen to.</p>
@@ -258,21 +255,22 @@
         </div>
     </section>
 
-    <section class="pipeline">
+    <section class="pipeline-section">
         <div class="container">
-            <h2>AI Pipeline</h2>
+            <h2 class="section-title">Pipeline</h2>
             <div class="pipeline-intro">
                 <p>Once you have a book scan (either from a sheet-fed scanner after cutting the spine, or a non-destructive overhead scanner), shelf runs it through a multi-stage AI pipeline. Each stage builds on the last: multiple OCR providers extract the text, LLMs classify and label the structure (body text vs headers vs footnotes vs page numbers), the table of contents is extracted and linked to actual pages, and finally clean ePub files are produced—text that flows when read aloud.</p>
             </div>
-
-            <div class="stages">
+            
+            <div class="pipeline-flow">
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">📷</span>
-                        <h3 class="stage-name">OCR Pages</h3>
+                        <h3 class="stage-title">OCR Pages</h3>
                     </div>
                     <p class="stage-description">Extract text from scanned page images using vision AI models</p>
                     <div class="phases">
+                        <div class="phases-title">Phases</div>
                         <div class="phase">
                             <div class="phase-name">mistral</div>
                             <div class="phase-description">Extract text using Mistral vision model</div>
@@ -295,10 +293,11 @@
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">🏷️</span>
-                        <h3 class="stage-name">Label Structure</h3>
+                        <h3 class="stage-title">Label Structure</h3>
                     </div>
                     <p class="stage-description">Classify content blocks as body text, headers, footnotes, or page numbers</p>
                     <div class="phases">
+                        <div class="phases-title">Phases</div>
                         <div class="phase">
                             <div class="phase-name">mechanical</div>
                             <div class="phase-description">Extract patterns using regex and heuristics</div>
@@ -321,10 +320,11 @@
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">📑</span>
-                        <h3 class="stage-name">Extract ToC</h3>
+                        <h3 class="stage-title">Extract ToC</h3>
                     </div>
                     <p class="stage-description">Identify and extract the table of contents from OCR output</p>
                     <div class="phases">
+                        <div class="phases-title">Phases</div>
                         <div class="phase">
                             <div class="phase-name">find</div>
                             <div class="phase-description">Locate ToC pages using vision agent</div>
@@ -339,21 +339,22 @@
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">🔗</span>
-                        <h3 class="stage-name">Link ToC</h3>
+                        <h3 class="stage-title">Link ToC</h3>
                     </div>
                     <p class="stage-description">Map table of contents entries to their corresponding page numbers</p>
                     <div class="phases">
+                        <div class="phases-title">Phases</div>
                         <div class="phase">
                             <div class="phase-name">find_entries</div>
                             <div class="phase-description">Locate each ToC entry in page content</div>
                         </div>
                         <div class="phase">
                             <div class="phase-name">pattern</div>
-                            <div class="phase-description">Analyze heading patterns to find candidates</div>
+                            <div class="phase-description">Analyze heading patterns to find chapter sequences</div>
                         </div>
                         <div class="phase">
-                            <div class="phase-name">evaluation</div>
-                            <div class="phase-description">Evaluate candidate headings with vision LLM</div>
+                            <div class="phase-name">discover</div>
+                            <div class="phase-description">Search for each entry in detected patterns</div>
                         </div>
                         <div class="phase">
                             <div class="phase-name">merge</div>
@@ -369,10 +370,11 @@
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">🏗️</span>
-                        <h3 class="stage-name">Build Structure</h3>
+                        <h3 class="stage-title">Build Structure</h3>
                     </div>
                     <p class="stage-description">Assemble unified document structure with chapter text and metadata</p>
                     <div class="phases">
+                        <div class="phases-title">Phases</div>
                         <div class="phase">
                             <div class="phase-name">build_structure</div>
                             <div class="phase-description">Build document skeleton from ToC and detected headings</div>
@@ -391,10 +393,11 @@
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">📖</span>
-                        <h3 class="stage-name">Generate Output</h3>
+                        <h3 class="stage-title">Generate Output</h3>
                     </div>
                     <p class="stage-description">Create ePub files, audiobook scripts, or structured API output</p>
                     <div class="phases">
+                        <div class="phases-title">Phases</div>
                         <div class="phase">
                             <div class="phase-name">generate_epub</div>
                             <div class="phase-description">Build and validate ePub 3.0 file</div>
@@ -407,10 +410,7 @@
 
     <footer>
         <div class="container">
-            <div class="footer-content">
-                <span class="footer-logo">shelf</span>
-                <span>2024</span>
-            </div>
+            <p>shelf © 2024</p>
         </div>
     </footer>
 </body>
