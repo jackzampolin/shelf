@@ -4,230 +4,262 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>shelf - Scans to structured text</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background-color: #0a0a0a;
-            color: #ffffff;
+            color: #e4e4e7;
             line-height: 1.6;
         }
-        
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 0 20px;
         }
-        
+
         nav {
-            background-color: #0a0a0a;
-            padding: 20px 0;
-            border-bottom: 1px solid #1a1a1a;
+            background-color: rgba(10, 10, 10, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid #27272a;
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
-        
-        nav .nav-content {
+
+        .nav-content {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 1rem 0;
         }
-        
+
         .logo {
-            font-size: 24px;
+            font-size: 1.5rem;
             font-weight: 700;
             color: #3b82f6;
             text-decoration: none;
         }
-        
+
         .github-link {
-            background-color: #1a1a1a;
-            color: #ffffff;
-            padding: 10px 20px;
+            background-color: #27272a;
+            color: #e4e4e7;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
             text-decoration: none;
-            border-radius: 6px;
             font-weight: 500;
-            transition: background-color 0.2s;
+            transition: background-color 0.2s ease;
+            border: 1px solid #3f3f46;
         }
-        
+
         .github-link:hover {
-            background-color: #2a2a2a;
+            background-color: #3f3f46;
         }
-        
+
         .hero {
-            padding: 80px 0 120px;
+            padding: 4rem 0;
             text-align: center;
         }
-        
+
         .hero h1 {
-            font-size: 3.5rem;
+            font-size: clamp(2.5rem, 5vw, 4rem);
             font-weight: 700;
-            margin-bottom: 30px;
-            color: #ffffff;
+            margin-bottom: 2rem;
+            background: linear-gradient(135deg, #e4e4e7 0%, #a1a1aa 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
-        
-        .hero-content {
+
+        .hero-text {
+            font-size: 1.125rem;
             max-width: 800px;
             margin: 0 auto;
-            font-size: 1.2rem;
-            color: #cccccc;
-            line-height: 1.8;
+            color: #d4d4d8;
+            line-height: 1.7;
         }
-        
-        .hero-content p {
+
+        .hero-text p {
             margin-bottom: 1.5rem;
         }
-        
-        .pipeline-section {
-            padding: 80px 0;
-            background-color: #111111;
+
+        .pipeline {
+            padding: 4rem 0;
         }
-        
-        .section-title {
+
+        .pipeline h2 {
             font-size: 2.5rem;
             font-weight: 700;
             text-align: center;
-            margin-bottom: 30px;
-            color: #ffffff;
+            margin-bottom: 2rem;
+            color: #e4e4e7;
         }
-        
+
         .pipeline-intro {
+            font-size: 1.125rem;
             max-width: 800px;
-            margin: 0 auto 60px;
-            font-size: 1.1rem;
-            color: #cccccc;
+            margin: 0 auto 3rem;
+            color: #d4d4d8;
             line-height: 1.7;
             text-align: center;
         }
-        
+
         .pipeline-flow {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-            margin-top: 50px;
+            gap: 2rem;
+            margin: 3rem 0;
         }
-        
+
+        @media (min-width: 768px) {
+            .pipeline-flow {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .pipeline-flow {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
         .stage {
-            background-color: #1a1a1a;
-            border: 1px solid #2a2a2a;
+            background-color: #18181b;
+            border: 1px solid #27272a;
             border-radius: 12px;
-            padding: 30px;
-            transition: transform 0.2s, border-color 0.2s;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
         }
-        
+
         .stage:hover {
-            transform: translateY(-4px);
             border-color: #3b82f6;
+            transform: translateY(-2px);
         }
-        
+
         .stage-header {
             display: flex;
             align-items: center;
-            margin-bottom: 20px;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
         }
-        
+
         .stage-icon {
-            font-size: 2rem;
-            margin-right: 15px;
+            font-size: 1.5rem;
         }
-        
-        .stage-title {
-            font-size: 1.4rem;
+
+        .stage-name {
+            font-size: 1.25rem;
             font-weight: 600;
-            color: #ffffff;
+            color: #e4e4e7;
         }
-        
+
         .stage-description {
-            color: #cccccc;
-            margin-bottom: 25px;
+            color: #d4d4d8;
+            margin-bottom: 1.5rem;
             line-height: 1.6;
         }
-        
+
         .phases {
-            border-top: 1px solid #2a2a2a;
-            padding-top: 20px;
+            border-top: 1px solid #27272a;
+            padding-top: 1rem;
         }
-        
-        .phases-title {
-            font-size: 0.9rem;
+
+        .phases h4 {
+            font-size: 0.875rem;
             font-weight: 600;
             color: #3b82f6;
-            margin-bottom: 15px;
+            margin-bottom: 0.75rem;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.05em;
         }
-        
+
         .phase {
-            margin-bottom: 12px;
-            padding-left: 15px;
-            border-left: 2px solid #2a2a2a;
+            margin-bottom: 0.75rem;
         }
-        
+
         .phase-name {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.9rem;
-            color: #3b82f6;
+            font-size: 0.875rem;
             font-weight: 500;
-            margin-bottom: 3px;
+            color: #fbbf24;
+            margin-bottom: 0.25rem;
         }
-        
+
         .phase-description {
-            font-size: 0.85rem;
-            color: #888888;
-            line-height: 1.4;
+            font-size: 0.875rem;
+            color: #a1a1aa;
+            line-height: 1.5;
         }
-        
-        footer {
-            background-color: #0a0a0a;
-            border-top: 1px solid #1a1a1a;
-            padding: 40px 0;
+
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 3rem;
+            margin: 3rem 0;
+            padding: 2rem;
+            background-color: #18181b;
+            border-radius: 12px;
+            border: 1px solid #27272a;
+        }
+
+        .stat {
             text-align: center;
         }
-        
-        footer p {
-            color: #666666;
-            font-size: 0.9rem;
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #3b82f6;
+            display: block;
         }
-        
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: #a1a1aa;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        footer {
+            border-top: 1px solid #27272a;
+            padding: 2rem 0;
+            text-align: center;
+            margin-top: 4rem;
+        }
+
+        .footer-content {
+            color: #71717a;
+            font-size: 0.875rem;
+        }
+
         @media (max-width: 768px) {
-            .hero h1 {
-                font-size: 2.5rem;
-            }
-            
-            .hero-content {
-                font-size: 1.1rem;
-            }
-            
-            .pipeline-flow {
-                grid-template-columns: 1fr;
-                gap: 20px;
-            }
-            
-            .stage {
-                padding: 20px;
-            }
-            
-            .section-title {
-                font-size: 2rem;
-            }
-        }
-        
-        @media (max-width: 480px) {
-            .hero h1 {
-                font-size: 2rem;
-            }
-            
-            .hero-content {
-                font-size: 1rem;
-            }
-            
             .container {
-                padding: 0 15px;
+                padding: 0 16px;
+            }
+
+            .hero {
+                padding: 3rem 0;
+            }
+
+            .pipeline {
+                padding: 3rem 0;
+            }
+
+            .stats {
+                gap: 2rem;
+                margin: 2rem 0;
+            }
+
+            .stat-number {
+                font-size: 1.5rem;
             }
         }
     </style>
@@ -245,7 +277,7 @@
     <section class="hero">
         <div class="container">
             <h1>Scans to structured text</h1>
-            <div class="hero-content">
+            <div class="hero-text">
                 <p>Not every book is available as an audiobook. Military history, academic texts, out-of-print nonfiction—if you want to listen to them, you have to make them yourself.</p>
                 
                 <p>Raw OCR gets you text, but text mixed with garbage—page numbers read aloud, running headers interrupting every page, image captions scattered through the text, footnote numbers with no footnotes. The result is technically an audiobook, but not one you'd want to listen to.</p>
@@ -255,22 +287,23 @@
         </div>
     </section>
 
-    <section class="pipeline-section">
+    <section class="pipeline">
         <div class="container">
-            <h2 class="section-title">Pipeline</h2>
-            <div class="pipeline-intro">
-                <p>Once you have a book scan (either from a sheet-fed scanner after cutting the spine, or a non-destructive overhead scanner), shelf runs it through a multi-stage AI pipeline. Each stage builds on the last: multiple OCR providers extract the text, LLMs classify and label the structure (body text vs headers vs footnotes vs page numbers), the table of contents is extracted and linked to actual pages, and finally clean ePub files are produced—text that flows when read aloud.</p>
-            </div>
+            <h2>Pipeline</h2>
             
+            <p class="pipeline-intro">
+                Once you have a book scan (either from a sheet-fed scanner after cutting the spine, or a non-destructive overhead scanner), shelf runs it through a multi-stage AI pipeline. Each stage builds on the last: multiple OCR providers extract the text, LLMs classify and label the structure (body text vs headers vs footnotes vs page numbers), the table of contents is extracted and linked to actual pages, and finally clean ePub files are produced—text that flows when read aloud.
+            </p>
+
             <div class="pipeline-flow">
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">📷</span>
-                        <h3 class="stage-title">OCR Pages</h3>
+                        <h3 class="stage-name">OCR Pages</h3>
                     </div>
                     <p class="stage-description">Extract text from scanned page images using vision AI models</p>
                     <div class="phases">
-                        <div class="phases-title">Phases</div>
+                        <h4>Phases</h4>
                         <div class="phase">
                             <div class="phase-name">mistral</div>
                             <div class="phase-description">Extract text using Mistral vision model</div>
@@ -293,11 +326,11 @@
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">🏷️</span>
-                        <h3 class="stage-title">Label Structure</h3>
+                        <h3 class="stage-name">Label Structure</h3>
                     </div>
                     <p class="stage-description">Classify content blocks as body text, headers, footnotes, or page numbers</p>
                     <div class="phases">
-                        <div class="phases-title">Phases</div>
+                        <h4>Phases</h4>
                         <div class="phase">
                             <div class="phase-name">mechanical</div>
                             <div class="phase-description">Extract patterns using regex and heuristics</div>
@@ -320,11 +353,11 @@
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">📑</span>
-                        <h3 class="stage-title">Extract ToC</h3>
+                        <h3 class="stage-name">Extract ToC</h3>
                     </div>
                     <p class="stage-description">Identify and extract the table of contents from OCR output</p>
                     <div class="phases">
-                        <div class="phases-title">Phases</div>
+                        <h4>Phases</h4>
                         <div class="phase">
                             <div class="phase-name">find</div>
                             <div class="phase-description">Locate ToC pages using vision agent</div>
@@ -339,11 +372,11 @@
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">🔗</span>
-                        <h3 class="stage-title">Link ToC</h3>
+                        <h3 class="stage-name">Link ToC</h3>
                     </div>
                     <p class="stage-description">Map table of contents entries to their corresponding page numbers</p>
                     <div class="phases">
-                        <div class="phases-title">Phases</div>
+                        <h4>Phases</h4>
                         <div class="phase">
                             <div class="phase-name">find_entries</div>
                             <div class="phase-description">Locate each ToC entry in page content</div>
@@ -370,11 +403,11 @@
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">🏗️</span>
-                        <h3 class="stage-title">Build Structure</h3>
+                        <h3 class="stage-name">Build Structure</h3>
                     </div>
                     <p class="stage-description">Assemble unified document structure with chapter text and metadata</p>
                     <div class="phases">
-                        <div class="phases-title">Phases</div>
+                        <h4>Phases</h4>
                         <div class="phase">
                             <div class="phase-name">build_structure</div>
                             <div class="phase-description">Build document skeleton from ToC and detected headings</div>
@@ -393,11 +426,11 @@
                 <div class="stage">
                     <div class="stage-header">
                         <span class="stage-icon">📖</span>
-                        <h3 class="stage-title">Generate Output</h3>
+                        <h3 class="stage-name">Generate Output</h3>
                     </div>
                     <p class="stage-description">Create ePub files, audiobook scripts, or structured API output</p>
                     <div class="phases">
-                        <div class="phases-title">Phases</div>
+                        <h4>Phases</h4>
                         <div class="phase">
                             <div class="phase-name">generate_epub</div>
                             <div class="phase-description">Build and validate ePub 3.0 file</div>
@@ -405,12 +438,25 @@
                     </div>
                 </div>
             </div>
+
+            <div class="stats">
+                <div class="stat">
+                    <span class="stat-number">28,057</span>
+                    <span class="stat-label">Lines of Python</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-number">6</span>
+                    <span class="stat-label">Pipeline Stages</span>
+                </div>
+            </div>
         </div>
     </section>
 
     <footer>
         <div class="container">
-            <p>shelf © 2024</p>
+            <div class="footer-content">
+                shelf © 2024
+            </div>
         </div>
     </footer>
 </body>
