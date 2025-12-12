@@ -1,0 +1,66 @@
+<form hx-post="/settings/api/validate"
+      hx-target="#llm-providers-preview"
+      hx-swap="innerHTML"
+      class="config-form">
+    <input type="hidden" name="section" value="llm-providers">
+
+    <div class="form-description">
+        <p>LLM providers for text processing and correction.</p>
+    </div>
+
+    {% for name, provider in config.llm_providers.items() %}
+    <div class="provider-card">
+        <div class="provider-header">
+            <span class="provider-name">{{ name }}</span>
+        </div>
+
+        <div class="provider-fields">
+            <div class="field-row">
+                <label>Type</label>
+                <select name="llm_providers.{{ name }}.type">
+                    <option value="openrouter" {% if provider.type == 'openrouter' %}selected{% endif %}>OpenRouter</option>
+                    <option value="anthropic" {% if provider.type == 'anthropic' %}selected{% endif %}>Anthropic</option>
+                    <option value="ollama" {% if provider.type == 'ollama' %}selected{% endif %}>Ollama</option>
+                </select>
+            </div>
+
+            <div class="field-row">
+                <label>Model *</label>
+                <input type="text"
+                       name="llm_providers.{{ name }}.model"
+                       value="{{ provider.model }}"
+                       required
+                       placeholder="e.g., xai/grok-4.1-fast">
+            </div>
+
+            <div class="field-row">
+                <label>Rate Limit (req/s)</label>
+                <input type="number"
+                       name="llm_providers.{{ name }}.rate_limit"
+                       value="{{ provider.rate_limit or '' }}"
+                       step="0.1"
+                       placeholder="Optional">
+            </div>
+
+            <div class="field-row">
+                <label>API Key Reference</label>
+                <select name="llm_providers.{{ name }}.api_key_ref">
+                    <option value="">Default (use type)</option>
+                    {% for key_name in api_key_names %}
+                    <option value="{{ key_name }}"
+                            {% if provider.api_key_ref == key_name %}selected{% endif %}>
+                        {{ key_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="form-actions">
+        <button type="submit" class="btn-preview">Preview Changes</button>
+    </div>
+</form>
+
+<div id="llm-providers-preview"></div>

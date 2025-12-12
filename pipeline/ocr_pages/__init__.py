@@ -113,10 +113,10 @@ class OcrPagesStage(BaseStage):
             max_workers=self.blend_max_workers,
         )
 
-        # Metadata extraction (uses web-search LLM)
+        # Metadata extraction (uses web-search LLM from config)
+        # Don't pass model - let extract_metadata() use config default with :online suffix
         self.metadata_tracker = metadata_phase.create_metadata_tracker(
             self.stage_storage,
-            model=self.blend_model,  # Use same model for metadata
         )
 
         self.status_tracker = MultiPhaseStatusTracker(

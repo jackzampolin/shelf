@@ -11,7 +11,7 @@ from web.data.label_structure_data import (
 )
 from web.data.link_toc_data import get_link_toc_data, get_linked_entries_tree
 from web.data.ocr_pages_data import (
-    get_ocr_pages_data, get_page_ocr_text, get_blend_text
+    get_ocr_pages_data, get_page_ocr_text, get_blend_text, get_metadata_status
 )
 from web.data.common_structure_data import (
     get_structure_summary, get_structure_entries, get_entry_detail
@@ -65,6 +65,23 @@ def api_get_blend_text(scan_id: str, page_num: int):
         abort(404, f"No blend data for page {page_num}")
 
     return jsonify({"text": text})
+
+
+@stage_bp.route('/api/metadata/<scan_id>')
+def api_get_metadata(scan_id: str):
+    """Get extracted metadata for a book."""
+    library = Library(storage_root=Config.BOOK_STORAGE_ROOT)
+
+    if not library.get_scan_info(scan_id):
+        abort(404, f"Book '{scan_id}' not found")
+
+    storage = library.get_book_storage(scan_id)
+    metadata = get_metadata_status(storage)
+
+    if metadata is None:
+        abort(404, f"No metadata extracted for '{scan_id}'")
+
+    return jsonify(metadata)
 
 
 @stage_bp.route('/stage/<scan_id>/extract-toc')

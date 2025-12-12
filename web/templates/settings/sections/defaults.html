@@ -1,0 +1,54 @@
+<form hx-post="/settings/api/validate"
+      hx-target="#defaults-preview"
+      hx-swap="innerHTML"
+      class="config-form">
+    <input type="hidden" name="section" value="defaults">
+
+    <div class="form-description">
+        <p>Default settings for new books and pipeline operations.</p>
+    </div>
+
+    <div class="defaults-form">
+        <div class="field-row">
+            <label>Default OCR Providers</label>
+            <div class="checkbox-group">
+                {% for name in config.ocr_providers.keys() %}
+                <label class="checkbox-item">
+                    <input type="checkbox"
+                           name="defaults.ocr_providers"
+                           value="{{ name }}"
+                           {% if name in config.defaults.ocr_providers %}checked{% endif %}>
+                    {{ name }}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="field-row">
+            <label>Default LLM Provider</label>
+            <select name="defaults.llm_provider">
+                {% for name in config.llm_providers.keys() %}
+                <option value="{{ name }}"
+                        {% if name == config.defaults.llm_provider %}selected{% endif %}>
+                    {{ name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="field-row">
+            <label>Max Workers</label>
+            <input type="number"
+                   name="defaults.max_workers"
+                   value="{{ config.defaults.max_workers }}"
+                   min="1"
+                   max="50">
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn-preview">Preview Changes</button>
+    </div>
+</form>
+
+<div id="defaults-preview"></div>

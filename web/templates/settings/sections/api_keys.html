@@ -1,0 +1,66 @@
+<form hx-post="/settings/api/validate"
+      hx-target="#api-keys-preview"
+      hx-swap="innerHTML"
+      class="config-form">
+    <input type="hidden" name="section" value="api-keys">
+
+    <div class="form-description">
+        <p>API keys for external services. Use <code>${ENV_VAR}</code> syntax to reference environment variables.</p>
+    </div>
+
+    {% for key_name, masked_value in config.api_keys.items() %}
+    <div class="key-row">
+        <label class="key-label">{{ key_name }}</label>
+        <div class="key-value">
+            <span class="masked-value" id="mask-{{ key_name }}">{{ masked_value }}</span>
+            <input type="text"
+                   name="api_keys.{{ key_name }}"
+                   class="key-input"
+                   id="input-{{ key_name }}"
+                   style="display: none;"
+                   placeholder="Enter new value or ${ENV_VAR}"
+                   value="{{ config.api_keys_raw.get(key_name, '') }}">
+            <button type="button"
+                    class="btn-edit"
+                    id="edit-btn-{{ key_name }}"
+                    onclick="toggleKeyEdit('{{ key_name }}')">Edit</button>
+        </div>
+    </div>
+    {% endfor %}
+
+    <!-- Add new key -->
+    <div class="add-row">
+        <h4>Add New Key</h4>
+        <div class="add-fields">
+            <input type="text" name="new_key_name" placeholder="Key name (e.g., newservice)">
+            <input type="text" name="new_key_value" placeholder="Value or ${ENV_VAR}">
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn-preview">Preview Changes</button>
+    </div>
+</form>
+
+<div id="api-keys-preview"></div>
+
+<script>
+function toggleKeyEdit(keyName) {
+    const mask = document.getElementById('mask-' + keyName);
+    const input = document.getElementById('input-' + keyName);
+    const btn = document.getElementById('edit-btn-' + keyName);
+
+    if (input.style.display === 'none') {
+        mask.style.display = 'none';
+        input.style.display = 'block';
+        btn.textContent = 'Cancel';
+        btn.classList.add('btn-cancel');
+        input.focus();
+    } else {
+        mask.style.display = 'inline';
+        input.style.display = 'none';
+        btn.textContent = 'Edit';
+        btn.classList.remove('btn-cancel');
+    }
+}
+</script>

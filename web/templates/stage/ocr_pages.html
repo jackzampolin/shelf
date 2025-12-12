@@ -52,6 +52,45 @@
     color: #856404;
 }
 
+.status-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+.phase-status {
+    display: flex;
+    gap: 8px;
+}
+
+.phase-btn {
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: 500;
+    border: 1px solid #dee2e6;
+    background: #f8f9fa;
+}
+
+.phase-btn.completed {
+    background: #d4edda;
+    border-color: #c3e6cb;
+    color: #155724;
+}
+
+.phase-btn.in_progress {
+    background: #fff3cd;
+    border-color: #ffeaa7;
+    color: #856404;
+}
+
+.phase-btn.not_started {
+    background: #f8f9fa;
+    border-color: #dee2e6;
+    color: #6c757d;
+}
+
 .page-viewer {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -286,29 +325,38 @@
                 <span><strong>Pages:</strong> {{ ocr_data.page_range[1] }}</span>
             </div>
         </div>
-        <div class="provider-buttons">
-            {% for provider in ocr_data.providers %}
-            {% set provider_info = ocr_data.provider_data[provider] %}
-            <div class="provider-btn {{ provider_info.status }}">
-                {% if provider_info.status == 'completed' %}
-                    ✓
-                {% elif provider_info.status == 'in_progress' %}
-                    ⏳
-                {% else %}
-                    ○
-                {% endif %}
-                {{ provider }}
-                {% if provider_info.pages_processed > 0 %}
-                    ({{ (provider_info.pages_processed / ocr_data.page_range[1] * 100) | int }}%)
-                {% endif %}
-                {% if provider_info.cost_usd > 0 %}
-                    ${{ "%.2f"|format(provider_info.cost_usd) }}
-                {% endif %}
-                {% if provider_info.runtime_seconds >= 60 %}
-                    ({{ "%.1fm"|format(provider_info.runtime_seconds / 60) }})
+        <div class="status-section">
+            <!-- Phase Status -->
+            <div class="phase-status">
+                {% if ocr_data.phases %}
+                {% for phase_name, phase_info in ocr_data.phases.items() %}
+                <div class="phase-btn {{ phase_info.status }}">
+                    {% if phase_info.status == 'completed' %}✓
+                    {% elif phase_info.status == 'in_progress' %}⏳
+                    {% else %}○{% endif %}
+                    {{ phase_name | capitalize }}
+                    {% if phase_info.pages_processed is defined and phase_info.total_pages is defined and phase_info.total_pages > 0 %}
+                        ({{ (phase_info.pages_processed / phase_info.total_pages * 100) | int }}%)
+                    {% endif %}
+                </div>
+                {% endfor %}
                 {% endif %}
             </div>
-            {% endfor %}
+            <!-- Provider Status -->
+            <div class="provider-buttons">
+                {% for provider in ocr_data.providers %}
+                {% set provider_info = ocr_data.provider_data.get(provider, {}) %}
+                <div class="provider-btn {{ provider_info.status | default('not_started') }}">
+                    {% if provider_info.status == 'completed' %}✓
+                    {% elif provider_info.status == 'in_progress' %}⏳
+                    {% else %}○{% endif %}
+                    {{ provider }}
+                    {% if provider_info.pages_processed and provider_info.pages_processed > 0 %}
+                        ({{ (provider_info.pages_processed / ocr_data.page_range[1] * 100) | int }}%)
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
         </div>
     </div>
 
@@ -349,7 +397,7 @@
                     <button class="view-toggle-btn" onclick="switchViewMode('diff')">Diff</button>
                 </div>
                 <div id="provider-selector" class="provider-selector hidden">
-                    {% for provider in ['olm-ocr', 'mistral-ocr', 'paddle-ocr'] %}
+                    {% for provider in ocr_data.providers %}
                     <button class="provider-tab {% if loop.first %}active{% endif %}" onclick="switchProvider('{{ provider }}')">
                         {{ provider }}
                     </button>
@@ -362,7 +410,7 @@
             </div>
 
             <div id="diff-content" class="panel-content hidden">
-                {% for provider in ['olm-ocr', 'mistral-ocr', 'paddle-ocr'] %}
+                {% for provider in ocr_data.providers %}
                 <div id="diff-{{ provider }}" class="diff-panel {% if loop.first %}active{% endif %}">
                     <div id="diff-output-{{ provider }}" class="ocr-text"></div>
                     <div id="diff-stats-{{ provider }}" class="diff-stats"></div>
@@ -379,7 +427,7 @@ const scanId = '{{ scan_id }}';
 const minPage = {{ ocr_data.page_range[0] }};
 const maxPage = {{ ocr_data.page_range[1] }};
 const currentPage = {{ initial_page }};
-const providers = ['olm-ocr', 'mistral-ocr', 'paddle-ocr'];
+const providers = {{ ocr_data.providers | tojson }};
 let currentBlendText = '';
 let providerTexts = {};
 let currentViewMode = 'blend';
