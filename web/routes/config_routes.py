@@ -171,11 +171,17 @@ def _parse_form_data(form, section: str) -> dict:
     elif section == 'ocr-providers':
         # ocr_providers.{name}.{field} = value
         data = {}
+        removals = set()
+
         for key, value in form.items():
             if key.startswith('ocr_providers.'):
                 parts = key.replace('ocr_providers.', '').split('.', 1)
                 if len(parts) == 2:
                     name, field = parts
+                    # Track removals
+                    if field == '_remove' and value.lower() in ('true', 'on', '1'):
+                        removals.add(name)
+                        continue
                     if name not in data:
                         data[name] = {}
                     # Type conversions
@@ -188,6 +194,23 @@ def _parse_form_data(form, section: str) -> dict:
                             pass
                     if value or field == 'enabled':  # Keep enabled even if False
                         data[name][field] = value
+
+        # Remove marked providers
+        for name in removals:
+            data.pop(name, None)
+
+        # Handle new provider
+        new_name = form.get('new_ocr_provider.name', '').strip()
+        new_type = form.get('new_ocr_provider.type', '').strip()
+        new_model = form.get('new_ocr_provider.model', '').strip()
+        if new_name:
+            data[new_name] = {
+                'type': new_type or 'deepinfra',
+                'enabled': True,
+            }
+            if new_model:
+                data[new_name]['model'] = new_model
+
         return data
 
     elif section == 'llm-providers':

@@ -75,24 +75,35 @@ def create_result_handler(tracker: PhaseStatusTracker):
                 return
 
         # Get corrections from LLM response
-        corrections = result.parsed_json.get("corrections", [])
+        corrections_raw = result.parsed_json.get("corrections", [])
         confidence = result.parsed_json.get("confidence", 1.0)
 
         # Apply corrections
         corrected_text, num_applied = apply_corrections(
             base_text,
-            corrections,
+            corrections_raw,
             logger=tracker.logger
         )
 
-        # Save result
+        # Convert raw corrections to TextCorrection objects for storage
+        corrections_typed = [
+            TextCorrection(
+                original=c.get("original", ""),
+                replacement=c.get("replacement", ""),
+                reason=c.get("reason", "")
+            )
+            for c in corrections_raw
+            if c.get("original")  # Skip empty corrections
+        ]
+
+        # Save result with full audit trail
         output = BlendedOcrPageOutput(
-            page_num=page_num,
             markdown=corrected_text,
-            char_count=len(corrected_text),
             model_used=result.model_used or "unknown",
-            corrections_applied=num_applied,
             base_source=base_source,
+            corrections_applied=num_applied,
+            corrections=corrections_typed,
+            confidence=confidence,
         )
 
         tracker.stage_storage.save_page(
@@ -109,12 +120,8 @@ def create_result_handler(tracker: PhaseStatusTracker):
 
         # Log summary
         if num_applied > 0:
-            tracker.logger.info(
-                f"✓ {result.request.id}: {num_applied} corrections applied ({output.char_count} chars)"
-            )
+            tracker.logger.info(f"✓ {result.request.id}: {num_applied} corrections applied")
         else:
-            tracker.logger.info(
-                f"✓ {result.request.id}: no corrections needed ({output.char_count} chars)"
-            )
+            tracker.logger.info(f"✓ {result.request.id}: no corrections needed")
 
     return on_result

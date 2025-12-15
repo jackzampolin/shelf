@@ -10,3 +10,4 @@ class OCRBatchConfig:
     provider: OCRProvider
     batch_name: Optional[str] = None  # Defaults to provider.name if not set
     max_workers: int = 10
+    silent: bool = False  # Suppress progress display (for parallel execution)

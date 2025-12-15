@@ -186,6 +186,9 @@ def validate_config_section(section: str, data: Dict) -> Tuple[bool, Dict, List[
 
     Returns: (is_valid, validated_data, error_messages)
     """
+    # Normalize section name (form uses hyphens, code uses underscores)
+    normalized = section.replace('-', '_')
+
     validators = {
         'api_keys': validate_api_keys,
         'ocr_providers': validate_ocr_providers,
@@ -193,7 +196,7 @@ def validate_config_section(section: str, data: Dict) -> Tuple[bool, Dict, List[
         'defaults': validate_defaults,
     }
 
-    validator = validators.get(section)
+    validator = validators.get(normalized)
     if not validator:
         return False, data, [f"Unknown section: {section}"]
 
@@ -214,6 +217,9 @@ def get_config_preview(
     """
     manager = LibraryConfigManager(storage_root)
     current = manager.load() if manager.exists() else LibraryConfig.with_defaults()
+
+    # Normalize section name (form uses hyphens, config uses underscores)
+    section = section.replace('-', '_')
 
     changes = []
 
@@ -322,16 +328,29 @@ def apply_config_update(
     """
     Apply validated update to config and save.
 
-    Uses LibraryConfigManager.update() for deep merge.
+    For provider sections (ocr_providers, llm_providers), does a full
+    replacement to support removals. For other sections, uses deep merge.
 
     Returns: Updated LibraryConfig
     """
     manager = LibraryConfigManager(storage_root)
 
-    # Build the update dict
-    update = {section: data}
+    # Normalize section name (form uses hyphens, config uses underscores)
+    config_section = section.replace('-', '_')
 
-    # Apply update
-    manager.update(update)
+    # For provider sections, we need full replacement (not merge)
+    # to support removing providers
+    if config_section in ('ocr_providers', 'llm_providers', 'api_keys'):
+        # Load current config, replace section entirely, save
+        config = manager.load()
+        config_dict = config.model_dump()
+        config_dict[config_section] = data
+        # Rebuild and save
+        new_config = LibraryConfig.model_validate(config_dict)
+        manager.save(new_config)
+    else:
+        # For other sections (defaults), use deep merge
+        update = {config_section: data}
+        manager.update(update)
 
     return manager.load()

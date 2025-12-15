@@ -25,19 +25,9 @@ class BlendCorrections(BaseModel):
 
 class BlendedOcrPageOutput(BaseModel):
     """Final blended OCR output for a page."""
-    page_num: int = Field(..., ge=1)
     markdown: str = Field(...)
-    char_count: int = Field(..., ge=0)
     model_used: str = Field(...)
-    # New fields for diff-based blend
-    corrections_applied: int = Field(default=0, ge=0, description="Number of corrections applied")
     base_source: str = Field(default="mistral", description="Which OCR output was used as base")
-
-
-class BlendedOcrPageMetrics(BaseModel):
-    page_num: int = Field(..., ge=1)
-    cost_usd: float = Field(..., ge=0.0)
-    time_seconds: float = Field(..., ge=0.0)
-    char_count: int = Field(..., ge=0)
-    prompt_tokens: int = Field(..., ge=0)
-    completion_tokens: int = Field(..., ge=0)
+    corrections_applied: int = Field(default=0, ge=0, description="Number of corrections applied")
+    corrections: List[TextCorrection] = Field(default_factory=list, description="Corrections suggested by LLM")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="LLM confidence in corrections")

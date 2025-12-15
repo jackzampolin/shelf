@@ -24,7 +24,6 @@ from .schemas import (
     PaddleOcrPageOutput,
     PaddleOcrPageMetrics,
     BlendedOcrPageOutput,
-    BlendedOcrPageMetrics,
 )
 
 
@@ -183,5 +182,4 @@ __all__ = [
     "PaddleOcrPageOutput",
     "PaddleOcrPageMetrics",
     "BlendedOcrPageOutput",
-    "BlendedOcrPageMetrics",
 ]

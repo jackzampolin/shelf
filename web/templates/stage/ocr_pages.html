@@ -323,6 +323,20 @@
             <div class="book-info">
                 <span><strong>Title:</strong> {{ metadata.title }}</span>
                 <span><strong>Pages:</strong> {{ ocr_data.page_range[1] }}</span>
+                {% if ocr_data.total_runtime_seconds > 0 %}
+                <span><strong>Time:</strong>
+                    {% if ocr_data.total_runtime_seconds < 60 %}
+                        {{ "%.1f"|format(ocr_data.total_runtime_seconds) }}s
+                    {% elif ocr_data.total_runtime_seconds < 3600 %}
+                        {{ "%.1f"|format(ocr_data.total_runtime_seconds / 60) }}m
+                    {% else %}
+                        {{ "%.1f"|format(ocr_data.total_runtime_seconds / 3600) }}h
+                    {% endif %}
+                </span>
+                {% endif %}
+                {% if ocr_data.total_cost_usd > 0 %}
+                <span><strong>Cost:</strong> ${{ "%.2f"|format(ocr_data.total_cost_usd) }}</span>
+                {% endif %}
             </div>
         </div>
         <div class="status-section">

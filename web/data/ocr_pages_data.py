@@ -170,6 +170,8 @@ def get_ocr_pages_data(storage: BookStorage) -> Optional[Dict[str, Any]]:
         'provider_data': aggregate['providers'],
         'phases': aggregate['phases'],
         'status': aggregate['status'],
+        'total_cost_usd': aggregate['total_cost_usd'],
+        'total_runtime_seconds': aggregate['total_runtime_seconds'],
     }
 
 

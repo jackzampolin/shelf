@@ -206,6 +206,11 @@
     color: var(--dark);
 }
 
+.provider-actions {
+    display: flex;
+    gap: 20px;
+}
+
 .enabled-toggle,
 .remove-toggle {
     display: flex;

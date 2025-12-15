@@ -45,6 +45,7 @@ class OCRBatchProcessor:
         self.logger = config.tracker.logger
         self.max_workers = config.max_workers
         self.batch_name = config.batch_name or config.provider.name
+        self.silent = config.silent
 
         self.stage_storage = config.tracker.stage_storage
         self.subdir = config.tracker.phase_name
@@ -75,8 +76,9 @@ class OCRBatchProcessor:
             else "unlimited"
         )
 
-        self.logger.info(f"Processing {len(page_nums)} pages with {self.provider.name}")
-        self.logger.info(f"Workers: {self.max_workers}, Rate limit: {rate_limit_str}")
+        if not self.silent:
+            self.logger.info(f"Processing {len(page_nums)} pages with {self.provider.name}")
+            self.logger.info(f"Workers: {self.max_workers}, Rate limit: {rate_limit_str}")
 
         progress = Progress(
             TextColumn(f"⏳ {self.batch_name}"),
@@ -86,7 +88,8 @@ class OCRBatchProcessor:
             TimeRemainingColumn(),
             TextColumn("•"),
             TextColumn("{task.fields[suffix]}", justify="right"),
-            transient=True
+            transient=True,
+            disable=self.silent,
         )
 
         def process_single_page(page_num: int) -> Dict[str, Any]:
@@ -169,19 +172,20 @@ class OCRBatchProcessor:
                     )
 
         avg_time_per_page = total_time / pages_processed if pages_processed > 0 else 0
-        print_ocr_complete(self.batch_name, DisplayStats(
-            completed=pages_processed,
-            total=len(page_nums),
-            time_seconds=total_time,
-            cost_usd=total_cost,
-            chars=total_chars,
-            avg_time_per_item=avg_time_per_page,
-        ))
 
-        self.logger.info(
-            f"{self.batch_name} complete: {pages_processed}/{len(page_nums)} pages, "
-            f"${total_cost:.4f}, {total_chars:,} chars"
-        )
+        if not self.silent:
+            print_ocr_complete(self.batch_name, DisplayStats(
+                completed=pages_processed,
+                total=len(page_nums),
+                time_seconds=total_time,
+                cost_usd=total_cost,
+                chars=total_chars,
+                avg_time_per_item=avg_time_per_page,
+            ))
+            self.logger.info(
+                f"{self.batch_name} complete: {pages_processed}/{len(page_nums)} pages, "
+                f"${total_cost:.4f}, {total_chars:,} chars"
+            )
 
         if pages_processed == len(page_nums):
             status = "success"
