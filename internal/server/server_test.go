@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/testutil"
 )
 
 // TestServer_FullLifecycle tests the complete server lifecycle including DefraDB.
@@ -18,22 +19,24 @@ func TestServer_FullLifecycle(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
+	// Register cleanup for test containers
+	_ = testutil.DockerClient(t)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	dataPath := t.TempDir()
 	port := "18080" // Use non-standard port for testing
-
-	// Clean up any existing test container first
-	cleanupTestContainer(t, dataPath)
+	containerName := testutil.UniqueContainerName(t, "server")
 
 	srv, err := New(Config{
 		Host:          "127.0.0.1",
 		Port:          port,
 		DefraDataPath: dataPath,
 		DefraConfig: defra.DockerConfig{
-			ContainerName: "shelf-defra-server-test",
+			ContainerName: containerName,
 			HostPort:      "19281", // Non-standard port
+			Labels:        testutil.ContainerLabels(t),
 		},
 	})
 	if err != nil {
@@ -139,7 +142,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 	t.Run("defra_stopped_after_shutdown", func(t *testing.T) {
 		// Create a new manager to check status
 		mgr, err := defra.NewDockerManager(defra.DockerConfig{
-			ContainerName: "shelf-defra-server-test",
+			ContainerName: containerName,
 		})
 		if err != nil {
 			t.Fatalf("failed to create manager: %v", err)
@@ -165,21 +168,24 @@ func TestServer_ContextCancellation(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
+	// Register cleanup for test containers
+	_ = testutil.DockerClient(t)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	dataPath := t.TempDir()
 	port := "18081"
-
-	cleanupTestContainer(t, dataPath)
+	containerName := testutil.UniqueContainerName(t, "cancel")
 
 	srv, err := New(Config{
 		Host:          "127.0.0.1",
 		Port:          port,
 		DefraDataPath: dataPath,
 		DefraConfig: defra.DockerConfig{
-			ContainerName: "shelf-defra-cancel-test",
+			ContainerName: containerName,
 			HostPort:      "19282",
+			Labels:        testutil.ContainerLabels(t),
 		},
 	})
 	if err != nil {
@@ -213,7 +219,7 @@ func TestServer_ContextCancellation(t *testing.T) {
 
 	// Verify DefraDB is stopped
 	mgr, err := defra.NewDockerManager(defra.DockerConfig{
-		ContainerName: "shelf-defra-cancel-test",
+		ContainerName: containerName,
 	})
 	if err != nil {
 		t.Fatalf("failed to create manager: %v", err)
@@ -237,21 +243,24 @@ func TestServer_DoubleStart(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
+	// Register cleanup for test containers
+	_ = testutil.DockerClient(t)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	dataPath := t.TempDir()
 	port := "18082"
-
-	cleanupTestContainer(t, dataPath)
+	containerName := testutil.UniqueContainerName(t, "double")
 
 	srv, err := New(Config{
 		Host:          "127.0.0.1",
 		Port:          port,
 		DefraDataPath: dataPath,
 		DefraConfig: defra.DockerConfig{
-			ContainerName: "shelf-defra-double-test",
+			ContainerName: containerName,
 			HostPort:      "19283",
+			Labels:        testutil.ContainerLabels(t),
 		},
 	})
 	if err != nil {
@@ -285,19 +294,24 @@ func TestServer_CleansUpOrphanedContainer(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
+	// Register cleanup for test containers
+	_ = testutil.DockerClient(t)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	dataPath := t.TempDir()
 	port := "18083"
-	containerName := "shelf-defra-orphan-test"
+	containerName := testutil.UniqueContainerName(t, "orphan")
 	defraPort := "19284"
+	labels := testutil.ContainerLabels(t)
 
 	// First, create an "orphaned" container (simulating a crash)
 	mgr, err := defra.NewDockerManager(defra.DockerConfig{
 		ContainerName: containerName,
 		DataPath:      dataPath,
 		HostPort:      defraPort,
+		Labels:        labels,
 	})
 	if err != nil {
 		t.Fatalf("failed to create manager: %v", err)
@@ -325,6 +339,7 @@ func TestServer_CleansUpOrphanedContainer(t *testing.T) {
 		DefraConfig: defra.DockerConfig{
 			ContainerName: containerName,
 			HostPort:      defraPort,
+			Labels:        labels,
 		},
 	})
 	if err != nil {
@@ -394,27 +409,3 @@ func waitForServer(ctx context.Context, baseURL string, timeout time.Duration) e
 	return fmt.Errorf("server not ready after %s", timeout)
 }
 
-// cleanupTestContainer removes any leftover test container.
-func cleanupTestContainer(t *testing.T, dataPath string) {
-	t.Helper()
-
-	// Clean up various test containers
-	containers := []string{
-		"shelf-defra-server-test",
-		"shelf-defra-cancel-test",
-		"shelf-defra-double-test",
-		"shelf-defra-orphan-test",
-	}
-
-	for _, name := range containers {
-		mgr, err := defra.NewDockerManager(defra.DockerConfig{
-			ContainerName: name,
-			DataPath:      dataPath,
-		})
-		if err != nil {
-			continue
-		}
-		_ = mgr.Remove(context.Background())
-		mgr.Close()
-	}
-}

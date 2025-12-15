@@ -41,8 +41,9 @@ type DockerManager struct {
 	cli           *client.Client
 	containerName string
 	imageName     string
-	dataPath      string  // Host path for data persistence (~/.shelf/defradb)
-	hostPort      string  // Host port to bind (default: 9181)
+	dataPath      string            // Host path for data persistence (~/.shelf/defradb)
+	hostPort      string            // Host port to bind (default: 9181)
+	labels        map[string]string // Container labels
 }
 
 // DockerConfig holds configuration for the Docker manager.
@@ -51,6 +52,7 @@ type DockerConfig struct {
 	Image         string
 	DataPath      string
 	HostPort      string
+	Labels        map[string]string // Optional labels for container (used for test cleanup)
 }
 
 // NewDockerManager creates a new Docker manager for DefraDB.
@@ -71,12 +73,19 @@ func NewDockerManager(cfg DockerConfig) (*DockerManager, error) {
 		cfg.HostPort = DefaultPort
 	}
 
+	// Merge default label with any provided labels
+	labels := map[string]string{Label: "true"}
+	for k, v := range cfg.Labels {
+		labels[k] = v
+	}
+
 	return &DockerManager{
 		cli:           cli,
 		containerName: cfg.ContainerName,
 		imageName:     cfg.Image,
 		dataPath:      cfg.DataPath,
 		hostPort:      cfg.HostPort,
+		labels:        labels,
 	}, nil
 }
 
@@ -224,9 +233,7 @@ func (m *DockerManager) createAndStart(ctx context.Context) error {
 			"--store", "badger",
 			"--rootdir", DataDir,
 		},
-		Labels: map[string]string{
-			Label: "true",
-		},
+		Labels: m.labels,
 		ExposedPorts: nat.PortSet{
 			ContainerPort: struct{}{},
 		},

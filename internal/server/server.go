@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/schema"
 )
 
 // Server is the main Shelf HTTP server.
@@ -116,6 +117,13 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("DefraDB health check failed: %w", err)
 	}
 	s.logger.Info("DefraDB is ready", "url", s.defraManager.URL())
+
+	// Initialize schemas
+	s.logger.Info("initializing schemas")
+	if err := schema.Initialize(ctx, s.defraClient, s.logger); err != nil {
+		_ = s.shutdown()
+		return fmt.Errorf("schema initialization failed: %w", err)
+	}
 
 	// Start HTTP server in goroutine
 	errCh := make(chan error, 1)
