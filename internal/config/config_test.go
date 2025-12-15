@@ -3,7 +3,9 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -92,4 +94,179 @@ api_keys:
 			t.Errorf("expected test_value, got %s", cfg.APIKeys["test_key"])
 		}
 	})
+}
+
+func TestManager_OnChange(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `
+api_keys:
+  test_key: "initial_value"
+`
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	mgr, err := NewManager(configFile)
+	if err != nil {
+		t.Fatalf("failed to create manager: %v", err)
+	}
+
+	// Track callback invocations
+	callbackCount := 0
+	var lastConfig *Config
+
+	mgr.OnChange(func(cfg *Config) {
+		callbackCount++
+		lastConfig = cfg
+	})
+
+	// Verify callback is registered
+	mgr.mu.RLock()
+	if len(mgr.callbacks) != 1 {
+		t.Errorf("expected 1 callback, got %d", len(mgr.callbacks))
+	}
+	mgr.mu.RUnlock()
+
+	// Note: Actually triggering the callback requires WatchConfig + file change
+	// which is tested in TestManager_WatchConfig
+	_ = lastConfig
+	_ = callbackCount
+}
+
+func TestManager_OnChange_Multiple(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `
+api_keys:
+  key: "value"
+`
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	mgr, err := NewManager(configFile)
+	if err != nil {
+		t.Fatalf("failed to create manager: %v", err)
+	}
+
+	// Register multiple callbacks
+	mgr.OnChange(func(cfg *Config) {})
+	mgr.OnChange(func(cfg *Config) {})
+	mgr.OnChange(func(cfg *Config) {})
+
+	mgr.mu.RLock()
+	if len(mgr.callbacks) != 3 {
+		t.Errorf("expected 3 callbacks, got %d", len(mgr.callbacks))
+	}
+	mgr.mu.RUnlock()
+}
+
+func TestManager_Get_ThreadSafe(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `
+api_keys:
+  key: "value"
+`
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	mgr, err := NewManager(configFile)
+	if err != nil {
+		t.Fatalf("failed to create manager: %v", err)
+	}
+
+	// Call Get concurrently to verify no race conditions
+	done := make(chan struct{})
+	for i := 0; i < 10; i++ {
+		go func() {
+			for j := 0; j < 100; j++ {
+				cfg := mgr.Get()
+				_ = cfg.APIKeys["key"]
+			}
+			done <- struct{}{}
+		}()
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+}
+
+func TestManager_WatchConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `
+api_keys:
+  test_key: "initial_value"
+`
+	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	mgr, err := NewManager(configFile)
+	if err != nil {
+		t.Fatalf("failed to create manager: %v", err)
+	}
+
+	// Verify initial value
+	cfg := mgr.Get()
+	if cfg.APIKeys["test_key"] != "initial_value" {
+		t.Errorf("initial value mismatch: expected initial_value, got %s", cfg.APIKeys["test_key"])
+	}
+
+	// Track callback invocations
+	var callbackCount atomic.Int32
+	var lastValue atomic.Value
+
+	mgr.OnChange(func(cfg *Config) {
+		callbackCount.Add(1)
+		lastValue.Store(cfg.APIKeys["test_key"])
+	})
+
+	// Start watching
+	mgr.WatchConfig()
+
+	// Give fsnotify time to set up the watcher
+	time.Sleep(100 * time.Millisecond)
+
+	// Update the config file
+	newContent := `
+api_keys:
+  test_key: "updated_value"
+`
+	if err := os.WriteFile(configFile, []byte(newContent), 0644); err != nil {
+		t.Fatalf("failed to write updated config file: %v", err)
+	}
+
+	// Wait for the watcher to detect the change (fsnotify is async)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if callbackCount.Load() > 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if callbackCount.Load() == 0 {
+		t.Error("callback was not invoked after config file change")
+	}
+
+	// Verify the config was updated
+	newCfg := mgr.Get()
+	if newCfg.APIKeys["test_key"] != "updated_value" {
+		t.Errorf("config not updated: expected updated_value, got %s", newCfg.APIKeys["test_key"])
+	}
+
+	// Verify callback received the updated value
+	if v := lastValue.Load(); v != "updated_value" {
+		t.Errorf("callback received wrong value: expected updated_value, got %v", v)
+	}
 }
