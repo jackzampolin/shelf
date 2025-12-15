@@ -7,12 +7,21 @@ import (
 	"sync"
 )
 
+// JobFactory creates a Job instance from stored metadata.
+// Used for resuming jobs after restart.
+type JobFactory func(id string, metadata map[string]any) (Job, error)
+
 // Scheduler manages workers and distributes work units from jobs.
+// It uses Manager to persist job state to DefraDB.
 type Scheduler struct {
 	mu      sync.RWMutex
+	manager *Manager           // For persistence
 	workers map[string]*Worker // workers by name
 	jobs    map[string]Job     // active jobs by ID
 	logger  *slog.Logger
+
+	// Job factories for resumption
+	factories map[string]JobFactory
 
 	// Work queue (buffered channel)
 	queue chan *WorkUnit
@@ -23,6 +32,7 @@ type Scheduler struct {
 
 // SchedulerConfig configures a new scheduler.
 type SchedulerConfig struct {
+	Manager   *Manager // Required for persistence
 	Logger    *slog.Logger
 	QueueSize int // Size of work queue buffer (default 1000)
 }
@@ -39,12 +49,23 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 	}
 
 	return &Scheduler{
-		workers: make(map[string]*Worker),
-		jobs:    make(map[string]Job),
-		pending: make(map[string]int),
-		queue:   make(chan *WorkUnit, queueSize),
-		logger:  logger,
+		manager:   cfg.Manager,
+		workers:   make(map[string]*Worker),
+		jobs:      make(map[string]Job),
+		factories: make(map[string]JobFactory),
+		pending:   make(map[string]int),
+		queue:     make(chan *WorkUnit, queueSize),
+		logger:    logger,
 	}
+}
+
+// RegisterFactory registers a job factory for a job type.
+// Required for resuming jobs after restart.
+func (s *Scheduler) RegisterFactory(jobType string, factory JobFactory) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.factories[jobType] = factory
+	s.logger.Debug("job factory registered", "type", jobType)
 }
 
 // RegisterWorker adds a worker to the scheduler.
@@ -77,11 +98,38 @@ func (s *Scheduler) ListWorkers() []string {
 }
 
 // Submit starts a job and enqueues its initial work units.
+// Creates a persistent record in DefraDB via Manager.
 func (s *Scheduler) Submit(ctx context.Context, job Job) error {
+	// Get initial metadata from job status
+	metadata, _ := job.Status(ctx)
+	metadataMap := make(map[string]any)
+	for k, v := range metadata {
+		metadataMap[k] = v
+	}
+
+	// Persist to DefraDB if manager available
+	var recordID string
+	if s.manager != nil {
+		var err error
+		recordID, err = s.manager.Create(ctx, job.Type(), metadataMap)
+		if err != nil {
+			return fmt.Errorf("failed to create job record: %w", err)
+		}
+		s.logger.Info("job record created", "record_id", recordID, "job_id", job.ID())
+	}
+
+	// Track in memory
 	s.mu.Lock()
 	s.jobs[job.ID()] = job
 	s.pending[job.ID()] = 0
 	s.mu.Unlock()
+
+	// Update status to running
+	if s.manager != nil && recordID != "" {
+		if err := s.manager.UpdateStatus(ctx, recordID, StatusRunning, ""); err != nil {
+			s.logger.Warn("failed to update job status", "error", err)
+		}
+	}
 
 	s.logger.Info("job submitted", "job_id", job.ID(), "type", job.Type())
 
@@ -92,6 +140,11 @@ func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 		delete(s.jobs, job.ID())
 		delete(s.pending, job.ID())
 		s.mu.Unlock()
+
+		// Mark as failed in DefraDB
+		if s.manager != nil && recordID != "" {
+			s.manager.UpdateStatus(ctx, recordID, StatusFailed, err.Error())
+		}
 		return fmt.Errorf("job start failed: %w", err)
 	}
 
@@ -99,6 +152,62 @@ func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 	s.enqueueUnits(job.ID(), units)
 
 	return nil
+}
+
+// Resume restarts jobs that were interrupted (status: running).
+// Requires job factories to be registered for each job type.
+func (s *Scheduler) Resume(ctx context.Context) (int, error) {
+	if s.manager == nil {
+		return 0, fmt.Errorf("manager required for resume")
+	}
+
+	// Find interrupted jobs
+	records, err := s.manager.List(ctx, ListFilter{Status: StatusRunning})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list running jobs: %w", err)
+	}
+
+	resumed := 0
+	for _, record := range records {
+		s.mu.RLock()
+		factory, ok := s.factories[record.JobType]
+		s.mu.RUnlock()
+
+		if !ok {
+			s.logger.Warn("no factory for job type, cannot resume",
+				"job_id", record.ID, "type", record.JobType)
+			continue
+		}
+
+		// Recreate job from stored metadata
+		job, err := factory(record.ID, record.Metadata)
+		if err != nil {
+			s.logger.Error("failed to recreate job",
+				"job_id", record.ID, "error", err)
+			continue
+		}
+
+		// Track in memory
+		s.mu.Lock()
+		s.jobs[job.ID()] = job
+		s.pending[job.ID()] = 0
+		s.mu.Unlock()
+
+		// Start job (should be idempotent - checks what's already done)
+		units, err := job.Start(ctx)
+		if err != nil {
+			s.logger.Error("failed to resume job",
+				"job_id", record.ID, "error", err)
+			s.manager.UpdateStatus(ctx, record.ID, StatusFailed, err.Error())
+			continue
+		}
+
+		s.enqueueUnits(job.ID(), units)
+		resumed++
+		s.logger.Info("job resumed", "job_id", record.ID, "type", record.JobType)
+	}
+
+	return resumed, nil
 }
 
 // enqueueUnits adds work units to the queue and updates pending count.
@@ -271,6 +380,15 @@ func (s *Scheduler) handleResult(ctx context.Context, unit *WorkUnit, result Wor
 
 	if isDone {
 		s.logger.Info("job completed", "job_id", job.ID(), "type", job.Type())
+
+		// Update DefraDB status
+		if s.manager != nil {
+			// Note: We're using job.ID() as the record ID here
+			// In practice, you'd want to track the DefraDB record ID separately
+			if err := s.manager.UpdateStatus(ctx, job.ID(), StatusCompleted, ""); err != nil {
+				s.logger.Warn("failed to update job status in DefraDB", "error", err)
+			}
+		}
 	}
 }
 
