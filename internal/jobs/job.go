@@ -2,12 +2,16 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
+
+// ErrNotFound is returned when a job is not found.
+var ErrNotFound = errors.New("job not found")
 
 // WorkUnitType distinguishes LLM from OCR work.
 type WorkUnitType string

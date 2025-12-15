@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// ErrUnhealthy is returned when DefraDB health check fails.
+var ErrUnhealthy = errors.New("defra health check failed")
 
 // Client is a DefraDB HTTP/GraphQL client.
 type Client struct {

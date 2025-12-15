@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/testutil"
 )
 
@@ -132,6 +134,202 @@ func TestServer_FullLifecycle(t *testing.T) {
 	t.Run("is_running", func(t *testing.T) {
 		if !srv.IsRunning() {
 			t.Error("IsRunning() = false, want true")
+		}
+	})
+
+	// Job API tests
+	var createdJobID string
+
+	t.Run("create_job", func(t *testing.T) {
+		body := `{"job_type": "ocr-pages", "metadata": {"book_id": "test-book-123", "pages": 50}}`
+		resp, err := http.Post(cfg.URL()+"/api/jobs", "application/json", bytes.NewBufferString(body))
+		if err != nil {
+			t.Fatalf("create job failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusCreated {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusCreated)
+		}
+
+		var result CreateJobResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if result.ID == "" {
+			t.Error("expected non-empty job ID")
+		}
+		createdJobID = result.ID
+		t.Logf("created job with ID: %s", createdJobID)
+	})
+
+	t.Run("get_job", func(t *testing.T) {
+		if createdJobID == "" {
+			t.Skip("no job ID from create test")
+		}
+
+		resp, err := http.Get(cfg.URL() + "/api/jobs/" + createdJobID)
+		if err != nil {
+			t.Fatalf("get job failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var job jobs.Record
+		if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if job.JobType != "ocr-pages" {
+			t.Errorf("job.JobType = %q, want %q", job.JobType, "ocr-pages")
+		}
+		if job.Status != jobs.StatusQueued {
+			t.Errorf("job.Status = %q, want %q", job.Status, jobs.StatusQueued)
+		}
+	})
+
+	t.Run("list_jobs", func(t *testing.T) {
+		resp, err := http.Get(cfg.URL() + "/api/jobs")
+		if err != nil {
+			t.Fatalf("list jobs failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var result ListJobsResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if len(result.Jobs) < 1 {
+			t.Errorf("expected at least 1 job, got %d", len(result.Jobs))
+		}
+	})
+
+	t.Run("list_jobs_filtered", func(t *testing.T) {
+		resp, err := http.Get(cfg.URL() + "/api/jobs?job_type=ocr-pages")
+		if err != nil {
+			t.Fatalf("list jobs failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var result ListJobsResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		for _, job := range result.Jobs {
+			if job.JobType != "ocr-pages" {
+				t.Errorf("filtered job has wrong type: %q", job.JobType)
+			}
+		}
+	})
+
+	t.Run("update_job_status", func(t *testing.T) {
+		if createdJobID == "" {
+			t.Skip("no job ID from create test")
+		}
+
+		body := `{"status": "running"}`
+		req, _ := http.NewRequest(http.MethodPatch, cfg.URL()+"/api/jobs/"+createdJobID, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("update job failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var job jobs.Record
+		if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if job.Status != jobs.StatusRunning {
+			t.Errorf("job.Status = %q, want %q", job.Status, jobs.StatusRunning)
+		}
+	})
+
+	t.Run("update_job_metadata", func(t *testing.T) {
+		if createdJobID == "" {
+			t.Skip("no job ID from create test")
+		}
+
+		body := `{"metadata": {"progress": 25, "current_page": 13}}`
+		req, _ := http.NewRequest(http.MethodPatch, cfg.URL()+"/api/jobs/"+createdJobID, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("update job failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var job jobs.Record
+		if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		// Check metadata was merged
+		if job.Metadata["progress"] != float64(25) {
+			t.Errorf("job.Metadata[progress] = %v, want 25", job.Metadata["progress"])
+		}
+	})
+
+	t.Run("get_nonexistent_job", func(t *testing.T) {
+		resp, err := http.Get(cfg.URL() + "/api/jobs/bae-nonexistent-id")
+		if err != nil {
+			t.Fatalf("get job failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNotFound)
+		}
+	})
+
+	t.Run("create_job_missing_type", func(t *testing.T) {
+		body := `{"metadata": {"book_id": "test"}}`
+		resp, err := http.Post(cfg.URL()+"/api/jobs", "application/json", bytes.NewBufferString(body))
+		if err != nil {
+			t.Fatalf("create job failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("create_job_invalid_json", func(t *testing.T) {
+		body := `{invalid`
+		resp, err := http.Post(cfg.URL()+"/api/jobs", "application/json", bytes.NewBufferString(body))
+		if err != nil {
+			t.Fatalf("create job failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
 		}
 	})
 
