@@ -114,19 +114,43 @@ go build -o shelf ./cmd/shelf
 go test ./...
 ```
 
-### Reference
+### Reference Projects
 
-- Pattern reference: `/Users/johnzampolin/go/src/github.com/sourcenetwork/defra-mongo-connector`
-- DefraDB docs: https://docs.source.network/
+**defra-mongo-connector** - `/Users/johnzampolin/go/src/github.com/sourcenetwork/defra-mongo-connector`
+Use this for patterns on:
+- CLI structure (Cobra commands, flags)
+- Docker container management (`internal/dockerutil/`)
+- Config with viper + hot-reload (`internal/connector/config.go`)
+- Integration testing patterns
+
+**DefraDB source** - `/Users/johnzampolin/go/src/github.com/sourcenetwork/defradb`
+Local copy of DefraDB for understanding the database internals, client API, and query patterns.
+
+**DefraDB docs** - https://docs.source.network/
 </go_implementation>
 
 <python_implementation>
 ## Python Implementation (Legacy Reference)
 
-The Python code in `main` is the reference implementation. Use it to understand:
-- Stage logic and prompts
+The Python code in `main` branch is the reference implementation.
+
+### Local Paths
+
+```bash
+# Python code (main branch worktree)
+/Users/johnzampolin/go/src/github.com/jackzampolin/shelf
+
+# Book data (scans, OCR output, etc.)
+~/Documents/shelf/
+```
+
+### What to Reference
+
+Use the Python code to understand:
+- Stage logic and prompts (`pipeline/*/`)
 - Data flow between stages
-- LLM call patterns
+- LLM call patterns (`infra/llm/`)
+- Config schema (`infra/config/schemas.py`)
 
 ### Key Files
 
@@ -144,18 +168,6 @@ infra/
 ├── ocr/                 # OCR provider base
 ├── pipeline/            # Stage base classes
 └── config/              # Configuration
-```
-
-### Environment
-
-```bash
-# Python setup
-uv venv && source .venv/bin/activate
-uv pip install -e .
-uv run python shelf.py --help
-
-# Tests
-uv run python -m pytest tests/
 ```
 </python_implementation>
 
