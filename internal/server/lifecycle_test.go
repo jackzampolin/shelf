@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -12,32 +11,22 @@ import (
 	"github.com/jackzampolin/shelf/internal/testutil"
 )
 
-// TestServer_FullLifecycle tests the complete server lifecycle including DefraDB.
-// This test requires Docker to be running.
 func TestServer_FullLifecycle(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	// Register cleanup for test containers
-	_ = testutil.DockerClient(t)
+	cfg := testutil.NewServerConfig(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	dataPath := t.TempDir()
-	port := "18080" // Use non-standard port for testing
-	containerName := testutil.UniqueContainerName(t, "server")
-
 	srv, err := New(Config{
-		Host:          "127.0.0.1",
-		Port:          port,
-		DefraDataPath: dataPath,
+		Host:          cfg.Host,
+		Port:          cfg.Port,
+		DefraDataPath: cfg.DefraDataPath,
 		DefraConfig: defra.DockerConfig{
-			ContainerName: containerName,
-			HostPort:      "19281", // Non-standard port
-			Labels:        testutil.ContainerLabels(t),
+			ContainerName: cfg.DefraConfig.ContainerName,
+			HostPort:      cfg.DefraConfig.HostPort,
+			Labels:        cfg.DefraConfig.Labels,
 		},
+		Logger: cfg.Logger,
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -52,14 +41,13 @@ func TestServer_FullLifecycle(t *testing.T) {
 	}()
 
 	// Wait for server to be ready
-	baseURL := fmt.Sprintf("http://127.0.0.1:%s", port)
-	if err := waitForServer(ctx, baseURL, 30*time.Second); err != nil {
+	if err := testutil.WaitForServer(cfg.URL(), 60*time.Second); err != nil {
 		serverCancel()
 		t.Fatalf("server did not start: %v", err)
 	}
 
 	t.Run("health_endpoint", func(t *testing.T) {
-		resp, err := http.Get(baseURL + "/health")
+		resp, err := http.Get(cfg.URL() + "/health")
 		if err != nil {
 			t.Fatalf("health check failed: %v", err)
 		}
@@ -80,7 +68,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 	})
 
 	t.Run("ready_endpoint", func(t *testing.T) {
-		resp, err := http.Get(baseURL + "/ready")
+		resp, err := http.Get(cfg.URL() + "/ready")
 		if err != nil {
 			t.Fatalf("ready check failed: %v", err)
 		}
@@ -100,6 +88,33 @@ func TestServer_FullLifecycle(t *testing.T) {
 		}
 		if health.Defra != "ok" {
 			t.Errorf("health.Defra = %q, want %q", health.Defra, "ok")
+		}
+	})
+
+	t.Run("status_endpoint", func(t *testing.T) {
+		resp, err := http.Get(cfg.URL() + "/status")
+		if err != nil {
+			t.Fatalf("status check failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("status code = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+
+		var status StatusResponse
+		if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		if status.Server != "running" {
+			t.Errorf("status.Server = %q, want %q", status.Server, "running")
+		}
+		if status.Defra.Health != "healthy" {
+			t.Errorf("status.Defra.Health = %q, want %q", status.Defra.Health, "healthy")
+		}
+		if status.Defra.Container != "running" {
+			t.Errorf("status.Defra.Container = %q, want %q", status.Defra.Container, "running")
 		}
 	})
 
@@ -140,9 +155,8 @@ func TestServer_FullLifecycle(t *testing.T) {
 	})
 
 	t.Run("defra_stopped_after_shutdown", func(t *testing.T) {
-		// Create a new manager to check status
 		mgr, err := defra.NewDockerManager(defra.DockerConfig{
-			ContainerName: containerName,
+			ContainerName: cfg.DefraConfig.ContainerName,
 		})
 		if err != nil {
 			t.Fatalf("failed to create manager: %v", err)
@@ -156,39 +170,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 
 		if status == defra.StatusRunning {
 			t.Error("DefraDB still running after server shutdown")
-			// Clean up
 			_ = mgr.Stop(ctx)
 		}
 	})
-}
-
-// waitForServer polls the server until it responds or timeout.
-func waitForServer(ctx context.Context, baseURL string, timeout time.Duration) error {
-	client := &http.Client{Timeout: 2 * time.Second}
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/health", nil)
-		if err != nil {
-			return err
-		}
-
-		resp, err := client.Do(req)
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				return nil
-			}
-		}
-
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	return fmt.Errorf("server not ready after %s", timeout)
 }

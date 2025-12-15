@@ -143,14 +143,14 @@ var _ LLMClient = (*MockClient)(nil)
 
 // MockOCRProvider is an OCRProvider for testing.
 type MockOCRProvider struct {
-	ProviderName   string
-	Latency        time.Duration
-	ShouldFail     bool
-	FailAfter      int
-	ResponseText   string
-	RPS            float64
-	Retries        int
-	RetryDelay     time.Duration
+	ProviderName string
+	Latency      time.Duration
+	ShouldFail   bool
+	FailAfter    int
+	ResponseText string
+	RPS          float64
+	Retries      int
+	RetryDelay   time.Duration
 
 	requestCount atomic.Int64
 }

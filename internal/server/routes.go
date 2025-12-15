@@ -13,6 +13,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Health endpoints
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /ready", s.handleReady)
+	mux.HandleFunc("GET /status", s.handleStatus)
 
 	// Job endpoints
 	mux.HandleFunc("POST /api/jobs", s.handleCreateJob)
@@ -49,6 +50,49 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		resp.Defra = "not_initialized"
 		writeJSON(w, http.StatusServiceUnavailable, resp)
 		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// StatusResponse is the detailed status response.
+type StatusResponse struct {
+	Server string `json:"server"`
+	Defra  struct {
+		Container string `json:"container"`
+		Health    string `json:"health"`
+		URL       string `json:"url"`
+	} `json:"defra"`
+}
+
+// handleStatus returns detailed server and DefraDB status.
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	resp := StatusResponse{
+		Server: "running",
+	}
+
+	// Get DefraDB container status
+	if s.defraManager != nil {
+		status, err := s.defraManager.Status(r.Context())
+		if err != nil {
+			resp.Defra.Container = "error"
+		} else {
+			resp.Defra.Container = string(status)
+		}
+		resp.Defra.URL = s.defraManager.URL()
+	} else {
+		resp.Defra.Container = "not_initialized"
+	}
+
+	// Check DefraDB health
+	if s.defraClient != nil {
+		if err := s.defraClient.HealthCheck(r.Context()); err != nil {
+			resp.Defra.Health = "unhealthy"
+		} else {
+			resp.Defra.Health = "healthy"
+		}
+	} else {
+		resp.Defra.Health = "not_initialized"
 	}
 
 	writeJSON(w, http.StatusOK, resp)

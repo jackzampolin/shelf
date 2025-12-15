@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -11,31 +10,22 @@ import (
 	"github.com/jackzampolin/shelf/internal/testutil"
 )
 
-// TestServer_ContextCancellation tests that the server properly handles context cancellation.
 func TestServer_ContextCancellation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	// Register cleanup for test containers
-	_ = testutil.DockerClient(t)
+	cfg := testutil.NewServerConfig(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	dataPath := t.TempDir()
-	port := "18081"
-	containerName := testutil.UniqueContainerName(t, "cancel")
-
 	srv, err := New(Config{
-		Host:          "127.0.0.1",
-		Port:          port,
-		DefraDataPath: dataPath,
+		Host:          cfg.Host,
+		Port:          cfg.Port,
+		DefraDataPath: cfg.DefraDataPath,
 		DefraConfig: defra.DockerConfig{
-			ContainerName: containerName,
-			HostPort:      "19282",
-			Labels:        testutil.ContainerLabels(t),
+			ContainerName: cfg.DefraConfig.ContainerName,
+			HostPort:      cfg.DefraConfig.HostPort,
+			Labels:        cfg.DefraConfig.Labels,
 		},
+		Logger: cfg.Logger,
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -49,8 +39,7 @@ func TestServer_ContextCancellation(t *testing.T) {
 	}()
 
 	// Wait for server to be ready
-	baseURL := fmt.Sprintf("http://127.0.0.1:%s", port)
-	if err := waitForServer(ctx, baseURL, 30*time.Second); err != nil {
+	if err := testutil.WaitForServer(cfg.URL(), 60*time.Second); err != nil {
 		serverCancel()
 		t.Fatalf("server did not start: %v", err)
 	}
@@ -68,7 +57,7 @@ func TestServer_ContextCancellation(t *testing.T) {
 
 	// Verify DefraDB is stopped
 	mgr, err := defra.NewDockerManager(defra.DockerConfig{
-		ContainerName: containerName,
+		ContainerName: cfg.DefraConfig.ContainerName,
 	})
 	if err != nil {
 		t.Fatalf("failed to create manager: %v", err)
@@ -86,31 +75,22 @@ func TestServer_ContextCancellation(t *testing.T) {
 	}
 }
 
-// TestServer_DoubleStart tests that starting a running server returns an error.
 func TestServer_DoubleStart(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	// Register cleanup for test containers
-	_ = testutil.DockerClient(t)
+	cfg := testutil.NewServerConfig(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	dataPath := t.TempDir()
-	port := "18082"
-	containerName := testutil.UniqueContainerName(t, "double")
-
 	srv, err := New(Config{
-		Host:          "127.0.0.1",
-		Port:          port,
-		DefraDataPath: dataPath,
+		Host:          cfg.Host,
+		Port:          cfg.Port,
+		DefraDataPath: cfg.DefraDataPath,
 		DefraConfig: defra.DockerConfig{
-			ContainerName: containerName,
-			HostPort:      "19283",
-			Labels:        testutil.ContainerLabels(t),
+			ContainerName: cfg.DefraConfig.ContainerName,
+			HostPort:      cfg.DefraConfig.HostPort,
+			Labels:        cfg.DefraConfig.Labels,
 		},
+		Logger: cfg.Logger,
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -124,8 +104,7 @@ func TestServer_DoubleStart(t *testing.T) {
 	}()
 
 	// Wait for server
-	baseURL := fmt.Sprintf("http://127.0.0.1:%s", port)
-	if err := waitForServer(ctx, baseURL, 30*time.Second); err != nil {
+	if err := testutil.WaitForServer(cfg.URL(), 60*time.Second); err != nil {
 		t.Fatalf("server did not start: %v", err)
 	}
 
@@ -136,31 +115,18 @@ func TestServer_DoubleStart(t *testing.T) {
 	}
 }
 
-// TestServer_CleansUpOrphanedContainer tests that the server removes any existing
-// container before starting, ensuring a clean slate even after crashes.
 func TestServer_CleansUpOrphanedContainer(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	// Register cleanup for test containers
-	_ = testutil.DockerClient(t)
+	cfg := testutil.NewServerConfig(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	dataPath := t.TempDir()
-	port := "18083"
-	containerName := testutil.UniqueContainerName(t, "orphan")
-	defraPort := "19284"
-	labels := testutil.ContainerLabels(t)
-
 	// First, create an "orphaned" container (simulating a crash)
 	mgr, err := defra.NewDockerManager(defra.DockerConfig{
-		ContainerName: containerName,
-		DataPath:      dataPath,
-		HostPort:      defraPort,
-		Labels:        labels,
+		ContainerName: cfg.DefraConfig.ContainerName,
+		DataPath:      cfg.DefraDataPath,
+		HostPort:      cfg.DefraConfig.HostPort,
+		Labels:        cfg.DefraConfig.Labels,
 	})
 	if err != nil {
 		t.Fatalf("failed to create manager: %v", err)
@@ -182,14 +148,15 @@ func TestServer_CleansUpOrphanedContainer(t *testing.T) {
 
 	// Now start the server - it should clean up the orphan and start fresh
 	srv, err := New(Config{
-		Host:          "127.0.0.1",
-		Port:          port,
-		DefraDataPath: dataPath,
+		Host:          cfg.Host,
+		Port:          cfg.Port,
+		DefraDataPath: cfg.DefraDataPath,
 		DefraConfig: defra.DockerConfig{
-			ContainerName: containerName,
-			HostPort:      defraPort,
-			Labels:        labels,
+			ContainerName: cfg.DefraConfig.ContainerName,
+			HostPort:      cfg.DefraConfig.HostPort,
+			Labels:        cfg.DefraConfig.Labels,
 		},
+		Logger: cfg.Logger,
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -203,14 +170,13 @@ func TestServer_CleansUpOrphanedContainer(t *testing.T) {
 	}()
 
 	// Wait for server to be ready
-	baseURL := fmt.Sprintf("http://127.0.0.1:%s", port)
-	if err := waitForServer(ctx, baseURL, 30*time.Second); err != nil {
+	if err := testutil.WaitForServer(cfg.URL(), 60*time.Second); err != nil {
 		serverCancel()
 		t.Fatalf("server did not start after cleaning orphan: %v", err)
 	}
 
 	// Verify server is healthy
-	resp, err := http.Get(baseURL + "/ready")
+	resp, err := http.Get(cfg.URL() + "/ready")
 	if err != nil {
 		serverCancel()
 		t.Fatalf("ready check failed: %v", err)
