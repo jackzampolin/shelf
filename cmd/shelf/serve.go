@@ -50,11 +50,17 @@ Examples:
 			return err
 		}
 
+		// Ensure defradb data directory exists
+		defraDataPath := filepath.Join(h.Path(), "defradb")
+		if err := os.MkdirAll(defraDataPath, 0755); err != nil {
+			return err
+		}
+
 		// Create server
 		srv, err := server.New(server.Config{
 			Host:          serveHost,
 			Port:          servePort,
-			DefraDataPath: filepath.Join(h.Path(), "defradb"),
+			DefraDataPath: defraDataPath,
 			DefraConfig: defra.DockerConfig{
 				// Use defaults from defra package
 			},

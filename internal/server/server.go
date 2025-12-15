@@ -84,6 +84,7 @@ func New(cfg Config) (*Server, error) {
 
 // Start starts the server and DefraDB.
 // It blocks until the context is cancelled or an error occurs.
+// Any existing DefraDB container is removed first to ensure a clean start.
 func (s *Server) Start(ctx context.Context) error {
 	s.mu.Lock()
 	if s.running {
@@ -93,7 +94,13 @@ func (s *Server) Start(ctx context.Context) error {
 	s.running = true
 	s.mu.Unlock()
 
-	// Start DefraDB first
+	// Remove any existing container for a clean start
+	s.logger.Info("cleaning up existing DefraDB container")
+	if err := s.defraManager.Remove(ctx); err != nil {
+		s.logger.Warn("failed to remove existing container", "error", err)
+	}
+
+	// Start DefraDB
 	s.logger.Info("starting DefraDB")
 	if err := s.defraManager.Start(ctx); err != nil {
 		s.setNotRunning()
@@ -105,7 +112,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Verify DefraDB is healthy
 	if err := s.defraClient.HealthCheck(ctx); err != nil {
-		s.setNotRunning()
+		_ = s.shutdown() // Clean up DefraDB on failure
 		return fmt.Errorf("DefraDB health check failed: %w", err)
 	}
 	s.logger.Info("DefraDB is ready", "url", s.defraManager.URL())
@@ -126,6 +133,7 @@ func (s *Server) Start(ctx context.Context) error {
 		s.logger.Info("shutdown signal received")
 	case err := <-errCh:
 		if err != nil {
+			_ = s.shutdown() // Clean up DefraDB on HTTP error
 			return fmt.Errorf("HTTP server error: %w", err)
 		}
 	}
