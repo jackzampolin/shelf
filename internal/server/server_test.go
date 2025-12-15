@@ -278,6 +278,91 @@ func TestServer_DoubleStart(t *testing.T) {
 	}
 }
 
+// TestServer_CleansUpOrphanedContainer tests that the server removes any existing
+// container before starting, ensuring a clean slate even after crashes.
+func TestServer_CleansUpOrphanedContainer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	dataPath := t.TempDir()
+	port := "18083"
+	containerName := "shelf-defra-orphan-test"
+	defraPort := "19284"
+
+	// First, create an "orphaned" container (simulating a crash)
+	mgr, err := defra.NewDockerManager(defra.DockerConfig{
+		ContainerName: containerName,
+		DataPath:      dataPath,
+		HostPort:      defraPort,
+	})
+	if err != nil {
+		t.Fatalf("failed to create manager: %v", err)
+	}
+
+	// Start the container (this simulates an orphan from a previous crash)
+	if err := mgr.Start(ctx); err != nil {
+		mgr.Close()
+		t.Fatalf("failed to start orphan container: %v", err)
+	}
+
+	// Verify it's running
+	status, err := mgr.Status(ctx)
+	if err != nil || status != defra.StatusRunning {
+		mgr.Close()
+		t.Fatalf("orphan container not running: status=%s, err=%v", status, err)
+	}
+	mgr.Close()
+
+	// Now start the server - it should clean up the orphan and start fresh
+	srv, err := New(Config{
+		Host:          "127.0.0.1",
+		Port:          port,
+		DefraDataPath: dataPath,
+		DefraConfig: defra.DockerConfig{
+			ContainerName: containerName,
+			HostPort:      defraPort,
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	serverErr := make(chan error, 1)
+	serverCtx, serverCancel := context.WithCancel(ctx)
+
+	go func() {
+		serverErr <- srv.Start(serverCtx)
+	}()
+
+	// Wait for server to be ready
+	baseURL := fmt.Sprintf("http://127.0.0.1:%s", port)
+	if err := waitForServer(ctx, baseURL, 30*time.Second); err != nil {
+		serverCancel()
+		t.Fatalf("server did not start after cleaning orphan: %v", err)
+	}
+
+	// Verify server is healthy
+	resp, err := http.Get(baseURL + "/ready")
+	if err != nil {
+		serverCancel()
+		t.Fatalf("ready check failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		serverCancel()
+		t.Errorf("ready status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	// Clean shutdown
+	serverCancel()
+	<-serverErr
+}
+
 // waitForServer polls the server until it responds or timeout.
 func waitForServer(ctx context.Context, baseURL string, timeout time.Duration) error {
 	client := &http.Client{Timeout: 2 * time.Second}
@@ -318,6 +403,7 @@ func cleanupTestContainer(t *testing.T, dataPath string) {
 		"shelf-defra-server-test",
 		"shelf-defra-cancel-test",
 		"shelf-defra-double-test",
+		"shelf-defra-orphan-test",
 	}
 
 	for _, name := range containers {
