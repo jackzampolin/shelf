@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/schema"
 )
 
@@ -21,6 +22,7 @@ type Server struct {
 	httpServer   *http.Server
 	defraManager *defra.DockerManager
 	defraClient  *defra.Client
+	jobManager   *jobs.Manager
 	logger       *slog.Logger
 
 	mu      sync.RWMutex
@@ -125,6 +127,9 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("schema initialization failed: %w", err)
 	}
 
+	// Create job manager
+	s.jobManager = jobs.NewManager(s.defraClient, s.logger)
+
 	// Start HTTP server in goroutine
 	errCh := make(chan error, 1)
 	go func() {
@@ -194,6 +199,12 @@ func (s *Server) IsRunning() bool {
 // Returns nil if the server hasn't started yet.
 func (s *Server) DefraClient() *defra.Client {
 	return s.defraClient
+}
+
+// JobManager returns the job manager.
+// Returns nil if the server hasn't started yet.
+func (s *Server) JobManager() *jobs.Manager {
+	return s.jobManager
 }
 
 // Addr returns the server's listen address.
