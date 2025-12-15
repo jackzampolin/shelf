@@ -3,68 +3,207 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
-	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 const MockJobType = "mock"
 
 // MockJob is a simple job for testing the job system.
+// It creates N work units and tracks their completion.
 type MockJob struct {
-	Duration   time.Duration
-	ShouldFail bool
-	steps      atomic.Int32
-	totalSteps int32
+	id         string
+	workUnits  int
+	unitType   WorkUnitType
+	provider   string
+	shouldFail bool
+
+	mu        sync.Mutex
+	started   bool
+	completed int
+	results   []WorkResult
+}
+
+// MockJobConfig configures a mock job.
+type MockJobConfig struct {
+	ID         string       // Job ID (auto-generated if empty)
+	WorkUnits  int          // Number of work units to create
+	UnitType   WorkUnitType // Type of work units (default: LLM)
+	Provider   string       // Provider to use (empty = any)
+	ShouldFail bool         // If true, job fails after all work completes
 }
 
 // NewMockJob creates a new mock job with default settings.
-func NewMockJob() *MockJob {
-	return &MockJob{
-		Duration:   100 * time.Millisecond,
-		totalSteps: 5,
+func NewMockJob(cfg MockJobConfig) *MockJob {
+	id := cfg.ID
+	if id == "" {
+		id = uuid.New().String()
 	}
+	unitType := cfg.UnitType
+	if unitType == "" {
+		unitType = WorkUnitTypeLLM
+	}
+	workUnits := cfg.WorkUnits
+	if workUnits <= 0 {
+		workUnits = 5
+	}
+
+	return &MockJob{
+		id:         id,
+		workUnits:  workUnits,
+		unitType:   unitType,
+		provider:   cfg.Provider,
+		shouldFail: cfg.ShouldFail,
+	}
+}
+
+func (j *MockJob) ID() string {
+	return j.id
 }
 
 func (j *MockJob) Type() string {
 	return MockJobType
 }
 
-// Execute runs the mock job.
-// It simulates work by sleeping and updating progress.
-//
-// Note: This implementation is idempotent - it checks current step
-// and continues from there rather than starting fresh.
-func (j *MockJob) Execute(ctx context.Context) error {
-	deps := DepsFromContext(ctx)
-	if deps.Logger != nil {
-		deps.Logger.Info("mock job executing", "duration", j.Duration, "steps", j.totalSteps)
+// Start creates initial work units.
+func (j *MockJob) Start(ctx context.Context) ([]WorkUnit, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	if j.started {
+		return nil, fmt.Errorf("job already started")
 	}
+	j.started = true
 
-	stepDuration := j.Duration / time.Duration(j.totalSteps)
+	units := make([]WorkUnit, j.workUnits)
+	for i := 0; i < j.workUnits; i++ {
+		units[i] = WorkUnit{
+			ID:       fmt.Sprintf("%s-unit-%d", j.id, i),
+			Type:     j.unitType,
+			Provider: j.provider,
+			JobID:    j.id,
+		}
 
-	// Resume from current step (idempotent)
-	for j.steps.Load() < j.totalSteps {
-		select {
-		case <-time.After(stepDuration):
-			step := j.steps.Add(1)
-			if deps.Logger != nil {
-				deps.Logger.Debug("mock job progress", "step", step, "total", j.totalSteps)
+		// Add appropriate request based on type
+		if j.unitType == WorkUnitTypeLLM {
+			units[i].ChatRequest = &providers.ChatRequest{
+				Messages: []providers.Message{
+					{Role: "user", Content: fmt.Sprintf("Mock request %d", i)},
+				},
 			}
-		case <-ctx.Done():
-			return ctx.Err()
+		} else {
+			units[i].OCRRequest = &OCRWorkRequest{
+				Image:   []byte(fmt.Sprintf("mock-image-%d", i)),
+				PageNum: i + 1,
+			}
 		}
 	}
 
-	if j.ShouldFail {
-		return fmt.Errorf("mock job configured to fail")
-	}
-	return nil
+	return units, nil
 }
 
-// Status returns the current progress of the mock job.
+// OnComplete handles work unit completion.
+func (j *MockJob) OnComplete(ctx context.Context, result WorkResult) ([]WorkUnit, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	j.completed++
+	j.results = append(j.results, result)
+
+	// MockJob doesn't create follow-up work
+	return nil, nil
+}
+
+// Done returns true when all work is complete.
+func (j *MockJob) Done() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	return j.started && j.completed >= j.workUnits
+}
+
+// Status returns current progress.
 func (j *MockJob) Status(ctx context.Context) (map[string]string, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
 	return map[string]string{
-		"step":  fmt.Sprintf("%d", j.steps.Load()),
-		"total": fmt.Sprintf("%d", j.totalSteps),
+		"completed": fmt.Sprintf("%d", j.completed),
+		"total":     fmt.Sprintf("%d", j.workUnits),
+		"started":   fmt.Sprintf("%t", j.started),
+		"done":      fmt.Sprintf("%t", j.started && j.completed >= j.workUnits),
 	}, nil
 }
+
+// Results returns all collected results (for testing).
+func (j *MockJob) Results() []WorkResult {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.results
+}
+
+// Verify interface
+var _ Job = (*MockJob)(nil)
+
+// CountingJob is a simple job that counts work unit completions.
+// Useful for testing the scheduler.
+type CountingJob struct {
+	id        string
+	total     int
+	completed atomic.Int32
+	done      atomic.Bool
+}
+
+func NewCountingJob(id string, total int) *CountingJob {
+	return &CountingJob{
+		id:    id,
+		total: total,
+	}
+}
+
+func (j *CountingJob) ID() string   { return j.id }
+func (j *CountingJob) Type() string { return "counting" }
+
+func (j *CountingJob) Start(ctx context.Context) ([]WorkUnit, error) {
+	units := make([]WorkUnit, j.total)
+	for i := 0; i < j.total; i++ {
+		units[i] = WorkUnit{
+			ID:   fmt.Sprintf("%s-unit-%d", j.id, i),
+			Type: WorkUnitTypeLLM,
+			ChatRequest: &providers.ChatRequest{
+				Messages: []providers.Message{
+					{Role: "user", Content: "test"},
+				},
+			},
+		}
+	}
+	return units, nil
+}
+
+func (j *CountingJob) OnComplete(ctx context.Context, result WorkResult) ([]WorkUnit, error) {
+	j.completed.Add(1)
+	if int(j.completed.Load()) >= j.total {
+		j.done.Store(true)
+	}
+	return nil, nil
+}
+
+func (j *CountingJob) Done() bool {
+	return j.done.Load()
+}
+
+func (j *CountingJob) Status(ctx context.Context) (map[string]string, error) {
+	return map[string]string{
+		"completed": fmt.Sprintf("%d", j.completed.Load()),
+		"total":     fmt.Sprintf("%d", j.total),
+	}, nil
+}
+
+func (j *CountingJob) Completed() int {
+	return int(j.completed.Load())
+}
+
+var _ Job = (*CountingJob)(nil)

@@ -6,27 +6,71 @@ import (
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/providers"
 )
 
+// WorkUnitType distinguishes LLM from OCR work.
+type WorkUnitType string
+
+const (
+	WorkUnitTypeLLM WorkUnitType = "llm"
+	WorkUnitTypeOCR WorkUnitType = "ocr"
+)
+
+// WorkUnit is a single unit of work for a provider.
+type WorkUnit struct {
+	ID       string       // Unique identifier for this work unit
+	Type     WorkUnitType // "llm" or "ocr"
+	Provider string       // Specific provider name, or "" for any of this type
+	JobID    string       // Which job this belongs to
+	Priority int          // Higher = processed first
+
+	// Request data (one of these will be set based on Type)
+	ChatRequest *providers.ChatRequest
+	OCRRequest  *OCRWorkRequest
+}
+
+// OCRWorkRequest contains the data needed for an OCR work unit.
+type OCRWorkRequest struct {
+	Image   []byte
+	PageNum int
+}
+
+// WorkResult is the result of a completed work unit.
+type WorkResult struct {
+	WorkUnitID string
+	Success    bool
+	Error      error
+
+	// Result data (one of these will be set based on work unit type)
+	ChatResult *providers.ChatResult
+	OCRResult  *providers.OCRResult
+}
+
 // Job is the interface that all job types must implement.
+// Jobs dynamically create work units and react to their completion.
 type Job interface {
+	// ID returns the unique job identifier.
+	ID() string
+
 	// Type returns the job type identifier.
 	Type() string
 
-	// Execute runs the job. It should respect context cancellation.
-	// Dependencies are retrieved via DepsFromContext(ctx).
-	//
-	// IMPORTANT: Execute must be idempotent. Jobs may be resumed after
-	// server restarts, crashes, or failures. The implementation must:
-	// - Check existing state before starting work
-	// - Handle partial completion gracefully
-	// - Not assume a clean starting state
-	// - Use the job's metadata to track progress
-	Execute(ctx context.Context) error
+	// Start initializes the job and returns the initial work units to enqueue.
+	// Called once when the job begins execution.
+	Start(ctx context.Context) ([]WorkUnit, error)
+
+	// OnComplete is called when a work unit finishes.
+	// Returns NEW work units to enqueue (e.g., LLM work after OCR completes).
+	// This is how jobs implement multi-phase workflows.
+	OnComplete(ctx context.Context, result WorkResult) ([]WorkUnit, error)
+
+	// Done returns true when the job has no more pending work units
+	// and all work has completed.
+	Done() bool
 
 	// Status returns the current status of the job as key-value pairs.
 	// This allows jobs to report progress, current step, items processed, etc.
-	// Returns nil map if no status to report.
 	Status(ctx context.Context) (map[string]string, error)
 }
 
