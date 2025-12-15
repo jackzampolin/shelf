@@ -1,15 +1,19 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+# Go
+*.exe
+*.exe~
+*.dll
 *.so
-.Python
+*.dylib
+*.test
+*.out
 
-# Virtual environments
-.venv/
-venv/
-ENV/
-env/
+# Build artifacts
+build/
+dist/
+
+# Go workspace
+go.work
+go.work.sum
 
 # IDE
 .vscode/
@@ -26,36 +30,16 @@ Thumbs.db
 .env
 .env.local
 
-# Build artifacts
-build/
-dist/
-*.egg-info/
-
 # Project-specific
 .claude/.env
 
 # Log files
 *.log
 
-# Validation data - exclude full text extractions
-tests/fixtures/**/extracted_text/
-tests/fixtures/**/fulltext_*.txt
-tests/validation_reports/
+# Coverage
+coverage.out
+coverage.html
 
-# Old extract-toc fixtures (will be removed) - exclude copyrighted book content
-tests/fixtures/extract_toc/*/
-!tests/fixtures/extract_toc/README.md
-!tests/fixtures/extract_toc/setup_ground_truth.sh
-!tests/fixtures/extract_toc/__init__.py
-
-# New expected results - INCLUDE these (small JSON files only)
-# These are ground truth test expectations, not copyrighted content
-!tests/fixtures/expected/
-
-# Test results tracking - gitignored for local iteration
-# Results are saved with git metadata for correlation
+# Test artifacts
 test_results/
-
-# Test outputs - temporary workspaces for running tests
-# Tests read from library, write outputs here (cleaned after tests)
 test_outputs/
