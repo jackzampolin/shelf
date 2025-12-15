@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+
+	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // JobFactory creates a Job instance from stored metadata.
@@ -426,4 +428,42 @@ func (s *Scheduler) ActiveJobs() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.jobs)
+}
+
+// WorkerLoad returns rate limiter status for all workers.
+func (s *Scheduler) WorkerLoad() map[string]providers.RateLimiterStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	load := make(map[string]providers.RateLimiterStatus, len(s.workers))
+	for name, w := range s.workers {
+		load[name] = w.RateLimiterStatus()
+	}
+	return load
+}
+
+// QueueStats returns queue depth broken down by work unit type.
+func (s *Scheduler) QueueStats() QueueStatus {
+	s.mu.RLock()
+	pendingByJob := make(map[string]int, len(s.pending))
+	for k, v := range s.pending {
+		pendingByJob[k] = v
+	}
+	s.mu.RUnlock()
+
+	total := len(s.queue)
+	return QueueStatus{
+		Total:        total,
+		Capacity:     cap(s.queue),
+		Utilization:  float64(total) / float64(cap(s.queue)),
+		PendingByJob: pendingByJob,
+	}
+}
+
+// QueueStatus reports current queue state.
+type QueueStatus struct {
+	Total        int            `json:"total"`
+	Capacity     int            `json:"capacity"`
+	Utilization  float64        `json:"utilization"`
+	PendingByJob map[string]int `json:"pending_by_job"`
 }

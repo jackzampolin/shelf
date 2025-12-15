@@ -211,3 +211,63 @@ func TestScheduler_ListWorkers(t *testing.T) {
 		t.Errorf("got %d workers, want 2", len(names))
 	}
 }
+
+// TestScheduler_WorkerLoad tests rate limiter status for all workers.
+func TestScheduler_WorkerLoad(t *testing.T) {
+	scheduler := NewScheduler(SchedulerConfig{})
+
+	llmClient := providers.NewMockClient()
+	ocrProvider := providers.NewMockOCRProvider()
+
+	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm-1", LLMClient: llmClient, RPM: 60})
+	ocrWorker, _ := NewWorker(WorkerConfig{Name: "ocr-1", OCRProvider: ocrProvider})
+
+	scheduler.RegisterWorker(llmWorker)
+	scheduler.RegisterWorker(ocrWorker)
+
+	load := scheduler.WorkerLoad()
+
+	if len(load) != 2 {
+		t.Errorf("got %d workers in load, want 2", len(load))
+	}
+
+	llmLoad, ok := load["llm-1"]
+	if !ok {
+		t.Error("llm-1 not in load")
+	}
+	if llmLoad.TokensLimit != 60 {
+		t.Errorf("llm-1 TokensLimit = %d, want 60", llmLoad.TokensLimit)
+	}
+}
+
+// TestScheduler_QueueStats tests queue status reporting.
+func TestScheduler_QueueStats(t *testing.T) {
+	scheduler := NewScheduler(SchedulerConfig{QueueSize: 100})
+
+	stats := scheduler.QueueStats()
+	if stats.Capacity != 100 {
+		t.Errorf("Capacity = %d, want 100", stats.Capacity)
+	}
+	if stats.Total != 0 {
+		t.Errorf("Total = %d, want 0", stats.Total)
+	}
+
+	// Add a worker and submit a job (don't start workers so items stay queued)
+	llmClient := providers.NewMockClient()
+	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient})
+	scheduler.RegisterWorker(llmWorker)
+
+	job := NewCountingJob("queue-test", 5)
+	scheduler.Submit(context.Background(), job)
+
+	stats = scheduler.QueueStats()
+	if stats.Total != 5 {
+		t.Errorf("Total = %d, want 5", stats.Total)
+	}
+	if stats.PendingByJob["queue-test"] != 5 {
+		t.Errorf("PendingByJob[queue-test] = %d, want 5", stats.PendingByJob["queue-test"])
+	}
+	if stats.Utilization != 0.05 {
+		t.Errorf("Utilization = %f, want 0.05", stats.Utilization)
+	}
+}
