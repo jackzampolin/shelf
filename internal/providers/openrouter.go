@@ -166,7 +166,14 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		case string:
 			content = c
 		default:
-			b, _ := json.Marshal(c)
+			b, err := json.Marshal(c)
+			if err != nil {
+				result.Success = false
+				result.ErrorType = "content_marshal_error"
+				result.ErrorMessage = fmt.Sprintf("failed to marshal content: %v", err)
+				result.TotalTime = time.Since(start)
+				return result, fmt.Errorf("failed to marshal content: %w", err)
+			}
 			content = string(b)
 		}
 	}

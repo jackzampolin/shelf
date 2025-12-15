@@ -103,7 +103,10 @@ func (s *Scheduler) ListWorkers() []string {
 // Creates a persistent record in DefraDB via Manager.
 func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 	// Get initial metadata from job status
-	metadata, _ := job.Status(ctx)
+	metadata, err := job.Status(ctx)
+	if err != nil {
+		s.logger.Warn("failed to get initial job status", "job_id", job.ID(), "error", err)
+	}
 	metadataMap := make(map[string]any)
 	for k, v := range metadata {
 		metadataMap[k] = v

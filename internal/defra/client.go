@@ -147,7 +147,10 @@ func (c *Client) Mutation(ctx context.Context, mutation string, variables map[st
 
 // Create creates a document in a collection.
 func (c *Client) Create(ctx context.Context, collection string, input map[string]any) (string, error) {
-	inputGQL := mapToGraphQLInput(input)
+	inputGQL, err := mapToGraphQLInput(input)
+	if err != nil {
+		return "", fmt.Errorf("failed to build input: %w", err)
+	}
 	query := fmt.Sprintf(`mutation { create_%s(input: %s) { _docID } }`, collection, inputGQL)
 
 	resp, err := c.Execute(ctx, query, nil)
@@ -172,7 +175,7 @@ func (c *Client) Create(ctx context.Context, collection string, input map[string
 }
 
 // mapToGraphQLInput converts a map to GraphQL input format.
-func mapToGraphQLInput(input map[string]any) string {
+func mapToGraphQLInput(input map[string]any) (string, error) {
 	var parts []string
 	for k, v := range input {
 		var valStr string
@@ -184,10 +187,13 @@ func mapToGraphQLInput(input map[string]any) string {
 		case bool:
 			valStr = fmt.Sprintf("%v", val)
 		default:
-			b, _ := json.Marshal(val)
+			b, err := json.Marshal(val)
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal value for key %q: %w", k, err)
+			}
 			valStr = string(b)
 		}
 		parts = append(parts, fmt.Sprintf("%s: %s", k, valStr))
 	}
-	return "{" + strings.Join(parts, ", ") + "}"
+	return "{" + strings.Join(parts, ", ") + "}", nil
 }

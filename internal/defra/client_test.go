@@ -265,7 +265,10 @@ func TestMapToGraphQLInput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := mapToGraphQLInput(tt.input)
+			got, err := mapToGraphQLInput(tt.input)
+			if err != nil {
+				t.Fatalf("mapToGraphQLInput() error = %v", err)
+			}
 			found := false
 			for _, want := range tt.want {
 				if got == want {

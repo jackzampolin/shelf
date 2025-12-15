@@ -78,7 +78,10 @@ func (m *Manager) createJob(ctx context.Context, record *Record) (string, error)
 		"created_at": record.CreatedAt.Format(time.RFC3339),
 	}
 	if record.Metadata != nil {
-		metaJSON, _ := json.Marshal(record.Metadata)
+		metaJSON, err := json.Marshal(record.Metadata)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal metadata: %w", err)
+		}
 		input["metadata"] = string(metaJSON)
 	}
 
