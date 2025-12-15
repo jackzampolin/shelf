@@ -33,7 +33,7 @@ func applySchema(ctx context.Context, client *defra.Client, s Schema, logger *sl
 	if err != nil {
 		// Check if it's an "already exists" error - that's fine
 		if isAlreadyExistsError(err) {
-			logger.Debug("schema already exists", "name", s.Name)
+			logger.Info("schema already exists", "name", s.Name)
 			return nil
 		}
 		return fmt.Errorf("failed to add schema %s: %w", s.Name, err)
