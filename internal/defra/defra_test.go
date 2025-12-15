@@ -348,15 +348,11 @@ func TestDockerManager_URL(t *testing.T) {
 // =============================================================================
 
 // TestDockerManager_Integration tests the full lifecycle.
-// This test is skipped unless SHELF_TEST_DOCKER=1 is set.
+// Requires Docker to be running. Use -short to skip.
 func TestDockerManager_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-
-	// Skip if Docker integration tests not enabled
-	// Run with: SHELF_TEST_DOCKER=1 go test -v ./internal/defra/...
-	t.Skip("integration test - run with SHELF_TEST_DOCKER=1")
 
 	ctx := context.Background()
 	dataPath := t.TempDir()
@@ -465,12 +461,11 @@ func TestDockerManager_Integration(t *testing.T) {
 }
 
 // TestDockerManager_ContextCancellation tests that operations respect context.
+// Requires Docker to be running. Use -short to skip.
 func TestDockerManager_ContextCancellation_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-
-	t.Skip("integration test - run with SHELF_TEST_DOCKER=1")
 
 	dataPath := t.TempDir()
 
@@ -511,12 +506,11 @@ func TestDockerManager_ContextCancellation_Integration(t *testing.T) {
 }
 
 // TestDockerManager_Logs tests log retrieval.
+// Requires Docker to be running. Use -short to skip.
 func TestDockerManager_Logs_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-
-	t.Skip("integration test - run with SHELF_TEST_DOCKER=1")
 
 	ctx := context.Background()
 	dataPath := t.TempDir()
@@ -552,12 +546,11 @@ func TestDockerManager_Logs_Integration(t *testing.T) {
 }
 
 // TestDockerManager_Logs_NotFound tests logs when container doesn't exist.
+// Requires Docker to be running. Use -short to skip.
 func TestDockerManager_Logs_NotFound_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
-
-	t.Skip("integration test - run with SHELF_TEST_DOCKER=1")
 
 	ctx := context.Background()
 
