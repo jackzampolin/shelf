@@ -1,4 +1,4 @@
-# 3. Cost Tracking as First-Class Architectural Concern
+# 2. Cost Tracking as First-Class Architectural Concern
 
 **Date:** 2025-10-01
 
@@ -50,7 +50,15 @@ These numbers directly inform decisions.
 
 ## Implementation
 
-Record costs after every API call (MetricsManager). Display in CLI (`shelf.py book <id> info`). Document model costs in config. CLAUDE.md requires approval for expensive operations.
+**Go implementation:**
+- Every LLM/OCR call returns cost in result (ChatResult.CostUSD, OCRResult.CostUSD)
+- Jobs track cumulative costs
+- DefraDB stores cost history for audit
+- CLAUDE.md requires approval for expensive operations
+
+**Future:**
+- Dashboard showing cost per book/stage
+- Budget limits and alerts
 
 ## Consequences
 

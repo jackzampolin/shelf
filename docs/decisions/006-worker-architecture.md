@@ -43,15 +43,25 @@ Go uses a job system:
 
 ## Worker Pattern
 
-Each provider runs as a dedicated goroutine with its own rate limiter:
+Each provider is wrapped in a Worker with its own rate limiter:
 
 ```go
-type Worker interface {
-    Run(ctx context.Context, jobs <-chan Job, results chan<- Result)
+// Worker wraps a provider (LLM or OCR) with rate limiting
+type Worker struct {
+    llmClient   providers.LLMClient
+    ocrProvider providers.OCRProvider
+    rateLimiter *providers.RateLimiter
 }
 
-// Rate limiting per provider, not global
-limiter := rate.NewLimiter(rate.Limit(provider.RateLimit), 1)
+// Process executes a work unit, respecting rate limits
+func (w *Worker) Process(ctx context.Context, unit *WorkUnit) WorkResult
+
+// Providers define their own rate limits
+type LLMClient interface {
+    RequestsPerMinute() int  // RPM pulled at worker init
+    MaxRetries() int
+    RetryDelayBase() time.Duration
+}
 ```
 
 ## Job Lifecycle

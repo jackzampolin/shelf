@@ -21,15 +21,15 @@ Large files with mixed concepts create noise:
 
 Every choice about structure, naming, comments answers: **"Does this make the codebase easier to understand quickly?"**
 
-This principle informs ADR 001 (Think Data First), ADR 002 (Stage Independence), ADR 003 (Cost Tracking).
+This principle informs ADR 001 (Cordon Sanitaire), ADR 002 (Cost Tracking), ADR 005 (DefraDB Source of Truth).
 
 ## The Practices
 
 This principle manifests in specific practices (each documented in detail):
 
-- **ADR 005: Clean Working Tree** - Ideas in GitHub, not TODO comments
-- **ADR 006: File Organization** - Small files, clear purpose (one concept per file)
-- **ADR 007: Naming Conventions** - Filenames teach before you open them
+- **ADR 001: Cordon Sanitaire** - Ideas in GitHub, not TODO comments
+- **ADR 003: File Organization** - Small files, clear purpose (one concept per file)
+- **ADR 004: Naming Conventions** - Filenames teach before you open them
 - **Comments policy** - Minimal (~10 in entire codebase), only for non-obvious WHY
 - **Abstraction boundaries** - See ADR 002 (Stage Independence)
 
@@ -58,12 +58,12 @@ Together, these create an environment optimized for rapid context acquisition.
 
 ## How This Informs Other ADRs
 
-- **ADR 001:** Files on disk = ground truth = transparent
-- **ADR 002:** Clear boundaries = small composable units
-- **ADR 003:** Separate MetricsManager = visible costs
-- **ADR 005:** Working tree cleanliness
-- **ADR 006:** File splitting decisions
-- **ADR 007:** Naming consistency
+- **ADR 001:** Cordon Sanitaire = working tree cleanliness
+- **ADR 002:** Cost tracking = visible costs
+- **ADR 003:** File organization = small composable units
+- **ADR 004:** Naming conventions = consistency
+- **ADR 005:** DefraDB = source of truth
+- **ADR 006:** Worker architecture = managed work
 
 ## Consequences
 

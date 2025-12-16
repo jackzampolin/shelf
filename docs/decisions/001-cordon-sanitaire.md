@@ -1,4 +1,4 @@
-# 8. Cordon Sanitaire (Temporal Boundaries)
+# 1. Cordon Sanitaire (Temporal Boundaries)
 
 **Date:** 2025-12-15
 

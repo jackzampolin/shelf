@@ -12,18 +12,22 @@
 
 ```
 internal/
-├── config/           # One package per concern
-│   ├── config.go     # Manager, loading
+├── config/           # Configuration management
+│   ├── config.go     # Manager, loading, hot-reload
 │   └── schema.go     # Types, defaults
-├── providers/
-│   ├── worker.go     # Interface + pool
-│   ├── openrouter.go
-│   └── mistral.go    # One file per provider
-└── pipeline/
-    └── stages/
-        └── ocr/      # One package per stage
-            ├── stage.go
-            └── processor.go
+├── providers/        # LLM and OCR provider clients
+│   ├── provider.go   # Interfaces (LLMClient, OCRProvider)
+│   ├── openrouter.go # One file per provider
+│   ├── mistral.go
+│   └── registry.go   # Provider registry
+├── jobs/             # Job system
+│   ├── job.go        # Job interface, work units
+│   ├── worker.go     # Worker wrapping providers
+│   ├── scheduler.go  # Job orchestration
+│   └── manager.go    # DefraDB persistence
+└── server/           # HTTP API
+    ├── server.go
+    └── routes.go
 ```
 
 ## File Size Guidelines
