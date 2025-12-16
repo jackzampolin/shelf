@@ -19,6 +19,11 @@ type MockClient struct {
 	ResponseText string
 	ResponseJSON json.RawMessage
 
+	// Rate limiting
+	RPM        int
+	Retries    int
+	RetryDelay time.Duration
+
 	// State
 	requestCount atomic.Int64
 }
@@ -28,12 +33,30 @@ func NewMockClient() *MockClient {
 	return &MockClient{
 		Latency:      10 * time.Millisecond,
 		ResponseText: "mock response",
+		RPM:          60,
+		Retries:      3,
+		RetryDelay:   time.Second,
 	}
 }
 
 // Name returns the client identifier.
 func (c *MockClient) Name() string {
 	return MockClientName
+}
+
+// RequestsPerMinute returns the RPM limit for rate limiting.
+func (c *MockClient) RequestsPerMinute() int {
+	return c.RPM
+}
+
+// MaxRetries returns the maximum retry attempts.
+func (c *MockClient) MaxRetries() int {
+	return c.Retries
+}
+
+// RetryDelayBase returns the base delay between retries.
+func (c *MockClient) RetryDelayBase() time.Duration {
+	return c.RetryDelay
 }
 
 // Chat sends a mock chat request.

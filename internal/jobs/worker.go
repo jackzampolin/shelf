@@ -59,13 +59,16 @@ func NewWorker(cfg WorkerConfig) (*Worker, error) {
 		logger: logger.With("worker", cfg.Name),
 	}
 
-	// Determine type and RPM
+	// Determine type and RPM - pull from provider if not overridden in config
 	rpm := cfg.RPM
 	if cfg.LLMClient != nil {
 		w.workerType = WorkerTypeLLM
 		w.llmClient = cfg.LLMClient
 		if rpm == 0 {
-			rpm = 60 // Default for LLM
+			rpm = cfg.LLMClient.RequestsPerMinute()
+			if rpm == 0 {
+				rpm = 60 // Fallback default
+			}
 		}
 		if cfg.Name == "" {
 			w.name = cfg.LLMClient.Name()
@@ -77,7 +80,7 @@ func NewWorker(cfg WorkerConfig) (*Worker, error) {
 			// Convert RPS to RPM
 			rpm = int(cfg.OCRProvider.RequestsPerSecond() * 60)
 			if rpm == 0 {
-				rpm = 60
+				rpm = 60 // Fallback default
 			}
 		}
 		if cfg.Name == "" {

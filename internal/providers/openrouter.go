@@ -24,6 +24,10 @@ type OpenRouterConfig struct {
 	BaseURL      string
 	DefaultModel string
 	Timeout      time.Duration
+	// Rate limiting
+	RPM        int           // Requests per minute (default: 60)
+	MaxRetries int           // Max retry attempts (default: 3)
+	RetryDelay time.Duration // Base delay between retries (default: 1s)
 }
 
 // OpenRouterClient implements LLMClient using the OpenRouter API.
@@ -32,6 +36,10 @@ type OpenRouterClient struct {
 	baseURL      string
 	defaultModel string
 	client       *http.Client
+	// Rate limiting
+	rpm        int
+	maxRetries int
+	retryDelay time.Duration
 }
 
 // NewOpenRouterClient creates a new OpenRouter client.
@@ -45,6 +53,15 @@ func NewOpenRouterClient(cfg OpenRouterConfig) *OpenRouterClient {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 120 * time.Second
 	}
+	if cfg.RPM == 0 {
+		cfg.RPM = 60
+	}
+	if cfg.MaxRetries == 0 {
+		cfg.MaxRetries = 3
+	}
+	if cfg.RetryDelay == 0 {
+		cfg.RetryDelay = time.Second
+	}
 
 	return &OpenRouterClient{
 		apiKey:       cfg.APIKey,
@@ -53,12 +70,30 @@ func NewOpenRouterClient(cfg OpenRouterConfig) *OpenRouterClient {
 		client: &http.Client{
 			Timeout: cfg.Timeout,
 		},
+		rpm:        cfg.RPM,
+		maxRetries: cfg.MaxRetries,
+		retryDelay: cfg.RetryDelay,
 	}
 }
 
 // Name returns the client identifier.
 func (c *OpenRouterClient) Name() string {
 	return OpenRouterName
+}
+
+// RequestsPerMinute returns the RPM limit for rate limiting.
+func (c *OpenRouterClient) RequestsPerMinute() int {
+	return c.rpm
+}
+
+// MaxRetries returns the maximum retry attempts.
+func (c *OpenRouterClient) MaxRetries() int {
+	return c.maxRetries
+}
+
+// RetryDelayBase returns the base delay between retries.
+func (c *OpenRouterClient) RetryDelayBase() time.Duration {
+	return c.retryDelay
 }
 
 // Chat sends a chat completion request.

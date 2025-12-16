@@ -17,6 +17,11 @@ type LLMClient interface {
 
 	// Name returns the client identifier (e.g., "openrouter").
 	Name() string
+
+	// Rate limiting properties (pulled by Worker at initialization)
+	RequestsPerMinute() int // RPM - requests per minute
+	MaxRetries() int
+	RetryDelayBase() time.Duration
 }
 
 // OCRProvider handles image-to-text extraction.
