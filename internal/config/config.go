@@ -9,6 +9,8 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
+
+	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // Manager handles loading and hot-reloading configuration.
@@ -126,41 +128,16 @@ func ResolveEnvVars(value string) string {
 	})
 }
 
-// ProviderRegistryConfig holds resolved provider configuration for the registry.
-// This is separate from providers.RegistryConfig to avoid circular imports.
-type ProviderRegistryConfig struct {
-	OCRProviders map[string]ResolvedOCRProvider
-	LLMProviders map[string]ResolvedLLMProvider
-}
-
-// ResolvedOCRProvider has the API key resolved from environment.
-type ResolvedOCRProvider struct {
-	Type      string
-	Model     string
-	APIKey    string
-	RateLimit float64
-	Enabled   bool
-}
-
-// ResolvedLLMProvider has the API key resolved from environment.
-type ResolvedLLMProvider struct {
-	Type      string
-	Model     string
-	APIKey    string
-	RateLimit float64
-	Enabled   bool
-}
-
 // ToProviderRegistryConfig converts the config to a format suitable for providers.Registry.
 // It resolves all ${ENV_VAR} references in API keys.
-func (c *Config) ToProviderRegistryConfig() ProviderRegistryConfig {
-	cfg := ProviderRegistryConfig{
-		OCRProviders: make(map[string]ResolvedOCRProvider),
-		LLMProviders: make(map[string]ResolvedLLMProvider),
+func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
+	cfg := providers.RegistryConfig{
+		OCRProviders: make(map[string]providers.OCRProviderConfig),
+		LLMProviders: make(map[string]providers.LLMProviderConfig),
 	}
 
 	for name, ocr := range c.OCRProviders {
-		cfg.OCRProviders[name] = ResolvedOCRProvider{
+		cfg.OCRProviders[name] = providers.OCRProviderConfig{
 			Type:      ocr.Type,
 			Model:     ocr.Model,
 			APIKey:    ResolveEnvVars(ocr.APIKey),
@@ -170,7 +147,7 @@ func (c *Config) ToProviderRegistryConfig() ProviderRegistryConfig {
 	}
 
 	for name, llm := range c.LLMProviders {
-		cfg.LLMProviders[name] = ResolvedLLMProvider{
+		cfg.LLMProviders[name] = providers.LLMProviderConfig{
 			Type:      llm.Type,
 			Model:     llm.Model,
 			APIKey:    ResolveEnvVars(llm.APIKey),

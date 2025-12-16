@@ -12,10 +12,10 @@ import (
 func TestMockJob(t *testing.T) {
 	t.Run("start creates work units", func(t *testing.T) {
 		job := NewMockJob(MockJobConfig{
-			ID:        "test-job",
 			WorkUnits: 3,
 			UnitType:  WorkUnitTypeLLM,
 		})
+		job.SetRecordID("test-job") // Set ID for testing
 
 		units, err := job.Start(context.Background())
 		if err != nil {
@@ -52,9 +52,9 @@ func TestMockJob(t *testing.T) {
 
 	t.Run("tracks completion", func(t *testing.T) {
 		job := NewMockJob(MockJobConfig{
-			ID:        "test-job",
 			WorkUnits: 3,
 		})
+		job.SetRecordID("test-job") // Set ID for testing
 
 		units, _ := job.Start(context.Background())
 
@@ -259,7 +259,7 @@ func TestScheduler(t *testing.T) {
 		scheduler.RegisterWorker(worker)
 
 		// Create and submit a job
-		job := NewCountingJob("test-job", 5)
+		job := NewCountingJob(5)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -306,7 +306,6 @@ func TestScheduler(t *testing.T) {
 
 		// Create job that targets specific provider
 		job := NewMockJob(MockJobConfig{
-			ID:        "test-job",
 			WorkUnits: 3,
 			Provider:  "llm-2", // Target specific worker
 		})

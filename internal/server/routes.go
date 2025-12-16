@@ -2,24 +2,36 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/jackzampolin/shelf/internal/jobs"
 )
 
 // registerRoutes sets up all HTTP routes.
 func (s *Server) registerRoutes(mux *http.ServeMux) {
-	// Health endpoints
+	// Health endpoints (always available)
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /ready", s.handleReady)
 	mux.HandleFunc("GET /status", s.handleStatus)
 
-	// Job endpoints
-	mux.HandleFunc("POST /api/jobs", s.handleCreateJob)
-	mux.HandleFunc("GET /api/jobs", s.handleListJobs)
-	mux.HandleFunc("GET /api/jobs/{id}", s.handleGetJob)
-	mux.HandleFunc("PATCH /api/jobs/{id}", s.handleUpdateJob)
+	// Job endpoints (require initialization)
+	mux.HandleFunc("POST /api/jobs", s.requireInit(s.handleCreateJob))
+	mux.HandleFunc("GET /api/jobs", s.requireInit(s.handleListJobs))
+	mux.HandleFunc("GET /api/jobs/{id}", s.requireInit(s.handleGetJob))
+	mux.HandleFunc("PATCH /api/jobs/{id}", s.requireInit(s.handleUpdateJob))
+}
+
+// requireInit is middleware that ensures the server is fully initialized.
+// Returns 503 Service Unavailable if DefraDB or job manager aren't ready.
+func (s *Server) requireInit(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.defraClient == nil || s.jobManager == nil {
+			writeError(w, http.StatusServiceUnavailable, "server not fully initialized")
+			return
+		}
+		next(w, r)
+	}
 }
 
 // HealthResponse is the response for health check endpoints.
@@ -127,11 +139,6 @@ type CreateJobResponse struct {
 
 // handleCreateJob creates a new job.
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
-	if s.jobManager == nil {
-		writeError(w, http.StatusServiceUnavailable, "job manager not initialized")
-		return
-	}
-
 	var req CreateJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -154,11 +161,6 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 // handleGetJob returns a job by ID.
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
-	if s.jobManager == nil {
-		writeError(w, http.StatusServiceUnavailable, "job manager not initialized")
-		return
-	}
-
 	id := r.PathValue("id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "job id is required")
@@ -167,7 +169,7 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 
 	job, err := s.jobManager.Get(r.Context(), id)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, jobs.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "job not found")
 			return
 		}
@@ -185,11 +187,6 @@ type ListJobsResponse struct {
 
 // handleListJobs returns jobs matching optional filters.
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
-	if s.jobManager == nil {
-		writeError(w, http.StatusServiceUnavailable, "job manager not initialized")
-		return
-	}
-
 	filter := jobs.ListFilter{
 		Status:  jobs.Status(r.URL.Query().Get("status")),
 		JobType: r.URL.Query().Get("job_type"),
@@ -213,11 +210,6 @@ type UpdateJobRequest struct {
 
 // handleUpdateJob updates a job's status or metadata.
 func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
-	if s.jobManager == nil {
-		writeError(w, http.StatusServiceUnavailable, "job manager not initialized")
-		return
-	}
-
 	id := r.PathValue("id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "job id is required")

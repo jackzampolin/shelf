@@ -52,7 +52,16 @@ Examples:
 		}
 
 		// Load configuration
-		configFile := filepath.Join(h.Path(), "config.yaml")
+		// Priority: --config flag > ./config.yaml > ~/.shelf/config.yaml
+		configFile := cfgFile
+		if configFile == "" {
+			// Check local directory first
+			if _, err := os.Stat("config.yaml"); err == nil {
+				configFile = "config.yaml"
+			} else {
+				configFile = filepath.Join(h.Path(), "config.yaml")
+			}
+		}
 		cfgMgr, err := config.NewManager(configFile)
 		if err != nil {
 			logger.Warn("config not loaded, using defaults", "error", err)
@@ -68,14 +77,29 @@ Examples:
 			return err
 		}
 
+		// Build DefraDB config from loaded config (if available)
+		defraConfig := defra.DockerConfig{
+			DataPath: defraDataPath,
+		}
+		if cfgMgr != nil {
+			cfg := cfgMgr.Get()
+			if cfg.Defra.ContainerName != "" {
+				defraConfig.ContainerName = cfg.Defra.ContainerName
+			}
+			if cfg.Defra.Image != "" {
+				defraConfig.Image = cfg.Defra.Image
+			}
+			if cfg.Defra.Port != "" {
+				defraConfig.HostPort = cfg.Defra.Port
+			}
+		}
+
 		// Create server
 		srv, err := server.New(server.Config{
 			Host:          serveHost,
 			Port:          servePort,
 			DefraDataPath: defraDataPath,
-			DefraConfig: defra.DockerConfig{
-				// Use defaults from defra package
-			},
+			DefraConfig:   defraConfig,
 			ConfigManager: cfgMgr,
 			Logger:        logger,
 		})

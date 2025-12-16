@@ -19,10 +19,10 @@ import (
 func TestMultiPhaseJob_Workflow(t *testing.T) {
 	t.Run("creates LLM units as OCR completes", func(t *testing.T) {
 		job := NewMultiPhaseJob(MultiPhaseJobConfig{
-			ID:        "test-multi",
 			OCRPages:  3,
 			LLMPerOCR: 2,
 		})
+		job.SetRecordID("test-multi") // Set ID for testing
 
 		// Start job - should get OCR units
 		units, err := job.Start(context.Background())
@@ -149,7 +149,6 @@ func TestScheduler_MultiPhaseWorkflow(t *testing.T) {
 
 	// Create multi-phase job: 3 OCR pages, 1 LLM per OCR = 6 total units
 	job := NewMultiPhaseJob(MultiPhaseJobConfig{
-		ID:        "multi-test",
 		OCRPages:  3,
 		LLMPerOCR: 1,
 	})
@@ -210,7 +209,6 @@ func TestScheduler_RoutesToCorrectWorkerType(t *testing.T) {
 
 	// Create job that targets specific providers
 	job := NewMultiPhaseJob(MultiPhaseJobConfig{
-		ID:          "routed-job",
 		OCRPages:    2,
 		LLMPerOCR:   1,
 		OCRProvider: "ocr-2",
@@ -374,7 +372,6 @@ func TestScheduler_WithManager(t *testing.T) {
 	scheduler.RegisterWorker(llmWorker)
 
 	job := NewMultiPhaseJob(MultiPhaseJobConfig{
-		ID:        "persist-test",
 		OCRPages:  2,
 		LLMPerOCR: 1,
 	})
@@ -419,7 +416,6 @@ func TestScheduler_PartialFailure(t *testing.T) {
 	scheduler.RegisterWorker(llmWorker)
 
 	job := NewMultiPhaseJob(MultiPhaseJobConfig{
-		ID:        "partial-fail",
 		OCRPages:  3,
 		LLMPerOCR: 1,
 	})

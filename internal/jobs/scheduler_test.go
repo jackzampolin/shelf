@@ -23,7 +23,6 @@ func TestScheduler_NoWorkerForType(t *testing.T) {
 
 	// Create job that needs OCR
 	job := NewMultiPhaseJob(MultiPhaseJobConfig{
-		ID:       "no-ocr-worker",
 		OCRPages: 2,
 	})
 
@@ -54,7 +53,7 @@ func TestScheduler_JobStatus(t *testing.T) {
 	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPM: 6000})
 	scheduler.RegisterWorker(llmWorker)
 
-	job := NewCountingJob("status-test", 5)
+	job := NewCountingJob(5)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -68,7 +67,7 @@ func TestScheduler_JobStatus(t *testing.T) {
 	// Check status while running
 	time.Sleep(50 * time.Millisecond)
 
-	status, err := scheduler.JobStatus(ctx, "status-test")
+	status, err := scheduler.JobStatus(ctx, job.ID())
 	if err != nil {
 		t.Fatalf("JobStatus() error = %v", err)
 	}
@@ -96,8 +95,8 @@ func TestScheduler_ActiveJobs(t *testing.T) {
 		t.Error("should start with 0 active jobs")
 	}
 
-	job1 := NewCountingJob("job1", 3)
-	job2 := NewCountingJob("job2", 3)
+	job1 := NewCountingJob(3)
+	job2 := NewCountingJob(3)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -141,7 +140,7 @@ func TestScheduler_PendingCount(t *testing.T) {
 	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPM: 6000})
 	scheduler.RegisterWorker(llmWorker)
 
-	job := NewCountingJob("pending-test", 5)
+	job := NewCountingJob(5)
 
 	ctx := context.Background()
 	if err := scheduler.Submit(ctx, job); err != nil {
@@ -159,7 +158,9 @@ func TestScheduler_RegisterFactory(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{})
 
 	factory := func(id string, metadata map[string]any) (Job, error) {
-		return NewMockJob(MockJobConfig{ID: id}), nil
+		job := NewMockJob(MockJobConfig{})
+		job.SetRecordID(id) // Set the persisted ID
+		return job, nil
 	}
 
 	scheduler.RegisterFactory("test-type", factory)
@@ -257,15 +258,15 @@ func TestScheduler_QueueStats(t *testing.T) {
 	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient})
 	scheduler.RegisterWorker(llmWorker)
 
-	job := NewCountingJob("queue-test", 5)
+	job := NewCountingJob(5)
 	scheduler.Submit(context.Background(), job)
 
 	stats = scheduler.QueueStats()
 	if stats.Total != 5 {
 		t.Errorf("Total = %d, want 5", stats.Total)
 	}
-	if stats.PendingByJob["queue-test"] != 5 {
-		t.Errorf("PendingByJob[queue-test] = %d, want 5", stats.PendingByJob["queue-test"])
+	if stats.PendingByJob[job.ID()] != 5 {
+		t.Errorf("PendingByJob[%s] = %d, want 5", job.ID(), stats.PendingByJob[job.ID()])
 	}
 	if stats.Utilization != 0.05 {
 		t.Errorf("Utilization = %f, want 0.05", stats.Utilization)

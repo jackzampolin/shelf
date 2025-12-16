@@ -4,6 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 //go:embed schemas/*.graphql
@@ -66,17 +67,5 @@ func Get(name string) (*Schema, error) {
 
 // lowercase converts a name to lowercase for filename lookup.
 func lowercase(s string) string {
-	if len(s) == 0 {
-		return s
-	}
-	// Simple lowercase for our use case
-	result := make([]byte, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		result[i] = c
-	}
-	return string(result)
+	return strings.ToLower(s)
 }

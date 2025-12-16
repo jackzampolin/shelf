@@ -6,7 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
@@ -15,7 +14,7 @@ const MockJobType = "mock"
 // MockJob is a simple job for testing the job system.
 // It creates N work units and tracks their completion.
 type MockJob struct {
-	id         string
+	id         string // DefraDB record ID (set by scheduler after persistence)
 	workUnits  int
 	unitType   WorkUnitType
 	provider   string
@@ -29,7 +28,6 @@ type MockJob struct {
 
 // MockJobConfig configures a mock job.
 type MockJobConfig struct {
-	ID         string       // Job ID (auto-generated if empty)
 	WorkUnits  int          // Number of work units to create
 	UnitType   WorkUnitType // Type of work units (default: LLM)
 	Provider   string       // Provider to use (empty = any)
@@ -38,10 +36,6 @@ type MockJobConfig struct {
 
 // NewMockJob creates a new mock job with default settings.
 func NewMockJob(cfg MockJobConfig) *MockJob {
-	id := cfg.ID
-	if id == "" {
-		id = uuid.New().String()
-	}
 	unitType := cfg.UnitType
 	if unitType == "" {
 		unitType = WorkUnitTypeLLM
@@ -52,7 +46,6 @@ func NewMockJob(cfg MockJobConfig) *MockJob {
 	}
 
 	return &MockJob{
-		id:         id,
 		workUnits:  workUnits,
 		unitType:   unitType,
 		provider:   cfg.Provider,
@@ -60,8 +53,14 @@ func NewMockJob(cfg MockJobConfig) *MockJob {
 	}
 }
 
+// ID returns the DefraDB record ID. Empty until persisted.
 func (j *MockJob) ID() string {
 	return j.id
+}
+
+// SetRecordID sets the DefraDB record ID after persistence.
+func (j *MockJob) SetRecordID(id string) {
+	j.id = id
 }
 
 func (j *MockJob) Type() string {
@@ -78,13 +77,14 @@ func (j *MockJob) Start(ctx context.Context) ([]WorkUnit, error) {
 	}
 	j.started = true
 
+	jobID := j.ID()
 	units := make([]WorkUnit, j.workUnits)
 	for i := 0; i < j.workUnits; i++ {
 		units[i] = WorkUnit{
-			ID:       fmt.Sprintf("%s-unit-%d", j.id, i),
+			ID:       fmt.Sprintf("%s-unit-%d", jobID, i),
 			Type:     j.unitType,
 			Provider: j.provider,
-			JobID:    j.id,
+			JobID:    jobID,
 		}
 
 		// Add appropriate request based on type
@@ -151,27 +151,36 @@ var _ Job = (*MockJob)(nil)
 // CountingJob is a simple job that counts work unit completions.
 // Useful for testing the scheduler.
 type CountingJob struct {
-	id        string
+	id        string // DefraDB record ID (set by scheduler after persistence)
 	total     int
 	completed atomic.Int32
 	done      atomic.Bool
 }
 
-func NewCountingJob(id string, total int) *CountingJob {
+func NewCountingJob(total int) *CountingJob {
 	return &CountingJob{
-		id:    id,
 		total: total,
 	}
 }
 
-func (j *CountingJob) ID() string   { return j.id }
+// ID returns the DefraDB record ID. Empty until persisted.
+func (j *CountingJob) ID() string {
+	return j.id
+}
+
+// SetRecordID sets the DefraDB record ID after persistence.
+func (j *CountingJob) SetRecordID(id string) {
+	j.id = id
+}
+
 func (j *CountingJob) Type() string { return "counting" }
 
 func (j *CountingJob) Start(ctx context.Context) ([]WorkUnit, error) {
+	jobID := j.ID()
 	units := make([]WorkUnit, j.total)
 	for i := 0; i < j.total; i++ {
 		units[i] = WorkUnit{
-			ID:   fmt.Sprintf("%s-unit-%d", j.id, i),
+			ID:   fmt.Sprintf("%s-unit-%d", jobID, i),
 			Type: WorkUnitTypeLLM,
 			ChatRequest: &providers.ChatRequest{
 				Messages: []providers.Message{
@@ -213,11 +222,11 @@ var _ Job = (*CountingJob)(nil)
 // Phase 2: LLM work units (created as OCR completes)
 // This tests the dynamic work unit creation via OnComplete.
 type MultiPhaseJob struct {
-	id           string
-	ocrPages     int  // Number of OCR work units in phase 1
-	llmPerOCR    int  // Number of LLM units to create per OCR completion
-	ocrProvider  string
-	llmProvider  string
+	id          string // DefraDB record ID (set by scheduler after persistence)
+	ocrPages    int    // Number of OCR work units in phase 1
+	llmPerOCR   int    // Number of LLM units to create per OCR completion
+	ocrProvider string
+	llmProvider string
 
 	mu             sync.Mutex
 	started        bool
@@ -230,7 +239,6 @@ type MultiPhaseJob struct {
 
 // MultiPhaseJobConfig configures a multi-phase job.
 type MultiPhaseJobConfig struct {
-	ID          string
 	OCRPages    int    // Number of OCR pages (default 5)
 	LLMPerOCR   int    // LLM units per OCR completion (default 1)
 	OCRProvider string // Specific OCR provider (empty = any)
@@ -239,10 +247,6 @@ type MultiPhaseJobConfig struct {
 
 // NewMultiPhaseJob creates a job that simulates OCR→LLM workflow.
 func NewMultiPhaseJob(cfg MultiPhaseJobConfig) *MultiPhaseJob {
-	id := cfg.ID
-	if id == "" {
-		id = uuid.New().String()
-	}
 	ocrPages := cfg.OCRPages
 	if ocrPages <= 0 {
 		ocrPages = 5
@@ -253,7 +257,6 @@ func NewMultiPhaseJob(cfg MultiPhaseJobConfig) *MultiPhaseJob {
 	}
 
 	return &MultiPhaseJob{
-		id:          id,
 		ocrPages:    ocrPages,
 		llmPerOCR:   llmPerOCR,
 		ocrProvider: cfg.OCRProvider,
@@ -261,7 +264,16 @@ func NewMultiPhaseJob(cfg MultiPhaseJobConfig) *MultiPhaseJob {
 	}
 }
 
-func (j *MultiPhaseJob) ID() string   { return j.id }
+// ID returns the DefraDB record ID. Empty until persisted.
+func (j *MultiPhaseJob) ID() string {
+	return j.id
+}
+
+// SetRecordID sets the DefraDB record ID after persistence.
+func (j *MultiPhaseJob) SetRecordID(id string) {
+	j.id = id
+}
+
 func (j *MultiPhaseJob) Type() string { return "multi-phase" }
 
 // Start returns the initial OCR work units.

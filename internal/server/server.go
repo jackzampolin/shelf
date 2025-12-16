@@ -77,13 +77,11 @@ func New(cfg Config) (*Server, error) {
 
 	// If config manager provided, set up providers and hot reload
 	if cfg.ConfigManager != nil {
-		provCfg := cfg.ConfigManager.Get().ToProviderRegistryConfig()
-		registry.Reload(configToRegistryConfig(provCfg))
+		registry.Reload(cfg.ConfigManager.Get().ToProviderRegistryConfig())
 
 		// Watch for config changes
 		cfg.ConfigManager.OnChange(func(c *config.Config) {
-			provCfg := c.ToProviderRegistryConfig()
-			registry.Reload(configToRegistryConfig(provCfg))
+			registry.Reload(c.ToProviderRegistryConfig())
 			cfg.Logger.Info("provider registry reloaded from config")
 		})
 	}
@@ -110,39 +108,9 @@ func New(cfg Config) (*Server, error) {
 	return s, nil
 }
 
-// configToRegistryConfig converts config.ProviderRegistryConfig to providers.RegistryConfig.
-func configToRegistryConfig(cfg config.ProviderRegistryConfig) providers.RegistryConfig {
-	result := providers.RegistryConfig{
-		OCRProviders: make(map[string]providers.OCRProviderConfig),
-		LLMProviders: make(map[string]providers.LLMProviderConfig),
-	}
-
-	for name, ocr := range cfg.OCRProviders {
-		result.OCRProviders[name] = providers.OCRProviderConfig{
-			Type:      ocr.Type,
-			Model:     ocr.Model,
-			APIKey:    ocr.APIKey,
-			RateLimit: ocr.RateLimit,
-			Enabled:   ocr.Enabled,
-		}
-	}
-
-	for name, llm := range cfg.LLMProviders {
-		result.LLMProviders[name] = providers.LLMProviderConfig{
-			Type:      llm.Type,
-			Model:     llm.Model,
-			APIKey:    llm.APIKey,
-			RateLimit: llm.RateLimit,
-			Enabled:   llm.Enabled,
-		}
-	}
-
-	return result
-}
-
 // Start starts the server and DefraDB.
 // It blocks until the context is cancelled or an error occurs.
-// Any existing DefraDB container is removed first to ensure a clean start.
+// If an existing DefraDB container exists, it validates the configuration matches.
 func (s *Server) Start(ctx context.Context) error {
 	s.mu.Lock()
 	if s.running {
@@ -152,10 +120,10 @@ func (s *Server) Start(ctx context.Context) error {
 	s.running = true
 	s.mu.Unlock()
 
-	// Remove any existing container for a clean start
-	s.logger.Info("cleaning up existing DefraDB container")
-	if err := s.defraManager.Remove(ctx); err != nil {
-		s.logger.Warn("failed to remove existing container", "error", err)
+	// Validate any existing container matches our config
+	if err := s.defraManager.ValidateExisting(ctx); err != nil {
+		s.setNotRunning()
+		return fmt.Errorf("existing DefraDB container incompatible: %w", err)
 	}
 
 	// Start DefraDB

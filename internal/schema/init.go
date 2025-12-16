@@ -44,6 +44,8 @@ func applySchema(ctx context.Context, client *defra.Client, s Schema, logger *sl
 }
 
 // isAlreadyExistsError checks if the error indicates the collection already exists.
+// Note: DefraDB is accessed via HTTP API, not a Go SDK, so errors are parsed from
+// response bodies. String matching is unavoidable here.
 func isAlreadyExistsError(err error) bool {
 	if err == nil {
 		return false

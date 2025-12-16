@@ -211,6 +211,53 @@ func (m *DockerManager) URL() string {
 	return fmt.Sprintf("http://localhost:%s", m.hostPort)
 }
 
+// ValidateExisting checks if an existing container matches our expected configuration.
+// Returns nil if the container is compatible, or an error describing the mismatch.
+func (m *DockerManager) ValidateExisting(ctx context.Context) error {
+	status, containerID, err := m.getContainerStatus(ctx)
+	if err != nil {
+		return err
+	}
+	if status == StatusNotFound {
+		return nil // No container to validate
+	}
+
+	// Inspect the container
+	info, err := m.cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return fmt.Errorf("failed to inspect container: %w", err)
+	}
+
+	// Check port binding
+	bindings := info.HostConfig.PortBindings[ContainerPort]
+	if len(bindings) == 0 {
+		return fmt.Errorf("existing container has no port binding for %s", ContainerPort)
+	}
+	boundPort := bindings[0].HostPort
+	if boundPort != m.hostPort {
+		return fmt.Errorf("existing container bound to port %s, expected %s", boundPort, m.hostPort)
+	}
+
+	// Check data mount if we have a data path configured
+	if m.dataPath != "" {
+		foundMount := false
+		for _, mnt := range info.Mounts {
+			if mnt.Destination == DataDir {
+				if mnt.Source != m.dataPath {
+					return fmt.Errorf("existing container mounts %s, expected %s", mnt.Source, m.dataPath)
+				}
+				foundMount = true
+				break
+			}
+		}
+		if !foundMount {
+			return fmt.Errorf("existing container has no mount for %s", DataDir)
+		}
+	}
+
+	return nil
+}
+
 // WaitReady waits for DefraDB to be ready to accept requests.
 func (m *DockerManager) WaitReady(ctx context.Context, timeout time.Duration) error {
 	return m.waitForReady(ctx, timeout)

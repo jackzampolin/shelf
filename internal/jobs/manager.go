@@ -109,7 +109,7 @@ func (m *Manager) getJob(ctx context.Context, jobID string) (*Record, error) {
 
 	jobs, ok := resp.Data["Job"].([]any)
 	if !ok || len(jobs) == 0 {
-		return nil, fmt.Errorf("job not found: %s", jobID)
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, jobID)
 	}
 
 	return parseJobRecord(jobs[0].(map[string]any))

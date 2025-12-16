@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
@@ -112,43 +113,46 @@ func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 		metadataMap[k] = v
 	}
 
-	// Persist to DefraDB if manager available
-	var recordID string
+	// Persist to DefraDB if manager available, otherwise generate a temporary ID
 	if s.manager != nil {
-		var err error
-		recordID, err = s.manager.Create(ctx, job.Type(), metadataMap)
+		recordID, err := s.manager.Create(ctx, job.Type(), metadataMap)
 		if err != nil {
 			return fmt.Errorf("failed to create job record: %w", err)
 		}
-		s.logger.Info("job record created", "record_id", recordID, "job_id", job.ID())
+		job.SetRecordID(recordID)
+		s.logger.Info("job record created", "id", recordID, "type", job.Type())
+	} else {
+		// Generate a temporary ID for in-memory tracking when no persistence
+		job.SetRecordID(uuid.New().String())
 	}
 
-	// Track in memory
+	// Track in memory using DefraDB record ID
 	s.mu.Lock()
 	s.jobs[job.ID()] = job
 	s.pending[job.ID()] = 0
 	s.mu.Unlock()
 
 	// Update status to running
-	if s.manager != nil && recordID != "" {
-		if err := s.manager.UpdateStatus(ctx, recordID, StatusRunning, ""); err != nil {
+	if s.manager != nil {
+		if err := s.manager.UpdateStatus(ctx, job.ID(), StatusRunning, ""); err != nil {
 			s.logger.Warn("failed to update job status", "error", err)
 		}
 	}
 
-	s.logger.Info("job submitted", "job_id", job.ID(), "type", job.Type())
+	s.logger.Info("job submitted", "id", job.ID(), "type", job.Type())
 
 	// Start the job to get initial work units
 	units, err := job.Start(ctx)
 	if err != nil {
+		jobID := job.ID()
 		s.mu.Lock()
-		delete(s.jobs, job.ID())
-		delete(s.pending, job.ID())
+		delete(s.jobs, jobID)
+		delete(s.pending, jobID)
 		s.mu.Unlock()
 
 		// Mark as failed in DefraDB
-		if s.manager != nil && recordID != "" {
-			s.manager.UpdateStatus(ctx, recordID, StatusFailed, err.Error())
+		if s.manager != nil && jobID != "" {
+			s.manager.UpdateStatus(ctx, jobID, StatusFailed, err.Error())
 		}
 		return fmt.Errorf("job start failed: %w", err)
 	}
@@ -384,12 +388,10 @@ func (s *Scheduler) handleResult(ctx context.Context, unit *WorkUnit, result Wor
 	s.mu.Unlock()
 
 	if isDone {
-		s.logger.Info("job completed", "job_id", job.ID(), "type", job.Type())
+		s.logger.Info("job completed", "id", job.ID(), "type", job.Type())
 
 		// Update DefraDB status
 		if s.manager != nil {
-			// Note: We're using job.ID() as the record ID here
-			// In practice, you'd want to track the DefraDB record ID separately
 			if err := s.manager.UpdateStatus(ctx, job.ID(), StatusCompleted, ""); err != nil {
 				s.logger.Warn("failed to update job status in DefraDB", "error", err)
 			}

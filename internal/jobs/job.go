@@ -54,8 +54,13 @@ type WorkResult struct {
 // Job is the interface that all job types must implement.
 // Jobs dynamically create work units and react to their completion.
 type Job interface {
-	// ID returns the unique job identifier.
+	// ID returns the DefraDB record ID for this job.
+	// Returns empty string before SetRecordID is called.
 	ID() string
+
+	// SetRecordID sets the DefraDB record ID after the job is persisted.
+	// This is called by the scheduler after creating the job in DefraDB.
+	SetRecordID(id string)
 
 	// Type returns the job type identifier.
 	Type() string
