@@ -40,7 +40,10 @@ func NewManager(cfgFile string) (*Manager, error) {
 // initViper sets up viper with defaults and config file.
 func (cm *Manager) initViper(cfgFile string) error {
 	defaults := DefaultConfig()
-	viper.SetDefault("api_keys", defaults.APIKeys)
+	viper.SetDefault("ocr_providers", defaults.OCRProviders)
+	viper.SetDefault("llm_providers", defaults.LLMProviders)
+	viper.SetDefault("defaults", defaults.Defaults)
+	viper.SetDefault("defra", defaults.Defra)
 
 	// Environment variables with SHELF_ prefix
 	viper.SetEnvPrefix("SHELF")
@@ -123,7 +126,58 @@ func ResolveEnvVars(value string) string {
 	})
 }
 
-// ResolveAPIKey resolves an API key, expanding ${ENV_VAR} references.
-func (c *Config) ResolveAPIKey(name string) string {
-	return ResolveEnvVars(c.GetAPIKey(name))
+// ProviderRegistryConfig holds resolved provider configuration for the registry.
+// This is separate from providers.RegistryConfig to avoid circular imports.
+type ProviderRegistryConfig struct {
+	OCRProviders map[string]ResolvedOCRProvider
+	LLMProviders map[string]ResolvedLLMProvider
+}
+
+// ResolvedOCRProvider has the API key resolved from environment.
+type ResolvedOCRProvider struct {
+	Type      string
+	Model     string
+	APIKey    string
+	RateLimit float64
+	Enabled   bool
+}
+
+// ResolvedLLMProvider has the API key resolved from environment.
+type ResolvedLLMProvider struct {
+	Type      string
+	Model     string
+	APIKey    string
+	RateLimit float64
+	Enabled   bool
+}
+
+// ToProviderRegistryConfig converts the config to a format suitable for providers.Registry.
+// It resolves all ${ENV_VAR} references in API keys.
+func (c *Config) ToProviderRegistryConfig() ProviderRegistryConfig {
+	cfg := ProviderRegistryConfig{
+		OCRProviders: make(map[string]ResolvedOCRProvider),
+		LLMProviders: make(map[string]ResolvedLLMProvider),
+	}
+
+	for name, ocr := range c.OCRProviders {
+		cfg.OCRProviders[name] = ResolvedOCRProvider{
+			Type:      ocr.Type,
+			Model:     ocr.Model,
+			APIKey:    ResolveEnvVars(ocr.APIKey),
+			RateLimit: ocr.RateLimit,
+			Enabled:   ocr.Enabled,
+		}
+	}
+
+	for name, llm := range c.LLMProviders {
+		cfg.LLMProviders[name] = ResolvedLLMProvider{
+			Type:      llm.Type,
+			Model:     llm.Model,
+			APIKey:    ResolveEnvVars(llm.APIKey),
+			RateLimit: llm.RateLimit,
+			Enabled:   llm.Enabled,
+		}
+	}
+
+	return cfg
 }

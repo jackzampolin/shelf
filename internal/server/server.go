@@ -10,8 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackzampolin/shelf/internal/config"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
 )
 
@@ -23,6 +25,8 @@ type Server struct {
 	defraManager *defra.DockerManager
 	defraClient  *defra.Client
 	jobManager   *jobs.Manager
+	registry     *providers.Registry
+	configMgr    *config.Manager
 	logger       *slog.Logger
 
 	mu      sync.RWMutex
@@ -39,6 +43,8 @@ type Config struct {
 	DefraDataPath string
 	// DefraConfig holds DefraDB container settings
 	DefraConfig defra.DockerConfig
+	// ConfigManager provides configuration with hot-reload support
+	ConfigManager *config.Manager
 	// Logger is the structured logger to use
 	Logger *slog.Logger
 }
@@ -65,8 +71,27 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("failed to create defra manager: %w", err)
 	}
 
+	// Create provider registry
+	registry := providers.NewRegistry()
+	registry.SetLogger(cfg.Logger)
+
+	// If config manager provided, set up providers and hot reload
+	if cfg.ConfigManager != nil {
+		provCfg := cfg.ConfigManager.Get().ToProviderRegistryConfig()
+		registry.Reload(configToRegistryConfig(provCfg))
+
+		// Watch for config changes
+		cfg.ConfigManager.OnChange(func(c *config.Config) {
+			provCfg := c.ToProviderRegistryConfig()
+			registry.Reload(configToRegistryConfig(provCfg))
+			cfg.Logger.Info("provider registry reloaded from config")
+		})
+	}
+
 	s := &Server{
 		defraManager: defraManager,
+		registry:     registry,
+		configMgr:    cfg.ConfigManager,
 		logger:       cfg.Logger,
 	}
 
@@ -83,6 +108,36 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	return s, nil
+}
+
+// configToRegistryConfig converts config.ProviderRegistryConfig to providers.RegistryConfig.
+func configToRegistryConfig(cfg config.ProviderRegistryConfig) providers.RegistryConfig {
+	result := providers.RegistryConfig{
+		OCRProviders: make(map[string]providers.OCRProviderConfig),
+		LLMProviders: make(map[string]providers.LLMProviderConfig),
+	}
+
+	for name, ocr := range cfg.OCRProviders {
+		result.OCRProviders[name] = providers.OCRProviderConfig{
+			Type:      ocr.Type,
+			Model:     ocr.Model,
+			APIKey:    ocr.APIKey,
+			RateLimit: ocr.RateLimit,
+			Enabled:   ocr.Enabled,
+		}
+	}
+
+	for name, llm := range cfg.LLMProviders {
+		result.LLMProviders[name] = providers.LLMProviderConfig{
+			Type:      llm.Type,
+			Model:     llm.Model,
+			APIKey:    llm.APIKey,
+			RateLimit: llm.RateLimit,
+			Enabled:   llm.Enabled,
+		}
+	}
+
+	return result
 }
 
 // Start starts the server and DefraDB.
@@ -210,4 +265,9 @@ func (s *Server) JobManager() *jobs.Manager {
 // Addr returns the server's listen address.
 func (s *Server) Addr() string {
 	return s.httpServer.Addr
+}
+
+// Registry returns the provider registry.
+func (s *Server) Registry() *providers.Registry {
+	return s.registry
 }

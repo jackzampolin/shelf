@@ -57,18 +57,34 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 
 // StatusResponse is the detailed status response.
 type StatusResponse struct {
-	Server string `json:"server"`
-	Defra  struct {
-		Container string `json:"container"`
-		Health    string `json:"health"`
-		URL       string `json:"url"`
-	} `json:"defra"`
+	Server    string           `json:"server"`
+	Providers ProvidersStatus  `json:"providers"`
+	Defra     DefraStatus      `json:"defra"`
+}
+
+// ProvidersStatus shows registered OCR and LLM providers.
+type ProvidersStatus struct {
+	OCR []string `json:"ocr"`
+	LLM []string `json:"llm"`
+}
+
+// DefraStatus shows DefraDB container and health status.
+type DefraStatus struct {
+	Container string `json:"container"`
+	Health    string `json:"health"`
+	URL       string `json:"url"`
 }
 
 // handleStatus returns detailed server and DefraDB status.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	resp := StatusResponse{
 		Server: "running",
+	}
+
+	// Get registered providers
+	if s.registry != nil {
+		resp.Providers.OCR = s.registry.ListOCR()
+		resp.Providers.LLM = s.registry.ListLLM()
 	}
 
 	// Get DefraDB container status

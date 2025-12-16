@@ -26,6 +26,7 @@ type ServerConfig struct {
 	Host          string
 	Port          string
 	DefraDataPath string
+	ConfigFile    string
 	DefraConfig   DefraTestConfig
 	Logger        *slog.Logger
 }
@@ -51,11 +52,13 @@ func NewServerConfig(t *testing.T) ServerConfig {
 	}
 
 	containerName := UniqueContainerName(t, "defra")
+	configFile := tempDir + "/config.yaml"
 
 	return ServerConfig{
 		Host:          "127.0.0.1",
 		Port:          httpPort,
 		DefraDataPath: tempDir,
+		ConfigFile:    configFile,
 		DefraConfig: DefraTestConfig{
 			ContainerName: containerName,
 			HostPort:      defraPort,
@@ -142,4 +145,34 @@ func (s *StartServer) Stop() {
 	if s.Done != nil {
 		<-s.Done
 	}
+}
+
+// StatusResponse matches the server's StatusResponse structure.
+type StatusResponse struct {
+	Server    string `json:"server"`
+	Providers struct {
+		OCR []string `json:"ocr"`
+		LLM []string `json:"llm"`
+	} `json:"providers"`
+	Defra struct {
+		Container string `json:"container"`
+		Health    string `json:"health"`
+		URL       string `json:"url"`
+	} `json:"defra"`
+}
+
+// GetStatus fetches the /status endpoint and returns the parsed response.
+func GetStatus(url string) (*StatusResponse, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url + "/status")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var status StatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return nil, err
+	}
+	return &status, nil
 }

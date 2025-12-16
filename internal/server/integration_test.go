@@ -3,9 +3,12 @@ package server
 import (
 	"context"
 	"net/http"
+	"os"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/jackzampolin/shelf/internal/config"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/testutil"
 )
@@ -191,4 +194,192 @@ func TestServer_CleansUpOrphanedContainer(t *testing.T) {
 	// Clean shutdown
 	serverCancel()
 	<-serverErr
+}
+
+func TestServer_ConfigHotReload(t *testing.T) {
+	cfg := testutil.NewServerConfig(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	// Create initial config with one OCR provider
+	initialConfig := `
+ocr_providers:
+  mistral:
+    type: mistral-ocr
+    api_key: "test-mistral-key"
+    rate_limit: 6.0
+    enabled: true
+
+llm_providers:
+  openrouter:
+    type: openrouter
+    model: "anthropic/claude-sonnet-4"
+    api_key: "test-openrouter-key"
+    enabled: true
+`
+	if err := os.WriteFile(cfg.ConfigFile, []byte(initialConfig), 0644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
+	}
+
+	// Create config manager
+	cfgMgr, err := config.NewManager(cfg.ConfigFile)
+	if err != nil {
+		t.Fatalf("failed to create config manager: %v", err)
+	}
+	cfgMgr.WatchConfig()
+
+	// Create and start server
+	srv, err := New(Config{
+		Host:          cfg.Host,
+		Port:          cfg.Port,
+		DefraDataPath: cfg.DefraDataPath,
+		DefraConfig: defra.DockerConfig{
+			ContainerName: cfg.DefraConfig.ContainerName,
+			HostPort:      cfg.DefraConfig.HostPort,
+			Labels:        cfg.DefraConfig.Labels,
+		},
+		ConfigManager: cfgMgr,
+		Logger:        cfg.Logger,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	serverErr := make(chan error, 1)
+	serverCtx, serverCancel := context.WithCancel(ctx)
+	defer serverCancel()
+
+	go func() {
+		serverErr <- srv.Start(serverCtx)
+	}()
+
+	// Wait for server to be ready
+	if err := testutil.WaitForServer(cfg.URL(), 60*time.Second); err != nil {
+		t.Fatalf("server did not start: %v", err)
+	}
+
+	// Check initial providers via /status endpoint
+	status, err := testutil.GetStatus(cfg.URL())
+	if err != nil {
+		t.Fatalf("failed to get initial status: %v", err)
+	}
+
+	t.Logf("Initial providers: OCR=%v, LLM=%v", status.Providers.OCR, status.Providers.LLM)
+
+	if !slices.Contains(status.Providers.OCR, "mistral") {
+		t.Errorf("expected mistral in OCR providers, got %v", status.Providers.OCR)
+	}
+	if !slices.Contains(status.Providers.LLM, "openrouter") {
+		t.Errorf("expected openrouter in LLM providers, got %v", status.Providers.LLM)
+	}
+
+	// Update config to add DeepInfra OCR provider
+	updatedConfig := `
+ocr_providers:
+  mistral:
+    type: mistral-ocr
+    api_key: "test-mistral-key"
+    rate_limit: 6.0
+    enabled: true
+  deepinfra:
+    type: deepinfra
+    model: "ds-paddleocr-vl"
+    api_key: "test-deepinfra-key"
+    rate_limit: 10.0
+    enabled: true
+
+llm_providers:
+  openrouter:
+    type: openrouter
+    model: "anthropic/claude-sonnet-4"
+    api_key: "test-openrouter-key"
+    enabled: true
+`
+	if err := os.WriteFile(cfg.ConfigFile, []byte(updatedConfig), 0644); err != nil {
+		t.Fatalf("failed to write updated config: %v", err)
+	}
+
+	// Wait for hot reload to pick up changes
+	time.Sleep(500 * time.Millisecond)
+
+	// Poll for DeepInfra to appear
+	deadline := time.Now().Add(5 * time.Second)
+	var foundDeepInfra bool
+	for time.Now().Before(deadline) {
+		status, err = testutil.GetStatus(cfg.URL())
+		if err != nil {
+			t.Fatalf("failed to get status after update: %v", err)
+		}
+		if slices.Contains(status.Providers.OCR, "deepinfra") {
+			foundDeepInfra = true
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if !foundDeepInfra {
+		t.Errorf("expected deepinfra to appear after hot reload, got OCR=%v", status.Providers.OCR)
+	}
+
+	t.Logf("After adding DeepInfra: OCR=%v, LLM=%v", status.Providers.OCR, status.Providers.LLM)
+
+	// Now remove Mistral provider
+	removedConfig := `
+ocr_providers:
+  deepinfra:
+    type: deepinfra
+    model: "ds-paddleocr-vl"
+    api_key: "test-deepinfra-key"
+    rate_limit: 10.0
+    enabled: true
+
+llm_providers:
+  openrouter:
+    type: openrouter
+    model: "anthropic/claude-sonnet-4"
+    api_key: "test-openrouter-key"
+    enabled: true
+`
+	if err := os.WriteFile(cfg.ConfigFile, []byte(removedConfig), 0644); err != nil {
+		t.Fatalf("failed to write config with removed provider: %v", err)
+	}
+
+	// Wait for hot reload
+	time.Sleep(500 * time.Millisecond)
+
+	// Poll for Mistral to disappear
+	deadline = time.Now().Add(5 * time.Second)
+	var mistralRemoved bool
+	for time.Now().Before(deadline) {
+		status, err = testutil.GetStatus(cfg.URL())
+		if err != nil {
+			t.Fatalf("failed to get status after removal: %v", err)
+		}
+		if !slices.Contains(status.Providers.OCR, "mistral") {
+			mistralRemoved = true
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if !mistralRemoved {
+		t.Errorf("expected mistral to be removed after hot reload, got OCR=%v", status.Providers.OCR)
+	}
+
+	// Verify DeepInfra is still there
+	if !slices.Contains(status.Providers.OCR, "deepinfra") {
+		t.Errorf("expected deepinfra to remain, got OCR=%v", status.Providers.OCR)
+	}
+
+	t.Logf("After removing Mistral: OCR=%v, LLM=%v", status.Providers.OCR, status.Providers.LLM)
+
+	// Clean shutdown
+	serverCancel()
+	select {
+	case <-serverErr:
+		// Expected
+	case <-time.After(30 * time.Second):
+		t.Fatal("server did not shut down")
+	}
 }

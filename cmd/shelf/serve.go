@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/jackzampolin/shelf/internal/config"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/server"
@@ -50,6 +51,17 @@ Examples:
 			return err
 		}
 
+		// Load configuration
+		configFile := filepath.Join(h.Path(), "config.yaml")
+		cfgMgr, err := config.NewManager(configFile)
+		if err != nil {
+			logger.Warn("config not loaded, using defaults", "error", err)
+		} else {
+			// Enable config hot-reload
+			cfgMgr.WatchConfig()
+			logger.Info("configuration loaded", "file", configFile)
+		}
+
 		// Ensure defradb data directory exists
 		defraDataPath := filepath.Join(h.Path(), "defradb")
 		if err := os.MkdirAll(defraDataPath, 0755); err != nil {
@@ -64,7 +76,8 @@ Examples:
 			DefraConfig: defra.DockerConfig{
 				// Use defaults from defra package
 			},
-			Logger: logger,
+			ConfigManager: cfgMgr,
+			Logger:        logger,
 		})
 		if err != nil {
 			return err

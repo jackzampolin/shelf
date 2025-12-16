@@ -281,3 +281,44 @@ func TestOpenRouterClient(t *testing.T) {
 		t.Skip("integration test - requires OPENROUTER_API_KEY")
 	})
 }
+
+func TestMistralOCRClient(t *testing.T) {
+	t.Run("config defaults", func(t *testing.T) {
+		c := NewMistralOCRClient(MistralOCRConfig{
+			APIKey: "test-key",
+		})
+
+		if c.Name() != MistralOCRName {
+			t.Errorf("Name() = %q, want %q", c.Name(), MistralOCRName)
+		}
+		if c.baseURL != MistralOCRBaseURL {
+			t.Errorf("baseURL = %q, want %q", c.baseURL, MistralOCRBaseURL)
+		}
+		if c.model != MistralOCRModel {
+			t.Errorf("model = %q, want %q", c.model, MistralOCRModel)
+		}
+	})
+
+	t.Run("rate limit properties", func(t *testing.T) {
+		c := NewMistralOCRClient(MistralOCRConfig{APIKey: "test"})
+
+		if c.RequestsPerSecond() != 6.0 {
+			t.Errorf("RequestsPerSecond() = %f, want 6.0", c.RequestsPerSecond())
+		}
+		if c.MaxRetries() != 3 {
+			t.Errorf("MaxRetries() = %d, want 3", c.MaxRetries())
+		}
+		if c.RetryDelayBase() != 2*time.Second {
+			t.Errorf("RetryDelayBase() = %v, want 2s", c.RetryDelayBase())
+		}
+	})
+
+	t.Run("interface compliance", func(t *testing.T) {
+		var _ OCRProvider = (*MistralOCRClient)(nil)
+	})
+
+	// Integration test - skip unless MISTRAL_API_KEY is set
+	t.Run("integration", func(t *testing.T) {
+		t.Skip("integration test - requires MISTRAL_API_KEY")
+	})
+}
