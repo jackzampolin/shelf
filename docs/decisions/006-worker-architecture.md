@@ -18,59 +18,126 @@ Go uses a job system:
 - **Queryable** - "Show me all failed OCR jobs from today"
 - **Resumable** - Server restarts don't lose work in progress
 
-## What This Enables
+## Key Concepts
 
-| Python (CLI) | Go (Jobs) |
-|--------------|-----------|
-| Run one stage, hope it works | Submit job, track progress |
-| Ctrl+C loses progress | Graceful shutdown, resume |
-| Check files to see status | Query DefraDB for status |
-| Manual retry | Automatic retry with backoff |
-| No visibility | Dashboard showing all work |
+### Job
 
-## Architecture
-
-```
-┌─────────┐     ┌─────────────┐     ┌──────────┐
-│   API   │────▶│ Job Manager │────▶│ Workers  │
-└─────────┘     └─────────────┘     └──────────┘
-                      │                   │
-                      ▼                   ▼
-                 ┌─────────┐        ┌─────────┐
-                 │ DefraDB │◀───────│ Results │
-                 └─────────┘        └─────────┘
-```
-
-## Worker Pattern
-
-Each provider is wrapped in a Worker with its own rate limiter:
+A Job represents a complete unit of work (e.g., "OCR this book", "correct these pages"). Jobs create WorkUnits dynamically and react to their completion.
 
 ```go
-// Worker wraps a provider (LLM or OCR) with rate limiting
+type Job interface {
+    ID() string                    // DefraDB record ID
+    SetRecordID(id string)         // Called after persistence
+    Type() string                  // "ocr", "correct", etc.
+
+    Start(ctx) ([]WorkUnit, error) // Create initial work units
+    OnComplete(ctx, WorkResult) ([]WorkUnit, error) // React to completion
+    Done() bool                    // All work finished?
+    Status(ctx) (map[string]string, error)
+}
+```
+
+### WorkUnit
+
+A WorkUnit is a single API call - one LLM request or one OCR request.
+
+```go
+type WorkUnit struct {
+    ID       string       // Unique identifier
+    Type     WorkUnitType // "llm" or "ocr"
+    Provider string       // Target specific provider, or "" for any
+    JobID    string       // Parent job
+
+    // One of these is set based on Type
+    ChatRequest *providers.ChatRequest
+    OCRRequest  *OCRWorkRequest
+}
+```
+
+### Worker
+
+A Worker wraps a single provider (LLMClient or OCRProvider) with rate limiting.
+
+```go
 type Worker struct {
+    name        string
+    workerType  WorkerType  // "llm" or "ocr"
     llmClient   providers.LLMClient
     ocrProvider providers.OCRProvider
     rateLimiter *providers.RateLimiter
 }
 
-// Process executes a work unit, respecting rate limits
+// Process executes a work unit, blocking for rate limit
 func (w *Worker) Process(ctx context.Context, unit *WorkUnit) WorkResult
+```
 
+Workers pull rate limits from providers at initialization:
+```go
 // Providers define their own rate limits
 type LLMClient interface {
-    RequestsPerMinute() int  // RPM pulled at worker init
+    RequestsPerMinute() int
     MaxRetries() int
     RetryDelayBase() time.Duration
 }
 ```
 
+### Scheduler
+
+The Scheduler orchestrates everything: accepts jobs, queues work units, routes to workers, handles completion callbacks.
+
+```go
+scheduler.RegisterWorker(ocrWorker)
+scheduler.RegisterWorker(llmWorker)
+scheduler.Submit(ctx, job) // Persists to DefraDB, starts processing
+```
+
+## Architecture
+
+```
+┌─────────┐     ┌───────────┐     ┌──────────────┐
+│   API   │────▶│ Scheduler │────▶│   Workers    │
+└─────────┘     └───────────┘     │ (rate-limited)│
+                     │            └──────────────┘
+                     │                   │
+              ┌──────▼──────┐            │
+              │   Manager   │            │
+              │ (persistence)│           │
+              └──────┬──────┘            │
+                     │                   │
+                     ▼                   ▼
+                ┌─────────┐        ┌──────────┐
+                │ DefraDB │◀───────│ Results  │
+                └─────────┘        └──────────┘
+```
+
 ## Job Lifecycle
 
-1. **Submit** - API creates job in DefraDB (status: pending)
-2. **Assign** - Job manager assigns to worker
-3. **Execute** - Worker processes, updates progress
-4. **Complete** - Results written, status updated
-5. **Query** - Full history available via GraphQL
+1. **Submit** - API calls `scheduler.Submit(job)`
+2. **Persist** - Manager creates job record in DefraDB, sets job's record ID
+3. **Start** - `job.Start()` returns initial WorkUnits
+4. **Queue** - Scheduler queues WorkUnits
+5. **Route** - Scheduler routes each WorkUnit to appropriate Worker
+6. **Process** - Worker calls `Process()`, respects rate limits
+7. **Complete** - Scheduler receives WorkResult, calls `job.OnComplete()`
+8. **Chain** - OnComplete may return MORE WorkUnits (multi-phase jobs)
+9. **Done** - When `job.Done()` returns true, status updated in DefraDB
+
+## Multi-Phase Jobs
+
+Jobs can implement multi-phase workflows via OnComplete:
+
+```go
+func (j *BookJob) OnComplete(ctx context.Context, result WorkResult) ([]WorkUnit, error) {
+    if result.OCRResult != nil {
+        // OCR finished - now create LLM correction work
+        return []WorkUnit{{
+            Type: WorkUnitTypeLLM,
+            ChatRequest: buildCorrectionPrompt(result.OCRResult.Text),
+        }}, nil
+    }
+    return nil, nil // No follow-up work
+}
+```
 
 ## Core Principle
 
