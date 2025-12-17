@@ -51,6 +51,30 @@ type WorkResult struct {
 	OCRResult  *providers.OCRResult
 }
 
+// ProviderProgress tracks work unit progress for a single provider.
+// This enables granular progress tracking during job execution.
+type ProviderProgress struct {
+	TotalExpected      int // Total work units expected for this provider
+	CompletedAtStart   int // Already completed before job started (from DefraDB)
+	Queued             int // Currently queued/in-flight
+	Completed          int // Completed during this job execution
+	Failed             int // Failed during this job execution
+}
+
+// Remaining returns work units not yet processed.
+func (p ProviderProgress) Remaining() int {
+	return p.TotalExpected - p.CompletedAtStart - p.Completed - p.Failed
+}
+
+// PercentComplete returns overall completion percentage (0-100).
+func (p ProviderProgress) PercentComplete() float64 {
+	if p.TotalExpected == 0 {
+		return 0
+	}
+	done := p.CompletedAtStart + p.Completed
+	return float64(done) / float64(p.TotalExpected) * 100
+}
+
 // Job is the interface that all job types must implement.
 // Jobs dynamically create work units and react to their completion.
 type Job interface {
@@ -81,6 +105,11 @@ type Job interface {
 	// Status returns the current status of the job as key-value pairs.
 	// This allows jobs to report progress, current step, items processed, etc.
 	Status(ctx context.Context) (map[string]string, error)
+
+	// Progress returns per-provider work unit progress.
+	// Keys are provider names (e.g., "openrouter", "mistral").
+	// This enables granular progress tracking during execution.
+	Progress() map[string]ProviderProgress
 }
 
 // Dependencies provides access to shared resources for job execution.

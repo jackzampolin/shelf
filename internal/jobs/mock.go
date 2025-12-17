@@ -145,6 +145,35 @@ func (j *MockJob) Results() []WorkResult {
 	return j.results
 }
 
+// Progress returns per-provider work unit progress.
+func (j *MockJob) Progress() map[string]ProviderProgress {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	provider := j.provider
+	if provider == "" {
+		provider = "default"
+	}
+
+	// Count failed from results
+	failed := 0
+	for _, r := range j.results {
+		if !r.Success {
+			failed++
+		}
+	}
+
+	return map[string]ProviderProgress{
+		provider: {
+			TotalExpected:    j.workUnits,
+			CompletedAtStart: 0,
+			Queued:           j.workUnits - j.completed,
+			Completed:        j.completed - failed,
+			Failed:           failed,
+		},
+	}
+}
+
 // Verify interface
 var _ Job = (*MockJob)(nil)
 
@@ -213,6 +242,20 @@ func (j *CountingJob) Status(ctx context.Context) (map[string]string, error) {
 
 func (j *CountingJob) Completed() int {
 	return int(j.completed.Load())
+}
+
+// Progress returns per-provider work unit progress.
+func (j *CountingJob) Progress() map[string]ProviderProgress {
+	completed := int(j.completed.Load())
+	return map[string]ProviderProgress{
+		"default": {
+			TotalExpected:    j.total,
+			CompletedAtStart: 0,
+			Queued:           j.total - completed,
+			Completed:        completed,
+			Failed:           0,
+		},
+	}
 }
 
 var _ Job = (*CountingJob)(nil)
@@ -382,6 +425,51 @@ func (j *MultiPhaseJob) Stats() (ocrCompleted, llmCompleted, failed int) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return j.ocrCompleted, j.llmCompleted, len(j.failedUnits)
+}
+
+// Progress returns per-provider work unit progress.
+func (j *MultiPhaseJob) Progress() map[string]ProviderProgress {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	ocrProvider := j.ocrProvider
+	if ocrProvider == "" {
+		ocrProvider = "ocr-default"
+	}
+	llmProvider := j.llmProvider
+	if llmProvider == "" {
+		llmProvider = "llm-default"
+	}
+
+	expectedLLM := j.ocrPages * j.llmPerOCR
+
+	// Count OCR failures
+	ocrFailed := 0
+	llmFailed := 0
+	for _, id := range j.failedUnits {
+		if len(id) > 4 && id[len(j.id)+1:len(j.id)+4] == "ocr" {
+			ocrFailed++
+		} else {
+			llmFailed++
+		}
+	}
+
+	return map[string]ProviderProgress{
+		ocrProvider: {
+			TotalExpected:    j.ocrPages,
+			CompletedAtStart: 0,
+			Queued:           j.ocrPages - j.ocrCompleted - ocrFailed,
+			Completed:        j.ocrCompleted,
+			Failed:           ocrFailed,
+		},
+		llmProvider: {
+			TotalExpected:    expectedLLM,
+			CompletedAtStart: 0,
+			Queued:           j.llmCreated - j.llmCompleted - llmFailed,
+			Completed:        j.llmCompleted,
+			Failed:           llmFailed,
+		},
+	}
 }
 
 var _ Job = (*MultiPhaseJob)(nil)
