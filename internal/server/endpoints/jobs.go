@@ -70,9 +70,10 @@ func (e *CreateJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 			if jobType == "" {
 				return fmt.Errorf("--type is required")
 			}
+			ctx := cmd.Context()
 			client := api.NewClient(getServerURL())
 			var resp CreateJobResponse
-			if err := client.Post("/api/jobs", CreateJobRequest{JobType: jobType}, &resp); err != nil {
+			if err := client.Post(ctx, "/api/jobs", CreateJobRequest{JobType: jobType}, &resp); err != nil {
 				return err
 			}
 			fmt.Printf("Created job: %s\n", resp.ID)
@@ -124,6 +125,7 @@ func (e *ListJobsEndpoint) Command(getServerURL func() string) *cobra.Command {
 		Use:   "list",
 		Short: "List jobs",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			client := api.NewClient(getServerURL())
 
 			// Build query string
@@ -140,7 +142,7 @@ func (e *ListJobsEndpoint) Command(getServerURL func() string) *cobra.Command {
 			}
 
 			var resp ListJobsResponse
-			if err := client.Get(path, &resp); err != nil {
+			if err := client.Get(ctx, path, &resp); err != nil {
 				return err
 			}
 
@@ -201,9 +203,10 @@ func (e *GetJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 		Short: "Get a job by ID",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			client := api.NewClient(getServerURL())
 			var job jobs.Record
-			if err := client.Get("/api/jobs/"+args[0], &job); err != nil {
+			if err := client.Get(ctx, "/api/jobs/"+args[0], &job); err != nil {
 				return err
 			}
 			fmt.Printf("ID:      %s\n", job.ID)
@@ -295,10 +298,11 @@ func (e *UpdateJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 			if status == "" && jobError == "" {
 				return fmt.Errorf("at least --status or --error must be specified")
 			}
+			ctx := cmd.Context()
 			client := api.NewClient(getServerURL())
 			var job jobs.Record
 			req := UpdateJobRequest{Status: status, Error: jobError}
-			if err := client.Patch("/api/jobs/"+args[0], req, &job); err != nil {
+			if err := client.Patch(ctx, "/api/jobs/"+args[0], req, &job); err != nil {
 				return err
 			}
 			fmt.Printf("Updated job %s (status: %s)\n", job.ID, job.Status)

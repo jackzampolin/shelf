@@ -36,9 +36,10 @@ func (e *HealthEndpoint) Command(getServerURL func() string) *cobra.Command {
 		Use:   "health",
 		Short: "Check server health",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			client := api.NewClient(getServerURL())
 			var resp HealthResponse
-			if err := client.Get("/health", &resp); err != nil {
+			if err := client.Get(ctx, "/health", &resp); err != nil {
 				return err
 			}
 			fmt.Printf("Status: %s\n", resp.Status)
@@ -82,9 +83,10 @@ func (e *ReadyEndpoint) Command(getServerURL func() string) *cobra.Command {
 		Use:   "ready",
 		Short: "Check server readiness (includes DefraDB)",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			client := api.NewClient(getServerURL())
 			var resp HealthResponse
-			if err := client.Get("/ready", &resp); err != nil {
+			if err := client.Get(ctx, "/ready", &resp); err != nil {
 				return err
 			}
 			fmt.Printf("Status: %s\n", resp.Status)
@@ -173,9 +175,10 @@ func (e *StatusEndpoint) Command(getServerURL func() string) *cobra.Command {
 		Use:   "status",
 		Short: "Get detailed server status",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			client := api.NewClient(getServerURL())
 			var resp StatusResponse
-			if err := client.Get("/status", &resp); err != nil {
+			if err := client.Get(ctx, "/status", &resp); err != nil {
 				return err
 			}
 			fmt.Printf("Server: %s\n", resp.Server)

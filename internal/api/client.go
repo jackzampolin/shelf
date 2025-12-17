@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,8 +27,13 @@ func NewClient(baseURL string) *Client {
 }
 
 // Get performs a GET request and decodes the JSON response.
-func (c *Client) Get(path string, result any) error {
-	resp, err := c.httpClient.Get(c.baseURL + path)
+func (c *Client) Get(ctx context.Context, path string, result any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
@@ -37,7 +43,7 @@ func (c *Client) Get(path string, result any) error {
 }
 
 // Post performs a POST request with JSON body and decodes the response.
-func (c *Client) Post(path string, body any, result any) error {
+func (c *Client) Post(ctx context.Context, path string, body any, result any) error {
 	var bodyReader io.Reader
 	if body != nil {
 		bodyBytes, err := json.Marshal(body)
@@ -47,7 +53,13 @@ func (c *Client) Post(path string, body any, result any) error {
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
-	resp, err := c.httpClient.Post(c.baseURL+path, "application/json", bodyReader)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bodyReader)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
@@ -57,7 +69,7 @@ func (c *Client) Post(path string, body any, result any) error {
 }
 
 // Patch performs a PATCH request with JSON body and decodes the response.
-func (c *Client) Patch(path string, body any, result any) error {
+func (c *Client) Patch(ctx context.Context, path string, body any, result any) error {
 	var bodyReader io.Reader
 	if body != nil {
 		bodyBytes, err := json.Marshal(body)
@@ -67,7 +79,7 @@ func (c *Client) Patch(path string, body any, result any) error {
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
-	req, err := http.NewRequest(http.MethodPatch, c.baseURL+path, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+path, bodyReader)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

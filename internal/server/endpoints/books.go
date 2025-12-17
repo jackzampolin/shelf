@@ -92,6 +92,7 @@ For multi-part scans, files are sorted by numeric suffix (e.g., book-1.pdf, book
 Title is derived from the filename if not provided.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			// Resolve paths to absolute
 			paths := make([]string, len(args))
 			for i, arg := range args {
@@ -104,7 +105,7 @@ Title is derived from the filename if not provided.`,
 
 			client := api.NewClient(getServerURL())
 			var resp IngestResponse
-			if err := client.Post("/api/books/ingest", IngestRequest{
+			if err := client.Post(ctx, "/api/books/ingest", IngestRequest{
 				PDFPaths: paths,
 				Title:    title,
 				Author:   author,
@@ -206,9 +207,10 @@ func (e *ListBooksEndpoint) Command(getServerURL func() string) *cobra.Command {
 		Use:   "list",
 		Short: "List all books",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			client := api.NewClient(getServerURL())
 			var resp ListBooksResponse
-			if err := client.Get("/api/books", &resp); err != nil {
+			if err := client.Get(ctx, "/api/books", &resp); err != nil {
 				return err
 			}
 
@@ -303,9 +305,10 @@ func (e *GetBookEndpoint) Command(getServerURL func() string) *cobra.Command {
 		Short: "Get a book by ID",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			client := api.NewClient(getServerURL())
 			var book Book
-			if err := client.Get("/api/books/"+args[0], &book); err != nil {
+			if err := client.Get(ctx, "/api/books/"+args[0], &book); err != nil {
 				return err
 			}
 			fmt.Printf("ID:        %s\n", book.ID)
