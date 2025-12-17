@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+// Note: os import still needed for os.ReadDir/os.ReadFile in integration test
+
 func TestMistralOCRClient_ProcessImage(t *testing.T) {
 	t.Run("successful OCR", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -231,14 +233,12 @@ func TestMistralOCRClient_ProcessImage(t *testing.T) {
 // Requires MISTRAL_API_KEY environment variable to be set.
 // Uses test fixtures from testdata/ directory.
 func TestMistralOCRIntegration(t *testing.T) {
-	apiKey := os.Getenv("MISTRAL_API_KEY")
-	if apiKey == "" {
+	cfg := LoadTestConfig()
+	if !cfg.HasMistral() {
 		t.Skip("MISTRAL_API_KEY not set - skipping integration test")
 	}
 
-	client := NewMistralOCRClient(MistralOCRConfig{
-		APIKey: apiKey,
-	})
+	client := cfg.NewMistralOCRClient()
 
 	// Find test images
 	testdataDir := filepath.Join("testdata")

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -34,7 +34,7 @@ func TestDeepInfraOCRClient_ProcessImage(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Errorf("failed to decode request: %v", err)
 			}
-			if req.Model != "ds-paddleocr-vl" {
+			if req.Model != "PaddlePaddle/PaddleOCR-VL-0.9B" {
 				t.Errorf("unexpected model: %s", req.Model)
 			}
 			if len(req.Messages) != 1 {
@@ -44,7 +44,7 @@ func TestDeepInfraOCRClient_ProcessImage(t *testing.T) {
 			// Return mock response
 			resp := deepInfraResponse{
 				ID:    "test-id",
-				Model: "ds-paddleocr-vl",
+				Model: "PaddlePaddle/PaddleOCR-VL-0.9B",
 				Choices: []struct {
 					Index   int `json:"index"`
 					Message struct {
@@ -110,7 +110,7 @@ func TestDeepInfraOCRClient_ProcessImage(t *testing.T) {
 		if result.Metadata == nil {
 			t.Fatal("expected metadata")
 		}
-		if result.Metadata["model_used"] != "ds-paddleocr-vl" {
+		if result.Metadata["model_used"] != "PaddlePaddle/PaddleOCR-VL-0.9B" {
 			t.Errorf("model_used = %v", result.Metadata["model_used"])
 		}
 		if result.Metadata["total_tokens"] != 150 {
@@ -122,7 +122,7 @@ func TestDeepInfraOCRClient_ProcessImage(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resp := deepInfraResponse{
 				ID:      "test-id",
-				Model:   "ds-paddleocr-vl",
+				Model:   "PaddlePaddle/PaddleOCR-VL-0.9B",
 				Choices: []struct {
 					Index   int `json:"index"`
 					Message struct {
@@ -286,8 +286,8 @@ func TestDeepInfraOCRClient_Config(t *testing.T) {
 		if client.baseURL != DeepInfraBaseURL {
 			t.Errorf("baseURL = %s, want %s", client.baseURL, DeepInfraBaseURL)
 		}
-		if client.model != "ds-paddleocr-vl" {
-			t.Errorf("model = %s, want ds-paddleocr-vl", client.model)
+		if client.model != "PaddlePaddle/PaddleOCR-VL-0.9B" {
+			t.Errorf("model = %s, want PaddlePaddle/PaddleOCR-VL-0.9B", client.model)
 		}
 		if client.prompt != DeepInfraDefaultOCRPrompt {
 			t.Errorf("prompt = %s, want default", client.prompt)
@@ -326,14 +326,12 @@ func TestDeepInfraOCRClient_Config(t *testing.T) {
 // Requires DEEPINFRA_API_KEY environment variable to be set.
 // Uses test fixtures from testdata/ directory.
 func TestDeepInfraOCRIntegration(t *testing.T) {
-	apiKey := os.Getenv("DEEPINFRA_API_KEY")
-	if apiKey == "" {
+	cfg := LoadTestConfig()
+	if !cfg.HasDeepInfra() {
 		t.Skip("DEEPINFRA_API_KEY not set - skipping integration test")
 	}
 
-	client := NewDeepInfraOCRClient(DeepInfraOCRConfig{
-		APIKey: apiKey,
-	})
+	client := cfg.NewDeepInfraOCRClient()
 
 	// Find test images
 	testdataDir := filepath.Join("testdata")

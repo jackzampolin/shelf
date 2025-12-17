@@ -47,7 +47,7 @@ func NewDeepInfraOCRClient(cfg DeepInfraOCRConfig) *DeepInfraOCRClient {
 		cfg.BaseURL = DeepInfraBaseURL
 	}
 	if cfg.Model == "" {
-		cfg.Model = "ds-paddleocr-vl" // Default PaddleOCR model
+		cfg.Model = "PaddlePaddle/PaddleOCR-VL-0.9B" // Default PaddleOCR model
 	}
 	if cfg.Prompt == "" {
 		cfg.Prompt = DeepInfraDefaultOCRPrompt

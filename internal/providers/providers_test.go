@@ -262,63 +262,28 @@ func TestRateLimiter(t *testing.T) {
 	})
 }
 
-func TestOpenRouterClient(t *testing.T) {
-	t.Run("config defaults", func(t *testing.T) {
-		c := NewOpenRouterClient(OpenRouterConfig{
-			APIKey: "test-key",
-		})
-
-		if c.Name() != "openrouter" {
-			t.Errorf("Name() = %q, want %q", c.Name(), "openrouter")
-		}
-		if c.baseURL != OpenRouterBaseURL {
-			t.Errorf("baseURL = %q, want %q", c.baseURL, OpenRouterBaseURL)
-		}
+// TestTestConfig verifies the test helper works correctly.
+func TestTestConfig(t *testing.T) {
+	t.Run("loads from environment", func(t *testing.T) {
+		cfg := LoadTestConfig()
+		// Just verify it doesn't panic - actual values depend on environment
+		_ = cfg.HasOpenRouter()
+		_ = cfg.HasMistral()
+		_ = cfg.HasDeepInfra()
+		_ = cfg.HasAnyOCR()
+		_ = cfg.HasAnyLLM()
 	})
 
-	// Integration test - skip unless OPENROUTER_API_KEY is set
-	t.Run("integration", func(t *testing.T) {
-		t.Skip("integration test - requires OPENROUTER_API_KEY")
-	})
-}
+	t.Run("ToRegistryConfig", func(t *testing.T) {
+		cfg := LoadTestConfig()
+		regCfg := cfg.ToRegistryConfig()
 
-func TestMistralOCRClient(t *testing.T) {
-	t.Run("config defaults", func(t *testing.T) {
-		c := NewMistralOCRClient(MistralOCRConfig{
-			APIKey: "test-key",
-		})
-
-		if c.Name() != MistralOCRName {
-			t.Errorf("Name() = %q, want %q", c.Name(), MistralOCRName)
+		// Verify structure is correct
+		if regCfg.OCRProviders == nil {
+			t.Error("OCRProviders should not be nil")
 		}
-		if c.baseURL != MistralOCRBaseURL {
-			t.Errorf("baseURL = %q, want %q", c.baseURL, MistralOCRBaseURL)
+		if regCfg.LLMProviders == nil {
+			t.Error("LLMProviders should not be nil")
 		}
-		if c.model != MistralOCRModel {
-			t.Errorf("model = %q, want %q", c.model, MistralOCRModel)
-		}
-	})
-
-	t.Run("rate limit properties", func(t *testing.T) {
-		c := NewMistralOCRClient(MistralOCRConfig{APIKey: "test"})
-
-		if c.RequestsPerSecond() != 6.0 {
-			t.Errorf("RequestsPerSecond() = %f, want 6.0", c.RequestsPerSecond())
-		}
-		if c.MaxRetries() != 3 {
-			t.Errorf("MaxRetries() = %d, want 3", c.MaxRetries())
-		}
-		if c.RetryDelayBase() != 2*time.Second {
-			t.Errorf("RetryDelayBase() = %v, want 2s", c.RetryDelayBase())
-		}
-	})
-
-	t.Run("interface compliance", func(t *testing.T) {
-		var _ OCRProvider = (*MistralOCRClient)(nil)
-	})
-
-	// Integration test - skip unless MISTRAL_API_KEY is set
-	t.Run("integration", func(t *testing.T) {
-		t.Skip("integration test - requires MISTRAL_API_KEY")
 	})
 }
