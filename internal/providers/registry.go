@@ -1,9 +1,19 @@
 package providers
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
+)
+
+// Sentinel errors for the providers package.
+var (
+	// ErrLLMNotFound is returned when an LLM client is not found in the registry.
+	ErrLLMNotFound = errors.New("LLM client not found")
+
+	// ErrOCRNotFound is returned when an OCR provider is not found in the registry.
+	ErrOCRNotFound = errors.New("OCR provider not found")
 )
 
 // Registry holds references to LLM clients and OCR providers.
@@ -77,7 +87,7 @@ func (r *Registry) GetLLM(name string) (LLMClient, error) {
 	defer r.mu.RUnlock()
 	client, ok := r.llmClients[name]
 	if !ok {
-		return nil, fmt.Errorf("LLM client not found: %s", name)
+		return nil, fmt.Errorf("%w: %s", ErrLLMNotFound, name)
 	}
 	return client, nil
 }
@@ -88,7 +98,7 @@ func (r *Registry) GetOCR(name string) (OCRProvider, error) {
 	defer r.mu.RUnlock()
 	provider, ok := r.ocrProviders[name]
 	if !ok {
-		return nil, fmt.Errorf("OCR provider not found: %s", name)
+		return nil, fmt.Errorf("%w: %s", ErrOCRNotFound, name)
 	}
 	return provider, nil
 }

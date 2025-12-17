@@ -166,7 +166,7 @@ func (w *Worker) Submit(unit *WorkUnit) error {
 	case w.queue <- unit:
 		return nil
 	default:
-		return fmt.Errorf("worker %s queue full", w.name)
+		return fmt.Errorf("%w: %s", ErrWorkerQueueFull, w.name)
 	}
 }
 

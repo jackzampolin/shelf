@@ -2,7 +2,6 @@ package defra
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -160,7 +159,7 @@ func (s *Sink) SendSync(ctx context.Context, op WriteOp) (WriteResult, error) {
 	select {
 	case s.queue <- op:
 	case <-s.ctx.Done():
-		return WriteResult{}, fmt.Errorf("sink closed")
+		return WriteResult{}, ErrSinkClosed
 	case <-ctx.Done():
 		return WriteResult{}, ctx.Err()
 	}
@@ -170,7 +169,7 @@ func (s *Sink) SendSync(ctx context.Context, op WriteOp) (WriteResult, error) {
 	case result := <-resultCh:
 		return result, result.Err
 	case <-s.ctx.Done():
-		return WriteResult{}, fmt.Errorf("sink closed while waiting for result")
+		return WriteResult{}, ErrSinkClosed
 	case <-ctx.Done():
 		return WriteResult{}, ctx.Err()
 	}

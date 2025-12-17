@@ -210,7 +210,7 @@ func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 // Requires job factories to be registered for each job type.
 func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 	if s.manager == nil {
-		return 0, fmt.Errorf("manager required for resume")
+		return 0, ErrManagerRequired
 	}
 
 	// Find interrupted jobs

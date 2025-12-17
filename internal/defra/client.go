@@ -12,8 +12,14 @@ import (
 	"time"
 )
 
-// ErrUnhealthy is returned when DefraDB health check fails.
-var ErrUnhealthy = errors.New("defra health check failed")
+// Sentinel errors for the defra package.
+var (
+	// ErrUnhealthy is returned when DefraDB health check fails.
+	ErrUnhealthy = errors.New("defra health check failed")
+
+	// ErrSinkClosed is returned when operations are attempted on a closed sink.
+	ErrSinkClosed = errors.New("sink closed")
+)
 
 // Client is a DefraDB HTTP/GraphQL client.
 type Client struct {

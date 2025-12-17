@@ -13,6 +13,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/config"
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
@@ -27,10 +28,13 @@ type Server struct {
 	httpServer   *http.Server
 	defraManager *defra.DockerManager
 	defraClient  *defra.Client
+	defraSink    *defra.Sink
 	jobManager   *jobs.Manager
+	scheduler    *jobs.Scheduler
 	registry     *providers.Registry
 	configMgr    *config.Manager
 	logger       *slog.Logger
+	home         *home.Dir
 
 	// services holds all core services for context enrichment
 	services *svcctx.Services
@@ -56,6 +60,8 @@ type Config struct {
 	ConfigManager *config.Manager
 	// Logger is the structured logger to use
 	Logger *slog.Logger
+	// Home is the shelf home directory
+	Home *home.Dir
 }
 
 // New creates a new Server with the given configuration.
@@ -100,6 +106,7 @@ func New(cfg Config) (*Server, error) {
 		registry:     registry,
 		configMgr:    cfg.ConfigManager,
 		logger:       cfg.Logger,
+		home:         cfg.Home,
 	}
 
 	// Create endpoint registry and register all endpoints
@@ -114,9 +121,9 @@ func New(cfg Config) (*Server, error) {
 
 	s.httpServer = &http.Server{
 		Addr:         net.JoinHostPort(cfg.Host, cfg.Port),
-		Handler:      s.withServices(mux),
+		Handler:      s.withLogging(s.withServices(mux)),
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 10 * time.Minute, // Long timeout for large file operations
 		IdleTimeout:  120 * time.Second,
 	}
 
@@ -168,12 +175,37 @@ func (s *Server) Start(ctx context.Context) error {
 	// Create job manager
 	s.jobManager = jobs.NewManager(s.defraClient, s.logger)
 
+	// Create write sink for batched DefraDB writes
+	s.defraSink = defra.NewSink(defra.SinkConfig{
+		Client: s.defraClient,
+		Logger: s.logger,
+	})
+	s.defraSink.Start(ctx)
+
+	// Create scheduler for job execution
+	s.scheduler = jobs.NewScheduler(jobs.SchedulerConfig{
+		Manager: s.jobManager,
+		Logger:  s.logger,
+	})
+
+	// Initialize workers from provider registry
+	if err := s.scheduler.InitFromRegistry(s.registry); err != nil {
+		_ = s.shutdown()
+		return fmt.Errorf("failed to initialize workers: %w", err)
+	}
+
+	// Start scheduler in background
+	go s.scheduler.Start(ctx)
+
 	// Create services struct for context enrichment
 	s.services = &svcctx.Services{
 		DefraClient: s.defraClient,
+		DefraSink:   s.defraSink,
 		JobManager:  s.jobManager,
 		Registry:    s.registry,
+		Scheduler:   s.scheduler,
 		Logger:      s.logger,
+		Home:        s.home,
 	}
 
 	// Start HTTP server in goroutine
@@ -210,6 +242,12 @@ func (s *Server) shutdown() error {
 
 	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
 		s.logger.Error("HTTP server shutdown error", "error", err)
+	}
+
+	// Stop write sink (flushes remaining writes)
+	if s.defraSink != nil {
+		s.logger.Info("stopping write sink")
+		s.defraSink.Stop()
 	}
 
 	// Stop DefraDB
@@ -272,6 +310,36 @@ func (s *Server) withServices(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// withLogging wraps a handler to log requests.
+func (s *Server) withLogging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		s.logger.Info("request started", "method", r.Method, "path", r.URL.Path)
+
+		// Wrap response writer to capture status code
+		wrapped := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+
+		s.logger.Info("request completed",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", wrapped.status,
+			"duration", time.Since(start).String(),
+		)
+	})
+}
+
+// statusWriter wraps http.ResponseWriter to capture status code.
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
 }
 
 // requireInit is middleware that ensures the server is fully initialized.

@@ -1,8 +1,21 @@
 package pipeline
 
 import (
+	"errors"
 	"fmt"
 	"sync"
+)
+
+// Sentinel errors for the pipeline package.
+var (
+	// ErrStageAlreadyRegistered is returned when registering a duplicate stage.
+	ErrStageAlreadyRegistered = errors.New("stage already registered")
+
+	// ErrStageNotFound is returned when a stage dependency is not found.
+	ErrStageNotFound = errors.New("stage not found")
+
+	// ErrDependencyCycle is returned when stage dependencies form a cycle.
+	ErrDependencyCycle = errors.New("dependency cycle detected")
 )
 
 // Registry manages available stages and their dependencies.
@@ -28,7 +41,7 @@ func (r *Registry) Register(s Stage) error {
 
 	name := s.Name()
 	if _, exists := r.stages[name]; exists {
-		return fmt.Errorf("stage already registered: %s", name)
+		return fmt.Errorf("%w: %s", ErrStageAlreadyRegistered, name)
 	}
 
 	r.stages[name] = s
@@ -85,7 +98,7 @@ func (r *Registry) GetOrdered() ([]Stage, error) {
 		stage := r.stages[name]
 		for _, dep := range stage.Dependencies() {
 			if _, ok := r.stages[dep]; !ok {
-				return nil, fmt.Errorf("stage %q depends on unknown stage %q", name, dep)
+				return nil, fmt.Errorf("%w: stage %q depends on %q", ErrStageNotFound, name, dep)
 			}
 			inDegree[name]++
 		}
@@ -124,7 +137,7 @@ func (r *Registry) GetOrdered() ([]Stage, error) {
 
 	// Check for cycles
 	if len(ordered) != len(r.stages) {
-		return nil, fmt.Errorf("dependency cycle detected among stages")
+		return nil, ErrDependencyCycle
 	}
 
 	return ordered, nil
@@ -138,7 +151,7 @@ func (r *Registry) Validate() error {
 	for name, stage := range r.stages {
 		for _, dep := range stage.Dependencies() {
 			if _, ok := r.stages[dep]; !ok {
-				return fmt.Errorf("stage %q depends on unknown stage %q", name, dep)
+				return fmt.Errorf("%w: stage %q depends on %q", ErrStageNotFound, name, dep)
 			}
 		}
 	}

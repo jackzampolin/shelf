@@ -341,33 +341,6 @@ func TestScheduler(t *testing.T) {
 	})
 }
 
-func TestContextDeps(t *testing.T) {
-	t.Run("round trip", func(t *testing.T) {
-		logger := slog.Default()
-		deps := Dependencies{
-			Logger: logger,
-		}
-
-		ctx := ContextWithDeps(context.Background(), deps)
-		got := DepsFromContext(ctx)
-
-		if got.Logger != logger {
-			t.Error("logger not preserved")
-		}
-	})
-
-	t.Run("missing deps returns empty", func(t *testing.T) {
-		deps := DepsFromContext(context.Background())
-
-		if deps.Logger != nil {
-			t.Error("expected nil logger")
-		}
-		if deps.DefraClient != nil {
-			t.Error("expected nil DefraClient")
-		}
-	})
-}
-
 func TestNewRecord(t *testing.T) {
 	metadata := map[string]any{"key": "value"}
 	record := NewRecord("test", metadata)

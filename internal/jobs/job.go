@@ -3,15 +3,28 @@ package jobs
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"time"
 
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
-// ErrNotFound is returned when a job is not found.
-var ErrNotFound = errors.New("job not found")
+// Sentinel errors for the jobs package.
+var (
+	// ErrNotFound is returned when a job is not found.
+	ErrNotFound = errors.New("job not found")
+
+	// ErrNoWorkerAvailable is returned when no worker can handle a work unit.
+	ErrNoWorkerAvailable = errors.New("no worker available")
+
+	// ErrWorkerQueueFull is returned when a worker's queue is at capacity.
+	ErrWorkerQueueFull = errors.New("worker queue full")
+
+	// ErrJobAlreadyStarted is returned when trying to start an already-running job.
+	ErrJobAlreadyStarted = errors.New("job already started")
+
+	// ErrManagerRequired is returned when an operation requires a manager but none is set.
+	ErrManagerRequired = errors.New("manager required")
+)
 
 // WorkUnitType distinguishes LLM from OCR work.
 type WorkUnitType string
@@ -113,30 +126,6 @@ type Job interface {
 	// Keys are provider names (e.g., "openrouter", "mistral").
 	// This enables granular progress tracking during execution.
 	Progress() map[string]ProviderProgress
-}
-
-// Dependencies provides access to shared resources for job execution.
-type Dependencies struct {
-	DefraClient *defra.Client
-	Logger      *slog.Logger
-}
-
-// depsKey is the context key for Dependencies.
-type depsKey struct{}
-
-// ContextWithDeps returns a new context with Dependencies attached.
-func ContextWithDeps(ctx context.Context, deps Dependencies) context.Context {
-	return context.WithValue(ctx, depsKey{}, deps)
-}
-
-// DepsFromContext retrieves Dependencies from the context.
-// Returns a Dependencies with nil fields if not found.
-func DepsFromContext(ctx context.Context) Dependencies {
-	deps, ok := ctx.Value(depsKey{}).(Dependencies)
-	if !ok {
-		return Dependencies{}
-	}
-	return deps
 }
 
 // Status represents the current state of a job.
