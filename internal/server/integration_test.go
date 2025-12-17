@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackzampolin/shelf/internal/config"
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/server/endpoints"
 	"github.com/jackzampolin/shelf/internal/testutil"
 )
 
@@ -373,6 +374,80 @@ llm_providers:
 	}
 
 	t.Logf("After removing Mistral: OCR=%v, LLM=%v", status.Providers.OCR, status.Providers.LLM)
+
+	// Clean shutdown
+	serverCancel()
+	select {
+	case <-serverErr:
+		// Expected
+	case <-time.After(30 * time.Second):
+		t.Fatal("server did not shut down")
+	}
+}
+
+func TestCLI_StatusEndpoint(t *testing.T) {
+	cfg := testutil.NewServerConfig(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	srv, err := New(Config{
+		Host:          cfg.Host,
+		Port:          cfg.Port,
+		DefraDataPath: cfg.DefraDataPath,
+		DefraConfig: defra.DockerConfig{
+			ContainerName: cfg.DefraConfig.ContainerName,
+			HostPort:      cfg.DefraConfig.HostPort,
+			Labels:        cfg.DefraConfig.Labels,
+		},
+		Logger: cfg.Logger,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	serverErr := make(chan error, 1)
+	serverCtx, serverCancel := context.WithCancel(ctx)
+	defer serverCancel()
+
+	go func() {
+		serverErr <- srv.Start(serverCtx)
+	}()
+
+	// Wait for server to be ready
+	if err := testutil.WaitForServer(cfg.URL(), 60*time.Second); err != nil {
+		t.Fatalf("server did not start: %v", err)
+	}
+
+	// Test CLI commands via endpoint's Command method
+	// These tests verify the CLI -> HTTP -> Server round-trip works
+	t.Run("status_cli_command", func(t *testing.T) {
+		ep := &endpoints.StatusEndpoint{}
+		cmd := ep.Command(func() string { return cfg.URL() })
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("status command failed: %v", err)
+		}
+		// Command succeeded - round-trip worked
+	})
+
+	t.Run("health_cli_command", func(t *testing.T) {
+		ep := &endpoints.HealthEndpoint{}
+		cmd := ep.Command(func() string { return cfg.URL() })
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("health command failed: %v", err)
+		}
+	})
+
+	t.Run("ready_cli_command", func(t *testing.T) {
+		ep := &endpoints.ReadyEndpoint{}
+		cmd := ep.Command(func() string { return cfg.URL() })
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("ready command failed: %v", err)
+		}
+	})
 
 	// Clean shutdown
 	serverCancel()

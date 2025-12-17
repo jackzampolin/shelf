@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/server/endpoints"
 	"github.com/jackzampolin/shelf/internal/testutil"
 )
 
@@ -59,7 +60,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 			t.Errorf("health status = %d, want %d", resp.StatusCode, http.StatusOK)
 		}
 
-		var health HealthResponse
+		var health endpoints.HealthResponse
 		if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}
@@ -80,7 +81,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 			t.Errorf("ready status = %d, want %d", resp.StatusCode, http.StatusOK)
 		}
 
-		var health HealthResponse
+		var health endpoints.HealthResponse
 		if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}
@@ -104,7 +105,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 			t.Errorf("status code = %d, want %d", resp.StatusCode, http.StatusOK)
 		}
 
-		var status StatusResponse
+		var status endpoints.StatusResponse
 		if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}
@@ -152,7 +153,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusCreated)
 		}
 
-		var result CreateJobResponse
+		var result endpoints.CreateJobResponse
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}
@@ -203,7 +204,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 		}
 
-		var result ListJobsResponse
+		var result endpoints.ListJobsResponse
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}
@@ -224,7 +225,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 		}
 
-		var result ListJobsResponse
+		var result endpoints.ListJobsResponse
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}

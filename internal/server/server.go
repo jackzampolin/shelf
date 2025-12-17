@@ -10,11 +10,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/config"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
+	"github.com/jackzampolin/shelf/internal/server/endpoints"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // Server is the main Shelf HTTP server.
@@ -28,6 +31,12 @@ type Server struct {
 	registry     *providers.Registry
 	configMgr    *config.Manager
 	logger       *slog.Logger
+
+	// services holds all core services for context enrichment
+	services *svcctx.Services
+
+	// endpoints registry for HTTP routes
+	endpointRegistry *api.Registry
 
 	mu      sync.RWMutex
 	running bool
@@ -93,13 +102,19 @@ func New(cfg Config) (*Server, error) {
 		logger:       cfg.Logger,
 	}
 
+	// Create endpoint registry and register all endpoints
+	s.endpointRegistry = api.NewRegistry()
+	for _, ep := range endpoints.All(endpoints.Config{DefraManager: defraManager}) {
+		s.endpointRegistry.Register(ep)
+	}
+
 	// Set up HTTP server
 	mux := http.NewServeMux()
-	s.registerRoutes(mux)
+	s.endpointRegistry.RegisterRoutes(mux, s.requireInit)
 
 	s.httpServer = &http.Server{
 		Addr:         net.JoinHostPort(cfg.Host, cfg.Port),
-		Handler:      mux,
+		Handler:      s.withServices(mux),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -152,6 +167,14 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Create job manager
 	s.jobManager = jobs.NewManager(s.defraClient, s.logger)
+
+	// Create services struct for context enrichment
+	s.services = &svcctx.Services{
+		DefraClient: s.defraClient,
+		JobManager:  s.jobManager,
+		Registry:    s.registry,
+		Logger:      s.logger,
+	}
 
 	// Start HTTP server in goroutine
 	errCh := make(chan error, 1)
@@ -238,4 +261,29 @@ func (s *Server) Addr() string {
 // Registry returns the provider registry.
 func (s *Server) Registry() *providers.Registry {
 	return s.registry
+}
+
+// withServices wraps a handler to enrich the request context with services.
+func (s *Server) withServices(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		if s.services != nil {
+			ctx = svcctx.WithServices(ctx, s.services)
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// requireInit is middleware that ensures the server is fully initialized.
+// Returns 503 Service Unavailable if DefraDB or job manager aren't ready.
+func (s *Server) requireInit(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.defraClient == nil || s.jobManager == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`{"error":"server not fully initialized"}`))
+			return
+		}
+		next(w, r)
+	}
 }
