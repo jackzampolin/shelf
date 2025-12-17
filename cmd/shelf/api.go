@@ -27,6 +27,11 @@ var jobsCmd = &cobra.Command{
 	Short: "Job management commands",
 }
 
+var booksCmd = &cobra.Command{
+	Use:   "books",
+	Short: "Book management commands",
+}
+
 // getServerURL returns the server URL at runtime (after flag parsing).
 func getServerURL() string {
 	return serverURL
@@ -49,6 +54,12 @@ func init() {
 	jobsCmd.AddCommand((&endpoints.GetJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.UpdateJobEndpoint{}).Command(getServerURL))
 
+	// Books as subcommand group
+	booksCmd.AddCommand((&endpoints.IngestEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.ListBooksEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.GetBookEndpoint{}).Command(getServerURL))
+
 	apiCmd.AddCommand(jobsCmd)
+	apiCmd.AddCommand(booksCmd)
 	rootCmd.AddCommand(apiCmd)
 }

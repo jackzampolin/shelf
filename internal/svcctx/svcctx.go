@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
@@ -20,6 +21,7 @@ type Services struct {
 	Registry    *providers.Registry
 	Scheduler   *jobs.Scheduler
 	Logger      *slog.Logger
+	Home        *home.Dir
 }
 
 type servicesKey struct{}
@@ -80,6 +82,14 @@ func SchedulerFrom(ctx context.Context) *jobs.Scheduler {
 func LoggerFrom(ctx context.Context) *slog.Logger {
 	if s := ServicesFrom(ctx); s != nil {
 		return s.Logger
+	}
+	return nil
+}
+
+// HomeFrom extracts the home directory from context.
+func HomeFrom(ctx context.Context) *home.Dir {
+	if s := ServicesFrom(ctx); s != nil {
+		return s.Home
 	}
 	return nil
 }

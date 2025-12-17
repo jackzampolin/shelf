@@ -62,6 +62,14 @@ Examples:
 				configFile = filepath.Join(h.Path(), "config.yaml")
 			}
 		}
+
+		// Write default config if it doesn't exist
+		if _, err := os.Stat(configFile); os.IsNotExist(err) {
+			logger.Info("creating default config", "path", configFile)
+			if err := config.WriteDefault(configFile); err != nil {
+				logger.Warn("failed to write default config", "error", err)
+			}
+		}
 		cfgMgr, err := config.NewManager(configFile)
 		if err != nil {
 			logger.Warn("config not loaded, using defaults", "error", err)
@@ -102,6 +110,7 @@ Examples:
 			DefraConfig:   defraConfig,
 			ConfigManager: cfgMgr,
 			Logger:        logger,
+			Home:          h,
 		})
 		if err != nil {
 			return err

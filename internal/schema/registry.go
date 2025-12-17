@@ -20,6 +20,7 @@ type Schema struct {
 // registry holds all schemas in order.
 var registry = []Schema{
 	{Name: "Job", Order: 1},
+	{Name: "Book", Order: 2},
 }
 
 // All returns all schemas in dependency order.

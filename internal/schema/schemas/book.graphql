@@ -1,0 +1,7 @@
+type Book {
+    title: String
+    author: String
+    page_count: Int
+    status: String
+    created_at: DateTime
+}

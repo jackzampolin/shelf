@@ -32,6 +32,7 @@ Thumbs.db
 
 # Project-specific
 .claude/.env
+shelf
 
 # Log files
 *.log
@@ -43,3 +44,4 @@ coverage.html
 # Test artifacts
 test_results/
 test_outputs/
+testdata/

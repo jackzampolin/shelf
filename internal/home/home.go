@@ -71,3 +71,28 @@ func (d *Dir) ConfigExists() bool {
 	_, err := os.Stat(d.ConfigPath())
 	return err == nil
 }
+
+// SourceImagesDir returns the directory for source images of a book.
+func (d *Dir) SourceImagesDir(bookID string) string {
+	return filepath.Join(d.path, "source_images", bookID)
+}
+
+// SourceImagePath returns the path to a specific page image.
+// Page numbers are 1-indexed.
+func (d *Dir) SourceImagePath(bookID string, pageNum int) string {
+	return filepath.Join(d.SourceImagesDir(bookID), fmt.Sprintf("page_%04d.png", pageNum))
+}
+
+// SourceImagePaths returns paths for all pages of a book.
+func (d *Dir) SourceImagePaths(bookID string, pageCount int) []string {
+	paths := make([]string, pageCount)
+	for i := 1; i <= pageCount; i++ {
+		paths[i-1] = d.SourceImagePath(bookID, i)
+	}
+	return paths
+}
+
+// EnsureSourceImagesDir creates the source images directory for a book.
+func (d *Dir) EnsureSourceImagesDir(bookID string) error {
+	return os.MkdirAll(d.SourceImagesDir(bookID), 0o755)
+}

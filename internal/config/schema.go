@@ -54,18 +54,25 @@ func DefaultConfig() *Config {
 				RateLimit: 6.0, // 6 RPS
 				Enabled:   true,
 			},
+			"paddle": {
+				Type:      "deepinfra",
+				Model:     "PaddlePaddle/PaddleOCR-VL-0.9B",
+				APIKey:    "${DEEPINFRA_API_KEY}",
+				RateLimit: 10.0, // 10 RPS
+				Enabled:   true,
+			},
 		},
 		LLMProviders: map[string]LLMProviderCfg{
 			"openrouter": {
 				Type:      "openrouter",
-				Model:     "anthropic/claude-sonnet-4",
+				Model:     "x-ai/grok-4.1-fast",
 				APIKey:    "${OPENROUTER_API_KEY}",
 				RateLimit: 150.0, // 150 RPS
 				Enabled:   true,
 			},
 		},
 		Defaults: DefaultsCfg{
-			OCRProviders: []string{"mistral"},
+			OCRProviders: []string{"mistral", "paddle"},
 			LLMProvider:  "openrouter",
 			MaxWorkers:   10,
 		},

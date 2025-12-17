@@ -9,6 +9,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v2"
 
 	"github.com/jackzampolin/shelf/internal/providers"
 )
@@ -157,4 +158,20 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 	}
 
 	return cfg
+}
+
+// WriteDefault writes the default configuration to the specified path.
+func WriteDefault(path string) error {
+	cfg := DefaultConfig()
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	header := []byte(`# Shelf configuration
+# API keys use ${ENV_VAR} syntax to reference environment variables
+# Set these in your shell: export MISTRAL_API_KEY=xxx DEEPINFRA_API_KEY=xxx OPENROUTER_API_KEY=xxx
+
+`)
+	return os.WriteFile(path, append(header, data...), 0o644)
 }

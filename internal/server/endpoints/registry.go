@@ -23,6 +23,11 @@ func All(cfg Config) []api.Endpoint {
 		&ListJobsEndpoint{},
 		&GetJobEndpoint{},
 		&UpdateJobEndpoint{},
+
+		// Book endpoints
+		&IngestEndpoint{},
+		&ListBooksEndpoint{},
+		&GetBookEndpoint{},
 	}
 }
 
