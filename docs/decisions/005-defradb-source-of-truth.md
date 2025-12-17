@@ -71,6 +71,39 @@ Python used filesystem as database. Files existed = work done. No history, no ve
 
 Go uses DefraDB. Full audit trail. Cryptographic proof of every change.
 
+## Write Sink
+
+All writes flow through a single coordinated sink. Not scattered client calls.
+
+| Mode | Use Case |
+|------|----------|
+| **Send** | Fire-and-forget. Metrics, logs. Don't block. |
+| **SendSync** | Need the docID back. Stage outputs, job records. |
+
+Batching happens automatically:
+- Size trigger (100 ops)
+- Time trigger (5s)
+- Manual flush when needed
+
+```go
+// Fire-and-forget (metrics)
+sink.Send(defra.WriteOp{
+    Collection: "Metric",
+    Document:   map[string]any{"cost": 0.002},
+    Op:         defra.OpCreate,
+})
+
+// Blocking (need docID)
+result, _ := sink.SendSync(ctx, defra.WriteOp{
+    Collection: "OcrResult",
+    Document:   ocrDoc,
+    Op:         defra.OpCreate,
+})
+// result.DocID available immediately
+```
+
+Access via context: `svcctx.DefraSinkFrom(ctx)`.
+
 ## Schema Versioning
 
 DefraDB tracks schema changes too:

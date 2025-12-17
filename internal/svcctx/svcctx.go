@@ -15,11 +15,11 @@ import (
 // Components extract what they need via the individual extractors.
 type Services struct {
 	DefraClient *defra.Client
-	// DefraSink will be added when #123 is implemented
-	JobManager *jobs.Manager
-	Registry   *providers.Registry
-	Scheduler  *jobs.Scheduler
-	Logger     *slog.Logger
+	DefraSink   *defra.Sink
+	JobManager  *jobs.Manager
+	Registry    *providers.Registry
+	Scheduler   *jobs.Scheduler
+	Logger      *slog.Logger
 }
 
 type servicesKey struct{}
@@ -40,6 +40,14 @@ func ServicesFrom(ctx context.Context) *Services {
 func DefraClientFrom(ctx context.Context) *defra.Client {
 	if s := ServicesFrom(ctx); s != nil {
 		return s.DefraClient
+	}
+	return nil
+}
+
+// DefraSinkFrom extracts the DefraDB write sink from context.
+func DefraSinkFrom(ctx context.Context) *defra.Sink {
+	if s := ServicesFrom(ctx); s != nil {
+		return s.DefraSink
 	}
 	return nil
 }

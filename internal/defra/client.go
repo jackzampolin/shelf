@@ -174,6 +174,38 @@ func (c *Client) Create(ctx context.Context, collection string, input map[string
 	return "", fmt.Errorf("unexpected response format: %+v", resp.Data)
 }
 
+// Update updates a document in a collection.
+func (c *Client) Update(ctx context.Context, collection string, docID string, input map[string]any) error {
+	inputGQL, err := mapToGraphQLInput(input)
+	if err != nil {
+		return fmt.Errorf("failed to build input: %w", err)
+	}
+	query := fmt.Sprintf(`mutation { update_%s(docID: %q, input: %s) { _docID } }`, collection, docID, inputGQL)
+
+	resp, err := c.Execute(ctx, query, nil)
+	if err != nil {
+		return err
+	}
+	if errMsg := resp.Error(); errMsg != "" {
+		return fmt.Errorf("update error: %s", errMsg)
+	}
+	return nil
+}
+
+// Delete deletes a document from a collection.
+func (c *Client) Delete(ctx context.Context, collection string, docID string) error {
+	query := fmt.Sprintf(`mutation { delete_%s(docID: %q) { _docID } }`, collection, docID)
+
+	resp, err := c.Execute(ctx, query, nil)
+	if err != nil {
+		return err
+	}
+	if errMsg := resp.Error(); errMsg != "" {
+		return fmt.Errorf("delete error: %s", errMsg)
+	}
+	return nil
+}
+
 // mapToGraphQLInput converts a map to GraphQL input format.
 func mapToGraphQLInput(input map[string]any) (string, error) {
 	var parts []string
