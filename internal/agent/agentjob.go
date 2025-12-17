@@ -157,6 +157,7 @@ func (j *AgentJob) processAgentStateLocked(ctx context.Context) ([]jobs.WorkUnit
 				Type:        jobs.WorkUnitTypeLLM,
 				JobID:       j.recordID,
 				ChatRequest: unit.ChatRequest,
+				Tools:       unit.Tools, // Pass tools for ChatWithTools
 			})
 		}
 

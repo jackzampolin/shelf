@@ -32,6 +32,9 @@ type WorkUnit struct {
 	// Request data (one of these will be set based on Type)
 	ChatRequest *providers.ChatRequest
 	OCRRequest  *OCRWorkRequest
+
+	// Tools for LLM calls (optional - if set, ChatWithTools is used)
+	Tools []providers.Tool
 }
 
 // OCRWorkRequest contains the data needed for an OCR work unit.

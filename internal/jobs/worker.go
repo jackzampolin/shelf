@@ -205,7 +205,17 @@ func (w *Worker) Process(ctx context.Context, unit *WorkUnit) WorkResult {
 			result.Error = fmt.Errorf("LLM work unit missing ChatRequest")
 			return result
 		}
-		chatResult, err := w.llmClient.Chat(ctx, unit.ChatRequest)
+
+		var chatResult *providers.ChatResult
+		var err error
+
+		// Use ChatWithTools if tools are provided
+		if len(unit.Tools) > 0 {
+			chatResult, err = w.llmClient.ChatWithTools(ctx, unit.ChatRequest, unit.Tools)
+		} else {
+			chatResult, err = w.llmClient.Chat(ctx, unit.ChatRequest)
+		}
+
 		result.ChatResult = chatResult
 		if err != nil {
 			result.Success = false
