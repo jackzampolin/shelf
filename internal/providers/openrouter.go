@@ -152,6 +152,21 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 			orMsg.Content = m.Content
 		}
 
+		// Include tool_calls for assistant messages (required by API)
+		if len(m.ToolCalls) > 0 {
+			orMsg.ToolCalls = m.ToolCalls
+		}
+
+		// Include tool_call_id for tool response messages
+		if m.ToolCallID != "" {
+			orMsg.ToolCallID = m.ToolCallID
+		}
+
+		// Include reasoning_details for reasoning models
+		if len(m.ReasoningDetails) > 0 {
+			orMsg.ReasoningDetails = m.ReasoningDetails
+		}
+
 		orReq.Messages = append(orReq.Messages, orMsg)
 	}
 
@@ -219,8 +234,14 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 	result.PromptTokens = orResp.Usage.PromptTokens
 	result.CompletionTokens = orResp.Usage.CompletionTokens
 	result.TotalTokens = orResp.Usage.TotalTokens
+	result.ReasoningTokens = orResp.Usage.CompletionTokensDetails.ReasoningTokens
 	result.ExecutionTime = time.Since(start)
 	result.TotalTime = result.ExecutionTime
+
+	// Include reasoning_details for reasoning models
+	if len(orResp.Choices[0].Message.ReasoningDetails) > 0 {
+		result.ReasoningDetails = orResp.Choices[0].Message.ReasoningDetails
+	}
 
 	// Parse JSON if structured output was requested
 	if req.ResponseFormat != nil && content != "" {
@@ -405,8 +426,11 @@ type openRouterRequest struct {
 }
 
 type openRouterMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"` // string or []openRouterContent
+	Role             string             `json:"role"`
+	Content          any                `json:"content"`                     // string or []openRouterContent
+	ToolCalls        []ToolCall         `json:"tool_calls,omitempty"`        // For assistant messages with tool calls
+	ToolCallID       string             `json:"tool_call_id,omitempty"`      // For tool response messages
+	ReasoningDetails []ReasoningDetail  `json:"reasoning_details,omitempty"` // For reasoning models
 }
 
 type openRouterContent struct {
@@ -429,9 +453,9 @@ type openRouterResponse struct {
 	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
-			Role      string `json:"role"`
-			Content   any    `json:"content"`
-			ToolCalls []struct {
+			Role             string `json:"role"`
+			Content          any    `json:"content"`
+			ToolCalls        []struct {
 				ID       string `json:"id"`
 				Type     string `json:"type"`
 				Function struct {
@@ -439,13 +463,17 @@ type openRouterResponse struct {
 					Arguments string `json:"arguments"`
 				} `json:"function"`
 			} `json:"tool_calls,omitempty"`
+			ReasoningDetails []ReasoningDetail `json:"reasoning_details,omitempty"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
+		PromptTokens            int `json:"prompt_tokens"`
+		CompletionTokens        int `json:"completion_tokens"`
+		TotalTokens             int `json:"total_tokens"`
+		CompletionTokensDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details,omitempty"`
 	} `json:"usage"`
 }
 

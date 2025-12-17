@@ -152,10 +152,20 @@ func (a *Agent) HandleLLMResult(result *providers.ChatResult) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Build assistant message
+	// Build assistant message with all fields needed for API
 	assistantMsg := providers.Message{
 		Role:    "assistant",
 		Content: result.Content,
+	}
+
+	// Include tool_calls in assistant message (required by API for multi-turn)
+	if len(result.ToolCalls) > 0 {
+		assistantMsg.ToolCalls = result.ToolCalls
+	}
+
+	// Include reasoning_details for reasoning models (encrypted thinking)
+	if len(result.ReasoningDetails) > 0 {
+		assistantMsg.ReasoningDetails = result.ReasoningDetails
 	}
 
 	// Check for tool calls

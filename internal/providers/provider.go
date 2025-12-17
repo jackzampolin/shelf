@@ -44,8 +44,21 @@ type OCRProvider interface {
 type Message struct {
 	Role       string   `json:"role"` // "system", "user", "assistant", "tool"
 	Content    string   `json:"content"`
-	Images     [][]byte `json:"-"`                        // For vision models (base64 encoded in request)
-	ToolCallID string   `json:"tool_call_id,omitempty"`   // For tool response messages
+	Images     [][]byte `json:"-"`                      // For vision models (base64 encoded in request)
+	ToolCallID string   `json:"tool_call_id,omitempty"` // For tool response messages
+
+	// For assistant messages with tool calls (must be passed back to API)
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+
+	// For reasoning models (encrypted thinking tokens)
+	ReasoningDetails []ReasoningDetail `json:"reasoning_details,omitempty"`
+}
+
+// ReasoningDetail represents encrypted thinking from reasoning models.
+type ReasoningDetail struct {
+	Type      string `json:"type"` // "thinking"
+	Thinking  string `json:"thinking,omitempty"`
+	Encrypted string `json:"encrypted,omitempty"` // For encrypted thinking tokens
 }
 
 // ResponseFormat specifies structured output format.
@@ -81,6 +94,9 @@ type ChatResult struct {
 	Content    string          `json:"content"`
 	ParsedJSON json.RawMessage `json:"parsed_json,omitempty"` // Parsed if ResponseFormat was set
 	ToolCalls  []ToolCall      `json:"tool_calls,omitempty"`
+
+	// Reasoning model support (encrypted thinking tokens)
+	ReasoningDetails []ReasoningDetail `json:"reasoning_details,omitempty"`
 
 	// Token counts
 	PromptTokens     int `json:"prompt_tokens"`
