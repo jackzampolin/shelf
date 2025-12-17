@@ -117,8 +117,7 @@ func TestMultiPhaseJob_Workflow(t *testing.T) {
 // TestScheduler_MultiPhaseWorkflow tests the full scheduler with mixed workers.
 func TestScheduler_MultiPhaseWorkflow(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{
-		Logger:    slog.Default(),
-		QueueSize: 100,
+		Logger: slog.Default(),
 	})
 
 	// Create OCR worker
@@ -137,7 +136,7 @@ func TestScheduler_MultiPhaseWorkflow(t *testing.T) {
 	llmWorker, _ := NewWorker(WorkerConfig{
 		Name:      "llm-openrouter",
 		LLMClient: llmClient,
-		RPM:       6000,
+		RPS: 100.0,
 	})
 	scheduler.RegisterWorker(llmWorker)
 
@@ -156,8 +155,8 @@ func TestScheduler_MultiPhaseWorkflow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Start worker pool
-	go scheduler.RunWorkers(ctx, 2)
+	// Start scheduler (workers run as their own goroutines)
+	go scheduler.Start(ctx)
 
 	// Submit job
 	if err := scheduler.Submit(ctx, job); err != nil {
@@ -188,7 +187,7 @@ func TestScheduler_MultiPhaseWorkflow(t *testing.T) {
 
 // TestScheduler_RoutesToCorrectWorkerType tests work unit routing.
 func TestScheduler_RoutesToCorrectWorkerType(t *testing.T) {
-	scheduler := NewScheduler(SchedulerConfig{QueueSize: 100})
+	scheduler := NewScheduler(SchedulerConfig{})
 
 	// Add multiple workers of each type
 	ocrProvider1 := providers.NewMockOCRProvider()
@@ -200,11 +199,11 @@ func TestScheduler_RoutesToCorrectWorkerType(t *testing.T) {
 	scheduler.RegisterWorker(ocrWorker2)
 
 	llmClient1 := providers.NewMockClient()
-	llmWorker1, _ := NewWorker(WorkerConfig{Name: "llm-1", LLMClient: llmClient1, RPM: 6000})
+	llmWorker1, _ := NewWorker(WorkerConfig{Name: "llm-1", LLMClient: llmClient1, RPS: 100.0})
 	scheduler.RegisterWorker(llmWorker1)
 
 	llmClient2 := providers.NewMockClient()
-	llmWorker2, _ := NewWorker(WorkerConfig{Name: "llm-2", LLMClient: llmClient2, RPM: 6000})
+	llmWorker2, _ := NewWorker(WorkerConfig{Name: "llm-2", LLMClient: llmClient2, RPS: 100.0})
 	scheduler.RegisterWorker(llmWorker2)
 
 	// Create job that targets specific providers
@@ -218,7 +217,7 @@ func TestScheduler_RoutesToCorrectWorkerType(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	go scheduler.RunWorkers(ctx, 4)
+	go scheduler.Start(ctx)
 
 	if err := scheduler.Submit(ctx, job); err != nil {
 		t.Fatalf("Submit() error = %v", err)
@@ -358,9 +357,8 @@ func TestScheduler_WithManager(t *testing.T) {
 	manager := NewManager(defraClient, slog.Default())
 
 	scheduler := NewScheduler(SchedulerConfig{
-		Manager:   manager,
-		Logger:    slog.Default(),
-		QueueSize: 100,
+		Manager: manager,
+		Logger:  slog.Default(),
 	})
 
 	ocrProvider := providers.NewMockOCRProvider()
@@ -368,7 +366,7 @@ func TestScheduler_WithManager(t *testing.T) {
 	scheduler.RegisterWorker(ocrWorker)
 
 	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPM: 6000})
+	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
 	scheduler.RegisterWorker(llmWorker)
 
 	job := NewMultiPhaseJob(MultiPhaseJobConfig{
@@ -379,7 +377,7 @@ func TestScheduler_WithManager(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	go scheduler.RunWorkers(ctx, 2)
+	go scheduler.Start(ctx)
 
 	if err := scheduler.Submit(ctx, job); err != nil {
 		t.Fatalf("Submit() error = %v", err)
@@ -402,8 +400,7 @@ func TestScheduler_WithManager(t *testing.T) {
 // TestScheduler_PartialFailure tests job continues despite some failures.
 func TestScheduler_PartialFailure(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{
-		Logger:    slog.Default(),
-		QueueSize: 100,
+		Logger: slog.Default(),
 	})
 
 	ocrProvider := providers.NewMockOCRProvider()
@@ -412,7 +409,7 @@ func TestScheduler_PartialFailure(t *testing.T) {
 	scheduler.RegisterWorker(ocrWorker)
 
 	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPM: 6000})
+	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
 	scheduler.RegisterWorker(llmWorker)
 
 	job := NewMultiPhaseJob(MultiPhaseJobConfig{
@@ -423,7 +420,7 @@ func TestScheduler_PartialFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	go scheduler.RunWorkers(ctx, 2)
+	go scheduler.Start(ctx)
 
 	if err := scheduler.Submit(ctx, job); err != nil {
 		t.Fatalf("Submit() error = %v", err)

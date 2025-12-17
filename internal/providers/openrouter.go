@@ -25,7 +25,7 @@ type OpenRouterConfig struct {
 	DefaultModel string
 	Timeout      time.Duration
 	// Rate limiting
-	RPM        int           // Requests per minute (default: 60)
+	RPS        float64       // Requests per second (default: 150)
 	MaxRetries int           // Max retry attempts (default: 3)
 	RetryDelay time.Duration // Base delay between retries (default: 1s)
 }
@@ -37,7 +37,7 @@ type OpenRouterClient struct {
 	defaultModel string
 	client       *http.Client
 	// Rate limiting
-	rpm        int
+	rps        float64
 	maxRetries int
 	retryDelay time.Duration
 }
@@ -53,8 +53,8 @@ func NewOpenRouterClient(cfg OpenRouterConfig) *OpenRouterClient {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 120 * time.Second
 	}
-	if cfg.RPM == 0 {
-		cfg.RPM = 60
+	if cfg.RPS == 0 {
+		cfg.RPS = 150.0 // Default 150 RPS
 	}
 	if cfg.MaxRetries == 0 {
 		cfg.MaxRetries = 3
@@ -70,7 +70,7 @@ func NewOpenRouterClient(cfg OpenRouterConfig) *OpenRouterClient {
 		client: &http.Client{
 			Timeout: cfg.Timeout,
 		},
-		rpm:        cfg.RPM,
+		rps:        cfg.RPS,
 		maxRetries: cfg.MaxRetries,
 		retryDelay: cfg.RetryDelay,
 	}
@@ -81,9 +81,9 @@ func (c *OpenRouterClient) Name() string {
 	return OpenRouterName
 }
 
-// RequestsPerMinute returns the RPM limit for rate limiting.
-func (c *OpenRouterClient) RequestsPerMinute() int {
-	return c.rpm
+// RequestsPerSecond returns the RPS limit for rate limiting.
+func (c *OpenRouterClient) RequestsPerSecond() float64 {
+	return c.rps
 }
 
 // MaxRetries returns the maximum retry attempts.

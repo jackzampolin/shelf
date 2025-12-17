@@ -192,12 +192,12 @@ func TestRateLimiter(t *testing.T) {
 	})
 
 	t.Run("status", func(t *testing.T) {
-		limiter := NewRateLimiter(60)
+		limiter := NewRateLimiter(60.0) // 60 RPS
 
 		status := limiter.Status()
 
-		if status.TokensLimit != 60 {
-			t.Errorf("TokensLimit = %d, want 60", status.TokensLimit)
+		if status.RPS != 60.0 {
+			t.Errorf("RPS = %f, want 60.0", status.RPS)
 		}
 		if status.TokensAvailable <= 0 {
 			t.Error("expected positive tokens available")

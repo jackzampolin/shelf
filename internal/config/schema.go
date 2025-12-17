@@ -23,7 +23,7 @@ type LLMProviderCfg struct {
 	Type      string  `mapstructure:"type" yaml:"type"`           // "openrouter"
 	Model     string  `mapstructure:"model" yaml:"model"`         // Model name
 	APIKey    string  `mapstructure:"api_key" yaml:"api_key"`     // API key (supports ${ENV_VAR} syntax)
-	RateLimit float64 `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per minute
+	RateLimit float64 `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
 	Enabled   bool    `mapstructure:"enabled" yaml:"enabled"`
 }
 
@@ -51,16 +51,17 @@ func DefaultConfig() *Config {
 			"mistral": {
 				Type:      "mistral-ocr",
 				APIKey:    "${MISTRAL_API_KEY}",
-				RateLimit: 6.0,
+				RateLimit: 6.0, // 6 RPS
 				Enabled:   true,
 			},
 		},
 		LLMProviders: map[string]LLMProviderCfg{
 			"openrouter": {
-				Type:    "openrouter",
-				Model:   "anthropic/claude-sonnet-4",
-				APIKey:  "${OPENROUTER_API_KEY}",
-				Enabled: true,
+				Type:      "openrouter",
+				Model:     "anthropic/claude-sonnet-4",
+				APIKey:    "${OPENROUTER_API_KEY}",
+				RateLimit: 150.0, // 150 RPS
+				Enabled:   true,
 			},
 		},
 		Defaults: DefaultsCfg{

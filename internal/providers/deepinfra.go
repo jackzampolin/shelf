@@ -62,7 +62,7 @@ func NewDeepInfraOCRClient(cfg DeepInfraOCRConfig) *DeepInfraOCRClient {
 		cfg.Timeout = 120 * time.Second
 	}
 	if cfg.RateLimit == 0 {
-		cfg.RateLimit = 10.0 // Default 10 req/sec
+		cfg.RateLimit = 150.0 // Default 150 RPS
 	}
 
 	return &DeepInfraOCRClient{

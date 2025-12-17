@@ -15,7 +15,8 @@ import (
 type JobFactory func(id string, metadata map[string]any) (Job, error)
 
 // Scheduler manages workers and distributes work units from jobs.
-// It uses Manager to persist job state to DefraDB.
+// Each worker runs as its own goroutine with its own queue.
+// The scheduler routes work units to appropriate workers and handles results.
 type Scheduler struct {
 	mu      sync.RWMutex
 	manager *Manager           // For persistence
@@ -26,18 +27,20 @@ type Scheduler struct {
 	// Job factories for resumption
 	factories map[string]JobFactory
 
-	// Work queue (buffered channel)
-	queue chan *WorkUnit
+	// Results channel - all workers send results here
+	results chan workerResult
 
 	// Track pending work per job
 	pending map[string]int // jobID -> count of pending work units
+
+	// Running state
+	running bool
 }
 
 // SchedulerConfig configures a new scheduler.
 type SchedulerConfig struct {
-	Manager   *Manager // Required for persistence
-	Logger    *slog.Logger
-	QueueSize int // Size of work queue buffer (default 1000)
+	Manager *Manager // Required for persistence
+	Logger  *slog.Logger
 }
 
 // NewScheduler creates a new scheduler.
@@ -46,10 +49,6 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	queueSize := cfg.QueueSize
-	if queueSize <= 0 {
-		queueSize = 1000
-	}
 
 	return &Scheduler{
 		manager:   cfg.Manager,
@@ -57,7 +56,7 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 		jobs:      make(map[string]Job),
 		factories: make(map[string]JobFactory),
 		pending:   make(map[string]int),
-		queue:     make(chan *WorkUnit, queueSize),
+		results:   make(chan workerResult, 1000), // Buffered results channel
 		logger:    logger,
 	}
 }
@@ -72,12 +71,56 @@ func (s *Scheduler) RegisterFactory(jobType string, factory JobFactory) {
 }
 
 // RegisterWorker adds a worker to the scheduler.
+// Must be called before Start.
 func (s *Scheduler) RegisterWorker(w *Worker) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Initialize worker with shared results channel
+	w.init(s.results)
+
 	s.workers[w.Name()] = w
 	s.logger.Info("worker registered", "name", w.Name(), "type", w.Type())
+}
+
+// InitFromRegistry creates workers from all providers in the registry.
+// This is the recommended way to set up workers - one provider = one worker.
+// Each worker pulls its rate limit from the provider's configured value.
+func (s *Scheduler) InitFromRegistry(registry *providers.Registry) error {
+	// Create workers from LLM clients
+	for name, client := range registry.LLMClients() {
+		worker, err := NewWorker(WorkerConfig{
+			Name:      name,
+			LLMClient: client,
+			Logger:    s.logger,
+			// RPM pulled from client.RequestsPerMinute() by NewWorker
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create LLM worker %s: %w", name, err)
+		}
+		s.RegisterWorker(worker)
+	}
+
+	// Create workers from OCR providers
+	for name, provider := range registry.OCRProviders() {
+		worker, err := NewWorker(WorkerConfig{
+			Name:        name,
+			OCRProvider: provider,
+			Logger:      s.logger,
+			// RPS pulled from provider.RequestsPerSecond() by NewWorker
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create OCR worker %s: %w", name, err)
+		}
+		s.RegisterWorker(worker)
+	}
+
+	s.logger.Info("initialized workers from registry",
+		"llm_workers", len(registry.LLMClients()),
+		"ocr_workers", len(registry.OCRProviders()),
+	)
+
+	return nil
 }
 
 // GetWorker returns a worker by name.
@@ -219,7 +262,7 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 	return resumed, nil
 }
 
-// enqueueUnits adds work units to the queue and updates pending count.
+// enqueueUnits routes work units to the appropriate worker queues.
 func (s *Scheduler) enqueueUnits(jobID string, units []WorkUnit) {
 	if len(units) == 0 {
 		return
@@ -232,92 +275,43 @@ func (s *Scheduler) enqueueUnits(jobID string, units []WorkUnit) {
 	for i := range units {
 		unit := &units[i]
 		unit.JobID = jobID
-		select {
-		case s.queue <- unit:
-		default:
-			s.logger.Warn("queue full, dropping work unit", "unit_id", unit.ID, "job_id", jobID)
+
+		worker := s.findWorker(unit)
+		if worker == nil {
+			s.logger.Error("no worker found for work unit",
+				"unit_id", unit.ID,
+				"type", unit.Type,
+				"provider", unit.Provider,
+			)
+			// Send failure result
+			s.results <- workerResult{
+				JobID: jobID,
+				Unit:  unit,
+				Result: WorkResult{
+					WorkUnitID: unit.ID,
+					Success:    false,
+					Error:      fmt.Errorf("no worker available for type %s provider %s", unit.Type, unit.Provider),
+				},
+			}
+			continue
+		}
+
+		if err := worker.Submit(unit); err != nil {
+			s.logger.Warn("failed to submit to worker", "worker", worker.Name(), "error", err)
+			// Send failure result
+			s.results <- workerResult{
+				JobID: jobID,
+				Unit:  unit,
+				Result: WorkResult{
+					WorkUnitID: unit.ID,
+					Success:    false,
+					Error:      err,
+				},
+			}
 		}
 	}
 
 	s.logger.Debug("enqueued work units", "job_id", jobID, "count", len(units))
-}
-
-// Run starts the scheduler loop. It processes work units until ctx is cancelled.
-// Call this in a goroutine.
-func (s *Scheduler) Run(ctx context.Context) {
-	s.logger.Info("scheduler started")
-
-	for {
-		select {
-		case <-ctx.Done():
-			s.logger.Info("scheduler stopping")
-			return
-
-		case unit := <-s.queue:
-			s.processUnit(ctx, unit)
-		}
-	}
-}
-
-// RunWorkers starts multiple worker goroutines to process the queue in parallel.
-func (s *Scheduler) RunWorkers(ctx context.Context, numWorkers int) {
-	s.logger.Info("starting worker pool", "count", numWorkers)
-
-	var wg sync.WaitGroup
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func(workerNum int) {
-			defer wg.Done()
-			s.workerLoop(ctx, workerNum)
-		}(i)
-	}
-
-	// Wait for all workers to finish when context is cancelled
-	go func() {
-		<-ctx.Done()
-		wg.Wait()
-		s.logger.Info("all workers stopped")
-	}()
-}
-
-func (s *Scheduler) workerLoop(ctx context.Context, workerNum int) {
-	logger := s.logger.With("worker_num", workerNum)
-	logger.Debug("worker started")
-
-	for {
-		select {
-		case <-ctx.Done():
-			logger.Debug("worker stopping")
-			return
-
-		case unit := <-s.queue:
-			s.processUnit(ctx, unit)
-		}
-	}
-}
-
-func (s *Scheduler) processUnit(ctx context.Context, unit *WorkUnit) {
-	// Find appropriate worker
-	worker := s.findWorker(unit)
-	if worker == nil {
-		s.logger.Error("no worker found for work unit",
-			"unit_id", unit.ID,
-			"type", unit.Type,
-			"provider", unit.Provider,
-		)
-		s.handleResult(ctx, unit, WorkResult{
-			WorkUnitID: unit.ID,
-			Success:    false,
-			Error:      fmt.Errorf("no worker available for type %s provider %s", unit.Type, unit.Provider),
-		})
-		return
-	}
-
-	// Process the work unit
-	result := worker.Process(ctx, unit)
-
-	// Handle the result
-	s.handleResult(ctx, unit, result)
 }
 
 // findWorker finds an appropriate worker for the work unit.
@@ -352,38 +346,72 @@ func (s *Scheduler) findWorker(unit *WorkUnit) *Worker {
 	return nil
 }
 
-// handleResult processes a work result and notifies the job.
-func (s *Scheduler) handleResult(ctx context.Context, unit *WorkUnit, result WorkResult) {
+// Start begins the scheduler and all registered workers.
+// Blocks until context is cancelled.
+func (s *Scheduler) Start(ctx context.Context) {
 	s.mu.Lock()
-	job, ok := s.jobs[unit.JobID]
+	if s.running {
+		s.mu.Unlock()
+		return
+	}
+	s.running = true
+
+	// Start all workers
+	for _, w := range s.workers {
+		go w.Start(ctx)
+	}
+	s.mu.Unlock()
+
+	s.logger.Info("scheduler started", "workers", len(s.workers))
+
+	// Process results from workers
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Info("scheduler stopping")
+			s.mu.Lock()
+			s.running = false
+			s.mu.Unlock()
+			return
+
+		case wr := <-s.results:
+			s.handleResult(ctx, wr)
+		}
+	}
+}
+
+// handleResult processes a work result and notifies the job.
+func (s *Scheduler) handleResult(ctx context.Context, wr workerResult) {
+	s.mu.Lock()
+	job, ok := s.jobs[wr.JobID]
 	if ok {
-		s.pending[unit.JobID]--
+		s.pending[wr.JobID]--
 	}
 	s.mu.Unlock()
 
 	if !ok {
-		s.logger.Warn("received result for unknown job", "job_id", unit.JobID)
+		s.logger.Warn("received result for unknown job", "job_id", wr.JobID)
 		return
 	}
 
 	// Notify job of completion
-	newUnits, err := job.OnComplete(ctx, result)
+	newUnits, err := job.OnComplete(ctx, wr.Result)
 	if err != nil {
-		s.logger.Error("job OnComplete failed", "job_id", unit.JobID, "error", err)
+		s.logger.Error("job OnComplete failed", "job_id", wr.JobID, "error", err)
 	}
 
 	// Enqueue any new work units
 	if len(newUnits) > 0 {
-		s.enqueueUnits(unit.JobID, newUnits)
+		s.enqueueUnits(wr.JobID, newUnits)
 	}
 
 	// Check if job is done
 	s.mu.Lock()
-	pendingCount := s.pending[unit.JobID]
+	pendingCount := s.pending[wr.JobID]
 	isDone := job.Done() && pendingCount == 0
 	if isDone {
-		delete(s.jobs, unit.JobID)
-		delete(s.pending, unit.JobID)
+		delete(s.jobs, wr.JobID)
+		delete(s.pending, wr.JobID)
 	}
 	s.mu.Unlock()
 
@@ -423,11 +451,6 @@ func (s *Scheduler) JobStatus(ctx context.Context, jobID string) (map[string]str
 	return status, nil
 }
 
-// PendingCount returns the number of work units in the queue.
-func (s *Scheduler) PendingCount() int {
-	return len(s.queue)
-}
-
 // ActiveJobs returns the number of active jobs.
 func (s *Scheduler) ActiveJobs() int {
 	s.mu.RLock()
@@ -435,40 +458,25 @@ func (s *Scheduler) ActiveJobs() int {
 	return len(s.jobs)
 }
 
-// WorkerLoad returns rate limiter status for all workers.
-func (s *Scheduler) WorkerLoad() map[string]providers.RateLimiterStatus {
+// WorkerStatus returns queue depth and rate limiter status for all workers.
+func (s *Scheduler) WorkerStatus() map[string]WorkerStatusInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	load := make(map[string]providers.RateLimiterStatus, len(s.workers))
+	status := make(map[string]WorkerStatusInfo, len(s.workers))
 	for name, w := range s.workers {
-		load[name] = w.RateLimiterStatus()
+		status[name] = WorkerStatusInfo{
+			Type:        string(w.Type()),
+			QueueDepth:  w.QueueDepth(),
+			RateLimiter: w.RateLimiterStatus(),
+		}
 	}
-	return load
+	return status
 }
 
-// QueueStats returns queue depth broken down by work unit type.
-func (s *Scheduler) QueueStats() QueueStatus {
-	s.mu.RLock()
-	pendingByJob := make(map[string]int, len(s.pending))
-	for k, v := range s.pending {
-		pendingByJob[k] = v
-	}
-	s.mu.RUnlock()
-
-	total := len(s.queue)
-	return QueueStatus{
-		Total:        total,
-		Capacity:     cap(s.queue),
-		Utilization:  float64(total) / float64(cap(s.queue)),
-		PendingByJob: pendingByJob,
-	}
-}
-
-// QueueStatus reports current queue state.
-type QueueStatus struct {
-	Total        int            `json:"total"`
-	Capacity     int            `json:"capacity"`
-	Utilization  float64        `json:"utilization"`
-	PendingByJob map[string]int `json:"pending_by_job"`
+// WorkerStatusInfo reports a worker's current state.
+type WorkerStatusInfo struct {
+	Type        string                     `json:"type"`
+	QueueDepth  int                        `json:"queue_depth"`
+	RateLimiter providers.RateLimiterStatus `json:"rate_limiter"`
 }

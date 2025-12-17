@@ -334,24 +334,26 @@ func TestRegistry_Reload(t *testing.T) {
 		r := NewRegistryFromConfig(RegistryConfig{
 			LLMProviders: map[string]LLMProviderConfig{
 				"openrouter": {
-					Type:    "openrouter",
-					Model:   "test-model",
-					APIKey:  "same-key",
-					Enabled: true,
+					Type:      "openrouter",
+					Model:     "test-model",
+					APIKey:    "same-key",
+					RateLimit: 60, // Explicit rate limit
+					Enabled:   true,
 				},
 			},
 		})
 
 		client1, _ := r.GetLLM("openrouter")
 
-		// Reload with same config
+		// Reload with same config (including same rate limit)
 		r.Reload(RegistryConfig{
 			LLMProviders: map[string]LLMProviderConfig{
 				"openrouter": {
-					Type:    "openrouter",
-					Model:   "test-model",
-					APIKey:  "same-key",
-					Enabled: true,
+					Type:      "openrouter",
+					Model:     "test-model",
+					APIKey:    "same-key",
+					RateLimit: 60, // Same rate limit
+					Enabled:   true,
 				},
 			},
 		})

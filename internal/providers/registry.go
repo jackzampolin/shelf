@@ -131,6 +131,30 @@ func (r *Registry) HasOCR(name string) bool {
 	return ok
 }
 
+// LLMClients returns a map of all registered LLM clients.
+// Used by Scheduler to create workers from providers.
+func (r *Registry) LLMClients() map[string]LLMClient {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make(map[string]LLMClient, len(r.llmClients))
+	for name, client := range r.llmClients {
+		result[name] = client
+	}
+	return result
+}
+
+// OCRProviders returns a map of all registered OCR providers.
+// Used by Scheduler to create workers from providers.
+func (r *Registry) OCRProviders() map[string]OCRProvider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make(map[string]OCRProvider, len(r.ocrProviders))
+	for name, provider := range r.ocrProviders {
+		result[name] = provider
+	}
+	return result
+}
+
 // RegistryConfig defines the providers to instantiate from config.
 // This mirrors the config.Config structure for provider setup.
 type RegistryConfig struct {
@@ -158,7 +182,7 @@ type LLMProviderConfig struct {
 	Type      string  // "openrouter"
 	Model     string  // Model name
 	APIKey    string  // Resolved API key
-	RateLimit float64 // Requests per minute
+	RateLimit float64 // Requests per second
 	Enabled   bool
 }
 
@@ -278,6 +302,7 @@ func createLLMClient(cfg LLMProviderConfig) LLMClient {
 		return NewOpenRouterClient(OpenRouterConfig{
 			APIKey:       cfg.APIKey,
 			DefaultModel: cfg.Model,
+			RPS:          cfg.RateLimit, // Pass RPS from config
 		})
 	default:
 		return nil
@@ -289,12 +314,14 @@ func createOCRProvider(cfg OCRProviderConfig) OCRProvider {
 	switch cfg.Type {
 	case "mistral-ocr":
 		return NewMistralOCRClient(MistralOCRConfig{
-			APIKey: cfg.APIKey,
+			APIKey:    cfg.APIKey,
+			RateLimit: cfg.RateLimit, // Pass rate limit from config
 		})
 	case "deepinfra":
 		return NewDeepInfraOCRClient(DeepInfraOCRConfig{
-			APIKey: cfg.APIKey,
-			Model:  cfg.Model,
+			APIKey:    cfg.APIKey,
+			Model:     cfg.Model,
+			RateLimit: cfg.RateLimit, // Pass rate limit from config
 		})
 	default:
 		return nil
@@ -305,7 +332,9 @@ func createOCRProvider(cfg OCRProviderConfig) OCRProvider {
 func needsLLMUpdate(client LLMClient, cfg LLMProviderConfig) bool {
 	switch c := client.(type) {
 	case *OpenRouterClient:
-		return c.apiKey != cfg.APIKey || c.defaultModel != cfg.Model
+		return c.apiKey != cfg.APIKey ||
+			c.defaultModel != cfg.Model ||
+			c.rps != cfg.RateLimit
 	default:
 		return true
 	}
@@ -315,9 +344,11 @@ func needsLLMUpdate(client LLMClient, cfg LLMProviderConfig) bool {
 func needsOCRUpdate(provider OCRProvider, cfg OCRProviderConfig) bool {
 	switch p := provider.(type) {
 	case *MistralOCRClient:
-		return p.apiKey != cfg.APIKey
+		return p.apiKey != cfg.APIKey || p.rateLimit != cfg.RateLimit
 	case *DeepInfraOCRClient:
-		return p.apiKey != cfg.APIKey || p.model != cfg.Model
+		return p.apiKey != cfg.APIKey ||
+			p.model != cfg.Model ||
+			p.rateLimit != cfg.RateLimit
 	default:
 		return true
 	}

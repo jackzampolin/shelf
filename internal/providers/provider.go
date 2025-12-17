@@ -19,7 +19,7 @@ type LLMClient interface {
 	Name() string
 
 	// Rate limiting properties (pulled by Worker at initialization)
-	RequestsPerMinute() int // RPM - requests per minute
+	RequestsPerSecond() float64 // RPS - requests per second
 	MaxRetries() int
 	RetryDelayBase() time.Duration
 }
@@ -42,9 +42,10 @@ type OCRProvider interface {
 
 // Message represents a chat message.
 type Message struct {
-	Role    string   `json:"role"` // "system", "user", "assistant"
-	Content string   `json:"content"`
-	Images  [][]byte `json:"-"` // For vision models (base64 encoded in request)
+	Role       string   `json:"role"` // "system", "user", "assistant", "tool"
+	Content    string   `json:"content"`
+	Images     [][]byte `json:"-"`                        // For vision models (base64 encoded in request)
+	ToolCallID string   `json:"tool_call_id,omitempty"`   // For tool response messages
 }
 
 // ResponseFormat specifies structured output format.

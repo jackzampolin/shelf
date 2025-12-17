@@ -17,6 +17,8 @@ const (
 )
 
 // Worker wraps a single provider (LLM or OCR) with rate limiting.
+// Each worker owns its own input queue and runs as a single goroutine.
+// This ensures rate limiting is properly enforced per-provider.
 type Worker struct {
 	name        string
 	workerType  WorkerType
@@ -24,6 +26,22 @@ type Worker struct {
 	ocrProvider providers.OCRProvider
 	rateLimiter *providers.RateLimiter
 	logger      *slog.Logger
+
+	// Queue for incoming work units (owned by this worker)
+	queue chan *WorkUnit
+
+	// Results channel (shared, set by scheduler)
+	results chan<- workerResult
+
+	// Queue size configuration
+	queueSize int
+}
+
+// workerResult pairs a work result with its job ID for routing.
+type workerResult struct {
+	JobID  string
+	Unit   *WorkUnit
+	Result WorkResult
 }
 
 // WorkerConfig configures a new worker.
@@ -35,9 +53,12 @@ type WorkerConfig struct {
 	LLMClient   providers.LLMClient
 	OCRProvider providers.OCRProvider
 
-	// Rate limiting (requests per minute)
-	// If 0, uses provider defaults or 60
-	RPM int
+	// Rate limiting (requests per second)
+	// If 0, uses provider defaults
+	RPS float64
+
+	// Queue size for this worker (default 100)
+	QueueSize int
 }
 
 // NewWorker creates a new worker wrapping a provider.
@@ -54,20 +75,26 @@ func NewWorker(cfg WorkerConfig) (*Worker, error) {
 		logger = slog.Default()
 	}
 
-	w := &Worker{
-		name:   cfg.Name,
-		logger: logger.With("worker", cfg.Name),
+	queueSize := cfg.QueueSize
+	if queueSize <= 0 {
+		queueSize = 100
 	}
 
-	// Determine type and RPM - pull from provider if not overridden in config
-	rpm := cfg.RPM
+	w := &Worker{
+		name:      cfg.Name,
+		logger:    logger.With("worker", cfg.Name),
+		queueSize: queueSize,
+	}
+
+	// Determine type and RPS - pull from provider if not overridden in config
+	rps := cfg.RPS
 	if cfg.LLMClient != nil {
 		w.workerType = WorkerTypeLLM
 		w.llmClient = cfg.LLMClient
-		if rpm == 0 {
-			rpm = cfg.LLMClient.RequestsPerMinute()
-			if rpm == 0 {
-				rpm = 60 // Fallback default
+		if rps == 0 {
+			rps = cfg.LLMClient.RequestsPerSecond()
+			if rps == 0 {
+				rps = 1.0 // Fallback default
 			}
 		}
 		if cfg.Name == "" {
@@ -76,11 +103,10 @@ func NewWorker(cfg WorkerConfig) (*Worker, error) {
 	} else {
 		w.workerType = WorkerTypeOCR
 		w.ocrProvider = cfg.OCRProvider
-		if rpm == 0 {
-			// Convert RPS to RPM
-			rpm = int(cfg.OCRProvider.RequestsPerSecond() * 60)
-			if rpm == 0 {
-				rpm = 60 // Fallback default
+		if rps == 0 {
+			rps = cfg.OCRProvider.RequestsPerSecond()
+			if rps == 0 {
+				rps = 1.0 // Fallback default
 			}
 		}
 		if cfg.Name == "" {
@@ -88,7 +114,7 @@ func NewWorker(cfg WorkerConfig) (*Worker, error) {
 		}
 	}
 
-	w.rateLimiter = providers.NewRateLimiter(rpm)
+	w.rateLimiter = providers.NewRateLimiter(rps)
 	w.logger = logger.With("worker", w.name, "type", w.workerType)
 
 	return w, nil
@@ -104,8 +130,53 @@ func (w *Worker) Type() WorkerType {
 	return w.workerType
 }
 
+// init initializes the worker's queue and sets the results channel.
+// Called by the scheduler before Start.
+func (w *Worker) init(results chan<- workerResult) {
+	w.queue = make(chan *WorkUnit, w.queueSize)
+	w.results = results
+}
+
+// Start runs the worker's processing loop.
+// Blocks until context is cancelled. Run in a goroutine.
+func (w *Worker) Start(ctx context.Context) {
+	w.logger.Info("worker started")
+
+	for {
+		select {
+		case <-ctx.Done():
+			w.logger.Info("worker stopping")
+			return
+
+		case unit := <-w.queue:
+			result := w.Process(ctx, unit)
+			w.results <- workerResult{
+				JobID:  unit.JobID,
+				Unit:   unit,
+				Result: result,
+			}
+		}
+	}
+}
+
+// Submit adds a work unit to this worker's queue.
+// Returns an error if the queue is full.
+func (w *Worker) Submit(unit *WorkUnit) error {
+	select {
+	case w.queue <- unit:
+		return nil
+	default:
+		return fmt.Errorf("worker %s queue full", w.name)
+	}
+}
+
+// QueueDepth returns the number of items in the worker's queue.
+func (w *Worker) QueueDepth() int {
+	return len(w.queue)
+}
+
 // Process executes a work unit and returns the result.
-// Blocks until rate limiter allows the request.
+// This is also called internally by the worker's goroutine.
 func (w *Worker) Process(ctx context.Context, unit *WorkUnit) WorkResult {
 	result := WorkResult{
 		WorkUnitID: unit.ID,

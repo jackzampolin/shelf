@@ -7,13 +7,12 @@ import (
 )
 
 // RateLimiter implements a token bucket rate limiter.
-// Matches the Python RateLimiter pattern.
+// Uses requests per second (RPS) as the rate unit.
 type RateLimiter struct {
 	mu sync.Mutex
 
-	// Configuration
-	requestsPerMinute int
-	windowSeconds     float64
+	// Configuration - requests per second
+	rps float64
 
 	// Token bucket state
 	tokens     float64
@@ -27,25 +26,24 @@ type RateLimiter struct {
 
 // RateLimiterStatus reports current limiter state.
 type RateLimiterStatus struct {
-	TokensAvailable  int           `json:"tokens_available"`
-	TokensLimit      int           `json:"tokens_limit"`
-	Utilization      float64       `json:"utilization"`
-	TimeUntilToken   time.Duration `json:"time_until_token"`
-	TotalConsumed    int64         `json:"total_consumed"`
-	TotalWaited      time.Duration `json:"total_waited"`
-	Last429Time      time.Time     `json:"last_429_time,omitempty"`
+	TokensAvailable float64       `json:"tokens_available"`
+	RPS             float64       `json:"rps"`
+	Utilization     float64       `json:"utilization"`
+	TimeUntilToken  time.Duration `json:"time_until_token"`
+	TotalConsumed   int64         `json:"total_consumed"`
+	TotalWaited     time.Duration `json:"total_waited"`
+	Last429Time     time.Time     `json:"last_429_time,omitempty"`
 }
 
-// NewRateLimiter creates a new rate limiter.
-func NewRateLimiter(requestsPerMinute int) *RateLimiter {
-	if requestsPerMinute <= 0 {
-		requestsPerMinute = 150 // Default
+// NewRateLimiter creates a new rate limiter with the given requests per second.
+func NewRateLimiter(rps float64) *RateLimiter {
+	if rps <= 0 {
+		rps = 1.0 // Conservative default
 	}
 	return &RateLimiter{
-		requestsPerMinute: requestsPerMinute,
-		windowSeconds:     60.0,
-		tokens:            float64(requestsPerMinute),
-		lastUpdate:        time.Now(),
+		rps:        rps,
+		tokens:     rps, // Start with 1 second worth of tokens
+		lastUpdate: time.Now(),
 	}
 }
 
@@ -64,8 +62,7 @@ func (r *RateLimiter) Wait(ctx context.Context) error {
 
 		// Calculate wait time for next token
 		tokensNeeded := 1.0 - r.tokens
-		refillRate := float64(r.requestsPerMinute) / r.windowSeconds
-		waitTime := time.Duration(tokensNeeded/refillRate*1000) * time.Millisecond
+		waitTime := time.Duration(tokensNeeded/r.rps*1000) * time.Millisecond
 		r.mu.Unlock()
 
 		// Wait outside lock
@@ -115,7 +112,7 @@ func (r *RateLimiter) Status() RateLimiterStatus {
 
 	r.refill()
 
-	utilization := 1.0 - (r.tokens / float64(r.requestsPerMinute))
+	utilization := 1.0 - (r.tokens / r.rps)
 	if utilization < 0 {
 		utilization = 0
 	}
@@ -123,13 +120,12 @@ func (r *RateLimiter) Status() RateLimiterStatus {
 	var timeUntilToken time.Duration
 	if r.tokens < 1.0 {
 		tokensNeeded := 1.0 - r.tokens
-		refillRate := float64(r.requestsPerMinute) / r.windowSeconds
-		timeUntilToken = time.Duration(tokensNeeded/refillRate*1000) * time.Millisecond
+		timeUntilToken = time.Duration(tokensNeeded/r.rps*1000) * time.Millisecond
 	}
 
 	return RateLimiterStatus{
-		TokensAvailable: int(r.tokens),
-		TokensLimit:     r.requestsPerMinute,
+		TokensAvailable: r.tokens,
+		RPS:             r.rps,
 		Utilization:     utilization,
 		TimeUntilToken:  timeUntilToken,
 		TotalConsumed:   r.totalConsumed,
@@ -144,12 +140,11 @@ func (r *RateLimiter) refill() {
 	elapsed := now.Sub(r.lastUpdate).Seconds()
 	r.lastUpdate = now
 
-	// Add tokens based on elapsed time
-	refillRate := float64(r.requestsPerMinute) / r.windowSeconds
-	r.tokens += elapsed * refillRate
+	// Add tokens based on elapsed time (rps tokens per second)
+	r.tokens += elapsed * r.rps
 
-	// Cap at max
-	if r.tokens > float64(r.requestsPerMinute) {
-		r.tokens = float64(r.requestsPerMinute)
+	// Cap at max (1 second worth of tokens)
+	if r.tokens > r.rps {
+		r.tokens = r.rps
 	}
 }

@@ -112,7 +112,7 @@ func TestWorker(t *testing.T) {
 
 		worker, err := NewWorker(WorkerConfig{
 			LLMClient: client,
-			RPM:       600, // 10 per second for fast tests
+			RPS: 10.0, // 10 per second for fast tests
 		})
 		if err != nil {
 			t.Fatalf("NewWorker() error = %v", err)
@@ -199,7 +199,7 @@ func TestWorker(t *testing.T) {
 		client := providers.NewMockClient()
 		client.Latency = 5 * time.Second
 
-		worker, _ := NewWorker(WorkerConfig{LLMClient: client, RPM: 600})
+		worker, _ := NewWorker(WorkerConfig{LLMClient: client, RPS: 10.0})
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
@@ -244,8 +244,7 @@ func TestScheduler(t *testing.T) {
 
 	t.Run("processes job work units", func(t *testing.T) {
 		scheduler := NewScheduler(SchedulerConfig{
-			Logger:    slog.Default(),
-			QueueSize: 100,
+			Logger: slog.Default(),
 		})
 
 		// Add a worker
@@ -254,7 +253,7 @@ func TestScheduler(t *testing.T) {
 		worker, _ := NewWorker(WorkerConfig{
 			Name:      "mock",
 			LLMClient: client,
-			RPM:       6000, // Fast for tests
+			RPS: 100.0, // Fast for tests
 		})
 		scheduler.RegisterWorker(worker)
 
@@ -264,8 +263,8 @@ func TestScheduler(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		// Start workers
-		go scheduler.RunWorkers(ctx, 2)
+		// Start scheduler (workers run as their own goroutines)
+		go scheduler.Start(ctx)
 
 		// Submit job
 		err := scheduler.Submit(ctx, job)
@@ -291,17 +290,17 @@ func TestScheduler(t *testing.T) {
 	})
 
 	t.Run("routes to specific provider", func(t *testing.T) {
-		scheduler := NewScheduler(SchedulerConfig{QueueSize: 100})
+		scheduler := NewScheduler(SchedulerConfig{})
 
 		// Add two workers
 		client1 := providers.NewMockClient()
 		client1.Latency = time.Millisecond
-		worker1, _ := NewWorker(WorkerConfig{Name: "llm-1", LLMClient: client1, RPM: 6000})
+		worker1, _ := NewWorker(WorkerConfig{Name: "llm-1", LLMClient: client1, RPS: 100.0})
 		scheduler.RegisterWorker(worker1)
 
 		client2 := providers.NewMockClient()
 		client2.Latency = time.Millisecond
-		worker2, _ := NewWorker(WorkerConfig{Name: "llm-2", LLMClient: client2, RPM: 6000})
+		worker2, _ := NewWorker(WorkerConfig{Name: "llm-2", LLMClient: client2, RPS: 100.0})
 		scheduler.RegisterWorker(worker2)
 
 		// Create job that targets specific provider
@@ -313,7 +312,7 @@ func TestScheduler(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		go scheduler.RunWorkers(ctx, 2)
+		go scheduler.Start(ctx)
 
 		err := scheduler.Submit(ctx, job)
 		if err != nil {

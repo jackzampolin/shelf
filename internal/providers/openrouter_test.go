@@ -307,13 +307,13 @@ func TestOpenRouterClient_Config(t *testing.T) {
 	t.Run("rate limit properties", func(t *testing.T) {
 		client := NewOpenRouterClient(OpenRouterConfig{
 			APIKey:     "test-key",
-			RPM:        120,
+			RPS:        50.0,
 			MaxRetries: 5,
 			RetryDelay: 2 * time.Second,
 		})
 
-		if client.RequestsPerMinute() != 120 {
-			t.Errorf("RequestsPerMinute() = %d, want 120", client.RequestsPerMinute())
+		if client.RequestsPerSecond() != 50.0 {
+			t.Errorf("RequestsPerSecond() = %f, want 50.0", client.RequestsPerSecond())
 		}
 		if client.MaxRetries() != 5 {
 			t.Errorf("MaxRetries() = %d, want 5", client.MaxRetries())

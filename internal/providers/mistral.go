@@ -27,7 +27,8 @@ type MistralOCRConfig struct {
 	BaseURL       string
 	Model         string
 	Timeout       time.Duration
-	IncludeImages bool // Whether to include base64 image data in response
+	IncludeImages bool    // Whether to include base64 image data in response
+	RateLimit     float64 // Requests per second (default: 6.0)
 }
 
 // MistralOCRClient implements OCRProvider using the Mistral OCR API.
@@ -36,6 +37,7 @@ type MistralOCRClient struct {
 	baseURL       string
 	model         string
 	includeImages bool
+	rateLimit     float64
 	client        *http.Client
 }
 
@@ -50,12 +52,16 @@ func NewMistralOCRClient(cfg MistralOCRConfig) *MistralOCRClient {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 120 * time.Second
 	}
+	if cfg.RateLimit == 0 {
+		cfg.RateLimit = 6.0 // Mistral OCR default rate limit
+	}
 
 	return &MistralOCRClient{
 		apiKey:        cfg.APIKey,
 		baseURL:       cfg.BaseURL,
 		model:         cfg.Model,
 		includeImages: cfg.IncludeImages,
+		rateLimit:     cfg.RateLimit,
 		client: &http.Client{
 			Timeout: cfg.Timeout,
 		},
@@ -69,7 +75,7 @@ func (c *MistralOCRClient) Name() string {
 
 // RequestsPerSecond returns the rate limit for Mistral OCR.
 func (c *MistralOCRClient) RequestsPerSecond() float64 {
-	return 6.0 // Mistral OCR rate limit
+	return c.rateLimit
 }
 
 // MaxRetries returns the maximum retry attempts.

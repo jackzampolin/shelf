@@ -12,13 +12,12 @@ import (
 // TestScheduler_NoWorkerForType tests error handling when no worker available.
 func TestScheduler_NoWorkerForType(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{
-		Logger:    slog.Default(),
-		QueueSize: 100,
+		Logger: slog.Default(),
 	})
 
 	// Only add LLM worker - no OCR worker
 	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPM: 6000})
+	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
 	scheduler.RegisterWorker(llmWorker)
 
 	// Create job that needs OCR
@@ -29,7 +28,7 @@ func TestScheduler_NoWorkerForType(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	go scheduler.RunWorkers(ctx, 1)
+	go scheduler.Start(ctx)
 
 	if err := scheduler.Submit(ctx, job); err != nil {
 		t.Fatalf("Submit() error = %v", err)
@@ -46,11 +45,11 @@ func TestScheduler_NoWorkerForType(t *testing.T) {
 
 // TestScheduler_JobStatus tests job status reporting.
 func TestScheduler_JobStatus(t *testing.T) {
-	scheduler := NewScheduler(SchedulerConfig{QueueSize: 100})
+	scheduler := NewScheduler(SchedulerConfig{})
 
 	llmClient := providers.NewMockClient()
 	llmClient.Latency = 100 * time.Millisecond // Slow to allow status check
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPM: 6000})
+	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
 	scheduler.RegisterWorker(llmWorker)
 
 	job := NewCountingJob(5)
@@ -58,7 +57,7 @@ func TestScheduler_JobStatus(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	go scheduler.RunWorkers(ctx, 1)
+	go scheduler.Start(ctx)
 
 	if err := scheduler.Submit(ctx, job); err != nil {
 		t.Fatalf("Submit() error = %v", err)
@@ -84,11 +83,11 @@ func TestScheduler_JobStatus(t *testing.T) {
 
 // TestScheduler_ActiveJobs tests active job tracking.
 func TestScheduler_ActiveJobs(t *testing.T) {
-	scheduler := NewScheduler(SchedulerConfig{QueueSize: 100})
+	scheduler := NewScheduler(SchedulerConfig{})
 
 	llmClient := providers.NewMockClient()
 	llmClient.Latency = 50 * time.Millisecond
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPM: 6000})
+	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
 	scheduler.RegisterWorker(llmWorker)
 
 	if scheduler.ActiveJobs() != 0 {
@@ -101,7 +100,7 @@ func TestScheduler_ActiveJobs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	go scheduler.RunWorkers(ctx, 2)
+	go scheduler.Start(ctx)
 
 	scheduler.Submit(ctx, job1)
 	scheduler.Submit(ctx, job2)
@@ -127,17 +126,13 @@ func TestScheduler_ActiveJobs(t *testing.T) {
 	}
 }
 
-// TestScheduler_PendingCount tests queue monitoring.
-func TestScheduler_PendingCount(t *testing.T) {
-	scheduler := NewScheduler(SchedulerConfig{QueueSize: 100})
+// TestScheduler_WorkerQueueDepth tests that work stays in worker queue when not started.
+func TestScheduler_WorkerQueueDepth(t *testing.T) {
+	scheduler := NewScheduler(SchedulerConfig{})
 
-	if scheduler.PendingCount() != 0 {
-		t.Error("should start with 0 pending")
-	}
-
-	// Don't start workers - items will stay in queue
+	// Register worker but don't start scheduler - items will stay in worker's queue
 	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPM: 6000})
+	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
 	scheduler.RegisterWorker(llmWorker)
 
 	job := NewCountingJob(5)
@@ -147,9 +142,10 @@ func TestScheduler_PendingCount(t *testing.T) {
 		t.Fatalf("Submit() error = %v", err)
 	}
 
-	// Without workers running, items stay in queue
-	if scheduler.PendingCount() != 5 {
-		t.Errorf("PendingCount() = %d, want 5", scheduler.PendingCount())
+	// Without starting scheduler, items stay in worker's queue
+	status := scheduler.WorkerStatus()
+	if status["llm"].QueueDepth != 5 {
+		t.Errorf("QueueDepth = %d, want 5", status["llm"].QueueDepth)
 	}
 }
 
@@ -213,62 +209,102 @@ func TestScheduler_ListWorkers(t *testing.T) {
 	}
 }
 
-// TestScheduler_WorkerLoad tests rate limiter status for all workers.
-func TestScheduler_WorkerLoad(t *testing.T) {
+// TestScheduler_WorkerStatus tests worker status reporting.
+func TestScheduler_WorkerStatus(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{})
 
 	llmClient := providers.NewMockClient()
 	ocrProvider := providers.NewMockOCRProvider()
 
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm-1", LLMClient: llmClient, RPM: 60})
+	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm-1", LLMClient: llmClient, RPS: 1.0})
 	ocrWorker, _ := NewWorker(WorkerConfig{Name: "ocr-1", OCRProvider: ocrProvider})
 
 	scheduler.RegisterWorker(llmWorker)
 	scheduler.RegisterWorker(ocrWorker)
 
-	load := scheduler.WorkerLoad()
+	status := scheduler.WorkerStatus()
 
-	if len(load) != 2 {
-		t.Errorf("got %d workers in load, want 2", len(load))
+	if len(status) != 2 {
+		t.Errorf("got %d workers in status, want 2", len(status))
 	}
 
-	llmLoad, ok := load["llm-1"]
+	llmStatus, ok := status["llm-1"]
 	if !ok {
-		t.Error("llm-1 not in load")
+		t.Error("llm-1 not in status")
 	}
-	if llmLoad.TokensLimit != 60 {
-		t.Errorf("llm-1 TokensLimit = %d, want 60", llmLoad.TokensLimit)
+	if llmStatus.Type != "llm" {
+		t.Errorf("llm-1 Type = %s, want llm", llmStatus.Type)
+	}
+	if llmStatus.RateLimiter.RPS != 1.0 {
+		t.Errorf("llm-1 RPS = %f, want 1.0", llmStatus.RateLimiter.RPS)
 	}
 }
 
-// TestScheduler_QueueStats tests queue status reporting.
-func TestScheduler_QueueStats(t *testing.T) {
-	scheduler := NewScheduler(SchedulerConfig{QueueSize: 100})
+// TestScheduler_InitFromRegistry tests automatic worker creation from registry.
+func TestScheduler_InitFromRegistry(t *testing.T) {
+	// Create registry with providers
+	registry := providers.NewRegistryFromConfig(providers.RegistryConfig{
+		LLMProviders: map[string]providers.LLMProviderConfig{
+			"openrouter": {
+				Type:      "openrouter",
+				APIKey:    "test-key",
+				Model:     "test-model",
+				RateLimit: 120, // 120 RPS
+				Enabled:   true,
+			},
+		},
+		OCRProviders: map[string]providers.OCRProviderConfig{
+			"mistral": {
+				Type:      "mistral-ocr",
+				APIKey:    "test-key",
+				RateLimit: 10.0, // 10 RPS
+				Enabled:   true,
+			},
+		},
+	})
 
-	stats := scheduler.QueueStats()
-	if stats.Capacity != 100 {
-		t.Errorf("Capacity = %d, want 100", stats.Capacity)
-	}
-	if stats.Total != 0 {
-		t.Errorf("Total = %d, want 0", stats.Total)
+	// Create scheduler and init from registry
+	scheduler := NewScheduler(SchedulerConfig{
+		Logger: slog.Default(),
+	})
+
+	if err := scheduler.InitFromRegistry(registry); err != nil {
+		t.Fatalf("InitFromRegistry() error = %v", err)
 	}
 
-	// Add a worker and submit a job (don't start workers so items stay queued)
-	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient})
-	scheduler.RegisterWorker(llmWorker)
-
-	job := NewCountingJob(5)
-	scheduler.Submit(context.Background(), job)
-
-	stats = scheduler.QueueStats()
-	if stats.Total != 5 {
-		t.Errorf("Total = %d, want 5", stats.Total)
+	// Verify workers were created
+	workers := scheduler.ListWorkers()
+	if len(workers) != 2 {
+		t.Errorf("got %d workers, want 2", len(workers))
 	}
-	if stats.PendingByJob[job.ID()] != 5 {
-		t.Errorf("PendingByJob[%s] = %d, want 5", job.ID(), stats.PendingByJob[job.ID()])
+
+	// Verify LLM worker
+	llmWorker, ok := scheduler.GetWorker("openrouter")
+	if !ok {
+		t.Error("openrouter worker not found")
+	} else {
+		if llmWorker.Type() != WorkerTypeLLM {
+			t.Errorf("openrouter Type = %s, want llm", llmWorker.Type())
+		}
+		// Verify rate limit was passed through
+		status := llmWorker.RateLimiterStatus()
+		if status.RPS != 120 {
+			t.Errorf("openrouter RPS = %f, want 120", status.RPS)
+		}
 	}
-	if stats.Utilization != 0.05 {
-		t.Errorf("Utilization = %f, want 0.05", stats.Utilization)
+
+	// Verify OCR worker
+	ocrWorker, ok := scheduler.GetWorker("mistral")
+	if !ok {
+		t.Error("mistral worker not found")
+	} else {
+		if ocrWorker.Type() != WorkerTypeOCR {
+			t.Errorf("mistral Type = %s, want ocr", ocrWorker.Type())
+		}
+		// Verify rate limit was passed through
+		status := ocrWorker.RateLimiterStatus()
+		if status.RPS != 10.0 {
+			t.Errorf("mistral RPS = %f, want 10.0", status.RPS)
+		}
 	}
 }
