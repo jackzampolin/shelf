@@ -93,7 +93,7 @@ func (s *Scheduler) InitFromRegistry(registry *providers.Registry) error {
 			Name:      name,
 			LLMClient: client,
 			Logger:    s.logger,
-			// RPM pulled from client.RequestsPerMinute() by NewWorker
+			// RPS pulled from client.RequestsPerSecond() by NewWorker
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create LLM worker %s: %w", name, err)

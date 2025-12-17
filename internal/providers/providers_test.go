@@ -217,7 +217,7 @@ func TestRateLimiter(t *testing.T) {
 
 	t.Run("respects cancellation", func(t *testing.T) {
 		// Create limiter with very low rate
-		limiter := NewRateLimiter(1) // 1 per minute
+		limiter := NewRateLimiter(1) // 1 per second
 
 		// Consume the one allowed token
 		limiter.Wait(context.Background())
