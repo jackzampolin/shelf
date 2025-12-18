@@ -9,15 +9,17 @@ import (
 
 // LoadPageState loads existing page state from DefraDB.
 func (j *Job) LoadPageState(ctx context.Context) error {
+	// Query pages with their related OCR results
 	query := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}}) {
 			_docID
 			page_num
-			ocr_mistral
-			ocr_paddle
-			ocr_complete
 			blend_complete
 			label_complete
+			ocr_results {
+				provider
+				text
+			}
 		}
 	}`, j.BookID)
 
@@ -55,12 +57,19 @@ func (j *Job) LoadPageState(ctx context.Context) error {
 			state.PageDocID = docID
 		}
 
-		// Load OCR results dynamically based on configured providers
-		for _, provider := range j.OcrProviders {
-			field := fmt.Sprintf("ocr_%s", provider)
-			if ocrText, ok := page[field].(string); ok && ocrText != "" {
-				state.OcrResults[provider] = ocrText
-				state.OcrDone[provider] = true
+		// Load OCR results from the relationship
+		if ocrResults, ok := page["ocr_results"].([]any); ok {
+			for _, r := range ocrResults {
+				result, ok := r.(map[string]any)
+				if !ok {
+					continue
+				}
+				provider, _ := result["provider"].(string)
+				text, _ := result["text"].(string)
+				if provider != "" && text != "" {
+					state.OcrResults[provider] = text
+					state.OcrDone[provider] = true
+				}
 			}
 		}
 

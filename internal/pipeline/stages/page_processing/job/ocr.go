@@ -47,10 +47,13 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 		state.OcrResults[info.Provider] = result.OCRResult.Text
 		state.OcrDone[info.Provider] = true
 
-		field := fmt.Sprintf("ocr_%s", info.Provider)
-		if err := j.DefraClient.Update(ctx, "Page", state.PageDocID, map[string]any{
-			field: result.OCRResult.Text,
-		}); err != nil {
+		// Create OcrResult record linked to the Page
+		_, err := j.DefraClient.Create(ctx, "OcrResult", map[string]any{
+			"page_id":  state.PageDocID,
+			"provider": info.Provider,
+			"text":     result.OCRResult.Text,
+		})
+		if err != nil {
 			return nil, fmt.Errorf("failed to save OCR result: %w", err)
 		}
 	}
@@ -64,14 +67,9 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 		}
 	}
 
+	// If all OCR done, trigger blend
 	var units []jobs.WorkUnit
 	if allOcrDone {
-		if err := j.DefraClient.Update(ctx, "Page", state.PageDocID, map[string]any{
-			"ocr_complete": true,
-		}); err != nil {
-			return nil, fmt.Errorf("failed to mark OCR complete: %w", err)
-		}
-
 		blendUnit := j.CreateBlendWorkUnit(info.PageNum, state)
 		if blendUnit != nil {
 			units = append(units, *blendUnit)
