@@ -14,6 +14,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/config"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
+	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
@@ -193,6 +194,12 @@ func (s *Server) Start(ctx context.Context) error {
 		_ = s.shutdown()
 		return fmt.Errorf("failed to initialize workers: %w", err)
 	}
+
+	// Initialize CPU workers for CPU-bound tasks (uses runtime.NumCPU())
+	s.scheduler.InitCPUWorkers(0)
+
+	// Register CPU task handlers
+	s.scheduler.RegisterCPUHandler(ingest.TaskExtractPage, ingest.ExtractPageHandler())
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)

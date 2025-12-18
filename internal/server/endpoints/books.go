@@ -20,12 +20,12 @@ type IngestRequest struct {
 	Author   string   `json:"author,omitempty"`
 }
 
-// IngestResponse is the response for a successful ingest.
+// IngestResponse is the response for a successful ingest job submission.
 type IngestResponse struct {
-	BookID    string `json:"book_id"`
-	Title     string `json:"title"`
-	Author    string `json:"author,omitempty"`
-	PageCount int    `json:"page_count"`
+	JobID  string `json:"job_id"`
+	Title  string `json:"title"`
+	Author string `json:"author,omitempty"`
+	Status string `json:"status"`
 }
 
 // IngestEndpoint handles POST /api/books/ingest.
@@ -61,23 +61,36 @@ func (e *IngestEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scheduler := svcctx.SchedulerFrom(r.Context())
+	if scheduler == nil {
+		writeError(w, http.StatusServiceUnavailable, "scheduler not initialized")
+		return
+	}
+
 	logger := svcctx.LoggerFrom(r.Context())
-	result, err := ingest.Ingest(r.Context(), client, homeDir, ingest.Request{
+
+	// Create and configure the ingest job
+	job := ingest.NewJob(ingest.JobConfig{
 		PDFPaths: req.PDFPaths,
 		Title:    req.Title,
 		Author:   req.Author,
 		Logger:   logger,
 	})
-	if err != nil {
+	job.SetDependencies(client, homeDir)
+
+	// Submit to scheduler (async)
+	if err := scheduler.Submit(r.Context(), job); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, IngestResponse{
-		BookID:    result.BookID,
-		Title:     result.Title,
-		Author:    result.Author,
-		PageCount: result.PageCount,
+	// Return job ID for status polling
+	status, _ := job.Status(r.Context())
+	writeJSON(w, http.StatusAccepted, IngestResponse{
+		JobID:  job.ID(),
+		Title:  status["title"],
+		Author: req.Author,
+		Status: "queued",
 	})
 }
 
@@ -89,7 +102,10 @@ func (e *IngestEndpoint) Command(getServerURL func() string) *cobra.Command {
 		Long: `Ingest one or more PDF files as a book.
 
 For multi-part scans, files are sorted by numeric suffix (e.g., book-1.pdf, book-2.pdf).
-Title is derived from the filename if not provided.`,
+Title is derived from the filename if not provided.
+
+This command submits an ingest job and returns immediately.
+Use 'shelf api jobs get <job-id>' to check progress.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -113,12 +129,13 @@ Title is derived from the filename if not provided.`,
 				return err
 			}
 
-			fmt.Printf("Ingested book: %s\n", resp.BookID)
+			fmt.Printf("Ingest job submitted: %s\n", resp.JobID)
 			fmt.Printf("  Title:  %s\n", resp.Title)
 			if resp.Author != "" {
 				fmt.Printf("  Author: %s\n", resp.Author)
 			}
-			fmt.Printf("  Pages:  %d\n", resp.PageCount)
+			fmt.Printf("  Status: %s\n", resp.Status)
+			fmt.Println("\nCheck progress with: shelf api jobs get", resp.JobID)
 			return nil
 		},
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"sync"
 
 	"github.com/google/uuid"
@@ -19,10 +20,14 @@ type JobFactory func(id string, metadata map[string]any) (Job, error)
 // The scheduler routes work units to appropriate workers and handles results.
 type Scheduler struct {
 	mu      sync.RWMutex
-	manager *Manager           // For persistence
-	workers map[string]*Worker // workers by name
-	jobs    map[string]Job     // active jobs by ID
+	manager *Manager                    // For persistence
+	workers map[string]WorkerInterface  // all workers by name
+	jobs    map[string]Job              // active jobs by ID
 	logger  *slog.Logger
+
+	// CPU workers for round-robin distribution
+	cpuWorkers []*CPUWorker
+	cpuIndex   int // next CPU worker to use
 
 	// Job factories for resumption
 	factories map[string]JobFactory
@@ -51,13 +56,14 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 	}
 
 	return &Scheduler{
-		manager:   cfg.Manager,
-		workers:   make(map[string]*Worker),
-		jobs:      make(map[string]Job),
-		factories: make(map[string]JobFactory),
-		pending:   make(map[string]int),
-		results:   make(chan workerResult, 1000), // Buffered results channel
-		logger:    logger,
+		manager:    cfg.Manager,
+		workers:    make(map[string]WorkerInterface),
+		cpuWorkers: make([]*CPUWorker, 0),
+		jobs:       make(map[string]Job),
+		factories:  make(map[string]JobFactory),
+		pending:    make(map[string]int),
+		results:    make(chan workerResult, 1000), // Buffered results channel
+		logger:     logger,
 	}
 }
 
@@ -72,7 +78,7 @@ func (s *Scheduler) RegisterFactory(jobType string, factory JobFactory) {
 
 // RegisterWorker adds a worker to the scheduler.
 // Must be called before Start.
-func (s *Scheduler) RegisterWorker(w *Worker) {
+func (s *Scheduler) RegisterWorker(w WorkerInterface) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -123,8 +129,47 @@ func (s *Scheduler) InitFromRegistry(registry *providers.Registry) error {
 	return nil
 }
 
+// InitCPUWorkers creates n CPU workers for CPU-bound tasks.
+// If n <= 0, uses runtime.NumCPU().
+// Returns the created workers so callers can register task handlers.
+func (s *Scheduler) InitCPUWorkers(n int) []*CPUWorker {
+	if n <= 0 {
+		n = runtime.NumCPU()
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	workers := make([]*CPUWorker, n)
+	for i := 0; i < n; i++ {
+		w := NewCPUWorker(CPUWorkerConfig{
+			Name:   fmt.Sprintf("cpu-%d", i),
+			Logger: s.logger,
+		})
+		w.init(s.results)
+		workers[i] = w
+		s.workers[w.Name()] = w
+	}
+	s.cpuWorkers = workers
+
+	s.logger.Info("initialized CPU workers", "count", n)
+	return workers
+}
+
+// RegisterCPUHandler registers a task handler on all CPU workers.
+// Convenience method - equivalent to calling RegisterHandler on each worker.
+func (s *Scheduler) RegisterCPUHandler(taskName string, handler CPUTaskHandler) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, w := range s.cpuWorkers {
+		w.RegisterHandler(taskName, handler)
+	}
+	s.logger.Debug("registered CPU handler on all workers", "task", taskName, "workers", len(s.cpuWorkers))
+}
+
 // GetWorker returns a worker by name.
-func (s *Scheduler) GetWorker(name string) (*Worker, bool) {
+func (s *Scheduler) GetWorker(name string) (WorkerInterface, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	w, ok := s.workers[name]
@@ -315,9 +360,20 @@ func (s *Scheduler) enqueueUnits(jobID string, units []WorkUnit) {
 }
 
 // findWorker finds an appropriate worker for the work unit.
-func (s *Scheduler) findWorker(unit *WorkUnit) *Worker {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *Scheduler) findWorker(unit *WorkUnit) WorkerInterface {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// CPU work units use round-robin across CPU workers
+	if unit.Type == WorkUnitTypeCPU {
+		if len(s.cpuWorkers) == 0 {
+			return nil
+		}
+		// Round-robin selection
+		w := s.cpuWorkers[s.cpuIndex]
+		s.cpuIndex = (s.cpuIndex + 1) % len(s.cpuWorkers)
+		return w
+	}
 
 	// If specific provider requested, use that
 	if unit.Provider != "" {
@@ -465,18 +521,23 @@ func (s *Scheduler) WorkerStatus() map[string]WorkerStatusInfo {
 
 	status := make(map[string]WorkerStatusInfo, len(s.workers))
 	for name, w := range s.workers {
-		status[name] = WorkerStatusInfo{
-			Type:        string(w.Type()),
-			QueueDepth:  w.QueueDepth(),
-			RateLimiter: w.RateLimiterStatus(),
+		info := WorkerStatusInfo{
+			Type:       string(w.Type()),
+			QueueDepth: w.QueueDepth(),
 		}
+		// Only LLM/OCR workers have rate limiters
+		if rw, ok := w.(*Worker); ok {
+			rlStatus := rw.RateLimiterStatus()
+			info.RateLimiter = &rlStatus
+		}
+		status[name] = info
 	}
 	return status
 }
 
 // WorkerStatusInfo reports a worker's current state.
 type WorkerStatusInfo struct {
-	Type        string                     `json:"type"`
-	QueueDepth  int                        `json:"queue_depth"`
-	RateLimiter providers.RateLimiterStatus `json:"rate_limiter"`
+	Type        string                      `json:"type"`
+	QueueDepth  int                         `json:"queue_depth"`
+	RateLimiter *providers.RateLimiterStatus `json:"rate_limiter,omitempty"`
 }
