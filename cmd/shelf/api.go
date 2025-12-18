@@ -37,6 +37,11 @@ var pipelineCmd = &cobra.Command{
 	Short: "Pipeline processing commands",
 }
 
+var metricsCmd = &cobra.Command{
+	Use:   "metrics",
+	Short: "Metrics and cost tracking commands",
+}
+
 // getServerURL returns the server URL at runtime (after flag parsing).
 func getServerURL() string {
 	return serverURL
@@ -68,8 +73,17 @@ func init() {
 	pipelineCmd.AddCommand((&endpoints.StartPipelineEndpoint{}).Command(getServerURL))
 	pipelineCmd.AddCommand((&endpoints.PipelineStatusEndpoint{}).Command(getServerURL))
 
+	// Metrics as subcommand group
+	metricsCmd.AddCommand((&endpoints.ListMetricsEndpoint{}).Command(getServerURL))
+	metricsCmd.AddCommand((&endpoints.MetricsCostEndpoint{}).Command(getServerURL))
+	metricsCmd.AddCommand((&endpoints.MetricsSummaryEndpoint{}).Command(getServerURL))
+
+	// Add book cost to books group
+	booksCmd.AddCommand((&endpoints.BookCostEndpoint{}).Command(getServerURL))
+
 	apiCmd.AddCommand(jobsCmd)
 	apiCmd.AddCommand(booksCmd)
 	apiCmd.AddCommand(pipelineCmd)
+	apiCmd.AddCommand(metricsCmd)
 	rootCmd.AddCommand(apiCmd)
 }

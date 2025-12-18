@@ -143,6 +143,10 @@ func (j *Job) convertTocAgentUnits(agentUnits []agent.WorkUnit) []jobs.WorkUnit 
 			j.RegisterWorkUnit(unitID, WorkUnitInfo{
 				UnitType: "toc_finder",
 			})
+
+			metrics := j.MetricsFor()
+			metrics.ItemKey = "toc_finder"
+
 			units = append(units, jobs.WorkUnit{
 				ID:          unitID,
 				Type:        jobs.WorkUnitTypeLLM,
@@ -150,6 +154,7 @@ func (j *Job) convertTocAgentUnits(agentUnits []agent.WorkUnit) []jobs.WorkUnit 
 				JobID:       j.RecordID,
 				ChatRequest: au.ChatRequest,
 				Tools:       au.Tools,
+				Metrics:     metrics,
 			})
 		}
 	}

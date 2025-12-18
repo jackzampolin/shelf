@@ -174,6 +174,11 @@ func (j *MockJob) Progress() map[string]ProviderProgress {
 	}
 }
 
+// MetricsFor returns nil for mock jobs (no metrics in tests).
+func (j *MockJob) MetricsFor() *WorkUnitMetrics {
+	return nil
+}
+
 // Verify interface
 var _ Job = (*MockJob)(nil)
 
@@ -256,6 +261,11 @@ func (j *CountingJob) Progress() map[string]ProviderProgress {
 			Failed:           0,
 		},
 	}
+}
+
+// MetricsFor returns nil for counting jobs (no metrics in tests).
+func (j *CountingJob) MetricsFor() *WorkUnitMetrics {
+	return nil
 }
 
 var _ Job = (*CountingJob)(nil)
@@ -470,6 +480,11 @@ func (j *MultiPhaseJob) Progress() map[string]ProviderProgress {
 			Failed:           llmFailed,
 		},
 	}
+}
+
+// MetricsFor returns nil for multi-phase jobs (no metrics in tests).
+func (j *MultiPhaseJob) MetricsFor() *WorkUnitMetrics {
+	return nil
 }
 
 var _ Job = (*MultiPhaseJob)(nil)

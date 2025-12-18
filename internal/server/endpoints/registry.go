@@ -32,6 +32,12 @@ func All(cfg Config) []api.Endpoint {
 		// Pipeline endpoints
 		&StartPipelineEndpoint{},
 		&PipelineStatusEndpoint{},
+
+		// Metrics endpoints
+		&ListMetricsEndpoint{},
+		&MetricsCostEndpoint{},
+		&MetricsSummaryEndpoint{},
+		&BookCostEndpoint{},
 	}
 }
 

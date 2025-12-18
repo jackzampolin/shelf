@@ -48,6 +48,10 @@ func (j *Job) CreateLabelWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit 
 	unit.Provider = j.LabelProvider
 	unit.JobID = j.RecordID
 
+	metrics := j.MetricsFor()
+	metrics.ItemKey = fmt.Sprintf("page_%04d_label", pageNum)
+	unit.Metrics = metrics
+
 	return unit
 }
 

@@ -34,6 +34,10 @@ func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	unit.Provider = j.TocProvider
 	unit.JobID = j.RecordID
 
+	metrics := j.MetricsFor()
+	metrics.ItemKey = "toc_extract"
+	unit.Metrics = metrics
+
 	return unit
 }
 

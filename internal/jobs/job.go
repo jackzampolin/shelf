@@ -50,6 +50,17 @@ type WorkUnit struct {
 
 	// Tools for LLM calls (optional - if set, ChatWithTools is used)
 	Tools []providers.Tool
+
+	// Metrics attribution (used by workers for automatic metrics recording)
+	Metrics *WorkUnitMetrics
+}
+
+// WorkUnitMetrics provides attribution data for metrics recording.
+// Set these fields on work units to enable automatic metrics recording by workers.
+type WorkUnitMetrics struct {
+	BookID  string // Book being processed
+	Stage   string // Pipeline stage (e.g., "page-processing")
+	ItemKey string // Item identifier (e.g., "page_0001", "toc_entry_5")
 }
 
 // OCRWorkRequest contains the data needed for an OCR work unit.
@@ -141,6 +152,10 @@ type Job interface {
 	// Keys are provider names (e.g., "openrouter", "mistral").
 	// This enables granular progress tracking during execution.
 	Progress() map[string]ProviderProgress
+
+	// MetricsFor returns base metrics attribution for this job.
+	// Returns BookID and Stage pre-filled. Callers add ItemKey for specific work units.
+	MetricsFor() *WorkUnitMetrics
 }
 
 // Status represents the current state of a job.

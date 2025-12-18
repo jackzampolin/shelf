@@ -159,6 +159,15 @@ func (j *Job) GetAndRemoveWorkUnit(unitID string) (WorkUnitInfo, bool) {
 	return info, ok
 }
 
+// MetricsFor returns base metrics attribution for this job.
+// Returns BookID and Stage pre-filled. Callers add ItemKey for specific work units.
+func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
+	return &jobs.WorkUnitMetrics{
+		BookID: j.BookID,
+		Stage:  j.Type(),
+	}
+}
+
 // ProviderProgress returns progress by provider for the Progress() method.
 func (j *Job) ProviderProgress() map[string]jobs.ProviderProgress {
 	progress := make(map[string]jobs.ProviderProgress)

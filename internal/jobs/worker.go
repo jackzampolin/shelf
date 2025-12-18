@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
@@ -46,6 +47,9 @@ type Worker struct {
 
 	// Queue size configuration
 	queueSize int
+
+	// Metrics recorder (optional - if set, metrics are recorded automatically)
+	metricsRecorder *metrics.Recorder
 }
 
 // workerResult pairs a work result with its job ID for routing.
@@ -70,6 +74,9 @@ type WorkerConfig struct {
 
 	// Queue size for this worker (default 100)
 	QueueSize int
+
+	// MetricsRecorder enables automatic metrics recording (optional)
+	MetricsRecorder *metrics.Recorder
 }
 
 // NewWorker creates a new worker wrapping a provider.
@@ -92,9 +99,10 @@ func NewWorker(cfg WorkerConfig) (*Worker, error) {
 	}
 
 	w := &Worker{
-		name:      cfg.Name,
-		logger:    logger.With("worker", cfg.Name),
-		queueSize: queueSize,
+		name:            cfg.Name,
+		logger:          logger.With("worker", cfg.Name),
+		queueSize:       queueSize,
+		metricsRecorder: cfg.MetricsRecorder,
 	}
 
 	// Determine type and RPS - pull from provider if not overridden in config
@@ -257,6 +265,9 @@ func (w *Worker) Process(ctx context.Context, unit *WorkUnit) WorkResult {
 		}
 	}
 
+	// Record metrics (if recorder is configured and unit has metrics attribution)
+	w.recordMetrics(ctx, unit, &result)
+
 	// Log completion
 	if result.Success {
 		w.logger.Debug("work unit completed", "unit_id", unit.ID)
@@ -265,6 +276,36 @@ func (w *Worker) Process(ctx context.Context, unit *WorkUnit) WorkResult {
 	}
 
 	return result
+}
+
+// recordMetrics records metrics for a completed work unit.
+func (w *Worker) recordMetrics(ctx context.Context, unit *WorkUnit, result *WorkResult) {
+	if w.metricsRecorder == nil || unit.Metrics == nil {
+		return
+	}
+
+	opts := metrics.RecordOpts{
+		JobID:   unit.JobID,
+		BookID:  unit.Metrics.BookID,
+		Stage:   unit.Metrics.Stage,
+		ItemKey: unit.Metrics.ItemKey,
+	}
+
+	var err error
+	switch w.workerType {
+	case WorkerTypeLLM:
+		if result.ChatResult != nil {
+			_, err = w.metricsRecorder.RecordLLMCall(ctx, opts, result.ChatResult)
+		}
+	case WorkerTypeOCR:
+		if result.OCRResult != nil {
+			_, err = w.metricsRecorder.RecordOCRCall(ctx, opts, w.name, result.OCRResult)
+		}
+	}
+
+	if err != nil {
+		w.logger.Warn("failed to record metrics", "unit_id", unit.ID, "error", err)
+	}
 }
 
 // RateLimiterStatus returns the current rate limiter status.

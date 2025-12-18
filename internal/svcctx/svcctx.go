@@ -9,6 +9,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/pipeline"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
@@ -24,6 +25,7 @@ type Services struct {
 	Logger           *slog.Logger
 	Home             *home.Dir
 	PipelineRegistry *pipeline.Registry
+	MetricsRecorder  *metrics.Recorder
 }
 
 type servicesKey struct{}
@@ -100,6 +102,14 @@ func HomeFrom(ctx context.Context) *home.Dir {
 func PipelineRegistryFrom(ctx context.Context) *pipeline.Registry {
 	if s := ServicesFrom(ctx); s != nil {
 		return s.PipelineRegistry
+	}
+	return nil
+}
+
+// MetricsRecorderFrom extracts the metrics recorder from context.
+func MetricsRecorderFrom(ctx context.Context) *metrics.Recorder {
+	if s := ServicesFrom(ctx); s != nil {
+		return s.MetricsRecorder
 	}
 	return nil
 }

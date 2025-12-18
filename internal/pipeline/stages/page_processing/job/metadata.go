@@ -34,6 +34,10 @@ func (j *Job) CreateMetadataWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	unit.Provider = j.MetadataProvider
 	unit.JobID = j.RecordID
 
+	metrics := j.MetricsFor()
+	metrics.ItemKey = "metadata"
+	unit.Metrics = metrics
+
 	return unit
 }
 

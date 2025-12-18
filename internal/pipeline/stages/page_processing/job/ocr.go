@@ -24,6 +24,9 @@ func (j *Job) CreateOcrWorkUnit(pageNum int, provider string) *jobs.WorkUnit {
 		Provider: provider,
 	})
 
+	metrics := j.MetricsFor()
+	metrics.ItemKey = fmt.Sprintf("page_%04d_%s", pageNum, provider)
+
 	return &jobs.WorkUnit{
 		ID:       unitID,
 		Type:     jobs.WorkUnitTypeOCR,
@@ -33,6 +36,7 @@ func (j *Job) CreateOcrWorkUnit(pageNum int, provider string) *jobs.WorkUnit {
 			Image:   imageData,
 			PageNum: pageNum,
 		},
+		Metrics: metrics,
 	}
 }
 

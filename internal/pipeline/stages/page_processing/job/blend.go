@@ -39,6 +39,10 @@ func (j *Job) CreateBlendWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit 
 	unit.Provider = j.BlendProvider
 	unit.JobID = j.RecordID
 
+	metrics := j.MetricsFor()
+	metrics.ItemKey = fmt.Sprintf("page_%04d_blend", pageNum)
+	unit.Metrics = metrics
+
 	return unit
 }
 

@@ -22,10 +22,11 @@ type Schema struct {
 var registry = []Schema{
 	{Name: "Job", Order: 1},
 	{Name: "Book", Order: 2},
-	{Name: "Page", Order: 3},      // depends on Book
-	{Name: "OcrResult", Order: 4}, // depends on Page
-	{Name: "ToC", Order: 5},       // depends on Book
-	{Name: "TocEntry", Order: 6},  // depends on ToC, Page
+	{Name: "Metric", Order: 3},    // standalone, no dependencies
+	{Name: "Page", Order: 4},      // depends on Book
+	{Name: "OcrResult", Order: 5}, // depends on Page
+	{Name: "ToC", Order: 6},       // depends on Book
+	{Name: "TocEntry", Order: 7},  // depends on ToC, Page
 }
 
 // All returns all schemas in dependency order.

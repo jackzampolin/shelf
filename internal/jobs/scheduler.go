@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
@@ -40,12 +41,16 @@ type Scheduler struct {
 
 	// Running state
 	running bool
+
+	// Metrics recorder (passed to workers for automatic metrics recording)
+	metricsRecorder *metrics.Recorder
 }
 
 // SchedulerConfig configures a new scheduler.
 type SchedulerConfig struct {
-	Manager *Manager // Required for persistence
-	Logger  *slog.Logger
+	Manager         *Manager          // Required for persistence
+	Logger          *slog.Logger
+	MetricsRecorder *metrics.Recorder // Optional - enables automatic metrics recording
 }
 
 // NewScheduler creates a new scheduler.
@@ -56,14 +61,15 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 	}
 
 	return &Scheduler{
-		manager:    cfg.Manager,
-		workers:    make(map[string]WorkerInterface),
-		cpuWorkers: make([]*CPUWorker, 0),
-		jobs:       make(map[string]Job),
-		factories:  make(map[string]JobFactory),
-		pending:    make(map[string]int),
-		results:    make(chan workerResult, 1000), // Buffered results channel
-		logger:     logger,
+		manager:         cfg.Manager,
+		workers:         make(map[string]WorkerInterface),
+		cpuWorkers:      make([]*CPUWorker, 0),
+		jobs:            make(map[string]Job),
+		factories:       make(map[string]JobFactory),
+		pending:         make(map[string]int),
+		results:         make(chan workerResult, 1000), // Buffered results channel
+		logger:          logger,
+		metricsRecorder: cfg.MetricsRecorder,
 	}
 }
 
@@ -96,9 +102,10 @@ func (s *Scheduler) InitFromRegistry(registry *providers.Registry) error {
 	// Create workers from LLM clients
 	for name, client := range registry.LLMClients() {
 		worker, err := NewWorker(WorkerConfig{
-			Name:      name,
-			LLMClient: client,
-			Logger:    s.logger,
+			Name:            name,
+			LLMClient:       client,
+			Logger:          s.logger,
+			MetricsRecorder: s.metricsRecorder,
 			// RPS pulled from client.RequestsPerSecond() by NewWorker
 		})
 		if err != nil {
@@ -110,9 +117,10 @@ func (s *Scheduler) InitFromRegistry(registry *providers.Registry) error {
 	// Create workers from OCR providers
 	for name, provider := range registry.OCRProviders() {
 		worker, err := NewWorker(WorkerConfig{
-			Name:        name,
-			OCRProvider: provider,
-			Logger:      s.logger,
+			Name:            name,
+			OCRProvider:     provider,
+			Logger:          s.logger,
+			MetricsRecorder: s.metricsRecorder,
 			// RPS pulled from provider.RequestsPerSecond() by NewWorker
 		})
 		if err != nil {

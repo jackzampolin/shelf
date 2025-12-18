@@ -340,3 +340,8 @@ func (j *Job) BookID() string {
 	defer j.mu.Unlock()
 	return j.finalBookID
 }
+
+// MetricsFor returns nil for ingest jobs (CPU-only work, no API costs).
+func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
+	return nil
+}
