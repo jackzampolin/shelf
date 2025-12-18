@@ -26,18 +26,19 @@ var (
 	ErrManagerRequired = errors.New("manager required")
 )
 
-// WorkUnitType distinguishes LLM from OCR work.
+// WorkUnitType distinguishes work by resource type.
 type WorkUnitType string
 
 const (
 	WorkUnitTypeLLM WorkUnitType = "llm"
 	WorkUnitTypeOCR WorkUnitType = "ocr"
+	WorkUnitTypeCPU WorkUnitType = "cpu" // CPU-bound work (no rate limiting)
 )
 
 // WorkUnit is a single unit of work for a provider.
 type WorkUnit struct {
 	ID       string       // Unique identifier for this work unit
-	Type     WorkUnitType // "llm" or "ocr"
+	Type     WorkUnitType // "llm", "ocr", or "cpu"
 	Provider string       // Specific provider name, or "" for any of this type
 	JobID    string       // Which job this belongs to
 	Priority int          // Higher = processed first
@@ -45,6 +46,7 @@ type WorkUnit struct {
 	// Request data (one of these will be set based on Type)
 	ChatRequest *providers.ChatRequest
 	OCRRequest  *OCRWorkRequest
+	CPURequest  *CPUWorkRequest
 
 	// Tools for LLM calls (optional - if set, ChatWithTools is used)
 	Tools []providers.Tool
@@ -56,6 +58,13 @@ type OCRWorkRequest struct {
 	PageNum int
 }
 
+// CPUWorkRequest contains the data needed for a CPU-bound work unit.
+// The Task field identifies what kind of CPU work this is.
+type CPUWorkRequest struct {
+	Task string // Task identifier (e.g., "extract-page")
+	Data any    // Task-specific data
+}
+
 // WorkResult is the result of a completed work unit.
 type WorkResult struct {
 	WorkUnitID string
@@ -65,6 +74,12 @@ type WorkResult struct {
 	// Result data (one of these will be set based on work unit type)
 	ChatResult *providers.ChatResult
 	OCRResult  *providers.OCRResult
+	CPUResult  *CPUWorkResult
+}
+
+// CPUWorkResult contains the result of a CPU-bound work unit.
+type CPUWorkResult struct {
+	Data any // Task-specific result data
 }
 
 // ProviderProgress tracks work unit progress for a single provider.

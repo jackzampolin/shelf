@@ -279,32 +279,40 @@ func TestScheduler_InitFromRegistry(t *testing.T) {
 	}
 
 	// Verify LLM worker
-	llmWorker, ok := scheduler.GetWorker("openrouter")
+	llmWorkerIface, ok := scheduler.GetWorker("openrouter")
 	if !ok {
 		t.Error("openrouter worker not found")
 	} else {
-		if llmWorker.Type() != WorkerTypeLLM {
-			t.Errorf("openrouter Type = %s, want llm", llmWorker.Type())
+		if llmWorkerIface.Type() != WorkerTypeLLM {
+			t.Errorf("openrouter Type = %s, want llm", llmWorkerIface.Type())
 		}
-		// Verify rate limit was passed through
-		status := llmWorker.RateLimiterStatus()
-		if status.RPS != 120 {
-			t.Errorf("openrouter RPS = %f, want 120", status.RPS)
+		// Verify rate limit was passed through (cast to *Worker for rate limiter access)
+		if llmWorker, ok := llmWorkerIface.(*Worker); ok {
+			status := llmWorker.RateLimiterStatus()
+			if status.RPS != 120 {
+				t.Errorf("openrouter RPS = %f, want 120", status.RPS)
+			}
+		} else {
+			t.Error("openrouter worker is not a *Worker")
 		}
 	}
 
 	// Verify OCR worker
-	ocrWorker, ok := scheduler.GetWorker("mistral")
+	ocrWorkerIface, ok := scheduler.GetWorker("mistral")
 	if !ok {
 		t.Error("mistral worker not found")
 	} else {
-		if ocrWorker.Type() != WorkerTypeOCR {
-			t.Errorf("mistral Type = %s, want ocr", ocrWorker.Type())
+		if ocrWorkerIface.Type() != WorkerTypeOCR {
+			t.Errorf("mistral Type = %s, want ocr", ocrWorkerIface.Type())
 		}
-		// Verify rate limit was passed through
-		status := ocrWorker.RateLimiterStatus()
-		if status.RPS != 10.0 {
-			t.Errorf("mistral RPS = %f, want 10.0", status.RPS)
+		// Verify rate limit was passed through (cast to *Worker for rate limiter access)
+		if ocrWorker, ok := ocrWorkerIface.(*Worker); ok {
+			status := ocrWorker.RateLimiterStatus()
+			if status.RPS != 10.0 {
+				t.Errorf("mistral RPS = %f, want 10.0", status.RPS)
+			}
+		} else {
+			t.Error("mistral worker is not a *Worker")
 		}
 	}
 }

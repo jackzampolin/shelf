@@ -8,13 +8,24 @@ import (
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
-// WorkerType indicates whether this worker handles LLM or OCR work.
+// WorkerType indicates what kind of work this worker handles.
 type WorkerType string
 
 const (
 	WorkerTypeLLM WorkerType = "llm"
 	WorkerTypeOCR WorkerType = "ocr"
 )
+
+// WorkerInterface is implemented by all worker types.
+// This allows the scheduler to manage different worker implementations uniformly.
+type WorkerInterface interface {
+	Name() string
+	Type() WorkerType
+	Start(ctx context.Context)
+	Submit(unit *WorkUnit) error
+	QueueDepth() int
+	init(results chan<- workerResult)
+}
 
 // Worker wraps a single provider (LLM or OCR) with rate limiting.
 // Each worker owns its own input queue and runs as a single goroutine.
