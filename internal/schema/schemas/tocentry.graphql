@@ -1,0 +1,19 @@
+type TocEntry {
+    toc: ToC
+
+    # Core fields
+    entry_number: String
+    title: String
+    level: Int
+    level_name: String
+
+    # Page references
+    printed_page_number: String
+    actual_page: Page
+
+    # Source tracking
+    source: String
+
+    # Ordering
+    sort_order: Int
+}

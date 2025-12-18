@@ -1,0 +1,21 @@
+type ToC {
+    book: Book
+
+    # Finder results
+    toc_found: Boolean
+    start_page: Int
+    end_page: Int
+
+    # Structure analysis
+    total_levels: Int
+    level_patterns: JSON
+
+    # Status
+    finder_complete: Boolean
+    extract_complete: Boolean
+    link_complete: Boolean
+    discover_complete: Boolean
+
+    # Relationships
+    entries: [TocEntry]
+}

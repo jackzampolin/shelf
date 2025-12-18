@@ -17,10 +17,15 @@ type Schema struct {
 	Order int    // Initialization order (lower = first)
 }
 
-// registry holds all schemas in order.
+// registry holds all schemas in dependency order.
+// Order matters: parent collections must be created before children.
 var registry = []Schema{
 	{Name: "Job", Order: 1},
 	{Name: "Book", Order: 2},
+	{Name: "Page", Order: 3},      // depends on Book
+	{Name: "OcrResult", Order: 4}, // depends on Page
+	{Name: "ToC", Order: 5},       // depends on Book
+	{Name: "TocEntry", Order: 6},  // depends on ToC, Page
 }
 
 // All returns all schemas in dependency order.

@@ -1,0 +1,153 @@
+package job
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/google/uuid"
+	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/pipeline/prompts/extract_toc"
+)
+
+// CreateTocExtractWorkUnit creates a ToC extraction work unit.
+func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
+	// Load ToC pages
+	tocPages, err := j.loadTocPages(ctx)
+	if err != nil || len(tocPages) == 0 {
+		return nil
+	}
+
+	// Load structure summary from finder (if available)
+	structureSummary, _ := j.loadTocStructureSummary(ctx)
+
+	unitID := uuid.New().String()
+	j.RegisterWorkUnit(unitID, WorkUnitInfo{
+		UnitType: "toc_extract",
+	})
+
+	unit := extract_toc.CreateWorkUnit(extract_toc.Input{
+		ToCPages:         tocPages,
+		StructureSummary: structureSummary,
+	})
+	unit.ID = unitID
+	unit.Provider = j.TocProvider
+	unit.JobID = j.RecordID
+
+	return unit
+}
+
+// HandleTocExtractComplete processes ToC extraction completion.
+func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResult) error {
+	if result.ChatResult == nil || result.ChatResult.ParsedJSON == nil {
+		j.BookState.TocExtractDone = true
+		return nil
+	}
+
+	extractResult, err := extract_toc.ParseResult(result.ChatResult.ParsedJSON)
+	if err != nil {
+		j.BookState.TocExtractDone = true
+		return fmt.Errorf("failed to parse ToC extract result: %w", err)
+	}
+
+	if err := j.saveTocExtractResult(ctx, extractResult); err != nil {
+		j.BookState.TocExtractDone = true
+		return fmt.Errorf("failed to save ToC extract result: %w", err)
+	}
+
+	j.BookState.TocExtractDone = true
+	return nil
+}
+
+// loadTocPages loads the ToC page content for extraction.
+func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
+	if j.BookState.TocStartPage == 0 || j.BookState.TocEndPage == 0 {
+		return nil, fmt.Errorf("ToC page range not set")
+	}
+
+	query := fmt.Sprintf(`{
+		Page(filter: {
+			book_id: {_eq: "%s"},
+			page_num: {_gte: %d, _lte: %d}
+		}, order: {page_num: ASC}) {
+			page_num
+			blend_markdown
+		}
+	}`, j.BookID, j.BookState.TocStartPage, j.BookState.TocEndPage)
+
+	resp, err := j.DefraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	rawPages, ok := resp.Data["Page"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("no pages found")
+	}
+
+	var tocPages []extract_toc.ToCPage
+	for _, p := range rawPages {
+		page, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		var tp extract_toc.ToCPage
+		if pn, ok := page["page_num"].(float64); ok {
+			tp.PageNum = int(pn)
+		}
+		if bm, ok := page["blend_markdown"].(string); ok {
+			tp.OCRText = bm
+		}
+
+		if tp.OCRText != "" {
+			tocPages = append(tocPages, tp)
+		}
+	}
+
+	return tocPages, nil
+}
+
+// loadTocStructureSummary loads the structure summary from the ToC finder.
+func (j *Job) loadTocStructureSummary(ctx context.Context) (*extract_toc.StructureSummary, error) {
+	if j.TocDocID == "" {
+		return nil, nil
+	}
+
+	query := fmt.Sprintf(`{
+		ToC(filter: {_docID: {_eq: "%s"}}) {
+			structure_summary
+		}
+	}`, j.TocDocID)
+
+	resp, err := j.DefraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if tocs, ok := resp.Data["ToC"].([]any); ok && len(tocs) > 0 {
+		if toc, ok := tocs[0].(map[string]any); ok {
+			if summaryStr, ok := toc["structure_summary"].(string); ok && summaryStr != "" {
+				var summary extract_toc.StructureSummary
+				if err := json.Unmarshal([]byte(summaryStr), &summary); err == nil {
+					return &summary, nil
+				}
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+// saveTocExtractResult saves the ToC extraction result to DefraDB.
+func (j *Job) saveTocExtractResult(ctx context.Context, result *extract_toc.Result) error {
+	entriesJSON, err := json.Marshal(result.Entries)
+	if err != nil {
+		return err
+	}
+
+	return j.DefraClient.Update(ctx, "ToC", j.TocDocID, map[string]any{
+		"entries":          string(entriesJSON),
+		"extract_complete": true,
+	})
+}

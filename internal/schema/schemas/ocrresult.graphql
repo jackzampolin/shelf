@@ -1,0 +1,8 @@
+type OcrResult {
+    page: Page
+    provider: String
+    text: String
+    confidence: Float
+    provider_metadata: JSON
+    created_at: DateTime
+}
