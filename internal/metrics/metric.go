@@ -43,8 +43,8 @@ type Metric struct {
 	CreatedAt time.Time `json:"created_at,omitempty"`
 }
 
-// toMap converts the metric to a map for DefraDB storage.
-func (m *Metric) toMap() map[string]any {
+// ToMap converts the metric to a map for DefraDB storage.
+func (m *Metric) ToMap() map[string]any {
 	data := map[string]any{
 		"success":    m.Success,
 		"created_at": m.CreatedAt.Format(time.RFC3339),

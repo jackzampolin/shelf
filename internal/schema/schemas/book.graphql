@@ -23,6 +23,8 @@ type Book {
     metadata_complete: Boolean
 
     # Relationships
+    # One-to-many: Book has many Pages
     pages: [Page]
-    toc: ToC
+    # One-to-one: Book has one ToC (@primary on this side)
+    toc: ToC @primary
 }

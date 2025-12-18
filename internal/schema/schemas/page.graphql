@@ -1,4 +1,5 @@
 type Page {
+    # Many-to-one: Page belongs to Book
     book: Book
     page_num: Int
 
@@ -20,5 +21,6 @@ type Page {
     label_complete: Boolean
 
     # Relationships
+    # One-to-many: Page has many OcrResults
     ocr_results: [OcrResult]
 }

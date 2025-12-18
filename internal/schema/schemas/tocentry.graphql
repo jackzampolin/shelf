@@ -1,4 +1,5 @@
 type TocEntry {
+    # Many-to-one: TocEntry belongs to ToC
     toc: ToC
 
     # Core fields
@@ -7,7 +8,7 @@ type TocEntry {
     level: Int
     level_name: String
 
-    # Page references
+    # Page references (optional link to actual page)
     printed_page_number: String
     actual_page: Page
 

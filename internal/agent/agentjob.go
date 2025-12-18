@@ -104,6 +104,11 @@ func (j *AgentJob) Progress() map[string]jobs.ProviderProgress {
 	return nil // Agent jobs don't have per-provider progress tracking
 }
 
+// MetricsFor returns nil for agent jobs (metrics not yet implemented).
+func (j *AgentJob) MetricsFor() *jobs.WorkUnitMetrics {
+	return nil
+}
+
 // Result returns the agent's result (only valid after Done() returns true).
 func (j *AgentJob) Result() *Result {
 	return j.agent.Result()

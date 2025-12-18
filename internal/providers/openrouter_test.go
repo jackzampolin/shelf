@@ -330,10 +330,14 @@ func TestOpenRouterClient_Config(t *testing.T) {
 
 // TestOpenRouterIntegration runs real LLM calls against the OpenRouter API.
 // Requires OPENROUTER_API_KEY environment variable to be set.
+// Skipped by default - run with: go test -run TestOpenRouterIntegration ./internal/providers
 func TestOpenRouterIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	cfg := LoadTestConfig()
 	if !cfg.HasOpenRouter() {
-		t.Skip("OPENROUTER_API_KEY not set - skipping integration test")
+		t.Skip("OPENROUTER_API_KEY not set")
 	}
 
 	client := cfg.NewOpenRouterClient()

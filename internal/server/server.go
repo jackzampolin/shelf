@@ -16,7 +16,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/pipeline"
 	"github.com/jackzampolin/shelf/internal/pipeline/stages/page_processing"
 	"github.com/jackzampolin/shelf/internal/providers"
@@ -37,7 +36,6 @@ type Server struct {
 	scheduler        *jobs.Scheduler
 	registry         *providers.Registry
 	pipelineRegistry *pipeline.Registry
-	metricsRecorder  *metrics.Recorder
 	configMgr        *config.Manager
 	logger           *slog.Logger
 	home             *home.Dir
@@ -211,9 +209,6 @@ func (s *Server) Start(ctx context.Context) error {
 	// Create job manager
 	s.jobManager = jobs.NewManager(s.defraClient, s.logger)
 
-	// Create metrics recorder
-	s.metricsRecorder = metrics.NewRecorder(s.defraClient)
-
 	// Create write sink for batched DefraDB writes
 	s.defraSink = defra.NewSink(defra.SinkConfig{
 		Client: s.defraClient,
@@ -221,11 +216,11 @@ func (s *Server) Start(ctx context.Context) error {
 	})
 	s.defraSink.Start(ctx)
 
-	// Create scheduler for job execution
+	// Create scheduler for job execution (sink enables fire-and-forget metrics)
 	s.scheduler = jobs.NewScheduler(jobs.SchedulerConfig{
-		Manager:         s.jobManager,
-		Logger:          s.logger,
-		MetricsRecorder: s.metricsRecorder,
+		Manager: s.jobManager,
+		Logger:  s.logger,
+		Sink:    s.defraSink,
 	})
 
 	// Initialize workers from provider registry
@@ -253,7 +248,6 @@ func (s *Server) Start(ctx context.Context) error {
 		Logger:           s.logger,
 		Home:             s.home,
 		PipelineRegistry: s.pipelineRegistry,
-		MetricsRecorder:  s.metricsRecorder,
 	}
 
 	// Start HTTP server in goroutine

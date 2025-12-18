@@ -10,6 +10,8 @@ import (
 )
 
 // Initialize applies all schemas to DefraDB.
+// All schemas are combined into a single SDL to handle circular dependencies
+// (e.g., Book references Page, Page references Book).
 // It's safe to call multiple times - existing schemas are skipped.
 func Initialize(ctx context.Context, client *defra.Client, logger *slog.Logger) error {
 	schemas, err := All()
@@ -17,29 +19,26 @@ func Initialize(ctx context.Context, client *defra.Client, logger *slog.Logger) 
 		return fmt.Errorf("failed to load schemas: %w", err)
 	}
 
+	// Combine all schemas into one SDL to handle circular dependencies
+	var sdlParts []string
+	var schemaNames []string
 	for _, s := range schemas {
-		if err := applySchema(ctx, client, s, logger); err != nil {
-			return err
-		}
+		sdlParts = append(sdlParts, s.SDL)
+		schemaNames = append(schemaNames, s.Name)
 	}
+	combinedSDL := strings.Join(sdlParts, "\n\n")
 
-	return nil
-}
-
-// applySchema adds a single schema to DefraDB.
-// Returns nil if schema already exists.
-func applySchema(ctx context.Context, client *defra.Client, s Schema, logger *slog.Logger) error {
-	err := client.AddSchema(ctx, s.SDL)
+	// Add all schemas in one call
+	err = client.AddSchema(ctx, combinedSDL)
 	if err != nil {
-		// Check if it's an "already exists" error - that's fine
 		if isAlreadyExistsError(err) {
-			logger.Info("schema already exists", "name", s.Name)
+			logger.Info("schemas already exist", "names", schemaNames)
 			return nil
 		}
-		return fmt.Errorf("failed to add schema %s: %w", s.Name, err)
+		return fmt.Errorf("failed to add schemas: %w", err)
 	}
 
-	logger.Info("schema added", "name", s.Name)
+	logger.Info("schemas added", "names", schemaNames)
 	return nil
 }
 

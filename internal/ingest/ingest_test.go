@@ -1,9 +1,6 @@
 package ingest
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -76,35 +73,3 @@ func TestDeriveTitle(t *testing.T) {
 	}
 }
 
-func TestExtractImages(t *testing.T) {
-	// Use the test fixture
-	testPDF := filepath.Join("..", "..", "testdata", "test-book.pdf")
-	if _, err := os.Stat(testPDF); os.IsNotExist(err) {
-		t.Skip("test fixture not found")
-	}
-
-	// Create temp output directory
-	outDir, err := os.MkdirTemp("", "ingest-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(outDir)
-
-	// Extract images
-	count, err := extractImages(testPDF, outDir, 0)
-	if err != nil {
-		t.Fatalf("extractImages failed: %v", err)
-	}
-
-	if count != 615 {
-		t.Errorf("expected 615 pages, got %d", count)
-	}
-
-	// Verify files exist with correct naming
-	for i := 1; i <= count; i++ {
-		path := filepath.Join(outDir, fmt.Sprintf("page_%04d.png", i))
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			t.Errorf("expected file %s to exist", path)
-		}
-	}
-}

@@ -61,11 +61,11 @@ run:
 
 .PHONY: test
 test:
-	go test ./... $(TEST_FLAGS)
-
-.PHONY: test\:unit
-test\:unit:
 	go test ./... $(TEST_FLAGS) -short
+
+.PHONY: test\:all
+test\:all:
+	go test ./... $(TEST_FLAGS)
 
 .PHONY: test\:verbose
 test\:verbose:
@@ -154,8 +154,8 @@ help:
 	@echo "  make run                Build and run shelf"
 	@echo ""
 	@echo "Test:"
-	@echo "  make test               Run all tests"
-	@echo "  make test:unit          Run unit tests only"
+	@echo "  make test               Run tests (skips integration tests)"
+	@echo "  make test:all           Run all tests including integration"
 	@echo "  make test:verbose       Run tests with verbose output"
 	@echo "  make test:coverage      Run tests with coverage report"
 	@echo ""

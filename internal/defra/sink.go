@@ -273,10 +273,9 @@ func (s *Sink) processGroup(collection string, opType OpType, ops []WriteOp) {
 }
 
 // processCreates handles batched create operations.
+// Creates are processed individually since DefraDB GraphQL
+// doesn't have a native CreateMany in the HTTP API yet.
 func (s *Sink) processCreates(collection string, ops []WriteOp) {
-	// For now, process creates individually since DefraDB GraphQL
-	// doesn't have a native CreateMany in the HTTP API.
-	// TODO: When DefraDB adds batch support, use it here.
 	for _, op := range ops {
 		docID, err := s.client.Create(s.ctx, collection, op.Document)
 		result := WriteResult{DocID: docID, Err: err}

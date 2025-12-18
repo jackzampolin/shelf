@@ -232,10 +232,14 @@ func TestMistralOCRClient_ProcessImage(t *testing.T) {
 // TestMistralOCRIntegration runs real OCR against the Mistral API.
 // Requires MISTRAL_API_KEY environment variable to be set.
 // Uses test fixtures from testdata/ directory.
+// Skipped by default - run with: go test -run TestMistralOCRIntegration ./internal/providers
 func TestMistralOCRIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	cfg := LoadTestConfig()
 	if !cfg.HasMistral() {
-		t.Skip("MISTRAL_API_KEY not set - skipping integration test")
+		t.Skip("MISTRAL_API_KEY not set")
 	}
 
 	client := cfg.NewMistralOCRClient()

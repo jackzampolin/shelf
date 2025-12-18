@@ -17,9 +17,12 @@ import (
 // These tests make real API calls and require OPENROUTER_API_KEY.
 
 func TestAgentIntegration_SingleAgent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
 	if apiKey == "" {
-		t.Skip("OPENROUTER_API_KEY not set, skipping integration test")
+		t.Skip("OPENROUTER_API_KEY not set")
 	}
 
 	// Create temp directory for file operations
@@ -125,9 +128,12 @@ done:
 }
 
 func TestAgentIntegration_MultipleAgents(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
 	if apiKey == "" {
-		t.Skip("OPENROUTER_API_KEY not set, skipping integration test")
+		t.Skip("OPENROUTER_API_KEY not set")
 	}
 
 	// Create 3 agents with different tasks
@@ -296,9 +302,12 @@ done:
 }
 
 func TestAgentIntegration_MaxIterations(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
 	if apiKey == "" {
-		t.Skip("OPENROUTER_API_KEY not set, skipping integration test")
+		t.Skip("OPENROUTER_API_KEY not set")
 	}
 
 	// Create agent with an impossible task and low max iterations

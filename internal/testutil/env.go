@@ -38,7 +38,7 @@ func NewServerConfig(t *testing.T) ServerConfig {
 	// Register Docker cleanup for this test
 	_ = DockerClient(t)
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	tempDir := t.TempDir()
 
 	// Find free ports for HTTP server and DefraDB

@@ -42,10 +42,20 @@ func TestServer_ContextCancellation(t *testing.T) {
 		serverErr <- srv.Start(serverCtx)
 	}()
 
-	// Wait for server to be ready
-	if err := testutil.WaitForServer(cfg.URL(), 60*time.Second); err != nil {
-		serverCancel()
-		t.Fatalf("server did not start: %v", err)
+	// Wait for server to be ready, but check for early server failure
+	ready := make(chan error, 1)
+	go func() {
+		ready <- testutil.WaitForServer(cfg.URL(), 60*time.Second)
+	}()
+
+	select {
+	case err := <-serverErr:
+		t.Fatalf("server failed to start: %v", err)
+	case err := <-ready:
+		if err != nil {
+			serverCancel()
+			t.Fatalf("server did not start: %v", err)
+		}
 	}
 
 	// Cancel context immediately

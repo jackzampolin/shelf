@@ -325,10 +325,14 @@ func TestDeepInfraOCRClient_Config(t *testing.T) {
 // TestDeepInfraOCRIntegration runs real OCR against the DeepInfra API.
 // Requires DEEPINFRA_API_KEY environment variable to be set.
 // Uses test fixtures from testdata/ directory.
+// Skipped by default - run with: go test -run TestDeepInfraOCRIntegration ./internal/providers
 func TestDeepInfraOCRIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	cfg := LoadTestConfig()
 	if !cfg.HasDeepInfra() {
-		t.Skip("DEEPINFRA_API_KEY not set - skipping integration test")
+		t.Skip("DEEPINFRA_API_KEY not set")
 	}
 
 	client := cfg.NewDeepInfraOCRClient()

@@ -1,4 +1,5 @@
 type ToC {
+    # One-to-one: ToC belongs to Book (other side has @primary)
     book: Book
 
     # Finder results
@@ -13,5 +14,6 @@ type ToC {
     link_complete: Boolean
 
     # Relationships
+    # One-to-many: ToC has many TocEntries
     entries: [TocEntry]
 }

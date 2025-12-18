@@ -1,4 +1,5 @@
 type OcrResult {
+    # Many-to-one: OcrResult belongs to Page
     page: Page
     provider: String
     text: String
