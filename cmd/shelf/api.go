@@ -32,6 +32,11 @@ var booksCmd = &cobra.Command{
 	Short: "Book management commands",
 }
 
+var pipelineCmd = &cobra.Command{
+	Use:   "pipeline",
+	Short: "Pipeline processing commands",
+}
+
 // getServerURL returns the server URL at runtime (after flag parsing).
 func getServerURL() string {
 	return serverURL
@@ -59,7 +64,12 @@ func init() {
 	booksCmd.AddCommand((&endpoints.ListBooksEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.GetBookEndpoint{}).Command(getServerURL))
 
+	// Pipeline as subcommand group
+	pipelineCmd.AddCommand((&endpoints.StartPipelineEndpoint{}).Command(getServerURL))
+	pipelineCmd.AddCommand((&endpoints.PipelineStatusEndpoint{}).Command(getServerURL))
+
 	apiCmd.AddCommand(jobsCmd)
 	apiCmd.AddCommand(booksCmd)
+	apiCmd.AddCommand(pipelineCmd)
 	rootCmd.AddCommand(apiCmd)
 }

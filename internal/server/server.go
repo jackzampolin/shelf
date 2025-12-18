@@ -16,6 +16,8 @@ import (
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/pipeline"
+	"github.com/jackzampolin/shelf/internal/pipeline/stages/page_processing"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
 	"github.com/jackzampolin/shelf/internal/server/endpoints"
@@ -26,16 +28,17 @@ import (
 // It manages the DefraDB container lifecycle - starting it on server start
 // and stopping it on server shutdown.
 type Server struct {
-	httpServer   *http.Server
-	defraManager *defra.DockerManager
-	defraClient  *defra.Client
-	defraSink    *defra.Sink
-	jobManager   *jobs.Manager
-	scheduler    *jobs.Scheduler
-	registry     *providers.Registry
-	configMgr    *config.Manager
-	logger       *slog.Logger
-	home         *home.Dir
+	httpServer       *http.Server
+	defraManager     *defra.DockerManager
+	defraClient      *defra.Client
+	defraSink        *defra.Sink
+	jobManager       *jobs.Manager
+	scheduler        *jobs.Scheduler
+	registry         *providers.Registry
+	pipelineRegistry *pipeline.Registry
+	configMgr        *config.Manager
+	logger           *slog.Logger
+	home             *home.Dir
 
 	// services holds all core services for context enrichment
 	services *svcctx.Services
@@ -63,6 +66,22 @@ type Config struct {
 	Logger *slog.Logger
 	// Home is the shelf home directory
 	Home *home.Dir
+	// PipelineConfig configures the page processing pipeline
+	PipelineConfig PipelineConfig
+}
+
+// PipelineConfig configures the page processing pipeline stages.
+type PipelineConfig struct {
+	// OcrProviders are the OCR providers to use (e.g., ["mistral", "paddle"])
+	OcrProviders []string
+	// BlendProvider is the LLM provider for blending OCR outputs
+	BlendProvider string
+	// LabelProvider is the LLM provider for labeling page structure
+	LabelProvider string
+	// MetadataProvider is the LLM provider for metadata extraction
+	MetadataProvider string
+	// TocProvider is the LLM provider for ToC operations
+	TocProvider string
 }
 
 // New creates a new Server with the given configuration.
@@ -102,12 +121,26 @@ func New(cfg Config) (*Server, error) {
 		})
 	}
 
+	// Create pipeline registry and register stages
+	pipelineRegistry := pipeline.NewRegistry()
+	pageProcessingStage := page_processing.NewStage(page_processing.Config{
+		OcrProviders:     cfg.PipelineConfig.OcrProviders,
+		BlendProvider:    cfg.PipelineConfig.BlendProvider,
+		LabelProvider:    cfg.PipelineConfig.LabelProvider,
+		MetadataProvider: cfg.PipelineConfig.MetadataProvider,
+		TocProvider:      cfg.PipelineConfig.TocProvider,
+	})
+	if err := pipelineRegistry.Register(pageProcessingStage); err != nil {
+		return nil, fmt.Errorf("failed to register page-processing stage: %w", err)
+	}
+
 	s := &Server{
-		defraManager: defraManager,
-		registry:     registry,
-		configMgr:    cfg.ConfigManager,
-		logger:       cfg.Logger,
-		home:         cfg.Home,
+		defraManager:     defraManager,
+		registry:         registry,
+		pipelineRegistry: pipelineRegistry,
+		configMgr:        cfg.ConfigManager,
+		logger:           cfg.Logger,
+		home:             cfg.Home,
 	}
 
 	// Create endpoint registry and register all endpoints
@@ -206,13 +239,14 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Create services struct for context enrichment
 	s.services = &svcctx.Services{
-		DefraClient: s.defraClient,
-		DefraSink:   s.defraSink,
-		JobManager:  s.jobManager,
-		Registry:    s.registry,
-		Scheduler:   s.scheduler,
-		Logger:      s.logger,
-		Home:        s.home,
+		DefraClient:      s.defraClient,
+		DefraSink:        s.defraSink,
+		JobManager:       s.jobManager,
+		Registry:         s.registry,
+		Scheduler:        s.scheduler,
+		Logger:           s.logger,
+		Home:             s.home,
+		PipelineRegistry: s.pipelineRegistry,
 	}
 
 	// Start HTTP server in goroutine

@@ -102,15 +102,27 @@ Examples:
 			}
 		}
 
+		// Build pipeline config from loaded config
+		var pipelineConfig server.PipelineConfig
+		if cfgMgr != nil {
+			cfg := cfgMgr.Get()
+			pipelineConfig.OcrProviders = cfg.Defaults.OCRProviders
+			pipelineConfig.BlendProvider = cfg.Defaults.LLMProvider
+			pipelineConfig.LabelProvider = cfg.Defaults.LLMProvider
+			pipelineConfig.MetadataProvider = cfg.Defaults.LLMProvider
+			pipelineConfig.TocProvider = cfg.Defaults.LLMProvider
+		}
+
 		// Create server
 		srv, err := server.New(server.Config{
-			Host:          serveHost,
-			Port:          servePort,
-			DefraDataPath: defraDataPath,
-			DefraConfig:   defraConfig,
-			ConfigManager: cfgMgr,
-			Logger:        logger,
-			Home:          h,
+			Host:           serveHost,
+			Port:           servePort,
+			DefraDataPath:  defraDataPath,
+			DefraConfig:    defraConfig,
+			ConfigManager:  cfgMgr,
+			Logger:         logger,
+			Home:           h,
+			PipelineConfig: pipelineConfig,
 		})
 		if err != nil {
 			return err
