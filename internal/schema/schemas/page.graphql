@@ -7,14 +7,15 @@ type Page {
     blend_confidence: Float
     blend_corrections: JSON
 
-    # Label fields (explicit)
+    # Label fields
     page_number_label: String
     running_header: String
     is_toc_page: Boolean
     is_front_matter: Boolean
     is_back_matter: Boolean
 
-    # Status (OCR tracked via OcrResults count vs expected)
+    # Status
+    ocr_complete: Boolean
     blend_complete: Boolean
     label_complete: Boolean
 

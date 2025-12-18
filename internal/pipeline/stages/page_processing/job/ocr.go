@@ -67,9 +67,15 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 		}
 	}
 
-	// If all OCR done, trigger blend
+	// If all OCR done, mark complete and trigger blend
 	var units []jobs.WorkUnit
 	if allOcrDone {
+		if err := j.DefraClient.Update(ctx, "Page", state.PageDocID, map[string]any{
+			"ocr_complete": true,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to mark OCR complete: %w", err)
+		}
+
 		blendUnit := j.CreateBlendWorkUnit(info.PageNum, state)
 		if blendUnit != nil {
 			units = append(units, *blendUnit)

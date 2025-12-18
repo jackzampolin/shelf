@@ -68,10 +68,10 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			j.PageState[pageNum] = state
 
 			// Create Page record in DefraDB
-			// OCR completion is tracked via OcrResult records, not a field
 			docID, err := j.DefraClient.Create(ctx, "Page", map[string]any{
 				"book_id":        j.BookID,
 				"page_num":       pageNum,
+				"ocr_complete":   false,
 				"blend_complete": false,
 				"label_complete": false,
 			})

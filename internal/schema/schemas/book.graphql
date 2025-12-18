@@ -1,7 +1,28 @@
 type Book {
     title: String
     author: String
+    authors: [String]
     page_count: Int
     status: String
     created_at: DateTime
+
+    # Metadata from agent
+    isbn: String
+    lccn: String
+    publisher: String
+    publication_year: Int
+    language: String
+    description: String
+    subjects: [String]
+
+    # Enrichment (Open Library)
+    cover_url: String
+    open_library_id: String
+
+    # Status
+    metadata_complete: Boolean
+
+    # Relationships
+    pages: [Page]
+    toc: ToC
 }

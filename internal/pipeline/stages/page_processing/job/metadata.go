@@ -2,7 +2,6 @@ package job
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -108,8 +107,7 @@ func (j *Job) SaveMetadataResult(ctx context.Context, result metadata.Result) er
 
 	if len(result.Authors) > 0 {
 		update["author"] = result.Authors[0]
-		authorsJSON, _ := json.Marshal(result.Authors)
-		update["authors"] = string(authorsJSON)
+		update["authors"] = result.Authors // DefraDB handles [String] arrays directly
 	}
 
 	if result.ISBN != nil {
@@ -125,8 +123,7 @@ func (j *Job) SaveMetadataResult(ctx context.Context, result metadata.Result) er
 		update["description"] = *result.Description
 	}
 	if len(result.Subjects) > 0 {
-		subjectsJSON, _ := json.Marshal(result.Subjects)
-		update["subjects"] = string(subjectsJSON)
+		update["subjects"] = result.Subjects // DefraDB handles [String] arrays directly
 	}
 
 	return j.DefraClient.Update(ctx, "Book", j.BookID, update)

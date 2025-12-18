@@ -141,13 +141,32 @@ func (j *Job) loadTocStructureSummary(ctx context.Context) (*extract_toc.Structu
 
 // saveTocExtractResult saves the ToC extraction result to DefraDB.
 func (j *Job) saveTocExtractResult(ctx context.Context, result *extract_toc.Result) error {
-	entriesJSON, err := json.Marshal(result.Entries)
-	if err != nil {
-		return err
+	// Create TocEntry records for each entry
+	for i, entry := range result.Entries {
+		entryData := map[string]any{
+			"toc_id":     j.TocDocID,
+			"title":      entry.Title,
+			"level":      entry.Level,
+			"sort_order": i,
+		}
+
+		if entry.EntryNumber != nil {
+			entryData["entry_number"] = *entry.EntryNumber
+		}
+		if entry.LevelName != nil {
+			entryData["level_name"] = *entry.LevelName
+		}
+		if entry.PrintedPageNumber != nil {
+			entryData["printed_page_number"] = *entry.PrintedPageNumber
+		}
+
+		if _, err := j.DefraClient.Create(ctx, "TocEntry", entryData); err != nil {
+			return fmt.Errorf("failed to create TocEntry %d: %w", i, err)
+		}
 	}
 
+	// Mark extraction complete
 	return j.DefraClient.Update(ctx, "ToC", j.TocDocID, map[string]any{
-		"entries":          string(entriesJSON),
 		"extract_complete": true,
 	})
 }
