@@ -6,7 +6,9 @@ import (
 	"os"
 
 	"github.com/google/uuid"
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateOcrWorkUnit creates an OCR work unit for a page and provider.
@@ -47,19 +49,29 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 		return nil, fmt.Errorf("no state for page %d", info.PageNum)
 	}
 
-	if result.OCRResult != nil {
-		state.OcrResults[info.Provider] = result.OCRResult.Text
-		state.OcrDone[info.Provider] = true
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return nil, fmt.Errorf("defra sink not in context")
+	}
 
-		// Create OcrResult record linked to the Page
-		_, err := j.DefraClient.Create(ctx, "OcrResult", map[string]any{
-			"page_id":  state.PageDocID,
-			"provider": info.Provider,
-			"text":     result.OCRResult.Text,
+	if result.OCRResult != nil {
+		// Persist to DefraDB first, then update memory (crash-safe ordering)
+		_, err := sink.SendSync(ctx, defra.WriteOp{
+			Collection: "OcrResult",
+			Document: map[string]any{
+				"page_id":  state.PageDocID,
+				"provider": info.Provider,
+				"text":     result.OCRResult.Text,
+			},
+			Op: defra.OpCreate,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to save OCR result: %w", err)
 		}
+
+		// Update in-memory state after successful persistence
+		state.OcrResults[info.Provider] = result.OCRResult.Text
+		state.OcrDone[info.Provider] = true
 	}
 
 	// Check if all OCR providers are done
@@ -74,9 +86,15 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 	// If all OCR done, mark complete and trigger blend
 	var units []jobs.WorkUnit
 	if allOcrDone {
-		if err := j.DefraClient.Update(ctx, "Page", state.PageDocID, map[string]any{
-			"ocr_complete": true,
-		}); err != nil {
+		_, err := sink.SendSync(ctx, defra.WriteOp{
+			Collection: "Page",
+			DocID:      state.PageDocID,
+			Document: map[string]any{
+				"ocr_complete": true,
+			},
+			Op: defra.OpUpdate,
+		})
+		if err != nil {
 			return nil, fmt.Errorf("failed to mark OCR complete: %w", err)
 		}
 

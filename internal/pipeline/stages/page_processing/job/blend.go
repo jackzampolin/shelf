@@ -6,8 +6,10 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/pipeline/prompts/blend"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateBlendWorkUnit creates a blend LLM work unit.
@@ -53,15 +55,22 @@ func (j *Job) HandleBlendComplete(ctx context.Context, info WorkUnitInfo, result
 		return nil, fmt.Errorf("no state for page %d", info.PageNum)
 	}
 
-	if result.ChatResult != nil && result.ChatResult.ParsedJSON != nil {
-		if err := j.SaveBlendResult(ctx, state, result.ChatResult.ParsedJSON); err != nil {
-			return nil, fmt.Errorf("failed to save blend result: %w", err)
-		}
+	// Require valid result to mark blend as done
+	if result.ChatResult == nil || result.ChatResult.ParsedJSON == nil {
+		return nil, fmt.Errorf("blend result missing for page %d", info.PageNum)
 	}
+
+	blendedText, err := j.SaveBlendResult(ctx, state, result.ChatResult.ParsedJSON)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save blend result: %w", err)
+	}
+
+	// Cache blended text for label work unit to avoid re-query
+	state.BlendedText = blendedText
 	state.BlendDone = true
 
 	var units []jobs.WorkUnit
-	labelUnit := j.CreateLabelWorkUnit(info.PageNum, state)
+	labelUnit := j.CreateLabelWorkUnit(ctx, info.PageNum, state)
 	if labelUnit != nil {
 		units = append(units, *labelUnit)
 	}
@@ -69,11 +78,16 @@ func (j *Job) HandleBlendComplete(ctx context.Context, info WorkUnitInfo, result
 	return units, nil
 }
 
-// SaveBlendResult saves the blend result to DefraDB.
-func (j *Job) SaveBlendResult(ctx context.Context, state *PageState, parsedJSON any) error {
+// SaveBlendResult saves the blend result to DefraDB and returns the blended text.
+func (j *Job) SaveBlendResult(ctx context.Context, state *PageState, parsedJSON any) (string, error) {
 	blendResult, err := blend.ParseResult(parsedJSON)
 	if err != nil {
-		return err
+		return "", err
+	}
+
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return "", fmt.Errorf("defra sink not in context")
 	}
 
 	primaryProvider := j.OcrProviders[0]
@@ -82,10 +96,16 @@ func (j *Job) SaveBlendResult(ctx context.Context, state *PageState, parsedJSON 
 
 	correctionsJSON, _ := json.Marshal(blendResult.Corrections)
 
-	return j.DefraClient.Update(ctx, "Page", state.PageDocID, map[string]any{
-		"blend_markdown":    blendedText,
-		"blend_corrections": string(correctionsJSON),
-		"blend_confidence":  blendResult.Confidence,
-		"blend_complete":    true,
+	_, err = sink.SendSync(ctx, defra.WriteOp{
+		Collection: "Page",
+		DocID:      state.PageDocID,
+		Document: map[string]any{
+			"blend_markdown":    blendedText,
+			"blend_corrections": string(correctionsJSON),
+			"blend_confidence":  blendResult.Confidence,
+			"blend_complete":    true,
+		},
+		Op: defra.OpUpdate,
 	})
+	return blendedText, err
 }

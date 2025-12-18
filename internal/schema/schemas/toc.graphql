@@ -8,9 +8,17 @@ type ToC {
     end_page: Int
     structure_summary: JSON
 
-    # Status
+    # Processing state
+    finder_started: Boolean
     finder_complete: Boolean
+    finder_failed: Boolean
+    finder_retries: Int
+
+    extract_started: Boolean
     extract_complete: Boolean
+    extract_failed: Boolean
+    extract_retries: Int
+
     link_complete: Boolean
 
     # Relationships

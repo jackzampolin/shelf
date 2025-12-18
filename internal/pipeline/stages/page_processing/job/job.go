@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // checkCancelled returns an error if the context is cancelled.
@@ -42,6 +44,12 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		return nil, err
 	}
 
+	// Get sink for writes
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return nil, fmt.Errorf("defra sink not in context")
+	}
+
 	// Load existing page state from DefraDB
 	if err := j.LoadPageState(ctx); err != nil {
 		return nil, fmt.Errorf("failed to load page state: %w", err)
@@ -50,6 +58,29 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	// Load book-level state
 	if err := j.LoadBookState(ctx); err != nil {
 		return nil, fmt.Errorf("failed to load book state: %w", err)
+	}
+
+	// Recover from crash during ToC operations
+	// If ToC finder was started but not done and agent is nil, reset to retry
+	if j.BookState.TocFinderStarted && !j.BookState.TocFinderDone && j.TocAgent == nil {
+		j.BookState.TocFinderStarted = false
+		j.BookState.TocFinderRetries++
+		if j.BookState.TocFinderRetries >= MaxBookOpRetries {
+			j.BookState.TocFinderFailed = true
+			j.BookState.TocFinderDone = true
+		}
+		j.PersistTocFinderState(ctx)
+	}
+
+	// Same for ToC extract
+	if j.BookState.TocExtractStarted && !j.BookState.TocExtractDone && j.TocAgent == nil {
+		j.BookState.TocExtractStarted = false
+		j.BookState.TocExtractRetries++
+		if j.BookState.TocExtractRetries >= MaxBookOpRetries {
+			j.BookState.TocExtractFailed = true
+			j.BookState.TocExtractDone = true
+		}
+		j.PersistTocExtractState(ctx)
 	}
 
 	// Generate work units for incomplete pages
@@ -68,21 +99,25 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			j.PageState[pageNum] = state
 
 			// Create Page record in DefraDB
-			docID, err := j.DefraClient.Create(ctx, "Page", map[string]any{
-				"book_id":        j.BookID,
-				"page_num":       pageNum,
-				"ocr_complete":   false,
-				"blend_complete": false,
-				"label_complete": false,
+			result, err := sink.SendSync(ctx, defra.WriteOp{
+				Collection: "Page",
+				Document: map[string]any{
+					"book_id":        j.BookID,
+					"page_num":       pageNum,
+					"ocr_complete":   false,
+					"blend_complete": false,
+					"label_complete": false,
+				},
+				Op: defra.OpCreate,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create page record: %w", err)
 			}
-			state.PageDocID = docID
+			state.PageDocID = result.DocID
 		}
 
 		// Check what work is needed for this page
-		newUnits := j.GeneratePageWorkUnits(pageNum, state)
+		newUnits := j.GeneratePageWorkUnits(ctx, pageNum, state)
 		units = append(units, newUnits...)
 	}
 
@@ -108,6 +143,35 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 	}
 
 	if !result.Success {
+		// Handle book-level operation failures with retry logic
+		switch info.UnitType {
+		case "metadata":
+			j.BookState.MetadataRetries++
+			if j.BookState.MetadataRetries < MaxBookOpRetries {
+				j.BookState.MetadataStarted = false // Allow retry
+			} else {
+				j.BookState.MetadataFailed = true // Permanently failed
+			}
+			j.PersistMetadataState(ctx) // Persist to DefraDB
+		case "toc_finder":
+			j.BookState.TocFinderRetries++
+			if j.BookState.TocFinderRetries < MaxBookOpRetries {
+				j.BookState.TocFinderStarted = false // Allow retry
+			} else {
+				j.BookState.TocFinderFailed = true // Permanently failed
+				j.BookState.TocFinderDone = true   // Mark done to unblock completion
+			}
+			j.PersistTocFinderState(ctx) // Persist to DefraDB
+		case "toc_extract":
+			j.BookState.TocExtractRetries++
+			if j.BookState.TocExtractRetries < MaxBookOpRetries {
+				j.BookState.TocExtractStarted = false // Allow retry
+			} else {
+				j.BookState.TocExtractFailed = true // Permanently failed
+				j.BookState.TocExtractDone = true   // Mark done to unblock completion
+			}
+			j.PersistTocExtractState(ctx) // Persist to DefraDB
+		}
 		return nil, fmt.Errorf("work unit failed (%s): %v", info.UnitType, result.Error)
 	}
 

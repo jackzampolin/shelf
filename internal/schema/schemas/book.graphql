@@ -19,8 +19,11 @@ type Book {
     cover_url: String
     open_library_id: String
 
-    # Status
+    # Processing state
+    metadata_started: Boolean
     metadata_complete: Boolean
+    metadata_failed: Boolean
+    metadata_retries: Int
 
     # Relationships
     # One-to-many: Book has many Pages

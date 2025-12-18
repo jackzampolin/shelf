@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	"github.com/jackzampolin/shelf/internal/agent"
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
 )
@@ -21,8 +20,9 @@ type PageState struct {
 	OcrDone    map[string]bool   // provider -> completed
 
 	// Pipeline state
-	BlendDone bool
-	LabelDone bool
+	BlendDone   bool
+	BlendedText string // Cached blend result for label work unit
+	LabelDone   bool
 }
 
 // NewPageState creates a new page state.
@@ -33,14 +33,21 @@ func NewPageState() *PageState {
 	}
 }
 
+// MaxBookOpRetries is the maximum number of retries for book-level operations.
+const MaxBookOpRetries = 3
+
 // BookState tracks book-level processing state.
 type BookState struct {
 	MetadataStarted  bool
 	MetadataComplete bool
+	MetadataFailed   bool // Permanently failed after max retries
+	MetadataRetries  int
 
 	// ToC finder state
 	TocFinderStarted bool
 	TocFinderDone    bool
+	TocFinderFailed  bool // Permanently failed after max retries
+	TocFinderRetries int
 	TocFound         bool
 	TocStartPage     int
 	TocEndPage       int
@@ -48,6 +55,8 @@ type BookState struct {
 	// ToC extract state
 	TocExtractStarted bool
 	TocExtractDone    bool
+	TocExtractFailed  bool // Permanently failed after max retries
+	TocExtractRetries int
 }
 
 // WorkUnitInfo tracks pending work units.
@@ -59,14 +68,14 @@ type WorkUnitInfo struct {
 
 // Job processes all pages through OCR -> Blend -> Label,
 // then triggers book-level operations (metadata, ToC).
+// Services (DefraClient, DefraSink) are accessed via svcctx from the context
+// passed to Start() and OnComplete().
 type Job struct {
 	Mu sync.Mutex
 
 	// Configuration
 	BookID           string
 	TotalPages       int
-	DefraClient      *defra.Client
-	DefraSink        *defra.Sink
 	HomeDir          *home.Dir
 	OcrProviders     []string
 	BlendProvider    string
@@ -97,8 +106,6 @@ func New(cfg Config) *Job {
 	return &Job{
 		BookID:           cfg.BookID,
 		TotalPages:       cfg.TotalPages,
-		DefraClient:      cfg.DefraClient,
-		DefraSink:        cfg.DefraSink,
 		HomeDir:          cfg.HomeDir,
 		OcrProviders:     cfg.OcrProviders,
 		BlendProvider:    cfg.BlendProvider,
@@ -114,8 +121,6 @@ func New(cfg Config) *Job {
 type Config struct {
 	BookID           string
 	TotalPages       int
-	DefraClient      *defra.Client
-	DefraSink        *defra.Sink
 	HomeDir          *home.Dir
 	OcrProviders     []string
 	BlendProvider    string

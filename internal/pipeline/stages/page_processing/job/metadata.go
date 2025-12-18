@@ -5,8 +5,10 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/pipeline/prompts/metadata"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateMetadataWorkUnit creates a metadata extraction work unit.
@@ -43,6 +45,11 @@ func (j *Job) CreateMetadataWorkUnit(ctx context.Context) *jobs.WorkUnit {
 
 // LoadPagesForMetadata loads page data for metadata extraction.
 func (j *Job) LoadPagesForMetadata(ctx context.Context, maxPages int) ([]metadata.Page, error) {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil, fmt.Errorf("defra client not in context")
+	}
+
 	query := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}}, order: {page_num: ASC}) {
 			page_num
@@ -50,7 +57,7 @@ func (j *Job) LoadPagesForMetadata(ctx context.Context, maxPages int) ([]metadat
 		}
 	}`, j.BookID)
 
-	resp, err := j.DefraClient.Execute(ctx, query, nil)
+	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +111,11 @@ func (j *Job) HandleMetadataComplete(ctx context.Context, result jobs.WorkResult
 
 // SaveMetadataResult saves the metadata result to the Book record.
 func (j *Job) SaveMetadataResult(ctx context.Context, result metadata.Result) error {
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+
 	update := map[string]any{
 		"title":             result.Title,
 		"metadata_complete": true,
@@ -130,5 +142,11 @@ func (j *Job) SaveMetadataResult(ctx context.Context, result metadata.Result) er
 		update["subjects"] = result.Subjects // DefraDB handles [String] arrays directly
 	}
 
-	return j.DefraClient.Update(ctx, "Book", j.BookID, update)
+	_, err := sink.SendSync(ctx, defra.WriteOp{
+		Collection: "Book",
+		DocID:      j.BookID,
+		Document:   update,
+		Op:         defra.OpUpdate,
+	})
+	return err
 }

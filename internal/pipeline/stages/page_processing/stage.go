@@ -167,6 +167,11 @@ func (s *Stage) CreateJob(ctx context.Context, bookID string, opts pipeline.Stag
 		return nil, fmt.Errorf("defra client not in context")
 	}
 
+	homeDir := svcctx.HomeFrom(ctx)
+	if homeDir == nil {
+		return nil, fmt.Errorf("home directory not in context")
+	}
+
 	// Get book info
 	bookQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
@@ -192,13 +197,11 @@ func (s *Stage) CreateJob(ctx context.Context, bookID string, opts pipeline.Stag
 		return nil, fmt.Errorf("book %s has no pages", bookID)
 	}
 
-	// Job stores dependencies since it runs over time with different contexts
+	// Job accesses services via svcctx from context passed to Start/OnComplete
 	return pjob.New(pjob.Config{
 		BookID:           bookID,
 		TotalPages:       totalPages,
-		DefraClient:      defraClient,
-		DefraSink:        svcctx.DefraSinkFrom(ctx),
-		HomeDir:          svcctx.HomeFrom(ctx),
+		HomeDir:          homeDir,
 		OcrProviders:     s.ocrProviders,
 		BlendProvider:    s.blendProvider,
 		LabelProvider:    s.labelProvider,

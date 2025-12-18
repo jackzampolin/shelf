@@ -6,8 +6,10 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/pipeline/prompts/extract_toc"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateTocExtractWorkUnit creates a ToC extraction work unit.
@@ -69,6 +71,11 @@ func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
 		return nil, fmt.Errorf("ToC page range not set")
 	}
 
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil, fmt.Errorf("defra client not in context")
+	}
+
 	query := fmt.Sprintf(`{
 		Page(filter: {
 			book_id: {_eq: "%s"},
@@ -79,7 +86,7 @@ func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
 		}
 	}`, j.BookID, j.BookState.TocStartPage, j.BookState.TocEndPage)
 
-	resp, err := j.DefraClient.Execute(ctx, query, nil)
+	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -118,13 +125,18 @@ func (j *Job) loadTocStructureSummary(ctx context.Context) (*extract_toc.Structu
 		return nil, nil
 	}
 
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil, fmt.Errorf("defra client not in context")
+	}
+
 	query := fmt.Sprintf(`{
 		ToC(filter: {_docID: {_eq: "%s"}}) {
 			structure_summary
 		}
 	}`, j.TocDocID)
 
-	resp, err := j.DefraClient.Execute(ctx, query, nil)
+	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +156,18 @@ func (j *Job) loadTocStructureSummary(ctx context.Context) (*extract_toc.Structu
 }
 
 // saveTocExtractResult saves the ToC extraction result to DefraDB.
+// This operation is idempotent - it deletes existing entries before creating new ones.
 func (j *Job) saveTocExtractResult(ctx context.Context, result *extract_toc.Result) error {
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+
+	// Delete existing entries for this ToC (makes operation idempotent for retries)
+	if err := j.deleteExistingTocEntries(ctx); err != nil {
+		return fmt.Errorf("failed to delete existing ToC entries: %w", err)
+	}
+
 	// Create TocEntry records for each entry
 	for i, entry := range result.Entries {
 		entryData := map[string]any{
@@ -164,13 +187,79 @@ func (j *Job) saveTocExtractResult(ctx context.Context, result *extract_toc.Resu
 			entryData["printed_page_number"] = *entry.PrintedPageNumber
 		}
 
-		if _, err := j.DefraClient.Create(ctx, "TocEntry", entryData); err != nil {
+		_, err := sink.SendSync(ctx, defra.WriteOp{
+			Collection: "TocEntry",
+			Document:   entryData,
+			Op:         defra.OpCreate,
+		})
+		if err != nil {
 			return fmt.Errorf("failed to create TocEntry %d: %w", i, err)
 		}
 	}
 
 	// Mark extraction complete
-	return j.DefraClient.Update(ctx, "ToC", j.TocDocID, map[string]any{
-		"extract_complete": true,
+	_, err := sink.SendSync(ctx, defra.WriteOp{
+		Collection: "ToC",
+		DocID:      j.TocDocID,
+		Document: map[string]any{
+			"extract_complete": true,
+		},
+		Op: defra.OpUpdate,
 	})
+	return err
+}
+
+// deleteExistingTocEntries deletes any existing TocEntry records for this ToC.
+func (j *Job) deleteExistingTocEntries(ctx context.Context) error {
+	if j.TocDocID == "" {
+		return nil
+	}
+
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+
+	// Query existing entries
+	query := fmt.Sprintf(`{
+		TocEntry(filter: {toc_id: {_eq: "%s"}}) {
+			_docID
+		}
+	}`, j.TocDocID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return err
+	}
+
+	entries, ok := resp.Data["TocEntry"].([]any)
+	if !ok || len(entries) == 0 {
+		return nil // No existing entries
+	}
+
+	// Delete each entry
+	for _, e := range entries {
+		entry, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		docID, ok := entry["_docID"].(string)
+		if !ok || docID == "" {
+			continue
+		}
+		_, err := sink.SendSync(ctx, defra.WriteOp{
+			Collection: "TocEntry",
+			DocID:      docID,
+			Op:         defra.OpDelete,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to delete TocEntry %s: %w", docID, err)
+		}
+	}
+
+	return nil
 }

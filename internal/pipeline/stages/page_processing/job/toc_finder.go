@@ -7,34 +7,50 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/agent"
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	toc_finder "github.com/jackzampolin/shelf/internal/pipeline/agents/toc_finder"
 	"github.com/jackzampolin/shelf/internal/pipeline/agents/toc_finder/tools"
 	"github.com/jackzampolin/shelf/internal/providers"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateTocFinderWorkUnit creates a ToC finder agent work unit.
+// Must be called with j.Mu held.
 func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return nil
+	}
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil
+	}
+
 	// Create or get ToC record
 	if j.TocDocID == "" {
-		docID, err := j.DefraClient.Create(ctx, "ToC", map[string]any{
-			"book_id":          j.BookID,
-			"toc_found":        false,
-			"finder_complete":  false,
-			"extract_complete": false,
-			"link_complete":    false,
+		result, err := sink.SendSync(ctx, defra.WriteOp{
+			Collection: "ToC",
+			Document: map[string]any{
+				"book_id":          j.BookID,
+				"toc_found":        false,
+				"finder_complete":  false,
+				"extract_complete": false,
+				"link_complete":    false,
+			},
+			Op: defra.OpCreate,
 		})
 		if err != nil {
 			return nil
 		}
-		j.TocDocID = docID
+		j.TocDocID = result.DocID
 	}
 
 	// Create tools for the agent
 	tocTools := tools.New(tools.Config{
 		BookID:      j.BookID,
 		TotalPages:  j.TotalPages,
-		DefraClient: j.DefraClient,
+		DefraClient: defraClient,
 		HomeDir:     j.HomeDir,
 	})
 
@@ -54,6 +70,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 }
 
 // HandleTocFinderComplete processes ToC finder agent work unit completion.
+// Must be called with j.Mu held.
 func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
 	if j.TocAgent == nil {
 		return nil, fmt.Errorf("toc agent not initialized")
@@ -105,10 +122,20 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		} else {
 			// Agent failed or no ToC found - mark finder as done with no ToC
 			j.BookState.TocFound = false
-			if err := j.DefraClient.Update(ctx, "ToC", j.TocDocID, map[string]any{
-				"toc_found":       false,
-				"finder_complete": true,
-			}); err != nil {
+			sink := svcctx.DefraSinkFrom(ctx)
+			if sink == nil {
+				return nil, fmt.Errorf("defra sink not in context")
+			}
+			_, err := sink.SendSync(ctx, defra.WriteOp{
+				Collection: "ToC",
+				DocID:      j.TocDocID,
+				Document: map[string]any{
+					"toc_found":       false,
+					"finder_complete": true,
+				},
+				Op: defra.OpUpdate,
+			})
+			if err != nil {
 				return nil, fmt.Errorf("failed to update ToC record: %w", err)
 			}
 		}
@@ -118,11 +145,19 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 	}
 
 	// Get more work units from agent
-	return []jobs.WorkUnit{*j.getNextTocFinderWorkUnit()}, nil
+	nextUnit := j.getNextTocFinderWorkUnit()
+	if nextUnit == nil {
+		return nil, nil
+	}
+	return []jobs.WorkUnit{*nextUnit}, nil
 }
 
 // getNextTocFinderWorkUnit gets the next work unit from the ToC finder agent.
+// Must be called with j.Mu held.
 func (j *Job) getNextTocFinderWorkUnit() *jobs.WorkUnit {
+	if j.TocAgent == nil {
+		return nil
+	}
 	units := j.TocAgent.NextWorkUnits()
 	if len(units) == 0 {
 		return nil
@@ -163,6 +198,11 @@ func (j *Job) convertTocAgentUnits(agentUnits []agent.WorkUnit) []jobs.WorkUnit 
 
 // saveTocFinderResult saves the ToC finder result to DefraDB.
 func (j *Job) saveTocFinderResult(ctx context.Context, result *toc_finder.Result) error {
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+
 	update := map[string]any{
 		"toc_found":       result.ToCFound,
 		"finder_complete": true,
@@ -180,5 +220,11 @@ func (j *Job) saveTocFinderResult(ctx context.Context, result *toc_finder.Result
 		}
 	}
 
-	return j.DefraClient.Update(ctx, "ToC", j.TocDocID, update)
+	_, err := sink.SendSync(ctx, defra.WriteOp{
+		Collection: "ToC",
+		DocID:      j.TocDocID,
+		Document:   update,
+		Op:         defra.OpUpdate,
+	})
+	return err
 }
