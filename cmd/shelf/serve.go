@@ -111,6 +111,7 @@ Examples:
 			pipelineConfig.LabelProvider = cfg.Defaults.LLMProvider
 			pipelineConfig.MetadataProvider = cfg.Defaults.LLMProvider
 			pipelineConfig.TocProvider = cfg.Defaults.LLMProvider
+			logger.Info("pipeline config loaded", "ocr_providers", pipelineConfig.OcrProviders)
 		}
 
 		// Create server

@@ -216,6 +216,11 @@ func (s *Stage) CreateJob(ctx context.Context, bookID string, opts pipeline.Stag
 		return nil, fmt.Errorf("no PDFs found in originals directory for book %s", bookID)
 	}
 
+	logger := svcctx.LoggerFrom(ctx)
+	if logger != nil {
+		logger.Info("creating page processing job", "book_id", bookID, "ocr_providers", s.ocrProviders)
+	}
+
 	// Job accesses services via svcctx from context passed to Start/OnComplete
 	return pjob.New(pjob.Config{
 		BookID:           bookID,

@@ -65,3 +65,17 @@ type WorkerStatusInfo struct {
 	QueueDepth  int                          `json:"queue_depth"`
 	RateLimiter *providers.RateLimiterStatus `json:"rate_limiter,omitempty"`
 }
+
+// JobProgress returns the per-provider progress for a specific job.
+// Returns nil if job is not found.
+func (s *Scheduler) JobProgress(jobID string) map[string]ProviderProgress {
+	s.mu.RLock()
+	job, ok := s.jobs[jobID]
+	s.mu.RUnlock()
+
+	if !ok {
+		return nil
+	}
+
+	return job.Progress()
+}
