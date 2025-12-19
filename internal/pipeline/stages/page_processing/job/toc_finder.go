@@ -31,31 +31,54 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	// Note: The Book->ToC relationship has @primary on Book side,
 	// so we create ToC first, then link it to Book via toc_id
 	if j.TocDocID == "" {
-		// First, create the ToC without book reference (relationship is on Book side)
-		result, err := sink.SendSync(ctx, defra.WriteOp{
-			Collection: "ToC",
-			Document: map[string]any{
-				"toc_found":        false,
-				"finder_complete":  false,
-				"extract_complete": false,
-				"link_complete":    false,
-			},
-			Op: defra.OpCreate,
-		})
-		if err != nil {
-			return nil
+		// First, check if Book already has a ToC linked
+		query := fmt.Sprintf(`{
+			Book(filter: {_docID: {_eq: "%s"}}) {
+				toc {
+					_docID
+				}
+			}
+		}`, j.BookID)
+		resp, err := defraClient.Execute(ctx, query, nil)
+		if err == nil {
+			if books, ok := resp.Data["Book"].([]any); ok && len(books) > 0 {
+				if book, ok := books[0].(map[string]any); ok {
+					if toc, ok := book["toc"].(map[string]any); ok {
+						if docID, ok := toc["_docID"].(string); ok && docID != "" {
+							j.TocDocID = docID
+						}
+					}
+				}
+			}
 		}
-		j.TocDocID = result.DocID
 
-		// Then update the Book to link to this ToC
-		sink.Send(defra.WriteOp{
-			Collection: "Book",
-			DocID:      j.BookID,
-			Document: map[string]any{
-				"toc_id": j.TocDocID,
-			},
-			Op: defra.OpUpdate,
-		})
+		// Only create if no ToC exists
+		if j.TocDocID == "" {
+			result, err := sink.SendSync(ctx, defra.WriteOp{
+				Collection: "ToC",
+				Document: map[string]any{
+					"toc_found":        false,
+					"finder_complete":  false,
+					"extract_complete": false,
+					"link_complete":    false,
+				},
+				Op: defra.OpCreate,
+			})
+			if err != nil {
+				return nil
+			}
+			j.TocDocID = result.DocID
+
+			// Then update the Book to link to this ToC
+			sink.Send(defra.WriteOp{
+				Collection: "Book",
+				DocID:      j.BookID,
+				Document: map[string]any{
+					"toc_id": j.TocDocID,
+				},
+				Op: defra.OpUpdate,
+			})
+		}
 	}
 
 	// Create tools for the agent
