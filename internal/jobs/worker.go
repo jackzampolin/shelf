@@ -291,7 +291,7 @@ func (w *ProviderWorker) Process(ctx context.Context, unit *WorkUnit) WorkResult
 						"attempt", attempt+1,
 						"max_attempts", maxRetries+1,
 						"error", err)
-					w.sleepWithJitter(ctx)
+					w.sleepBeforeRetry(ctx, err, attempt)
 					continue
 				}
 				result.Success = false
@@ -319,7 +319,7 @@ func (w *ProviderWorker) Process(ctx context.Context, unit *WorkUnit) WorkResult
 						"attempt", attempt+1,
 						"max_attempts", maxRetries+1,
 						"error", err)
-					w.sleepWithJitter(ctx)
+					w.sleepBeforeRetry(ctx, err, attempt)
 					continue
 				}
 				result.Success = false
@@ -371,10 +371,21 @@ func (w *ProviderWorker) getMaxRetries() int {
 }
 
 // isRetriableError checks if an error should trigger a retry.
+// Also handles rate limit errors by notifying the rate limiter.
 func (w *ProviderWorker) isRetriableError(err error) bool {
 	if err == nil {
 		return false
 	}
+
+	// Check for structured RateLimitError first
+	if rle, ok := providers.IsRateLimitError(err); ok {
+		// Notify rate limiter to drain tokens and back off
+		w.rateLimiter.Record429(rle.RetryAfter)
+		w.logger.Warn("rate limit hit, backing off",
+			"retry_after", rle.RetryAfter)
+		return true
+	}
+
 	errStr := err.Error()
 	// Retry on 5xx errors (server errors)
 	if strings.Contains(errStr, "status 500") ||
@@ -383,9 +394,11 @@ func (w *ProviderWorker) isRetriableError(err error) bool {
 		strings.Contains(errStr, "status 504") {
 		return true
 	}
-	// Retry on rate limit errors
+	// Retry on rate limit errors (fallback for providers without structured errors)
 	if strings.Contains(errStr, "status 429") ||
 		strings.Contains(errStr, "rate limit") {
+		// Record 429 with default backoff since we don't have Retry-After
+		w.rateLimiter.Record429(5 * time.Second)
 		return true
 	}
 	// Retry on timeout errors
@@ -402,10 +415,27 @@ func (w *ProviderWorker) isRetriableError(err error) bool {
 	return false
 }
 
-// sleepWithJitter waits with random jitter (1-3 seconds) before retry.
-func (w *ProviderWorker) sleepWithJitter(ctx context.Context) {
-	// Random delay between 1-3 seconds
-	delay := time.Duration(1000+rand.Intn(2000)) * time.Millisecond
+// sleepBeforeRetry waits before retrying, using retry-after from rate limit errors
+// or falling back to jitter-based delay.
+func (w *ProviderWorker) sleepBeforeRetry(ctx context.Context, err error, attempt int) {
+	var delay time.Duration
+
+	// Check for rate limit error with Retry-After
+	if rle, ok := providers.IsRateLimitError(err); ok && rle.RetryAfter > 0 {
+		delay = rle.RetryAfter
+		w.logger.Info("sleeping for Retry-After duration", "delay", delay)
+	} else {
+		// Use exponential backoff with jitter: base * 2^attempt + jitter
+		base := time.Duration(1000) * time.Millisecond
+		delay = base * time.Duration(1<<uint(attempt)) // 1s, 2s, 4s, 8s, 16s...
+		jitter := time.Duration(rand.Intn(1000)) * time.Millisecond
+		delay += jitter
+
+		// Cap at 30 seconds
+		if delay > 30*time.Second {
+			delay = 30*time.Second + jitter
+		}
+	}
 
 	select {
 	case <-time.After(delay):

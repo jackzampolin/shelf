@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -66,7 +67,7 @@ func NewDeepInfraOCRClient(cfg DeepInfraOCRConfig) *DeepInfraOCRClient {
 		cfg.Timeout = 500 * time.Second
 	}
 	if cfg.RateLimit == 0 {
-		cfg.RateLimit = 150.0 // Default 150 RPS
+		cfg.RateLimit = 15.0 // Default 15 RPS - DeepInfra PaddleOCR can be rate-limited aggressively
 	}
 	if cfg.MaxRetries == 0 {
 		cfg.MaxRetries = 7
@@ -244,10 +245,22 @@ func (c *DeepInfraOCRClient) doRequest(ctx context.Context, path string, body an
 
 	if resp.StatusCode != http.StatusOK {
 		var errResp deepInfraErrorResponse
+		errMsg := string(respBody)
 		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error.Message != "" {
-			return nil, fmt.Errorf("DeepInfra error (status %d): %s", resp.StatusCode, errResp.Error.Message)
+			errMsg = errResp.Error.Message
 		}
-		return nil, fmt.Errorf("DeepInfra error (status %d): %s", resp.StatusCode, string(respBody))
+
+		// Handle rate limiting with Retry-After header
+		if resp.StatusCode == http.StatusTooManyRequests {
+			retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+			return nil, &RateLimitError{
+				Message:    fmt.Sprintf("DeepInfra rate limited: %s", errMsg),
+				RetryAfter: retryAfter,
+				StatusCode: resp.StatusCode,
+			}
+		}
+
+		return nil, fmt.Errorf("DeepInfra error (status %d): %s", resp.StatusCode, errMsg)
 	}
 
 	var diResp deepInfraResponse
@@ -308,6 +321,30 @@ type deepInfraErrorResponse struct {
 		Message string `json:"message"`
 		Type    string `json:"type"`
 	} `json:"error"`
+}
+
+// parseRetryAfter parses the Retry-After header value.
+// Supports both seconds (integer) and HTTP-date formats.
+// Returns 0 if the header is empty or unparseable.
+func parseRetryAfter(value string) time.Duration {
+	if value == "" {
+		return 0
+	}
+
+	// Try parsing as seconds (most common for API rate limits)
+	if seconds, err := strconv.Atoi(value); err == nil {
+		return time.Duration(seconds) * time.Second
+	}
+
+	// Try parsing as HTTP-date (RFC 1123)
+	if t, err := time.Parse(time.RFC1123, value); err == nil {
+		delay := time.Until(t)
+		if delay > 0 {
+			return delay
+		}
+	}
+
+	return 0
 }
 
 // Verify interface
