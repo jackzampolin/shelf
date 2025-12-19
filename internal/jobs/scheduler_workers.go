@@ -17,149 +17,139 @@ func (s *Scheduler) RegisterFactory(jobType string, factory JobFactory) {
 	s.logger.Debug("job factory registered", "type", jobType)
 }
 
-// RegisterWorker adds a worker to the scheduler.
+// RegisterPool adds a worker pool to the scheduler.
 // Must be called before Start.
-func (s *Scheduler) RegisterWorker(w WorkerInterface) {
+func (s *Scheduler) RegisterPool(p WorkerPool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Initialize worker with shared results channel
-	w.init(s.results)
+	// Initialize pool with shared results channel
+	p.init(s.results)
 
-	s.workers[w.Name()] = w
-	s.logger.Info("worker registered", "name", w.Name(), "type", w.Type())
+	s.pools[p.Name()] = p
+	s.logger.Info("pool registered", "name", p.Name(), "type", p.Type())
 }
 
-// InitFromRegistry creates workers from all providers in the registry.
-// This is the recommended way to set up workers - one provider = one worker.
-// Each worker pulls its rate limit from the provider's configured value.
-// If runHealthChecks is true, each provider is health-checked before creating its worker.
+// InitFromRegistry creates pools from all providers in the registry.
+// This is the recommended way to set up pools - one provider = one pool.
+// Each pool pulls its rate limit from the provider's configured value.
 func (s *Scheduler) InitFromRegistry(registry *providers.Registry) error {
 	return s.InitFromRegistryWithHealthCheck(context.Background(), registry, false)
 }
 
-// InitFromRegistryWithHealthCheck creates workers with optional health checking.
-// When runHealthChecks is true, verifies each provider is reachable before creating workers.
-// Failed health checks are logged as warnings but don't prevent worker creation.
+// InitFromRegistryWithHealthCheck creates pools with optional health checking.
+// When runHealthChecks is true, verifies each provider is reachable before creating pools.
+// Failed health checks are logged as warnings but don't prevent pool creation.
 func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registry *providers.Registry, runHealthChecks bool) error {
-	// Create workers from LLM clients
+	// Create pools from LLM clients
 	for name, client := range registry.LLMClients() {
-		// Optional health check
 		if runHealthChecks {
 			if err := client.HealthCheck(ctx); err != nil {
 				s.logger.Warn("LLM provider health check failed",
 					"name", name,
 					"error", err,
 				)
-				// Continue anyway - let the worker be created
 			} else {
 				s.logger.Info("LLM provider health check passed", "name", name)
 			}
 		}
 
-		worker, err := NewProviderWorker(ProviderWorkerConfig{
+		pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
 			Name:      name,
 			LLMClient: client,
 			Logger:    s.logger,
 			Sink:      s.sink,
-			// RPS and concurrency pulled from client by NewProviderWorker
 		})
 		if err != nil {
-			return fmt.Errorf("failed to create LLM worker %s: %w", name, err)
+			return fmt.Errorf("failed to create LLM pool %s: %w", name, err)
 		}
-		s.RegisterWorker(worker)
+		s.RegisterPool(pool)
 	}
 
-	// Create workers from OCR providers
+	// Create pools from OCR providers
 	for name, provider := range registry.OCRProviders() {
-		// Optional health check
 		if runHealthChecks {
 			if err := provider.HealthCheck(ctx); err != nil {
 				s.logger.Warn("OCR provider health check failed",
 					"name", name,
 					"error", err,
 				)
-				// Continue anyway - let the worker be created
 			} else {
 				s.logger.Info("OCR provider health check passed", "name", name)
 			}
 		}
 
-		worker, err := NewProviderWorker(ProviderWorkerConfig{
+		pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
 			Name:        name,
 			OCRProvider: provider,
 			Logger:      s.logger,
 			Sink:        s.sink,
-			// RPS and concurrency pulled from provider by NewProviderWorker
 		})
 		if err != nil {
-			return fmt.Errorf("failed to create OCR worker %s: %w", name, err)
+			return fmt.Errorf("failed to create OCR pool %s: %w", name, err)
 		}
-		s.RegisterWorker(worker)
+		s.RegisterPool(pool)
 	}
 
-	s.logger.Info("initialized workers from registry",
-		"llm_workers", len(registry.LLMClients()),
-		"ocr_workers", len(registry.OCRProviders()),
+	s.logger.Info("initialized pools from registry",
+		"llm_pools", len(registry.LLMClients()),
+		"ocr_pools", len(registry.OCRProviders()),
 	)
 
 	return nil
 }
 
-// InitCPUWorkers creates n CPU workers for CPU-bound tasks.
-// If n <= 0, uses runtime.NumCPU().
-// Returns the created workers so callers can register task handlers.
-func (s *Scheduler) InitCPUWorkers(n int) []*CPUWorker {
-	if n <= 0 {
-		n = runtime.NumCPU()
+// InitCPUPool creates a single CPU worker pool.
+// If workerCount <= 0, uses runtime.NumCPU().
+// Returns the pool so callers can register task handlers.
+func (s *Scheduler) InitCPUPool(workerCount int) *CPUWorkerPool {
+	if workerCount <= 0 {
+		workerCount = runtime.NumCPU()
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	workers := make([]*CPUWorker, n)
-	for i := 0; i < n; i++ {
-		w := NewCPUWorker(CPUWorkerConfig{
-			Name:   fmt.Sprintf("cpu-%d", i),
-			Logger: s.logger,
-		})
-		w.init(s.results)
-		workers[i] = w
-		s.workers[w.Name()] = w
-	}
-	s.cpuWorkers = workers
+	pool := NewCPUWorkerPool(CPUWorkerPoolConfig{
+		Name:        "cpu",
+		WorkerCount: workerCount,
+		Logger:      s.logger,
+	})
+	pool.init(s.results)
 
-	s.logger.Info("initialized CPU workers", "count", n)
-	return workers
+	s.cpuPool = pool
+	s.pools["cpu"] = pool
+
+	s.logger.Info("initialized CPU pool", "workers", workerCount)
+	return pool
 }
 
-// RegisterCPUHandler registers a task handler on all CPU workers.
-// Convenience method - equivalent to calling RegisterHandler on each worker.
+// RegisterCPUHandler registers a task handler on the CPU pool.
 func (s *Scheduler) RegisterCPUHandler(taskName string, handler CPUTaskHandler) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for _, w := range s.cpuWorkers {
-		w.RegisterHandler(taskName, handler)
+	if s.cpuPool != nil {
+		s.cpuPool.RegisterHandler(taskName, handler)
+		s.logger.Debug("registered CPU handler", "task", taskName)
 	}
-	s.logger.Debug("registered CPU handler on all workers", "task", taskName, "workers", len(s.cpuWorkers))
 }
 
-// GetWorker returns a worker by name.
-func (s *Scheduler) GetWorker(name string) (WorkerInterface, bool) {
+// GetPool returns a pool by name.
+func (s *Scheduler) GetPool(name string) (WorkerPool, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	w, ok := s.workers[name]
-	return w, ok
+	p, ok := s.pools[name]
+	return p, ok
 }
 
-// ListWorkers returns all worker names.
-func (s *Scheduler) ListWorkers() []string {
+// ListPools returns all pool names.
+func (s *Scheduler) ListPools() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	names := make([]string, 0, len(s.workers))
-	for name := range s.workers {
+	names := make([]string, 0, len(s.pools))
+	for name := range s.pools {
 		names = append(names, name)
 	}
 	return names

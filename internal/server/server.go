@@ -233,8 +233,8 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize workers: %w", err)
 	}
 
-	// Initialize CPU workers for CPU-bound tasks (uses runtime.NumCPU())
-	s.scheduler.InitCPUWorkers(0)
+	// Initialize CPU pool for CPU-bound tasks (uses runtime.NumCPU())
+	s.scheduler.InitCPUPool(0)
 
 	// Register CPU task handlers
 	s.scheduler.RegisterCPUHandler(ingest.TaskExtractPage, ingest.ExtractPageHandler())

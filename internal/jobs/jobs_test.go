@@ -105,140 +105,85 @@ func TestMockJob(t *testing.T) {
 	})
 }
 
-func TestWorker(t *testing.T) {
-	t.Run("LLM worker processes chat requests", func(t *testing.T) {
+func TestProviderWorkerPool(t *testing.T) {
+	t.Run("LLM pool type", func(t *testing.T) {
 		client := providers.NewMockClient()
-		client.ResponseText = "hello world"
 
-		worker, err := NewProviderWorker(ProviderWorkerConfig{
+		pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+			Name:      "test-llm",
 			LLMClient: client,
-			RPS: 10.0, // 10 per second for fast tests
 		})
 		if err != nil {
-			t.Fatalf("NewProviderWorker() error = %v", err)
+			t.Fatalf("NewProviderWorkerPool() error = %v", err)
 		}
 
-		if worker.Type() != WorkerTypeLLM {
-			t.Errorf("Type() = %s, want llm", worker.Type())
+		if pool.Type() != PoolTypeLLM {
+			t.Errorf("Type() = %s, want llm", pool.Type())
 		}
-
-		unit := &WorkUnit{
-			ID:   "test-unit",
-			Type: WorkUnitTypeLLM,
-			ChatRequest: &providers.ChatRequest{
-				Messages: []providers.Message{
-					{Role: "user", Content: "test"},
-				},
-			},
-		}
-
-		result := worker.Process(context.Background(), unit)
-
-		if !result.Success {
-			t.Errorf("Process() failed: %v", result.Error)
-		}
-		if result.ChatResult == nil {
-			t.Error("missing ChatResult")
-		}
-		if result.ChatResult.Content != "hello world" {
-			t.Errorf("Content = %q, want %q", result.ChatResult.Content, "hello world")
+		if pool.Name() != "test-llm" {
+			t.Errorf("Name() = %s, want test-llm", pool.Name())
 		}
 	})
 
-	t.Run("OCR worker processes images", func(t *testing.T) {
+	t.Run("OCR pool type", func(t *testing.T) {
 		provider := providers.NewMockOCRProvider()
-		provider.ResponseText = "extracted text"
 
-		worker, err := NewProviderWorker(ProviderWorkerConfig{
+		pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+			Name:        "test-ocr",
 			OCRProvider: provider,
 		})
 		if err != nil {
-			t.Fatalf("NewProviderWorker() error = %v", err)
+			t.Fatalf("NewProviderWorkerPool() error = %v", err)
 		}
 
-		if worker.Type() != WorkerTypeOCR {
-			t.Errorf("Type() = %s, want ocr", worker.Type())
-		}
-
-		unit := &WorkUnit{
-			ID:   "test-unit",
-			Type: WorkUnitTypeOCR,
-			OCRRequest: &OCRWorkRequest{
-				Image:   []byte("fake image"),
-				PageNum: 1,
-			},
-		}
-
-		result := worker.Process(context.Background(), unit)
-
-		if !result.Success {
-			t.Errorf("Process() failed: %v", result.Error)
-		}
-		if result.OCRResult == nil {
-			t.Error("missing OCRResult")
+		if pool.Type() != PoolTypeOCR {
+			t.Errorf("Type() = %s, want ocr", pool.Type())
 		}
 	})
 
-	t.Run("rejects mismatched work type", func(t *testing.T) {
-		client := providers.NewMockClient()
-		worker, _ := NewProviderWorker(ProviderWorkerConfig{LLMClient: client})
-
-		unit := &WorkUnit{
-			ID:   "test-unit",
-			Type: WorkUnitTypeOCR, // Wrong type for LLM worker
-		}
-
-		result := worker.Process(context.Background(), unit)
-
-		if result.Success {
-			t.Error("should fail for mismatched type")
+	t.Run("requires client or provider", func(t *testing.T) {
+		_, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+			Name: "test",
+		})
+		if err == nil {
+			t.Error("should fail without client or provider")
 		}
 	})
 
-	t.Run("respects context cancellation", func(t *testing.T) {
+	t.Run("cannot have both client and provider", func(t *testing.T) {
 		client := providers.NewMockClient()
-		client.Latency = 5 * time.Second
+		provider := providers.NewMockOCRProvider()
 
-		worker, _ := NewProviderWorker(ProviderWorkerConfig{LLMClient: client, RPS: 10.0})
-
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // Cancel immediately
-
-		unit := &WorkUnit{
-			ID:   "test-unit",
-			Type: WorkUnitTypeLLM,
-			ChatRequest: &providers.ChatRequest{
-				Messages: []providers.Message{{Role: "user", Content: "test"}},
-			},
-		}
-
-		result := worker.Process(ctx, unit)
-
-		if result.Success {
-			t.Error("should fail when context cancelled")
+		_, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+			Name:        "test",
+			LLMClient:   client,
+			OCRProvider: provider,
+		})
+		if err == nil {
+			t.Error("should fail with both client and provider")
 		}
 	})
 }
 
 func TestScheduler(t *testing.T) {
-	t.Run("register and list workers", func(t *testing.T) {
+	t.Run("register and list pools", func(t *testing.T) {
 		scheduler := NewScheduler(SchedulerConfig{})
 
 		client := providers.NewMockClient()
-		worker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "test-llm", LLMClient: client})
-		scheduler.RegisterWorker(worker)
+		pool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "test-llm", LLMClient: client})
+		scheduler.RegisterPool(pool)
 
-		names := scheduler.ListWorkers()
+		names := scheduler.ListPools()
 		if len(names) != 1 || names[0] != "test-llm" {
-			t.Errorf("ListWorkers() = %v, want [test-llm]", names)
+			t.Errorf("ListPools() = %v, want [test-llm]", names)
 		}
 
-		w, ok := scheduler.GetWorker("test-llm")
+		p, ok := scheduler.GetPool("test-llm")
 		if !ok {
-			t.Error("GetWorker() not found")
+			t.Error("GetPool() not found")
 		}
-		if w.Name() != "test-llm" {
-			t.Errorf("Name() = %s, want test-llm", w.Name())
+		if p.Name() != "test-llm" {
+			t.Errorf("Name() = %s, want test-llm", p.Name())
 		}
 	})
 
@@ -247,15 +192,15 @@ func TestScheduler(t *testing.T) {
 			Logger: slog.Default(),
 		})
 
-		// Add a worker
+		// Add a pool
 		client := providers.NewMockClient()
 		client.Latency = time.Millisecond
-		worker, _ := NewProviderWorker(ProviderWorkerConfig{
+		pool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{
 			Name:      "mock",
 			LLMClient: client,
-			RPS: 100.0, // Fast for tests
+			RPS:       100.0, // Fast for tests
 		})
-		scheduler.RegisterWorker(worker)
+		scheduler.RegisterPool(pool)
 
 		// Create and submit a job
 		job := NewCountingJob(5)
@@ -263,7 +208,7 @@ func TestScheduler(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		// Start scheduler (workers run as their own goroutines)
+		// Start scheduler (pools run as their own goroutines)
 		go scheduler.Start(ctx)
 
 		// Submit job
@@ -292,21 +237,21 @@ func TestScheduler(t *testing.T) {
 	t.Run("routes to specific provider", func(t *testing.T) {
 		scheduler := NewScheduler(SchedulerConfig{})
 
-		// Add two workers
+		// Add two pools
 		client1 := providers.NewMockClient()
 		client1.Latency = time.Millisecond
-		worker1, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm-1", LLMClient: client1, RPS: 100.0})
-		scheduler.RegisterWorker(worker1)
+		pool1, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm-1", LLMClient: client1, RPS: 100.0})
+		scheduler.RegisterPool(pool1)
 
 		client2 := providers.NewMockClient()
 		client2.Latency = time.Millisecond
-		worker2, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm-2", LLMClient: client2, RPS: 100.0})
-		scheduler.RegisterWorker(worker2)
+		pool2, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm-2", LLMClient: client2, RPS: 100.0})
+		scheduler.RegisterPool(pool2)
 
 		// Create job that targets specific provider
 		job := NewMockJob(MockJobConfig{
 			WorkUnits: 3,
-			Provider:  "llm-2", // Target specific worker
+			Provider:  "llm-2", // Target specific pool
 		})
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
