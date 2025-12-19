@@ -63,4 +63,12 @@ type openRouterResponse struct {
 			ReasoningTokens int `json:"reasoning_tokens"`
 		} `json:"completion_tokens_details,omitempty"`
 	} `json:"usage"`
+	// Error is returned by OpenRouter when something goes wrong at the API/model level
+	Error *openRouterError `json:"error,omitempty"`
+}
+
+type openRouterError struct {
+	Message  string         `json:"message"`
+	Code     any            `json:"code,omitempty"`     // Can be string or int
+	Metadata map[string]any `json:"metadata,omitempty"` // Additional error context
 }

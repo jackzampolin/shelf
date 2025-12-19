@@ -114,13 +114,22 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		return result, httpErr
 	}
 
+	// Check for API-level error (can be returned with 200 status)
+	if orResp.Error != nil {
+		result.Success = false
+		result.ErrorType = "api_error"
+		result.ErrorMessage = orResp.Error.Message
+		result.TotalTime = time.Since(start)
+		return result, fmt.Errorf("OpenRouter API error: %s", orResp.Error.Message)
+	}
+
 	// Parse response
 	if len(orResp.Choices) == 0 {
 		result.Success = false
 		result.ErrorType = "empty_response"
-		result.ErrorMessage = "no choices in response"
+		result.ErrorMessage = fmt.Sprintf("no choices in response (model=%s, id=%s)", orResp.Model, orResp.ID)
 		result.TotalTime = time.Since(start)
-		return result, fmt.Errorf("no choices in response")
+		return result, fmt.Errorf("no choices in response (model=%s, id=%s)", orResp.Model, orResp.ID)
 	}
 
 	// Extract content

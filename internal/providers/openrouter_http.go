@@ -80,6 +80,13 @@ func (c *OpenRouterClient) doRequest(ctx context.Context, path string, body any)
 			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 		}
 
+		// Check for retryable response-level issues (API returned 200 but with error or empty choices)
+		if retryable, err := c.shouldRetryResponse(&orResp); retryable {
+			lastErr = err
+			c.sleepWithJitter(ctx, attempt)
+			continue
+		}
+
 		return &orResp, nil
 	}
 
@@ -95,10 +102,35 @@ func (c *OpenRouterClient) shouldRetry(statusCode int) bool {
 		return true
 	case 429: // Rate Limited
 		return true
+	case 520, 521, 522, 523, 524: // Cloudflare errors
+		return true
 	default:
 		// Retry on server errors (500+)
 		return statusCode >= 500
 	}
+}
+
+// shouldRetryResponse checks if a 200 OK response has retryable content issues.
+// Returns (true, error) if retryable, (false, nil) if not.
+func (c *OpenRouterClient) shouldRetryResponse(resp *openRouterResponse) (bool, error) {
+	// API-level error in response body - some are retryable
+	if resp.Error != nil {
+		// Check for retryable error codes
+		code := fmt.Sprintf("%v", resp.Error.Code)
+		switch code {
+		case "overloaded", "rate_limit_exceeded", "503", "502", "500":
+			return true, fmt.Errorf("OpenRouter API error (retryable): %s", resp.Error.Message)
+		}
+		// Non-retryable API errors (content_filter, invalid_request, etc.)
+		return false, nil
+	}
+
+	// Empty choices - likely transient, worth retrying
+	if len(resp.Choices) == 0 {
+		return true, fmt.Errorf("empty choices in response (model=%s, id=%s)", resp.Model, resp.ID)
+	}
+
+	return false, nil
 }
 
 // injectNonce adds a unique comment to the last user message to make the request different.
