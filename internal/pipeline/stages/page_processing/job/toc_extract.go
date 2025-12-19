@@ -169,6 +169,7 @@ func (j *Job) saveTocExtractResult(ctx context.Context, result *extract_toc.Resu
 	}
 
 	// Create TocEntry records for each entry
+	// Fire-and-forget - sink batches these creates
 	for i, entry := range result.Entries {
 		entryData := map[string]any{
 			"toc_id":     j.TocDocID,
@@ -187,18 +188,15 @@ func (j *Job) saveTocExtractResult(ctx context.Context, result *extract_toc.Resu
 			entryData["printed_page_number"] = *entry.PrintedPageNumber
 		}
 
-		_, err := sink.SendSync(ctx, defra.WriteOp{
+		sink.Send(defra.WriteOp{
 			Collection: "TocEntry",
 			Document:   entryData,
 			Op:         defra.OpCreate,
 		})
-		if err != nil {
-			return fmt.Errorf("failed to create TocEntry %d: %w", i, err)
-		}
 	}
 
-	// Mark extraction complete
-	_, err := sink.SendSync(ctx, defra.WriteOp{
+	// Mark extraction complete - fire-and-forget
+	sink.Send(defra.WriteOp{
 		Collection: "ToC",
 		DocID:      j.TocDocID,
 		Document: map[string]any{
@@ -206,7 +204,7 @@ func (j *Job) saveTocExtractResult(ctx context.Context, result *extract_toc.Resu
 		},
 		Op: defra.OpUpdate,
 	})
-	return err
+	return nil
 }
 
 // deleteExistingTocEntries deletes any existing TocEntry records for this ToC.
@@ -241,7 +239,8 @@ func (j *Job) deleteExistingTocEntries(ctx context.Context) error {
 		return nil // No existing entries
 	}
 
-	// Delete each entry
+	// Delete each entry synchronously to ensure ordering before creates
+	// (creates follow immediately after this function returns)
 	for _, e := range entries {
 		entry, ok := e.(map[string]any)
 		if !ok {
@@ -251,6 +250,7 @@ func (j *Job) deleteExistingTocEntries(ctx context.Context) error {
 		if !ok || docID == "" {
 			continue
 		}
+		// Must be sync to ensure deletes complete before creates
 		_, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "TocEntry",
 			DocID:      docID,

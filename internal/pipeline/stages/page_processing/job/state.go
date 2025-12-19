@@ -340,7 +340,8 @@ func (j *Job) PersistMetadataState(ctx context.Context) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	_, err := sink.SendSync(ctx, defra.WriteOp{
+	// Fire-and-forget - no need to block
+	sink.Send(defra.WriteOp{
 		Collection: "Book",
 		DocID:      j.BookID,
 		Document: map[string]any{
@@ -350,7 +351,7 @@ func (j *Job) PersistMetadataState(ctx context.Context) error {
 		},
 		Op: defra.OpUpdate,
 	})
-	return err
+	return nil
 }
 
 // PersistTocFinderState persists ToC finder state to DefraDB.
@@ -364,7 +365,8 @@ func (j *Job) PersistTocFinderState(ctx context.Context) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	_, err := sink.SendSync(ctx, defra.WriteOp{
+	// Fire-and-forget - no need to block
+	sink.Send(defra.WriteOp{
 		Collection: "ToC",
 		DocID:      j.TocDocID,
 		Document: map[string]any{
@@ -374,7 +376,7 @@ func (j *Job) PersistTocFinderState(ctx context.Context) error {
 		},
 		Op: defra.OpUpdate,
 	})
-	return err
+	return nil
 }
 
 // PersistTocExtractState persists ToC extract state to DefraDB.
@@ -388,7 +390,8 @@ func (j *Job) PersistTocExtractState(ctx context.Context) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	_, err := sink.SendSync(ctx, defra.WriteOp{
+	// Fire-and-forget - no need to block
+	sink.Send(defra.WriteOp{
 		Collection: "ToC",
 		DocID:      j.TocDocID,
 		Document: map[string]any{
@@ -398,5 +401,5 @@ func (j *Job) PersistTocExtractState(ctx context.Context) error {
 		},
 		Op: defra.OpUpdate,
 	})
-	return err
+	return nil
 }

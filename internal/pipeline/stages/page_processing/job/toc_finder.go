@@ -28,11 +28,13 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	}
 
 	// Create or get ToC record
+	// Note: The Book->ToC relationship has @primary on Book side,
+	// so we create ToC first, then link it to Book via toc_id
 	if j.TocDocID == "" {
+		// First, create the ToC without book reference (relationship is on Book side)
 		result, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "ToC",
 			Document: map[string]any{
-				"book_id":          j.BookID,
 				"toc_found":        false,
 				"finder_complete":  false,
 				"extract_complete": false,
@@ -44,6 +46,16 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 			return nil
 		}
 		j.TocDocID = result.DocID
+
+		// Then update the Book to link to this ToC
+		sink.Send(defra.WriteOp{
+			Collection: "Book",
+			DocID:      j.BookID,
+			Document: map[string]any{
+				"toc_id": j.TocDocID,
+			},
+			Op: defra.OpUpdate,
+		})
 	}
 
 	// Create tools for the agent
@@ -126,7 +138,8 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 			if sink == nil {
 				return nil, fmt.Errorf("defra sink not in context")
 			}
-			_, err := sink.SendSync(ctx, defra.WriteOp{
+			// Fire-and-forget - no need to block
+			sink.Send(defra.WriteOp{
 				Collection: "ToC",
 				DocID:      j.TocDocID,
 				Document: map[string]any{
@@ -135,9 +148,6 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 				},
 				Op: defra.OpUpdate,
 			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to update ToC record: %w", err)
-			}
 		}
 
 		// Check if we should start ToC extraction
@@ -220,11 +230,12 @@ func (j *Job) saveTocFinderResult(ctx context.Context, result *toc_finder.Result
 		}
 	}
 
-	_, err := sink.SendSync(ctx, defra.WriteOp{
+	// Fire-and-forget - no need to block
+	sink.Send(defra.WriteOp{
 		Collection: "ToC",
 		DocID:      j.TocDocID,
 		Document:   update,
 		Op:         defra.OpUpdate,
 	})
-	return err
+	return nil
 }

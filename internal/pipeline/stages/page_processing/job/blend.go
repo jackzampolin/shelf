@@ -96,7 +96,8 @@ func (j *Job) SaveBlendResult(ctx context.Context, state *PageState, parsedJSON 
 
 	correctionsJSON, _ := json.Marshal(blendResult.Corrections)
 
-	_, err = sink.SendSync(ctx, defra.WriteOp{
+	// Fire-and-forget - no need to block
+	sink.Send(defra.WriteOp{
 		Collection: "Page",
 		DocID:      state.PageDocID,
 		Document: map[string]any{
@@ -107,5 +108,5 @@ func (j *Job) SaveBlendResult(ctx context.Context, state *PageState, parsedJSON 
 		},
 		Op: defra.OpUpdate,
 	})
-	return blendedText, err
+	return blendedText, nil
 }

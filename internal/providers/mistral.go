@@ -27,8 +27,10 @@ type MistralOCRConfig struct {
 	BaseURL       string
 	Model         string
 	Timeout       time.Duration
-	IncludeImages bool    // Whether to include base64 image data in response
-	RateLimit     float64 // Requests per second (default: 6.0)
+	IncludeImages bool          // Whether to include base64 image data in response
+	RateLimit     float64       // Requests per second (default: 6.0)
+	MaxRetries    int           // Max retry attempts (default: 7)
+	RetryDelay    time.Duration // Base delay between retries (default: 2s)
 }
 
 // MistralOCRClient implements OCRProvider using the Mistral OCR API.
@@ -38,6 +40,8 @@ type MistralOCRClient struct {
 	model         string
 	includeImages bool
 	rateLimit     float64
+	maxRetries    int
+	retryDelay    time.Duration
 	client        *http.Client
 }
 
@@ -50,10 +54,16 @@ func NewMistralOCRClient(cfg MistralOCRConfig) *MistralOCRClient {
 		cfg.Model = MistralOCRModel
 	}
 	if cfg.Timeout == 0 {
-		cfg.Timeout = 120 * time.Second
+		cfg.Timeout = 500 * time.Second
 	}
 	if cfg.RateLimit == 0 {
 		cfg.RateLimit = 6.0 // Mistral OCR default rate limit
+	}
+	if cfg.MaxRetries == 0 {
+		cfg.MaxRetries = 7
+	}
+	if cfg.RetryDelay == 0 {
+		cfg.RetryDelay = 2 * time.Second
 	}
 
 	return &MistralOCRClient{
@@ -62,6 +72,8 @@ func NewMistralOCRClient(cfg MistralOCRConfig) *MistralOCRClient {
 		model:         cfg.Model,
 		includeImages: cfg.IncludeImages,
 		rateLimit:     cfg.RateLimit,
+		maxRetries:    cfg.MaxRetries,
+		retryDelay:    cfg.RetryDelay,
 		client: &http.Client{
 			Timeout: cfg.Timeout,
 		},
@@ -79,19 +91,20 @@ func (c *MistralOCRClient) RequestsPerSecond() float64 {
 }
 
 // MaxConcurrency returns the max concurrent in-flight requests.
-// Mistral OCR is relatively slow, so we use a lower concurrency.
+// We allow 30 concurrent requests, but the rate limiter ensures we
+// respect the 6 RPS limit. Takes ~5 seconds to reach full concurrency.
 func (c *MistralOCRClient) MaxConcurrency() int {
-	return 10
+	return 30
 }
 
 // MaxRetries returns the maximum retry attempts.
 func (c *MistralOCRClient) MaxRetries() int {
-	return 3
+	return c.maxRetries
 }
 
 // RetryDelayBase returns the base delay for exponential backoff.
 func (c *MistralOCRClient) RetryDelayBase() time.Duration {
-	return 2 * time.Second
+	return c.retryDelay
 }
 
 // HealthCheck verifies the Mistral API is reachable and the API key is valid.

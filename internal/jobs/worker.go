@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
@@ -105,7 +107,7 @@ func NewProviderWorker(cfg ProviderWorkerConfig) (*ProviderWorker, error) {
 
 	queueSize := cfg.QueueSize
 	if queueSize <= 0 {
-		queueSize = 100
+		queueSize = 10000 // Large queue to handle bulk book processing (10+ books)
 	}
 
 	w := &ProviderWorker{
@@ -234,6 +236,7 @@ func (w *ProviderWorker) QueueDepth() int {
 
 // Process executes a work unit and returns the result.
 // This is also called internally by the worker's goroutine.
+// Includes retry logic with exponential backoff for transient errors.
 func (w *ProviderWorker) Process(ctx context.Context, unit *WorkUnit) WorkResult {
 	result := WorkResult{
 		WorkUnitID: unit.ID,
@@ -247,60 +250,95 @@ func (w *ProviderWorker) Process(ctx context.Context, unit *WorkUnit) WorkResult
 		return result
 	}
 
-	// Wait for rate limiter
-	if err := w.rateLimiter.Wait(ctx); err != nil {
-		result.Success = false
-		result.Error = fmt.Errorf("rate limit wait failed: %w", err)
-		return result
+	// Get retry config from provider
+	maxRetries := w.getMaxRetries()
+
+	// Execute with retries
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// Wait for rate limiter before each attempt
+		if err := w.rateLimiter.Wait(ctx); err != nil {
+			result.Success = false
+			result.Error = fmt.Errorf("rate limit wait failed: %w", err)
+			return result
+		}
+
+		// Execute based on type
+		switch w.workerType {
+		case WorkerTypeLLM:
+			if unit.ChatRequest == nil {
+				result.Success = false
+				result.Error = fmt.Errorf("LLM work unit missing ChatRequest")
+				return result
+			}
+
+			var chatResult *providers.ChatResult
+			var err error
+
+			// Use ChatWithTools if tools are provided
+			if len(unit.Tools) > 0 {
+				chatResult, err = w.llmClient.ChatWithTools(ctx, unit.ChatRequest, unit.Tools)
+			} else {
+				chatResult, err = w.llmClient.Chat(ctx, unit.ChatRequest)
+			}
+
+			result.ChatResult = chatResult
+			if err != nil {
+				lastErr = err
+				if w.isRetriableError(err) && attempt < maxRetries {
+					w.logger.Warn("LLM request failed, retrying",
+						"unit_id", unit.ID,
+						"attempt", attempt+1,
+						"max_attempts", maxRetries+1,
+						"error", err)
+					w.sleepWithJitter(ctx)
+					continue
+				}
+				result.Success = false
+				result.Error = err
+			} else {
+				result.Success = chatResult.Success
+				if !chatResult.Success {
+					result.Error = fmt.Errorf("%s: %s", chatResult.ErrorType, chatResult.ErrorMessage)
+				}
+			}
+
+		case WorkerTypeOCR:
+			if unit.OCRRequest == nil {
+				result.Success = false
+				result.Error = fmt.Errorf("OCR work unit missing OCRRequest")
+				return result
+			}
+			ocrResult, err := w.ocrProvider.ProcessImage(ctx, unit.OCRRequest.Image, unit.OCRRequest.PageNum)
+			result.OCRResult = ocrResult
+			if err != nil {
+				lastErr = err
+				if w.isRetriableError(err) && attempt < maxRetries {
+					w.logger.Warn("OCR request failed, retrying",
+						"unit_id", unit.ID,
+						"attempt", attempt+1,
+						"max_attempts", maxRetries+1,
+						"error", err)
+					w.sleepWithJitter(ctx)
+					continue
+				}
+				result.Success = false
+				result.Error = err
+			} else {
+				result.Success = ocrResult.Success
+				if !ocrResult.Success {
+					result.Error = fmt.Errorf("OCR failed: %s", ocrResult.ErrorMessage)
+				}
+			}
+		}
+
+		// If we got here without continuing, we're done (success or non-retriable error)
+		break
 	}
 
-	// Execute based on type
-	switch w.workerType {
-	case WorkerTypeLLM:
-		if unit.ChatRequest == nil {
-			result.Success = false
-			result.Error = fmt.Errorf("LLM work unit missing ChatRequest")
-			return result
-		}
-
-		var chatResult *providers.ChatResult
-		var err error
-
-		// Use ChatWithTools if tools are provided
-		if len(unit.Tools) > 0 {
-			chatResult, err = w.llmClient.ChatWithTools(ctx, unit.ChatRequest, unit.Tools)
-		} else {
-			chatResult, err = w.llmClient.Chat(ctx, unit.ChatRequest)
-		}
-
-		result.ChatResult = chatResult
-		if err != nil {
-			result.Success = false
-			result.Error = err
-		} else {
-			result.Success = chatResult.Success
-			if !chatResult.Success {
-				result.Error = fmt.Errorf("%s: %s", chatResult.ErrorType, chatResult.ErrorMessage)
-			}
-		}
-
-	case WorkerTypeOCR:
-		if unit.OCRRequest == nil {
-			result.Success = false
-			result.Error = fmt.Errorf("OCR work unit missing OCRRequest")
-			return result
-		}
-		ocrResult, err := w.ocrProvider.ProcessImage(ctx, unit.OCRRequest.Image, unit.OCRRequest.PageNum)
-		result.OCRResult = ocrResult
-		if err != nil {
-			result.Success = false
-			result.Error = err
-		} else {
-			result.Success = ocrResult.Success
-			if !ocrResult.Success {
-				result.Error = fmt.Errorf("OCR failed: %s", ocrResult.ErrorMessage)
-			}
-		}
+	// If we exhausted retries, set the last error
+	if !result.Success && result.Error == nil && lastErr != nil {
+		result.Error = fmt.Errorf("failed after %d attempts: %w", maxRetries+1, lastErr)
 	}
 
 	// Record metrics (if sink is configured and unit has metrics attribution)
@@ -314,6 +352,65 @@ func (w *ProviderWorker) Process(ctx context.Context, unit *WorkUnit) WorkResult
 	}
 
 	return result
+}
+
+// getMaxRetries returns the max retry count from the underlying provider.
+func (w *ProviderWorker) getMaxRetries() int {
+	switch w.workerType {
+	case WorkerTypeLLM:
+		if w.llmClient != nil {
+			return w.llmClient.MaxRetries()
+		}
+	case WorkerTypeOCR:
+		if w.ocrProvider != nil {
+			return w.ocrProvider.MaxRetries()
+		}
+	}
+	// Default
+	return 7
+}
+
+// isRetriableError checks if an error should trigger a retry.
+func (w *ProviderWorker) isRetriableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// Retry on 5xx errors (server errors)
+	if strings.Contains(errStr, "status 500") ||
+		strings.Contains(errStr, "status 502") ||
+		strings.Contains(errStr, "status 503") ||
+		strings.Contains(errStr, "status 504") {
+		return true
+	}
+	// Retry on rate limit errors
+	if strings.Contains(errStr, "status 429") ||
+		strings.Contains(errStr, "rate limit") {
+		return true
+	}
+	// Retry on timeout errors
+	if strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "deadline exceeded") {
+		return true
+	}
+	// Retry on connection errors
+	if strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "EOF") {
+		return true
+	}
+	return false
+}
+
+// sleepWithJitter waits with random jitter (1-3 seconds) before retry.
+func (w *ProviderWorker) sleepWithJitter(ctx context.Context) {
+	// Random delay between 1-3 seconds
+	delay := time.Duration(1000+rand.Intn(2000)) * time.Millisecond
+
+	select {
+	case <-time.After(delay):
+	case <-ctx.Done():
+	}
 }
 
 // recordMetrics records metrics for a completed work unit via the sink.

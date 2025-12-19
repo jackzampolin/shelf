@@ -19,14 +19,16 @@ const (
 
 // DeepInfraOCRConfig holds configuration for the DeepInfra OCR client.
 type DeepInfraOCRConfig struct {
-	APIKey       string
-	BaseURL      string
-	Model        string        // e.g., "Qwen/Qwen2-VL-72B-Instruct", "ds-paddleocr-vl"
-	Prompt       string        // Custom OCR prompt
-	Temperature  float64
-	MaxTokens    int
-	Timeout      time.Duration
-	RateLimit    float64       // Requests per second
+	APIKey      string
+	BaseURL     string
+	Model       string        // e.g., "Qwen/Qwen2-VL-72B-Instruct", "ds-paddleocr-vl"
+	Prompt      string        // Custom OCR prompt
+	Temperature float64
+	MaxTokens   int
+	Timeout     time.Duration
+	RateLimit   float64       // Requests per second
+	MaxRetries  int           // Max retry attempts (default: 7)
+	RetryDelay  time.Duration // Base delay between retries (default: 2s)
 }
 
 // DeepInfraOCRClient implements OCRProvider using DeepInfra's OpenAI-compatible API.
@@ -38,6 +40,8 @@ type DeepInfraOCRClient struct {
 	temperature float64
 	maxTokens   int
 	rateLimit   float64
+	maxRetries  int
+	retryDelay  time.Duration
 	client      *http.Client
 }
 
@@ -59,10 +63,16 @@ func NewDeepInfraOCRClient(cfg DeepInfraOCRConfig) *DeepInfraOCRClient {
 		cfg.MaxTokens = 8000
 	}
 	if cfg.Timeout == 0 {
-		cfg.Timeout = 120 * time.Second
+		cfg.Timeout = 500 * time.Second
 	}
 	if cfg.RateLimit == 0 {
 		cfg.RateLimit = 150.0 // Default 150 RPS
+	}
+	if cfg.MaxRetries == 0 {
+		cfg.MaxRetries = 7
+	}
+	if cfg.RetryDelay == 0 {
+		cfg.RetryDelay = 2 * time.Second
 	}
 
 	return &DeepInfraOCRClient{
@@ -73,6 +83,8 @@ func NewDeepInfraOCRClient(cfg DeepInfraOCRConfig) *DeepInfraOCRClient {
 		temperature: cfg.Temperature,
 		maxTokens:   cfg.MaxTokens,
 		rateLimit:   cfg.RateLimit,
+		maxRetries:  cfg.MaxRetries,
+		retryDelay:  cfg.RetryDelay,
 		client: &http.Client{
 			Timeout: cfg.Timeout,
 		},
@@ -97,12 +109,12 @@ func (c *DeepInfraOCRClient) MaxConcurrency() int {
 
 // MaxRetries returns the maximum retry attempts.
 func (c *DeepInfraOCRClient) MaxRetries() int {
-	return 3
+	return c.maxRetries
 }
 
 // RetryDelayBase returns the base delay for exponential backoff.
 func (c *DeepInfraOCRClient) RetryDelayBase() time.Duration {
-	return 2 * time.Second
+	return c.retryDelay
 }
 
 // HealthCheck verifies the DeepInfra API is reachable and the API key is valid.

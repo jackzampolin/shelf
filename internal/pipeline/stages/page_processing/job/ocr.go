@@ -55,8 +55,9 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 	}
 
 	if result.OCRResult != nil {
-		// Persist to DefraDB first, then update memory (crash-safe ordering)
-		_, err := sink.SendSync(ctx, defra.WriteOp{
+		// Fire-and-forget write - sink batches these
+		// In-memory state is source of truth during execution; DB is recovery source
+		sink.Send(defra.WriteOp{
 			Collection: "OcrResult",
 			Document: map[string]any{
 				"page_id":  state.PageDocID,
@@ -65,11 +66,8 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 			},
 			Op: defra.OpCreate,
 		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to save OCR result: %w", err)
-		}
 
-		// Update in-memory state after successful persistence
+		// Update in-memory state immediately (no blocking)
 		state.OcrResults[info.Provider] = result.OCRResult.Text
 		state.OcrDone[info.Provider] = true
 	}
@@ -86,7 +84,8 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 	// If all OCR done, mark complete and trigger blend
 	var units []jobs.WorkUnit
 	if allOcrDone {
-		_, err := sink.SendSync(ctx, defra.WriteOp{
+		// Fire-and-forget - no need to block
+		sink.Send(defra.WriteOp{
 			Collection: "Page",
 			DocID:      state.PageDocID,
 			Document: map[string]any{
@@ -94,9 +93,6 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 			},
 			Op: defra.OpUpdate,
 		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to mark OCR complete: %w", err)
-		}
 
 		blendUnit := j.CreateBlendWorkUnit(info.PageNum, state)
 		if blendUnit != nil {

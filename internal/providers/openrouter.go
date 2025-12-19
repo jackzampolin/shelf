@@ -45,16 +45,16 @@ func NewOpenRouterClient(cfg OpenRouterConfig) *OpenRouterClient {
 		cfg.DefaultModel = "anthropic/claude-3.5-sonnet"
 	}
 	if cfg.Timeout == 0 {
-		cfg.Timeout = 120 * time.Second
+		cfg.Timeout = 500 * time.Second
 	}
 	if cfg.RPS == 0 {
 		cfg.RPS = 150.0 // Default 150 RPS
 	}
 	if cfg.MaxRetries == 0 {
-		cfg.MaxRetries = 3
+		cfg.MaxRetries = 7
 	}
 	if cfg.RetryDelay == 0 {
-		cfg.RetryDelay = time.Second
+		cfg.RetryDelay = 2 * time.Second
 	}
 
 	return &OpenRouterClient{

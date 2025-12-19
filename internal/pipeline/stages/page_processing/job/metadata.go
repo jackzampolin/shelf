@@ -142,11 +142,12 @@ func (j *Job) SaveMetadataResult(ctx context.Context, result metadata.Result) er
 		update["subjects"] = result.Subjects // DefraDB handles [String] arrays directly
 	}
 
-	_, err := sink.SendSync(ctx, defra.WriteOp{
+	// Fire-and-forget - no need to block
+	sink.Send(defra.WriteOp{
 		Collection: "Book",
 		DocID:      j.BookID,
 		Document:   update,
 		Op:         defra.OpUpdate,
 	})
-	return err
+	return nil
 }

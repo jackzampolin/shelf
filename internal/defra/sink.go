@@ -77,7 +77,7 @@ func NewSink(cfg SinkConfig) *Sink {
 		cfg.Concurrency = 4
 	}
 	if cfg.QueueSize <= 0 {
-		cfg.QueueSize = 1000
+		cfg.QueueSize = 10000 // Large queue to handle bulk book processing
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -183,6 +183,59 @@ func (s *Sink) Flush(ctx context.Context) error {
 		// Flush already pending
 	}
 	return nil
+}
+
+// SendManySync queues multiple write operations and waits for all results.
+// This allows the sink to batch operations efficiently.
+// Returns results in the same order as the input operations.
+func (s *Sink) SendManySync(ctx context.Context, ops []WriteOp) ([]WriteResult, error) {
+	if len(ops) == 0 {
+		return nil, nil
+	}
+
+	// Create result channels for each operation
+	resultChs := make([]chan WriteResult, len(ops))
+	for i := range ops {
+		resultChs[i] = make(chan WriteResult, 1)
+		ops[i].result = resultChs[i]
+	}
+
+	// Queue all operations (non-blocking for efficiency, but with context check)
+	for i := range ops {
+		select {
+		case s.queue <- ops[i]:
+		case <-s.ctx.Done():
+			return nil, ErrSinkClosed
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	// Wait for all results
+	results := make([]WriteResult, len(ops))
+	for i, ch := range resultChs {
+		select {
+		case result := <-ch:
+			results[i] = result
+			if result.Err != nil {
+				// Continue collecting results but track the first error
+				// All ops are already queued, so we should wait for them
+			}
+		case <-s.ctx.Done():
+			return nil, ErrSinkClosed
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	// Check for any errors in results
+	for _, r := range results {
+		if r.Err != nil {
+			return results, r.Err
+		}
+	}
+
+	return results, nil
 }
 
 // runBatcher collects operations and flushes on size/time triggers.

@@ -114,11 +114,12 @@ func (j *Job) SaveLabelResult(ctx context.Context, state *PageState, parsedJSON 
 		update["running_header"] = *labelResult.RunningHeader
 	}
 
-	_, err = sink.SendSync(ctx, defra.WriteOp{
+	// Fire-and-forget - no need to block
+	sink.Send(defra.WriteOp{
 		Collection: "Page",
 		DocID:      state.PageDocID,
 		Document:   update,
 		Op:         defra.OpUpdate,
 	})
-	return err
+	return nil
 }

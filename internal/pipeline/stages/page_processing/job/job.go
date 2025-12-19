@@ -96,29 +96,29 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		j.PersistTocExtractState(ctx)
 	}
 
-	// Generate work units for incomplete pages
-	var units []jobs.WorkUnit
-	pagesCreated := 0
-	pagesToCreate := j.TotalPages - len(j.PageState)
-
-	if logger != nil && pagesToCreate > 0 {
-		logger.Info("job.Start: creating page records", "pages_to_create", pagesToCreate)
+	// First pass: identify pages that need creation
+	var newPageNums []int
+	for pageNum := 1; pageNum <= j.TotalPages; pageNum++ {
+		if j.PageState[pageNum] == nil {
+			newPageNums = append(newPageNums, pageNum)
+		}
 	}
 
-	for pageNum := 1; pageNum <= j.TotalPages; pageNum++ {
-		// Check for cancellation periodically in the loop
+	// Batch create all new pages
+	if len(newPageNums) > 0 {
+		if logger != nil {
+			logger.Info("job.Start: creating page records", "pages_to_create", len(newPageNums))
+		}
+
+		// Check for cancellation before batch operation
 		if err := checkCancelled(ctx); err != nil {
 			return nil, err
 		}
 
-		state := j.PageState[pageNum]
-		if state == nil {
-			// Create page record and state
-			state = NewPageState()
-			j.PageState[pageNum] = state
-
-			// Create Page record in DefraDB
-			result, err := sink.SendSync(ctx, defra.WriteOp{
+		// Build batch of create operations
+		ops := make([]defra.WriteOp, len(newPageNums))
+		for i, pageNum := range newPageNums {
+			ops[i] = defra.WriteOp{
 				Collection: "Page",
 				Document: map[string]any{
 					"book_id":          j.BookID,
@@ -129,17 +129,41 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 					"label_complete":   false,
 				},
 				Op: defra.OpCreate,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to create page record for page %d: %w", pageNum, err)
 			}
-			state.PageDocID = result.DocID
-			pagesCreated++
+		}
 
-			// Log progress every 100 pages
-			if logger != nil && pagesCreated%100 == 0 {
-				logger.Info("job.Start: page creation progress", "created", pagesCreated, "total", pagesToCreate)
+		// Send all creates at once - sink will batch them efficiently
+		results, err := sink.SendManySync(ctx, ops)
+		if err != nil {
+			return nil, fmt.Errorf("failed to batch create page records: %w", err)
+		}
+
+		// Assign DocIDs to PageState
+		for i, pageNum := range newPageNums {
+			state := NewPageState()
+			state.PageDocID = results[i].DocID
+			j.PageState[pageNum] = state
+		}
+
+		if logger != nil {
+			logger.Info("job.Start: batch page creation complete", "created", len(newPageNums))
+		}
+	}
+
+	// Second pass: generate work units for all pages
+	var units []jobs.WorkUnit
+	for pageNum := 1; pageNum <= j.TotalPages; pageNum++ {
+		// Check for cancellation periodically
+		if pageNum%100 == 0 {
+			if err := checkCancelled(ctx); err != nil {
+				return nil, err
 			}
+		}
+
+		state := j.PageState[pageNum]
+		if state == nil {
+			// Should not happen after batch create, but be safe
+			continue
 		}
 
 		// Generate work units based on current state
@@ -156,7 +180,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	}
 
 	if logger != nil {
-		logger.Info("job.Start: page processing complete", "pages_created", pagesCreated, "work_units", len(units))
+		logger.Info("job.Start: work unit generation complete", "work_units", len(units))
 	}
 
 	// Check if we should start book-level operations

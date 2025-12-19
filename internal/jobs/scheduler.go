@@ -131,8 +131,11 @@ func (s *Scheduler) handleResult(ctx context.Context, wr workerResult) {
 		return
 	}
 
+	// Inject services into context for job handlers
+	enrichedCtx := s.injectServices(ctx)
+
 	// Notify job of completion
-	newUnits, err := job.OnComplete(ctx, wr.Result)
+	newUnits, err := job.OnComplete(enrichedCtx, wr.Result)
 	if err != nil {
 		s.logger.Error("job OnComplete failed", "job_id", wr.JobID, "error", err)
 	}
