@@ -11,14 +11,12 @@ import (
 // Creates a persistent record in DefraDB via Manager.
 // The job.Start() call runs asynchronously so the HTTP request returns immediately.
 func (s *Scheduler) Submit(ctx context.Context, job Job) error {
-	// Get initial metadata from job status
-	metadata, err := job.Status(ctx)
-	if err != nil {
-		s.logger.Warn("failed to get initial job status", "job_id", job.ID(), "error", err)
-	}
+	// Only store minimal metadata needed for job resumption.
+	// Full status is available via job.Status() on the live job.
+	metricsFor := job.MetricsFor()
 	metadataMap := make(map[string]any)
-	for k, v := range metadata {
-		metadataMap[k] = v
+	if metricsFor != nil && metricsFor.BookID != "" {
+		metadataMap["book_id"] = metricsFor.BookID
 	}
 
 	// Persist to DefraDB if manager available, otherwise generate a temporary ID
