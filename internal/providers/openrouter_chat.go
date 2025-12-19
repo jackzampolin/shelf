@@ -40,6 +40,7 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		Messages:    make([]openRouterMessage, 0, len(req.Messages)),
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
+		Usage:       &openRouterUsageRequest{Include: true}, // Request cost tracking
 	}
 
 	// Convert messages
@@ -160,6 +161,13 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 	result.ReasoningTokens = orResp.Usage.CompletionTokensDetails.ReasoningTokens
 	result.ExecutionTime = time.Since(start)
 	result.TotalTime = result.ExecutionTime
+
+	// Set cost from OpenRouter response (prefer native_total_cost, fallback to cost)
+	if orResp.Usage.NativeTotalCost > 0 {
+		result.CostUSD = orResp.Usage.NativeTotalCost
+	} else if orResp.Usage.Cost > 0 {
+		result.CostUSD = orResp.Usage.Cost
+	}
 
 	// Include reasoning_details for reasoning models
 	if len(orResp.Choices[0].Message.ReasoningDetails) > 0 {
