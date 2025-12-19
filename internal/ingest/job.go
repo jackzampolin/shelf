@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pdfcpu/pdfcpu/pkg/api"
-	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
@@ -38,8 +38,8 @@ type PageExtractResult struct {
 }
 
 // Job implements jobs.Job for ingesting book scans.
-// It discovers pages across all input PDFs, then farms out
-// individual page extractions to CPU workers.
+// It copies PDFs to the originals directory and creates a Book record.
+// Page extraction is handled later by the page_processing stage.
 type Job struct {
 	mu sync.Mutex
 
@@ -55,13 +55,11 @@ type Job struct {
 	homeDir     *home.Dir
 
 	// State
-	recordID       string // DefraDB job record ID
-	outputDir      string
-	totalPages     int
-	completedPages int
-	failedPages    int
-	done           bool
-	finalBookID    string // DefraDB Book docID after completion
+	recordID    string   // DefraDB job record ID
+	totalPages  int      // Discovered from PDFs
+	copiedPDFs  []string // Paths to copied PDFs in originals/
+	done        bool
+	finalBookID string // DefraDB Book docID after completion
 }
 
 // JobConfig configures a new ingest job.
@@ -123,7 +121,8 @@ func (j *Job) Type() string {
 	return JobType
 }
 
-// Start initializes the job and returns work units for each page.
+// Start copies PDFs to originals/ directory and creates a Book record.
+// No work units are returned - page extraction happens in page_processing stage.
 func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -135,133 +134,56 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		}
 	}
 
-	// Create output directory
-	if err := j.homeDir.EnsureSourceImagesDir(j.bookID); err != nil {
-		return nil, fmt.Errorf("failed to create output directory: %w", err)
+	// Create originals directory
+	if err := j.homeDir.EnsureOriginalsDir(j.bookID); err != nil {
+		return nil, fmt.Errorf("failed to create originals directory: %w", err)
 	}
-	j.outputDir = j.homeDir.SourceImagesDir(j.bookID)
+	originalsDir := j.homeDir.OriginalsDir(j.bookID)
 
 	j.logger.Info("starting ingest job",
 		"pdfs", len(j.pdfPaths),
 		"title", j.title,
-		"output_dir", j.outputDir,
+		"originals_dir", originalsDir,
 	)
 
-	// Discovery: count pages in all PDFs
-	conf := model.NewDefaultConfiguration()
-	conf.ValidationMode = model.ValidationRelaxed
-
-	var units []jobs.WorkUnit
-	outputNum := 1
+	// Copy PDFs and count pages
+	totalPages := 0
+	var copiedPDFs []string
 
 	for _, pdfPath := range j.pdfPaths {
-		// Try to decrypt to remove permission restrictions
-		workingPath, err := decryptPDF(pdfPath, conf)
-		if err != nil {
-			return nil, fmt.Errorf("failed to prepare PDF %s: %w", pdfPath, err)
-		}
-
 		// Get page count
-		f, err := os.Open(workingPath)
+		f, err := os.Open(pdfPath)
 		if err != nil {
-			if workingPath != pdfPath {
-				os.Remove(workingPath)
-			}
 			return nil, fmt.Errorf("failed to open PDF %s: %w", pdfPath, err)
 		}
 		pageCount, err := api.PageCount(f, nil)
 		f.Close()
 		if err != nil {
-			if workingPath != pdfPath {
-				os.Remove(workingPath)
-			}
 			return nil, fmt.Errorf("failed to get page count for %s: %w", pdfPath, err)
 		}
 
-		// Clean up temp file if we created one
-		if workingPath != pdfPath {
-			os.Remove(workingPath)
-		}
+		totalPages += pageCount
 
-		j.logger.Info("discovered PDF",
+		// Copy PDF to originals directory
+		destPath := filepath.Join(originalsDir, filepath.Base(pdfPath))
+		if err := copyFile(pdfPath, destPath); err != nil {
+			return nil, fmt.Errorf("failed to copy PDF %s: %w", pdfPath, err)
+		}
+		copiedPDFs = append(copiedPDFs, destPath)
+
+		j.logger.Info("copied PDF",
 			"file", filepath.Base(pdfPath),
 			"pages", pageCount,
 		)
-
-		// Create work unit for each page
-		for pageNum := 1; pageNum <= pageCount; pageNum++ {
-			units = append(units, jobs.WorkUnit{
-				ID:   fmt.Sprintf("%s-page-%d", j.bookID, outputNum),
-				Type: jobs.WorkUnitTypeCPU,
-				CPURequest: &jobs.CPUWorkRequest{
-					Task: TaskExtractPage,
-					Data: PageExtractRequest{
-						PDFPath:   pdfPath,
-						PageNum:   pageNum,
-						OutputNum: outputNum,
-						OutputDir: j.outputDir,
-					},
-				},
-			})
-			outputNum++
-		}
 	}
 
-	j.totalPages = len(units)
-	j.logger.Info("created work units", "total_pages", j.totalPages)
+	j.totalPages = totalPages
+	j.copiedPDFs = copiedPDFs
 
-	return units, nil
-}
-
-// OnComplete is called when a work unit finishes.
-func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-
-	if result.Success {
-		j.completedPages++
-		j.logger.Debug("page extracted",
-			"completed", j.completedPages,
-			"total", j.totalPages,
-		)
-	} else {
-		j.failedPages++
-		j.logger.Warn("page extraction failed",
-			"unit_id", result.WorkUnitID,
-			"error", result.Error,
-		)
-	}
-
-	// Check if all pages are done
-	if j.completedPages+j.failedPages >= j.totalPages {
-		if err := j.finalize(ctx); err != nil {
-			j.logger.Error("failed to finalize job", "error", err)
-			return nil, err
-		}
-		j.done = true
-	}
-
-	return nil, nil
-}
-
-// finalize creates the Book record in DefraDB after all pages are extracted.
-// Must be called with lock held.
-func (j *Job) finalize(ctx context.Context) error {
-	if j.failedPages > 0 {
-		// Clean up on failure
-		os.RemoveAll(j.outputDir)
-		return fmt.Errorf("ingest failed: %d pages failed to extract", j.failedPages)
-	}
-
-	j.logger.Info("finalizing ingest",
-		"title", j.title,
-		"pages", j.completedPages,
-	)
-
-	// Create Book record in DefraDB
+	// Create Book record in DefraDB immediately
 	input := map[string]any{
 		"title":      j.title,
-		"page_count": j.completedPages,
+		"page_count": totalPages,
 		"status":     "ingested",
 		"created_at": time.Now().UTC().Format(time.RFC3339),
 	}
@@ -271,23 +193,59 @@ func (j *Job) finalize(ctx context.Context) error {
 
 	docID, err := j.defraClient.Create(ctx, "Book", input)
 	if err != nil {
-		os.RemoveAll(j.outputDir)
-		return fmt.Errorf("failed to create Book record: %w", err)
+		os.RemoveAll(j.homeDir.SourceImagesDir(j.bookID))
+		return nil, fmt.Errorf("failed to create Book record: %w", err)
 	}
 
 	// Rename directory from UUID to docID
+	oldDir := j.homeDir.SourceImagesDir(j.bookID)
 	newDir := j.homeDir.SourceImagesDir(docID)
-	if err := os.Rename(j.outputDir, newDir); err != nil {
-		return fmt.Errorf("failed to rename directory: %w", err)
+	if err := os.Rename(oldDir, newDir); err != nil {
+		return nil, fmt.Errorf("failed to rename directory: %w", err)
+	}
+
+	// Update copied PDF paths to reflect new directory
+	newOriginalsDir := j.homeDir.OriginalsDir(docID)
+	for i, p := range j.copiedPDFs {
+		j.copiedPDFs[i] = filepath.Join(newOriginalsDir, filepath.Base(p))
 	}
 
 	j.finalBookID = docID
+	j.done = true
+
 	j.logger.Info("ingest complete",
 		"book_id", docID,
-		"pages", j.completedPages,
+		"total_pages", totalPages,
+		"pdfs", len(copiedPDFs),
 	)
 
-	return nil
+	// No work units - ingest is complete
+	return nil, nil
+}
+
+// OnComplete is called when a work unit finishes.
+// For ingest jobs, this is a no-op since Start() completes synchronously.
+func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
+	// No work units generated by ingest - this shouldn't be called
+	return nil, nil
+}
+
+// copyFile copies a file from src to dst.
+func copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	return err
 }
 
 // Done returns true when the job has completed.
@@ -303,10 +261,10 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 	defer j.mu.Unlock()
 
 	status := map[string]string{
-		"title":           j.title,
-		"total_pages":     fmt.Sprintf("%d", j.totalPages),
-		"completed_pages": fmt.Sprintf("%d", j.completedPages),
-		"failed_pages":    fmt.Sprintf("%d", j.failedPages),
+		"title":       j.title,
+		"total_pages": fmt.Sprintf("%d", j.totalPages),
+		"pdfs_copied": fmt.Sprintf("%d", len(j.copiedPDFs)),
+		"done":        fmt.Sprintf("%v", j.done),
 	}
 
 	if j.author != "" {
@@ -320,15 +278,21 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 }
 
 // Progress returns per-provider work unit progress.
+// Ingest jobs complete synchronously, so this returns 100% when done.
 func (j *Job) Progress() map[string]jobs.ProviderProgress {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
+	completed := 0
+	if j.done {
+		completed = len(j.copiedPDFs)
+	}
+
 	return map[string]jobs.ProviderProgress{
-		"cpu": {
-			TotalExpected: j.totalPages,
-			Completed:     j.completedPages,
-			Failed:        j.failedPages,
+		"copy": {
+			TotalExpected: len(j.pdfPaths),
+			Completed:     completed,
+			Failed:        0,
 		},
 	}
 }

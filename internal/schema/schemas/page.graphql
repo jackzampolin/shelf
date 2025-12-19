@@ -16,6 +16,7 @@ type Page {
     is_back_matter: Boolean
 
     # Status
+    extract_complete: Boolean
     ocr_complete: Boolean
     blend_complete: Boolean
     label_complete: Boolean

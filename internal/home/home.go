@@ -96,3 +96,13 @@ func (d *Dir) SourceImagePaths(bookID string, pageCount int) []string {
 func (d *Dir) EnsureSourceImagesDir(bookID string) error {
 	return os.MkdirAll(d.SourceImagesDir(bookID), 0o755)
 }
+
+// OriginalsDir returns the directory for original PDF files of a book.
+func (d *Dir) OriginalsDir(bookID string) string {
+	return filepath.Join(d.SourceImagesDir(bookID), "originals")
+}
+
+// EnsureOriginalsDir creates the originals directory for a book's PDFs.
+func (d *Dir) EnsureOriginalsDir(bookID string) error {
+	return os.MkdirAll(d.OriginalsDir(bookID), 0o755)
+}

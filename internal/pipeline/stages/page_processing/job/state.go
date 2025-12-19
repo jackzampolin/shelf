@@ -21,6 +21,7 @@ func (j *Job) LoadPageState(ctx context.Context) error {
 		Page(filter: {book_id: {_eq: "%s"}}) {
 			_docID
 			page_num
+			extract_complete
 			blend_complete
 			label_complete
 			ocr_results {
@@ -62,6 +63,9 @@ func (j *Job) LoadPageState(ctx context.Context) error {
 
 		if docID, ok := page["_docID"].(string); ok {
 			state.PageDocID = docID
+		}
+		if extractComplete, ok := page["extract_complete"].(bool); ok {
+			state.ExtractDone = extractComplete
 		}
 
 		// Load OCR results from the relationship

@@ -121,11 +121,12 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			result, err := sink.SendSync(ctx, defra.WriteOp{
 				Collection: "Page",
 				Document: map[string]any{
-					"book_id":        j.BookID,
-					"page_num":       pageNum,
-					"ocr_complete":   false,
-					"blend_complete": false,
-					"label_complete": false,
+					"book_id":          j.BookID,
+					"page_num":         pageNum,
+					"extract_complete": false,
+					"ocr_complete":     false,
+					"blend_complete":   false,
+					"label_complete":   false,
 				},
 				Op: defra.OpCreate,
 			})
@@ -141,9 +142,17 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			}
 		}
 
-		// Check what work is needed for this page
-		newUnits := j.GeneratePageWorkUnits(ctx, pageNum, state)
-		units = append(units, newUnits...)
+		// Generate work units based on current state
+		if !state.ExtractDone {
+			// Page needs extraction first
+			if unit := j.CreateExtractWorkUnit(pageNum); unit != nil {
+				units = append(units, *unit)
+			}
+		} else {
+			// Page is extracted, check what other work is needed
+			newUnits := j.GeneratePageWorkUnits(ctx, pageNum, state)
+			units = append(units, newUnits...)
+		}
 	}
 
 	if logger != nil {
@@ -207,6 +216,13 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 	var newUnits []jobs.WorkUnit
 
 	switch info.UnitType {
+	case "extract":
+		units, err := j.HandleExtractComplete(ctx, info, result)
+		if err != nil {
+			return nil, err
+		}
+		newUnits = append(newUnits, units...)
+
 	case "ocr":
 		units, err := j.HandleOcrComplete(ctx, info, result)
 		if err != nil {
@@ -262,8 +278,11 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 	j.Mu.Lock()
 	defer j.Mu.Unlock()
 
-	ocrDone, blendDone, labelDone := 0, 0, 0
+	extractDone, ocrDone, blendDone, labelDone := 0, 0, 0, 0
 	for _, state := range j.PageState {
+		if state.ExtractDone {
+			extractDone++
+		}
 		allOcr := true
 		for _, provider := range j.OcrProviders {
 			if !state.OcrDone[provider] {
@@ -285,6 +304,7 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 	return map[string]string{
 		"book_id":            j.BookID,
 		"total_pages":        fmt.Sprintf("%d", j.TotalPages),
+		"extract_complete":   fmt.Sprintf("%d", extractDone),
 		"ocr_complete":       fmt.Sprintf("%d", ocrDone),
 		"blend_complete":     fmt.Sprintf("%d", blendDone),
 		"label_complete":     fmt.Sprintf("%d", labelDone),

@@ -15,6 +15,9 @@ const LabelThresholdForBookOps = 20
 type PageState struct {
 	PageDocID string // DefraDB document ID for the Page record
 
+	// Extraction state (from PDF)
+	ExtractDone bool
+
 	// OCR state per provider
 	OcrResults map[string]string // provider -> OCR text
 	OcrDone    map[string]bool   // provider -> completed
@@ -62,11 +65,18 @@ type BookState struct {
 // WorkUnitInfo tracks pending work units.
 type WorkUnitInfo struct {
 	PageNum  int
-	UnitType string // "ocr", "blend", "label", "metadata", "toc_finder", "toc_extract"
+	UnitType string // "extract", "ocr", "blend", "label", "metadata", "toc_finder", "toc_extract"
 	Provider string // for OCR units
 }
 
-// Job processes all pages through OCR -> Blend -> Label,
+// PDFInfo describes a PDF file and its page range.
+type PDFInfo struct {
+	Path      string // Full path to the PDF
+	StartPage int    // First page number (1-indexed, cumulative)
+	EndPage   int    // Last page number (inclusive)
+}
+
+// Job processes all pages through Extract -> OCR -> Blend -> Label,
 // then triggers book-level operations (metadata, ToC).
 // Services (DefraClient, DefraSink) are accessed via svcctx from the context
 // passed to Start() and OnComplete().
@@ -82,6 +92,9 @@ type Job struct {
 	LabelProvider    string
 	MetadataProvider string
 	TocProvider      string
+
+	// PDF sources for extraction
+	PDFs []PDFInfo // Sorted by StartPage
 
 	// Job state
 	RecordID string
@@ -107,6 +120,7 @@ func New(cfg Config) *Job {
 		BookID:           cfg.BookID,
 		TotalPages:       cfg.TotalPages,
 		HomeDir:          cfg.HomeDir,
+		PDFs:             cfg.PDFs,
 		OcrProviders:     cfg.OcrProviders,
 		BlendProvider:    cfg.BlendProvider,
 		LabelProvider:    cfg.LabelProvider,
@@ -122,6 +136,7 @@ type Config struct {
 	BookID           string
 	TotalPages       int
 	HomeDir          *home.Dir
+	PDFs             []PDFInfo // PDF sources for extraction
 	OcrProviders     []string
 	BlendProvider    string
 	LabelProvider    string
@@ -173,9 +188,34 @@ func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 	}
 }
 
+// FindPDFForPage returns the PDF path and page number within that PDF for a given output page number.
+// Returns empty string and 0 if page is out of range.
+func (j *Job) FindPDFForPage(pageNum int) (pdfPath string, pageInPDF int) {
+	for _, pdf := range j.PDFs {
+		if pageNum >= pdf.StartPage && pageNum <= pdf.EndPage {
+			// pageInPDF is 1-indexed within this PDF
+			pageInPDF = pageNum - pdf.StartPage + 1
+			return pdf.Path, pageInPDF
+		}
+	}
+	return "", 0
+}
+
 // ProviderProgress returns progress by provider for the Progress() method.
 func (j *Job) ProviderProgress() map[string]jobs.ProviderProgress {
 	progress := make(map[string]jobs.ProviderProgress)
+
+	// Track extraction progress
+	extractCompleted := 0
+	for _, state := range j.PageState {
+		if state.ExtractDone {
+			extractCompleted++
+		}
+	}
+	progress["extract"] = jobs.ProviderProgress{
+		TotalExpected: j.TotalPages,
+		Completed:     extractCompleted,
+	}
 
 	// Track OCR progress per provider
 	for _, provider := range j.OcrProviders {

@@ -111,12 +111,12 @@ func TestJob_Progress(t *testing.T) {
 
 	progress := job.Progress()
 
-	cpu, ok := progress["cpu"]
+	copy, ok := progress["copy"]
 	if !ok {
-		t.Fatal("expected 'cpu' in progress")
+		t.Fatal("expected 'copy' in progress")
 	}
-	if cpu.TotalExpected != 0 {
-		t.Errorf("cpu.TotalExpected = %d, want 0", cpu.TotalExpected)
+	if copy.TotalExpected != 1 {
+		t.Errorf("copy.TotalExpected = %d, want 1", copy.TotalExpected)
 	}
 }
 
