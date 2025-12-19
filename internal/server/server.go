@@ -40,6 +40,9 @@ type Server struct {
 	logger           *slog.Logger
 	home             *home.Dir
 
+	// pageProcessingStage is saved for job factory registration
+	pageProcessingStage *page_processing.Stage
+
 	// services holds all core services for context enrichment
 	services *svcctx.Services
 
@@ -135,12 +138,13 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	s := &Server{
-		defraManager:     defraManager,
-		registry:         registry,
-		pipelineRegistry: pipelineRegistry,
-		configMgr:        cfg.ConfigManager,
-		logger:           cfg.Logger,
-		home:             cfg.Home,
+		defraManager:        defraManager,
+		registry:            registry,
+		pipelineRegistry:    pipelineRegistry,
+		pageProcessingStage: pageProcessingStage,
+		configMgr:           cfg.ConfigManager,
+		logger:              cfg.Logger,
+		home:                cfg.Home,
 	}
 
 	// Create endpoint registry and register all endpoints
@@ -235,6 +239,9 @@ func (s *Server) Start(ctx context.Context) error {
 	// Register CPU task handlers
 	s.scheduler.RegisterCPUHandler(ingest.TaskExtractPage, ingest.ExtractPageHandler())
 
+	// Register job factories for resumption
+	s.scheduler.RegisterFactory("page-processing", s.pageProcessingStage.JobFactory())
+
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)
 
@@ -254,6 +261,13 @@ func (s *Server) Start(ctx context.Context) error {
 	s.scheduler.SetContextEnricher(func(ctx context.Context) context.Context {
 		return svcctx.WithServices(ctx, s.services)
 	})
+
+	// Resume any interrupted jobs from previous run
+	if resumed, err := s.scheduler.Resume(ctx); err != nil {
+		s.logger.Warn("failed to resume jobs", "error", err)
+	} else if resumed > 0 {
+		s.logger.Info("resumed interrupted jobs", "count", resumed)
+	}
 
 	// Start HTTP server in goroutine
 	errCh := make(chan error, 1)

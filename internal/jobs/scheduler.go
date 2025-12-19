@@ -10,7 +10,8 @@ import (
 
 // JobFactory creates a Job instance from stored metadata.
 // Used for resuming jobs after restart.
-type JobFactory func(id string, metadata map[string]any) (Job, error)
+// Context provides access to services (DefraClient, HomeDir, etc.) via svcctx.
+type JobFactory func(ctx context.Context, id string, metadata map[string]any) (Job, error)
 
 // Scheduler manages workers and distributes work units from jobs.
 // Each worker runs as its own goroutine with its own queue.

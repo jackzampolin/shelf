@@ -170,6 +170,26 @@ func (s *Stage) GetStatus(ctx context.Context, bookID string) (pipeline.StageSta
 	return status, nil
 }
 
+// JobFactory returns a factory function for recreating jobs from stored metadata.
+// Used by the scheduler to resume interrupted jobs after restart.
+func (s *Stage) JobFactory() jobs.JobFactory {
+	return func(ctx context.Context, id string, metadata map[string]any) (jobs.Job, error) {
+		bookID, ok := metadata["book_id"].(string)
+		if !ok {
+			return nil, fmt.Errorf("missing book_id in job metadata")
+		}
+
+		job, err := s.CreateJob(ctx, bookID, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// Set the persisted record ID
+		job.SetRecordID(id)
+		return job, nil
+	}
+}
+
 func (s *Stage) CreateJob(ctx context.Context, bookID string, opts pipeline.StageOptions) (jobs.Job, error) {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {

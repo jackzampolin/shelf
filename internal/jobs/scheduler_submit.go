@@ -113,8 +113,11 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 			continue
 		}
 
+		// Inject services into context for factory
+		enrichedCtx := s.injectServices(ctx)
+
 		// Recreate job from stored metadata
-		job, err := factory(record.ID, record.Metadata)
+		job, err := factory(enrichedCtx, record.ID, record.Metadata)
 		if err != nil {
 			s.logger.Error("failed to recreate job",
 				"job_id", record.ID, "error", err)
@@ -128,11 +131,11 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 		s.mu.Unlock()
 
 		// Start job (should be idempotent - checks what's already done)
-		units, err := job.Start(ctx)
+		units, err := job.Start(enrichedCtx)
 		if err != nil {
 			s.logger.Error("failed to resume job",
 				"job_id", record.ID, "error", err)
-			s.manager.UpdateStatus(ctx, record.ID, StatusFailed, err.Error())
+			s.manager.UpdateStatus(enrichedCtx, record.ID, StatusFailed, err.Error())
 			continue
 		}
 

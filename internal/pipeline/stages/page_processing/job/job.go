@@ -326,18 +326,20 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 	}
 
 	return map[string]string{
-		"book_id":            j.BookID,
-		"total_pages":        fmt.Sprintf("%d", j.TotalPages),
-		"extract_complete":   fmt.Sprintf("%d", extractDone),
-		"ocr_complete":       fmt.Sprintf("%d", ocrDone),
-		"blend_complete":     fmt.Sprintf("%d", blendDone),
-		"label_complete":     fmt.Sprintf("%d", labelDone),
-		"metadata_started":   fmt.Sprintf("%v", j.BookState.MetadataStarted),
-		"metadata_complete":  fmt.Sprintf("%v", j.BookState.MetadataComplete),
-		"toc_finder_started": fmt.Sprintf("%v", j.BookState.TocFinderStarted),
-		"toc_found":          fmt.Sprintf("%v", j.BookState.TocFound),
-		"toc_extract_done":   fmt.Sprintf("%v", j.BookState.TocExtractDone),
-		"done":               fmt.Sprintf("%v", j.IsDone),
+		"book_id":             j.BookID,
+		"total_pages":         fmt.Sprintf("%d", j.TotalPages),
+		"extract_complete":    fmt.Sprintf("%d", extractDone),
+		"ocr_complete":        fmt.Sprintf("%d", ocrDone),
+		"blend_complete":      fmt.Sprintf("%d", blendDone),
+		"label_complete":      fmt.Sprintf("%d", labelDone),
+		"metadata_started":    fmt.Sprintf("%v", j.BookState.MetadataStarted),
+		"metadata_complete":   fmt.Sprintf("%v", j.BookState.MetadataComplete),
+		"toc_finder_started":  fmt.Sprintf("%v", j.BookState.TocFinderStarted),
+		"toc_finder_done":     fmt.Sprintf("%v", j.BookState.TocFinderDone),
+		"toc_found":           fmt.Sprintf("%v", j.BookState.TocFound),
+		"toc_extract_started": fmt.Sprintf("%v", j.BookState.TocExtractStarted),
+		"toc_extract_done":    fmt.Sprintf("%v", j.BookState.TocExtractDone),
+		"done":                fmt.Sprintf("%v", j.IsDone),
 	}, nil
 }
 

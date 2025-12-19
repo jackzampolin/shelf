@@ -136,66 +136,70 @@ func (j *Job) LoadBookState(ctx context.Context) error {
 		}
 	}
 
-	// Check ToC status
+	// Check ToC status via Book relationship (ToC doesn't have book_id field)
 	tocQuery := fmt.Sprintf(`{
-		ToC(filter: {book_id: {_eq: "%s"}}) {
-			_docID
-			toc_found
-			finder_started
-			finder_complete
-			finder_failed
-			finder_retries
-			extract_started
-			extract_complete
-			extract_failed
-			extract_retries
-			start_page
-			end_page
+		Book(filter: {_docID: {_eq: "%s"}}) {
+			toc {
+				_docID
+				toc_found
+				finder_started
+				finder_complete
+				finder_failed
+				finder_retries
+				extract_started
+				extract_complete
+				extract_failed
+				extract_retries
+				start_page
+				end_page
+			}
 		}
 	}`, j.BookID)
 
 	tocResp, err := defraClient.Execute(ctx, tocQuery, nil)
 	if err == nil {
-		if tocs, ok := tocResp.Data["ToC"].([]any); ok && len(tocs) > 0 {
-			if toc, ok := tocs[0].(map[string]any); ok {
-				if docID, ok := toc["_docID"].(string); ok {
-					j.TocDocID = docID
-				}
-				// Finder state
-				if fs, ok := toc["finder_started"].(bool); ok {
-					j.BookState.TocFinderStarted = fs
-				}
-				if fc, ok := toc["finder_complete"].(bool); ok {
-					j.BookState.TocFinderDone = fc
-				}
-				if ff, ok := toc["finder_failed"].(bool); ok {
-					j.BookState.TocFinderFailed = ff
-				}
-				if fr, ok := toc["finder_retries"].(float64); ok {
-					j.BookState.TocFinderRetries = int(fr)
-				}
-				if found, ok := toc["toc_found"].(bool); ok {
-					j.BookState.TocFound = found
-				}
-				// Extract state
-				if es, ok := toc["extract_started"].(bool); ok {
-					j.BookState.TocExtractStarted = es
-				}
-				if ec, ok := toc["extract_complete"].(bool); ok {
-					j.BookState.TocExtractDone = ec
-				}
-				if ef, ok := toc["extract_failed"].(bool); ok {
-					j.BookState.TocExtractFailed = ef
-				}
-				if er, ok := toc["extract_retries"].(float64); ok {
-					j.BookState.TocExtractRetries = int(er)
-				}
-				// Page range
-				if sp, ok := toc["start_page"].(float64); ok {
-					j.BookState.TocStartPage = int(sp)
-				}
-				if ep, ok := toc["end_page"].(float64); ok {
-					j.BookState.TocEndPage = int(ep)
+		if books, ok := tocResp.Data["Book"].([]any); ok && len(books) > 0 {
+			if book, ok := books[0].(map[string]any); ok {
+				if toc, ok := book["toc"].(map[string]any); ok {
+					if docID, ok := toc["_docID"].(string); ok {
+						j.TocDocID = docID
+					}
+					// Finder state
+					if fs, ok := toc["finder_started"].(bool); ok {
+						j.BookState.TocFinderStarted = fs
+					}
+					if fc, ok := toc["finder_complete"].(bool); ok {
+						j.BookState.TocFinderDone = fc
+					}
+					if ff, ok := toc["finder_failed"].(bool); ok {
+						j.BookState.TocFinderFailed = ff
+					}
+					if fr, ok := toc["finder_retries"].(float64); ok {
+						j.BookState.TocFinderRetries = int(fr)
+					}
+					if found, ok := toc["toc_found"].(bool); ok {
+						j.BookState.TocFound = found
+					}
+					// Extract state
+					if es, ok := toc["extract_started"].(bool); ok {
+						j.BookState.TocExtractStarted = es
+					}
+					if ec, ok := toc["extract_complete"].(bool); ok {
+						j.BookState.TocExtractDone = ec
+					}
+					if ef, ok := toc["extract_failed"].(bool); ok {
+						j.BookState.TocExtractFailed = ef
+					}
+					if er, ok := toc["extract_retries"].(float64); ok {
+						j.BookState.TocExtractRetries = int(er)
+					}
+					// Page range
+					if sp, ok := toc["start_page"].(float64); ok {
+						j.BookState.TocStartPage = int(sp)
+					}
+					if ep, ok := toc["end_page"].(float64); ok {
+						j.BookState.TocEndPage = int(ep)
+					}
 				}
 			}
 		}

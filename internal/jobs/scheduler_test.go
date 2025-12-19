@@ -156,7 +156,7 @@ func TestScheduler_WorkerQueueDepth(t *testing.T) {
 func TestScheduler_RegisterFactory(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{})
 
-	factory := func(id string, metadata map[string]any) (Job, error) {
+	factory := func(ctx context.Context, id string, metadata map[string]any) (Job, error) {
 		job := NewMockJob(MockJobConfig{})
 		job.SetRecordID(id) // Set the persisted ID
 		return job, nil

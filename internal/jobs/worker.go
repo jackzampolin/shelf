@@ -286,7 +286,7 @@ func (w *ProviderWorker) Process(ctx context.Context, unit *WorkUnit) WorkResult
 			if err != nil {
 				lastErr = err
 				if w.isRetriableError(err) && attempt < maxRetries {
-					w.logger.Warn("LLM request failed, retrying",
+					w.logger.Debug("LLM request failed, retrying",
 						"unit_id", unit.ID,
 						"attempt", attempt+1,
 						"max_attempts", maxRetries+1,
@@ -299,7 +299,19 @@ func (w *ProviderWorker) Process(ctx context.Context, unit *WorkUnit) WorkResult
 			} else {
 				result.Success = chatResult.Success
 				if !chatResult.Success {
-					result.Error = fmt.Errorf("%s: %s", chatResult.ErrorType, chatResult.ErrorMessage)
+					resultErr := fmt.Errorf("%s: %s", chatResult.ErrorType, chatResult.ErrorMessage)
+					// Check if this is a retriable result error (e.g., json_parse from truncated output)
+					if w.isRetriableResultError(chatResult) && attempt < maxRetries {
+						lastErr = resultErr
+						w.logger.Debug("LLM result error, retrying",
+							"unit_id", unit.ID,
+							"attempt", attempt+1,
+							"max_attempts", maxRetries+1,
+							"error_type", chatResult.ErrorType)
+						w.sleepBeforeRetry(ctx, resultErr, attempt)
+						continue
+					}
+					result.Error = resultErr
 				}
 			}
 
@@ -314,7 +326,7 @@ func (w *ProviderWorker) Process(ctx context.Context, unit *WorkUnit) WorkResult
 			if err != nil {
 				lastErr = err
 				if w.isRetriableError(err) && attempt < maxRetries {
-					w.logger.Warn("OCR request failed, retrying",
+					w.logger.Debug("OCR request failed, retrying",
 						"unit_id", unit.ID,
 						"attempt", attempt+1,
 						"max_attempts", maxRetries+1,
@@ -381,7 +393,7 @@ func (w *ProviderWorker) isRetriableError(err error) bool {
 	if rle, ok := providers.IsRateLimitError(err); ok {
 		// Notify rate limiter to drain tokens and back off
 		w.rateLimiter.Record429(rle.RetryAfter)
-		w.logger.Warn("rate limit hit, backing off",
+		w.logger.Debug("rate limit hit, backing off",
 			"retry_after", rle.RetryAfter)
 		return true
 	}
@@ -415,6 +427,19 @@ func (w *ProviderWorker) isRetriableError(err error) bool {
 	return false
 }
 
+// isRetriableResultError checks if a ChatResult error should trigger a retry.
+// This handles cases where the HTTP request succeeded but the response content is invalid.
+func (w *ProviderWorker) isRetriableResultError(result *providers.ChatResult) bool {
+	if result == nil {
+		return false
+	}
+	// Retry on JSON parse errors (truncated output, malformed JSON)
+	if result.ErrorType == "json_parse" {
+		return true
+	}
+	return false
+}
+
 // sleepBeforeRetry waits before retrying, using retry-after from rate limit errors
 // or falling back to jitter-based delay.
 func (w *ProviderWorker) sleepBeforeRetry(ctx context.Context, err error, attempt int) {
@@ -423,7 +448,7 @@ func (w *ProviderWorker) sleepBeforeRetry(ctx context.Context, err error, attemp
 	// Check for rate limit error with Retry-After
 	if rle, ok := providers.IsRateLimitError(err); ok && rle.RetryAfter > 0 {
 		delay = rle.RetryAfter
-		w.logger.Info("sleeping for Retry-After duration", "delay", delay)
+		w.logger.Debug("sleeping for Retry-After duration", "delay", delay)
 	} else {
 		// Use exponential backoff with jitter: base * 2^attempt + jitter
 		base := time.Duration(1000) * time.Millisecond
