@@ -3,12 +3,14 @@ package main
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/version"
 )
 
 var (
-	cfgFile string
-	homeDir string
+	cfgFile      string
+	homeDir      string
+	outputFormat string
 )
 
 var rootCmd = &cobra.Command{
@@ -32,6 +34,14 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(
 		&homeDir, "home", "", "shelf home directory (default: ~/.shelf)",
 	)
+	rootCmd.PersistentFlags().StringVarP(
+		&outputFormat, "output", "o", "yaml", "output format: yaml or json",
+	)
+
+	// Set output format before any command runs
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		api.SetOutputFormat(outputFormat)
+	}
 
 	rootCmd.AddCommand(versionCmd)
 }

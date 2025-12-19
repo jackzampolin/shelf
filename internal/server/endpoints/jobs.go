@@ -76,8 +76,7 @@ func (e *CreateJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 			if err := client.Post(ctx, "/api/jobs", CreateJobRequest{JobType: jobType}, &resp); err != nil {
 				return err
 			}
-			fmt.Printf("Created job: %s\n", resp.ID)
-			return nil
+			return api.Output(resp)
 		},
 	}
 	cmd.Flags().StringVar(&jobType, "type", "", "Job type (required)")
@@ -146,15 +145,7 @@ func (e *ListJobsEndpoint) Command(getServerURL func() string) *cobra.Command {
 				return err
 			}
 
-			if len(resp.Jobs) == 0 {
-				fmt.Println("No jobs found")
-				return nil
-			}
-
-			for _, job := range resp.Jobs {
-				fmt.Printf("%s  %s  %s\n", job.ID, job.JobType, job.Status)
-			}
-			return nil
+			return api.Output(resp)
 		},
 	}
 	cmd.Flags().StringVar(&status, "status", "", "Filter by status")
@@ -209,20 +200,7 @@ func (e *GetJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 			if err := client.Get(ctx, "/api/jobs/"+args[0], &job); err != nil {
 				return err
 			}
-			fmt.Printf("ID:      %s\n", job.ID)
-			fmt.Printf("Type:    %s\n", job.JobType)
-			fmt.Printf("Status:  %s\n", job.Status)
-			fmt.Printf("Created: %s\n", job.CreatedAt)
-			if job.StartedAt != nil {
-				fmt.Printf("Started: %s\n", job.StartedAt)
-			}
-			if job.CompletedAt != nil {
-				fmt.Printf("Completed: %s\n", job.CompletedAt)
-			}
-			if job.Error != "" {
-				fmt.Printf("Error:   %s\n", job.Error)
-			}
-			return nil
+			return api.Output(job)
 		},
 	}
 }
@@ -305,8 +283,7 @@ func (e *UpdateJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 			if err := client.Patch(ctx, "/api/jobs/"+args[0], req, &job); err != nil {
 				return err
 			}
-			fmt.Printf("Updated job %s (status: %s)\n", job.ID, job.Status)
-			return nil
+			return api.Output(job)
 		},
 	}
 	cmd.Flags().StringVar(&status, "status", "", "New status")

@@ -117,12 +117,7 @@ Use 'shelf api jobs get <job-id>' to check progress.`,
 				return err
 			}
 
-			fmt.Printf("Pipeline job submitted: %s\n", resp.JobID)
-			fmt.Printf("  Book:   %s\n", resp.BookID)
-			fmt.Printf("  Stage:  %s\n", resp.Stage)
-			fmt.Printf("  Status: %s\n", resp.Status)
-			fmt.Println("\nCheck progress with: shelf api jobs get", resp.JobID)
-			return nil
+			return api.Output(resp)
 		},
 	}
 	cmd.Flags().StringVar(&stage, "stage", "page-processing", "Pipeline stage to run")
@@ -262,22 +257,7 @@ func (e *PipelineStatusEndpoint) Command(getServerURL func() string) *cobra.Comm
 				return err
 			}
 
-			fmt.Printf("Pipeline Status for %s\n", resp.BookID)
-			fmt.Printf("  Stage: %s\n", resp.Stage)
-			fmt.Println()
-			fmt.Printf("  Pages:\n")
-			fmt.Printf("    Total:  %d\n", resp.TotalPages)
-			fmt.Printf("    OCR:    %d/%d\n", resp.OcrComplete, resp.TotalPages)
-			fmt.Printf("    Blend:  %d/%d\n", resp.BlendComplete, resp.TotalPages)
-			fmt.Printf("    Label:  %d/%d\n", resp.LabelComplete, resp.TotalPages)
-			fmt.Println()
-			fmt.Printf("  Book-level:\n")
-			fmt.Printf("    Metadata: %v\n", resp.MetadataComplete)
-			fmt.Printf("    ToC Found: %v\n", resp.TocFound)
-			fmt.Printf("    ToC Extracted: %v\n", resp.TocExtracted)
-			fmt.Println()
-			fmt.Printf("  Complete: %v\n", resp.IsComplete)
-			return nil
+			return api.Output(resp)
 		},
 	}
 	cmd.Flags().StringVar(&stage, "stage", "page-processing", "Pipeline stage to check")

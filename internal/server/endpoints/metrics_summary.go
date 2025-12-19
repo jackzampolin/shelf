@@ -1,9 +1,7 @@
 package endpoints
 
 import (
-	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -108,22 +106,7 @@ func (e *MetricsSummaryEndpoint) Command(getServerURL func() string) *cobra.Comm
 				return err
 			}
 
-			fmt.Printf("Metrics Summary\n")
-			fmt.Printf("===============\n")
-			fmt.Printf("  Count:       %d\n", resp.Count)
-			fmt.Printf("  Success:     %d\n", resp.SuccessCount)
-			fmt.Printf("  Errors:      %d\n", resp.ErrorCount)
-			fmt.Println()
-			fmt.Printf("  Total Cost:  $%.4f\n", resp.TotalCostUSD)
-			fmt.Printf("  Avg Cost:    $%.6f\n", resp.AvgCostUSD)
-			fmt.Println()
-			fmt.Printf("  Total Tokens: %d\n", resp.TotalTokens)
-			fmt.Printf("  Avg Tokens:   %.1f\n", resp.AvgTokens)
-			fmt.Println()
-			fmt.Printf("  Total Time:   %s\n", time.Duration(resp.TotalTimeSeconds*float64(time.Second)))
-			fmt.Printf("  Avg Time:     %.2fs\n", resp.AvgTimeSeconds)
-
-			return nil
+			return api.Output(resp)
 		},
 	}
 

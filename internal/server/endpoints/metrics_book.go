@@ -1,7 +1,6 @@
 package endpoints
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/spf13/cobra"
@@ -82,16 +81,7 @@ func (e *BookCostEndpoint) Command(getServerURL func() string) *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Book Cost: $%.4f\n", resp.TotalCostUSD)
-
-			if len(resp.Breakdown) > 0 {
-				fmt.Printf("\nBreakdown by stage:\n")
-				for k, v := range resp.Breakdown {
-					fmt.Printf("  %-20s  $%.4f\n", k, v)
-				}
-			}
-
-			return nil
+			return api.Output(resp)
 		},
 	}
 

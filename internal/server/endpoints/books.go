@@ -129,14 +129,7 @@ Use 'shelf api jobs get <job-id>' to check progress.`,
 				return err
 			}
 
-			fmt.Printf("Ingest job submitted: %s\n", resp.JobID)
-			fmt.Printf("  Title:  %s\n", resp.Title)
-			if resp.Author != "" {
-				fmt.Printf("  Author: %s\n", resp.Author)
-			}
-			fmt.Printf("  Status: %s\n", resp.Status)
-			fmt.Println("\nCheck progress with: shelf api jobs get", resp.JobID)
-			return nil
+			return api.Output(resp)
 		},
 	}
 	cmd.Flags().StringVar(&title, "title", "", "Book title (derived from filename if not provided)")
@@ -231,15 +224,7 @@ func (e *ListBooksEndpoint) Command(getServerURL func() string) *cobra.Command {
 				return err
 			}
 
-			if len(resp.Books) == 0 {
-				fmt.Println("No books found")
-				return nil
-			}
-
-			for _, book := range resp.Books {
-				fmt.Printf("%s  %s  %d pages  %s\n", book.ID[:8], book.Title, book.PageCount, book.Status)
-			}
-			return nil
+			return api.Output(resp)
 		},
 	}
 }
@@ -328,15 +313,7 @@ func (e *GetBookEndpoint) Command(getServerURL func() string) *cobra.Command {
 			if err := client.Get(ctx, "/api/books/"+args[0], &book); err != nil {
 				return err
 			}
-			fmt.Printf("ID:        %s\n", book.ID)
-			fmt.Printf("Title:     %s\n", book.Title)
-			if book.Author != "" {
-				fmt.Printf("Author:    %s\n", book.Author)
-			}
-			fmt.Printf("Pages:     %d\n", book.PageCount)
-			fmt.Printf("Status:    %s\n", book.Status)
-			fmt.Printf("Created:   %s\n", book.CreatedAt)
-			return nil
+			return api.Output(book)
 		},
 	}
 }

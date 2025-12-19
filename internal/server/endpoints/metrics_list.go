@@ -106,22 +106,7 @@ func (e *ListMetricsEndpoint) Command(getServerURL func() string) *cobra.Command
 				return err
 			}
 
-			if len(resp.Metrics) == 0 {
-				fmt.Println("No metrics found")
-				return nil
-			}
-
-			fmt.Printf("Found %d metrics:\n\n", resp.Count)
-			for _, m := range resp.Metrics {
-				fmt.Printf("  %s  %-15s  %-20s  $%.4f  %d tokens\n",
-					m.CreatedAt.Format("2006-01-02 15:04"),
-					m.Provider,
-					m.Stage,
-					m.CostUSD,
-					m.TotalTokens,
-				)
-			}
-			return nil
+			return api.Output(resp)
 		},
 	}
 

@@ -2,7 +2,6 @@ package endpoints
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/spf13/cobra"
@@ -42,8 +41,7 @@ func (e *HealthEndpoint) Command(getServerURL func() string) *cobra.Command {
 			if err := client.Get(ctx, "/health", &resp); err != nil {
 				return err
 			}
-			fmt.Printf("Status: %s\n", resp.Status)
-			return nil
+			return api.Output(resp)
 		},
 	}
 }
@@ -89,11 +87,7 @@ func (e *ReadyEndpoint) Command(getServerURL func() string) *cobra.Command {
 			if err := client.Get(ctx, "/ready", &resp); err != nil {
 				return err
 			}
-			fmt.Printf("Status: %s\n", resp.Status)
-			if resp.Defra != "" {
-				fmt.Printf("Defra:  %s\n", resp.Defra)
-			}
-			return nil
+			return api.Output(resp)
 		},
 	}
 }
@@ -181,15 +175,7 @@ func (e *StatusEndpoint) Command(getServerURL func() string) *cobra.Command {
 			if err := client.Get(ctx, "/status", &resp); err != nil {
 				return err
 			}
-			fmt.Printf("Server: %s\n", resp.Server)
-			fmt.Printf("Defra:\n")
-			fmt.Printf("  Container: %s\n", resp.Defra.Container)
-			fmt.Printf("  Health:    %s\n", resp.Defra.Health)
-			fmt.Printf("  URL:       %s\n", resp.Defra.URL)
-			fmt.Printf("Providers:\n")
-			fmt.Printf("  LLM: %v\n", resp.Providers.LLM)
-			fmt.Printf("  OCR: %v\n", resp.Providers.OCR)
-			return nil
+			return api.Output(resp)
 		},
 	}
 }
