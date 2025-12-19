@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/defra"
@@ -91,15 +92,28 @@ func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
 		return nil, fmt.Errorf("defra client not in context")
 	}
 
+	// Build page filter - use _in for range or _eq for single page
+	var pageFilter string
+	if j.BookState.TocStartPage == j.BookState.TocEndPage {
+		pageFilter = fmt.Sprintf("page_num: {_eq: %d}", j.BookState.TocStartPage)
+	} else {
+		// Build array of page numbers for _in filter
+		var pages []string
+		for p := j.BookState.TocStartPage; p <= j.BookState.TocEndPage; p++ {
+			pages = append(pages, fmt.Sprintf("%d", p))
+		}
+		pageFilter = fmt.Sprintf("page_num: {_in: [%s]}", strings.Join(pages, ", "))
+	}
+
 	query := fmt.Sprintf(`{
 		Page(filter: {
 			book_id: {_eq: "%s"},
-			page_num: {_gte: %d, _lte: %d}
+			%s
 		}, order: {page_num: ASC}) {
 			page_num
 			blend_markdown
 		}
-	}`, j.BookID, j.BookState.TocStartPage, j.BookState.TocEndPage)
+	}`, j.BookID, pageFilter)
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
