@@ -250,6 +250,11 @@ func (s *Server) Start(ctx context.Context) error {
 		PipelineRegistry: s.pipelineRegistry,
 	}
 
+	// Pass services to scheduler for async job context injection
+	s.scheduler.SetContextEnricher(func(ctx context.Context) context.Context {
+		return svcctx.WithServices(ctx, s.services)
+	})
+
 	// Start HTTP server in goroutine
 	errCh := make(chan error, 1)
 	go func() {

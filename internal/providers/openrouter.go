@@ -1,6 +1,8 @@
 package providers
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -86,6 +88,32 @@ func (c *OpenRouterClient) MaxRetries() int {
 // RetryDelayBase returns the base delay between retries.
 func (c *OpenRouterClient) RetryDelayBase() time.Duration {
 	return c.retryDelay
+}
+
+// HealthCheck verifies the OpenRouter API is reachable and the API key is valid.
+// Uses the /auth/key endpoint which returns key info without consuming tokens.
+func (c *OpenRouterClient) HealthCheck(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/auth/key", nil)
+	if err != nil {
+		return fmt.Errorf("failed to create health check request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("health check request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("invalid API key")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("health check failed with status %d", resp.StatusCode)
+	}
+
+	return nil
 }
 
 // Verify interface

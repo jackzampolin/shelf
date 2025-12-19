@@ -23,6 +23,7 @@ func All(cfg Config) []api.Endpoint {
 		&ListJobsEndpoint{},
 		&GetJobEndpoint{},
 		&UpdateJobEndpoint{},
+		&DeleteJobEndpoint{},
 
 		// Book endpoints
 		&IngestEndpoint{},
@@ -49,5 +50,6 @@ func JobCommands(serverURL string) []api.Endpoint {
 		&ListJobsEndpoint{},
 		&GetJobEndpoint{},
 		&UpdateJobEndpoint{},
+		&DeleteJobEndpoint{},
 	}
 }

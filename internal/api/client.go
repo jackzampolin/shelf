@@ -94,6 +94,22 @@ func (c *Client) Patch(ctx context.Context, path string, body any, result any) e
 	return c.handleResponse(resp, result)
 }
 
+// Delete performs a DELETE request.
+func (c *Client) Delete(ctx context.Context, path string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	return c.handleResponse(resp, nil)
+}
+
 func (c *Client) handleResponse(resp *http.Response, result any) error {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

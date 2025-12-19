@@ -18,6 +18,10 @@ type LLMClient interface {
 	// Name returns the client identifier (e.g., "openrouter").
 	Name() string
 
+	// HealthCheck verifies the provider is reachable and the API key is valid.
+	// Should be called during worker initialization to fail fast on misconfiguration.
+	HealthCheck(ctx context.Context) error
+
 	// Rate limiting properties (pulled by Worker at initialization)
 	RequestsPerSecond() float64 // RPS - requests per second
 	MaxRetries() int
@@ -33,6 +37,10 @@ type OCRProvider interface {
 
 	// ProcessImage extracts text from an image.
 	ProcessImage(ctx context.Context, image []byte, pageNum int) (*OCRResult, error)
+
+	// HealthCheck verifies the provider is reachable and the API key is valid.
+	// Should be called during worker initialization to fail fast on misconfiguration.
+	HealthCheck(ctx context.Context) error
 
 	// Rate limiting properties
 	RequestsPerSecond() float64

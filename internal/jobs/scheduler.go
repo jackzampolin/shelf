@@ -37,9 +37,13 @@ type Scheduler struct {
 
 	// Running state
 	running bool
+	ctx     context.Context // Scheduler's long-lived context (set in Start)
 
 	// Sink for fire-and-forget metrics writes (passed to workers)
 	sink *defra.Sink
+
+	// Context enricher for async job context injection
+	contextEnricher func(context.Context) context.Context
 }
 
 // SchedulerConfig configures a new scheduler.
@@ -69,6 +73,15 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 	}
 }
 
+// SetContextEnricher sets a callback for enriching job contexts with services.
+// Must be called after creating the Services struct but before submitting jobs.
+// The enricher callback adds services (DefraClient, Sink, Logger, etc.) to the context.
+func (s *Scheduler) SetContextEnricher(enricher func(context.Context) context.Context) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.contextEnricher = enricher
+}
+
 // Start begins the scheduler and all registered workers.
 // Blocks until context is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {
@@ -78,6 +91,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 		return
 	}
 	s.running = true
+	s.ctx = ctx // Store for async job operations
 
 	// Start all workers
 	for _, w := range s.workers {

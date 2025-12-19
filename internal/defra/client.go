@@ -180,6 +180,57 @@ func (c *Client) Create(ctx context.Context, collection string, input map[string
 	return "", fmt.Errorf("unexpected response format: %+v", resp.Data)
 }
 
+// CreateMany creates multiple documents in a collection in a single batch.
+// Returns doc IDs in the same order as the input documents.
+func (c *Client) CreateMany(ctx context.Context, collection string, inputs []map[string]any) ([]string, error) {
+	if len(inputs) == 0 {
+		return nil, nil
+	}
+
+	// Build array of GraphQL inputs: [{field: val}, {field: val}]
+	var inputParts []string
+	for _, input := range inputs {
+		inputGQL, err := mapToGraphQLInput(input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build input: %w", err)
+		}
+		inputParts = append(inputParts, inputGQL)
+	}
+	inputArray := "[" + strings.Join(inputParts, ", ") + "]"
+
+	query := fmt.Sprintf(`mutation { create_%s(input: %s) { _docID } }`, collection, inputArray)
+
+	resp, err := c.Execute(ctx, query, nil)
+	if err != nil {
+		return nil, err
+	}
+	if errMsg := resp.Error(); errMsg != "" {
+		return nil, fmt.Errorf("create error: %s", errMsg)
+	}
+
+	// Extract _docIDs from response
+	createKey := fmt.Sprintf("create_%s", collection)
+	docs, ok := resp.Data[createKey].([]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected response format: %+v", resp.Data)
+	}
+
+	docIDs := make([]string, 0, len(docs))
+	for _, d := range docs {
+		if doc, ok := d.(map[string]any); ok {
+			if docID, ok := doc["_docID"].(string); ok {
+				docIDs = append(docIDs, docID)
+			}
+		}
+	}
+
+	if len(docIDs) != len(inputs) {
+		return docIDs, fmt.Errorf("created %d docs but expected %d", len(docIDs), len(inputs))
+	}
+
+	return docIDs, nil
+}
+
 // Update updates a document in a collection.
 func (c *Client) Update(ctx context.Context, collection string, docID string, input map[string]any) error {
 	inputGQL, err := mapToGraphQLInput(input)

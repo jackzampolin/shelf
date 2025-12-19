@@ -50,14 +50,27 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		return nil, fmt.Errorf("defra sink not in context")
 	}
 
+	logger := svcctx.LoggerFrom(ctx)
+	if logger != nil {
+		logger.Info("job.Start: loading page state", "book_id", j.BookID, "total_pages", j.TotalPages)
+	}
+
 	// Load existing page state from DefraDB
 	if err := j.LoadPageState(ctx); err != nil {
 		return nil, fmt.Errorf("failed to load page state: %w", err)
 	}
 
+	if logger != nil {
+		logger.Info("job.Start: loaded page state", "existing_pages", len(j.PageState))
+	}
+
 	// Load book-level state
 	if err := j.LoadBookState(ctx); err != nil {
 		return nil, fmt.Errorf("failed to load book state: %w", err)
+	}
+
+	if logger != nil {
+		logger.Info("job.Start: loaded book state")
 	}
 
 	// Recover from crash during ToC operations
@@ -85,6 +98,12 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 	// Generate work units for incomplete pages
 	var units []jobs.WorkUnit
+	pagesCreated := 0
+	pagesToCreate := j.TotalPages - len(j.PageState)
+
+	if logger != nil && pagesToCreate > 0 {
+		logger.Info("job.Start: creating page records", "pages_to_create", pagesToCreate)
+	}
 
 	for pageNum := 1; pageNum <= j.TotalPages; pageNum++ {
 		// Check for cancellation periodically in the loop
@@ -111,14 +130,24 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 				Op: defra.OpCreate,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("failed to create page record: %w", err)
+				return nil, fmt.Errorf("failed to create page record for page %d: %w", pageNum, err)
 			}
 			state.PageDocID = result.DocID
+			pagesCreated++
+
+			// Log progress every 100 pages
+			if logger != nil && pagesCreated%100 == 0 {
+				logger.Info("job.Start: page creation progress", "created", pagesCreated, "total", pagesToCreate)
+			}
 		}
 
 		// Check what work is needed for this page
 		newUnits := j.GeneratePageWorkUnits(ctx, pageNum, state)
 		units = append(units, newUnits...)
+	}
+
+	if logger != nil {
+		logger.Info("job.Start: page processing complete", "pages_created", pagesCreated, "work_units", len(units))
 	}
 
 	// Check if we should start book-level operations

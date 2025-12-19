@@ -290,3 +290,54 @@ func (e *UpdateJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 	cmd.Flags().StringVar(&jobError, "error", "", "Error message (for failed status)")
 	return cmd
 }
+
+// DeleteJobEndpoint handles DELETE /api/jobs/{id}.
+type DeleteJobEndpoint struct{}
+
+func (e *DeleteJobEndpoint) Route() (string, string, http.HandlerFunc) {
+	return "DELETE", "/api/jobs/{id}", e.handler
+}
+
+func (e *DeleteJobEndpoint) RequiresInit() bool { return true }
+
+func (e *DeleteJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "job id is required")
+		return
+	}
+
+	jm := svcctx.JobManagerFrom(r.Context())
+	if jm == nil {
+		writeError(w, http.StatusServiceUnavailable, "job manager not initialized")
+		return
+	}
+
+	if err := jm.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, jobs.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "job not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (e *DeleteJobEndpoint) Command(getServerURL func() string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete a job by ID",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			client := api.NewClient(getServerURL())
+			if err := client.Delete(ctx, "/api/jobs/"+args[0]); err != nil {
+				return err
+			}
+			fmt.Println("Job deleted successfully")
+			return nil
+		},
+	}
+}

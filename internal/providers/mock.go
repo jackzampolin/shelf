@@ -59,6 +59,14 @@ func (c *MockClient) RetryDelayBase() time.Duration {
 	return c.RetryDelay
 }
 
+// HealthCheck always returns nil for mock client.
+func (c *MockClient) HealthCheck(ctx context.Context) error {
+	if c.ShouldFail {
+		return fmt.Errorf("mock client health check failed")
+	}
+	return nil
+}
+
 // Chat sends a mock chat request.
 func (c *MockClient) Chat(ctx context.Context, req *ChatRequest) (*ChatResult, error) {
 	return c.doRequest(ctx, req, nil)
@@ -208,6 +216,14 @@ func (p *MockOCRProvider) MaxRetries() int {
 // RetryDelayBase returns the base retry delay.
 func (p *MockOCRProvider) RetryDelayBase() time.Duration {
 	return p.RetryDelay
+}
+
+// HealthCheck always returns nil for mock provider.
+func (p *MockOCRProvider) HealthCheck(ctx context.Context) error {
+	if p.ShouldFail {
+		return fmt.Errorf("mock OCR provider health check failed")
+	}
+	return nil
 }
 
 // ProcessImage extracts text from an image.

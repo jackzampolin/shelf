@@ -9,6 +9,7 @@ import (
 
 // Submit starts a job and enqueues its initial work units.
 // Creates a persistent record in DefraDB via Manager.
+// The job.Start() call runs asynchronously so the HTTP request returns immediately.
 func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 	// Get initial metadata from job status
 	metadata, err := job.Status(ctx)
@@ -48,10 +49,27 @@ func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 
 	s.logger.Info("job submitted", "id", job.ID(), "type", job.Type())
 
-	// Start the job to get initial work units
+	// Start the job asynchronously - don't block the HTTP request
+	// Use a fresh context since the HTTP request context will be cancelled
+	go s.startJobAsync(job)
+
+	return nil
+}
+
+// startJobAsync runs job.Start() in a background goroutine.
+// Uses the scheduler's context instead of the HTTP request context.
+func (s *Scheduler) startJobAsync(job Job) {
+	// Use scheduler's context (lives for duration of server)
+	ctx := s.ctx
+
+	// Inject services into context for the job
+	ctx = s.injectServices(ctx)
+
 	units, err := job.Start(ctx)
 	if err != nil {
 		jobID := job.ID()
+		s.logger.Error("job start failed", "job_id", jobID, "error", err)
+
 		s.mu.Lock()
 		delete(s.jobs, jobID)
 		delete(s.pending, jobID)
@@ -61,13 +79,13 @@ func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 		if s.manager != nil && jobID != "" {
 			s.manager.UpdateStatus(ctx, jobID, StatusFailed, err.Error())
 		}
-		return fmt.Errorf("job start failed: %w", err)
+		return
 	}
+
+	s.logger.Info("job started", "job_id", job.ID(), "work_units", len(units))
 
 	// Enqueue initial work units
 	s.enqueueUnits(job.ID(), units)
-
-	return nil
 }
 
 // Resume restarts jobs that were interrupted (status: running).
@@ -124,4 +142,18 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 	}
 
 	return resumed, nil
+}
+
+// injectServices adds services to the context using the registered enricher.
+// The enricher is set via SetContextEnricher() after construction.
+func (s *Scheduler) injectServices(ctx context.Context) context.Context {
+	s.mu.RLock()
+	enricher := s.contextEnricher
+	s.mu.RUnlock()
+
+	if enricher == nil {
+		return ctx
+	}
+
+	return enricher(ctx)
 }

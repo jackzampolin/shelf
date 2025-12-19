@@ -63,6 +63,7 @@ func init() {
 	jobsCmd.AddCommand((&endpoints.ListJobsEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.GetJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.UpdateJobEndpoint{}).Command(getServerURL))
+	jobsCmd.AddCommand((&endpoints.DeleteJobEndpoint{}).Command(getServerURL))
 
 	// Books as subcommand group
 	booksCmd.AddCommand((&endpoints.IngestEndpoint{}).Command(getServerURL))

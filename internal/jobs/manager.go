@@ -62,6 +62,11 @@ func (m *Manager) UpdateMetadata(ctx context.Context, jobID string, metadata map
 	return m.updateJobMetadata(ctx, jobID, metadata)
 }
 
+// Delete removes a job record from DefraDB.
+func (m *Manager) Delete(ctx context.Context, jobID string) error {
+	return m.deleteJob(ctx, jobID)
+}
+
 // ListFilter specifies criteria for listing jobs.
 type ListFilter struct {
 	Status  Status // Filter by status (empty = all)
@@ -211,6 +216,22 @@ func (m *Manager) updateJobMetadata(ctx context.Context, jobID string, metadata 
 
 	_, err = m.defra.Mutation(ctx, mutation, nil)
 	return err
+}
+
+func (m *Manager) deleteJob(ctx context.Context, jobID string) error {
+	mutation := fmt.Sprintf(`mutation {
+		delete_Job(docID: %q) {
+			_docID
+		}
+	}`, jobID)
+
+	_, err := m.defra.Mutation(ctx, mutation, nil)
+	if err != nil {
+		return fmt.Errorf("failed to delete job: %w", err)
+	}
+
+	m.logger.Info("job deleted", "id", jobID)
+	return nil
 }
 
 // Helper functions

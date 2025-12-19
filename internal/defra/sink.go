@@ -272,23 +272,50 @@ func (s *Sink) processGroup(collection string, opType OpType, ops []WriteOp) {
 	}
 }
 
-// processCreates handles batched create operations.
-// Creates are processed individually since DefraDB GraphQL
-// doesn't have a native CreateMany in the HTTP API yet.
+// processCreates handles batched create operations using CreateMany.
 func (s *Sink) processCreates(collection string, ops []WriteOp) {
-	for _, op := range ops {
-		docID, err := s.client.Create(s.ctx, collection, op.Document)
-		result := WriteResult{DocID: docID, Err: err}
+	if len(ops) == 0 {
+		return
+	}
 
-		if err != nil {
-			s.logger.Error("create failed",
-				"collection", collection,
-				"error", err)
+	// Collect all documents for batch create
+	docs := make([]map[string]any, len(ops))
+	for i, op := range ops {
+		docs[i] = op.Document
+	}
+
+	// Batch create all documents in one API call
+	docIDs, err := s.client.CreateMany(s.ctx, collection, docs)
+
+	if err != nil {
+		s.logger.Error("batch create failed",
+			"collection", collection,
+			"count", len(ops),
+			"error", err)
+
+		// Send error result to all waiting callers
+		for _, op := range ops {
+			if op.result != nil {
+				op.result <- WriteResult{Err: err}
+				close(op.result)
+			}
+		}
+		return
+	}
+
+	s.logger.Debug("batch create succeeded",
+		"collection", collection,
+		"count", len(docIDs))
+
+	// Send success results with doc IDs
+	for i, op := range ops {
+		var docID string
+		if i < len(docIDs) {
+			docID = docIDs[i]
 		}
 
-		// Send result if caller is waiting
 		if op.result != nil {
-			op.result <- result
+			op.result <- WriteResult{DocID: docID}
 			close(op.result)
 		}
 	}
