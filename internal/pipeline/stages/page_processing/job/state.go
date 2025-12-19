@@ -293,6 +293,13 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		!j.BookState.TocExtractStarted &&
 		!j.BookState.TocExtractDone &&
 		!j.BookState.TocExtractFailed {
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Info("attempting to create ToC extract work unit",
+				"toc_start_page", j.BookState.TocStartPage,
+				"toc_end_page", j.BookState.TocEndPage,
+				"toc_doc_id", j.TocDocID)
+		}
 		unit := j.CreateTocExtractWorkUnit(ctx)
 		if unit != nil {
 			// Persist first, then update memory (crash-safe ordering)
@@ -302,6 +309,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 			} else {
 				units = append(units, *unit)
 			}
+		} else if logger != nil {
+			logger.Warn("failed to create ToC extract work unit",
+				"toc_start_page", j.BookState.TocStartPage,
+				"toc_end_page", j.BookState.TocEndPage)
 		}
 	}
 

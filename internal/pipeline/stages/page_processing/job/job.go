@@ -337,6 +337,8 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		"toc_finder_started":  fmt.Sprintf("%v", j.BookState.TocFinderStarted),
 		"toc_finder_done":     fmt.Sprintf("%v", j.BookState.TocFinderDone),
 		"toc_found":           fmt.Sprintf("%v", j.BookState.TocFound),
+		"toc_start_page":      fmt.Sprintf("%d", j.BookState.TocStartPage),
+		"toc_end_page":        fmt.Sprintf("%d", j.BookState.TocEndPage),
 		"toc_extract_started": fmt.Sprintf("%v", j.BookState.TocExtractStarted),
 		"toc_extract_done":    fmt.Sprintf("%v", j.BookState.TocExtractDone),
 		"done":                fmt.Sprintf("%v", j.IsDone),

@@ -14,9 +14,22 @@ import (
 
 // CreateTocExtractWorkUnit creates a ToC extraction work unit.
 func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
 	// Load ToC pages
 	tocPages, err := j.loadTocPages(ctx)
-	if err != nil || len(tocPages) == 0 {
+	if err != nil {
+		if logger != nil {
+			logger.Warn("failed to load ToC pages", "error", err)
+		}
+		return nil
+	}
+	if len(tocPages) == 0 {
+		if logger != nil {
+			logger.Warn("no ToC pages found",
+				"start_page", j.BookState.TocStartPage,
+				"end_page", j.BookState.TocEndPage)
+		}
 		return nil
 	}
 
@@ -67,6 +80,8 @@ func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResu
 
 // loadTocPages loads the ToC page content for extraction.
 func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
+	logger := svcctx.LoggerFrom(ctx)
+
 	if j.BookState.TocStartPage == 0 || j.BookState.TocEndPage == 0 {
 		return nil, fmt.Errorf("ToC page range not set")
 	}
@@ -93,7 +108,11 @@ func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
 
 	rawPages, ok := resp.Data["Page"].([]any)
 	if !ok {
-		return nil, fmt.Errorf("no pages found")
+		return nil, fmt.Errorf("no pages found in response")
+	}
+
+	if logger != nil {
+		logger.Debug("loadTocPages query result", "raw_pages_count", len(rawPages))
 	}
 
 	var tocPages []extract_toc.ToCPage
@@ -113,6 +132,8 @@ func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
 
 		if tp.OCRText != "" {
 			tocPages = append(tocPages, tp)
+		} else if logger != nil {
+			logger.Debug("page has no blend_markdown", "page_num", tp.PageNum)
 		}
 	}
 
