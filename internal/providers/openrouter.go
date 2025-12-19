@@ -80,6 +80,12 @@ func (c *OpenRouterClient) RequestsPerSecond() float64 {
 	return c.rps
 }
 
+// MaxConcurrency returns the max concurrent in-flight requests.
+// Returns 0 to use DefaultMaxConcurrency.
+func (c *OpenRouterClient) MaxConcurrency() int {
+	return 0
+}
+
 // MaxRetries returns the maximum retry attempts.
 func (c *OpenRouterClient) MaxRetries() int {
 	return c.maxRetries

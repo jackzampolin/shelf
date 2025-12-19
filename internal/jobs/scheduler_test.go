@@ -17,7 +17,7 @@ func TestScheduler_NoWorkerForType(t *testing.T) {
 
 	// Only add LLM worker - no OCR worker
 	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
+	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
 	scheduler.RegisterWorker(llmWorker)
 
 	// Create job that needs OCR
@@ -49,7 +49,7 @@ func TestScheduler_JobStatus(t *testing.T) {
 
 	llmClient := providers.NewMockClient()
 	llmClient.Latency = 100 * time.Millisecond // Slow to allow status check
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
+	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
 	scheduler.RegisterWorker(llmWorker)
 
 	job := NewCountingJob(5)
@@ -87,7 +87,7 @@ func TestScheduler_ActiveJobs(t *testing.T) {
 
 	llmClient := providers.NewMockClient()
 	llmClient.Latency = 50 * time.Millisecond
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
+	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
 	scheduler.RegisterWorker(llmWorker)
 
 	if scheduler.ActiveJobs() != 0 {
@@ -132,7 +132,7 @@ func TestScheduler_WorkerQueueDepth(t *testing.T) {
 
 	// Register worker but don't start scheduler - items will stay in worker's queue
 	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
+	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
 	scheduler.RegisterWorker(llmWorker)
 
 	job := NewCountingJob(5)
@@ -141,6 +141,9 @@ func TestScheduler_WorkerQueueDepth(t *testing.T) {
 	if err := scheduler.Submit(ctx, job); err != nil {
 		t.Fatalf("Submit() error = %v", err)
 	}
+
+	// Wait for async job start to complete (Submit spawns a goroutine)
+	time.Sleep(50 * time.Millisecond)
 
 	// Without starting scheduler, items stay in worker's queue
 	status := scheduler.WorkerStatus()
@@ -176,7 +179,7 @@ func TestScheduler_GetWorker(t *testing.T) {
 
 	// Register and find
 	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "test-llm", LLMClient: llmClient})
+	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "test-llm", LLMClient: llmClient})
 	scheduler.RegisterWorker(llmWorker)
 
 	w, ok := scheduler.GetWorker("test-llm")
@@ -197,8 +200,8 @@ func TestScheduler_ListWorkers(t *testing.T) {
 	}
 
 	llmClient := providers.NewMockClient()
-	w1, _ := NewWorker(WorkerConfig{Name: "w1", LLMClient: llmClient})
-	w2, _ := NewWorker(WorkerConfig{Name: "w2", LLMClient: llmClient})
+	w1, _ := NewProviderWorker(ProviderWorkerConfig{Name: "w1", LLMClient: llmClient})
+	w2, _ := NewProviderWorker(ProviderWorkerConfig{Name: "w2", LLMClient: llmClient})
 
 	scheduler.RegisterWorker(w1)
 	scheduler.RegisterWorker(w2)
@@ -216,8 +219,8 @@ func TestScheduler_WorkerStatus(t *testing.T) {
 	llmClient := providers.NewMockClient()
 	ocrProvider := providers.NewMockOCRProvider()
 
-	llmWorker, _ := NewWorker(WorkerConfig{Name: "llm-1", LLMClient: llmClient, RPS: 1.0})
-	ocrWorker, _ := NewWorker(WorkerConfig{Name: "ocr-1", OCRProvider: ocrProvider})
+	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm-1", LLMClient: llmClient, RPS: 1.0})
+	ocrWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "ocr-1", OCRProvider: ocrProvider})
 
 	scheduler.RegisterWorker(llmWorker)
 	scheduler.RegisterWorker(ocrWorker)
@@ -287,13 +290,13 @@ func TestScheduler_InitFromRegistry(t *testing.T) {
 			t.Errorf("openrouter Type = %s, want llm", llmWorkerIface.Type())
 		}
 		// Verify rate limit was passed through (cast to *Worker for rate limiter access)
-		if llmWorker, ok := llmWorkerIface.(*Worker); ok {
+		if llmWorker, ok := llmWorkerIface.(*ProviderWorker); ok {
 			status := llmWorker.RateLimiterStatus()
 			if status.RPS != 120 {
 				t.Errorf("openrouter RPS = %f, want 120", status.RPS)
 			}
 		} else {
-			t.Error("openrouter worker is not a *Worker")
+			t.Error("openrouter worker is not a *ProviderWorker")
 		}
 	}
 
@@ -306,13 +309,13 @@ func TestScheduler_InitFromRegistry(t *testing.T) {
 			t.Errorf("mistral Type = %s, want ocr", ocrWorkerIface.Type())
 		}
 		// Verify rate limit was passed through (cast to *Worker for rate limiter access)
-		if ocrWorker, ok := ocrWorkerIface.(*Worker); ok {
+		if ocrWorker, ok := ocrWorkerIface.(*ProviderWorker); ok {
 			status := ocrWorker.RateLimiterStatus()
 			if status.RPS != 10.0 {
 				t.Errorf("mistral RPS = %f, want 10.0", status.RPS)
 			}
 		} else {
-			t.Error("mistral worker is not a *Worker")
+			t.Error("mistral worker is not a *ProviderWorker")
 		}
 	}
 }

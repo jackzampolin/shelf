@@ -50,7 +50,7 @@ func (s *Scheduler) WorkerStatus() map[string]WorkerStatusInfo {
 			QueueDepth: w.QueueDepth(),
 		}
 		// Only LLM/OCR workers have rate limiters
-		if rw, ok := w.(*Worker); ok {
+		if rw, ok := w.(*ProviderWorker); ok {
 			rlStatus := rw.RateLimiterStatus()
 			info.RateLimiter = &rlStatus
 		}

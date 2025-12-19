@@ -110,12 +110,12 @@ func TestWorker(t *testing.T) {
 		client := providers.NewMockClient()
 		client.ResponseText = "hello world"
 
-		worker, err := NewWorker(WorkerConfig{
+		worker, err := NewProviderWorker(ProviderWorkerConfig{
 			LLMClient: client,
 			RPS: 10.0, // 10 per second for fast tests
 		})
 		if err != nil {
-			t.Fatalf("NewWorker() error = %v", err)
+			t.Fatalf("NewProviderWorker() error = %v", err)
 		}
 
 		if worker.Type() != WorkerTypeLLM {
@@ -149,11 +149,11 @@ func TestWorker(t *testing.T) {
 		provider := providers.NewMockOCRProvider()
 		provider.ResponseText = "extracted text"
 
-		worker, err := NewWorker(WorkerConfig{
+		worker, err := NewProviderWorker(ProviderWorkerConfig{
 			OCRProvider: provider,
 		})
 		if err != nil {
-			t.Fatalf("NewWorker() error = %v", err)
+			t.Fatalf("NewProviderWorker() error = %v", err)
 		}
 
 		if worker.Type() != WorkerTypeOCR {
@@ -181,7 +181,7 @@ func TestWorker(t *testing.T) {
 
 	t.Run("rejects mismatched work type", func(t *testing.T) {
 		client := providers.NewMockClient()
-		worker, _ := NewWorker(WorkerConfig{LLMClient: client})
+		worker, _ := NewProviderWorker(ProviderWorkerConfig{LLMClient: client})
 
 		unit := &WorkUnit{
 			ID:   "test-unit",
@@ -199,7 +199,7 @@ func TestWorker(t *testing.T) {
 		client := providers.NewMockClient()
 		client.Latency = 5 * time.Second
 
-		worker, _ := NewWorker(WorkerConfig{LLMClient: client, RPS: 10.0})
+		worker, _ := NewProviderWorker(ProviderWorkerConfig{LLMClient: client, RPS: 10.0})
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
@@ -225,7 +225,7 @@ func TestScheduler(t *testing.T) {
 		scheduler := NewScheduler(SchedulerConfig{})
 
 		client := providers.NewMockClient()
-		worker, _ := NewWorker(WorkerConfig{Name: "test-llm", LLMClient: client})
+		worker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "test-llm", LLMClient: client})
 		scheduler.RegisterWorker(worker)
 
 		names := scheduler.ListWorkers()
@@ -250,7 +250,7 @@ func TestScheduler(t *testing.T) {
 		// Add a worker
 		client := providers.NewMockClient()
 		client.Latency = time.Millisecond
-		worker, _ := NewWorker(WorkerConfig{
+		worker, _ := NewProviderWorker(ProviderWorkerConfig{
 			Name:      "mock",
 			LLMClient: client,
 			RPS: 100.0, // Fast for tests
@@ -295,12 +295,12 @@ func TestScheduler(t *testing.T) {
 		// Add two workers
 		client1 := providers.NewMockClient()
 		client1.Latency = time.Millisecond
-		worker1, _ := NewWorker(WorkerConfig{Name: "llm-1", LLMClient: client1, RPS: 100.0})
+		worker1, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm-1", LLMClient: client1, RPS: 100.0})
 		scheduler.RegisterWorker(worker1)
 
 		client2 := providers.NewMockClient()
 		client2.Latency = time.Millisecond
-		worker2, _ := NewWorker(WorkerConfig{Name: "llm-2", LLMClient: client2, RPS: 100.0})
+		worker2, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm-2", LLMClient: client2, RPS: 100.0})
 		scheduler.RegisterWorker(worker2)
 
 		// Create job that targets specific provider

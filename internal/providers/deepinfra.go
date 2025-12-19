@@ -89,6 +89,12 @@ func (c *DeepInfraOCRClient) RequestsPerSecond() float64 {
 	return c.rateLimit
 }
 
+// MaxConcurrency returns the max concurrent in-flight requests.
+// Returns 0 to use DefaultMaxConcurrency.
+func (c *DeepInfraOCRClient) MaxConcurrency() int {
+	return 0
+}
+
 // MaxRetries returns the maximum retry attempts.
 func (c *DeepInfraOCRClient) MaxRetries() int {
 	return 3

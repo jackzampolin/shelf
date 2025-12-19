@@ -63,7 +63,7 @@ When done, use the complete tool with your final answer.`,
 	})
 
 	// Create worker
-	worker, err := jobs.NewWorker(jobs.WorkerConfig{
+	worker, err := jobs.NewProviderWorker(jobs.ProviderWorkerConfig{
 		Name:      "openrouter",
 		LLMClient: client,
 		RPS:       1.0,
@@ -230,7 +230,7 @@ When done, use the complete tool with your result.`,
 	})
 
 	// Create worker
-	worker, err := jobs.NewWorker(jobs.WorkerConfig{
+	worker, err := jobs.NewProviderWorker(jobs.ProviderWorkerConfig{
 		Name:      "openrouter",
 		LLMClient: client,
 		RPS:       1.0,
@@ -338,7 +338,7 @@ Keep searching until you find it. Do not give up.`,
 	})
 
 	// Create worker and scheduler
-	worker, _ := jobs.NewWorker(jobs.WorkerConfig{
+	worker, _ := jobs.NewProviderWorker(jobs.ProviderWorkerConfig{
 		Name:      "openrouter",
 		LLMClient: client,
 		RPS:       1.0,

@@ -22,8 +22,9 @@ type LLMClient interface {
 	// Should be called during worker initialization to fail fast on misconfiguration.
 	HealthCheck(ctx context.Context) error
 
-	// Rate limiting properties (pulled by Worker at initialization)
+	// Rate limiting properties (pulled by ProviderWorker at initialization)
 	RequestsPerSecond() float64 // RPS - requests per second
+	MaxConcurrency() int        // Max concurrent in-flight requests (0 = use default)
 	MaxRetries() int
 	RetryDelayBase() time.Duration
 }
@@ -44,9 +45,13 @@ type OCRProvider interface {
 
 	// Rate limiting properties
 	RequestsPerSecond() float64
+	MaxConcurrency() int // Max concurrent in-flight requests (0 = use default)
 	MaxRetries() int
 	RetryDelayBase() time.Duration
 }
+
+// DefaultMaxConcurrency is used when provider returns 0 for MaxConcurrency.
+const DefaultMaxConcurrency = 30
 
 // Message represents a chat message.
 type Message struct {

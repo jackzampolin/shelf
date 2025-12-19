@@ -57,12 +57,12 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 			}
 		}
 
-		worker, err := NewWorker(WorkerConfig{
+		worker, err := NewProviderWorker(ProviderWorkerConfig{
 			Name:      name,
 			LLMClient: client,
 			Logger:    s.logger,
 			Sink:      s.sink,
-			// RPS pulled from client.RequestsPerSecond() by NewWorker
+			// RPS and concurrency pulled from client by NewProviderWorker
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create LLM worker %s: %w", name, err)
@@ -85,12 +85,12 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 			}
 		}
 
-		worker, err := NewWorker(WorkerConfig{
+		worker, err := NewProviderWorker(ProviderWorkerConfig{
 			Name:        name,
 			OCRProvider: provider,
 			Logger:      s.logger,
 			Sink:        s.sink,
-			// RPS pulled from provider.RequestsPerSecond() by NewWorker
+			// RPS and concurrency pulled from provider by NewProviderWorker
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create OCR worker %s: %w", name, err)

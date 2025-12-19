@@ -54,28 +54,31 @@ type WorkUnit struct {
 }
 ```
 
-### Worker
+### ProviderWorker
 
-A Worker wraps a single provider (LLMClient or OCRProvider) with rate limiting.
+A ProviderWorker wraps a single provider (LLMClient or OCRProvider) with rate limiting and a concurrency pool.
 
 ```go
-type Worker struct {
+type ProviderWorker struct {
     name        string
     workerType  WorkerType  // "llm" or "ocr"
     llmClient   providers.LLMClient
     ocrProvider providers.OCRProvider
     rateLimiter *providers.RateLimiter
+    concurrency int         // max concurrent in-flight requests
+    semaphore   chan struct{}
 }
 
-// Process executes a work unit, blocking for rate limit
-func (w *Worker) Process(ctx context.Context, unit *WorkUnit) WorkResult
+// Start runs the worker's processing loop with concurrent goroutines
+func (w *ProviderWorker) Start(ctx context.Context)
 ```
 
-Workers pull rate limits from providers at initialization:
+Workers pull rate limits and concurrency from providers at initialization:
 ```go
-// Providers define their own rate limits
+// Providers define their own rate limits and concurrency
 type LLMClient interface {
-    RequestsPerMinute() int
+    RequestsPerSecond() float64
+    MaxConcurrency() int  // max concurrent in-flight requests
     MaxRetries() int
     RetryDelayBase() time.Duration
 }

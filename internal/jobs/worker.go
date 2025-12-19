@@ -30,10 +30,10 @@ type WorkerInterface interface {
 	init(results chan<- workerResult)
 }
 
-// Worker wraps a single provider (LLM or OCR) with rate limiting.
-// Each worker owns its own input queue and runs as a single goroutine.
-// This ensures rate limiting is properly enforced per-provider.
-type Worker struct {
+// ProviderWorker wraps a single provider (LLM or OCR) with rate limiting and concurrency control.
+// Each worker owns its own input queue and runs a pool of goroutines up to MaxConcurrency.
+// This allows saturating the provider's RPS limit while respecting concurrency bounds.
+type ProviderWorker struct {
 	name        string
 	workerType  WorkerType
 	llmClient   providers.LLMClient
@@ -50,6 +50,10 @@ type Worker struct {
 	// Queue size configuration
 	queueSize int
 
+	// Concurrency control - max concurrent in-flight requests
+	concurrency int
+	semaphore   chan struct{}
+
 	// Sink for async metrics writes (optional - if set, metrics are recorded automatically)
 	sink *defra.Sink
 }
@@ -61,8 +65,8 @@ type workerResult struct {
 	Result WorkResult
 }
 
-// WorkerConfig configures a new worker.
-type WorkerConfig struct {
+// ProviderWorkerConfig configures a new provider worker.
+type ProviderWorkerConfig struct {
 	Name   string
 	Logger *slog.Logger
 
@@ -74,6 +78,10 @@ type WorkerConfig struct {
 	// If 0, uses provider defaults
 	RPS float64
 
+	// Max concurrent in-flight requests
+	// If 0, uses provider defaults (or DefaultMaxConcurrency)
+	Concurrency int
+
 	// Queue size for this worker (default 100)
 	QueueSize int
 
@@ -81,8 +89,8 @@ type WorkerConfig struct {
 	Sink *defra.Sink
 }
 
-// NewWorker creates a new worker wrapping a provider.
-func NewWorker(cfg WorkerConfig) (*Worker, error) {
+// NewProviderWorker creates a new provider worker wrapping a provider.
+func NewProviderWorker(cfg ProviderWorkerConfig) (*ProviderWorker, error) {
 	if cfg.LLMClient == nil && cfg.OCRProvider == nil {
 		return nil, fmt.Errorf("must provide either LLMClient or OCRProvider")
 	}
@@ -100,15 +108,16 @@ func NewWorker(cfg WorkerConfig) (*Worker, error) {
 		queueSize = 100
 	}
 
-	w := &Worker{
+	w := &ProviderWorker{
 		name:      cfg.Name,
 		logger:    logger.With("worker", cfg.Name),
 		queueSize: queueSize,
 		sink:      cfg.Sink,
 	}
 
-	// Determine type and RPS - pull from provider if not overridden in config
+	// Determine type, RPS, and concurrency - pull from provider if not overridden in config
 	rps := cfg.RPS
+	concurrency := cfg.Concurrency
 	if cfg.LLMClient != nil {
 		w.workerType = WorkerTypeLLM
 		w.llmClient = cfg.LLMClient
@@ -117,6 +126,9 @@ func NewWorker(cfg WorkerConfig) (*Worker, error) {
 			if rps == 0 {
 				rps = 1.0 // Fallback default
 			}
+		}
+		if concurrency == 0 {
+			concurrency = cfg.LLMClient.MaxConcurrency()
 		}
 		if cfg.Name == "" {
 			w.name = cfg.LLMClient.Name()
@@ -130,38 +142,49 @@ func NewWorker(cfg WorkerConfig) (*Worker, error) {
 				rps = 1.0 // Fallback default
 			}
 		}
+		if concurrency == 0 {
+			concurrency = cfg.OCRProvider.MaxConcurrency()
+		}
 		if cfg.Name == "" {
 			w.name = cfg.OCRProvider.Name()
 		}
 	}
 
+	// Apply default concurrency if still 0
+	if concurrency == 0 {
+		concurrency = providers.DefaultMaxConcurrency
+	}
+
 	w.rateLimiter = providers.NewRateLimiter(rps)
-	w.logger = logger.With("worker", w.name, "type", w.workerType)
+	w.concurrency = concurrency
+	w.logger = logger.With("worker", w.name, "type", w.workerType, "concurrency", concurrency)
 
 	return w, nil
 }
 
 // Name returns the worker name.
-func (w *Worker) Name() string {
+func (w *ProviderWorker) Name() string {
 	return w.name
 }
 
 // Type returns the worker type (LLM or OCR).
-func (w *Worker) Type() WorkerType {
+func (w *ProviderWorker) Type() WorkerType {
 	return w.workerType
 }
 
-// init initializes the worker's queue and sets the results channel.
+// init initializes the worker's queue, semaphore, and sets the results channel.
 // Called by the scheduler before Start.
-func (w *Worker) init(results chan<- workerResult) {
+func (w *ProviderWorker) init(results chan<- workerResult) {
 	w.queue = make(chan *WorkUnit, w.queueSize)
+	w.semaphore = make(chan struct{}, w.concurrency)
 	w.results = results
 }
 
-// Start runs the worker's processing loop.
+// Start runs the worker's processing loop with a concurrent goroutine pool.
+// Spawns up to w.concurrency goroutines to process work units in parallel.
 // Blocks until context is cancelled. Run in a goroutine.
-func (w *Worker) Start(ctx context.Context) {
-	w.logger.Info("worker started")
+func (w *ProviderWorker) Start(ctx context.Context) {
+	w.logger.Info("worker started", "rps", w.rateLimiter.Status().RPS)
 
 	for {
 		select {
@@ -170,11 +193,24 @@ func (w *Worker) Start(ctx context.Context) {
 			return
 
 		case unit := <-w.queue:
-			result := w.Process(ctx, unit)
-			w.results <- workerResult{
-				JobID:  unit.JobID,
-				Unit:   unit,
-				Result: result,
+			// Acquire semaphore slot (blocks if at max concurrency)
+			select {
+			case w.semaphore <- struct{}{}:
+				// Got a slot - spawn goroutine to process
+				go func(u *WorkUnit) {
+					defer func() { <-w.semaphore }() // Release slot when done
+
+					result := w.Process(ctx, u)
+					w.results <- workerResult{
+						JobID:  u.JobID,
+						Unit:   u,
+						Result: result,
+					}
+				}(unit)
+
+			case <-ctx.Done():
+				w.logger.Info("worker stopping during semaphore wait")
+				return
 			}
 		}
 	}
@@ -182,7 +218,7 @@ func (w *Worker) Start(ctx context.Context) {
 
 // Submit adds a work unit to this worker's queue.
 // Returns an error if the queue is full.
-func (w *Worker) Submit(unit *WorkUnit) error {
+func (w *ProviderWorker) Submit(unit *WorkUnit) error {
 	select {
 	case w.queue <- unit:
 		return nil
@@ -192,13 +228,13 @@ func (w *Worker) Submit(unit *WorkUnit) error {
 }
 
 // QueueDepth returns the number of items in the worker's queue.
-func (w *Worker) QueueDepth() int {
+func (w *ProviderWorker) QueueDepth() int {
 	return len(w.queue)
 }
 
 // Process executes a work unit and returns the result.
 // This is also called internally by the worker's goroutine.
-func (w *Worker) Process(ctx context.Context, unit *WorkUnit) WorkResult {
+func (w *ProviderWorker) Process(ctx context.Context, unit *WorkUnit) WorkResult {
 	result := WorkResult{
 		WorkUnitID: unit.ID,
 	}
@@ -281,7 +317,7 @@ func (w *Worker) Process(ctx context.Context, unit *WorkUnit) WorkResult {
 }
 
 // recordMetrics records metrics for a completed work unit via the sink.
-func (w *Worker) recordMetrics(unit *WorkUnit, result *WorkResult) {
+func (w *ProviderWorker) recordMetrics(unit *WorkUnit, result *WorkResult) {
 	if w.sink == nil || unit.Metrics == nil {
 		return
 	}
@@ -328,6 +364,11 @@ func (w *Worker) recordMetrics(unit *WorkUnit, result *WorkResult) {
 }
 
 // RateLimiterStatus returns the current rate limiter status.
-func (w *Worker) RateLimiterStatus() providers.RateLimiterStatus {
+func (w *ProviderWorker) RateLimiterStatus() providers.RateLimiterStatus {
 	return w.rateLimiter.Status()
+}
+
+// ConcurrencyStatus returns the current concurrency usage.
+func (w *ProviderWorker) ConcurrencyStatus() (inFlight, max int) {
+	return len(w.semaphore), w.concurrency
 }

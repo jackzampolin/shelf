@@ -49,6 +49,11 @@ func (c *MockClient) RequestsPerSecond() float64 {
 	return c.RPS
 }
 
+// MaxConcurrency returns the max concurrent in-flight requests.
+func (c *MockClient) MaxConcurrency() int {
+	return 0 // Use default
+}
+
 // MaxRetries returns the maximum retry attempts.
 func (c *MockClient) MaxRetries() int {
 	return c.Retries
@@ -206,6 +211,11 @@ func (p *MockOCRProvider) Name() string {
 // RequestsPerSecond returns the rate limit.
 func (p *MockOCRProvider) RequestsPerSecond() float64 {
 	return p.RPS
+}
+
+// MaxConcurrency returns the max concurrent in-flight requests.
+func (p *MockOCRProvider) MaxConcurrency() int {
+	return 0 // Use default
 }
 
 // MaxRetries returns the max retry count.

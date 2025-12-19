@@ -78,6 +78,12 @@ func (c *MistralOCRClient) RequestsPerSecond() float64 {
 	return c.rateLimit
 }
 
+// MaxConcurrency returns the max concurrent in-flight requests.
+// Mistral OCR is relatively slow, so we use a lower concurrency.
+func (c *MistralOCRClient) MaxConcurrency() int {
+	return 10
+}
+
 // MaxRetries returns the maximum retry attempts.
 func (c *MistralOCRClient) MaxRetries() int {
 	return 3
