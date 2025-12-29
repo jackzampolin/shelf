@@ -9,6 +9,22 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
+// boolsToOpState converts DB boolean fields to OperationState.
+func boolsToOpState(started, complete, failed bool, retries int) OperationState {
+	var status OpStatus
+	switch {
+	case failed:
+		status = OpFailed
+	case complete:
+		status = OpComplete
+	case started:
+		status = OpInProgress
+	default:
+		status = OpNotStarted
+	}
+	return OperationState{Status: status, Retries: retries}
+}
+
 // LoadPageState loads existing page state from DefraDB.
 func (j *Job) LoadPageState(ctx context.Context) error {
 	defraClient := svcctx.DefraClientFrom(ctx)
@@ -121,18 +137,21 @@ func (j *Job) LoadBookState(ctx context.Context) error {
 
 	if books, ok := bookResp.Data["Book"].([]any); ok && len(books) > 0 {
 		if book, ok := books[0].(map[string]any); ok {
+			var started, complete, failed bool
+			var retries int
 			if ms, ok := book["metadata_started"].(bool); ok {
-				j.BookState.MetadataStarted = ms
+				started = ms
 			}
 			if mc, ok := book["metadata_complete"].(bool); ok {
-				j.BookState.MetadataComplete = mc
+				complete = mc
 			}
 			if mf, ok := book["metadata_failed"].(bool); ok {
-				j.BookState.MetadataFailed = mf
+				failed = mf
 			}
 			if mr, ok := book["metadata_retries"].(float64); ok {
-				j.BookState.MetadataRetries = int(mr)
+				retries = int(mr)
 			}
+			j.BookState.Metadata = boolsToOpState(started, complete, failed, retries)
 		}
 	}
 
@@ -165,34 +184,43 @@ func (j *Job) LoadBookState(ctx context.Context) error {
 						j.TocDocID = docID
 					}
 					// Finder state
+					var fStarted, fComplete, fFailed bool
+					var fRetries int
 					if fs, ok := toc["finder_started"].(bool); ok {
-						j.BookState.TocFinderStarted = fs
+						fStarted = fs
 					}
 					if fc, ok := toc["finder_complete"].(bool); ok {
-						j.BookState.TocFinderDone = fc
+						fComplete = fc
 					}
 					if ff, ok := toc["finder_failed"].(bool); ok {
-						j.BookState.TocFinderFailed = ff
+						fFailed = ff
 					}
 					if fr, ok := toc["finder_retries"].(float64); ok {
-						j.BookState.TocFinderRetries = int(fr)
+						fRetries = int(fr)
 					}
+					j.BookState.TocFinder = boolsToOpState(fStarted, fComplete, fFailed, fRetries)
+
 					if found, ok := toc["toc_found"].(bool); ok {
 						j.BookState.TocFound = found
 					}
+
 					// Extract state
+					var eStarted, eComplete, eFailed bool
+					var eRetries int
 					if es, ok := toc["extract_started"].(bool); ok {
-						j.BookState.TocExtractStarted = es
+						eStarted = es
 					}
 					if ec, ok := toc["extract_complete"].(bool); ok {
-						j.BookState.TocExtractDone = ec
+						eComplete = ec
 					}
 					if ef, ok := toc["extract_failed"].(bool); ok {
-						j.BookState.TocExtractFailed = ef
+						eFailed = ef
 					}
 					if er, ok := toc["extract_retries"].(float64); ok {
-						j.BookState.TocExtractRetries = int(er)
+						eRetries = int(er)
 					}
+					j.BookState.TocExtract = boolsToOpState(eStarted, eComplete, eFailed, eRetries)
+
 					// Page range
 					if sp, ok := toc["start_page"].(float64); ok {
 						j.BookState.TocStartPage = int(sp)
@@ -245,54 +273,42 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 }
 
 // MaybeStartBookOperations checks if we should trigger metadata/ToC operations.
-// Must be called with j.Mu held.
+// Must be called with j.mu held.
 func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	labeledCount := j.CountLabeledPages()
 
 	var units []jobs.WorkUnit
 
 	// Start metadata extraction after threshold pages are labeled
-	// Skip if already started, completed, or permanently failed
-	if labeledCount >= LabelThresholdForBookOps &&
-		!j.BookState.MetadataStarted &&
-		!j.BookState.MetadataComplete &&
-		!j.BookState.MetadataFailed {
+	if labeledCount >= LabelThresholdForBookOps && j.BookState.Metadata.CanStart() {
 		unit := j.CreateMetadataWorkUnit(ctx)
 		if unit != nil {
-			// Persist first, then update memory (crash-safe ordering)
-			j.BookState.MetadataStarted = true
-			if err := j.PersistMetadataState(ctx); err != nil {
-				j.BookState.MetadataStarted = false // Rollback on failure
-			} else {
-				units = append(units, *unit)
+			if err := j.BookState.Metadata.Start(); err == nil {
+				if err := j.PersistMetadataState(ctx); err != nil {
+					j.BookState.Metadata.Status = OpNotStarted // Rollback on failure
+				} else {
+					units = append(units, *unit)
+				}
 			}
 		}
 	}
 
 	// Start ToC finder after threshold pages are labeled
-	// Skip if already started, done, or permanently failed
-	if labeledCount >= LabelThresholdForBookOps &&
-		!j.BookState.TocFinderStarted &&
-		!j.BookState.TocFinderDone &&
-		!j.BookState.TocFinderFailed {
+	if labeledCount >= LabelThresholdForBookOps && j.BookState.TocFinder.CanStart() {
 		unit := j.CreateTocFinderWorkUnit(ctx)
 		if unit != nil {
-			// Persist first, then update memory (crash-safe ordering)
-			j.BookState.TocFinderStarted = true
-			if err := j.PersistTocFinderState(ctx); err != nil {
-				j.BookState.TocFinderStarted = false // Rollback on failure
-			} else {
-				units = append(units, *unit)
+			if err := j.BookState.TocFinder.Start(); err == nil {
+				if err := j.PersistTocFinderState(ctx); err != nil {
+					j.BookState.TocFinder.Status = OpNotStarted // Rollback on failure
+				} else {
+					units = append(units, *unit)
+				}
 			}
 		}
 	}
 
 	// Start ToC extraction if finder is done and found a ToC
-	// Skip if already started, done, or permanently failed
-	if j.BookState.TocFinderDone && j.BookState.TocFound &&
-		!j.BookState.TocExtractStarted &&
-		!j.BookState.TocExtractDone &&
-		!j.BookState.TocExtractFailed {
+	if j.BookState.TocFinder.IsDone() && j.BookState.TocFound && j.BookState.TocExtract.CanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("attempting to create ToC extract work unit",
@@ -302,12 +318,12 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 		unit := j.CreateTocExtractWorkUnit(ctx)
 		if unit != nil {
-			// Persist first, then update memory (crash-safe ordering)
-			j.BookState.TocExtractStarted = true
-			if err := j.PersistTocExtractState(ctx); err != nil {
-				j.BookState.TocExtractStarted = false // Rollback on failure
-			} else {
-				units = append(units, *unit)
+			if err := j.BookState.TocExtract.Start(); err == nil {
+				if err := j.PersistTocExtractState(ctx); err != nil {
+					j.BookState.TocExtract.Status = OpNotStarted // Rollback on failure
+				} else {
+					units = append(units, *unit)
+				}
 			}
 		} else if logger != nil {
 			logger.Warn("failed to create ToC extract work unit",
@@ -329,19 +345,17 @@ func (j *Job) CheckCompletion() {
 	}
 
 	// Metadata must be complete or permanently failed
-	metadataDone := j.BookState.MetadataComplete || j.BookState.MetadataFailed
-	if !metadataDone {
+	if !j.BookState.Metadata.IsDone() {
 		return
 	}
 
-	// ToC processing must be complete or permanently failed
-	// Either: finder done/failed + not found, OR finder done/failed + found + extract done/failed
-	tocFinderDone := j.BookState.TocFinderDone || j.BookState.TocFinderFailed
-	if !tocFinderDone {
+	// ToC finder must be complete or permanently failed
+	if !j.BookState.TocFinder.IsDone() {
 		return
 	}
-	tocExtractDone := j.BookState.TocExtractDone || j.BookState.TocExtractFailed
-	if j.BookState.TocFound && !tocExtractDone {
+
+	// If ToC was found, extraction must also be done
+	if j.BookState.TocFound && !j.BookState.TocExtract.IsDone() {
 		return
 	}
 
@@ -360,9 +374,9 @@ func (j *Job) PersistMetadataState(ctx context.Context) error {
 		Collection: "Book",
 		DocID:      j.BookID,
 		Document: map[string]any{
-			"metadata_started": j.BookState.MetadataStarted,
-			"metadata_failed":  j.BookState.MetadataFailed,
-			"metadata_retries": j.BookState.MetadataRetries,
+			"metadata_started": j.BookState.Metadata.IsStarted(),
+			"metadata_failed":  j.BookState.Metadata.IsFailed(),
+			"metadata_retries": j.BookState.Metadata.Retries,
 		},
 		Op: defra.OpUpdate,
 	})
@@ -385,9 +399,9 @@ func (j *Job) PersistTocFinderState(ctx context.Context) error {
 		Collection: "ToC",
 		DocID:      j.TocDocID,
 		Document: map[string]any{
-			"finder_started": j.BookState.TocFinderStarted,
-			"finder_failed":  j.BookState.TocFinderFailed,
-			"finder_retries": j.BookState.TocFinderRetries,
+			"finder_started": j.BookState.TocFinder.IsStarted(),
+			"finder_failed":  j.BookState.TocFinder.IsFailed(),
+			"finder_retries": j.BookState.TocFinder.Retries,
 		},
 		Op: defra.OpUpdate,
 	})
@@ -410,9 +424,9 @@ func (j *Job) PersistTocExtractState(ctx context.Context) error {
 		Collection: "ToC",
 		DocID:      j.TocDocID,
 		Document: map[string]any{
-			"extract_started": j.BookState.TocExtractStarted,
-			"extract_failed":  j.BookState.TocExtractFailed,
-			"extract_retries": j.BookState.TocExtractRetries,
+			"extract_started": j.BookState.TocExtract.IsStarted(),
+			"extract_failed":  j.BookState.TocExtract.IsFailed(),
+			"extract_retries": j.BookState.TocExtract.Retries,
 		},
 		Op: defra.OpUpdate,
 	})

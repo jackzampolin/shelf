@@ -31,6 +31,26 @@ type Config struct {
 	TocProvider      string
 }
 
+// Validate checks that the config has all required fields.
+func (c Config) Validate() error {
+	if len(c.OcrProviders) == 0 {
+		return fmt.Errorf("at least one OCR provider is required")
+	}
+	if c.BlendProvider == "" {
+		return fmt.Errorf("blend provider is required")
+	}
+	if c.LabelProvider == "" {
+		return fmt.Errorf("label provider is required")
+	}
+	if c.MetadataProvider == "" {
+		return fmt.Errorf("metadata provider is required")
+	}
+	if c.TocProvider == "" {
+		return fmt.Errorf("toc provider is required")
+	}
+	return nil
+}
+
 // Status represents the status of page processing for a book.
 type Status struct {
 	TotalPages       int  `json:"total_pages"`
@@ -145,6 +165,10 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 
 // NewJob creates a new process pages job for the given book.
 func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return nil, fmt.Errorf("defra client not in context")

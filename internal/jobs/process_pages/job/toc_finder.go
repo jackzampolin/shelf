@@ -139,7 +139,7 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 
 	// Check if agent is done
 	if j.TocAgent.IsDone() {
-		j.BookState.TocFinderDone = true
+		j.BookState.TocFinder.Complete()
 		agentResult := j.TocAgent.Result()
 
 		if agentResult != nil && agentResult.Success {

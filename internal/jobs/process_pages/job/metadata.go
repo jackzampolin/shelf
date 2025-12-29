@@ -105,7 +105,7 @@ func (j *Job) HandleMetadataComplete(ctx context.Context, result jobs.WorkResult
 		return fmt.Errorf("failed to save metadata: %w", err)
 	}
 
-	j.BookState.MetadataComplete = true
+	j.BookState.Metadata.Complete()
 	return nil
 }
 
