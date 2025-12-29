@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/pipeline/prompts/label"
+	"github.com/jackzampolin/shelf/internal/prompts/label"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 

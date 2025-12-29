@@ -9,8 +9,8 @@ import (
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	toc_finder "github.com/jackzampolin/shelf/internal/pipeline/agents/toc_finder"
-	"github.com/jackzampolin/shelf/internal/pipeline/agents/toc_finder/tools"
+	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
+	"github.com/jackzampolin/shelf/internal/agents/toc_finder/tools"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )

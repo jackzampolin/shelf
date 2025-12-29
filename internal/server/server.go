@@ -16,8 +16,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/pipeline"
-	"github.com/jackzampolin/shelf/internal/pipeline/stages/page_processing"
+	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
 	"github.com/jackzampolin/shelf/internal/server/endpoints"
@@ -34,14 +33,13 @@ type Server struct {
 	defraSink        *defra.Sink
 	jobManager       *jobs.Manager
 	scheduler        *jobs.Scheduler
-	registry         *providers.Registry
-	pipelineRegistry *pipeline.Registry
-	configMgr        *config.Manager
-	logger           *slog.Logger
-	home             *home.Dir
+	registry  *providers.Registry
+	configMgr *config.Manager
+	logger    *slog.Logger
+	home      *home.Dir
 
-	// pageProcessingStage is saved for job factory registration
-	pageProcessingStage *page_processing.Stage
+	// processPagesCfg is saved for job factory registration
+	processPagesCfg process_pages.Config
 
 	// services holds all core services for context enrichment
 	services *svcctx.Services
@@ -124,32 +122,30 @@ func New(cfg Config) (*Server, error) {
 		})
 	}
 
-	// Create pipeline registry and register stages
-	pipelineRegistry := pipeline.NewRegistry()
-	pageProcessingStage := page_processing.NewStage(page_processing.Config{
+	// Save process pages config for job factory registration
+	processPagesCfg := process_pages.Config{
 		OcrProviders:     cfg.PipelineConfig.OcrProviders,
 		BlendProvider:    cfg.PipelineConfig.BlendProvider,
 		LabelProvider:    cfg.PipelineConfig.LabelProvider,
 		MetadataProvider: cfg.PipelineConfig.MetadataProvider,
 		TocProvider:      cfg.PipelineConfig.TocProvider,
-	})
-	if err := pipelineRegistry.Register(pageProcessingStage); err != nil {
-		return nil, fmt.Errorf("failed to register page-processing stage: %w", err)
 	}
 
 	s := &Server{
-		defraManager:        defraManager,
-		registry:            registry,
-		pipelineRegistry:    pipelineRegistry,
-		pageProcessingStage: pageProcessingStage,
-		configMgr:           cfg.ConfigManager,
-		logger:              cfg.Logger,
-		home:                cfg.Home,
+		defraManager:    defraManager,
+		registry:        registry,
+		processPagesCfg: processPagesCfg,
+		configMgr:       cfg.ConfigManager,
+		logger:          cfg.Logger,
+		home:            cfg.Home,
 	}
 
 	// Create endpoint registry and register all endpoints
 	s.endpointRegistry = api.NewRegistry()
-	for _, ep := range endpoints.All(endpoints.Config{DefraManager: defraManager}) {
+	for _, ep := range endpoints.All(endpoints.Config{
+		DefraManager:       defraManager,
+		ProcessPagesConfig: processPagesCfg,
+	}) {
 		s.endpointRegistry.Register(ep)
 	}
 
@@ -240,21 +236,20 @@ func (s *Server) Start(ctx context.Context) error {
 	s.scheduler.RegisterCPUHandler(ingest.TaskExtractPage, ingest.ExtractPageHandler())
 
 	// Register job factories for resumption
-	s.scheduler.RegisterFactory("page-processing", s.pageProcessingStage.JobFactory())
+	s.scheduler.RegisterFactory(process_pages.JobType, process_pages.JobFactory(s.processPagesCfg))
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)
 
 	// Create services struct for context enrichment
 	s.services = &svcctx.Services{
-		DefraClient:      s.defraClient,
-		DefraSink:        s.defraSink,
-		JobManager:       s.jobManager,
-		Registry:         s.registry,
-		Scheduler:        s.scheduler,
-		Logger:           s.logger,
-		Home:             s.home,
-		PipelineRegistry: s.pipelineRegistry,
+		DefraClient: s.defraClient,
+		DefraSink:   s.defraSink,
+		JobManager:  s.jobManager,
+		Registry:    s.registry,
+		Scheduler:   s.scheduler,
+		Logger:      s.logger,
+		Home:        s.home,
 	}
 
 	// Pass services to scheduler for async job context injection

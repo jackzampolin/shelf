@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/pipeline/prompts/extract_toc"
+	"github.com/jackzampolin/shelf/internal/prompts/extract_toc"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	toc_finder "github.com/jackzampolin/shelf/internal/pipeline/agents/toc_finder"
+	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/providers"
