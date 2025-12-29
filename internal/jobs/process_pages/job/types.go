@@ -1,6 +1,7 @@
 package job
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/jackzampolin/shelf/internal/agent"
@@ -39,27 +40,98 @@ func NewPageState() *PageState {
 // MaxBookOpRetries is the maximum number of retries for book-level operations.
 const MaxBookOpRetries = 3
 
+// OpStatus represents the status of a book-level operation.
+type OpStatus int
+
+const (
+	OpNotStarted OpStatus = iota
+	OpInProgress
+	OpComplete
+	OpFailed
+)
+
+// String returns the string representation of the status.
+func (s OpStatus) String() string {
+	switch s {
+	case OpNotStarted:
+		return "not_started"
+	case OpInProgress:
+		return "in_progress"
+	case OpComplete:
+		return "complete"
+	case OpFailed:
+		return "failed"
+	default:
+		return "unknown"
+	}
+}
+
+// OperationState tracks the state of a retriable book-level operation.
+type OperationState struct {
+	Status  OpStatus
+	Retries int
+}
+
+// Start marks the operation as in progress. Returns error if already started.
+func (o *OperationState) Start() error {
+	if o.Status != OpNotStarted {
+		return fmt.Errorf("operation already %s", o.Status)
+	}
+	o.Status = OpInProgress
+	return nil
+}
+
+// Complete marks the operation as successfully completed.
+func (o *OperationState) Complete() {
+	o.Status = OpComplete
+}
+
+// Fail records a failure and returns true if permanently failed (max retries reached).
+func (o *OperationState) Fail(maxRetries int) bool {
+	o.Retries++
+	if o.Retries >= maxRetries {
+		o.Status = OpFailed
+		return true
+	}
+	o.Status = OpNotStarted // Allow retry
+	return false
+}
+
+// IsStarted returns true if the operation has been started.
+func (o *OperationState) IsStarted() bool {
+	return o.Status == OpInProgress
+}
+
+// IsDone returns true if the operation is complete or permanently failed.
+func (o *OperationState) IsDone() bool {
+	return o.Status == OpComplete || o.Status == OpFailed
+}
+
+// IsFailed returns true if the operation permanently failed.
+func (o *OperationState) IsFailed() bool {
+	return o.Status == OpFailed
+}
+
+// IsComplete returns true if the operation completed successfully.
+func (o *OperationState) IsComplete() bool {
+	return o.Status == OpComplete
+}
+
+// CanStart returns true if the operation can be started (not started, not done).
+func (o *OperationState) CanStart() bool {
+	return o.Status == OpNotStarted
+}
+
 // BookState tracks book-level processing state.
 type BookState struct {
-	MetadataStarted  bool
-	MetadataComplete bool
-	MetadataFailed   bool // Permanently failed after max retries
-	MetadataRetries  int
+	Metadata   OperationState
+	TocFinder  OperationState
+	TocExtract OperationState
 
-	// ToC finder state
-	TocFinderStarted bool
-	TocFinderDone    bool
-	TocFinderFailed  bool // Permanently failed after max retries
-	TocFinderRetries int
-	TocFound         bool
-	TocStartPage     int
-	TocEndPage       int
-
-	// ToC extract state
-	TocExtractStarted bool
-	TocExtractDone    bool
-	TocExtractFailed  bool // Permanently failed after max retries
-	TocExtractRetries int
+	// ToC finder results (set when TocFinder completes successfully)
+	TocFound     bool
+	TocStartPage int
+	TocEndPage   int
 }
 
 // WorkUnitInfo tracks pending work units.
@@ -81,7 +153,7 @@ type PDFInfo struct {
 // Services (DefraClient, DefraSink) are accessed via svcctx from the context
 // passed to Start() and OnComplete().
 type Job struct {
-	Mu sync.Mutex
+	mu sync.Mutex
 
 	// Configuration
 	BookID           string

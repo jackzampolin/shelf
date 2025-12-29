@@ -9,16 +9,16 @@ import (
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
-// TestScheduler_NoWorkerForType tests error handling when no worker available.
-func TestScheduler_NoWorkerForType(t *testing.T) {
+// TestScheduler_NoPoolForType tests error handling when no pool available.
+func TestScheduler_NoPoolForType(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{
 		Logger: slog.Default(),
 	})
 
-	// Only add LLM worker - no OCR worker
+	// Only add LLM pool - no OCR pool
 	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
-	scheduler.RegisterWorker(llmWorker)
+	llmPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
+	scheduler.RegisterPool(llmPool)
 
 	// Create job that needs OCR
 	job := NewMultiPhaseJob(MultiPhaseJobConfig{
@@ -39,7 +39,7 @@ func TestScheduler_NoWorkerForType(t *testing.T) {
 
 	_, _, failed := job.Stats()
 	if failed != 2 {
-		t.Errorf("failed = %d, want 2 (no OCR worker)", failed)
+		t.Errorf("failed = %d, want 2 (no OCR pool)", failed)
 	}
 }
 
@@ -49,8 +49,8 @@ func TestScheduler_JobStatus(t *testing.T) {
 
 	llmClient := providers.NewMockClient()
 	llmClient.Latency = 100 * time.Millisecond // Slow to allow status check
-	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
-	scheduler.RegisterWorker(llmWorker)
+	llmPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
+	scheduler.RegisterPool(llmPool)
 
 	job := NewCountingJob(5)
 
@@ -87,8 +87,8 @@ func TestScheduler_ActiveJobs(t *testing.T) {
 
 	llmClient := providers.NewMockClient()
 	llmClient.Latency = 50 * time.Millisecond
-	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
-	scheduler.RegisterWorker(llmWorker)
+	llmPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
+	scheduler.RegisterPool(llmPool)
 
 	if scheduler.ActiveJobs() != 0 {
 		t.Error("should start with 0 active jobs")
@@ -126,14 +126,14 @@ func TestScheduler_ActiveJobs(t *testing.T) {
 	}
 }
 
-// TestScheduler_WorkerQueueDepth tests that work stays in worker queue when not started.
-func TestScheduler_WorkerQueueDepth(t *testing.T) {
+// TestScheduler_PoolQueueDepth tests that work stays in pool queue when not started.
+func TestScheduler_PoolQueueDepth(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{})
 
-	// Register worker but don't start scheduler - items will stay in worker's queue
+	// Register pool but don't start scheduler - items will stay in pool's queue
 	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
-	scheduler.RegisterWorker(llmWorker)
+	llmPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
+	scheduler.RegisterPool(llmPool)
 
 	job := NewCountingJob(5)
 
@@ -145,8 +145,8 @@ func TestScheduler_WorkerQueueDepth(t *testing.T) {
 	// Wait for async job start to complete (Submit spawns a goroutine)
 	time.Sleep(50 * time.Millisecond)
 
-	// Without starting scheduler, items stay in worker's queue
-	status := scheduler.WorkerStatus()
+	// Without starting scheduler, items stay in pool's queue
+	status := scheduler.PoolStatuses()
 	if status["llm"].QueueDepth != 5 {
 		t.Errorf("QueueDepth = %d, want 5", status["llm"].QueueDepth)
 	}
@@ -156,7 +156,7 @@ func TestScheduler_WorkerQueueDepth(t *testing.T) {
 func TestScheduler_RegisterFactory(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{})
 
-	factory := func(id string, metadata map[string]any) (Job, error) {
+	factory := func(ctx context.Context, id string, metadata map[string]any) (Job, error) {
 		job := NewMockJob(MockJobConfig{})
 		job.SetRecordID(id) // Set the persisted ID
 		return job, nil
@@ -167,68 +167,68 @@ func TestScheduler_RegisterFactory(t *testing.T) {
 	// No direct way to verify registration, but it shouldn't panic
 }
 
-// TestScheduler_GetWorker tests worker lookup.
-func TestScheduler_GetWorker(t *testing.T) {
+// TestScheduler_GetPool tests pool lookup.
+func TestScheduler_GetPool(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{})
 
 	// Not found initially
-	_, ok := scheduler.GetWorker("nonexistent")
+	_, ok := scheduler.GetPool("nonexistent")
 	if ok {
-		t.Error("should not find nonexistent worker")
+		t.Error("should not find nonexistent pool")
 	}
 
 	// Register and find
 	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "test-llm", LLMClient: llmClient})
-	scheduler.RegisterWorker(llmWorker)
+	llmPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "test-llm", LLMClient: llmClient})
+	scheduler.RegisterPool(llmPool)
 
-	w, ok := scheduler.GetWorker("test-llm")
+	p, ok := scheduler.GetPool("test-llm")
 	if !ok {
-		t.Error("should find registered worker")
+		t.Error("should find registered pool")
 	}
-	if w.Name() != "test-llm" {
-		t.Errorf("Name() = %s, want test-llm", w.Name())
+	if p.Name() != "test-llm" {
+		t.Errorf("Name() = %s, want test-llm", p.Name())
 	}
 }
 
-// TestScheduler_ListWorkers tests worker enumeration.
-func TestScheduler_ListWorkers(t *testing.T) {
+// TestScheduler_ListPools tests pool enumeration.
+func TestScheduler_ListPools(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{})
 
-	if len(scheduler.ListWorkers()) != 0 {
-		t.Error("should start with no workers")
+	if len(scheduler.ListPools()) != 0 {
+		t.Error("should start with no pools")
 	}
 
 	llmClient := providers.NewMockClient()
-	w1, _ := NewProviderWorker(ProviderWorkerConfig{Name: "w1", LLMClient: llmClient})
-	w2, _ := NewProviderWorker(ProviderWorkerConfig{Name: "w2", LLMClient: llmClient})
+	p1, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "p1", LLMClient: llmClient})
+	p2, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "p2", LLMClient: llmClient})
 
-	scheduler.RegisterWorker(w1)
-	scheduler.RegisterWorker(w2)
+	scheduler.RegisterPool(p1)
+	scheduler.RegisterPool(p2)
 
-	names := scheduler.ListWorkers()
+	names := scheduler.ListPools()
 	if len(names) != 2 {
-		t.Errorf("got %d workers, want 2", len(names))
+		t.Errorf("got %d pools, want 2", len(names))
 	}
 }
 
-// TestScheduler_WorkerStatus tests worker status reporting.
-func TestScheduler_WorkerStatus(t *testing.T) {
+// TestScheduler_PoolStatus tests pool status reporting.
+func TestScheduler_PoolStatus(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{})
 
 	llmClient := providers.NewMockClient()
 	ocrProvider := providers.NewMockOCRProvider()
 
-	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm-1", LLMClient: llmClient, RPS: 1.0})
-	ocrWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "ocr-1", OCRProvider: ocrProvider})
+	llmPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm-1", LLMClient: llmClient, RPS: 1.0})
+	ocrPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "ocr-1", OCRProvider: ocrProvider})
 
-	scheduler.RegisterWorker(llmWorker)
-	scheduler.RegisterWorker(ocrWorker)
+	scheduler.RegisterPool(llmPool)
+	scheduler.RegisterPool(ocrPool)
 
-	status := scheduler.WorkerStatus()
+	status := scheduler.PoolStatuses()
 
 	if len(status) != 2 {
-		t.Errorf("got %d workers in status, want 2", len(status))
+		t.Errorf("got %d pools in status, want 2", len(status))
 	}
 
 	llmStatus, ok := status["llm-1"]
@@ -243,7 +243,7 @@ func TestScheduler_WorkerStatus(t *testing.T) {
 	}
 }
 
-// TestScheduler_InitFromRegistry tests automatic worker creation from registry.
+// TestScheduler_InitFromRegistry tests automatic pool creation from registry.
 func TestScheduler_InitFromRegistry(t *testing.T) {
 	// Create registry with providers
 	registry := providers.NewRegistryFromConfig(providers.RegistryConfig{
@@ -275,47 +275,39 @@ func TestScheduler_InitFromRegistry(t *testing.T) {
 		t.Fatalf("InitFromRegistry() error = %v", err)
 	}
 
-	// Verify workers were created
-	workers := scheduler.ListWorkers()
-	if len(workers) != 2 {
-		t.Errorf("got %d workers, want 2", len(workers))
+	// Verify pools were created
+	pools := scheduler.ListPools()
+	if len(pools) != 2 {
+		t.Errorf("got %d pools, want 2", len(pools))
 	}
 
-	// Verify LLM worker
-	llmWorkerIface, ok := scheduler.GetWorker("openrouter")
+	// Verify LLM pool
+	llmPool, ok := scheduler.GetPool("openrouter")
 	if !ok {
-		t.Error("openrouter worker not found")
+		t.Error("openrouter pool not found")
 	} else {
-		if llmWorkerIface.Type() != WorkerTypeLLM {
-			t.Errorf("openrouter Type = %s, want llm", llmWorkerIface.Type())
+		if llmPool.Type() != PoolTypeLLM {
+			t.Errorf("openrouter Type = %s, want llm", llmPool.Type())
 		}
-		// Verify rate limit was passed through (cast to *Worker for rate limiter access)
-		if llmWorker, ok := llmWorkerIface.(*ProviderWorker); ok {
-			status := llmWorker.RateLimiterStatus()
-			if status.RPS != 120 {
-				t.Errorf("openrouter RPS = %f, want 120", status.RPS)
-			}
-		} else {
-			t.Error("openrouter worker is not a *ProviderWorker")
+		// Verify rate limit was passed through
+		status := llmPool.Status()
+		if status.RateLimiter.RPS != 120 {
+			t.Errorf("openrouter RPS = %f, want 120", status.RateLimiter.RPS)
 		}
 	}
 
-	// Verify OCR worker
-	ocrWorkerIface, ok := scheduler.GetWorker("mistral")
+	// Verify OCR pool
+	ocrPool, ok := scheduler.GetPool("mistral")
 	if !ok {
-		t.Error("mistral worker not found")
+		t.Error("mistral pool not found")
 	} else {
-		if ocrWorkerIface.Type() != WorkerTypeOCR {
-			t.Errorf("mistral Type = %s, want ocr", ocrWorkerIface.Type())
+		if ocrPool.Type() != PoolTypeOCR {
+			t.Errorf("mistral Type = %s, want ocr", ocrPool.Type())
 		}
-		// Verify rate limit was passed through (cast to *Worker for rate limiter access)
-		if ocrWorker, ok := ocrWorkerIface.(*ProviderWorker); ok {
-			status := ocrWorker.RateLimiterStatus()
-			if status.RPS != 10.0 {
-				t.Errorf("mistral RPS = %f, want 10.0", status.RPS)
-			}
-		} else {
-			t.Error("mistral worker is not a *ProviderWorker")
+		// Verify rate limit was passed through
+		status := ocrPool.Status()
+		if status.RateLimiter.RPS != 10.0 {
+			t.Errorf("mistral RPS = %f, want 10.0", status.RateLimiter.RPS)
 		}
 	}
 }

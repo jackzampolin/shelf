@@ -11,14 +11,12 @@ import (
 // Creates a persistent record in DefraDB via Manager.
 // The job.Start() call runs asynchronously so the HTTP request returns immediately.
 func (s *Scheduler) Submit(ctx context.Context, job Job) error {
-	// Get initial metadata from job status
-	metadata, err := job.Status(ctx)
-	if err != nil {
-		s.logger.Warn("failed to get initial job status", "job_id", job.ID(), "error", err)
-	}
+	// Only store minimal metadata needed for job resumption.
+	// Full status is available via job.Status() on the live job.
+	metricsFor := job.MetricsFor()
 	metadataMap := make(map[string]any)
-	for k, v := range metadata {
-		metadataMap[k] = v
+	if metricsFor != nil && metricsFor.BookID != "" {
+		metadataMap["book_id"] = metricsFor.BookID
 	}
 
 	// Persist to DefraDB if manager available, otherwise generate a temporary ID
@@ -113,8 +111,11 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 			continue
 		}
 
+		// Inject services into context for factory
+		enrichedCtx := s.injectServices(ctx)
+
 		// Recreate job from stored metadata
-		job, err := factory(record.ID, record.Metadata)
+		job, err := factory(enrichedCtx, record.ID, record.Metadata)
 		if err != nil {
 			s.logger.Error("failed to recreate job",
 				"job_id", record.ID, "error", err)
@@ -128,11 +129,11 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 		s.mu.Unlock()
 
 		// Start job (should be idempotent - checks what's already done)
-		units, err := job.Start(ctx)
+		units, err := job.Start(enrichedCtx)
 		if err != nil {
 			s.logger.Error("failed to resume job",
 				"job_id", record.ID, "error", err)
-			s.manager.UpdateStatus(ctx, record.ID, StatusFailed, err.Error())
+			s.manager.UpdateStatus(enrichedCtx, record.ID, StatusFailed, err.Error())
 			continue
 		}
 

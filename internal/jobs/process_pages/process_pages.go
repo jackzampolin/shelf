@@ -1,4 +1,4 @@
-package page_processing
+package process_pages
 
 import (
 	"context"
@@ -12,25 +12,17 @@ import (
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/pipeline"
-	pjob "github.com/jackzampolin/shelf/internal/pipeline/stages/page_processing/job"
+	pjob "github.com/jackzampolin/shelf/internal/jobs/process_pages/job"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
-// Stage handles per-page processing: OCR -> Blend -> Label.
-// Also triggers book-level operations: ToC finding, ToC extraction, metadata.
-type Stage struct {
-	// Provider configuration (not services - those come from context)
-	ocrProviders     []string // e.g., ["mistral", "paddle"]
-	blendProvider    string   // LLM provider for blending
-	labelProvider    string   // LLM provider for labeling
-	metadataProvider string   // LLM provider for metadata extraction
-	tocProvider      string   // LLM provider for ToC operations
-}
+// JobType is the identifier for this job type.
+const JobType = "process-pages"
 
-// Config configures the stage.
+// Config configures the process pages job.
 type Config struct {
 	OcrProviders     []string
 	BlendProvider    string
@@ -39,26 +31,24 @@ type Config struct {
 	TocProvider      string
 }
 
-// NewStage creates a new page processing stage.
-func NewStage(cfg Config) *Stage {
-	return &Stage{
-		ocrProviders:     cfg.OcrProviders,
-		blendProvider:    cfg.BlendProvider,
-		labelProvider:    cfg.LabelProvider,
-		metadataProvider: cfg.MetadataProvider,
-		tocProvider:      cfg.TocProvider,
+// Validate checks that the config has all required fields.
+func (c Config) Validate() error {
+	if len(c.OcrProviders) == 0 {
+		return fmt.Errorf("at least one OCR provider is required")
 	}
-}
-
-func (s *Stage) Name() string           { return "page-processing" }
-func (s *Stage) Dependencies() []string { return nil }
-func (s *Stage) Icon() string           { return "📄" }
-func (s *Stage) Description() string {
-	return "Process pages through OCR, blend, label, ToC, and metadata extraction"
-}
-
-func (s *Stage) RequiredCollections() []string {
-	return []string{"Book", "Page", "ToC"}
+	if c.BlendProvider == "" {
+		return fmt.Errorf("blend provider is required")
+	}
+	if c.LabelProvider == "" {
+		return fmt.Errorf("label provider is required")
+	}
+	if c.MetadataProvider == "" {
+		return fmt.Errorf("metadata provider is required")
+	}
+	if c.TocProvider == "" {
+		return fmt.Errorf("toc provider is required")
+	}
+	return nil
 }
 
 // Status represents the status of page processing for a book.
@@ -72,21 +62,24 @@ type Status struct {
 	TocExtracted     bool `json:"toc_extracted"`
 }
 
+// IsComplete returns whether processing is complete for this book.
 func (st *Status) IsComplete() bool {
 	allPagesComplete := st.LabelComplete >= st.TotalPages
 	return allPagesComplete && st.MetadataComplete && st.TocExtracted
 }
 
-func (st *Status) Data() any {
-	return st
-}
-
-func (s *Stage) GetStatus(ctx context.Context, bookID string) (pipeline.StageStatus, error) {
+// GetStatus queries DefraDB for the current processing status of a book.
+func GetStatus(ctx context.Context, bookID string) (*Status, error) {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return nil, fmt.Errorf("defra client not in context")
 	}
 
+	return GetStatusWithClient(ctx, defraClient, bookID)
+}
+
+// GetStatusWithClient queries DefraDB for status using the provided client.
+func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID string) (*Status, error) {
 	// Query book for total pages and metadata status
 	bookQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
@@ -95,7 +88,7 @@ func (s *Stage) GetStatus(ctx context.Context, bookID string) (pipeline.StageSta
 		}
 	}`, bookID)
 
-	bookResp, err := defraClient.Execute(ctx, bookQuery, nil)
+	bookResp, err := client.Execute(ctx, bookQuery, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query book: %w", err)
 	}
@@ -122,7 +115,7 @@ func (s *Stage) GetStatus(ctx context.Context, bookID string) (pipeline.StageSta
 		}
 	}`, bookID)
 
-	pageResp, err := defraClient.Execute(ctx, pageQuery, nil)
+	pageResp, err := client.Execute(ctx, pageQuery, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query pages: %w", err)
 	}
@@ -153,7 +146,7 @@ func (s *Stage) GetStatus(ctx context.Context, bookID string) (pipeline.StageSta
 		}
 	}`, bookID)
 
-	tocResp, err := defraClient.Execute(ctx, tocQuery, nil)
+	tocResp, err := client.Execute(ctx, tocQuery, nil)
 	if err == nil {
 		if tocs, ok := tocResp.Data["ToC"].([]any); ok && len(tocs) > 0 {
 			if toc, ok := tocs[0].(map[string]any); ok {
@@ -170,7 +163,12 @@ func (s *Stage) GetStatus(ctx context.Context, bookID string) (pipeline.StageSta
 	return status, nil
 }
 
-func (s *Stage) CreateJob(ctx context.Context, bookID string, opts pipeline.StageOptions) (jobs.Job, error) {
+// NewJob creates a new process pages job for the given book.
+func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return nil, fmt.Errorf("defra client not in context")
@@ -216,18 +214,43 @@ func (s *Stage) CreateJob(ctx context.Context, bookID string, opts pipeline.Stag
 		return nil, fmt.Errorf("no PDFs found in originals directory for book %s", bookID)
 	}
 
+	logger := svcctx.LoggerFrom(ctx)
+	if logger != nil {
+		logger.Info("creating page processing job", "book_id", bookID, "ocr_providers", cfg.OcrProviders)
+	}
+
 	// Job accesses services via svcctx from context passed to Start/OnComplete
 	return pjob.New(pjob.Config{
 		BookID:           bookID,
 		TotalPages:       totalPages,
 		HomeDir:          homeDir,
 		PDFs:             pdfs,
-		OcrProviders:     s.ocrProviders,
-		BlendProvider:    s.blendProvider,
-		LabelProvider:    s.labelProvider,
-		MetadataProvider: s.metadataProvider,
-		TocProvider:      s.tocProvider,
+		OcrProviders:     cfg.OcrProviders,
+		BlendProvider:    cfg.BlendProvider,
+		LabelProvider:    cfg.LabelProvider,
+		MetadataProvider: cfg.MetadataProvider,
+		TocProvider:      cfg.TocProvider,
 	}), nil
+}
+
+// JobFactory returns a factory function for recreating jobs from stored metadata.
+// Used by the scheduler to resume interrupted jobs after restart.
+func JobFactory(cfg Config) jobs.JobFactory {
+	return func(ctx context.Context, id string, metadata map[string]any) (jobs.Job, error) {
+		bookID, ok := metadata["book_id"].(string)
+		if !ok {
+			return nil, fmt.Errorf("missing book_id in job metadata")
+		}
+
+		job, err := NewJob(ctx, cfg, bookID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Set the persisted record ID
+		job.SetRecordID(id)
+		return job, nil
+	}
 }
 
 // loadPDFsFromOriginals scans the originals directory for PDFs

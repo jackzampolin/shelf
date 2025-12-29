@@ -114,36 +114,36 @@ func TestMultiPhaseJob_Workflow(t *testing.T) {
 	})
 }
 
-// TestScheduler_MultiPhaseWorkflow tests the full scheduler with mixed workers.
+// TestScheduler_MultiPhaseWorkflow tests the full scheduler with mixed pools.
 func TestScheduler_MultiPhaseWorkflow(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{
 		Logger: slog.Default(),
 	})
 
-	// Create OCR worker
+	// Create OCR pool
 	ocrProvider := providers.NewMockOCRProvider()
 	ocrProvider.ResponseText = "extracted text"
-	ocrWorker, _ := NewProviderWorker(ProviderWorkerConfig{
+	ocrPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{
 		Name:        "ocr-paddle",
 		OCRProvider: ocrProvider,
 	})
-	scheduler.RegisterWorker(ocrWorker)
+	scheduler.RegisterPool(ocrPool)
 
-	// Create LLM worker
+	// Create LLM pool
 	llmClient := providers.NewMockClient()
 	llmClient.ResponseText = "processed result"
 	llmClient.Latency = time.Millisecond
-	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{
+	llmPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{
 		Name:      "llm-openrouter",
 		LLMClient: llmClient,
-		RPS: 100.0,
+		RPS:       100.0,
 	})
-	scheduler.RegisterWorker(llmWorker)
+	scheduler.RegisterPool(llmPool)
 
-	// Verify both workers registered
-	workers := scheduler.ListWorkers()
-	if len(workers) != 2 {
-		t.Fatalf("expected 2 workers, got %d", len(workers))
+	// Verify both pools registered
+	pools := scheduler.ListPools()
+	if len(pools) != 2 {
+		t.Fatalf("expected 2 pools, got %d", len(pools))
 	}
 
 	// Create multi-phase job: 3 OCR pages, 1 LLM per OCR = 6 total units
@@ -155,7 +155,7 @@ func TestScheduler_MultiPhaseWorkflow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Start scheduler (workers run as their own goroutines)
+	// Start scheduler (pools run as their own goroutines)
 	go scheduler.Start(ctx)
 
 	// Submit job
@@ -185,26 +185,26 @@ func TestScheduler_MultiPhaseWorkflow(t *testing.T) {
 	}
 }
 
-// TestScheduler_RoutesToCorrectWorkerType tests work unit routing.
-func TestScheduler_RoutesToCorrectWorkerType(t *testing.T) {
+// TestScheduler_RoutesToCorrectPoolType tests work unit routing.
+func TestScheduler_RoutesToCorrectPoolType(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{})
 
-	// Add multiple workers of each type
+	// Add multiple pools of each type
 	ocrProvider1 := providers.NewMockOCRProvider()
-	ocrWorker1, _ := NewProviderWorker(ProviderWorkerConfig{Name: "ocr-1", OCRProvider: ocrProvider1})
-	scheduler.RegisterWorker(ocrWorker1)
+	ocrPool1, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "ocr-1", OCRProvider: ocrProvider1})
+	scheduler.RegisterPool(ocrPool1)
 
 	ocrProvider2 := providers.NewMockOCRProvider()
-	ocrWorker2, _ := NewProviderWorker(ProviderWorkerConfig{Name: "ocr-2", OCRProvider: ocrProvider2})
-	scheduler.RegisterWorker(ocrWorker2)
+	ocrPool2, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "ocr-2", OCRProvider: ocrProvider2})
+	scheduler.RegisterPool(ocrPool2)
 
 	llmClient1 := providers.NewMockClient()
-	llmWorker1, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm-1", LLMClient: llmClient1, RPS: 100.0})
-	scheduler.RegisterWorker(llmWorker1)
+	llmPool1, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm-1", LLMClient: llmClient1, RPS: 100.0})
+	scheduler.RegisterPool(llmPool1)
 
 	llmClient2 := providers.NewMockClient()
-	llmWorker2, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm-2", LLMClient: llmClient2, RPS: 100.0})
-	scheduler.RegisterWorker(llmWorker2)
+	llmPool2, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm-2", LLMClient: llmClient2, RPS: 100.0})
+	scheduler.RegisterPool(llmPool2)
 
 	// Create job that targets specific providers
 	job := NewMultiPhaseJob(MultiPhaseJobConfig{
@@ -362,12 +362,12 @@ func TestScheduler_WithManager(t *testing.T) {
 	})
 
 	ocrProvider := providers.NewMockOCRProvider()
-	ocrWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "ocr", OCRProvider: ocrProvider})
-	scheduler.RegisterWorker(ocrWorker)
+	ocrPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "ocr", OCRProvider: ocrProvider})
+	scheduler.RegisterPool(ocrPool)
 
 	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
-	scheduler.RegisterWorker(llmWorker)
+	llmPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
+	scheduler.RegisterPool(llmPool)
 
 	job := NewMultiPhaseJob(MultiPhaseJobConfig{
 		OCRPages:  2,
@@ -405,12 +405,12 @@ func TestScheduler_PartialFailure(t *testing.T) {
 
 	ocrProvider := providers.NewMockOCRProvider()
 	ocrProvider.FailAfter = 1
-	ocrWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "ocr", OCRProvider: ocrProvider})
-	scheduler.RegisterWorker(ocrWorker)
+	ocrPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "ocr", OCRProvider: ocrProvider})
+	scheduler.RegisterPool(ocrPool)
 
 	llmClient := providers.NewMockClient()
-	llmWorker, _ := NewProviderWorker(ProviderWorkerConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
-	scheduler.RegisterWorker(llmWorker)
+	llmPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
+	scheduler.RegisterPool(llmPool)
 
 	job := NewMultiPhaseJob(MultiPhaseJobConfig{
 		OCRPages:  3,

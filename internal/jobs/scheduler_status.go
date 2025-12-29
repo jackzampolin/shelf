@@ -38,30 +38,55 @@ func (s *Scheduler) ActiveJobs() int {
 	return len(s.jobs)
 }
 
-// WorkerStatus returns queue depth and rate limiter status for all workers.
+// PoolStatuses returns status for all pools.
+func (s *Scheduler) PoolStatuses() map[string]PoolStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	status := make(map[string]PoolStatus, len(s.pools))
+	for name, p := range s.pools {
+		status[name] = p.Status()
+	}
+	return status
+}
+
+// WorkerStatus returns queue depth and rate limiter status for all pools.
+// Deprecated: Use PoolStatuses() for the new format.
+// This method is kept for backward compatibility with existing API consumers.
 func (s *Scheduler) WorkerStatus() map[string]WorkerStatusInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	status := make(map[string]WorkerStatusInfo, len(s.workers))
-	for name, w := range s.workers {
-		info := WorkerStatusInfo{
-			Type:       string(w.Type()),
-			QueueDepth: w.QueueDepth(),
+	status := make(map[string]WorkerStatusInfo, len(s.pools))
+	for name, p := range s.pools {
+		ps := p.Status()
+		status[name] = WorkerStatusInfo{
+			Type:        ps.Type,
+			QueueDepth:  ps.QueueDepth,
+			RateLimiter: ps.RateLimiter,
 		}
-		// Only LLM/OCR workers have rate limiters
-		if rw, ok := w.(*ProviderWorker); ok {
-			rlStatus := rw.RateLimiterStatus()
-			info.RateLimiter = &rlStatus
-		}
-		status[name] = info
 	}
 	return status
 }
 
 // WorkerStatusInfo reports a worker's current state.
+// Deprecated: Use PoolStatus instead.
 type WorkerStatusInfo struct {
 	Type        string                       `json:"type"`
 	QueueDepth  int                          `json:"queue_depth"`
 	RateLimiter *providers.RateLimiterStatus `json:"rate_limiter,omitempty"`
+}
+
+// JobProgress returns the per-provider progress for a specific job.
+// Returns nil if job is not found.
+func (s *Scheduler) JobProgress(jobID string) map[string]ProviderProgress {
+	s.mu.RLock()
+	job, ok := s.jobs[jobID]
+	s.mu.RUnlock()
+
+	if !ok {
+		return nil
+	}
+
+	return job.Progress()
 }

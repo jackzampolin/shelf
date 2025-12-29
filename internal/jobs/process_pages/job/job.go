@@ -20,24 +20,24 @@ func checkCancelled(ctx context.Context) error {
 }
 
 func (j *Job) ID() string {
-	j.Mu.Lock()
-	defer j.Mu.Unlock()
+	j.mu.Lock()
+	defer j.mu.Unlock()
 	return j.RecordID
 }
 
 func (j *Job) SetRecordID(id string) {
-	j.Mu.Lock()
-	defer j.Mu.Unlock()
+	j.mu.Lock()
+	defer j.mu.Unlock()
 	j.RecordID = id
 }
 
 func (j *Job) Type() string {
-	return "page-processing"
+	return "process-pages"
 }
 
 func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
-	j.Mu.Lock()
-	defer j.Mu.Unlock()
+	j.mu.Lock()
+	defer j.mu.Unlock()
 
 	// Check for cancellation
 	if err := checkCancelled(ctx); err != nil {
@@ -75,24 +75,14 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 	// Recover from crash during ToC operations
 	// If ToC finder was started but not done and agent is nil, reset to retry
-	if j.BookState.TocFinderStarted && !j.BookState.TocFinderDone && j.TocAgent == nil {
-		j.BookState.TocFinderStarted = false
-		j.BookState.TocFinderRetries++
-		if j.BookState.TocFinderRetries >= MaxBookOpRetries {
-			j.BookState.TocFinderFailed = true
-			j.BookState.TocFinderDone = true
-		}
+	if j.BookState.TocFinder.IsStarted() && j.TocAgent == nil {
+		j.BookState.TocFinder.Fail(MaxBookOpRetries)
 		j.PersistTocFinderState(ctx)
 	}
 
 	// Same for ToC extract
-	if j.BookState.TocExtractStarted && !j.BookState.TocExtractDone && j.TocAgent == nil {
-		j.BookState.TocExtractStarted = false
-		j.BookState.TocExtractRetries++
-		if j.BookState.TocExtractRetries >= MaxBookOpRetries {
-			j.BookState.TocExtractFailed = true
-			j.BookState.TocExtractDone = true
-		}
+	if j.BookState.TocExtract.IsStarted() && j.TocAgent == nil {
+		j.BookState.TocExtract.Fail(MaxBookOpRetries)
 		j.PersistTocExtractState(ctx)
 	}
 
@@ -191,8 +181,8 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 }
 
 func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
-	j.Mu.Lock()
-	defer j.Mu.Unlock()
+	j.mu.Lock()
+	defer j.mu.Unlock()
 
 	// Check for cancellation
 	if err := checkCancelled(ctx); err != nil {
@@ -208,30 +198,13 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		// Handle book-level operation failures with retry logic
 		switch info.UnitType {
 		case "metadata":
-			j.BookState.MetadataRetries++
-			if j.BookState.MetadataRetries < MaxBookOpRetries {
-				j.BookState.MetadataStarted = false // Allow retry
-			} else {
-				j.BookState.MetadataFailed = true // Permanently failed
-			}
+			j.BookState.Metadata.Fail(MaxBookOpRetries)
 			j.PersistMetadataState(ctx) // Persist to DefraDB
 		case "toc_finder":
-			j.BookState.TocFinderRetries++
-			if j.BookState.TocFinderRetries < MaxBookOpRetries {
-				j.BookState.TocFinderStarted = false // Allow retry
-			} else {
-				j.BookState.TocFinderFailed = true // Permanently failed
-				j.BookState.TocFinderDone = true   // Mark done to unblock completion
-			}
+			j.BookState.TocFinder.Fail(MaxBookOpRetries)
 			j.PersistTocFinderState(ctx) // Persist to DefraDB
 		case "toc_extract":
-			j.BookState.TocExtractRetries++
-			if j.BookState.TocExtractRetries < MaxBookOpRetries {
-				j.BookState.TocExtractStarted = false // Allow retry
-			} else {
-				j.BookState.TocExtractFailed = true // Permanently failed
-				j.BookState.TocExtractDone = true   // Mark done to unblock completion
-			}
+			j.BookState.TocExtract.Fail(MaxBookOpRetries)
 			j.PersistTocExtractState(ctx) // Persist to DefraDB
 		}
 		return nil, fmt.Errorf("work unit failed (%s): %v", info.UnitType, result.Error)
@@ -293,14 +266,14 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 }
 
 func (j *Job) Done() bool {
-	j.Mu.Lock()
-	defer j.Mu.Unlock()
+	j.mu.Lock()
+	defer j.mu.Unlock()
 	return j.IsDone
 }
 
 func (j *Job) Status(ctx context.Context) (map[string]string, error) {
-	j.Mu.Lock()
-	defer j.Mu.Unlock()
+	j.mu.Lock()
+	defer j.mu.Unlock()
 
 	extractDone, ocrDone, blendDone, labelDone := 0, 0, 0, 0
 	for _, state := range j.PageState {
@@ -326,23 +299,27 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 	}
 
 	return map[string]string{
-		"book_id":            j.BookID,
-		"total_pages":        fmt.Sprintf("%d", j.TotalPages),
-		"extract_complete":   fmt.Sprintf("%d", extractDone),
-		"ocr_complete":       fmt.Sprintf("%d", ocrDone),
-		"blend_complete":     fmt.Sprintf("%d", blendDone),
-		"label_complete":     fmt.Sprintf("%d", labelDone),
-		"metadata_started":   fmt.Sprintf("%v", j.BookState.MetadataStarted),
-		"metadata_complete":  fmt.Sprintf("%v", j.BookState.MetadataComplete),
-		"toc_finder_started": fmt.Sprintf("%v", j.BookState.TocFinderStarted),
-		"toc_found":          fmt.Sprintf("%v", j.BookState.TocFound),
-		"toc_extract_done":   fmt.Sprintf("%v", j.BookState.TocExtractDone),
-		"done":               fmt.Sprintf("%v", j.IsDone),
+		"book_id":             j.BookID,
+		"total_pages":         fmt.Sprintf("%d", j.TotalPages),
+		"extract_complete":    fmt.Sprintf("%d", extractDone),
+		"ocr_complete":        fmt.Sprintf("%d", ocrDone),
+		"blend_complete":      fmt.Sprintf("%d", blendDone),
+		"label_complete":      fmt.Sprintf("%d", labelDone),
+		"metadata_started":    fmt.Sprintf("%v", j.BookState.Metadata.IsStarted()),
+		"metadata_complete":   fmt.Sprintf("%v", j.BookState.Metadata.IsComplete()),
+		"toc_finder_started":  fmt.Sprintf("%v", j.BookState.TocFinder.IsStarted()),
+		"toc_finder_done":     fmt.Sprintf("%v", j.BookState.TocFinder.IsDone()),
+		"toc_found":           fmt.Sprintf("%v", j.BookState.TocFound),
+		"toc_start_page":      fmt.Sprintf("%d", j.BookState.TocStartPage),
+		"toc_end_page":        fmt.Sprintf("%d", j.BookState.TocEndPage),
+		"toc_extract_started": fmt.Sprintf("%v", j.BookState.TocExtract.IsStarted()),
+		"toc_extract_done":    fmt.Sprintf("%v", j.BookState.TocExtract.IsDone()),
+		"done":                fmt.Sprintf("%v", j.IsDone),
 	}, nil
 }
 
 func (j *Job) Progress() map[string]jobs.ProviderProgress {
-	j.Mu.Lock()
-	defer j.Mu.Unlock()
+	j.mu.Lock()
+	defer j.mu.Unlock()
 	return j.ProviderProgress()
 }

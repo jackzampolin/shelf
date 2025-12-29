@@ -3,11 +3,13 @@ package endpoints
 import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
 )
 
 // Config holds dependencies needed by some endpoints.
 type Config struct {
-	DefraManager *defra.DockerManager
+	DefraManager       *defra.DockerManager
+	ProcessPagesConfig process_pages.Config
 }
 
 // All returns all endpoint instances.
@@ -30,9 +32,9 @@ func All(cfg Config) []api.Endpoint {
 		&ListBooksEndpoint{},
 		&GetBookEndpoint{},
 
-		// Pipeline endpoints
-		&StartPipelineEndpoint{},
-		&PipelineStatusEndpoint{},
+		// Job start/status endpoints
+		&StartJobEndpoint{ProcessPagesConfig: cfg.ProcessPagesConfig},
+		&JobStatusEndpoint{},
 
 		// Metrics endpoints
 		&ListMetricsEndpoint{},

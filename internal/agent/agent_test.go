@@ -62,19 +62,19 @@ When done, use the complete tool with your final answer.`,
 		DefaultModel: "x-ai/grok-4.1-fast",
 	})
 
-	// Create worker
-	worker, err := jobs.NewProviderWorker(jobs.ProviderWorkerConfig{
+	// Create pool
+	pool, err := jobs.NewProviderWorkerPool(jobs.ProviderWorkerPoolConfig{
 		Name:      "openrouter",
 		LLMClient: client,
 		RPS:       1.0,
 	})
 	if err != nil {
-		t.Fatalf("failed to create worker: %v", err)
+		t.Fatalf("failed to create pool: %v", err)
 	}
 
 	// Create scheduler (no persistence for tests)
 	scheduler := jobs.NewScheduler(jobs.SchedulerConfig{})
-	scheduler.RegisterWorker(worker)
+	scheduler.RegisterPool(pool)
 
 	// Start scheduler (runs workers as goroutines internally)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -229,21 +229,21 @@ When done, use the complete tool with your result.`,
 		DefaultModel: "x-ai/grok-4.1-fast",
 	})
 
-	// Create worker
-	worker, err := jobs.NewProviderWorker(jobs.ProviderWorkerConfig{
+	// Create pool
+	pool, err := jobs.NewProviderWorkerPool(jobs.ProviderWorkerPoolConfig{
 		Name:      "openrouter",
 		LLMClient: client,
 		RPS:       1.0,
 	})
 	if err != nil {
-		t.Fatalf("failed to create worker: %v", err)
+		t.Fatalf("failed to create pool: %v", err)
 	}
 
 	// Create scheduler
 	scheduler := jobs.NewScheduler(jobs.SchedulerConfig{})
-	scheduler.RegisterWorker(worker)
+	scheduler.RegisterPool(pool)
 
-	// Start scheduler - each worker runs as its own goroutine
+	// Start scheduler - pools run as their own goroutines
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
@@ -337,15 +337,15 @@ Keep searching until you find it. Do not give up.`,
 		DefaultModel: "x-ai/grok-4.1-fast",
 	})
 
-	// Create worker and scheduler
-	worker, _ := jobs.NewProviderWorker(jobs.ProviderWorkerConfig{
+	// Create pool and scheduler
+	pool, _ := jobs.NewProviderWorkerPool(jobs.ProviderWorkerPoolConfig{
 		Name:      "openrouter",
 		LLMClient: client,
 		RPS:       1.0,
 	})
 
 	scheduler := jobs.NewScheduler(jobs.SchedulerConfig{})
-	scheduler.RegisterWorker(worker)
+	scheduler.RegisterPool(pool)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()

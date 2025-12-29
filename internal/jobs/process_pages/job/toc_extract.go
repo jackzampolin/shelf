@@ -4,19 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/pipeline/prompts/extract_toc"
+	"github.com/jackzampolin/shelf/internal/prompts/extract_toc"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateTocExtractWorkUnit creates a ToC extraction work unit.
 func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
 	// Load ToC pages
 	tocPages, err := j.loadTocPages(ctx)
-	if err != nil || len(tocPages) == 0 {
+	if err != nil {
+		if logger != nil {
+			logger.Warn("failed to load ToC pages", "error", err)
+		}
+		return nil
+	}
+	if len(tocPages) == 0 {
+		if logger != nil {
+			logger.Warn("no ToC pages found",
+				"start_page", j.BookState.TocStartPage,
+				"end_page", j.BookState.TocEndPage)
+		}
 		return nil
 	}
 
@@ -46,27 +60,29 @@ func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
 // HandleTocExtractComplete processes ToC extraction completion.
 func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResult) error {
 	if result.ChatResult == nil || result.ChatResult.ParsedJSON == nil {
-		j.BookState.TocExtractDone = true
+		j.BookState.TocExtract.Complete()
 		return nil
 	}
 
 	extractResult, err := extract_toc.ParseResult(result.ChatResult.ParsedJSON)
 	if err != nil {
-		j.BookState.TocExtractDone = true
+		j.BookState.TocExtract.Complete()
 		return fmt.Errorf("failed to parse ToC extract result: %w", err)
 	}
 
 	if err := j.saveTocExtractResult(ctx, extractResult); err != nil {
-		j.BookState.TocExtractDone = true
+		j.BookState.TocExtract.Complete()
 		return fmt.Errorf("failed to save ToC extract result: %w", err)
 	}
 
-	j.BookState.TocExtractDone = true
+	j.BookState.TocExtract.Complete()
 	return nil
 }
 
 // loadTocPages loads the ToC page content for extraction.
 func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
+	logger := svcctx.LoggerFrom(ctx)
+
 	if j.BookState.TocStartPage == 0 || j.BookState.TocEndPage == 0 {
 		return nil, fmt.Errorf("ToC page range not set")
 	}
@@ -76,15 +92,28 @@ func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
 		return nil, fmt.Errorf("defra client not in context")
 	}
 
+	// Build page filter - use _in for range or _eq for single page
+	var pageFilter string
+	if j.BookState.TocStartPage == j.BookState.TocEndPage {
+		pageFilter = fmt.Sprintf("page_num: {_eq: %d}", j.BookState.TocStartPage)
+	} else {
+		// Build array of page numbers for _in filter
+		var pages []string
+		for p := j.BookState.TocStartPage; p <= j.BookState.TocEndPage; p++ {
+			pages = append(pages, fmt.Sprintf("%d", p))
+		}
+		pageFilter = fmt.Sprintf("page_num: {_in: [%s]}", strings.Join(pages, ", "))
+	}
+
 	query := fmt.Sprintf(`{
 		Page(filter: {
 			book_id: {_eq: "%s"},
-			page_num: {_gte: %d, _lte: %d}
+			%s
 		}, order: {page_num: ASC}) {
 			page_num
 			blend_markdown
 		}
-	}`, j.BookID, j.BookState.TocStartPage, j.BookState.TocEndPage)
+	}`, j.BookID, pageFilter)
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
@@ -93,7 +122,11 @@ func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
 
 	rawPages, ok := resp.Data["Page"].([]any)
 	if !ok {
-		return nil, fmt.Errorf("no pages found")
+		return nil, fmt.Errorf("no pages found in response")
+	}
+
+	if logger != nil {
+		logger.Debug("loadTocPages query result", "raw_pages_count", len(rawPages))
 	}
 
 	var tocPages []extract_toc.ToCPage
@@ -113,6 +146,8 @@ func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
 
 		if tp.OCRText != "" {
 			tocPages = append(tocPages, tp)
+		} else if logger != nil {
+			logger.Debug("page has no blend_markdown", "page_num", tp.PageNum)
 		}
 	}
 

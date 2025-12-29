@@ -9,21 +9,19 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/pipeline"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // Services holds all core services that flow through context.
 // Components extract what they need via the individual extractors.
 type Services struct {
-	DefraClient      *defra.Client
-	DefraSink        *defra.Sink
-	JobManager       *jobs.Manager
-	Registry         *providers.Registry
-	Scheduler        *jobs.Scheduler
-	Logger           *slog.Logger
-	Home             *home.Dir
-	PipelineRegistry *pipeline.Registry
+	DefraClient *defra.Client
+	DefraSink   *defra.Sink
+	JobManager  *jobs.Manager
+	Registry    *providers.Registry
+	Scheduler   *jobs.Scheduler
+	Logger      *slog.Logger
+	Home        *home.Dir
 }
 
 type servicesKey struct{}
@@ -92,14 +90,6 @@ func LoggerFrom(ctx context.Context) *slog.Logger {
 func HomeFrom(ctx context.Context) *home.Dir {
 	if s := ServicesFrom(ctx); s != nil {
 		return s.Home
-	}
-	return nil
-}
-
-// PipelineRegistryFrom extracts the pipeline registry from context.
-func PipelineRegistryFrom(ctx context.Context) *pipeline.Registry {
-	if s := ServicesFrom(ctx); s != nil {
-		return s.PipelineRegistry
 	}
 	return nil
 }

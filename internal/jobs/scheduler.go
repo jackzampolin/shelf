@@ -10,26 +10,24 @@ import (
 
 // JobFactory creates a Job instance from stored metadata.
 // Used for resuming jobs after restart.
-type JobFactory func(id string, metadata map[string]any) (Job, error)
+// Context provides access to services (DefraClient, HomeDir, etc.) via svcctx.
+type JobFactory func(ctx context.Context, id string, metadata map[string]any) (Job, error)
 
-// Scheduler manages workers and distributes work units from jobs.
-// Each worker runs as its own goroutine with its own queue.
-// The scheduler routes work units to appropriate workers and handles results.
+// Scheduler manages worker pools and distributes work units from jobs.
+// Each pool runs its own goroutines and manages its own queue.
+// The scheduler routes work units to appropriate pools and handles results.
 type Scheduler struct {
 	mu      sync.RWMutex
-	manager *Manager                   // For persistence
-	workers map[string]WorkerInterface // all workers by name
-	jobs    map[string]Job             // active jobs by ID
+	manager *Manager              // For persistence
+	pools   map[string]WorkerPool // all pools by name
+	cpuPool *CPUWorkerPool        // CPU pool (also in pools map)
+	jobs    map[string]Job        // active jobs by ID
 	logger  *slog.Logger
-
-	// CPU workers for round-robin distribution
-	cpuWorkers []*CPUWorker
-	cpuIndex   int // next CPU worker to use
 
 	// Job factories for resumption
 	factories map[string]JobFactory
 
-	// Results channel - all workers send results here
+	// Results channel - all pools send results here
 	results chan workerResult
 
 	// Track pending work per job
@@ -39,7 +37,7 @@ type Scheduler struct {
 	running bool
 	ctx     context.Context // Scheduler's long-lived context (set in Start)
 
-	// Sink for fire-and-forget metrics writes (passed to workers)
+	// Sink for fire-and-forget metrics writes (passed to pools)
 	sink *defra.Sink
 
 	// Context enricher for async job context injection
@@ -61,15 +59,14 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 	}
 
 	return &Scheduler{
-		manager:    cfg.Manager,
-		workers:    make(map[string]WorkerInterface),
-		cpuWorkers: make([]*CPUWorker, 0),
-		jobs:       make(map[string]Job),
-		factories:  make(map[string]JobFactory),
-		pending:    make(map[string]int),
-		results:    make(chan workerResult, 1000), // Buffered results channel
-		logger:     logger,
-		sink:       cfg.Sink,
+		manager:   cfg.Manager,
+		pools:     make(map[string]WorkerPool),
+		jobs:      make(map[string]Job),
+		factories: make(map[string]JobFactory),
+		pending:   make(map[string]int),
+		results:   make(chan workerResult, 1000), // Buffered results channel
+		logger:    logger,
+		sink:      cfg.Sink,
 	}
 }
 
@@ -82,7 +79,7 @@ func (s *Scheduler) SetContextEnricher(enricher func(context.Context) context.Co
 	s.contextEnricher = enricher
 }
 
-// Start begins the scheduler and all registered workers.
+// Start begins the scheduler and all registered pools.
 // Blocks until context is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {
 	s.mu.Lock()
@@ -93,13 +90,13 @@ func (s *Scheduler) Start(ctx context.Context) {
 	s.running = true
 	s.ctx = ctx // Store for async job operations
 
-	// Start all workers
-	for _, w := range s.workers {
-		go w.Start(ctx)
+	// Start all pools
+	for _, p := range s.pools {
+		go p.Start(ctx)
 	}
 	s.mu.Unlock()
 
-	s.logger.Info("scheduler started", "workers", len(s.workers))
+	s.logger.Info("scheduler started", "pools", len(s.pools))
 
 	// Process results from workers
 	for {

@@ -32,10 +32,6 @@ var booksCmd = &cobra.Command{
 	Short: "Book management commands",
 }
 
-var pipelineCmd = &cobra.Command{
-	Use:   "pipeline",
-	Short: "Pipeline processing commands",
-}
 
 var metricsCmd = &cobra.Command{
 	Use:   "metrics",
@@ -64,15 +60,13 @@ func init() {
 	jobsCmd.AddCommand((&endpoints.GetJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.UpdateJobEndpoint{}).Command(getServerURL))
 	jobsCmd.AddCommand((&endpoints.DeleteJobEndpoint{}).Command(getServerURL))
+	jobsCmd.AddCommand((&endpoints.StartJobEndpoint{}).Command(getServerURL))
+	jobsCmd.AddCommand((&endpoints.JobStatusEndpoint{}).Command(getServerURL))
 
 	// Books as subcommand group
 	booksCmd.AddCommand((&endpoints.IngestEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.ListBooksEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.GetBookEndpoint{}).Command(getServerURL))
-
-	// Pipeline as subcommand group
-	pipelineCmd.AddCommand((&endpoints.StartPipelineEndpoint{}).Command(getServerURL))
-	pipelineCmd.AddCommand((&endpoints.PipelineStatusEndpoint{}).Command(getServerURL))
 
 	// Metrics as subcommand group
 	metricsCmd.AddCommand((&endpoints.ListMetricsEndpoint{}).Command(getServerURL))
@@ -84,7 +78,6 @@ func init() {
 
 	apiCmd.AddCommand(jobsCmd)
 	apiCmd.AddCommand(booksCmd)
-	apiCmd.AddCommand(pipelineCmd)
 	apiCmd.AddCommand(metricsCmd)
 	rootCmd.AddCommand(apiCmd)
 }

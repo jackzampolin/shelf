@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	toc_finder "github.com/jackzampolin/shelf/internal/pipeline/agents/toc_finder"
+	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 

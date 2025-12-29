@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -52,6 +53,29 @@ type OCRProvider interface {
 
 // DefaultMaxConcurrency is used when provider returns 0 for MaxConcurrency.
 const DefaultMaxConcurrency = 30
+
+// RateLimitError is returned when a provider returns a 429 status.
+// It contains the Retry-After duration if provided by the server.
+type RateLimitError struct {
+	Message    string
+	RetryAfter time.Duration
+	StatusCode int
+}
+
+func (e *RateLimitError) Error() string {
+	if e.RetryAfter > 0 {
+		return fmt.Sprintf("%s (retry after %v)", e.Message, e.RetryAfter)
+	}
+	return e.Message
+}
+
+// IsRateLimitError checks if an error is a RateLimitError and returns it.
+func IsRateLimitError(err error) (*RateLimitError, bool) {
+	if rle, ok := err.(*RateLimitError); ok {
+		return rle, true
+	}
+	return nil, false
+}
 
 // Message represents a chat message.
 type Message struct {

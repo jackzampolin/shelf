@@ -2,7 +2,7 @@ package jobs
 
 import "fmt"
 
-// enqueueUnits routes work units to the appropriate worker queues.
+// enqueueUnits routes work units to the appropriate pool queues.
 func (s *Scheduler) enqueueUnits(jobID string, units []WorkUnit) {
 	if len(units) == 0 {
 		return
@@ -16,9 +16,9 @@ func (s *Scheduler) enqueueUnits(jobID string, units []WorkUnit) {
 		unit := &units[i]
 		unit.JobID = jobID
 
-		worker := s.findWorker(unit)
-		if worker == nil {
-			s.logger.Error("no worker found for work unit",
+		pool := s.findPool(unit)
+		if pool == nil {
+			s.logger.Error("no pool found for work unit",
 				"unit_id", unit.ID,
 				"type", unit.Type,
 				"provider", unit.Provider,
@@ -30,14 +30,14 @@ func (s *Scheduler) enqueueUnits(jobID string, units []WorkUnit) {
 				Result: WorkResult{
 					WorkUnitID: unit.ID,
 					Success:    false,
-					Error:      fmt.Errorf("no worker available for type %s provider %s", unit.Type, unit.Provider),
+					Error:      fmt.Errorf("no pool available for type %s provider %s", unit.Type, unit.Provider),
 				},
 			}
 			continue
 		}
 
-		if err := worker.Submit(unit); err != nil {
-			s.logger.Warn("failed to submit to worker", "worker", worker.Name(), "error", err)
+		if err := pool.Submit(unit); err != nil {
+			s.logger.Warn("failed to submit to pool", "pool", pool.Name(), "error", err)
 			// Send failure result
 			s.results <- workerResult{
 				JobID: jobID,
@@ -54,43 +54,40 @@ func (s *Scheduler) enqueueUnits(jobID string, units []WorkUnit) {
 	s.logger.Debug("enqueued work units", "job_id", jobID, "count", len(units))
 }
 
-// findWorker finds an appropriate worker for the work unit.
-func (s *Scheduler) findWorker(unit *WorkUnit) WorkerInterface {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// findPool finds an appropriate pool for the work unit.
+func (s *Scheduler) findPool(unit *WorkUnit) WorkerPool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	// CPU work units use round-robin across CPU workers
+	// CPU work units go to the CPU pool
 	if unit.Type == WorkUnitTypeCPU {
-		if len(s.cpuWorkers) == 0 {
-			return nil
-		}
-		// Round-robin selection
-		w := s.cpuWorkers[s.cpuIndex]
-		s.cpuIndex = (s.cpuIndex + 1) % len(s.cpuWorkers)
-		return w
+		return s.cpuPool // May be nil if not initialized
 	}
 
-	// If specific provider requested, use that
+	// If specific provider requested, use that pool
 	if unit.Provider != "" {
-		if w, ok := s.workers[unit.Provider]; ok {
+		if p, ok := s.pools[unit.Provider]; ok {
 			// Verify type matches
-			if (unit.Type == WorkUnitTypeLLM && w.Type() == WorkerTypeLLM) ||
-				(unit.Type == WorkUnitTypeOCR && w.Type() == WorkerTypeOCR) {
-				return w
+			targetType := PoolTypeLLM
+			if unit.Type == WorkUnitTypeOCR {
+				targetType = PoolTypeOCR
+			}
+			if p.Type() == targetType {
+				return p
 			}
 		}
 		return nil
 	}
 
-	// Otherwise find any worker of the right type
-	targetType := WorkerTypeLLM
+	// Otherwise find any pool of the right type
+	targetType := PoolTypeLLM
 	if unit.Type == WorkUnitTypeOCR {
-		targetType = WorkerTypeOCR
+		targetType = PoolTypeOCR
 	}
 
-	for _, w := range s.workers {
-		if w.Type() == targetType {
-			return w
+	for _, p := range s.pools {
+		if p.Type() == targetType {
+			return p
 		}
 	}
 

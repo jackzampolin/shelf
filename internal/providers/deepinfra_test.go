@@ -309,8 +309,9 @@ func TestDeepInfraOCRClient_Config(t *testing.T) {
 		if client.RequestsPerSecond() != 5.0 {
 			t.Errorf("RequestsPerSecond() = %f, want 5.0", client.RequestsPerSecond())
 		}
-		if client.MaxRetries() != 3 {
-			t.Errorf("MaxRetries() = %d, want 3", client.MaxRetries())
+		// Default MaxRetries is 7 when not specified
+		if client.MaxRetries() != 7 {
+			t.Errorf("MaxRetries() = %d, want 7", client.MaxRetries())
 		}
 		if client.RetryDelayBase() != 2*time.Second {
 			t.Errorf("RetryDelayBase() = %v, want 2s", client.RetryDelayBase())
