@@ -293,8 +293,11 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Start ToC finder after threshold pages are labeled
-	if labeledCount >= LabelThresholdForBookOps && j.BookState.TocFinder.CanStart() {
+	// Start ToC finder after threshold pages are labeled AND front matter has enough OCR.
+	// Front matter check ensures pages 1-50 have OCR before ToC finder starts,
+	// since ToC is typically in front matter and grep_report searches pages 1-50.
+	frontMatterComplete := j.CountFrontMatterBlendComplete()
+	if labeledCount >= LabelThresholdForBookOps && frontMatterComplete >= FrontMatterOcrThreshold && j.BookState.TocFinder.CanStart() {
 		unit := j.CreateTocFinderWorkUnit(ctx)
 		if unit != nil {
 			if err := j.BookState.TocFinder.Start(); err == nil {

@@ -1,7 +1,6 @@
 package endpoints
 
 import (
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jackzampolin/shelf/internal/api"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // SwaggerEndpoint serves the OpenAPI spec.
@@ -34,7 +34,9 @@ func (e *SwaggerEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		if os.IsNotExist(err) {
 			writeError(w, http.StatusNotFound, "swagger.json not found")
 		} else {
-			slog.Error("failed to read swagger spec", "path", specPath, "error", err)
+			if logger := svcctx.LoggerFrom(r.Context()); logger != nil {
+				logger.Error("failed to read swagger spec", "path", specPath, "error", err)
+			}
 			writeError(w, http.StatusInternalServerError, "failed to read swagger.json")
 		}
 		return
@@ -43,7 +45,9 @@ func (e *SwaggerEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	if _, err := w.Write(data); err != nil {
-		slog.Warn("failed to write swagger response", "error", err)
+		if logger := svcctx.LoggerFrom(r.Context()); logger != nil {
+			logger.Warn("failed to write swagger response", "error", err)
+		}
 	}
 }
 
@@ -102,7 +106,9 @@ func (e *SwaggerUIEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 </html>`
 	w.Header().Set("Content-Type", "text/html")
 	if _, err := w.Write([]byte(html)); err != nil {
-		slog.Warn("failed to write swagger UI response", "error", err)
+		if logger := svcctx.LoggerFrom(r.Context()); logger != nil {
+			logger.Warn("failed to write swagger UI response", "error", err)
+		}
 	}
 }
 

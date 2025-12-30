@@ -12,6 +12,14 @@ import (
 // LabelThresholdForBookOps is the number of labeled pages before triggering book-level operations.
 const LabelThresholdForBookOps = 20
 
+// FrontMatterPageCount is the number of pages considered front matter for ToC search.
+const FrontMatterPageCount = 50
+
+// FrontMatterOcrThreshold is the minimum number of front matter pages that must have
+// blend_complete before starting ToC finder. This ensures the ToC pages have OCR data.
+// Set lower because page processing order isn't guaranteed to be sequential.
+const FrontMatterOcrThreshold = 25
+
 // PageState tracks the processing state of a single page.
 type PageState struct {
 	PageDocID string // DefraDB document ID for the Page record
@@ -168,6 +176,7 @@ type Job struct {
 	LabelProvider    string
 	MetadataProvider string
 	TocProvider      string
+	DebugAgents      bool // Enable debug logging for agent executions
 
 	// PDF sources for extraction
 	PDFs []PDFInfo // Sorted by StartPage
@@ -202,6 +211,7 @@ func New(cfg Config) *Job {
 		LabelProvider:    cfg.LabelProvider,
 		MetadataProvider: cfg.MetadataProvider,
 		TocProvider:      cfg.TocProvider,
+		DebugAgents:      cfg.DebugAgents,
 		PageState:        make(map[int]*PageState),
 		PendingUnits:     make(map[string]WorkUnitInfo),
 	}
@@ -218,6 +228,7 @@ type Config struct {
 	LabelProvider    string
 	MetadataProvider string
 	TocProvider      string
+	DebugAgents      bool // Enable debug logging for agent executions
 }
 
 // CountLabeledPages returns the number of pages that have completed labeling.
@@ -225,6 +236,22 @@ func (j *Job) CountLabeledPages() int {
 	count := 0
 	for _, state := range j.PageState {
 		if state.LabelDone {
+			count++
+		}
+	}
+	return count
+}
+
+// CountFrontMatterBlendComplete returns the number of front matter pages (1-50)
+// that have completed blend. Used to gate ToC finder start.
+func (j *Job) CountFrontMatterBlendComplete() int {
+	count := 0
+	maxPage := FrontMatterPageCount
+	if j.TotalPages < maxPage {
+		maxPage = j.TotalPages
+	}
+	for pageNum := 1; pageNum <= maxPage; pageNum++ {
+		if state, ok := j.PageState[pageNum]; ok && state.BlendDone {
 			count++
 		}
 	}

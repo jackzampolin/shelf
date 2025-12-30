@@ -225,6 +225,55 @@ Flat structure (chapters only):
   }
 }
 
+Flat structure with multi-line entries:
+{
+  "toc_found": true,
+  "toc_page_range": {"start_page": 6, "end_page": 7},
+  "confidence": 0.90,
+  "search_strategy_used": "grep_report",
+  "reasoning": "Single-level part list. Each entry spans multiple lines (prefix, title, page number on separate lines) but ALL at same indentation - no hierarchy.",
+  "structure_summary": {
+    "total_levels": 1,
+    "level_patterns": {
+      "1": {"visual": "Flush left, multi-line entries with page numbers on separate lines", "numbering": "Roman numerals (I-V)", "has_page_numbers": true, "semantic_type": "part"}
+    },
+    "consistency_notes": ["Multi-line format: 'Part I' on one line, title on next, page number on third line - all flush left"]
+  }
+}
+
+2-level with structural markers at same indent:
+{
+  "toc_found": true,
+  "toc_page_range": {"start_page": 11, "end_page": 12},
+  "confidence": 0.92,
+  "search_strategy_used": "grep_report",
+  "reasoning": "2-level structure detected via semantic patterns. 'PART I', 'PART II', 'PART III' markers at same indent as chapters, but clearly separate structural level.",
+  "structure_summary": {
+    "total_levels": 2,
+    "level_patterns": {
+      "1": {"visual": "Flush left, uppercase, bold, structural marker only", "numbering": "Roman numerals (I-III)", "has_page_numbers": false, "semantic_type": "part"},
+      "2": {"visual": "Flush left (same as level 1), standard font", "numbering": "Arabic (1-31)", "has_page_numbers": true, "semantic_type": "chapter"}
+    },
+    "consistency_notes": ["Parts indicated by 'PART [Roman]' on separate lines with no page numbers", "Chapters numbered sequentially across all parts"]
+  }
+}
+
+WARNING - Avoid false positives from OCR spacing artifacts:
+{
+  "toc_found": true,
+  "toc_page_range": {"start_page": 5, "end_page": 5},
+  "confidence": 0.93,
+  "search_strategy_used": "grep_report",
+  "reasoning": "Single-level chapter list. OCR introduced inconsistent spacing (some entries have 2-3 extra spaces) but all entries are semantically the same level - Roman numeral chapters.",
+  "structure_summary": {
+    "total_levels": 1,
+    "level_patterns": {
+      "1": {"visual": "Flush left with minor OCR spacing variations", "numbering": "Roman numerals (I-XI)", "has_page_numbers": true, "semantic_type": "chapter"}
+    },
+    "consistency_notes": ["OCR artifact: some entries have slight indentation (2-3 spaces) but all are same hierarchical level", "All entries follow same pattern: Roman numeral + title + page"]
+  }
+}
+
 Not found:
 {
   "toc_found": false,
@@ -273,14 +322,30 @@ This is ATTEMPT #%d. Previous attempt did not find ToC.
 Previous Strategy: %s
 Pages Checked: %d
 Previous Reasoning: %s
+`, attemptNum+1, prevStrategy, prevPagesChecked, prevReasoning)
 
+	// Include previous page observations if available
+	if prevStructureNotes, ok := previousAttempt["structure_notes"].(map[string]string); ok && len(prevStructureNotes) > 0 {
+		retryContext += "\nPrevious Observations:\n"
+		// Sort and limit to first 5 pages
+		count := 0
+		for pageNum, note := range prevStructureNotes {
+			if count >= 5 {
+				break
+			}
+			retryContext += fmt.Sprintf("  Page %s: %s\n", pageNum, note)
+			count++
+		}
+	}
+
+	retryContext += `
 Consider:
 - Did previous attempt search the right pages?
 - Were there false negatives in grep report?
 - Should you try different page ranges?
 - Could ToC have unusual formatting/naming?
 </previous_attempt>
-`, attemptNum+1, prevStrategy, prevPagesChecked, prevReasoning)
+`
 
 	return basePrompt + retryContext
 }

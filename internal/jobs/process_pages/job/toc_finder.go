@@ -98,6 +98,11 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 			{Role: "user", Content: userPrompt},
 		},
 		MaxIterations: 15,
+		// Observability config
+		AgentType: "toc_finder",
+		BookID:    j.BookID,
+		JobID:     j.RecordID,
+		Debug:     j.DebugAgents,
 	})
 
 	// Get first work unit from agent
@@ -139,6 +144,14 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 
 	// Check if agent is done
 	if j.TocAgent.IsDone() {
+		// Save agent log if debug enabled
+		if err := j.TocAgent.SaveLog(ctx); err != nil {
+			logger := svcctx.LoggerFrom(ctx)
+			if logger != nil {
+				logger.Warn("failed to save agent log", "error", err)
+			}
+		}
+
 		j.BookState.TocFinder.Complete()
 		agentResult := j.TocAgent.Result()
 

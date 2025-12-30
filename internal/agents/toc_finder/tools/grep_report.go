@@ -14,6 +14,8 @@ import (
 type GrepReport struct {
 	SearchRange        string               `json:"search_range"`
 	TotalPagesSearched int                  `json:"total_pages_searched"`
+	PagesWithData      int                  `json:"pages_with_data"`
+	FailedPages        []int                `json:"failed_pages,omitempty"`
 	CategorizedPages   map[string][]int     `json:"categorized_pages"`
 	PageDetails        map[int]CategoryHits `json:"page_details"`
 }
@@ -55,12 +57,17 @@ func (t *ToCFinderTools) getFrontmatterGrepReport(ctx context.Context) (string, 
 		PageDetails:        make(map[int]CategoryHits),
 	}
 
-	// Query blended text for each page
+	// Query blended text for each page, tracking failures
+	var failedPages []int
+	pagesWithData := 0
+
 	for pageNum := 1; pageNum <= maxPages; pageNum++ {
 		text, err := t.getPageBlendedText(ctx, pageNum)
 		if err != nil {
+			failedPages = append(failedPages, pageNum)
 			continue
 		}
+		pagesWithData++
 
 		categories := searchCategorizedPatterns(text)
 		if len(categories) > 0 {
@@ -70,6 +77,9 @@ func (t *ToCFinderTools) getFrontmatterGrepReport(ctx context.Context) (string, 
 			}
 		}
 	}
+
+	report.PagesWithData = pagesWithData
+	report.FailedPages = failedPages
 
 	t.grepReportCache = report
 	summary := summarizeGrepReport(report)
@@ -168,12 +178,22 @@ func searchCategorizedPatterns(text string) CategoryHits {
 // summarizeGrepReport generates an actionable summary.
 func summarizeGrepReport(report *GrepReport) string {
 	var lines []string
-	lines = append(lines, fmt.Sprintf("Searched: %s", report.SearchRange))
+	lines = append(lines, fmt.Sprintf("Searched: %s (%d pages with OCR data)", report.SearchRange, report.PagesWithData))
+
+	// Warn about missing data
+	if len(report.FailedPages) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, fmt.Sprintf("⚠️  WARNING: %d pages missing OCR data: %v", len(report.FailedPages), report.FailedPages))
+		lines = append(lines, "   These pages could not be searched - ToC might be on an unsearched page!")
+	}
 	lines = append(lines, "")
 
 	categorized := report.CategorizedPages
 	if len(categorized) == 0 {
-		lines = append(lines, "No keywords found in search range.")
+		lines = append(lines, "No keywords found in searchable pages.")
+		if len(report.FailedPages) > 0 {
+			lines = append(lines, "Consider visually checking failed pages - they may contain ToC.")
+		}
 		return strings.Join(lines, "\n")
 	}
 

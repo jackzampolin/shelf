@@ -27,6 +27,7 @@ var registry = []Schema{
 	{Name: "OcrResult", Order: 5}, // depends on Page
 	{Name: "ToC", Order: 6},       // depends on Book
 	{Name: "TocEntry", Order: 7},  // depends on ToC, Page
+	{Name: "AgentRun", Order: 8},  // standalone, for debugging agent executions
 }
 
 // All returns all schemas in dependency order.
