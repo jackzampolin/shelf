@@ -29,6 +29,7 @@ type Config struct {
 	LabelProvider    string
 	MetadataProvider string
 	TocProvider      string
+	DebugAgents      bool // Enable debug logging for agent executions
 }
 
 // Validate checks that the config has all required fields.
@@ -230,6 +231,7 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 		LabelProvider:    cfg.LabelProvider,
 		MetadataProvider: cfg.MetadataProvider,
 		TocProvider:      cfg.TocProvider,
+		DebugAgents:      cfg.DebugAgents,
 	}), nil
 }
 

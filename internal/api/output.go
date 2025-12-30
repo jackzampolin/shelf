@@ -73,3 +73,13 @@ func OutputTo(w io.Writer, format OutputFormat, data any) error {
 func IsStructuredOutput() bool {
 	return globalOutputFormat == OutputFormatJSON || globalOutputFormat == OutputFormatYAML
 }
+
+// OutputToFile writes data to a file in JSON format.
+func OutputToFile(data any, path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer f.Close()
+	return OutputTo(f, OutputFormatJSON, data)
+}

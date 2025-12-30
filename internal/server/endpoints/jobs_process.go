@@ -38,6 +38,20 @@ func (e *StartJobEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *StartJobEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		Start job for a book
+//	@Description	Start processing job (OCR, blend, label) for a book
+//	@Tags			jobs
+//	@Accept			json
+//	@Produce		json
+//	@Param			book_id	path		string			true	"Book ID"
+//	@Param			request	body		StartJobRequest	false	"Optional job type"
+//	@Success		202		{object}	StartJobResponse
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		500		{object}	ErrorResponse
+//	@Failure		503		{object}	ErrorResponse
+//	@Router			/api/jobs/start/{book_id} [post]
 func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	bookID := r.PathValue("book_id")
 	if bookID == "" {
@@ -151,6 +165,19 @@ func (e *JobStatusEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *JobStatusEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		Get job status for a book
+//	@Description	Get processing status for a book's jobs
+//	@Tags			jobs
+//	@Produce		json
+//	@Param			book_id		path		string	true	"Book ID"
+//	@Param			job_type	query		string	false	"Job type (default: process-pages)"
+//	@Success		200			{object}	JobStatusResponse
+//	@Failure		400			{object}	ErrorResponse
+//	@Failure		500			{object}	ErrorResponse
+//	@Failure		503			{object}	ErrorResponse
+//	@Router			/api/jobs/status/{book_id} [get]
 func (e *JobStatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	bookID := r.PathValue("book_id")
 	if bookID == "" {

@@ -32,6 +32,21 @@ func (e *MetricsSummaryEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *MetricsSummaryEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		Get metrics summary
+//	@Description	Get aggregated metrics summary with counts, costs, and timing
+//	@Tags			metrics
+//	@Produce		json
+//	@Param			job_id		query		string	false	"Filter by job ID"
+//	@Param			book_id		query		string	false	"Filter by book ID"
+//	@Param			stage		query		string	false	"Filter by stage"
+//	@Param			provider	query		string	false	"Filter by provider"
+//	@Param			model		query		string	false	"Filter by model"
+//	@Success		200			{object}	MetricsSummaryResponse
+//	@Failure		500			{object}	ErrorResponse
+//	@Failure		503			{object}	ErrorResponse
+//	@Router			/api/metrics/summary [get]
 func (e *MetricsSummaryEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	defraClient := svcctx.DefraClientFrom(r.Context())
 	if defraClient == nil {

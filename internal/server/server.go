@@ -83,6 +83,8 @@ type PipelineConfig struct {
 	MetadataProvider string
 	// TocProvider is the LLM provider for ToC operations
 	TocProvider string
+	// DebugAgents enables debug logging for agent executions
+	DebugAgents bool
 }
 
 // New creates a new Server with the given configuration.
@@ -129,6 +131,7 @@ func New(cfg Config) (*Server, error) {
 		LabelProvider:    cfg.PipelineConfig.LabelProvider,
 		MetadataProvider: cfg.PipelineConfig.MetadataProvider,
 		TocProvider:      cfg.PipelineConfig.TocProvider,
+		DebugAgents:      cfg.PipelineConfig.DebugAgents,
 	}
 
 	s := &Server{

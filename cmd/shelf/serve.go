@@ -1,3 +1,17 @@
+// Shelf API
+//
+//	@title			Shelf API
+//	@version		1.0
+//	@description	Book digitization pipeline API for managing books, jobs, and processing.
+//
+//	@contact.name	API Support
+//	@contact.url	https://github.com/jackzampolin/shelf
+//
+//	@license.name	MIT
+//	@license.url	https://opensource.org/licenses/MIT
+//
+//	@host		localhost:8080
+//	@BasePath	/
 package main
 
 import (
@@ -37,10 +51,12 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
-		// Set up logger
+		// Set up logger with configured level
+		logLvl := GetLogLevel()
 		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelInfo,
+			Level: logLvl,
 		}))
+		logger.Info("starting shelf server", "log_level", logLvl.String())
 
 		// Get home directory
 		h, err := home.New(homeDir)
@@ -113,6 +129,8 @@ Examples:
 			pipelineConfig.TocProvider = cfg.Defaults.LLMProvider
 			logger.Info("pipeline config loaded", "ocr_providers", pipelineConfig.OcrProviders)
 		}
+		// Enable agent debug logging when log level is debug
+		pipelineConfig.DebugAgents = IsDebugLevel()
 
 		// Create server
 		srv, err := server.New(server.Config{

@@ -25,6 +25,22 @@ func (e *MetricsCostEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *MetricsCostEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		Get cost breakdown
+//	@Description	Get total cost with optional breakdown by stage/provider/model
+//	@Tags			metrics
+//	@Produce		json
+//	@Param			job_id		query		string	false	"Filter by job ID"
+//	@Param			book_id		query		string	false	"Filter by book ID"
+//	@Param			stage		query		string	false	"Filter by stage"
+//	@Param			provider	query		string	false	"Filter by provider"
+//	@Param			model		query		string	false	"Filter by model"
+//	@Param			by			query		string	false	"Breakdown by: stage, provider, or model"
+//	@Success		200			{object}	MetricsCostResponse
+//	@Failure		500			{object}	ErrorResponse
+//	@Failure		503			{object}	ErrorResponse
+//	@Router			/api/metrics/cost [get]
 func (e *MetricsCostEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	defraClient := svcctx.DefraClientFrom(r.Context())
 	if defraClient == nil {

@@ -93,13 +93,15 @@ func (t *ToCFinderTools) writeTocResult(ctx context.Context, args map[string]any
 		PagesChecked:       len(t.pageObservations),
 	}
 
-	// Parse page range if provided
+	// Parse page range if provided (with safe type assertions)
 	if tocPageRange, ok := args["toc_page_range"].(map[string]any); ok && tocFound {
-		startPage := int(tocPageRange["start_page"].(float64))
-		endPage := int(tocPageRange["end_page"].(float64))
-		result.ToCPageRange = &toc_finder.PageRange{
-			StartPage: startPage,
-			EndPage:   endPage,
+		startPageF, startOK := tocPageRange["start_page"].(float64)
+		endPageF, endOK := tocPageRange["end_page"].(float64)
+		if startOK && endOK {
+			result.ToCPageRange = &toc_finder.PageRange{
+				StartPage: int(startPageF),
+				EndPage:   int(endPageF),
+			}
 		}
 	}
 
@@ -111,11 +113,14 @@ func (t *ToCFinderTools) writeTocResult(ctx context.Context, args map[string]any
 		}
 	}
 
-	// Parse structure summary if provided
+	// Parse structure summary if provided (with safe type assertions)
 	if structureSummaryRaw, ok := args["structure_summary"].(map[string]any); ok && tocFound {
-		totalLevels := int(structureSummaryRaw["total_levels"].(float64))
+		totalLevelsF, totalOK := structureSummaryRaw["total_levels"].(float64)
+		if !totalOK {
+			totalLevelsF = 1 // Default to 1 level if not specified
+		}
 		result.StructureSummary = &toc_finder.StructureSummary{
-			TotalLevels:   totalLevels,
+			TotalLevels:   int(totalLevelsF),
 			LevelPatterns: make(map[string]toc_finder.LevelPattern),
 		}
 
@@ -126,8 +131,9 @@ func (t *ToCFinderTools) writeTocResult(ctx context.Context, args map[string]any
 					continue
 				}
 
-				lp := toc_finder.LevelPattern{
-					HasPageNumbers: pattern["has_page_numbers"].(bool),
+				lp := toc_finder.LevelPattern{}
+				if hasPageNumbers, ok := pattern["has_page_numbers"].(bool); ok {
+					lp.HasPageNumbers = hasPageNumbers
 				}
 				if visual, ok := pattern["visual"].(string); ok {
 					lp.Visual = visual

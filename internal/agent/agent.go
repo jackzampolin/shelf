@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackzampolin/shelf/internal/agent/observability"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
@@ -24,6 +25,12 @@ type Config struct {
 
 	// MaxIterations limits the agent loop (default: 15)
 	MaxIterations int
+
+	// Observability config (for debug tracing)
+	AgentType string // e.g., "toc_finder", "toc_extract"
+	BookID    string // Book being processed
+	JobID     string // Job ID for correlation
+	Debug     bool   // Enable debug logging to DefraDB
 }
 
 // Agent manages state for a single agent conversation.
@@ -51,6 +58,9 @@ type Agent struct {
 	// Completion state
 	complete bool
 	result   *Result
+
+	// Observability (nil if debug disabled)
+	logger *observability.Logger
 }
 
 // New creates a new Agent with the given configuration.
@@ -69,6 +79,12 @@ func New(cfg Config) *Agent {
 	messages := make([]providers.Message, len(cfg.InitialMessages))
 	copy(messages, cfg.InitialMessages)
 
+	// Create logger if debug enabled
+	var logger *observability.Logger
+	if cfg.Debug {
+		logger = observability.NewLogger(id, cfg.AgentType, cfg.BookID, cfg.JobID)
+	}
+
 	return &Agent{
 		id:            id,
 		tools:         cfg.Tools,
@@ -76,6 +92,7 @@ func New(cfg Config) *Agent {
 		messages:      messages,
 		toolResults:   make(map[string]string),
 		startTime:     time.Now(),
+		logger:        logger,
 	}
 }
 
@@ -251,7 +268,15 @@ func (a *Agent) ExecuteTool(ctx context.Context, tc providers.ToolCall) (string,
 			return "", fmt.Errorf("failed to parse tool arguments: %w", err)
 		}
 	}
-	return a.tools.ExecuteTool(ctx, tc.Function.Name, args)
+
+	result, err := a.tools.ExecuteTool(ctx, tc.Function.Name, args)
+
+	// Log tool call if debug enabled
+	if a.logger != nil {
+		a.logger.LogToolCall(a.iteration, tc.Function.Name, args, result, err)
+	}
+
+	return result, err
 }
 
 // IsDone returns true if the agent has completed (success or failure).
@@ -273,6 +298,39 @@ func (a *Agent) Iteration() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.iteration
+}
+
+// SaveLog persists the agent execution log to DefraDB.
+// Should be called after IsDone() returns true.
+// No-op if debug logging is disabled.
+func (a *Agent) SaveLog(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.logger == nil {
+		return nil
+	}
+
+	// Capture final messages
+	a.logger.SetMessages(a.messages)
+
+	// Determine success and error
+	success := a.result != nil && a.result.Success
+	var resultData any
+	var err error
+	if a.result != nil {
+		resultData = a.result.ToolResult
+		if !a.result.Success && a.result.Error != "" {
+			err = fmt.Errorf("%s", a.result.Error)
+		}
+	}
+
+	return a.logger.Save(ctx, success, a.iteration, resultData, err)
+}
+
+// HasLogger returns true if debug logging is enabled.
+func (a *Agent) HasLogger() bool {
+	return a.logger != nil
 }
 
 // WorkUnit represents a unit of work the agent needs executed.

@@ -26,6 +26,14 @@ func (e *HealthEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *HealthEndpoint) RequiresInit() bool { return false }
 
+// handler godoc
+//
+//	@Summary		Health check
+//	@Description	Basic health check endpoint
+//	@Tags			health
+//	@Produce		json
+//	@Success		200	{object}	HealthResponse
+//	@Router			/health [get]
 func (e *HealthEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, HealthResponse{Status: "ok"})
 }
@@ -55,6 +63,15 @@ func (e *ReadyEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *ReadyEndpoint) RequiresInit() bool { return false }
 
+// handler godoc
+//
+//	@Summary		Readiness check
+//	@Description	Readiness check including DefraDB status
+//	@Tags			health
+//	@Produce		json
+//	@Success		200	{object}	HealthResponse
+//	@Failure		503	{object}	HealthResponse
+//	@Router			/ready [get]
 func (e *ReadyEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	resp := HealthResponse{Status: "ok", Defra: "ok"}
 
@@ -124,6 +141,14 @@ func (e *StatusEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *StatusEndpoint) RequiresInit() bool { return false }
 
+// handler godoc
+//
+//	@Summary		Server status
+//	@Description	Get detailed server status including providers and DefraDB
+//	@Tags			health
+//	@Produce		json
+//	@Success		200	{object}	StatusResponse
+//	@Router			/status [get]
 func (e *StatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	resp := StatusResponse{
 		Server: "running",

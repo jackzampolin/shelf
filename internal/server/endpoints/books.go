@@ -37,6 +37,19 @@ func (e *IngestEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *IngestEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		Ingest book scans
+//	@Description	Ingest PDF files as a new book and start processing
+//	@Tags			books
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		IngestRequest	true	"Ingest request"
+//	@Success		202		{object}	IngestResponse
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		500		{object}	ErrorResponse
+//	@Failure		503		{object}	ErrorResponse
+//	@Router			/api/books/ingest [post]
 func (e *IngestEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	var req IngestRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -161,6 +174,16 @@ func (e *ListBooksEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *ListBooksEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		List books
+//	@Description	List all books in the library
+//	@Tags			books
+//	@Produce		json
+//	@Success		200	{object}	ListBooksResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Failure		503	{object}	ErrorResponse
+//	@Router			/api/books [get]
 func (e *ListBooksEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	client := svcctx.DefraClientFrom(r.Context())
 	if client == nil {
@@ -238,6 +261,19 @@ func (e *GetBookEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *GetBookEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		Get book by ID
+//	@Description	Get detailed information about a book
+//	@Tags			books
+//	@Produce		json
+//	@Param			id	path		string	true	"Book ID"
+//	@Success		200	{object}	Book
+//	@Failure		400	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Failure		503	{object}	ErrorResponse
+//	@Router			/api/books/{id} [get]
 func (e *GetBookEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {

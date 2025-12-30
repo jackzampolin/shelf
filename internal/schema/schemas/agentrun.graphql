@@ -1,0 +1,27 @@
+type AgentRun {
+    # Context
+    agent_id: String @index
+    agent_type: String @index  # "toc_finder", "toc_extract", etc.
+    book_id: String @index
+    job_id: String @index
+
+    # Timing
+    started_at: DateTime
+    completed_at: DateTime
+
+    # Execution
+    iterations: Int
+
+    # Result
+    success: Boolean
+    error: String
+
+    # Conversation trace (JSON-encoded for flexibility)
+    messages_json: String
+
+    # Tool calls summary (JSON array of tool call logs)
+    tool_calls_json: String
+
+    # Final structured result (JSON-encoded)
+    result_json: String
+}
