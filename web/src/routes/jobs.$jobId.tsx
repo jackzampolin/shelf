@@ -1,10 +1,44 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '@/api/client'
+import type { components } from '@/api/types'
+
+type ProviderProgress = components['schemas']['github_com_jackzampolin_shelf_internal_jobs.ProviderProgress']
 
 export const Route = createFileRoute('/jobs/$jobId')({
   component: JobDetailPage,
 })
+
+function ProgressBar({ completed, total, failed }: { completed: number; total: number; failed: number }) {
+  const percentage = total > 0 ? Math.round((completed / total) * 100) : 0
+  const failedPercentage = total > 0 ? Math.round((failed / total) * 100) : 0
+
+  return (
+    <div className="w-full">
+      <div className="flex justify-between text-sm mb-1">
+        <span className="text-gray-600">
+          {completed} / {total} completed
+          {failed > 0 && <span className="text-red-600 ml-2">({failed} failed)</span>}
+        </span>
+        <span className="text-gray-600">{percentage}%</span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+        <div className="h-full flex">
+          <div
+            className="bg-green-500 transition-all duration-300"
+            style={{ width: `${percentage}%` }}
+          />
+          {failed > 0 && (
+            <div
+              className="bg-red-500 transition-all duration-300"
+              style={{ width: `${failedPercentage}%` }}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function JobDetailPage() {
   const { jobId } = Route.useParams()
@@ -53,12 +87,38 @@ function JobDetailPage() {
         return 'bg-blue-100 text-blue-800'
       case 'failed':
         return 'bg-red-100 text-red-800'
-      case 'pending':
+      case 'queued':
         return 'bg-yellow-100 text-yellow-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
   }
+
+  // Calculate overall progress from provider progress
+  const calculateOverallProgress = () => {
+    if (!job.progress) return null
+
+    let totalCompleted = 0
+    let totalExpected = 0
+    let totalFailed = 0
+
+    Object.values(job.progress).forEach((p: ProviderProgress) => {
+      totalCompleted += (p.completed ?? 0) + (p.completedAtStart ?? 0)
+      totalExpected += p.totalExpected ?? 0
+      totalFailed += p.failed ?? 0
+    })
+
+    if (totalExpected === 0) return null
+
+    return {
+      completed: totalCompleted,
+      total: totalExpected,
+      failed: totalFailed,
+      percentage: Math.round((totalCompleted / totalExpected) * 100),
+    }
+  }
+
+  const overallProgress = calculateOverallProgress()
 
   return (
     <div className="space-y-6">
@@ -78,6 +138,18 @@ function JobDetailPage() {
           {job.status}
         </span>
       </div>
+
+      {/* Overall Progress (for running jobs) */}
+      {overallProgress && job.status === 'running' && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-blue-800 mb-2">Overall Progress</h3>
+          <ProgressBar
+            completed={overallProgress.completed}
+            total={overallProgress.total}
+            failed={overallProgress.failed}
+          />
+        </div>
+      )}
 
       {/* Job Info */}
       <div className="bg-white rounded-lg shadow p-6">
@@ -102,6 +174,14 @@ function JobDetailPage() {
               {job.started_at ? new Date(job.started_at).toLocaleString() : '-'}
             </dd>
           </div>
+          {job.completed_at && (
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Completed</dt>
+              <dd className="mt-1 text-sm text-gray-900">
+                {new Date(job.completed_at).toLocaleString()}
+              </dd>
+            </div>
+          )}
         </dl>
       </div>
 
@@ -110,6 +190,34 @@ function JobDetailPage() {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <h3 className="text-sm font-medium text-red-800">Error</h3>
           <pre className="mt-2 text-sm text-red-700 whitespace-pre-wrap">{job.error}</pre>
+        </div>
+      )}
+
+      {/* Provider Progress with progress bars */}
+      {job.progress && Object.keys(job.progress).length > 0 && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Provider Progress</h3>
+          <div className="space-y-6">
+            {Object.entries(job.progress).map(([provider, progress]) => {
+              const p = progress as ProviderProgress
+              const completed = (p.completed ?? 0) + (p.completedAtStart ?? 0)
+              const total = p.totalExpected ?? 0
+              const failed = p.failed ?? 0
+              const queued = p.queued ?? 0
+
+              return (
+                <div key={provider} className="border-b pb-4 last:border-0 last:pb-0">
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="font-medium text-gray-700">{provider}</h4>
+                    {queued > 0 && (
+                      <span className="text-sm text-yellow-600">{queued} queued</span>
+                    )}
+                  </div>
+                  <ProgressBar completed={completed} total={total} failed={failed} />
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -128,54 +236,23 @@ function JobDetailPage() {
         </div>
       )}
 
-      {/* Provider Progress */}
-      {job.progress && Object.keys(job.progress).length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Provider Progress</h3>
-          <div className="space-y-4">
-            {Object.entries(job.progress).map(([provider, progress]) => (
-              <div key={provider} className="border-b pb-4 last:border-0">
-                <h4 className="font-medium text-gray-700">{provider}</h4>
-                <dl className="mt-2 grid grid-cols-3 gap-2 text-sm">
-                  <div>
-                    <dt className="text-gray-500">Completed</dt>
-                    <dd className="font-medium">{(progress as any).completed || 0}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-500">Failed</dt>
-                    <dd className="font-medium text-red-600">{(progress as any).failed || 0}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-500">Total</dt>
-                    <dd className="font-medium">{(progress as any).total || 0}</dd>
-                  </div>
-                </dl>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Worker Status */}
       {job.worker_status && Object.keys(job.worker_status).length > 0 && (
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Worker Status</h3>
-          <div className="space-y-4">
-            {Object.entries(job.worker_status).map(([worker, status]) => (
-              <div key={worker} className="border-b pb-4 last:border-0">
-                <h4 className="font-medium text-gray-700">{worker}</h4>
-                <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <dt className="text-gray-500">Queue Depth</dt>
-                    <dd className="font-medium">{(status as any).queue_depth || 0}</dd>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Object.entries(job.worker_status).map(([worker, status]) => {
+              const s = status as { queue_depth?: number; type?: string }
+              return (
+                <div key={worker} className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="font-medium text-gray-700 text-sm">{worker}</h4>
+                  <div className="mt-2 text-sm">
+                    <span className="text-gray-500">Queue: </span>
+                    <span className="font-medium">{s.queue_depth ?? 0}</span>
                   </div>
-                  <div>
-                    <dt className="text-gray-500">Active Workers</dt>
-                    <dd className="font-medium">{(status as any).active_workers || 0}</dd>
-                  </div>
-                </dl>
-              </div>
-            ))}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

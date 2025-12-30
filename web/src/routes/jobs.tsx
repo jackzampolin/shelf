@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '@/api/client'
@@ -7,6 +8,8 @@ export const Route = createFileRoute('/jobs')({
 })
 
 function JobsPage() {
+  const [showFinished, setShowFinished] = useState(false)
+
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['jobs'],
     queryFn: async () => unwrap(await client.GET('/api/jobs')),
@@ -29,7 +32,23 @@ function JobsPage() {
     )
   }
 
-  const jobs = data?.jobs || []
+  const allJobs = data?.jobs || []
+
+  // Sort by created_at descending (most recent first)
+  const sortedJobs = [...allJobs].sort((a, b) => {
+    const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
+    const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
+    return dateB - dateA
+  })
+
+  // Filter out completed/failed jobs unless toggle is on
+  const jobs = showFinished
+    ? sortedJobs
+    : sortedJobs.filter((job) => job.status !== 'completed' && job.status !== 'failed')
+
+  const finishedCount = sortedJobs.filter(
+    (job) => job.status === 'completed' || job.status === 'failed'
+  ).length
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -39,7 +58,7 @@ function JobsPage() {
         return 'bg-blue-100 text-blue-800'
       case 'failed':
         return 'bg-red-100 text-red-800'
-      case 'pending':
+      case 'queued':
         return 'bg-yellow-100 text-yellow-800'
       default:
         return 'bg-gray-100 text-gray-800'
@@ -51,21 +70,43 @@ function JobsPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Jobs</h1>
-          <p className="text-gray-500">{jobs.length} jobs</p>
+          <p className="text-gray-500">
+            {jobs.length} active jobs
+            {finishedCount > 0 && !showFinished && (
+              <span className="text-gray-400"> ({finishedCount} finished hidden)</span>
+            )}
+          </p>
         </div>
-        <button
-          onClick={() => refetch()}
-          className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-        >
-          Refresh
-        </button>
+        <div className="flex items-center space-x-4">
+          <label className="flex items-center space-x-2 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={showFinished}
+              onChange={(e) => setShowFinished(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>Show finished</span>
+          </label>
+          <button
+            onClick={() => refetch()}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       {jobs.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-12 text-center">
-          <p className="text-gray-500">No jobs yet.</p>
+          <p className="text-gray-500">
+            {showFinished ? 'No jobs yet.' : 'No active jobs.'}
+          </p>
           <p className="text-sm text-gray-400 mt-2">
-            Start processing a book to create jobs.
+            {showFinished
+              ? 'Start processing a book to create jobs.'
+              : finishedCount > 0
+              ? 'Toggle "Show finished" to see completed jobs.'
+              : 'Start processing a book to create jobs.'}
           </p>
         </div>
       ) : (
