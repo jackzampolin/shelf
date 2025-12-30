@@ -2,6 +2,9 @@ type ToC {
     # One-to-one: ToC belongs to Book (other side has @primary)
     book: Book
 
+    # Creation timestamp (ensures unique DocID per creation attempt)
+    created_at: DateTime
+
     # Finder results
     toc_found: Boolean
     start_page: Int

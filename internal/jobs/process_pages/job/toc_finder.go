@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/agent"
@@ -54,6 +55,8 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 
 		// Only create if no ToC exists
 		if j.TocDocID == "" {
+			// Include created_at timestamp to ensure unique DocID per book/attempt
+			// (DefraDB generates deterministic DocIDs based on content)
 			result, err := sink.SendSync(ctx, defra.WriteOp{
 				Collection: "ToC",
 				Document: map[string]any{
@@ -61,6 +64,8 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 					"finder_complete":  false,
 					"extract_complete": false,
 					"link_complete":    false,
+					"finder_started":   true,
+					"created_at":       time.Now().Format(time.RFC3339Nano),
 				},
 				Op: defra.OpCreate,
 			})
@@ -69,8 +74,9 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 			}
 			j.TocDocID = result.DocID
 
-			// Then update the Book to link to this ToC
-			sink.Send(defra.WriteOp{
+			// Update the Book to link to this ToC synchronously to ensure
+			// the relationship exists before we return
+			_, err = sink.SendSync(ctx, defra.WriteOp{
 				Collection: "Book",
 				DocID:      j.BookID,
 				Document: map[string]any{
@@ -78,6 +84,13 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 				},
 				Op: defra.OpUpdate,
 			})
+			if err != nil {
+				// Log but continue - ToC was created, just not linked yet
+				logger := svcctx.LoggerFrom(ctx)
+				if logger != nil {
+					logger.Warn("failed to link ToC to Book", "error", err, "toc_doc_id", j.TocDocID)
+				}
+			}
 		}
 	}
 
