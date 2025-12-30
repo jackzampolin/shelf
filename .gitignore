@@ -45,3 +45,4 @@ coverage.html
 test_results/
 test_outputs/
 testdata/
+.test-home/

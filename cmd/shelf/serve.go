@@ -39,7 +39,7 @@ Examples:
 
 		// Set up logger
 		logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelInfo,
+			Level: slog.LevelInfo, // TODO: Make configurable via --log-level flag
 		}))
 
 		// Get home directory

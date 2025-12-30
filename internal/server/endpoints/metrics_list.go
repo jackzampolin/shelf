@@ -27,6 +27,22 @@ func (e *ListMetricsEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *ListMetricsEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		List metrics
+//	@Description	List LLM/OCR call metrics with optional filtering
+//	@Tags			metrics
+//	@Produce		json
+//	@Param			job_id		query		string	false	"Filter by job ID"
+//	@Param			book_id		query		string	false	"Filter by book ID"
+//	@Param			stage		query		string	false	"Filter by stage"
+//	@Param			provider	query		string	false	"Filter by provider"
+//	@Param			model		query		string	false	"Filter by model"
+//	@Param			limit		query		int		false	"Maximum results (default 100)"
+//	@Success		200			{object}	ListMetricsResponse
+//	@Failure		500			{object}	ErrorResponse
+//	@Failure		503			{object}	ErrorResponse
+//	@Router			/api/metrics [get]
 func (e *ListMetricsEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	defraClient := svcctx.DefraClientFrom(r.Context())
 	if defraClient == nil {

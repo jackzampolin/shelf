@@ -1,0 +1,931 @@
+definitions:
+  github_com_jackzampolin_shelf_internal_jobs.ProviderProgress:
+    properties:
+      completed:
+        description: Completed during this job execution
+        type: integer
+      completedAtStart:
+        description: Already completed before job started (from DefraDB)
+        type: integer
+      failed:
+        description: Failed during this job execution
+        type: integer
+      queued:
+        description: Currently queued/in-flight
+        type: integer
+      totalExpected:
+        description: Total work units expected for this provider
+        type: integer
+    type: object
+  github_com_jackzampolin_shelf_internal_jobs.Record:
+    properties:
+      _docID:
+        type: string
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error:
+        type: string
+      job_type:
+        type: string
+      metadata:
+        additionalProperties: {}
+        type: object
+      started_at:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Status'
+    type: object
+  github_com_jackzampolin_shelf_internal_jobs.Status:
+    enum:
+    - queued
+    - running
+    - completed
+    - failed
+    - cancelled
+    type: string
+    x-enum-varnames:
+    - StatusQueued
+    - StatusRunning
+    - StatusCompleted
+    - StatusFailed
+    - StatusCancelled
+  github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo:
+    properties:
+      queue_depth:
+        type: integer
+      rate_limiter:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_providers.RateLimiterStatus'
+      type:
+        type: string
+    type: object
+  github_com_jackzampolin_shelf_internal_metrics.Metric:
+    properties:
+      _docID:
+        type: string
+      book_id:
+        type: string
+      completion_tokens:
+        type: integer
+      cost_usd:
+        description: Cost and tokens
+        type: number
+      created_at:
+        description: Metadata
+        type: string
+      error_type:
+        type: string
+      execution_seconds:
+        type: number
+      item_key:
+        description: e.g., "page_0001", "toc_entry_5"
+        type: string
+      job_id:
+        description: Attribution (for filtering/aggregation)
+        type: string
+      model:
+        type: string
+      output_cid:
+        description: Exact version (CID)
+        type: string
+      output_doc_id:
+        description: Output reference (version-specific)
+        type: string
+      output_type:
+        description: Collection name
+        type: string
+      prompt_tokens:
+        type: integer
+      provider:
+        description: Provider info
+        type: string
+      queue_seconds:
+        description: Timing
+        type: number
+      reasoning_tokens:
+        type: integer
+      stage:
+        type: string
+      success:
+        description: Status
+        type: boolean
+      total_seconds:
+        type: number
+      total_tokens:
+        type: integer
+    type: object
+  github_com_jackzampolin_shelf_internal_providers.RateLimiterStatus:
+    properties:
+      last_429_time:
+        type: string
+      rps:
+        type: number
+      time_until_token:
+        $ref: '#/definitions/time.Duration'
+      tokens_available:
+        type: number
+      total_consumed:
+        type: integer
+      total_waited:
+        $ref: '#/definitions/time.Duration'
+      utilization:
+        type: number
+    type: object
+  internal_server_endpoints.Book:
+    properties:
+      author:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      page_count:
+        type: integer
+      status:
+        type: string
+      title:
+        type: string
+    type: object
+  internal_server_endpoints.CreateJobRequest:
+    properties:
+      job_type:
+        type: string
+      metadata:
+        additionalProperties: {}
+        type: object
+    type: object
+  internal_server_endpoints.CreateJobResponse:
+    properties:
+      id:
+        type: string
+    type: object
+  internal_server_endpoints.DefraStatus:
+    properties:
+      container:
+        type: string
+      health:
+        type: string
+      url:
+        type: string
+    type: object
+  internal_server_endpoints.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  internal_server_endpoints.GetJobResponse:
+    properties:
+      _docID:
+        type: string
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error:
+        type: string
+      job_type:
+        type: string
+      live_status:
+        additionalProperties:
+          type: string
+        description: Live status fields (only populated for running jobs)
+        type: object
+      metadata:
+        additionalProperties: {}
+        type: object
+      pending_units:
+        type: integer
+      progress:
+        additionalProperties:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.ProviderProgress'
+        type: object
+      started_at:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Status'
+      worker_status:
+        additionalProperties:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo'
+        type: object
+    type: object
+  internal_server_endpoints.HealthResponse:
+    properties:
+      defra:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_server_endpoints.IngestRequest:
+    properties:
+      author:
+        type: string
+      pdf_paths:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+    type: object
+  internal_server_endpoints.IngestResponse:
+    properties:
+      author:
+        type: string
+      job_id:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+    type: object
+  internal_server_endpoints.JobStatusResponse:
+    properties:
+      blend_complete:
+        type: integer
+      book_id:
+        type: string
+      is_complete:
+        type: boolean
+      job_type:
+        type: string
+      label_complete:
+        type: integer
+      metadata_complete:
+        type: boolean
+      ocr_complete:
+        type: integer
+      toc_extracted:
+        type: boolean
+      toc_found:
+        type: boolean
+      total_pages:
+        type: integer
+    type: object
+  internal_server_endpoints.ListBooksResponse:
+    properties:
+      books:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.Book'
+        type: array
+    type: object
+  internal_server_endpoints.ListJobsResponse:
+    properties:
+      jobs:
+        items:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Record'
+        type: array
+    type: object
+  internal_server_endpoints.ListMetricsResponse:
+    properties:
+      count:
+        type: integer
+      metrics:
+        items:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_metrics.Metric'
+        type: array
+    type: object
+  internal_server_endpoints.MetricsCostResponse:
+    properties:
+      breakdown:
+        additionalProperties:
+          format: float64
+          type: number
+        type: object
+      total_cost_usd:
+        type: number
+    type: object
+  internal_server_endpoints.MetricsSummaryResponse:
+    properties:
+      avg_cost_usd:
+        type: number
+      avg_time_seconds:
+        type: number
+      avg_tokens:
+        type: number
+      count:
+        type: integer
+      error_count:
+        type: integer
+      success_count:
+        type: integer
+      total_cost_usd:
+        type: number
+      total_time_seconds:
+        type: number
+      total_tokens:
+        type: integer
+    type: object
+  internal_server_endpoints.ProvidersStatus:
+    properties:
+      llm:
+        items:
+          type: string
+        type: array
+      ocr:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_server_endpoints.StartJobRequest:
+    properties:
+      job_type:
+        description: 'Optional: defaults to "process-pages"'
+        type: string
+    type: object
+  internal_server_endpoints.StartJobResponse:
+    properties:
+      book_id:
+        type: string
+      job_id:
+        type: string
+      job_type:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_server_endpoints.StatusResponse:
+    properties:
+      defra:
+        $ref: '#/definitions/internal_server_endpoints.DefraStatus'
+      providers:
+        $ref: '#/definitions/internal_server_endpoints.ProvidersStatus'
+      server:
+        type: string
+    type: object
+  internal_server_endpoints.UpdateJobRequest:
+    properties:
+      error:
+        type: string
+      metadata:
+        additionalProperties: {}
+        type: object
+      status:
+        type: string
+    type: object
+  time.Duration:
+    enum:
+    - -9223372036854775808
+    - 9223372036854775807
+    - 1
+    - 1000
+    - 1000000
+    - 1000000000
+    - 60000000000
+    - 3600000000000
+    format: int64
+    type: integer
+    x-enum-varnames:
+    - minDuration
+    - maxDuration
+    - Nanosecond
+    - Microsecond
+    - Millisecond
+    - Second
+    - Minute
+    - Hour
+info:
+  contact: {}
+paths:
+  /api/books:
+    get:
+      description: List all books in the library
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ListBooksResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List books
+      tags:
+      - books
+  /api/books/{id}:
+    get:
+      description: Get detailed information about a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.Book'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get book by ID
+      tags:
+      - books
+  /api/books/{id}/cost:
+    get:
+      description: Get total cost for processing a specific book
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Breakdown by: stage'
+        in: query
+        name: by
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.MetricsCostResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get book processing cost
+      tags:
+      - books
+  /api/books/ingest:
+    post:
+      consumes:
+      - application/json
+      description: Ingest PDF files as a new book and start processing
+      parameters:
+      - description: Ingest request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.IngestRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.IngestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Ingest book scans
+      tags:
+      - books
+  /api/jobs:
+    get:
+      description: List all jobs with optional filtering
+      parameters:
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Filter by job type
+        in: query
+        name: job_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ListJobsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List jobs
+      tags:
+      - jobs
+    post:
+      consumes:
+      - application/json
+      description: Create a new job of the specified type
+      parameters:
+      - description: Job creation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.CreateJobRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.CreateJobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Create a job
+      tags:
+      - jobs
+  /api/jobs/{id}:
+    delete:
+      description: Delete a job by ID
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Delete a job
+      tags:
+      - jobs
+    get:
+      description: Get detailed job information including live status for running
+        jobs
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.GetJobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get job by ID
+      tags:
+      - jobs
+    patch:
+      consumes:
+      - application/json
+      description: Update job status or metadata
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.UpdateJobRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Record'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Update a job
+      tags:
+      - jobs
+  /api/jobs/start/{book_id}:
+    post:
+      consumes:
+      - application/json
+      description: Start processing job (OCR, blend, label) for a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      - description: Optional job type
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.StartJobRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.StartJobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Start job for a book
+      tags:
+      - jobs
+  /api/jobs/status/{book_id}:
+    get:
+      description: Get processing status for a book's jobs
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      - description: 'Job type (default: process-pages)'
+        in: query
+        name: job_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.JobStatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get job status for a book
+      tags:
+      - jobs
+  /api/metrics:
+    get:
+      description: List LLM/OCR call metrics with optional filtering
+      parameters:
+      - description: Filter by job ID
+        in: query
+        name: job_id
+        type: string
+      - description: Filter by book ID
+        in: query
+        name: book_id
+        type: string
+      - description: Filter by stage
+        in: query
+        name: stage
+        type: string
+      - description: Filter by provider
+        in: query
+        name: provider
+        type: string
+      - description: Filter by model
+        in: query
+        name: model
+        type: string
+      - description: Maximum results (default 100)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ListMetricsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List metrics
+      tags:
+      - metrics
+  /api/metrics/cost:
+    get:
+      description: Get total cost with optional breakdown by stage/provider/model
+      parameters:
+      - description: Filter by job ID
+        in: query
+        name: job_id
+        type: string
+      - description: Filter by book ID
+        in: query
+        name: book_id
+        type: string
+      - description: Filter by stage
+        in: query
+        name: stage
+        type: string
+      - description: Filter by provider
+        in: query
+        name: provider
+        type: string
+      - description: Filter by model
+        in: query
+        name: model
+        type: string
+      - description: 'Breakdown by: stage, provider, or model'
+        in: query
+        name: by
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.MetricsCostResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get cost breakdown
+      tags:
+      - metrics
+  /api/metrics/summary:
+    get:
+      description: Get aggregated metrics summary with counts, costs, and timing
+      parameters:
+      - description: Filter by job ID
+        in: query
+        name: job_id
+        type: string
+      - description: Filter by book ID
+        in: query
+        name: book_id
+        type: string
+      - description: Filter by stage
+        in: query
+        name: stage
+        type: string
+      - description: Filter by provider
+        in: query
+        name: provider
+        type: string
+      - description: Filter by model
+        in: query
+        name: model
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.MetricsSummaryResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get metrics summary
+      tags:
+      - metrics
+  /health:
+    get:
+      description: Basic health check endpoint
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
+      summary: Health check
+      tags:
+      - health
+  /ready:
+    get:
+      description: Readiness check including DefraDB status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
+      summary: Readiness check
+      tags:
+      - health
+  /status:
+    get:
+      description: Get detailed server status including providers and DefraDB
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.StatusResponse'
+      summary: Server status
+      tags:
+      - health
+swagger: "2.0"

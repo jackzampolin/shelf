@@ -10,6 +10,7 @@ import (
 type Config struct {
 	DefraManager       *defra.DockerManager
 	ProcessPagesConfig process_pages.Config
+	SwaggerSpecPath    string
 }
 
 // All returns all endpoint instances.
@@ -41,6 +42,10 @@ func All(cfg Config) []api.Endpoint {
 		&MetricsCostEndpoint{},
 		&MetricsSummaryEndpoint{},
 		&BookCostEndpoint{},
+
+		// Swagger/OpenAPI endpoints
+		&SwaggerEndpoint{SpecPath: cfg.SwaggerSpecPath},
+		&SwaggerUIEndpoint{},
 	}
 }
 

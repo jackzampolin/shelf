@@ -34,6 +34,19 @@ func (e *CreateJobEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *CreateJobEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		Create a job
+//	@Description	Create a new job of the specified type
+//	@Tags			jobs
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		CreateJobRequest	true	"Job creation request"
+//	@Success		201		{object}	CreateJobResponse
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		500		{object}	ErrorResponse
+//	@Failure		503		{object}	ErrorResponse
+//	@Router			/api/jobs [post]
 func (e *CreateJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	var req CreateJobRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -97,6 +110,18 @@ func (e *ListJobsEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *ListJobsEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		List jobs
+//	@Description	List all jobs with optional filtering
+//	@Tags			jobs
+//	@Produce		json
+//	@Param			status		query		string	false	"Filter by status"
+//	@Param			job_type	query		string	false	"Filter by job type"
+//	@Success		200			{object}	ListJobsResponse
+//	@Failure		500			{object}	ErrorResponse
+//	@Failure		503			{object}	ErrorResponse
+//	@Router			/api/jobs [get]
 func (e *ListJobsEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	jm := svcctx.JobManagerFrom(r.Context())
 	if jm == nil {
@@ -173,6 +198,19 @@ func (e *GetJobEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *GetJobEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		Get job by ID
+//	@Description	Get detailed job information including live status for running jobs
+//	@Tags			jobs
+//	@Produce		json
+//	@Param			id	path		string	true	"Job ID"
+//	@Success		200	{object}	GetJobResponse
+//	@Failure		400	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Failure		503	{object}	ErrorResponse
+//	@Router			/api/jobs/{id} [get]
 func (e *GetJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -263,6 +301,20 @@ func (e *UpdateJobEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *UpdateJobEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		Update a job
+//	@Description	Update job status or metadata
+//	@Tags			jobs
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string				true	"Job ID"
+//	@Param			request	body		UpdateJobRequest	true	"Update request"
+//	@Success		200		{object}	jobs.Record
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		500		{object}	ErrorResponse
+//	@Failure		503		{object}	ErrorResponse
+//	@Router			/api/jobs/{id} [patch]
 func (e *UpdateJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -342,6 +394,18 @@ func (e *DeleteJobEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *DeleteJobEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		Delete a job
+//	@Description	Delete a job by ID
+//	@Tags			jobs
+//	@Param			id	path	string	true	"Job ID"
+//	@Success		204	"No Content"
+//	@Failure		400	{object}	ErrorResponse
+//	@Failure		404	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Failure		503	{object}	ErrorResponse
+//	@Router			/api/jobs/{id} [delete]
 func (e *DeleteJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {

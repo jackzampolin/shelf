@@ -19,6 +19,19 @@ func (e *BookCostEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *BookCostEndpoint) RequiresInit() bool { return true }
 
+// handler godoc
+//
+//	@Summary		Get book processing cost
+//	@Description	Get total cost for processing a specific book
+//	@Tags			books
+//	@Produce		json
+//	@Param			id	path		string	true	"Book ID"
+//	@Param			by	query		string	false	"Breakdown by: stage"
+//	@Success		200	{object}	MetricsCostResponse
+//	@Failure		400	{object}	ErrorResponse
+//	@Failure		500	{object}	ErrorResponse
+//	@Failure		503	{object}	ErrorResponse
+//	@Router			/api/books/{id}/cost [get]
 func (e *BookCostEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	bookID := r.PathValue("id")
 	if bookID == "" {
