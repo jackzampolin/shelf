@@ -1,29 +1,33 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { client } from '@/api/client'
+import { client, unwrap } from '@/api/client'
 
 export const Route = createFileRoute('/')({
   component: Dashboard,
 })
 
 function Dashboard() {
-  const { data: health, isLoading: healthLoading } = useQuery({
+  const {
+    data: health,
+    isLoading: healthLoading,
+    error: healthError,
+  } = useQuery({
     queryKey: ['health'],
-    queryFn: async () => {
-      const res = await client.GET('/health')
-      return res.data
-    },
+    queryFn: async () => unwrap(await client.GET('/health')),
     refetchInterval: 30000,
   })
 
-  const { data: status, isLoading: statusLoading } = useQuery({
+  const {
+    data: status,
+    isLoading: statusLoading,
+    error: statusError,
+  } = useQuery({
     queryKey: ['status'],
-    queryFn: async () => {
-      const res = await client.GET('/status')
-      return res.data
-    },
+    queryFn: async () => unwrap(await client.GET('/status')),
     refetchInterval: 30000,
   })
+
+  const connectionError = healthError || statusError
 
   return (
     <div className="space-y-6">
@@ -31,6 +35,14 @@ function Dashboard() {
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="text-gray-500">Book digitization pipeline status</p>
       </div>
+
+      {connectionError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-700">
+            Cannot connect to server: {connectionError.message}
+          </p>
+        </div>
+      )}
 
       {/* Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

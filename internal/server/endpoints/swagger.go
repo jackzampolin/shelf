@@ -1,6 +1,7 @@
 package endpoints
 
 import (
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,19 +26,25 @@ func (e *SwaggerEndpoint) RequiresInit() bool { return false }
 func (e *SwaggerEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	specPath := e.SpecPath
 	if specPath == "" {
-		// Default to docs/swagger/swagger.json relative to working dir
 		specPath = "docs/swagger/swagger.json"
 	}
 
 	data, err := os.ReadFile(specPath)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "swagger.json not found")
+		if os.IsNotExist(err) {
+			writeError(w, http.StatusNotFound, "swagger.json not found")
+		} else {
+			slog.Error("failed to read swagger spec", "path", specPath, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to read swagger.json")
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Write(data)
+	if _, err := w.Write(data); err != nil {
+		slog.Warn("failed to write swagger response", "error", err)
+	}
 }
 
 func (e *SwaggerEndpoint) Command(getServerURL func() string) *cobra.Command {
@@ -94,7 +101,9 @@ func (e *SwaggerUIEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 </body>
 </html>`
 	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(html))
+	if _, err := w.Write([]byte(html)); err != nil {
+		slog.Warn("failed to write swagger UI response", "error", err)
+	}
 }
 
 func (e *SwaggerUIEndpoint) Command(getServerURL func() string) *cobra.Command {

@@ -44,7 +44,7 @@ describe('Books Endpoints', () => {
         return
       }
 
-      const bookId = listData.books[0].id
+      const bookId = listData.books[0].id ?? ''
 
       const { data, error } = await testClient.GET('/api/books/{id}', {
         params: { path: { id: bookId } },
@@ -82,7 +82,7 @@ describe('Books Endpoints', () => {
         return
       }
 
-      const bookId = listData.books[0].id
+      const bookId = listData.books[0].id ?? ''
 
       const { data, error } = await testClient.GET('/api/books/{id}/cost', {
         params: { path: { id: bookId } },
@@ -101,7 +101,7 @@ describe('Books Endpoints', () => {
         return
       }
 
-      const bookId = listData.books[0].id
+      const bookId = listData.books[0].id ?? ''
 
       const { data, error } = await testClient.GET('/api/books/{id}/cost', {
         params: {

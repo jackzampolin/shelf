@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { client } from '@/api/client'
+import { client, unwrap } from '@/api/client'
 
 export const Route = createFileRoute('/jobs')({
   component: JobsPage,
@@ -9,11 +9,8 @@ export const Route = createFileRoute('/jobs')({
 function JobsPage() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['jobs'],
-    queryFn: async () => {
-      const res = await client.GET('/api/jobs')
-      return res.data
-    },
-    refetchInterval: 5000, // Refresh every 5 seconds for running jobs
+    queryFn: async () => unwrap(await client.GET('/api/jobs')),
+    refetchInterval: 5000,
   })
 
   if (isLoading) {
@@ -94,41 +91,44 @@ function JobsPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {jobs.map((job) => (
-                <tr key={job.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <Link
-                      to="/jobs/$jobId"
-                      params={{ jobId: job.id }}
-                      className="text-blue-600 hover:text-blue-800 font-mono text-sm"
-                    >
-                      {job.id.slice(0, 8)}...
-                    </Link>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {job.job_type}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(job.status)}`}
-                    >
-                      {job.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {job.created_at ? new Date(job.created_at).toLocaleString() : '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    <Link
-                      to="/jobs/$jobId"
-                      params={{ jobId: job.id }}
-                      className="text-blue-600 hover:text-blue-800"
-                    >
-                      View
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+              {jobs.map((job) => {
+                const jobId = job._docID ?? ''
+                return (
+                  <tr key={jobId} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <Link
+                        to="/jobs/$jobId"
+                        params={{ jobId }}
+                        className="text-blue-600 hover:text-blue-800 font-mono text-sm"
+                      >
+                        {jobId.slice(0, 8)}...
+                      </Link>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {job.job_type}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(job.status ?? '')}`}
+                      >
+                        {job.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {job.created_at ? new Date(job.created_at).toLocaleString() : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <Link
+                        to="/jobs/$jobId"
+                        params={{ jobId }}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

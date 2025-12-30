@@ -1,3 +1,4 @@
+basePath: /
 definitions:
   github_com_jackzampolin_shelf_internal_jobs.ProviderProgress:
     properties:
@@ -383,8 +384,17 @@ definitions:
     - Second
     - Minute
     - Hour
+host: localhost:8080
 info:
-  contact: {}
+  contact:
+    name: API Support
+    url: https://github.com/jackzampolin/shelf
+  description: Book digitization pipeline API for managing books, jobs, and processing.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  title: Shelf API
+  version: "1.0"
 paths:
   /api/books:
     get:

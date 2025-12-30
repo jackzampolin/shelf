@@ -36,6 +36,8 @@ async function findFreePort(): Promise<number> {
  * Wait for the server to be ready by polling the health endpoint
  */
 async function waitForServer(url: string, maxAttempts = 60, delayMs = 1000): Promise<void> {
+  let lastError: Error | null = null
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const response = await fetch(`${url}/health`)
@@ -44,9 +46,18 @@ async function waitForServer(url: string, maxAttempts = 60, delayMs = 1000): Pro
         if (data.status === 'ok') {
           return
         }
+      } else {
+        lastError = new Error(`Health check returned ${response.status}`)
       }
-    } catch {
-      // Server not ready yet
+    } catch (error) {
+      // ECONNREFUSED is expected while server is starting
+      const errorCause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined
+      const isConnectionRefused =
+        error instanceof Error && (error.message.includes('ECONNREFUSED') || String(errorCause).includes('ECONNREFUSED'))
+      if (!isConnectionRefused) {
+        console.warn(`[waitForServer] Attempt ${attempt}: Unexpected error:`, error)
+      }
+      lastError = error instanceof Error ? error : new Error(String(error))
     }
 
     if (attempt < maxAttempts) {
@@ -54,13 +65,19 @@ async function waitForServer(url: string, maxAttempts = 60, delayMs = 1000): Pro
     }
   }
 
-  throw new Error(`Server at ${url} not ready after ${maxAttempts} attempts`)
+  const finalError = new Error(`Server at ${url} not ready after ${maxAttempts} attempts`)
+  if (lastError) {
+    console.error('[waitForServer] Last error:', lastError.message)
+  }
+  throw finalError
 }
 
 /**
  * Wait for DefraDB to be ready
  */
 async function waitForDefra(url: string, maxAttempts = 60, delayMs = 1000): Promise<void> {
+  let lastError: Error | null = null
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const response = await fetch(`${url}/ready`)
@@ -69,9 +86,18 @@ async function waitForDefra(url: string, maxAttempts = 60, delayMs = 1000): Prom
         if (data.status === 'ok' && data.defra === 'ok') {
           return
         }
+        lastError = new Error(`Ready check: status=${data.status}, defra=${data.defra}`)
+      } else {
+        lastError = new Error(`Ready check returned ${response.status}`)
       }
-    } catch {
-      // Not ready yet
+    } catch (error) {
+      const errorCause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined
+      const isConnectionRefused =
+        error instanceof Error && (error.message.includes('ECONNREFUSED') || String(errorCause).includes('ECONNREFUSED'))
+      if (!isConnectionRefused) {
+        console.warn(`[waitForDefra] Attempt ${attempt}: Unexpected error:`, error)
+      }
+      lastError = error instanceof Error ? error : new Error(String(error))
     }
 
     if (attempt < maxAttempts) {
@@ -79,7 +105,11 @@ async function waitForDefra(url: string, maxAttempts = 60, delayMs = 1000): Prom
     }
   }
 
-  throw new Error(`DefraDB not ready after ${maxAttempts} attempts`)
+  const finalError = new Error(`DefraDB not ready after ${maxAttempts} attempts`)
+  if (lastError) {
+    console.error('[waitForDefra] Last error:', lastError.message)
+  }
+  throw finalError
 }
 
 /**
@@ -222,8 +252,17 @@ defaults:
           cleanup.on('close', () => resolve())
         })
         console.log('Container cleaned up')
-      } catch {
-        console.log('Container cleanup skipped (may not exist)')
+      } catch (error) {
+        console.warn('Container cleanup failed:', error instanceof Error ? error.message : error)
+      }
+
+      // Clean up the test home directory
+      try {
+        const { rmSync } = await import('fs')
+        rmSync(testHome, { recursive: true, force: true })
+        console.log('Test home cleaned up')
+      } catch (error) {
+        console.warn('Test home cleanup failed:', error instanceof Error ? error.message : error)
       }
     }
   }

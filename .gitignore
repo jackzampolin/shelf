@@ -32,7 +32,7 @@ Thumbs.db
 
 # Project-specific
 .claude/.env
-shelf
+/shelf
 
 # Log files
 *.log

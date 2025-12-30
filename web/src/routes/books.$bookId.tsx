@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { client } from '@/api/client'
+import { client, unwrap } from '@/api/client'
 
 export const Route = createFileRoute('/books/$bookId')({
   component: BookDetailPage,
@@ -11,32 +11,32 @@ function BookDetailPage() {
 
   const { data: book, isLoading, error } = useQuery({
     queryKey: ['books', bookId],
-    queryFn: async () => {
-      const res = await client.GET('/api/books/{id}', {
-        params: { path: { id: bookId } },
-      })
-      return res.data
-    },
+    queryFn: async () =>
+      unwrap(
+        await client.GET('/api/books/{id}', {
+          params: { path: { id: bookId } },
+        })
+      ),
   })
 
-  const { data: cost } = useQuery({
+  const { data: cost, error: costError } = useQuery({
     queryKey: ['books', bookId, 'cost'],
-    queryFn: async () => {
-      const res = await client.GET('/api/books/{id}/cost', {
-        params: { path: { id: bookId }, query: { by: 'stage' } },
-      })
-      return res.data
-    },
+    queryFn: async () =>
+      unwrap(
+        await client.GET('/api/books/{id}/cost', {
+          params: { path: { id: bookId }, query: { by: 'stage' } },
+        })
+      ),
   })
 
   const { data: jobStatus } = useQuery({
     queryKey: ['jobs', 'status', bookId],
-    queryFn: async () => {
-      const res = await client.GET('/api/jobs/status/{book_id}', {
-        params: { path: { book_id: bookId } },
-      })
-      return res.data
-    },
+    queryFn: async () =>
+      unwrap(
+        await client.GET('/api/jobs/status/{book_id}', {
+          params: { path: { book_id: bookId } },
+        })
+      ),
     refetchInterval: 5000,
   })
 
@@ -107,9 +107,13 @@ function BookDetailPage() {
 
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-sm font-medium text-gray-500">Total Cost</h3>
-          <p className="mt-2 text-2xl font-semibold">
-            ${cost?.total_cost_usd?.toFixed(4) || '0.0000'}
-          </p>
+          {costError ? (
+            <p className="mt-2 text-sm text-red-500">Failed to load</p>
+          ) : cost?.total_cost_usd !== undefined ? (
+            <p className="mt-2 text-2xl font-semibold">${cost.total_cost_usd.toFixed(4)}</p>
+          ) : (
+            <p className="mt-2 text-gray-400">--</p>
+          )}
         </div>
       </div>
 

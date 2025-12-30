@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { client } from '@/api/client'
+import { client, unwrap } from '@/api/client'
 
 export const Route = createFileRoute('/books')({
   component: BooksPage,
@@ -9,10 +9,7 @@ export const Route = createFileRoute('/books')({
 function BooksPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['books'],
-    queryFn: async () => {
-      const res = await client.GET('/api/books')
-      return res.data
-    },
+    queryFn: async () => unwrap(await client.GET('/api/books')),
   })
 
   if (isLoading) {
@@ -72,47 +69,50 @@ function BooksPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {books.map((book) => (
-                <tr key={book.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <Link
-                      to="/books/$bookId"
-                      params={{ bookId: book.id }}
-                      className="text-blue-600 hover:text-blue-800 font-medium"
-                    >
-                      {book.title}
-                    </Link>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {book.author || '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {book.page_count}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        book.status === 'complete'
-                          ? 'bg-green-100 text-green-800'
-                          : book.status === 'processing'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
-                    >
-                      {book.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    <Link
-                      to="/books/$bookId"
-                      params={{ bookId: book.id }}
-                      className="text-blue-600 hover:text-blue-800"
-                    >
-                      View
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+              {books.map((book) => {
+                const bookId = book.id ?? ''
+                return (
+                  <tr key={bookId} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <Link
+                        to="/books/$bookId"
+                        params={{ bookId }}
+                        className="text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        {book.title}
+                      </Link>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {book.author || '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {book.page_count}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          book.status === 'complete'
+                            ? 'bg-green-100 text-green-800'
+                            : book.status === 'processing'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        {book.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <Link
+                        to="/books/$bookId"
+                        params={{ bookId }}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

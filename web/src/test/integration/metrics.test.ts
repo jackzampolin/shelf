@@ -83,7 +83,7 @@ describe('Metrics Endpoints', () => {
 
       if (data) {
         // Success + error should equal total count
-        expect(data.success_count + data.error_count).toBe(data.count)
+        expect((data.success_count ?? 0) + (data.error_count ?? 0)).toBe(data.count ?? 0)
       }
     })
   })

@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { client } from '@/api/client'
+import { client, unwrap } from '@/api/client'
 
 export const Route = createFileRoute('/jobs/$jobId')({
   component: JobDetailPage,
@@ -11,12 +11,12 @@ function JobDetailPage() {
 
   const { data: job, isLoading, error } = useQuery({
     queryKey: ['jobs', jobId],
-    queryFn: async () => {
-      const res = await client.GET('/api/jobs/{id}', {
-        params: { path: { id: jobId } },
-      })
-      return res.data
-    },
+    queryFn: async () =>
+      unwrap(
+        await client.GET('/api/jobs/{id}', {
+          params: { path: { id: jobId } },
+        })
+      ),
     refetchInterval: (query) =>
       query.state.data?.status === 'running' ? 2000 : false,
   })
@@ -74,7 +74,7 @@ function JobDetailPage() {
       {/* Header */}
       <div className="flex items-center space-x-4">
         <h1 className="text-2xl font-bold text-gray-900">Job Details</h1>
-        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium ${getStatusColor(job.status)}`}>
+        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium ${getStatusColor(job.status ?? '')}`}>
           {job.status}
         </span>
       </div>
@@ -84,7 +84,7 @@ function JobDetailPage() {
         <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <dt className="text-sm font-medium text-gray-500">ID</dt>
-            <dd className="mt-1 text-sm text-gray-900 font-mono">{job.id}</dd>
+            <dd className="mt-1 text-sm text-gray-900 font-mono">{job._docID}</dd>
           </div>
           <div>
             <dt className="text-sm font-medium text-gray-500">Type</dt>
@@ -97,9 +97,9 @@ function JobDetailPage() {
             </dd>
           </div>
           <div>
-            <dt className="text-sm font-medium text-gray-500">Updated</dt>
+            <dt className="text-sm font-medium text-gray-500">Started</dt>
             <dd className="mt-1 text-sm text-gray-900">
-              {job.updated_at ? new Date(job.updated_at).toLocaleString() : '-'}
+              {job.started_at ? new Date(job.started_at).toLocaleString() : '-'}
             </dd>
           </div>
         </dl>

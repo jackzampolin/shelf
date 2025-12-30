@@ -1,8 +1,20 @@
 {
     "swagger": "2.0",
     "info": {
-        "contact": {}
+        "description": "Book digitization pipeline API for managing books, jobs, and processing.",
+        "title": "Shelf API",
+        "contact": {
+            "name": "API Support",
+            "url": "https://github.com/jackzampolin/shelf"
+        },
+        "license": {
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT"
+        },
+        "version": "1.0"
     },
+    "host": "localhost:8080",
+    "basePath": "/",
     "paths": {
         "/api/books": {
             "get": {

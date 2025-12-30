@@ -152,4 +152,59 @@ describe('Jobs Endpoints', () => {
       expect([204, 404]).toContain(response.status)
     })
   })
+
+  describe('POST /api/jobs/start/{book_id}', () => {
+    it('should return 400 for non-existent book', async () => {
+      const { response } = await testClient.POST('/api/jobs/start/{book_id}', {
+        params: { path: { book_id: 'non-existent-book' } },
+        body: { job_type: 'process-pages' },
+      })
+
+      // Should fail because book doesn't exist
+      expect(response.status).toBeGreaterThanOrEqual(400)
+    })
+
+    it('should return 400 for invalid job_type', async () => {
+      const { error, response } = await testClient.POST('/api/jobs/start/{book_id}', {
+        params: { path: { book_id: 'any-book' } },
+        body: { job_type: 'invalid-job-type' },
+      })
+
+      expect(response.status).toBe(400)
+      expect(error).toBeDefined()
+    })
+  })
+
+  describe('GET /api/jobs/status/{book_id}', () => {
+    it('should return status for any book_id', async () => {
+      const { data, response } = await testClient.GET('/api/jobs/status/{book_id}', {
+        params: { path: { book_id: 'any-book-id' } },
+      })
+
+      // Endpoint may return 200 with zeros or 404 for non-existent book
+      if (response.ok) {
+        expect(data).toBeDefined()
+        expect(typeof data?.total_pages).toBe('number')
+        expect(typeof data?.ocr_complete).toBe('number')
+      }
+    })
+
+    it('should include expected status fields', async () => {
+      const { data, response } = await testClient.GET('/api/jobs/status/{book_id}', {
+        params: { path: { book_id: 'test-book' } },
+      })
+
+      if (response.ok && data) {
+        // Check all expected fields are present
+        expect('total_pages' in data).toBe(true)
+        expect('ocr_complete' in data).toBe(true)
+        expect('blend_complete' in data).toBe(true)
+        expect('label_complete' in data).toBe(true)
+        expect('metadata_complete' in data).toBe(true)
+        expect('toc_found' in data).toBe(true)
+        expect('toc_extracted' in data).toBe(true)
+        expect('is_complete' in data).toBe(true)
+      }
+    })
+  })
 })
