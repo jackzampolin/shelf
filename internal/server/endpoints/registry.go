@@ -34,6 +34,11 @@ func All(cfg Config) []api.Endpoint {
 		&ListBooksEndpoint{},
 		&GetBookEndpoint{},
 
+		// Page endpoints
+		&PageImageEndpoint{},
+		&ListPagesEndpoint{},
+		&GetPageEndpoint{},
+
 		// Job start/status endpoints
 		&StartJobEndpoint{ProcessPagesConfig: cfg.ProcessPagesConfig},
 		&JobStatusEndpoint{},

@@ -212,6 +212,226 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/{book_id}/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List pages
+         * @description List all pages for a book with processing status
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ListPagesResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/pages/{page_num}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get page details
+         * @description Get full details for a specific page including OCR results, blend output, and labels
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                    /** @description Page number (1-indexed) */
+                    page_num: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.GetPageResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/pages/{page_num}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get page image
+         * @description Get the PNG image for a specific page of a book
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                    /** @description Page number (1-indexed) */
+                    page_num: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{id}": {
         parameters: {
             query?: never;
@@ -1280,6 +1500,14 @@ export interface components {
                 [key: string]: components["schemas"]["github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo"];
             };
         };
+        "internal_server_endpoints.GetPageResponse": {
+            blend_confidence?: number;
+            blend_markdown?: string;
+            labels?: components["schemas"]["internal_server_endpoints.PageLabels"];
+            ocr_results?: components["schemas"]["internal_server_endpoints.OcrResult"][];
+            page_num?: number;
+            status?: components["schemas"]["internal_server_endpoints.PageStatus"];
+        };
         "internal_server_endpoints.HealthResponse": {
             defra?: string;
             status?: string;
@@ -1317,6 +1545,10 @@ export interface components {
             count?: number;
             metrics?: components["schemas"]["github_com_jackzampolin_shelf_internal_metrics.Metric"][];
         };
+        "internal_server_endpoints.ListPagesResponse": {
+            pages?: components["schemas"]["internal_server_endpoints.PageSummary"][];
+            total_pages?: number;
+        };
         "internal_server_endpoints.MetricsCostResponse": {
             breakdown?: {
                 [key: string]: number;
@@ -1333,6 +1565,30 @@ export interface components {
             total_cost_usd?: number;
             total_time_seconds?: number;
             total_tokens?: number;
+        };
+        "internal_server_endpoints.OcrResult": {
+            confidence?: number;
+            provider?: string;
+            text?: string;
+        };
+        "internal_server_endpoints.PageLabels": {
+            is_back_matter?: boolean;
+            is_front_matter?: boolean;
+            is_toc_page?: boolean;
+            page_number_label?: string;
+            running_header?: string;
+        };
+        "internal_server_endpoints.PageStatus": {
+            blend_complete?: boolean;
+            extract_complete?: boolean;
+            label_complete?: boolean;
+            ocr_complete?: boolean;
+        };
+        "internal_server_endpoints.PageSummary": {
+            blend_complete?: boolean;
+            label_complete?: boolean;
+            ocr_complete?: boolean;
+            page_num?: number;
         };
         "internal_server_endpoints.ProvidersStatus": {
             llm?: string[];

@@ -162,6 +162,167 @@
                 }
             }
         },
+        "/api/books/{book_id}/pages": {
+            "get": {
+                "description": "List all pages for a book with processing status",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pages"
+                ],
+                "summary": "List pages",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ListPagesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{book_id}/pages/{page_num}": {
+            "get": {
+                "description": "Get full details for a specific page including OCR results, blend output, and labels",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pages"
+                ],
+                "summary": "Get page details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (1-indexed)",
+                        "name": "page_num",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.GetPageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{book_id}/pages/{page_num}/image": {
+            "get": {
+                "description": "Get the PNG image for a specific page of a book",
+                "produces": [
+                    "image/png"
+                ],
+                "tags": [
+                    "pages"
+                ],
+                "summary": "Get page image",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (1-indexed)",
+                        "name": "page_num",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/books/{id}": {
             "get": {
                 "description": "Get detailed information about a book",
@@ -1209,6 +1370,32 @@
                 }
             }
         },
+        "internal_server_endpoints.GetPageResponse": {
+            "type": "object",
+            "properties": {
+                "blend_confidence": {
+                    "type": "number"
+                },
+                "blend_markdown": {
+                    "type": "string"
+                },
+                "labels": {
+                    "$ref": "#/definitions/internal_server_endpoints.PageLabels"
+                },
+                "ocr_results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.OcrResult"
+                    }
+                },
+                "page_num": {
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/internal_server_endpoints.PageStatus"
+                }
+            }
+        },
         "internal_server_endpoints.HealthResponse": {
             "type": "object",
             "properties": {
@@ -1325,6 +1512,20 @@
                 }
             }
         },
+        "internal_server_endpoints.ListPagesResponse": {
+            "type": "object",
+            "properties": {
+                "pages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.PageSummary"
+                    }
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_server_endpoints.MetricsCostResponse": {
             "type": "object",
             "properties": {
@@ -1368,6 +1569,74 @@
                     "type": "number"
                 },
                 "total_tokens": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_server_endpoints.OcrResult": {
+            "type": "object",
+            "properties": {
+                "confidence": {
+                    "type": "number"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_server_endpoints.PageLabels": {
+            "type": "object",
+            "properties": {
+                "is_back_matter": {
+                    "type": "boolean"
+                },
+                "is_front_matter": {
+                    "type": "boolean"
+                },
+                "is_toc_page": {
+                    "type": "boolean"
+                },
+                "page_number_label": {
+                    "type": "string"
+                },
+                "running_header": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_server_endpoints.PageStatus": {
+            "type": "object",
+            "properties": {
+                "blend_complete": {
+                    "type": "boolean"
+                },
+                "extract_complete": {
+                    "type": "boolean"
+                },
+                "label_complete": {
+                    "type": "boolean"
+                },
+                "ocr_complete": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_server_endpoints.PageSummary": {
+            "type": "object",
+            "properties": {
+                "blend_complete": {
+                    "type": "boolean"
+                },
+                "label_complete": {
+                    "type": "boolean"
+                },
+                "ocr_complete": {
+                    "type": "boolean"
+                },
+                "page_num": {
                     "type": "integer"
                 }
             }

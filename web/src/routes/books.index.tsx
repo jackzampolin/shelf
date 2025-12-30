@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '@/api/client'
 
-export const Route = createFileRoute('/books')({
+export const Route = createFileRoute('/books/')({
   component: BooksPage,
 })
 

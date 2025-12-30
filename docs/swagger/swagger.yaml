@@ -210,6 +210,23 @@ definitions:
           $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo'
         type: object
     type: object
+  internal_server_endpoints.GetPageResponse:
+    properties:
+      blend_confidence:
+        type: number
+      blend_markdown:
+        type: string
+      labels:
+        $ref: '#/definitions/internal_server_endpoints.PageLabels'
+      ocr_results:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.OcrResult'
+        type: array
+      page_num:
+        type: integer
+      status:
+        $ref: '#/definitions/internal_server_endpoints.PageStatus'
+    type: object
   internal_server_endpoints.HealthResponse:
     properties:
       defra:
@@ -285,6 +302,15 @@ definitions:
           $ref: '#/definitions/github_com_jackzampolin_shelf_internal_metrics.Metric'
         type: array
     type: object
+  internal_server_endpoints.ListPagesResponse:
+    properties:
+      pages:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.PageSummary'
+        type: array
+      total_pages:
+        type: integer
+    type: object
   internal_server_endpoints.MetricsCostResponse:
     properties:
       breakdown:
@@ -314,6 +340,50 @@ definitions:
       total_time_seconds:
         type: number
       total_tokens:
+        type: integer
+    type: object
+  internal_server_endpoints.OcrResult:
+    properties:
+      confidence:
+        type: number
+      provider:
+        type: string
+      text:
+        type: string
+    type: object
+  internal_server_endpoints.PageLabels:
+    properties:
+      is_back_matter:
+        type: boolean
+      is_front_matter:
+        type: boolean
+      is_toc_page:
+        type: boolean
+      page_number_label:
+        type: string
+      running_header:
+        type: string
+    type: object
+  internal_server_endpoints.PageStatus:
+    properties:
+      blend_complete:
+        type: boolean
+      extract_complete:
+        type: boolean
+      label_complete:
+        type: boolean
+      ocr_complete:
+        type: boolean
+    type: object
+  internal_server_endpoints.PageSummary:
+    properties:
+      blend_complete:
+        type: boolean
+      label_complete:
+        type: boolean
+      ocr_complete:
+        type: boolean
+      page_num:
         type: integer
     type: object
   internal_server_endpoints.ProvidersStatus:
@@ -417,6 +487,114 @@ paths:
       summary: List books
       tags:
       - books
+  /api/books/{book_id}/pages:
+    get:
+      description: List all pages for a book with processing status
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ListPagesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List pages
+      tags:
+      - pages
+  /api/books/{book_id}/pages/{page_num}:
+    get:
+      description: Get full details for a specific page including OCR results, blend
+        output, and labels
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      - description: Page number (1-indexed)
+        in: path
+        name: page_num
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.GetPageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get page details
+      tags:
+      - pages
+  /api/books/{book_id}/pages/{page_num}/image:
+    get:
+      description: Get the PNG image for a specific page of a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      - description: Page number (1-indexed)
+        in: path
+        name: page_num
+        required: true
+        type: integer
+      produces:
+      - image/png
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get page image
+      tags:
+      - pages
   /api/books/{id}:
     get:
       description: Get detailed information about a book

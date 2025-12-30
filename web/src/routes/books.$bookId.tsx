@@ -99,15 +99,24 @@ function BookDetailPage() {
           <h1 className="text-2xl font-bold text-gray-900">{book.title}</h1>
           {book.author && <p className="text-gray-500">{book.author}</p>}
         </div>
-        {book.status === 'ingested' && (
-          <button
-            onClick={() => startProcessingMutation.mutate()}
-            disabled={startProcessingMutation.isPending}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        <div className="flex items-center space-x-3">
+          <Link
+            to="/books/$bookId/pages"
+            params={{ bookId }}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
-            {startProcessingMutation.isPending ? 'Starting...' : 'Start Processing'}
-          </button>
-        )}
+            View Pages
+          </Link>
+          {book.status === 'ingested' && (
+            <button
+              onClick={() => startProcessingMutation.mutate()}
+              disabled={startProcessingMutation.isPending}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {startProcessingMutation.isPending ? 'Starting...' : 'Start Processing'}
+            </button>
+          )}
+        </div>
         {startProcessingMutation.isError && (
           <p className="text-sm text-red-600 mt-2">
             Error: {startProcessingMutation.error?.message || 'Failed to start processing'}
