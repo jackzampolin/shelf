@@ -1,5 +1,5 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '@/api/client'
 
 export const Route = createFileRoute('/books/$bookId')({
@@ -8,6 +8,24 @@ export const Route = createFileRoute('/books/$bookId')({
 
 function BookDetailPage() {
   const { bookId } = Route.useParams()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  const startProcessingMutation = useMutation({
+    mutationFn: async () =>
+      unwrap(
+        await client.POST('/api/jobs/start/{book_id}', {
+          params: { path: { book_id: bookId } },
+        })
+      ),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['jobs', 'status', bookId] })
+      queryClient.invalidateQueries({ queryKey: ['books', bookId] })
+      if (data?.job_id) {
+        navigate({ to: '/jobs/$jobId', params: { jobId: data.job_id } })
+      }
+    },
+  })
 
   const { data: book, isLoading, error } = useQuery({
     queryKey: ['books', bookId],
@@ -76,9 +94,25 @@ function BookDetailPage() {
       </nav>
 
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">{book.title}</h1>
-        {book.author && <p className="text-gray-500">{book.author}</p>}
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{book.title}</h1>
+          {book.author && <p className="text-gray-500">{book.author}</p>}
+        </div>
+        {book.status === 'ingested' && (
+          <button
+            onClick={() => startProcessingMutation.mutate()}
+            disabled={startProcessingMutation.isPending}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {startProcessingMutation.isPending ? 'Starting...' : 'Start Processing'}
+          </button>
+        )}
+        {startProcessingMutation.isError && (
+          <p className="text-sm text-red-600 mt-2">
+            Error: {startProcessingMutation.error?.message || 'Failed to start processing'}
+          </p>
+        )}
       </div>
 
       {/* Info Cards */}

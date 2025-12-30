@@ -521,6 +521,47 @@ paths:
       summary: Ingest book scans
       tags:
       - books
+  /api/books/ingest/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload PDF files to ingest as a new book
+      parameters:
+      - description: PDF files to ingest
+        in: formData
+        name: files
+        required: true
+        type: file
+      - description: Book title (derived from filename if not provided)
+        in: formData
+        name: title
+        type: string
+      - description: Book author
+        in: formData
+        name: author
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.IngestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Upload and ingest book PDFs
+      tags:
+      - books
   /api/jobs:
     get:
       description: List all jobs with optional filtering

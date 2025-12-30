@@ -30,6 +30,7 @@ func All(cfg Config) []api.Endpoint {
 
 		// Book endpoints
 		&IngestEndpoint{},
+		&UploadIngestEndpoint{},
 		&ListBooksEndpoint{},
 		&GetBookEndpoint{},
 
