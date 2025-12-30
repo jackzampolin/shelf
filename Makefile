@@ -43,11 +43,19 @@ default: build
 #
 
 .PHONY: build
-build:
+build: web
+	go build $(BUILD_FLAGS) -o build/$(BINARY_NAME) ./cmd/shelf
+
+.PHONY: build\:backend
+build\:backend:
 	go build $(BUILD_FLAGS) -o build/$(BINARY_NAME) ./cmd/shelf
 
 .PHONY: install
-install:
+install: web
+	go install $(BUILD_FLAGS) ./cmd/shelf
+
+.PHONY: install\:backend
+install\:backend:
 	go install $(BUILD_FLAGS) ./cmd/shelf
 
 .PHONY: run
@@ -210,10 +218,11 @@ web\:test\:watch:
 #
 
 .PHONY: all
-all: swagger build web
+all: swagger web build
+	@echo "Build complete! Run './build/shelf serve' to start."
 
 .PHONY: dev
-dev: swagger build
+dev: swagger build\:backend
 	@echo "Backend ready. Run 'make web:dev' in another terminal for frontend."
 
 #
@@ -225,10 +234,13 @@ help:
 	@echo "Shelf - Book Digitization Pipeline"
 	@echo ""
 	@echo "Build:"
-	@echo "  make build              Build the shelf binary"
-	@echo "  make install            Install shelf"
+	@echo "  make build              Build frontend + shelf binary (production)"
+	@echo "  make build:backend      Build shelf binary only (for dev)"
+	@echo "  make install            Install shelf with embedded frontend"
+	@echo "  make install:backend    Install shelf without frontend rebuild"
 	@echo "  make run                Build and run shelf"
-	@echo "  make all                Build swagger, backend, and frontend"
+	@echo "  make all                Build swagger + frontend + backend"
+	@echo "  make dev                Build backend only for development"
 	@echo ""
 	@echo "Test:"
 	@echo "  make test               Run tests (skips integration tests)"

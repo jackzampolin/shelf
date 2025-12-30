@@ -46,6 +46,9 @@ func All(cfg Config) []api.Endpoint {
 		// Swagger/OpenAPI endpoints
 		&SwaggerEndpoint{SpecPath: cfg.SwaggerSpecPath},
 		&SwaggerUIEndpoint{},
+
+		// Static files (catch-all, must be last)
+		&StaticEndpoint{},
 	}
 }
 
