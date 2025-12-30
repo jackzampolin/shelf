@@ -461,7 +461,12 @@ func (p *ProviderWorkerPool) sleepBeforeRetry(ctx context.Context, err error, at
 }
 
 func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
-	if p.sink == nil || unit.Metrics == nil {
+	if p.sink == nil {
+		p.logger.Debug("recordMetrics: sink is nil, skipping")
+		return
+	}
+	if unit.Metrics == nil {
+		p.logger.Debug("recordMetrics: unit.Metrics is nil, skipping", "unit_id", unit.ID)
 		return
 	}
 
@@ -491,11 +496,18 @@ func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
 	case PoolTypeOCR:
 		if result.OCRResult != nil {
 			m.Provider = p.name
+			m.CostUSD = result.OCRResult.CostUSD
 			if !result.OCRResult.Success {
 				m.ErrorType = "ocr_error"
 			}
 		}
 	}
+
+	p.logger.Debug("recordMetrics: sending metric",
+		"unit_id", unit.ID,
+		"book_id", m.BookID,
+		"stage", m.Stage,
+		"cost_usd", m.CostUSD)
 
 	p.sink.Send(defra.WriteOp{
 		Op:         defra.OpCreate,

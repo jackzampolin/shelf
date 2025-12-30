@@ -175,14 +175,20 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 	}
 
 	// Parse JSON if structured output was requested
-	if req.ResponseFormat != nil && content != "" {
-		var parsed json.RawMessage
-		if err := json.Unmarshal([]byte(content), &parsed); err == nil {
-			result.ParsedJSON = parsed
-		} else {
+	if req.ResponseFormat != nil {
+		if content == "" {
 			result.Success = false
-			result.ErrorType = "json_parse"
-			result.ErrorMessage = fmt.Sprintf("failed to parse JSON response: %v", err)
+			result.ErrorType = "empty_content"
+			result.ErrorMessage = "expected JSON response but got empty content"
+		} else {
+			var parsed json.RawMessage
+			if err := json.Unmarshal([]byte(content), &parsed); err == nil {
+				result.ParsedJSON = parsed
+			} else {
+				result.Success = false
+				result.ErrorType = "json_parse"
+				result.ErrorMessage = fmt.Sprintf("failed to parse JSON response: %v", err)
+			}
 		}
 	}
 

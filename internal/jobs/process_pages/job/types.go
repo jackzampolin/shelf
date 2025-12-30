@@ -134,11 +134,15 @@ type BookState struct {
 	TocEndPage   int
 }
 
+// MaxPageOpRetries is the maximum number of retries for page-level operations.
+const MaxPageOpRetries = 3
+
 // WorkUnitInfo tracks pending work units.
 type WorkUnitInfo struct {
-	PageNum  int
-	UnitType string // "extract", "ocr", "blend", "label", "metadata", "toc_finder", "toc_extract"
-	Provider string // for OCR units
+	PageNum    int
+	UnitType   string // "extract", "ocr", "blend", "label", "metadata", "toc_finder", "toc_extract"
+	Provider   string // for OCR units
+	RetryCount int    // number of times this work unit has been retried
 }
 
 // PDFInfo describes a PDF file and its page range.
@@ -240,6 +244,17 @@ func (j *Job) AllPagesComplete() bool {
 // RegisterWorkUnit registers a pending work unit.
 func (j *Job) RegisterWorkUnit(unitID string, info WorkUnitInfo) {
 	j.PendingUnits[unitID] = info
+}
+
+// GetWorkUnit gets a pending work unit without removing it.
+func (j *Job) GetWorkUnit(unitID string) (WorkUnitInfo, bool) {
+	info, ok := j.PendingUnits[unitID]
+	return info, ok
+}
+
+// RemoveWorkUnit removes a pending work unit.
+func (j *Job) RemoveWorkUnit(unitID string) {
+	delete(j.PendingUnits, unitID)
 }
 
 // GetAndRemoveWorkUnit gets and removes a pending work unit.

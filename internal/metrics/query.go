@@ -86,8 +86,17 @@ func buildFilterClause(f Filter) string {
 func (q *Query) List(ctx context.Context, f Filter, limit int) ([]Metric, error) {
 	filterClause := buildFilterClause(f)
 
-	query := `{
-		Metric(%s) {
+	// Build query with or without filter clause
+	// When no filter, use "Metric" not "Metric()" for valid GraphQL
+	var metricSelector string
+	if filterClause != "" {
+		metricSelector = fmt.Sprintf("Metric(%s)", filterClause)
+	} else {
+		metricSelector = "Metric"
+	}
+
+	query := fmt.Sprintf(`{
+		%s {
 			_docID
 			job_id
 			book_id
@@ -110,13 +119,7 @@ func (q *Query) List(ctx context.Context, f Filter, limit int) ([]Metric, error)
 			error_type
 			created_at
 		}
-	}`
-
-	if filterClause != "" {
-		query = fmt.Sprintf(query, filterClause)
-	} else {
-		query = fmt.Sprintf(query, "")
-	}
+	}`, metricSelector)
 
 	resp, err := q.client.Execute(ctx, query, nil)
 	if err != nil {

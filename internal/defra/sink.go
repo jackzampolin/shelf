@@ -358,7 +358,8 @@ func (s *Sink) processCreates(collection string, ops []WriteOp) {
 
 	s.logger.Debug("batch create succeeded",
 		"collection", collection,
-		"count", len(docIDs))
+		"count", len(docIDs),
+		"doc_ids", docIDs)
 
 	// Send success results with doc IDs
 	for i, op := range ops {

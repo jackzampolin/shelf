@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
@@ -189,80 +190,170 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		return nil, err
 	}
 
-	info, ok := j.GetAndRemoveWorkUnit(result.WorkUnitID)
+	// Get work unit info (don't remove yet - we may need to retry)
+	info, ok := j.GetWorkUnit(result.WorkUnitID)
 	if !ok {
 		return nil, nil // Not our work unit
 	}
 
+	logger := svcctx.LoggerFrom(ctx)
+
 	if !result.Success {
-		// Handle book-level operation failures with retry logic
+		// Handle failures with retry logic
 		switch info.UnitType {
 		case "metadata":
 			j.BookState.Metadata.Fail(MaxBookOpRetries)
-			j.PersistMetadataState(ctx) // Persist to DefraDB
+			j.PersistMetadataState(ctx)
 		case "toc_finder":
 			j.BookState.TocFinder.Fail(MaxBookOpRetries)
-			j.PersistTocFinderState(ctx) // Persist to DefraDB
+			j.PersistTocFinderState(ctx)
 		case "toc_extract":
 			j.BookState.TocExtract.Fail(MaxBookOpRetries)
-			j.PersistTocExtractState(ctx) // Persist to DefraDB
+			j.PersistTocExtractState(ctx)
+		default:
+			// Page-level operations (extract, ocr, blend, label) - retry if under limit
+			if info.RetryCount < MaxPageOpRetries {
+				retryUnit := j.createRetryUnit(ctx, info, logger)
+				if retryUnit != nil {
+					j.RemoveWorkUnit(result.WorkUnitID)
+					return []jobs.WorkUnit{*retryUnit}, nil
+				}
+			}
+			if logger != nil {
+				logger.Error("page operation failed after retries",
+					"unit_type", info.UnitType,
+					"page_num", info.PageNum,
+					"retry_count", info.RetryCount,
+					"error", result.Error)
+			}
 		}
+		j.RemoveWorkUnit(result.WorkUnitID)
 		return nil, fmt.Errorf("work unit failed (%s): %v", info.UnitType, result.Error)
 	}
 
 	var newUnits []jobs.WorkUnit
+	var handlerErr error
 
 	switch info.UnitType {
 	case "extract":
 		units, err := j.HandleExtractComplete(ctx, info, result)
 		if err != nil {
-			return nil, err
+			handlerErr = err
+		} else {
+			newUnits = append(newUnits, units...)
 		}
-		newUnits = append(newUnits, units...)
 
 	case "ocr":
 		units, err := j.HandleOcrComplete(ctx, info, result)
 		if err != nil {
-			return nil, err
+			handlerErr = err
+		} else {
+			newUnits = append(newUnits, units...)
 		}
-		newUnits = append(newUnits, units...)
 
 	case "blend":
 		units, err := j.HandleBlendComplete(ctx, info, result)
 		if err != nil {
-			return nil, err
+			handlerErr = err
+		} else {
+			newUnits = append(newUnits, units...)
 		}
-		newUnits = append(newUnits, units...)
 
 	case "label":
 		units, err := j.HandleLabelComplete(ctx, info, result)
 		if err != nil {
-			return nil, err
+			handlerErr = err
+		} else {
+			newUnits = append(newUnits, units...)
 		}
-		newUnits = append(newUnits, units...)
 
 	case "metadata":
 		if err := j.HandleMetadataComplete(ctx, result); err != nil {
-			return nil, err
+			handlerErr = err
 		}
 
 	case "toc_finder":
 		units, err := j.HandleTocFinderComplete(ctx, result)
 		if err != nil {
-			return nil, err
+			handlerErr = err
+		} else {
+			newUnits = append(newUnits, units...)
 		}
-		newUnits = append(newUnits, units...)
 
 	case "toc_extract":
 		if err := j.HandleTocExtractComplete(ctx, result); err != nil {
-			return nil, err
+			handlerErr = err
 		}
 	}
 
-	// Check overall completion
+	// Handle handler errors with retry for page-level operations
+	if handlerErr != nil {
+		isPageOp := info.UnitType == "extract" || info.UnitType == "ocr" ||
+			info.UnitType == "blend" || info.UnitType == "label"
+
+		if isPageOp && info.RetryCount < MaxPageOpRetries {
+			if logger != nil {
+				logger.Warn("handler failed, retrying",
+					"unit_type", info.UnitType,
+					"page_num", info.PageNum,
+					"retry_count", info.RetryCount,
+					"error", handlerErr)
+			}
+			retryUnit := j.createRetryUnit(ctx, info, logger)
+			if retryUnit != nil {
+				j.RemoveWorkUnit(result.WorkUnitID)
+				return []jobs.WorkUnit{*retryUnit}, nil
+			}
+		}
+		j.RemoveWorkUnit(result.WorkUnitID)
+		return nil, handlerErr
+	}
+
+	// Success - remove work unit and check completion
+	j.RemoveWorkUnit(result.WorkUnitID)
 	j.CheckCompletion()
 
 	return newUnits, nil
+}
+
+// createRetryUnit creates a retry work unit for a failed page-level operation.
+func (j *Job) createRetryUnit(ctx context.Context, info WorkUnitInfo, logger *slog.Logger) *jobs.WorkUnit {
+	state := j.PageState[info.PageNum]
+	if state == nil {
+		return nil
+	}
+
+	newRetryCount := info.RetryCount + 1
+	if logger != nil {
+		logger.Info("creating retry unit",
+			"unit_type", info.UnitType,
+			"page_num", info.PageNum,
+			"retry_count", newRetryCount)
+	}
+
+	var unit *jobs.WorkUnit
+	switch info.UnitType {
+	case "extract":
+		unit = j.CreateExtractWorkUnit(info.PageNum)
+	case "ocr":
+		unit = j.CreateOcrWorkUnit(info.PageNum, info.Provider)
+	case "blend":
+		unit = j.CreateBlendWorkUnit(info.PageNum, state)
+	case "label":
+		unit = j.CreateLabelWorkUnit(ctx, info.PageNum, state)
+	}
+
+	if unit != nil {
+		// Update the registered info with new retry count
+		j.PendingUnits[unit.ID] = WorkUnitInfo{
+			PageNum:    info.PageNum,
+			UnitType:   info.UnitType,
+			Provider:   info.Provider,
+			RetryCount: newRetryCount,
+		}
+	}
+
+	return unit
 }
 
 func (j *Job) Done() bool {
