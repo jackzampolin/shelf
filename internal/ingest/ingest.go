@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pdfcpu/pdfcpu/pkg/api"
-	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
@@ -130,47 +130,12 @@ func Ingest(ctx context.Context, client *defra.Client, homeDir *home.Dir, req Re
 	}, nil
 }
 
-// decryptPDF removes encryption/permissions from a PDF.
-// Returns the path to the decrypted PDF (may be same as input if not encrypted).
-func decryptPDF(pdfPath string, conf *model.Configuration) (string, error) {
-	// Create temp file for decrypted PDF
-	tmpFile, err := os.CreateTemp("", "shelf-decrypt-*.pdf")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	tmpFile.Close()
-
-	// Try to decrypt the PDF (empty password for PDFs with no user password)
-	if err := api.DecryptFile(pdfPath, tmpPath, conf); err != nil {
-		os.Remove(tmpPath)
-		// If decrypt fails (not encrypted or other issue), use original
-		// Common error: "this file is not encrypted" - that's fine, use original
-		return pdfPath, nil
-	}
-
-	return tmpPath, nil
-}
-
-// extractImages extracts all images from a PDF to the output directory.
-// Returns the number of images extracted.
+// extractImages renders all pages from a PDF to the output directory using pdftoppm.
+// Returns the number of pages extracted.
 // startPage is the offset for page numbering (for multi-part PDFs).
-func extractImages(pdfPath, outDir string, startPage int) (int, error) {
-	conf := model.NewDefaultConfiguration()
-	conf.ValidationMode = model.ValidationRelaxed
-
-	// Try to decrypt PDF to remove permission restrictions
-	// This works on PDFs with restrictive permission bits (even without encryption password)
-	workingPath, err := decryptPDF(pdfPath, conf)
-	if err != nil {
-		return 0, fmt.Errorf("failed to prepare PDF: %w", err)
-	}
-	if workingPath != pdfPath {
-		defer os.Remove(workingPath)
-	}
-
+func extractImages(pdfPath, outDir string, pageOffset int) (int, error) {
 	// Get page count
-	f, err := os.Open(workingPath)
+	f, err := os.Open(pdfPath)
 	if err != nil {
 		return 0, fmt.Errorf("failed to open PDF: %w", err)
 	}
@@ -180,105 +145,94 @@ func extractImages(pdfPath, outDir string, startPage int) (int, error) {
 		return 0, fmt.Errorf("failed to get page count: %w", err)
 	}
 
-	// Process in chunks concurrently
-	const chunkSize = 50
+	// Process pages concurrently
 	maxWorkers := runtime.NumCPU()
 
 	type result struct {
-		chunkStart int
-		count      int
-		err        error
+		pageNum int
+		err     error
 	}
 
-	chunks := make([][]int, 0)
-	for start := 1; start <= pageCount; start += chunkSize {
-		end := start + chunkSize - 1
-		if end > pageCount {
-			end = pageCount
-		}
-		chunks = append(chunks, []int{start, end})
-	}
-
-	results := make(chan result, len(chunks))
+	results := make(chan result, pageCount)
 	sem := make(chan struct{}, maxWorkers)
 
-	for _, chunk := range chunks {
+	for page := 1; page <= pageCount; page++ {
 		sem <- struct{}{} // acquire
-		go func(start, end int) {
+		go func(pageInPDF int) {
 			defer func() { <-sem }() // release
 
-			count, err := extractChunk(workingPath, outDir, start, end, startPage, conf)
-			results <- result{chunkStart: start, count: count, err: err}
-		}(chunk[0], chunk[1])
+			outputPageNum := pageOffset + pageInPDF
+			err := renderPage(pdfPath, outDir, pageInPDF, outputPageNum)
+			results <- result{pageNum: pageInPDF, err: err}
+		}(page)
 	}
 
 	// Collect results
-	totalCount := 0
-	for range chunks {
+	successCount := 0
+	for i := 0; i < pageCount; i++ {
 		r := <-results
 		if r.err != nil {
-			return 0, fmt.Errorf("failed to extract pages %d+: %w", r.chunkStart, r.err)
+			return 0, fmt.Errorf("failed to render page %d: %w", r.pageNum, r.err)
 		}
-		totalCount += r.count
+		successCount++
 	}
 
-	return totalCount, nil
+	return successCount, nil
 }
 
-// extractChunk extracts a range of pages from a PDF.
-func extractChunk(pdfPath, outDir string, startPage, endPage, pageOffset int, conf *model.Configuration) (int, error) {
-	// Create a temp directory for this chunk
-	tmpDir, err := os.MkdirTemp("", "shelf-chunk-*")
+// renderPage renders a single page from a PDF using pdftoppm (poppler-utils).
+func renderPage(pdfPath, outDir string, pageInPDF, outputPageNum int) error {
+	// Create temp directory for output
+	tmpDir, err := os.MkdirTemp("", "shelf-page-*")
 	if err != nil {
-		return 0, fmt.Errorf("failed to create temp dir: %w", err)
+		return fmt.Errorf("failed to create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Build page selection
-	pages := make([]string, 0)
-	for p := startPage; p <= endPage; p++ {
-		pages = append(pages, strconv.Itoa(p))
-	}
+	// Output prefix for pdftoppm
+	outputPrefix := filepath.Join(tmpDir, "page")
 
-	// Extract images for this page range
-	if err := api.ExtractImagesFile(pdfPath, tmpDir, pages, conf); err != nil {
-		return 0, fmt.Errorf("pdfcpu extract failed: %w", err)
-	}
+	// Run pdftoppm to render the page
+	// -png: output PNG format
+	// -f N: first page to render
+	// -l N: last page to render
+	// -r 300: resolution in DPI
+	// -singlefile: don't add page number suffix
+	pageStr := fmt.Sprintf("%d", pageInPDF)
+	cmd := exec.Command("pdftoppm",
+		"-png",
+		"-f", pageStr,
+		"-l", pageStr,
+		"-r", "300",
+		"-singlefile",
+		pdfPath,
+		outputPrefix,
+	)
 
-	// Read extracted files
-	entries, err := os.ReadDir(tmpDir)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return 0, fmt.Errorf("failed to read temp dir: %w", err)
+		return fmt.Errorf("pdftoppm failed: %w (output: %s)", err, string(output))
 	}
 
-	// Sort entries to maintain page order
-	sortExtractedFiles(entries)
-
-	count := 0
-	for i, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		// Read source file
-		srcPath := filepath.Join(tmpDir, entry.Name())
-		data, err := os.ReadFile(srcPath)
-		if err != nil {
-			return 0, fmt.Errorf("failed to read extracted image: %w", err)
-		}
-
-		// Write to destination with sequential naming
-		// pageOffset is cumulative from previous PDFs, startPage is within this PDF
-		pageNum := pageOffset + startPage + i
-		dstPath := filepath.Join(outDir, fmt.Sprintf("page_%04d.png", pageNum))
-		if err := os.WriteFile(dstPath, data, 0o644); err != nil {
-			return 0, fmt.Errorf("failed to write page image: %w", err)
-		}
-
-		count++
+	// pdftoppm with -singlefile creates: <prefix>.png
+	srcPath := outputPrefix + ".png"
+	if _, err := os.Stat(srcPath); err != nil {
+		return fmt.Errorf("pdftoppm did not create expected output: %w", err)
 	}
 
-	return count, nil
+	// Read the rendered image
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to read rendered image: %w", err)
+	}
+
+	// Write to destination with sequential naming
+	dstPath := filepath.Join(outDir, fmt.Sprintf("page_%04d.png", outputPageNum))
+	if err := os.WriteFile(dstPath, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write page image: %w", err)
+	}
+
+	return nil
 }
 
 // sortPDFsByNumber sorts PDF paths by their numeric suffix.
@@ -313,25 +267,6 @@ func sortPDFsByNumber(paths []string) []string {
 	})
 
 	return sorted
-}
-
-// sortExtractedFiles sorts directory entries by the page number in their filename.
-// pdfcpu names files like "book_1_Im1.png", "book_2_Im2.png"
-func sortExtractedFiles(entries []os.DirEntry) {
-	re := regexp.MustCompile(`_(\d+)_`)
-
-	sort.Slice(entries, func(i, j int) bool {
-		mi := re.FindStringSubmatch(entries[i].Name())
-		mj := re.FindStringSubmatch(entries[j].Name())
-
-		if len(mi) > 1 && len(mj) > 1 {
-			ni, _ := strconv.Atoi(mi[1])
-			nj, _ := strconv.Atoi(mj[1])
-			return ni < nj
-		}
-
-		return entries[i].Name() < entries[j].Name()
-	})
 }
 
 // deriveTitle extracts a title from a PDF filename.
