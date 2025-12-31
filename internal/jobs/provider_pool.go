@@ -526,14 +526,16 @@ func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
 			PromptCID: unit.Metrics.PromptCID,
 		}
 		call := llmcall.FromChatResult(result.ChatResult, opts)
-		p.sink.Send(defra.WriteOp{
-			Op:         defra.OpCreate,
-			Collection: "LLMCall",
-			Document:   call.ToMap(),
-		})
-		p.logger.Debug("recordMetrics: recorded LLM call",
-			"call_id", call.ID,
-			"prompt_key", opts.PromptKey)
+		if call != nil {
+			p.sink.Send(defra.WriteOp{
+				Op:         defra.OpCreate,
+				Collection: "LLMCall",
+				Document:   call.ToMap(),
+			})
+			p.logger.Debug("recordMetrics: recorded LLM call",
+				"call_id", call.ID,
+				"prompt_key", opts.PromptKey)
+		}
 	}
 }
 

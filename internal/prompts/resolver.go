@@ -8,7 +8,7 @@ import (
 )
 
 // Resolver resolves prompts with book-level overrides.
-// Resolution order: BookPromptOverride > Embedded default
+// See package documentation for resolution order details.
 type Resolver struct {
 	store    *Store
 	embedded map[string]EmbeddedPrompt

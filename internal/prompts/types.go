@@ -2,10 +2,16 @@
 //
 // The package supports a hybrid model where:
 //   - Embedded .tmpl files in code are the source of truth for defaults
-//   - The Prompt collection in DefraDB mirrors these for UI/traceability
+//   - The Prompt collection in DefraDB mirrors these for UI/CID traceability
 //   - BookPromptOverride allows per-book customization
 //
-// Resolution order: BookPromptOverride > Embedded default
+// Resolution order for a specific book:
+//  1. BookPromptOverride (per-book customization, if exists)
+//  2. Embedded default (from .tmpl files in code)
+//
+// The Prompt collection mirrors embedded defaults and is used for:
+//   - Web UI display (list/edit prompts)
+//   - CID traceability (linking LLM calls to exact prompt versions)
 package prompts
 
 import (

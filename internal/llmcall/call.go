@@ -59,12 +59,17 @@ type RecordOptions struct {
 	PromptKey string
 	PromptCID string // Content-addressed ID linking to exact prompt version
 
-	// Request parameters
-	Temperature float64
+	// Request parameters (pointer to distinguish "not set" from "set to 0")
+	Temperature *float64
 }
 
 // FromChatResult creates a Call from a ChatResult.
+// Returns nil if result is nil.
 func FromChatResult(result *providers.ChatResult, opts RecordOptions) *Call {
+	if result == nil {
+		return nil
+	}
+
 	call := &Call{
 		ID:           uuid.New().String(),
 		Timestamp:    time.Now(),
@@ -82,8 +87,8 @@ func FromChatResult(result *providers.ChatResult, opts RecordOptions) *Call {
 		Success:      result.Success,
 	}
 
-	if opts.Temperature > 0 {
-		call.Temperature = &opts.Temperature
+	if opts.Temperature != nil {
+		call.Temperature = opts.Temperature
 	}
 
 	if !result.Success {

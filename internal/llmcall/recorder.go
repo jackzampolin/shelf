@@ -36,6 +36,12 @@ func (r *Recorder) Record(result *providers.ChatResult, opts RecordOptions) {
 	}
 
 	call := FromChatResult(result, opts)
+	if call == nil {
+		r.logger.Warn("LLM call not recorded: nil result provided",
+			"prompt_key", opts.PromptKey)
+		return
+	}
+
 	r.sink.Send(defra.WriteOp{
 		Op:         defra.OpCreate,
 		Collection: "LLMCall",

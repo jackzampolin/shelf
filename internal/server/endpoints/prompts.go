@@ -3,6 +3,7 @@ package endpoints
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -227,7 +228,11 @@ func (e *ListBookPromptsEndpoint) handler(w http.ResponseWriter, r *http.Request
 	for _, p := range embedded {
 		resolved, err := resolver.Resolve(r.Context(), p.Key, bookID)
 		if err != nil {
-			// Skip on error, use embedded
+			// Log and fall back to embedded default
+			slog.Warn("failed to resolve prompt, using embedded default",
+				"key", p.Key,
+				"book_id", bookID,
+				"error", err)
 			resp.Prompts = append(resp.Prompts, BookPromptResponse{
 				Key:        p.Key,
 				Text:       p.Text,
