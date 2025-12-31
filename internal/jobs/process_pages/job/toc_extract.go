@@ -43,8 +43,9 @@ func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	})
 
 	unit := extract_toc.CreateWorkUnit(extract_toc.Input{
-		ToCPages:         tocPages,
-		StructureSummary: structureSummary,
+		ToCPages:             tocPages,
+		StructureSummary:     structureSummary,
+		SystemPromptOverride: j.GetPrompt(extract_toc.PromptKey),
 	})
 	unit.ID = unitID
 	unit.Provider = j.TocProvider
@@ -52,6 +53,8 @@ func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
 
 	metrics := j.MetricsFor()
 	metrics.ItemKey = "toc_extract"
+	metrics.PromptKey = extract_toc.PromptKey
+	metrics.PromptCID = j.GetPromptCID(extract_toc.PromptKey)
 	unit.Metrics = metrics
 
 	return unit

@@ -61,6 +61,19 @@ func All(cfg Config) []api.Endpoint {
 		&UpdateSettingEndpoint{},
 		&ResetSettingEndpoint{},
 
+		// LLM call history endpoints
+		&ListLLMCallsEndpoint{},
+		&GetLLMCallEndpoint{},
+		&LLMCallCountsEndpoint{},
+
+		// Prompt endpoints
+		&ListPromptsEndpoint{},
+		&GetPromptEndpoint{},
+		&ListBookPromptsEndpoint{},
+		&GetBookPromptEndpoint{},
+		&SetBookPromptEndpoint{},
+		&ClearBookPromptEndpoint{},
+
 		// Swagger/OpenAPI endpoints
 		&SwaggerEndpoint{SpecPath: cfg.SwaggerSpecPath},
 		&SwaggerUIEndpoint{},
@@ -90,5 +103,15 @@ func SettingsCommands() []api.Endpoint {
 		&GetSettingEndpoint{},
 		&UpdateSettingEndpoint{},
 		&ResetSettingEndpoint{},
+	}
+}
+
+// LLMCallCommands returns endpoints for LLM call history operations.
+// This groups llmcall-related commands under "llmcalls" subcommand.
+func LLMCallCommands() []api.Endpoint {
+	return []api.Endpoint{
+		&ListLLMCallsEndpoint{},
+		&GetLLMCallEndpoint{},
+		&LLMCallCountsEndpoint{},
 	}
 }

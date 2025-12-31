@@ -18,6 +18,10 @@ type Page struct {
 // Input contains the data needed for a metadata work unit.
 type Input struct {
 	BookText string // OCR text from first ~20 pages
+
+	// SystemPromptOverride allows using a book-level prompt override.
+	// If empty, uses the embedded default.
+	SystemPromptOverride string
 }
 
 // PrepareBookText prepares book text from pages for metadata extraction.
@@ -39,14 +43,17 @@ func PrepareBookText(pages []Page, maxPages int) string {
 // CreateWorkUnit creates a metadata extraction LLM work unit.
 // The caller must set ID, JobID, and Provider on the returned unit.
 func CreateWorkUnit(input Input) *jobs.WorkUnit {
-	userPrompt := fmt.Sprintf(UserPromptTemplate, input.BookText)
+	systemPrompt := input.SystemPromptOverride
+	if systemPrompt == "" {
+		systemPrompt = SystemPrompt()
+	}
 
 	return &jobs.WorkUnit{
 		Type: jobs.WorkUnitTypeLLM,
 		ChatRequest: &providers.ChatRequest{
 			Messages: []providers.Message{
-				{Role: "system", Content: SystemPrompt},
-				{Role: "user", Content: userPrompt},
+				{Role: "system", Content: systemPrompt},
+				{Role: "user", Content: UserPrompt(input.BookText)},
 			},
 			ResponseFormat: buildResponseFormat(),
 			Temperature:    0.1,

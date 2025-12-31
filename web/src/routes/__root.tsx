@@ -41,6 +41,18 @@ function RootLayout() {
                 >
                   Settings
                 </Link>
+                <Link
+                  to="/llmcalls"
+                  className="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium [&.active]:text-blue-600 [&.active]:font-semibold"
+                >
+                  LLM Calls
+                </Link>
+                <Link
+                  to="/prompts"
+                  className="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium [&.active]:text-blue-600 [&.active]:font-semibold"
+                >
+                  Prompts
+                </Link>
               </nav>
             </div>
             <div className="flex items-center space-x-4">

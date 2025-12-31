@@ -56,7 +56,8 @@ func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageS
 	})
 
 	unit := label.CreateWorkUnit(label.Input{
-		BlendedText: blendedText,
+		BlendedText:          blendedText,
+		SystemPromptOverride: j.GetPrompt(label.SystemPromptKey),
 	})
 	unit.ID = unitID
 	unit.Provider = j.LabelProvider
@@ -64,6 +65,8 @@ func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageS
 
 	metrics := j.MetricsFor()
 	metrics.ItemKey = fmt.Sprintf("page_%04d_label", pageNum)
+	metrics.PromptKey = label.SystemPromptKey
+	metrics.PromptCID = j.GetPromptCID(label.SystemPromptKey)
 	unit.Metrics = metrics
 
 	return unit

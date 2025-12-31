@@ -35,7 +35,8 @@ func (j *Job) CreateBlendWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit 
 	})
 
 	unit := blend.CreateWorkUnit(blend.Input{
-		OCROutputs: outputs,
+		OCROutputs:           outputs,
+		SystemPromptOverride: j.GetPrompt(blend.PromptKey),
 	})
 	unit.ID = unitID
 	unit.Provider = j.BlendProvider
@@ -43,6 +44,8 @@ func (j *Job) CreateBlendWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit 
 
 	metrics := j.MetricsFor()
 	metrics.ItemKey = fmt.Sprintf("page_%04d_blend", pageNum)
+	metrics.PromptKey = blend.PromptKey
+	metrics.PromptCID = j.GetPromptCID(blend.PromptKey)
 	unit.Metrics = metrics
 
 	return unit

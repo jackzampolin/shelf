@@ -192,12 +192,12 @@ in the initial implementation.
 
 ---
 
-## Phase 2: Prompt Linking (Traceability)
+## Phase 2: Prompt Linking (Traceability) ✅
 
-### 2.1 LLMCall Schema
+### 2.1 LLMCall Schema ✅
 **Goal**: Track every LLM call with prompt reference
 
-**Files to create:**
+**Files created:**
 - `internal/schema/schemas/llmcall.graphql`
 
 **Schema:**
@@ -205,69 +205,84 @@ in the initial implementation.
 type LLMCall {
   id: String! @index(unique: true)
   timestamp: DateTime!
-  book: Book
-  page: Page
-  job: Job
-  promptKey: String!
-  promptCID: String
+  latency_ms: Int!
+  book_id: String @index
+  page_id: String @index
+  job_id: String @index
+  prompt_key: String! @index
+  prompt_cid: String
+  provider: String!
   model: String!
-  temperature: Float!
-  inputTokens: Int!
-  outputTokens: Int!
-  latencyMs: Int!
+  temperature: Float
+  input_tokens: Int!
+  output_tokens: Int!
   response: String!
-  toolCalls: JSON
+  tool_calls: JSON
+  success: Boolean!
+  error: String
 }
 ```
 
 **Tasks:**
-- [ ] Create schema file
-- [ ] Add to registry (Order: 9)
-- [ ] Test initialization
+- [x] Create schema file
+- [x] Add to registry (Order: 9)
+- [x] Test initialization
 
-### 2.2 LLM Call Recording
+### 2.2 LLM Call Recording ✅
 **Goal**: Record every LLM/agent call to DefraDB
 
-**Files to modify:**
-- `internal/providers/llm.go` (or create `internal/providers/metrics.go`)
-- `internal/agent/agent.go`
+**Files created:**
+- `internal/llmcall/call.go` - Call struct and FromChatResult converter
+- `internal/llmcall/store.go` - Store for querying calls
+- `internal/llmcall/recorder.go` - Fire-and-forget recorder via Sink
+
+**Files modified:**
+- `internal/jobs/job.go` - Added PageID, PromptKey to WorkUnitMetrics
+- `internal/jobs/provider_pool.go` - Hook into recordMetrics to also record LLMCalls
+- `internal/svcctx/svcctx.go` - Added LLMCallStore to Services
+- `internal/server/server.go` - Initialize LLMCallStore
 
 **Tasks:**
-- [ ] Create `RecordLLMCall(ctx, opts, resp)` function
-- [ ] Hook into LLM provider's `Chat()` and `ChatWithTools()`
-- [ ] Pass promptKey through call chain (may need context or options struct)
-- [ ] For Phase 2, promptCID can be empty (filled in Phase 3)
+- [x] Create llmcall package with Call, Store, Recorder
+- [x] Hook into provider_pool's recordMetrics()
+- [x] Pass promptKey through WorkUnitMetrics
+- [x] For Phase 2, promptCID is empty (filled in Phase 3)
 
-### 2.3 Call History Endpoints
+### 2.3 Call History Endpoints ✅
 **Goal**: Query LLM call history
 
-**Files to create:**
+**Files created:**
 - `internal/server/endpoints/llmcalls.go`
 
 **Endpoints:**
 ```
 GET /api/llmcalls                    - List calls (with filters)
-GET /api/llmcalls/:id                - Get single call
-GET /api/books/:bookId/llmcalls      - Calls for a book
-GET /api/pages/:pageId/llmcalls      - Calls for a page
+GET /api/llmcalls/{id}               - Get single call
+GET /api/llmcalls/counts/{book_id}   - Calls count by prompt key for a book
 ```
 
 **Tasks:**
-- [ ] Implement list endpoint with filters (book, page, job, promptKey, date range)
-- [ ] Implement detail endpoint
-- [ ] Add CLI: `shelf api llmcalls list`, etc.
+- [x] Implement list endpoint with filters (book, page, job, promptKey, provider, model, success)
+- [x] Implement detail endpoint
+- [x] Implement counts by prompt key endpoint
+- [x] Add CLI: `shelf api llmcalls list`, `get`, `counts`
 
-### 2.4 Call History UI
+### 2.4 Call History UI ✅
 **Goal**: View LLM calls in web UI
 
-**Files to create/modify:**
-- `web/src/routes/llmcalls.tsx` (or integrate into existing pages)
+**Files created:**
+- `web/src/routes/llmcalls.tsx` - Dedicated LLM calls page
+
+**Files modified:**
+- `web/src/routes/__root.tsx` - Added LLM Calls nav link
 
 **Tasks:**
-- [ ] Add LLM calls tab to book detail page
-- [ ] Add LLM calls tab to page viewer
-- [ ] Show: timestamp, model, tokens, latency, promptKey
-- [ ] Link to prompt (placeholder until Phase 3)
+- [x] Create /llmcalls page with filterable table
+- [x] Show: timestamp, model, tokens, latency, promptKey
+- [x] Detail modal with full response and tool calls
+- [x] Link to book and job from call details
+- [ ] Add LLM calls tab to book detail page (deferred)
+- [ ] Add LLM calls tab to page viewer (deferred)
 
 ---
 

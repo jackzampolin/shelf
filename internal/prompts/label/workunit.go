@@ -2,7 +2,6 @@ package label
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/providers"
@@ -11,19 +10,26 @@ import (
 // Input contains the data needed for a label work unit.
 type Input struct {
 	BlendedText string
+
+	// SystemPromptOverride allows using a book-level prompt override.
+	// If empty, uses the embedded default.
+	SystemPromptOverride string
 }
 
 // CreateWorkUnit creates a label extraction LLM work unit.
 // The caller must set ID, JobID, and Provider on the returned unit.
 func CreateWorkUnit(input Input) *jobs.WorkUnit {
-	userPrompt := fmt.Sprintf(UserPromptTemplate, input.BlendedText)
+	systemPrompt := input.SystemPromptOverride
+	if systemPrompt == "" {
+		systemPrompt = SystemPrompt()
+	}
 
 	return &jobs.WorkUnit{
 		Type: jobs.WorkUnitTypeLLM,
 		ChatRequest: &providers.ChatRequest{
 			Messages: []providers.Message{
-				{Role: "system", Content: SystemPrompt},
-				{Role: "user", Content: userPrompt},
+				{Role: "system", Content: systemPrompt},
+				{Role: "user", Content: UserPrompt(input.BlendedText)},
 			},
 			ResponseFormat: buildResponseFormat(),
 			Temperature:    0.1,

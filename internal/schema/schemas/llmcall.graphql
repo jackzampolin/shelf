@@ -1,0 +1,34 @@
+type LLMCall {
+    # Unique identifier (UUID)
+    id: String! @index(unique: true)
+
+    # Timing
+    timestamp: DateTime!
+    latency_ms: Int!
+
+    # Context references (using IDs for simpler querying)
+    book_id: String @index
+    page_id: String @index
+    job_id: String @index
+
+    # Prompt traceability
+    prompt_key: String! @index
+    prompt_cid: String  # Filled in Phase 3 when prompts are in DB
+
+    # Model info
+    provider: String!
+    model: String!
+    temperature: Float
+
+    # Token usage
+    input_tokens: Int!
+    output_tokens: Int!
+
+    # Response
+    response: String!
+    tool_calls: JSON
+
+    # Status
+    success: Boolean!
+    error: String
+}

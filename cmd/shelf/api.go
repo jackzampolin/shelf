@@ -38,6 +38,16 @@ var metricsCmd = &cobra.Command{
 	Short: "Metrics and cost tracking commands",
 }
 
+var settingsCmd = &cobra.Command{
+	Use:   "settings",
+	Short: "Configuration settings commands",
+}
+
+var llmcallsCmd = &cobra.Command{
+	Use:   "llmcalls",
+	Short: "LLM call history commands",
+}
+
 // getServerURL returns the server URL at runtime (after flag parsing).
 func getServerURL() string {
 	return serverURL
@@ -76,8 +86,21 @@ func init() {
 	// Add book cost to books group
 	booksCmd.AddCommand((&endpoints.BookCostEndpoint{}).Command(getServerURL))
 
+	// Settings as subcommand group
+	settingsCmd.AddCommand((&endpoints.ListSettingsEndpoint{}).Command(getServerURL))
+	settingsCmd.AddCommand((&endpoints.GetSettingEndpoint{}).Command(getServerURL))
+	settingsCmd.AddCommand((&endpoints.UpdateSettingEndpoint{}).Command(getServerURL))
+	settingsCmd.AddCommand((&endpoints.ResetSettingEndpoint{}).Command(getServerURL))
+
+	// LLM calls as subcommand group
+	llmcallsCmd.AddCommand((&endpoints.ListLLMCallsEndpoint{}).Command(getServerURL))
+	llmcallsCmd.AddCommand((&endpoints.GetLLMCallEndpoint{}).Command(getServerURL))
+	llmcallsCmd.AddCommand((&endpoints.LLMCallCountsEndpoint{}).Command(getServerURL))
+
 	apiCmd.AddCommand(jobsCmd)
 	apiCmd.AddCommand(booksCmd)
 	apiCmd.AddCommand(metricsCmd)
+	apiCmd.AddCommand(settingsCmd)
+	apiCmd.AddCommand(llmcallsCmd)
 	rootCmd.AddCommand(apiCmd)
 }

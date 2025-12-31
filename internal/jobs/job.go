@@ -58,9 +58,12 @@ type WorkUnit struct {
 // WorkUnitMetrics provides attribution data for metrics recording.
 // Set these fields on work units to enable automatic metrics recording by workers.
 type WorkUnitMetrics struct {
-	BookID  string // Book being processed
-	Stage   string // Pipeline stage (e.g., "page-processing")
-	ItemKey string // Item identifier (e.g., "page_0001", "toc_entry_5")
+	BookID    string // Book being processed
+	PageID    string // Page being processed (if applicable)
+	Stage     string // Pipeline stage (e.g., "page-processing")
+	ItemKey   string // Item identifier (e.g., "page_0001", "toc_entry_5")
+	PromptKey string // Prompt identifier for LLM call tracing (e.g., "stages.blend.system")
+	PromptCID string // Content-addressed ID of the exact prompt version used
 }
 
 // OCRWorkRequest contains the data needed for an OCR work unit.

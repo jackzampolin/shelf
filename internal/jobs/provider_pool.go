@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
@@ -462,11 +463,11 @@ func (p *ProviderWorkerPool) sleepBeforeRetry(ctx context.Context, err error, at
 
 func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
 	if p.sink == nil {
-		p.logger.Debug("recordMetrics: sink is nil, skipping")
+		p.logger.Warn("recordMetrics: sink not configured, metrics and LLM calls not recorded")
 		return
 	}
 	if unit.Metrics == nil {
-		p.logger.Debug("recordMetrics: unit.Metrics is nil, skipping", "unit_id", unit.ID)
+		p.logger.Warn("recordMetrics: unit.Metrics is nil, skipping", "unit_id", unit.ID)
 		return
 	}
 
@@ -514,6 +515,28 @@ func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
 		Collection: "Metric",
 		Document:   m.ToMap(),
 	})
+
+	// Also record LLM call for traceability (Phase 2)
+	if p.poolType == PoolTypeLLM && result.ChatResult != nil {
+		opts := llmcall.RecordOptions{
+			BookID:    unit.Metrics.BookID,
+			PageID:    unit.Metrics.PageID,
+			JobID:     unit.JobID,
+			PromptKey: unit.Metrics.PromptKey,
+			PromptCID: unit.Metrics.PromptCID,
+		}
+		call := llmcall.FromChatResult(result.ChatResult, opts)
+		if call != nil {
+			p.sink.Send(defra.WriteOp{
+				Op:         defra.OpCreate,
+				Collection: "LLMCall",
+				Document:   call.ToMap(),
+			})
+			p.logger.Debug("recordMetrics: recorded LLM call",
+				"call_id", call.ID,
+				"prompt_key", opts.PromptKey)
+		}
+	}
 }
 
 // Verify interface compliance

@@ -20,15 +20,18 @@ type Schema struct {
 // registry holds all schemas in dependency order.
 // Order matters: parent collections must be created before children.
 var registry = []Schema{
-	{Name: "Config", Order: 0},    // standalone config settings, loaded first
+	{Name: "Config", Order: 0},              // standalone config settings, loaded first
 	{Name: "Job", Order: 1},
 	{Name: "Book", Order: 2},
-	{Name: "Metric", Order: 3},    // standalone, no dependencies
-	{Name: "Page", Order: 4},      // depends on Book
-	{Name: "OcrResult", Order: 5}, // depends on Page
-	{Name: "ToC", Order: 6},       // depends on Book
-	{Name: "TocEntry", Order: 7},  // depends on ToC, Page
-	{Name: "AgentRun", Order: 8},  // standalone, for debugging agent executions
+	{Name: "Metric", Order: 3},              // standalone, no dependencies
+	{Name: "Page", Order: 4},                // depends on Book
+	{Name: "OcrResult", Order: 5},           // depends on Page
+	{Name: "ToC", Order: 6},                 // depends on Book
+	{Name: "TocEntry", Order: 7},            // depends on ToC, Page
+	{Name: "AgentRun", Order: 8},            // standalone, for debugging agent executions
+	{Name: "LLMCall", Order: 9},             // standalone, tracks all LLM API calls
+	{Name: "Prompt", Order: 10},             // embedded prompt sync for UI/traceability
+	{Name: "BookPromptOverride", Order: 11}, // per-book prompt customizations
 }
 
 // All returns all schemas in dependency order.
