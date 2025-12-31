@@ -29,6 +29,7 @@ var registry = []Schema{
 	{Name: "ToC", Order: 6},       // depends on Book
 	{Name: "TocEntry", Order: 7},  // depends on ToC, Page
 	{Name: "AgentRun", Order: 8},  // standalone, for debugging agent executions
+	{Name: "LLMCall", Order: 9},   // standalone, tracks all LLM API calls
 }
 
 // All returns all schemas in dependency order.

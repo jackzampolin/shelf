@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
@@ -514,6 +515,25 @@ func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
 		Collection: "Metric",
 		Document:   m.ToMap(),
 	})
+
+	// Also record LLM call for traceability (Phase 2)
+	if p.poolType == PoolTypeLLM && result.ChatResult != nil {
+		opts := llmcall.RecordOptions{
+			BookID:    unit.Metrics.BookID,
+			PageID:    unit.Metrics.PageID,
+			JobID:     unit.JobID,
+			PromptKey: unit.Metrics.PromptKey,
+		}
+		call := llmcall.FromChatResult(result.ChatResult, opts)
+		p.sink.Send(defra.WriteOp{
+			Op:         defra.OpCreate,
+			Collection: "LLMCall",
+			Document:   call.ToMap(),
+		})
+		p.logger.Debug("recordMetrics: recorded LLM call",
+			"call_id", call.ID,
+			"prompt_key", opts.PromptKey)
+	}
 }
 
 // Verify interface compliance

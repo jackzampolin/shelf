@@ -17,6 +17,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
+	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
@@ -265,6 +266,7 @@ func (s *Server) Start(ctx context.Context) error {
 		Logger:       s.logger,
 		Home:         s.home,
 		MetricsQuery: metrics.NewQuery(s.defraClient),
+		LLMCallStore: llmcall.NewStore(s.defraClient),
 	}
 
 	// Pass services to scheduler for async job context injection

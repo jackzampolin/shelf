@@ -68,6 +68,32 @@ func (c *Client) Post(ctx context.Context, path string, body any, result any) er
 	return c.handleResponse(resp, result)
 }
 
+// Put performs a PUT request with JSON body and decodes the response.
+func (c *Client) Put(ctx context.Context, path string, body any, result any) error {
+	var bodyReader io.Reader
+	if body != nil {
+		bodyBytes, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("failed to marshal body: %w", err)
+		}
+		bodyReader = bytes.NewReader(bodyBytes)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.baseURL+path, bodyReader)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	return c.handleResponse(resp, result)
+}
+
 // Patch performs a PATCH request with JSON body and decodes the response.
 func (c *Client) Patch(ctx context.Context, path string, body any, result any) error {
 	var bodyReader io.Reader

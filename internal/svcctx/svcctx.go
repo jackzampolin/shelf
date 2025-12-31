@@ -10,6 +10,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
@@ -26,6 +27,7 @@ type Services struct {
 	Logger       *slog.Logger
 	Home         *home.Dir
 	MetricsQuery *metrics.Query
+	LLMCallStore *llmcall.Store
 }
 
 type servicesKey struct{}
@@ -110,6 +112,14 @@ func ConfigStoreFrom(ctx context.Context) config.Store {
 func MetricsQueryFrom(ctx context.Context) *metrics.Query {
 	if s := ServicesFrom(ctx); s != nil {
 		return s.MetricsQuery
+	}
+	return nil
+}
+
+// LLMCallStoreFrom extracts the LLM call store from context.
+func LLMCallStoreFrom(ctx context.Context) *llmcall.Store {
+	if s := ServicesFrom(ctx); s != nil {
+		return s.LLMCallStore
 	}
 	return nil
 }
