@@ -4,11 +4,47 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 )
+
+// validIDPattern matches valid IDs (UUIDs, DefraDB DocIDs, or simple alphanumeric).
+var validIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// validKeyPattern matches valid prompt keys (alphanumeric with dots, underscores, hyphens).
+var validKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
+// validateID checks that an ID is safe for GraphQL interpolation.
+func validateID(id string) error {
+	if id == "" {
+		return nil
+	}
+	if len(id) > 128 {
+		return fmt.Errorf("id too long (max 128 chars)")
+	}
+	if !validIDPattern.MatchString(id) {
+		return fmt.Errorf("invalid id format: must be alphanumeric with _ or -")
+	}
+	return nil
+}
+
+// validateKey checks that a key is safe for GraphQL interpolation.
+func validateKey(key string) error {
+	if key == "" {
+		return nil
+	}
+	if len(key) > 128 {
+		return fmt.Errorf("key too long (max 128 chars)")
+	}
+	if !validKeyPattern.MatchString(key) {
+		return fmt.Errorf("invalid key format: must be alphanumeric with . _ or -")
+	}
+	return nil
+}
 
 // Store provides access to LLM call records in DefraDB.
 type Store struct {
@@ -36,7 +72,12 @@ type QueryFilter struct {
 }
 
 // Get retrieves a single LLM call by ID.
+// Returns (nil, nil) if no call with the given ID exists.
 func (s *Store) Get(ctx context.Context, id string) (*Call, error) {
+	if err := validateID(id); err != nil {
+		return nil, fmt.Errorf("invalid id: %w", err)
+	}
+
 	query := fmt.Sprintf(`{
 		LLMCall(filter: {id: {_eq: %q}}) {
 			id
@@ -79,6 +120,26 @@ func (s *Store) Get(ctx context.Context, id string) (*Call, error) {
 
 // List retrieves LLM calls matching the filter.
 func (s *Store) List(ctx context.Context, filter QueryFilter) ([]Call, error) {
+	// Validate all filter inputs to prevent GraphQL injection
+	for field, value := range map[string]string{
+		"book_id":    filter.BookID,
+		"page_id":    filter.PageID,
+		"job_id":     filter.JobID,
+		"prompt_key": filter.PromptKey,
+		"provider":   filter.Provider,
+		"model":      filter.Model,
+	} {
+		if field == "prompt_key" {
+			if err := validateKey(value); err != nil {
+				return nil, fmt.Errorf("invalid %s: %w", field, err)
+			}
+		} else {
+			if err := validateID(value); err != nil {
+				return nil, fmt.Errorf("invalid %s: %w", field, err)
+			}
+		}
+	}
+
 	// Build filter conditions
 	var conditions []string
 
@@ -167,8 +228,11 @@ func (s *Store) List(ctx context.Context, filter QueryFilter) ([]Call, error) {
 }
 
 // CountByPromptKey returns call counts grouped by prompt key.
+// NOTE: This fetches all LLM calls for the book and aggregates client-side
+// because DefraDB doesn't support GROUP BY. This is O(n) in memory where n is
+// the number of LLM calls for the book. For books with many calls (10k+),
+// consider caching results or implementing pagination.
 func (s *Store) CountByPromptKey(ctx context.Context, bookID string) (map[string]int, error) {
-	// DefraDB doesn't have GROUP BY, so we fetch all and aggregate client-side
 	filter := QueryFilter{BookID: bookID}
 	calls, err := s.List(ctx, filter)
 	if err != nil {
@@ -195,9 +259,12 @@ func parseLLMCalls(data map[string]any) ([]Call, error) {
 	}
 
 	calls := make([]Call, 0, len(docs))
-	for _, d := range docs {
+	for i, d := range docs {
 		doc, ok := d.(map[string]any)
 		if !ok {
+			slog.Warn("skipping malformed LLM call document",
+				"index", i,
+				"type", fmt.Sprintf("%T", d))
 			continue
 		}
 
@@ -206,7 +273,12 @@ func parseLLMCalls(data map[string]any) ([]Call, error) {
 			call.ID = v
 		}
 		if v, ok := doc["timestamp"].(string); ok {
-			if t, err := time.Parse(time.RFC3339, v); err == nil {
+			if t, err := time.Parse(time.RFC3339, v); err != nil {
+				slog.Debug("failed to parse LLM call timestamp",
+					"id", call.ID,
+					"raw_value", v,
+					"error", err)
+			} else {
 				call.Timestamp = t
 			}
 		}
@@ -255,7 +327,11 @@ func parseLLMCalls(data map[string]any) ([]Call, error) {
 
 		// Handle tool_calls JSON
 		if v := doc["tool_calls"]; v != nil {
-			if data, err := json.Marshal(v); err == nil {
+			if data, err := json.Marshal(v); err != nil {
+				slog.Warn("failed to serialize tool_calls from DB",
+					"id", call.ID,
+					"error", err)
+			} else {
 				call.ToolCalls = data
 			}
 		}

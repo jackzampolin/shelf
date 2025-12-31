@@ -463,11 +463,11 @@ func (p *ProviderWorkerPool) sleepBeforeRetry(ctx context.Context, err error, at
 
 func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
 	if p.sink == nil {
-		p.logger.Debug("recordMetrics: sink is nil, skipping")
+		p.logger.Warn("recordMetrics: sink not configured, metrics and LLM calls not recorded")
 		return
 	}
 	if unit.Metrics == nil {
-		p.logger.Debug("recordMetrics: unit.Metrics is nil, skipping", "unit_id", unit.ID)
+		p.logger.Warn("recordMetrics: unit.Metrics is nil, skipping", "unit_id", unit.ID)
 		return
 	}
 

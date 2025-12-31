@@ -4,6 +4,7 @@ package llmcall
 
 import (
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,7 +28,7 @@ type Call struct {
 
 	// Prompt traceability
 	PromptKey string `json:"prompt_key"`
-	PromptCID string `json:"prompt_cid,omitempty"` // Filled in Phase 3
+	PromptCID string `json:"prompt_cid,omitempty"` // Content-addressed ID linking to the exact prompt version used
 
 	// Model info
 	Provider    string   `json:"provider"`
@@ -89,7 +90,11 @@ func FromChatResult(result *providers.ChatResult, opts RecordOptions) *Call {
 
 	// Serialize tool calls if present
 	if len(result.ToolCalls) > 0 {
-		if data, err := json.Marshal(result.ToolCalls); err == nil {
+		if data, err := json.Marshal(result.ToolCalls); err != nil {
+			slog.Warn("failed to serialize tool calls for LLM call record",
+				"error", err,
+				"tool_call_count", len(result.ToolCalls))
+		} else {
 			call.ToolCalls = data
 		}
 	}

@@ -1,6 +1,7 @@
 package endpoints
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -51,10 +52,13 @@ func (e *ListLLMCallsEndpoint) RequiresInit() bool { return true }
 //	@Param			prompt_key	query		string	false	"Filter by prompt key"
 //	@Param			provider	query		string	false	"Filter by provider"
 //	@Param			model		query		string	false	"Filter by model"
-//	@Param			success		query		bool	false	"Filter by success status"
+//	@Param			success		query		bool	false	"Filter by success status (true or false)"
 //	@Param			limit		query		int		false	"Max results (default 100)"
 //	@Param			offset		query		int		false	"Result offset"
+//	@Param			after		query		string	false	"Filter calls after this RFC3339 timestamp"
+//	@Param			before		query		string	false	"Filter calls before this RFC3339 timestamp"
 //	@Success		200			{object}	LLMCallsResponse
+//	@Failure		400			{object}	ErrorResponse
 //	@Failure		500			{object}	ErrorResponse
 //	@Router			/api/llmcalls [get]
 func (e *ListLLMCallsEndpoint) handler(w http.ResponseWriter, r *http.Request) {
@@ -75,30 +79,50 @@ func (e *ListLLMCallsEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if v := q.Get("success"); v != "" {
-		b, _ := strconv.ParseBool(v)
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid success filter: %q must be true or false", v))
+			return
+		}
 		filter.Success = &b
 	}
 
 	if v := q.Get("limit"); v != "" {
-		filter.Limit, _ = strconv.Atoi(v)
+		limit, err := strconv.Atoi(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid limit: %q must be an integer", v))
+			return
+		}
+		filter.Limit = limit
 	}
 	if filter.Limit <= 0 {
 		filter.Limit = 100
 	}
 
 	if v := q.Get("offset"); v != "" {
-		filter.Offset, _ = strconv.Atoi(v)
+		offset, err := strconv.Atoi(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid offset: %q must be an integer", v))
+			return
+		}
+		filter.Offset = offset
 	}
 
 	if v := q.Get("after"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			filter.After = &t
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid after time: %q must be RFC3339 format (e.g., 2024-01-15T00:00:00Z)", v))
+			return
 		}
+		filter.After = &t
 	}
 	if v := q.Get("before"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			filter.Before = &t
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid before time: %q must be RFC3339 format (e.g., 2024-01-15T00:00:00Z)", v))
+			return
 		}
+		filter.Before = &t
 	}
 
 	calls, err := store.List(r.Context(), filter)
@@ -247,7 +271,7 @@ func (e *GetLLMCallEndpoint) Command(getServerURL func() string) *cobra.Command 
 	}
 }
 
-// LLMCallCountsEndpoint handles GET /api/llmcalls/counts.
+// LLMCallCountsEndpoint handles GET /api/llmcalls/counts/{book_id}.
 type LLMCallCountsEndpoint struct{}
 
 func (e *LLMCallCountsEndpoint) Route() (string, string, http.HandlerFunc) {
