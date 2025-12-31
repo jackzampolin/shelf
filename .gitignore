@@ -46,3 +46,7 @@ test_results/
 test_outputs/
 testdata/
 .test-home/
+
+# Web build artifacts
+web/.vite/
+web/tsconfig.tsbuildinfo
