@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 
 	"github.com/spf13/cobra"
 
@@ -426,6 +427,10 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 								resp.ToC.Entries = append(resp.ToC.Entries, tocEntry)
 							}
 						}
+						// Sort entries by sort_order since DefraDB doesn't guarantee order
+						sort.Slice(resp.ToC.Entries, func(i, j int) bool {
+							return resp.ToC.Entries[i].SortOrder < resp.ToC.Entries[j].SortOrder
+						})
 					}
 				}
 			}

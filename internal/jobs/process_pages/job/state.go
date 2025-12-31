@@ -340,7 +340,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 // CheckCompletion checks if the entire job is complete.
 // A job is complete when all pages are labeled AND book-level operations
 // are either complete or permanently failed.
-func (j *Job) CheckCompletion() {
+func (j *Job) CheckCompletion(ctx context.Context) {
 	// All pages must be labeled
 	if !j.AllPagesComplete() {
 		return
@@ -362,6 +362,28 @@ func (j *Job) CheckCompletion() {
 	}
 
 	j.IsDone = true
+
+	// Persist the complete status to DefraDB
+	j.PersistBookStatus(ctx, BookStatusComplete)
+}
+
+// PersistBookStatus persists book status to DefraDB.
+func (j *Job) PersistBookStatus(ctx context.Context, status BookStatus) error {
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+
+	// Fire-and-forget - no need to block
+	sink.Send(defra.WriteOp{
+		Collection: "Book",
+		DocID:      j.BookID,
+		Document: map[string]any{
+			"status": string(status),
+		},
+		Op: defra.OpUpdate,
+	})
+	return nil
 }
 
 // PersistMetadataState persists metadata state to DefraDB.

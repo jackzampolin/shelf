@@ -74,6 +74,16 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		logger.Info("job.Start: loaded book state")
 	}
 
+	// Set book status to processing
+	j.PersistBookStatus(ctx, BookStatusProcessing)
+
+	// Recover from crash during metadata operation
+	// If metadata was started but not done, reset to retry
+	if j.BookState.Metadata.IsStarted() {
+		j.BookState.Metadata.Fail(MaxBookOpRetries)
+		j.PersistMetadataState(ctx)
+	}
+
 	// Recover from crash during ToC operations
 	// If ToC finder was started but not done and agent is nil, reset to retry
 	if j.BookState.TocFinder.IsStarted() && j.TocAgent == nil {
@@ -311,7 +321,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 	// Success - remove work unit and check completion
 	j.RemoveWorkUnit(result.WorkUnitID)
-	j.CheckCompletion()
+	j.CheckCompletion(ctx)
 
 	return newUnits, nil
 }

@@ -12,6 +12,15 @@ import (
 // LabelThresholdForBookOps is the number of labeled pages before triggering book-level operations.
 const LabelThresholdForBookOps = 20
 
+// BookStatus represents the top-level status of a book.
+type BookStatus string
+
+const (
+	BookStatusIngested   BookStatus = "ingested"
+	BookStatusProcessing BookStatus = "processing"
+	BookStatusComplete   BookStatus = "complete"
+)
+
 // FrontMatterPageCount is the number of pages considered front matter for ToC search.
 const FrontMatterPageCount = 50
 
