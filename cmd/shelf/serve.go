@@ -102,8 +102,10 @@ Examples:
 		}
 
 		// Build DefraDB config from loaded config (if available)
+		// HomePath enables deterministic container naming (shelf-defra-{hash})
 		defraConfig := defra.DockerConfig{
 			DataPath: defraDataPath,
+			HomePath: h.Path(),
 		}
 		if cfgMgr != nil {
 			cfg := cfgMgr.Get()

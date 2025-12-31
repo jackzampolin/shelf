@@ -20,6 +20,117 @@ func TestDockerConfig_Defaults(t *testing.T) {
 	}
 }
 
+func TestGenerateContainerName(t *testing.T) {
+	tests := []struct {
+		name     string
+		homePath string
+		want     string
+	}{
+		{
+			name:     "typical home path",
+			homePath: "/home/user/.shelf",
+			want:     "shelf-defra-75643996", // sha256("/home/user/.shelf")[:8]
+		},
+		{
+			name:     "different home path",
+			homePath: "/Users/john/.shelf",
+			want:     "shelf-defra-72909148", // sha256("/Users/john/.shelf")[:8]
+		},
+		{
+			name:     "empty path",
+			homePath: "",
+			want:     "shelf-defra-e3b0c442", // sha256("")[:8]
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GenerateContainerName(tt.homePath)
+
+			// Check prefix
+			if !hasPrefix(got, ContainerNamePrefix) {
+				t.Errorf("GenerateContainerName() = %q, want prefix %q", got, ContainerNamePrefix)
+			}
+
+			// Check total length (prefix + 8 char hash)
+			wantLen := len(ContainerNamePrefix) + 8
+			if len(got) != wantLen {
+				t.Errorf("GenerateContainerName() length = %d, want %d", len(got), wantLen)
+			}
+
+			// Check expected value
+			if got != tt.want {
+				t.Errorf("GenerateContainerName(%q) = %q, want %q", tt.homePath, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGenerateContainerName_Deterministic(t *testing.T) {
+	homePath := "/Users/test/.shelf"
+
+	first := GenerateContainerName(homePath)
+	second := GenerateContainerName(homePath)
+
+	if first != second {
+		t.Errorf("GenerateContainerName() not deterministic: %q != %q", first, second)
+	}
+}
+
+func TestGenerateContainerName_UniquePerPath(t *testing.T) {
+	path1 := "/home/user1/.shelf"
+	path2 := "/home/user2/.shelf"
+
+	name1 := GenerateContainerName(path1)
+	name2 := GenerateContainerName(path2)
+
+	if name1 == name2 {
+		t.Errorf("GenerateContainerName() should produce unique names: %q == %q", name1, name2)
+	}
+}
+
+func hasPrefix(s, prefix string) bool {
+	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+func TestNewDockerManager_ContainerNaming(t *testing.T) {
+	tests := []struct {
+		name         string
+		cfg          DockerConfig
+		wantContName string
+	}{
+		{
+			name:         "explicit container name takes precedence",
+			cfg:          DockerConfig{ContainerName: "my-custom-container", HomePath: "/home/test/.shelf"},
+			wantContName: "my-custom-container",
+		},
+		{
+			name:         "generates name from home path when no explicit name",
+			cfg:          DockerConfig{HomePath: "/home/test/.shelf"},
+			wantContName: GenerateContainerName("/home/test/.shelf"),
+		},
+		{
+			name:         "falls back to default when no name or home path",
+			cfg:          DockerConfig{},
+			wantContName: DefaultContainerName,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mgr, err := NewDockerManager(tt.cfg)
+			if err != nil {
+				t.Fatalf("NewDockerManager() error = %v", err)
+			}
+			defer mgr.Close()
+
+			if mgr.ContainerName() != tt.wantContName {
+				t.Errorf("ContainerName() = %q, want %q", mgr.ContainerName(), tt.wantContName)
+			}
+		})
+	}
+}
+
 func TestContainerStatus_Values(t *testing.T) {
 	statuses := []ContainerStatus{
 		StatusRunning,

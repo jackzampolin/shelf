@@ -6,6 +6,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/jackzampolin/shelf/internal/config"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
@@ -21,6 +22,7 @@ type Services struct {
 	JobManager   *jobs.Manager
 	Registry     *providers.Registry
 	Scheduler    *jobs.Scheduler
+	ConfigStore  config.Store
 	Logger       *slog.Logger
 	Home         *home.Dir
 	MetricsQuery *metrics.Query
@@ -92,6 +94,14 @@ func LoggerFrom(ctx context.Context) *slog.Logger {
 func HomeFrom(ctx context.Context) *home.Dir {
 	if s := ServicesFrom(ctx); s != nil {
 		return s.Home
+	}
+	return nil
+}
+
+// ConfigStoreFrom extracts the config store from context.
+func ConfigStoreFrom(ctx context.Context) config.Store {
+	if s := ServicesFrom(ctx); s != nil {
+		return s.ConfigStore
 	}
 	return nil
 }
