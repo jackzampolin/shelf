@@ -12,24 +12,23 @@
 
 | Thing | Convention | Example |
 |-------|------------|---------|
-| Packages | lowercase, short | `config`, `providers` |
+| Packages | lowercase, underscores OK | `config`, `extract_toc` |
 | Files | lowercase, underscore | `rate_limiter.go` |
 | Exported types | PascalCase | `type Worker interface` |
 | Unexported | camelCase | `func processPage()` |
 | Interfaces | -er suffix when possible | `Reader`, `Processor` |
 
-## Stage Names
+## Multi-Word Packages
 
-**Format:** `lowercase-with-hyphens`
-
-Used in: CLI args, DefraDB collections, logs, metrics.
+Go allows underscores in package names for multi-word concepts:
 
 ```
-ocr-pages
-label-structure
-extract-toc
-link-toc
+internal/prompts/extract_toc/
+internal/agents/toc_finder/
+internal/jobs/process_pages/
 ```
+
+This differs from Python's hyphenated stage names. In Go, underscores are idiomatic.
 
 ## ADR Files
 
@@ -39,10 +38,6 @@ link-toc
 000-information-hygiene.md
 005-defradb-source-of-truth.md
 ```
-
-## Why Consistency Matters
-
-Mixed conventions (hyphens vs underscores) caused real bugs in the Python version. Stage name lookups failed between CLI, storage, and logs.
 
 ## Core Principle
 

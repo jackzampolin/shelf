@@ -147,11 +147,6 @@ func (e *UploadIngestEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Note: temp directory cleanup happens after ingest job copies files
-	// The ingest job copies to originals/, so we can clean up temp after a delay
-	// For now, let the OS clean up temp files eventually
-	// TODO: Consider a cleanup goroutine or using job completion callback
-
 	// Return job ID for status polling
 	status, _ := job.Status(r.Context())
 	writeJSON(w, http.StatusAccepted, IngestResponse{
