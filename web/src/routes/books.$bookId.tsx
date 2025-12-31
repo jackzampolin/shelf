@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute, Link, useNavigate, Outlet, useRouterState } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/react'
 import { client, unwrap } from '@/api/client'
 
 export const Route = createFileRoute('/books/$bookId')({
@@ -535,27 +536,13 @@ function BookDetailPage() {
               {agentLogDetail.result && (
                 <div>
                   <div className="text-sm font-medium text-gray-700 mb-2">Result</div>
-                  <pre className="bg-gray-50 rounded p-3 text-xs overflow-x-auto">
-                    {JSON.stringify(agentLogDetail.result, null, 2)}
-                  </pre>
+                  <div className="bg-gray-50 rounded p-3">
+                    <KeyValueDisplay data={agentLogDetail.result} />
+                  </div>
                 </div>
               )}
-              {agentLogDetail.messages && (
-                <div>
-                  <div className="text-sm font-medium text-gray-700 mb-2">Messages</div>
-                  <pre className="bg-gray-50 rounded p-3 text-xs overflow-x-auto max-h-64">
-                    {JSON.stringify(agentLogDetail.messages, null, 2)}
-                  </pre>
-                </div>
-              )}
-              {agentLogDetail.tool_calls && (
-                <div>
-                  <div className="text-sm font-medium text-gray-700 mb-2">Tool Calls</div>
-                  <pre className="bg-gray-50 rounded p-3 text-xs overflow-x-auto max-h-64">
-                    {JSON.stringify(agentLogDetail.tool_calls, null, 2)}
-                  </pre>
-                </div>
-              )}
+              <MessagesSection messages={agentLogDetail.messages} />
+              <ToolCallsSection toolCalls={agentLogDetail.tool_calls} />
             </div>
           ) : (
             <div className="text-center py-4 text-gray-500">Loading...</div>
@@ -691,6 +678,251 @@ function Modal({
           </button>
         </div>
         <div className="p-6 overflow-y-auto">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+function RoleBadge({ role }: { role: string }) {
+  const styles: Record<string, string> = {
+    system: 'bg-purple-100 text-purple-700',
+    user: 'bg-blue-100 text-blue-700',
+    assistant: 'bg-green-100 text-green-700',
+    tool: 'bg-orange-100 text-orange-700',
+  }
+
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs font-medium ${styles[role] || 'bg-gray-100 text-gray-700'}`}>
+      {role}
+    </span>
+  )
+}
+
+function formatJSON(jsonString: string): string {
+  try {
+    return JSON.stringify(JSON.parse(jsonString), null, 2)
+  } catch {
+    return jsonString
+  }
+}
+
+function KeyValueDisplay({ data, depth = 0 }: { data: unknown; depth?: number }) {
+  if (data === null || data === undefined) {
+    return <span className="text-gray-400 italic">null</span>
+  }
+
+  if (typeof data === 'boolean') {
+    return (
+      <span className={data ? 'text-green-600' : 'text-red-600'}>
+        {data ? '✓ true' : '✗ false'}
+      </span>
+    )
+  }
+
+  if (typeof data === 'number') {
+    // Special case for confidence scores (0-1 range)
+    if (data >= 0 && data <= 1) {
+      const percent = Math.round(data * 100)
+      return (
+        <span className="inline-flex items-center gap-2">
+          <span className="font-mono">{data.toFixed(2)}</span>
+          <span className="text-xs text-gray-500">({percent}%)</span>
+        </span>
+      )
+    }
+    return <span className="font-mono text-blue-600">{data}</span>
+  }
+
+  if (typeof data === 'string') {
+    if (data.length > 200) {
+      return <span className="text-gray-700">{data.slice(0, 200)}...</span>
+    }
+    return <span className="text-gray-700">{data}</span>
+  }
+
+  if (Array.isArray(data)) {
+    if (data.length === 0) {
+      return <span className="text-gray-400 italic">empty array</span>
+    }
+    return (
+      <div className="space-y-1">
+        {data.map((item, idx) => (
+          <div key={idx} className="flex gap-2">
+            <span className="text-gray-400 text-xs">{idx}.</span>
+            <KeyValueDisplay data={item} depth={depth + 1} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (typeof data === 'object') {
+    const entries = Object.entries(data)
+    if (entries.length === 0) {
+      return <span className="text-gray-400 italic">empty object</span>
+    }
+    return (
+      <div className={`space-y-2 ${depth > 0 ? 'pl-3 border-l border-gray-200' : ''}`}>
+        {entries.map(([key, value]) => (
+          <div key={key} className="text-sm">
+            <span className="font-medium text-gray-600">{formatKey(key)}:</span>{' '}
+            {isSimpleValue(value) ? (
+              <KeyValueDisplay data={value} depth={depth + 1} />
+            ) : (
+              <div className="mt-1">
+                <KeyValueDisplay data={value} depth={depth + 1} />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  return <span>{String(data)}</span>
+}
+
+function formatKey(key: string): string {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/^./, (s) => s.toUpperCase())
+}
+
+function isSimpleValue(value: unknown): boolean {
+  return (
+    value === null ||
+    value === undefined ||
+    typeof value === 'boolean' ||
+    typeof value === 'number' ||
+    typeof value === 'string'
+  )
+}
+
+interface Message {
+  role?: string
+  content?: string
+  tool_call_id?: string
+}
+
+interface ToolCall {
+  tool_name?: string
+  timestamp?: string
+  iteration?: number
+  args_json?: string
+  result_len?: number
+  error?: string
+}
+
+function MessagesSection({ messages }: { messages?: unknown }) {
+  if (!messages || !Array.isArray(messages) || messages.length === 0) {
+    return null
+  }
+
+  // Type guard: check if first item looks like a message object
+  const firstItem = messages[0]
+  if (typeof firstItem !== 'object' || firstItem === null) {
+    return null
+  }
+
+  const typedMessages = messages as Message[]
+
+  return (
+    <div>
+      <div className="text-sm font-medium text-gray-700 mb-2">
+        Messages ({typedMessages.length})
+      </div>
+      <div className="space-y-2 max-h-80 overflow-y-auto">
+        {typedMessages.map((msg, idx) => (
+          <div key={idx} className="bg-gray-50 rounded p-3 text-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <RoleBadge role={msg.role || 'unknown'} />
+              {msg.tool_call_id && (
+                <span className="text-xs text-gray-400 font-mono">
+                  {msg.tool_call_id}
+                </span>
+              )}
+            </div>
+            <div className="text-gray-700 whitespace-pre-wrap text-xs">
+              {msg.content || <span className="text-gray-400 italic">No content</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ToolCallsSection({ toolCalls }: { toolCalls?: unknown }) {
+  if (!toolCalls || !Array.isArray(toolCalls) || toolCalls.length === 0) {
+    return null
+  }
+
+  // Type guard: check if first item looks like a tool call object
+  const firstItem = toolCalls[0]
+  if (typeof firstItem !== 'object' || firstItem === null) {
+    return null
+  }
+
+  const typedCalls = toolCalls as ToolCall[]
+
+  return (
+    <div>
+      <div className="text-sm font-medium text-gray-700 mb-2">
+        Tool Calls ({typedCalls.length})
+      </div>
+      <div className="space-y-2 max-h-80 overflow-y-auto">
+        {typedCalls.map((call, idx) => (
+          <Disclosure key={idx}>
+            {({ open }) => (
+              <div className="border rounded">
+                <DisclosureButton className="w-full flex items-center justify-between p-3 text-left bg-gray-50 hover:bg-gray-100">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs transition-transform ${open ? 'rotate-90' : ''}`}>
+                      ▶
+                    </span>
+                    <span className="font-mono text-sm text-blue-600">
+                      {call.tool_name}
+                    </span>
+                    {call.iteration !== undefined && (
+                      <span className="text-xs text-gray-400">
+                        iter {call.iteration}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    {call.result_len !== undefined && (
+                      <span>{call.result_len} chars</span>
+                    )}
+                    {call.error && (
+                      <span className="text-red-500">error</span>
+                    )}
+                  </div>
+                </DisclosureButton>
+                <DisclosurePanel className="p-3 border-t bg-white">
+                  {call.args_json && (
+                    <div className="mb-2">
+                      <div className="text-xs font-medium text-gray-500 mb-1">Arguments</div>
+                      <pre className="text-xs bg-gray-50 p-2 rounded overflow-x-auto">
+                        {formatJSON(call.args_json)}
+                      </pre>
+                    </div>
+                  )}
+                  {call.error && (
+                    <div className="text-xs text-red-600 bg-red-50 p-2 rounded">
+                      {call.error}
+                    </div>
+                  )}
+                  {call.timestamp && (
+                    <div className="text-xs text-gray-400 mt-2">
+                      {new Date(call.timestamp).toLocaleString()}
+                    </div>
+                  )}
+                </DisclosurePanel>
+              </div>
+            )}
+          </Disclosure>
+        ))}
       </div>
     </div>
   )
