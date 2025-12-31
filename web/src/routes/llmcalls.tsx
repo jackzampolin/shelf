@@ -17,9 +17,9 @@ interface LLMCall {
   input_tokens: number
   output_tokens: number
   response: string
-  tool_calls?: unknown
+  tool_calls?: Record<string, unknown>
   success: boolean
-  error?: string
+  error_message?: string
 }
 
 interface LLMCallsResponse {
@@ -323,13 +323,12 @@ function LLMCallsPage() {
                   </div>
                 )}
 
-                {/* Error */}
-                {selectedCall.error && (
+                {selectedCall.error_message ? (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                     <h3 className="text-sm font-medium text-red-800 mb-2">Error</h3>
-                    <pre className="text-sm text-red-700 whitespace-pre-wrap">{selectedCall.error}</pre>
+                    <pre className="text-sm text-red-700 whitespace-pre-wrap">{selectedCall.error_message}</pre>
                   </div>
-                )}
+                ) : null}
 
                 {/* Response */}
                 <div>

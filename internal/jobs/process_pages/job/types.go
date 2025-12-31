@@ -207,6 +207,10 @@ type Job struct {
 
 	// Work unit tracking
 	PendingUnits map[string]WorkUnitInfo // work_unit_id -> info
+
+	// Resolved prompts (cached at job start for book-level overrides)
+	ResolvedPrompts map[string]string // prompt_key -> resolved text
+	ResolvedCIDs    map[string]string // prompt_key -> CID for traceability
 }
 
 // New creates a new Job with initialized maps.
@@ -224,6 +228,8 @@ func New(cfg Config) *Job {
 		DebugAgents:      cfg.DebugAgents,
 		PageState:        make(map[int]*PageState),
 		PendingUnits:     make(map[string]WorkUnitInfo),
+		ResolvedPrompts:  make(map[string]string),
+		ResolvedCIDs:     make(map[string]string),
 	}
 }
 

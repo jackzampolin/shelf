@@ -66,6 +66,14 @@ func All(cfg Config) []api.Endpoint {
 		&GetLLMCallEndpoint{},
 		&LLMCallCountsEndpoint{},
 
+		// Prompt endpoints
+		&ListPromptsEndpoint{},
+		&GetPromptEndpoint{},
+		&ListBookPromptsEndpoint{},
+		&GetBookPromptEndpoint{},
+		&SetBookPromptEndpoint{},
+		&ClearBookPromptEndpoint{},
+
 		// Swagger/OpenAPI endpoints
 		&SwaggerEndpoint{SpecPath: cfg.SwaggerSpecPath},
 		&SwaggerUIEndpoint{},

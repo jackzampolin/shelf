@@ -523,6 +523,7 @@ func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
 			PageID:    unit.Metrics.PageID,
 			JobID:     unit.JobID,
 			PromptKey: unit.Metrics.PromptKey,
+			PromptCID: unit.Metrics.PromptCID,
 		}
 		call := llmcall.FromChatResult(result.ChatResult, opts)
 		p.sink.Send(defra.WriteOp{

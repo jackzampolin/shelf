@@ -56,6 +56,11 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		logger.Info("job.Start: loading page state", "book_id", j.BookID, "total_pages", j.TotalPages)
 	}
 
+	// Resolve prompts once at job start (supports book-level overrides)
+	if err := j.ResolvePrompts(ctx); err != nil {
+		return nil, fmt.Errorf("failed to resolve prompts: %w", err)
+	}
+
 	// Load existing page state from DefraDB
 	if err := j.LoadPageState(ctx); err != nil {
 		return nil, fmt.Errorf("failed to load page state: %w", err)

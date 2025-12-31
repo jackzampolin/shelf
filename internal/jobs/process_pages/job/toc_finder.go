@@ -102,12 +102,13 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 		HomeDir:     j.HomeDir,
 	})
 
-	// Create agent
+	// Create agent with resolved prompt (supports book-level overrides)
 	userPrompt := toc_finder.BuildUserPrompt(j.BookID, j.TotalPages, nil)
+	systemPrompt := j.GetPrompt(toc_finder.PromptKey)
 	j.TocAgent = agent.New(agent.Config{
 		Tools: tocTools,
 		InitialMessages: []providers.Message{
-			{Role: "system", Content: toc_finder.SystemPrompt},
+			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},
 		},
 		MaxIterations: 25,
@@ -240,6 +241,8 @@ func (j *Job) convertTocAgentUnits(agentUnits []agent.WorkUnit) []jobs.WorkUnit 
 
 			metrics := j.MetricsFor()
 			metrics.ItemKey = "toc_finder"
+			metrics.PromptKey = toc_finder.PromptKey
+			metrics.PromptCID = j.GetPromptCID(toc_finder.PromptKey)
 
 			units = append(units, jobs.WorkUnit{
 				ID:          unitID,

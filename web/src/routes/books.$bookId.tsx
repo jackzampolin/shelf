@@ -11,8 +11,8 @@ export const Route = createFileRoute('/books/$bookId')({
 function BookDetailLayout() {
   const routerState = useRouterState()
   const pathname = routerState.location.pathname
-  // Check if we're on a child route (pages list or page viewer)
-  const isChildRoute = pathname.includes('/pages')
+  // Check if we're on a child route (pages list, page viewer, or prompts)
+  const isChildRoute = pathname.includes('/pages') || pathname.includes('/prompts')
 
   if (isChildRoute) {
     return <Outlet />
@@ -140,6 +140,13 @@ function BookDetailPage() {
             className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
             View Pages
+          </Link>
+          <Link
+            to="/books/$bookId/prompts"
+            params={{ bookId }}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Prompts
           </Link>
           {book.status === 'ingested' && (
             <button

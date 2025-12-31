@@ -63,6 +63,7 @@ type WorkUnitMetrics struct {
 	Stage     string // Pipeline stage (e.g., "page-processing")
 	ItemKey   string // Item identifier (e.g., "page_0001", "toc_entry_5")
 	PromptKey string // Prompt identifier for LLM call tracing (e.g., "stages.blend.system")
+	PromptCID string // Content-addressed ID of the exact prompt version used
 }
 
 // OCRWorkRequest contains the data needed for an OCR work unit.

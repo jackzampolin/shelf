@@ -12,22 +12,24 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
+	"github.com/jackzampolin/shelf/internal/prompts"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // Services holds all core services that flow through context.
 // Components extract what they need via the individual extractors.
 type Services struct {
-	DefraClient  *defra.Client
-	DefraSink    *defra.Sink
-	JobManager   *jobs.Manager
-	Registry     *providers.Registry
-	Scheduler    *jobs.Scheduler
-	ConfigStore  config.Store
-	Logger       *slog.Logger
-	Home         *home.Dir
-	MetricsQuery *metrics.Query
-	LLMCallStore *llmcall.Store
+	DefraClient    *defra.Client
+	DefraSink      *defra.Sink
+	JobManager     *jobs.Manager
+	Registry       *providers.Registry
+	Scheduler      *jobs.Scheduler
+	ConfigStore    config.Store
+	Logger         *slog.Logger
+	Home           *home.Dir
+	MetricsQuery   *metrics.Query
+	LLMCallStore   *llmcall.Store
+	PromptResolver *prompts.Resolver
 }
 
 type servicesKey struct{}
@@ -120,6 +122,14 @@ func MetricsQueryFrom(ctx context.Context) *metrics.Query {
 func LLMCallStoreFrom(ctx context.Context) *llmcall.Store {
 	if s := ServicesFrom(ctx); s != nil {
 		return s.LLMCallStore
+	}
+	return nil
+}
+
+// PromptResolverFrom extracts the prompt resolver from context.
+func PromptResolverFrom(ctx context.Context) *prompts.Resolver {
+	if s := ServicesFrom(ctx); s != nil {
+		return s.PromptResolver
 	}
 	return nil
 }

@@ -30,7 +30,8 @@ func (j *Job) CreateMetadataWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	})
 
 	unit := metadata.CreateWorkUnit(metadata.Input{
-		BookText: bookText,
+		BookText:             bookText,
+		SystemPromptOverride: j.GetPrompt(metadata.SystemPromptKey),
 	})
 	unit.ID = unitID
 	unit.Provider = j.MetadataProvider
@@ -38,6 +39,8 @@ func (j *Job) CreateMetadataWorkUnit(ctx context.Context) *jobs.WorkUnit {
 
 	metrics := j.MetricsFor()
 	metrics.ItemKey = "metadata"
+	metrics.PromptKey = metadata.SystemPromptKey
+	metrics.PromptCID = j.GetPromptCID(metadata.SystemPromptKey)
 	unit.Metrics = metrics
 
 	return unit

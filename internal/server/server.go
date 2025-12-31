@@ -19,10 +19,17 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
 	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
+	"github.com/jackzampolin/shelf/internal/prompts"
+	"github.com/jackzampolin/shelf/internal/prompts/blend"
+	"github.com/jackzampolin/shelf/internal/prompts/extract_toc"
+	"github.com/jackzampolin/shelf/internal/prompts/label"
+	"github.com/jackzampolin/shelf/internal/prompts/metadata"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
 	"github.com/jackzampolin/shelf/internal/server/endpoints"
 	"github.com/jackzampolin/shelf/internal/svcctx"
+
+	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 )
 
 // Server is the main Shelf HTTP server.
@@ -36,10 +43,11 @@ type Server struct {
 	jobManager       *jobs.Manager
 	scheduler        *jobs.Scheduler
 	registry    *providers.Registry
-	configMgr   *config.Manager
-	configStore config.Store
-	logger      *slog.Logger
-	home        *home.Dir
+	configMgr      *config.Manager
+	configStore    config.Store
+	promptResolver *prompts.Resolver
+	logger         *slog.Logger
+	home           *home.Dir
 
 	// processPagesCfg is saved for job factory registration
 	processPagesCfg process_pages.Config
@@ -220,6 +228,22 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("config seeding failed: %w", err)
 	}
 
+	// Create prompt resolver and register all embedded prompts
+	promptStore := prompts.NewStore(s.defraClient, s.logger)
+	s.promptResolver = prompts.NewResolver(promptStore, s.logger)
+	blend.RegisterPrompts(s.promptResolver)
+	label.RegisterPrompts(s.promptResolver)
+	metadata.RegisterPrompts(s.promptResolver)
+	extract_toc.RegisterPrompts(s.promptResolver)
+	toc_finder.RegisterPrompts(s.promptResolver)
+
+	// Sync prompts to database (creates new, updates modified)
+	s.logger.Info("syncing prompts to database")
+	if err := s.promptResolver.SyncAll(ctx); err != nil {
+		_ = s.shutdown()
+		return fmt.Errorf("prompt seeding failed: %w", err)
+	}
+
 	// Create job manager
 	s.jobManager = jobs.NewManager(s.defraClient, s.logger)
 
@@ -257,16 +281,17 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Create services struct for context enrichment
 	s.services = &svcctx.Services{
-		DefraClient:  s.defraClient,
-		DefraSink:    s.defraSink,
-		JobManager:   s.jobManager,
-		Registry:     s.registry,
-		Scheduler:    s.scheduler,
-		ConfigStore:  s.configStore,
-		Logger:       s.logger,
-		Home:         s.home,
-		MetricsQuery: metrics.NewQuery(s.defraClient),
-		LLMCallStore: llmcall.NewStore(s.defraClient),
+		DefraClient:    s.defraClient,
+		DefraSink:      s.defraSink,
+		JobManager:     s.jobManager,
+		Registry:       s.registry,
+		Scheduler:      s.scheduler,
+		ConfigStore:    s.configStore,
+		Logger:         s.logger,
+		Home:           s.home,
+		MetricsQuery:   metrics.NewQuery(s.defraClient),
+		LLMCallStore:   llmcall.NewStore(s.defraClient),
+		PromptResolver: s.promptResolver,
 	}
 
 	// Pass services to scheduler for async job context injection

@@ -57,6 +57,7 @@ type RecordOptions struct {
 
 	// Prompt identification (required for traceability)
 	PromptKey string
+	PromptCID string // Content-addressed ID linking to exact prompt version
 
 	// Request parameters
 	Temperature float64
@@ -72,6 +73,7 @@ func FromChatResult(result *providers.ChatResult, opts RecordOptions) *Call {
 		PageID:       opts.PageID,
 		JobID:        opts.JobID,
 		PromptKey:    opts.PromptKey,
+		PromptCID:    opts.PromptCID,
 		Provider:     result.Provider,
 		Model:        result.ModelUsed,
 		InputTokens:  result.PromptTokens,

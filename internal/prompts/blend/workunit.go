@@ -21,6 +21,10 @@ type Input struct {
 	// OCROutputs from different providers. First provider is treated as PRIMARY.
 	OCROutputs []OCROutput
 	PageImage  []byte // Optional: page image for vision-based correction
+
+	// SystemPromptOverride allows using a book-level prompt override.
+	// If empty, uses the embedded default.
+	SystemPromptOverride string
 }
 
 // CreateWorkUnit creates a blend LLM work unit.
@@ -28,11 +32,16 @@ type Input struct {
 func CreateWorkUnit(input Input) *jobs.WorkUnit {
 	userPrompt := buildUserPrompt(input.OCROutputs)
 
+	systemPrompt := input.SystemPromptOverride
+	if systemPrompt == "" {
+		systemPrompt = SystemPrompt()
+	}
+
 	unit := &jobs.WorkUnit{
 		Type: jobs.WorkUnitTypeLLM,
 		ChatRequest: &providers.ChatRequest{
 			Messages: []providers.Message{
-				{Role: "system", Content: SystemPrompt},
+				{Role: "system", Content: systemPrompt},
 				{Role: "user", Content: userPrompt},
 			},
 			ResponseFormat: buildResponseFormat(),
