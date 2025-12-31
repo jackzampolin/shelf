@@ -180,9 +180,18 @@ func (c *Client) Create(ctx context.Context, collection string, input map[string
 	return "", fmt.Errorf("unexpected response format: %+v", resp.Data)
 }
 
+// CreateManyResult contains the result of a batch create operation.
+type CreateManyResult struct {
+	DocID  string
+	Fields map[string]any
+}
+
 // CreateMany creates multiple documents in a collection in a single batch.
-// Returns doc IDs in the same order as the input documents.
-func (c *Client) CreateMany(ctx context.Context, collection string, inputs []map[string]any) ([]string, error) {
+// The returnFields parameter specifies which fields to include in results for matching.
+// If returnFields is empty, only _docID is returned.
+// IMPORTANT: DefraDB may not return results in the same order as inputs.
+// Use returnFields to include identifying fields (like page_num) for proper matching.
+func (c *Client) CreateMany(ctx context.Context, collection string, inputs []map[string]any, returnFields ...string) ([]CreateManyResult, error) {
 	if len(inputs) == 0 {
 		return nil, nil
 	}
@@ -198,7 +207,13 @@ func (c *Client) CreateMany(ctx context.Context, collection string, inputs []map
 	}
 	inputArray := "[" + strings.Join(inputParts, ", ") + "]"
 
-	query := fmt.Sprintf(`mutation { create_%s(input: %s) { _docID } }`, collection, inputArray)
+	// Build return fields: always include _docID, plus any requested fields
+	fields := "_docID"
+	for _, f := range returnFields {
+		fields += " " + f
+	}
+
+	query := fmt.Sprintf(`mutation { create_%s(input: %s) { %s } }`, collection, inputArray, fields)
 
 	resp, err := c.Execute(ctx, query, nil)
 	if err != nil {
@@ -208,27 +223,37 @@ func (c *Client) CreateMany(ctx context.Context, collection string, inputs []map
 		return nil, fmt.Errorf("create error: %s", errMsg)
 	}
 
-	// Extract _docIDs from response
+	// Extract results from response
 	createKey := fmt.Sprintf("create_%s", collection)
 	docs, ok := resp.Data[createKey].([]any)
 	if !ok {
 		return nil, fmt.Errorf("unexpected response format: %+v", resp.Data)
 	}
 
-	docIDs := make([]string, 0, len(docs))
+	results := make([]CreateManyResult, 0, len(docs))
 	for _, d := range docs {
 		if doc, ok := d.(map[string]any); ok {
-			if docID, ok := doc["_docID"].(string); ok {
-				docIDs = append(docIDs, docID)
+			result := CreateManyResult{
+				Fields: make(map[string]any),
 			}
+			if docID, ok := doc["_docID"].(string); ok {
+				result.DocID = docID
+			}
+			// Copy all returned fields except _docID
+			for k, v := range doc {
+				if k != "_docID" {
+					result.Fields[k] = v
+				}
+			}
+			results = append(results, result)
 		}
 	}
 
-	if len(docIDs) != len(inputs) {
-		return docIDs, fmt.Errorf("created %d docs but expected %d", len(docIDs), len(inputs))
+	if len(results) != len(inputs) {
+		return results, fmt.Errorf("created %d docs but expected %d", len(results), len(inputs))
 	}
 
-	return docIDs, nil
+	return results, nil
 }
 
 // Update updates a document in a collection.

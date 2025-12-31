@@ -2,6 +2,7 @@ package defra
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -27,8 +28,9 @@ type WriteOp struct {
 
 // WriteResult contains the result of a write operation.
 type WriteResult struct {
-	DocID string // Stable document ID
-	Err   error  // Error if operation failed
+	DocID  string         // Stable document ID
+	Fields map[string]any // Additional fields returned (for matching)
+	Err    error          // Error if operation failed
 }
 
 // SinkConfig configures the write sink.
@@ -337,8 +339,18 @@ func (s *Sink) processCreates(collection string, ops []WriteOp) {
 		docs[i] = op.Document
 	}
 
+	// Determine which fields to return for matching.
+	// Different collections need different identifying fields.
+	var returnFields []string
+	switch collection {
+	case "Page":
+		returnFields = []string{"page_num"}
+	case "OcrResult":
+		returnFields = []string{"page_id", "provider"}
+	}
+
 	// Batch create all documents in one API call
-	docIDs, err := s.client.CreateMany(s.ctx, collection, docs)
+	results, err := s.client.CreateMany(s.ctx, collection, docs, returnFields...)
 
 	if err != nil {
 		s.logger.Error("batch create failed",
@@ -356,21 +368,56 @@ func (s *Sink) processCreates(collection string, ops []WriteOp) {
 		return
 	}
 
+	// Log created doc IDs
+	docIDs := make([]string, len(results))
+	for i, r := range results {
+		docIDs[i] = r.DocID
+	}
 	s.logger.Debug("batch create succeeded",
 		"collection", collection,
-		"count", len(docIDs),
+		"count", len(results),
 		"doc_ids", docIDs)
 
-	// Send success results with doc IDs
-	for i, op := range ops {
-		var docID string
-		if i < len(docIDs) {
-			docID = docIDs[i]
+	// For collections with identifying fields, match results back to ops by those fields.
+	// Otherwise fall back to positional matching.
+	if len(returnFields) > 0 && collection == "Page" {
+		// Build a map from page_num to CreateManyResult for O(1) lookup
+		resultsByPageNum := make(map[int]CreateManyResult)
+		for _, r := range results {
+			if pageNum, ok := r.Fields["page_num"].(float64); ok {
+				resultsByPageNum[int(pageNum)] = r
+			}
 		}
 
-		if op.result != nil {
-			op.result <- WriteResult{DocID: docID}
-			close(op.result)
+		// Match each op to its result by page_num
+		for _, op := range ops {
+			if pageNum, ok := op.Document["page_num"].(int); ok {
+				if r, found := resultsByPageNum[pageNum]; found {
+					if op.result != nil {
+						op.result <- WriteResult{DocID: r.DocID, Fields: r.Fields}
+						close(op.result)
+					}
+					continue
+				}
+			}
+			// Fallback: send error if no match found
+			if op.result != nil {
+				op.result <- WriteResult{Err: fmt.Errorf("no matching result for page_num")}
+				close(op.result)
+			}
+		}
+	} else {
+		// Fallback to positional matching for other collections
+		for i, op := range ops {
+			var result WriteResult
+			if i < len(results) {
+				result = WriteResult{DocID: results[i].DocID, Fields: results[i].Fields}
+			}
+
+			if op.result != nil {
+				op.result <- result
+				close(op.result)
+			}
 		}
 	}
 }
