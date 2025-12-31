@@ -64,15 +64,20 @@ type Config {
 
 **Config Keys (hierarchical paths):**
 ```
-providers.openrouter.api_key
-providers.openrouter.base_url
-providers.openrouter.rate_limit
-providers.mistral.enabled
-processing.default_model
-processing.default_temperature
-processing.max_tokens
-processing.workers.ocr
-processing.workers.agent
+providers.ocr.mistral.type
+providers.ocr.mistral.api_key
+providers.ocr.mistral.rate_limit
+providers.ocr.mistral.enabled
+providers.ocr.paddle.type
+providers.ocr.paddle.model
+providers.ocr.paddle.api_key
+providers.llm.openrouter.type
+providers.llm.openrouter.model
+providers.llm.openrouter.api_key
+providers.llm.openrouter.rate_limit
+defaults.ocr_providers
+defaults.llm_provider
+defaults.max_workers
 ```
 
 #### Prompt Collection (Phase 3)

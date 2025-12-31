@@ -495,7 +495,7 @@ Each component should have:
 2. Integration tests against real DefraDB (tagged `//go:build integration`)
 
 Key test scenarios:
-- Config: CRUD, env var resolution, caching
+- Config: CRUD, env var resolution, key validation
 - Prompts: Resolution order, template rendering, CID capture
 - LLMCalls: Recording, queries, book/page filtering
 
@@ -507,7 +507,7 @@ Key test scenarios:
 
 2. **Concurrent edits**: DefraDB uses Merkle CRDTs with deterministic merge - concurrent edits automatically converge to the same state. Last-write-wins is natural.
 
-3. **Prompt validation**: Yes - validate Go template syntax on save using `text/template.Parse()`. Also auto-extract variables via AST walk (see `/tmp/tmpl_check.go` for working implementation).
+3. **Prompt validation**: Yes - validate Go template syntax on save using `text/template.Parse()`. Also auto-extract variables via AST walk of the parsed template.
 
 ## Sources
 

@@ -3,12 +3,37 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
+	"unicode"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
+
+// ErrInvalidKey is returned when a config key contains invalid characters.
+var ErrInvalidKey = errors.New("invalid config key")
+
+// ValidateKey checks if a config key contains only allowed characters.
+// Valid keys contain: letters, digits, dots, underscores, and hyphens.
+// This protects against typos and malformed keys.
+func ValidateKey(key string) error {
+	if key == "" {
+		return fmt.Errorf("%w: key cannot be empty", ErrInvalidKey)
+	}
+	for i, r := range key {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '.' && r != '_' && r != '-' {
+			return fmt.Errorf("%w: invalid character %q at position %d", ErrInvalidKey, r, i)
+		}
+	}
+	// Don't allow keys starting or ending with dots
+	if key[0] == '.' || key[len(key)-1] == '.' {
+		return fmt.Errorf("%w: key cannot start or end with a dot", ErrInvalidKey)
+	}
+	return nil
+}
 
 // Store provides access to configuration stored in DefraDB.
 // No caching - reads fresh from DefraDB each time.
@@ -189,9 +214,12 @@ func parseConfigEntries(data map[string]any) ([]Entry, error) {
 	}
 
 	entries := make([]Entry, 0, len(docs))
-	for _, d := range docs {
+	for i, d := range docs {
 		doc, ok := d.(map[string]any)
 		if !ok {
+			slog.Warn("skipping malformed config document",
+				"index", i,
+				"type", fmt.Sprintf("%T", d))
 			continue
 		}
 
@@ -211,6 +239,9 @@ func parseConfigEntries(data map[string]any) ([]Entry, error) {
 			var parsed any
 			if err := json.Unmarshal([]byte(v), &parsed); err != nil {
 				// If not valid JSON, use the raw string
+				slog.Debug("config value is not valid JSON, using as raw string",
+					"key", entry.Key,
+					"error", err)
 				entry.Value = v
 			} else {
 				entry.Value = parsed

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -244,5 +245,40 @@ func TestGetHelpers(t *testing.T) {
 	}
 	if got := getBool(m, "missing"); got != false {
 		t.Errorf("getBool() for missing = %v, want false", got)
+	}
+}
+
+func TestValidateKey(t *testing.T) {
+	tests := []struct {
+		name    string
+		key     string
+		wantErr bool
+	}{
+		{"valid simple key", "foo", false},
+		{"valid dotted key", "providers.ocr.mistral.type", false},
+		{"valid with underscore", "defaults.max_workers", false},
+		{"valid with hyphen", "my-setting", false},
+		{"valid with numbers", "provider1.config2", false},
+		{"empty key", "", true},
+		{"starts with dot", ".foo", true},
+		{"ends with dot", "foo.", true},
+		{"contains space", "foo bar", true},
+		{"contains special char", "foo@bar", true},
+		{"contains slash", "foo/bar", true},
+		{"contains colon", "foo:bar", true},
+		{"contains quote", "foo\"bar", true},
+		{"contains curly brace", "foo{bar}", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateKey(tt.key)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateKey(%q) error = %v, wantErr %v", tt.key, err, tt.wantErr)
+			}
+			if err != nil && !errors.Is(err, ErrInvalidKey) {
+				t.Errorf("ValidateKey(%q) error should wrap ErrInvalidKey, got %v", tt.key, err)
+			}
+		})
 	}
 }

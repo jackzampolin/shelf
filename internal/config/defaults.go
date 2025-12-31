@@ -2,9 +2,13 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 )
+
+// ErrNoDefault is returned when no default value exists for a config key.
+var ErrNoDefault = errors.New("no default exists")
 
 // DefaultEntries returns the default configuration entries.
 // These are seeded into DefraDB on first run.
@@ -153,11 +157,11 @@ func GetDefault(key string) *Entry {
 }
 
 // ResetToDefault resets a config key to its default value.
-// Returns error if no default exists for the key.
+// Returns ErrNoDefault if no default exists for the key.
 func ResetToDefault(ctx context.Context, store Store, key string) error {
 	def := GetDefault(key)
 	if def == nil {
-		return fmt.Errorf("no default exists for key %q", key)
+		return fmt.Errorf("%w for key %q", ErrNoDefault, key)
 	}
 	return store.Set(ctx, key, def.Value, def.Description)
 }

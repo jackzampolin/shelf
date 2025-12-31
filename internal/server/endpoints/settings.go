@@ -2,10 +2,11 @@ package endpoints
 
 import (
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -130,8 +131,12 @@ func (e *GetSettingEndpoint) RequiresInit() bool { return true }
 //	@Router			/api/settings/{key} [get]
 func (e *GetSettingEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	key, err := url.PathUnescape(r.PathValue("key"))
-	if err != nil || key == "" {
-		writeError(w, http.StatusBadRequest, "invalid key")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid key encoding")
+		return
+	}
+	if err := config.ValidateKey(key); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -197,8 +202,12 @@ func (e *UpdateSettingEndpoint) RequiresInit() bool { return true }
 //	@Router			/api/settings/{key} [put]
 func (e *UpdateSettingEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	key, err := url.PathUnescape(r.PathValue("key"))
-	if err != nil || key == "" {
-		writeError(w, http.StatusBadRequest, "invalid key")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid key encoding")
+		return
+	}
+	if err := config.ValidateKey(key); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -215,7 +224,12 @@ func (e *UpdateSettingEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Get existing for description if not provided
-	existing, _ := store.Get(r.Context(), key)
+	existing, err := store.Get(r.Context(), key)
+	if err != nil {
+		// Log but don't fail - the user explicitly wants to set a value
+		slog.Warn("failed to fetch existing setting for description preservation",
+			"key", key, "error", err)
+	}
 	description := req.Description
 	if description == "" && existing != nil {
 		description = existing.Description
@@ -296,8 +310,12 @@ func (e *ResetSettingEndpoint) RequiresInit() bool { return true }
 //	@Router			/api/settings/reset/{key} [post]
 func (e *ResetSettingEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	key, err := url.PathUnescape(r.PathValue("key"))
-	if err != nil || key == "" {
-		writeError(w, http.StatusBadRequest, "invalid key")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid key encoding")
+		return
+	}
+	if err := config.ValidateKey(key); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -309,7 +327,7 @@ func (e *ResetSettingEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 	// Reset to default
 	if err := config.ResetToDefault(r.Context(), store, key); err != nil {
-		if strings.Contains(err.Error(), "no default exists") {
+		if errors.Is(err, config.ErrNoDefault) {
 			writeError(w, http.StatusNotFound, err.Error())
 		} else {
 			writeError(w, http.StatusInternalServerError, err.Error())

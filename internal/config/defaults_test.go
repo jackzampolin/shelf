@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -175,6 +176,9 @@ func TestResetToDefault(t *testing.T) {
 		err := ResetToDefault(ctx, store, "does.not.exist")
 		if err == nil {
 			t.Error("ResetToDefault() should error for unknown key")
+		}
+		if !errors.Is(err, ErrNoDefault) {
+			t.Errorf("ResetToDefault() error should wrap ErrNoDefault, got %v", err)
 		}
 	})
 }
