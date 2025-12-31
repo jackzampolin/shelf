@@ -4,12 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"sort"
-	"strconv"
-
-	"github.com/pdfcpu/pdfcpu/pkg/api"
-	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 
 	"github.com/jackzampolin/shelf/internal/jobs"
 )
@@ -49,7 +45,9 @@ func ExtractPageHandler() jobs.CPUTaskHandler {
 	}
 }
 
-// extractSinglePage extracts a single page from a PDF and writes it to the output directory.
+// extractSinglePage renders a single page from a PDF using pdftoppm (poppler-utils).
+// This renders the page correctly, unlike pdfcpu.ExtractImagesFile which extracts
+// embedded image objects whose internal numbering may not match page order.
 func extractSinglePage(ctx context.Context, req PageExtractRequest) (string, error) {
 	// Check for cancellation
 	select {
@@ -58,59 +56,48 @@ func extractSinglePage(ctx context.Context, req PageExtractRequest) (string, err
 	default:
 	}
 
-	conf := model.NewDefaultConfiguration()
-	conf.ValidationMode = model.ValidationRelaxed
-
-	// Try to decrypt to remove permission restrictions
-	workingPath, err := decryptPDF(req.PDFPath, conf)
-	if err != nil {
-		return "", fmt.Errorf("failed to prepare PDF: %w", err)
-	}
-	if workingPath != req.PDFPath {
-		defer os.Remove(workingPath)
-	}
-
-	// Create temp directory for extraction
+	// Create temp directory for output
 	tmpDir, err := os.MkdirTemp("", "shelf-page-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Extract just this page
-	pages := []string{strconv.Itoa(req.PageNum)}
-	if err := api.ExtractImagesFile(workingPath, tmpDir, pages, conf); err != nil {
-		return "", fmt.Errorf("pdfcpu extract failed: %w", err)
-	}
+	// Output prefix for pdftoppm
+	outputPrefix := filepath.Join(tmpDir, "page")
 
-	// Read extracted file (there should be exactly one)
-	entries, err := os.ReadDir(tmpDir)
+	// Run pdftoppm to render the page
+	// -png: output PNG format
+	// -f N: first page to render
+	// -l N: last page to render
+	// -r 300: resolution in DPI (matches reasonable quality for OCR)
+	// -singlefile: don't add page number suffix (we handle naming ourselves)
+	pageStr := fmt.Sprintf("%d", req.PageNum)
+	cmd := exec.CommandContext(ctx, "pdftoppm",
+		"-png",
+		"-f", pageStr,
+		"-l", pageStr,
+		"-r", "300",
+		"-singlefile",
+		req.PDFPath,
+		outputPrefix,
+	)
+
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to read temp dir: %w", err)
+		return "", fmt.Errorf("pdftoppm failed: %w (output: %s)", err, string(output))
 	}
 
-	// Filter out directories
-	var files []os.DirEntry
-	for _, e := range entries {
-		if !e.IsDir() {
-			files = append(files, e)
-		}
+	// pdftoppm with -singlefile creates: <prefix>.png
+	srcPath := outputPrefix + ".png"
+	if _, err := os.Stat(srcPath); err != nil {
+		return "", fmt.Errorf("pdftoppm did not create expected output: %w", err)
 	}
 
-	if len(files) == 0 {
-		return "", fmt.Errorf("no image extracted for page %d", req.PageNum)
-	}
-
-	// Sort files to get consistent ordering
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Name() < files[j].Name()
-	})
-
-	// Read the extracted image
-	srcPath := filepath.Join(tmpDir, files[0].Name())
+	// Read the rendered image
 	data, err := os.ReadFile(srcPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read extracted image: %w", err)
+		return "", fmt.Errorf("failed to read rendered image: %w", err)
 	}
 
 	// Write to destination with sequential naming
