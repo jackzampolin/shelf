@@ -55,6 +55,12 @@ func All(cfg Config) []api.Endpoint {
 		&MetricsSummaryEndpoint{},
 		&BookCostEndpoint{},
 
+		// Settings endpoints
+		&ListSettingsEndpoint{},
+		&GetSettingEndpoint{},
+		&UpdateSettingEndpoint{},
+		&ResetSettingEndpoint{},
+
 		// Swagger/OpenAPI endpoints
 		&SwaggerEndpoint{SpecPath: cfg.SwaggerSpecPath},
 		&SwaggerUIEndpoint{},
@@ -73,5 +79,16 @@ func JobCommands(serverURL string) []api.Endpoint {
 		&GetJobEndpoint{},
 		&UpdateJobEndpoint{},
 		&DeleteJobEndpoint{},
+	}
+}
+
+// SettingsCommands returns endpoints for settings operations.
+// This groups settings-related commands under "settings" subcommand.
+func SettingsCommands() []api.Endpoint {
+	return []api.Endpoint{
+		&ListSettingsEndpoint{},
+		&GetSettingEndpoint{},
+		&UpdateSettingEndpoint{},
+		&ResetSettingEndpoint{},
 	}
 }

@@ -34,10 +34,11 @@ type Server struct {
 	defraSink        *defra.Sink
 	jobManager       *jobs.Manager
 	scheduler        *jobs.Scheduler
-	registry  *providers.Registry
-	configMgr *config.Manager
-	logger    *slog.Logger
-	home      *home.Dir
+	registry    *providers.Registry
+	configMgr   *config.Manager
+	configStore config.Store
+	logger      *slog.Logger
+	home        *home.Dir
 
 	// processPagesCfg is saved for job factory registration
 	processPagesCfg process_pages.Config
@@ -210,6 +211,14 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("schema initialization failed: %w", err)
 	}
 
+	// Create config store and seed defaults
+	s.configStore = config.NewStore(s.defraClient)
+	s.logger.Info("seeding config defaults")
+	if err := config.SeedDefaults(ctx, s.configStore, s.logger); err != nil {
+		_ = s.shutdown()
+		return fmt.Errorf("config seeding failed: %w", err)
+	}
+
 	// Create job manager
 	s.jobManager = jobs.NewManager(s.defraClient, s.logger)
 
@@ -252,6 +261,7 @@ func (s *Server) Start(ctx context.Context) error {
 		JobManager:   s.jobManager,
 		Registry:     s.registry,
 		Scheduler:    s.scheduler,
+		ConfigStore:  s.configStore,
 		Logger:       s.logger,
 		Home:         s.home,
 		MetricsQuery: metrics.NewQuery(s.defraClient),

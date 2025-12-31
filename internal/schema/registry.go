@@ -20,6 +20,7 @@ type Schema struct {
 // registry holds all schemas in dependency order.
 // Order matters: parent collections must be created before children.
 var registry = []Schema{
+	{Name: "Config", Order: 0},    // standalone config settings, loaded first
 	{Name: "Job", Order: 1},
 	{Name: "Book", Order: 2},
 	{Name: "Metric", Order: 3},    // standalone, no dependencies

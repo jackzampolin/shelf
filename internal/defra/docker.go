@@ -2,6 +2,8 @@ package defra
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,7 +25,17 @@ const (
 	ContainerPort        = "9181/tcp"
 	DataDir              = "/data"
 	Label                = "shelf-defra"
+	ContainerNamePrefix  = "shelf-defra-"
 )
+
+// GenerateContainerName generates a deterministic container name from the home directory path.
+// The format is: shelf-defra-{first8chars-of-sha256(homePath)}
+// This allows multiple shelf instances on the same machine with different home directories.
+func GenerateContainerName(homePath string) string {
+	hash := sha256.Sum256([]byte(homePath))
+	hashStr := hex.EncodeToString(hash[:])
+	return ContainerNamePrefix + hashStr[:8]
+}
 
 // ContainerStatus represents the state of the DefraDB container.
 type ContainerStatus string
@@ -48,14 +60,18 @@ type DockerManager struct {
 
 // DockerConfig holds configuration for the Docker manager.
 type DockerConfig struct {
-	ContainerName string
-	Image         string
-	DataPath      string
-	HostPort      string
+	ContainerName string            // Explicit container name (optional)
+	Image         string            // Docker image to use
+	DataPath      string            // Host path for data persistence
+	HostPort      string            // Host port to bind
+	HomePath      string            // Shelf home directory (used for dynamic container naming)
 	Labels        map[string]string // Optional labels for container (used for test cleanup)
 }
 
 // NewDockerManager creates a new Docker manager for DefraDB.
+// If ContainerName is empty and HomePath is set, a deterministic container name
+// is generated from the home directory hash. This allows multiple shelf instances
+// on the same machine with different home directories.
 func NewDockerManager(cfg DockerConfig) (*DockerManager, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
@@ -64,7 +80,12 @@ func NewDockerManager(cfg DockerConfig) (*DockerManager, error) {
 
 	// Set defaults
 	if cfg.ContainerName == "" {
-		cfg.ContainerName = DefaultContainerName
+		if cfg.HomePath != "" {
+			// Generate deterministic name from home directory
+			cfg.ContainerName = GenerateContainerName(cfg.HomePath)
+		} else {
+			cfg.ContainerName = DefaultContainerName
+		}
 	}
 	if cfg.Image == "" {
 		cfg.Image = DefaultImage
@@ -209,6 +230,11 @@ func (m *DockerManager) Logs(ctx context.Context, tail string) (string, error) {
 // URL returns the DefraDB API URL.
 func (m *DockerManager) URL() string {
 	return fmt.Sprintf("http://localhost:%s", m.hostPort)
+}
+
+// ContainerName returns the container name being used.
+func (m *DockerManager) ContainerName() string {
+	return m.containerName
 }
 
 // ValidateExisting checks if an existing container matches our expected configuration.
