@@ -17,6 +17,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
+	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
 	"github.com/jackzampolin/shelf/internal/server/endpoints"
@@ -246,13 +247,14 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Create services struct for context enrichment
 	s.services = &svcctx.Services{
-		DefraClient: s.defraClient,
-		DefraSink:   s.defraSink,
-		JobManager:  s.jobManager,
-		Registry:    s.registry,
-		Scheduler:   s.scheduler,
-		Logger:      s.logger,
-		Home:        s.home,
+		DefraClient:  s.defraClient,
+		DefraSink:    s.defraSink,
+		JobManager:   s.jobManager,
+		Registry:     s.registry,
+		Scheduler:    s.scheduler,
+		Logger:       s.logger,
+		Home:         s.home,
+		MetricsQuery: metrics.NewQuery(s.defraClient),
 	}
 
 	// Pass services to scheduler for async job context injection

@@ -141,14 +141,24 @@ func (a *Agent) NextWorkUnits() []WorkUnit {
 		return nil
 	}
 
-	req := &providers.ChatRequest{
-		Messages: a.messages,
+	// Copy messages for the request to avoid mutating history
+	// This is important because we attach images to the last message,
+	// and we don't want those images to persist in the conversation history.
+	requestMessages := make([]providers.Message, len(a.messages))
+	for i, msg := range a.messages {
+		// Copy the message (shallow copy is fine, we only modify Images)
+		requestMessages[i] = msg
+		// Clear any images from history to ensure only current image is sent
+		requestMessages[i].Images = nil
 	}
 
-	// Add images if tools provide them
+	req := &providers.ChatRequest{
+		Messages: requestMessages,
+	}
+
+	// Add current images to the last message only
+	// This ensures the LLM only sees the current page, not accumulated history
 	if images := a.tools.GetImages(); len(images) > 0 {
-		// Add images to the last user message or create one
-		// For simplicity, we'll add to request (provider handles it)
 		if len(req.Messages) > 0 {
 			lastIdx := len(req.Messages) - 1
 			req.Messages[lastIdx].Images = images

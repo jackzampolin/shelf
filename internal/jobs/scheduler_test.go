@@ -311,3 +311,64 @@ func TestScheduler_InitFromRegistry(t *testing.T) {
 		}
 	}
 }
+
+// SyncCompleteJob is a job that completes synchronously with zero work units.
+// This mimics the behavior of ingest jobs.
+type SyncCompleteJob struct {
+	id      string
+	started bool
+	done    bool
+}
+
+func (j *SyncCompleteJob) ID() string                  { return j.id }
+func (j *SyncCompleteJob) SetRecordID(id string)       { j.id = id }
+func (j *SyncCompleteJob) Type() string                { return "sync-complete" }
+func (j *SyncCompleteJob) Done() bool                  { return j.done }
+func (j *SyncCompleteJob) MetricsFor() *WorkUnitMetrics { return nil }
+func (j *SyncCompleteJob) Status(ctx context.Context) (map[string]string, error) {
+	return map[string]string{"done": "true"}, nil
+}
+func (j *SyncCompleteJob) Progress() map[string]ProviderProgress { return nil }
+func (j *SyncCompleteJob) OnComplete(ctx context.Context, result WorkResult) ([]WorkUnit, error) {
+	return nil, nil
+}
+func (j *SyncCompleteJob) Start(ctx context.Context) ([]WorkUnit, error) {
+	if j.started {
+		return nil, nil
+	}
+	j.started = true
+	j.done = true // Immediately done
+	return nil, nil // Zero work units
+}
+
+// TestScheduler_SyncCompleteJob tests jobs that complete synchronously with no work units.
+// This verifies the fix for ingest jobs that never completed.
+func TestScheduler_SyncCompleteJob(t *testing.T) {
+	scheduler := NewScheduler(SchedulerConfig{
+		Logger: slog.Default(),
+	})
+
+	job := &SyncCompleteJob{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go scheduler.Start(ctx)
+
+	if err := scheduler.Submit(ctx, job); err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+
+	// Wait for async completion check
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify job is no longer in active jobs (was cleaned up after sync completion)
+	if scheduler.ActiveJobs() != 0 {
+		t.Errorf("ActiveJobs() = %d, want 0 (job should complete synchronously)", scheduler.ActiveJobs())
+	}
+
+	// Verify job reports as done
+	if !job.Done() {
+		t.Error("job.Done() = false, want true")
+	}
+}

@@ -126,9 +126,26 @@ function PageViewerPage() {
           >
             Previous
           </button>
-          <span className="text-sm text-gray-600">
-            Page {pageNumber} of {totalPages}
-          </span>
+          <div className="flex items-center space-x-1 text-sm text-gray-600">
+            <span>Page</span>
+            <input
+              type="number"
+              min={1}
+              max={totalPages}
+              value={pageNumber}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10)
+                if (val >= 1 && val <= totalPages) {
+                  navigate({
+                    to: '/books/$bookId/pages/$pageNum',
+                    params: { bookId, pageNum: String(val) },
+                  })
+                }
+              }}
+              className="w-16 px-2 py-1 text-center border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <span>of {totalPages}</span>
+          </div>
           <button
             onClick={() =>
               navigate({

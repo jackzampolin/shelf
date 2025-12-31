@@ -133,6 +133,81 @@ definitions:
       utilization:
         type: number
     type: object
+  internal_server_endpoints.AgentLogDetailResponse:
+    properties:
+      agent_type:
+        type: string
+      book_id:
+        type: string
+      completed_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      iterations:
+        type: integer
+      messages:
+        description: Detailed data
+        items:
+          type: integer
+        type: array
+      result:
+        items:
+          type: integer
+        type: array
+      started_at:
+        type: string
+      success:
+        type: boolean
+      tool_calls:
+        items:
+          type: integer
+        type: array
+    type: object
+  internal_server_endpoints.AgentLogSummary:
+    properties:
+      agent_type:
+        type: string
+      completed_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      iterations:
+        type: integer
+      started_at:
+        type: string
+      success:
+        type: boolean
+    type: object
+  internal_server_endpoints.AgentLogSummaryResponse:
+    properties:
+      agent_type:
+        type: string
+      book_id:
+        type: string
+      completed_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      iterations:
+        type: integer
+      started_at:
+        type: string
+      success:
+        type: boolean
+    type: object
+  internal_server_endpoints.AgentLogsListResponse:
+    properties:
+      logs:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.AgentLogSummaryResponse'
+        type: array
+    type: object
   internal_server_endpoints.Book:
     properties:
       author:
@@ -145,6 +220,33 @@ definitions:
         type: integer
       status:
         type: string
+      title:
+        type: string
+    type: object
+  internal_server_endpoints.BookMetadata:
+    properties:
+      author:
+        type: string
+      authors:
+        items:
+          type: string
+        type: array
+      description:
+        type: string
+      isbn:
+        type: string
+      language:
+        type: string
+      lccn:
+        type: string
+      publication_year:
+        type: integer
+      publisher:
+        type: string
+      subjects:
+        items:
+          type: string
+        type: array
       title:
         type: string
     type: object
@@ -169,6 +271,35 @@ definitions:
         type: string
       url:
         type: string
+    type: object
+  internal_server_endpoints.DetailedJobStatusResponse:
+    properties:
+      agent_logs:
+        description: Agent logs summary
+        items:
+          $ref: '#/definitions/internal_server_endpoints.AgentLogSummary'
+        type: array
+      book_id:
+        type: string
+      metadata:
+        allOf:
+        - $ref: '#/definitions/internal_server_endpoints.MetadataStatus'
+        description: Metadata status
+      ocr_progress:
+        additionalProperties:
+          $ref: '#/definitions/internal_server_endpoints.ProviderProgress'
+        description: Per-provider OCR progress
+        type: object
+      stages:
+        allOf:
+        - $ref: '#/definitions/internal_server_endpoints.StageProgress'
+        description: Stage progress with costs
+      toc:
+        allOf:
+        - $ref: '#/definitions/internal_server_endpoints.ToCStatus'
+        description: ToC status
+      total_pages:
+        type: integer
     type: object
   internal_server_endpoints.ErrorResponse:
     properties:
@@ -311,6 +442,19 @@ definitions:
       total_pages:
         type: integer
     type: object
+  internal_server_endpoints.MetadataStatus:
+    properties:
+      complete:
+        type: boolean
+      cost_usd:
+        type: number
+      data:
+        $ref: '#/definitions/internal_server_endpoints.BookMetadata'
+      failed:
+        type: boolean
+      started:
+        type: boolean
+    type: object
   internal_server_endpoints.MetricsCostResponse:
     properties:
       breakdown:
@@ -386,6 +530,15 @@ definitions:
       page_num:
         type: integer
     type: object
+  internal_server_endpoints.ProviderProgress:
+    properties:
+      complete:
+        type: integer
+      cost_usd:
+        type: number
+      total:
+        type: integer
+    type: object
   internal_server_endpoints.ProvidersStatus:
     properties:
       llm:
@@ -396,6 +549,41 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  internal_server_endpoints.StageProgress:
+    properties:
+      blend:
+        properties:
+          complete:
+            type: integer
+          cost_usd:
+            type: number
+          total:
+            type: integer
+        type: object
+      label:
+        properties:
+          complete:
+            type: integer
+          cost_usd:
+            type: number
+          total:
+            type: integer
+        type: object
+      ocr:
+        properties:
+          complete:
+            type: integer
+          cost_by_provider:
+            additionalProperties:
+              format: float64
+              type: number
+            type: object
+          total:
+            type: integer
+          total_cost_usd:
+            type: number
+        type: object
     type: object
   internal_server_endpoints.StartJobRequest:
     properties:
@@ -422,6 +610,53 @@ definitions:
         $ref: '#/definitions/internal_server_endpoints.ProvidersStatus'
       server:
         type: string
+    type: object
+  internal_server_endpoints.ToCEntry:
+    properties:
+      entry_number:
+        type: string
+      level:
+        type: integer
+      level_name:
+        type: string
+      printed_page_number:
+        type: string
+      sort_order:
+        type: integer
+      title:
+        type: string
+    type: object
+  internal_server_endpoints.ToCStatus:
+    properties:
+      cost_usd:
+        type: number
+      end_page:
+        type: integer
+      entries:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.ToCEntry'
+        type: array
+      entry_count:
+        description: Entries (when extracted)
+        type: integer
+      extract_complete:
+        type: boolean
+      extract_failed:
+        type: boolean
+      extract_started:
+        description: Extract stage
+        type: boolean
+      finder_complete:
+        type: boolean
+      finder_failed:
+        type: boolean
+      finder_started:
+        description: Finder stage
+        type: boolean
+      found:
+        type: boolean
+      start_page:
+        type: integer
     type: object
   internal_server_endpoints.UpdateJobRequest:
     properties:
@@ -466,6 +701,41 @@ info:
   title: Shelf API
   version: "1.0"
 paths:
+  /api/agent-logs/{id}:
+    get:
+      description: Get full agent log including messages and tool calls
+      parameters:
+      - description: Agent Log ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.AgentLogDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get agent log details
+      tags:
+      - agent-logs
   /api/books:
     get:
       description: List all books in the library
@@ -487,6 +757,37 @@ paths:
       summary: List books
       tags:
       - books
+  /api/books/{book_id}/agent-logs:
+    get:
+      description: Get all agent execution logs for a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.AgentLogsListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List agent logs for a book
+      tags:
+      - agent-logs
   /api/books/{book_id}/pages:
     get:
       description: List all pages for a book with processing status
@@ -978,6 +1279,38 @@ paths:
           schema:
             $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
       summary: Get job status for a book
+      tags:
+      - jobs
+  /api/jobs/status/{book_id}/detailed:
+    get:
+      description: Get comprehensive processing status including per-provider OCR
+        progress, costs, metadata, and ToC details
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.DetailedJobStatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get detailed job status for a book
       tags:
       - jobs
   /api/metrics:

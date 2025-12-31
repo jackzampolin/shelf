@@ -4,6 +4,84 @@
  */
 
 export interface paths {
+    "/api/agent-logs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get agent log details
+         * @description Get full agent log including messages and tool calls
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Agent Log ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.AgentLogDetailResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books": {
         parameters: {
             query?: never;
@@ -206,6 +284,75 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/agent-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List agent logs for a book
+         * @description Get all agent execution logs for a book
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.AgentLogsListResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -806,6 +953,75 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["internal_server_endpoints.JobStatusResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/status/{book_id}/detailed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get detailed job status for a book
+         * @description Get comprehensive processing status including per-provider OCR progress, costs, metadata, and ToC details
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.DetailedJobStatusResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -1452,12 +1668,60 @@ export interface components {
             total_waited?: components["schemas"]["time.Duration"];
             utilization?: number;
         };
+        "internal_server_endpoints.AgentLogDetailResponse": {
+            agent_type?: string;
+            book_id?: string;
+            completed_at?: string;
+            error?: string;
+            id?: string;
+            iterations?: number;
+            /** @description Detailed data */
+            messages?: number[];
+            result?: number[];
+            started_at?: string;
+            success?: boolean;
+            tool_calls?: number[];
+        };
+        "internal_server_endpoints.AgentLogSummary": {
+            agent_type?: string;
+            completed_at?: string;
+            error?: string;
+            id?: string;
+            iterations?: number;
+            started_at?: string;
+            success?: boolean;
+        };
+        "internal_server_endpoints.AgentLogSummaryResponse": {
+            agent_type?: string;
+            book_id?: string;
+            completed_at?: string;
+            error?: string;
+            id?: string;
+            iterations?: number;
+            started_at?: string;
+            success?: boolean;
+        };
+        "internal_server_endpoints.AgentLogsListResponse": {
+            logs?: components["schemas"]["internal_server_endpoints.AgentLogSummaryResponse"][];
+        };
         "internal_server_endpoints.Book": {
             author?: string;
             created_at?: string;
             id?: string;
             page_count?: number;
             status?: string;
+            title?: string;
+        };
+        "internal_server_endpoints.BookMetadata": {
+            author?: string;
+            authors?: string[];
+            description?: string;
+            isbn?: string;
+            language?: string;
+            lccn?: string;
+            publication_year?: number;
+            publisher?: string;
+            subjects?: string[];
             title?: string;
         };
         "internal_server_endpoints.CreateJobRequest": {
@@ -1473,6 +1737,22 @@ export interface components {
             container?: string;
             health?: string;
             url?: string;
+        };
+        "internal_server_endpoints.DetailedJobStatusResponse": {
+            /** @description Agent logs summary */
+            agent_logs?: components["schemas"]["internal_server_endpoints.AgentLogSummary"][];
+            book_id?: string;
+            /** @description Metadata status */
+            metadata?: components["schemas"]["internal_server_endpoints.MetadataStatus"];
+            /** @description Per-provider OCR progress */
+            ocr_progress?: {
+                [key: string]: components["schemas"]["internal_server_endpoints.ProviderProgress"];
+            };
+            /** @description Stage progress with costs */
+            stages?: components["schemas"]["internal_server_endpoints.StageProgress"];
+            /** @description ToC status */
+            toc?: components["schemas"]["internal_server_endpoints.ToCStatus"];
+            total_pages?: number;
         };
         "internal_server_endpoints.ErrorResponse": {
             error?: string;
@@ -1549,6 +1829,13 @@ export interface components {
             pages?: components["schemas"]["internal_server_endpoints.PageSummary"][];
             total_pages?: number;
         };
+        "internal_server_endpoints.MetadataStatus": {
+            complete?: boolean;
+            cost_usd?: number;
+            data?: components["schemas"]["internal_server_endpoints.BookMetadata"];
+            failed?: boolean;
+            started?: boolean;
+        };
         "internal_server_endpoints.MetricsCostResponse": {
             breakdown?: {
                 [key: string]: number;
@@ -1590,9 +1877,34 @@ export interface components {
             ocr_complete?: boolean;
             page_num?: number;
         };
+        "internal_server_endpoints.ProviderProgress": {
+            complete?: number;
+            cost_usd?: number;
+            total?: number;
+        };
         "internal_server_endpoints.ProvidersStatus": {
             llm?: string[];
             ocr?: string[];
+        };
+        "internal_server_endpoints.StageProgress": {
+            blend?: {
+                complete?: number;
+                cost_usd?: number;
+                total?: number;
+            };
+            label?: {
+                complete?: number;
+                cost_usd?: number;
+                total?: number;
+            };
+            ocr?: {
+                complete?: number;
+                cost_by_provider?: {
+                    [key: string]: number;
+                };
+                total?: number;
+                total_cost_usd?: number;
+            };
         };
         "internal_server_endpoints.StartJobRequest": {
             /** @description Optional: defaults to "process-pages" */
@@ -1608,6 +1920,31 @@ export interface components {
             defra?: components["schemas"]["internal_server_endpoints.DefraStatus"];
             providers?: components["schemas"]["internal_server_endpoints.ProvidersStatus"];
             server?: string;
+        };
+        "internal_server_endpoints.ToCEntry": {
+            entry_number?: string;
+            level?: number;
+            level_name?: string;
+            printed_page_number?: string;
+            sort_order?: number;
+            title?: string;
+        };
+        "internal_server_endpoints.ToCStatus": {
+            cost_usd?: number;
+            end_page?: number;
+            entries?: components["schemas"]["internal_server_endpoints.ToCEntry"][];
+            /** @description Entries (when extracted) */
+            entry_count?: number;
+            extract_complete?: boolean;
+            extract_failed?: boolean;
+            /** @description Extract stage */
+            extract_started?: boolean;
+            finder_complete?: boolean;
+            finder_failed?: boolean;
+            /** @description Finder stage */
+            finder_started?: boolean;
+            found?: boolean;
+            start_page?: number;
         };
         "internal_server_endpoints.UpdateJobRequest": {
             error?: string;

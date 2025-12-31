@@ -15,10 +15,11 @@ const LabelThresholdForBookOps = 20
 // FrontMatterPageCount is the number of pages considered front matter for ToC search.
 const FrontMatterPageCount = 50
 
-// FrontMatterOcrThreshold is the minimum number of front matter pages that must have
-// blend_complete before starting ToC finder. This ensures the ToC pages have OCR data.
-// Set lower because page processing order isn't guaranteed to be sequential.
-const FrontMatterOcrThreshold = 25
+// ConsecutiveFrontMatterRequired is the number of consecutive pages from page 1
+// that must have blend_complete before starting ToC finder. This ensures the ToC
+// pages (typically in first 20-30 pages) have blend output before the agent runs.
+// Set to 50 to ensure adequate coverage for books with longer front matter.
+const ConsecutiveFrontMatterRequired = 50
 
 // PageState tracks the processing state of a single page.
 type PageState struct {
@@ -242,20 +243,21 @@ func (j *Job) CountLabeledPages() int {
 	return count
 }
 
-// CountFrontMatterBlendComplete returns the number of front matter pages (1-50)
-// that have completed blend. Used to gate ToC finder start.
-func (j *Job) CountFrontMatterBlendComplete() int {
-	count := 0
-	maxPage := FrontMatterPageCount
-	if j.TotalPages < maxPage {
-		maxPage = j.TotalPages
+// ConsecutiveFrontMatterComplete returns true if pages 1 through ConsecutiveFrontMatterRequired
+// all have blend_complete. This ensures the ToC finder has OCR data for the pages where
+// the ToC is typically located.
+func (j *Job) ConsecutiveFrontMatterComplete() bool {
+	required := ConsecutiveFrontMatterRequired
+	if j.TotalPages < required {
+		required = j.TotalPages
 	}
-	for pageNum := 1; pageNum <= maxPage; pageNum++ {
-		if state, ok := j.PageState[pageNum]; ok && state.BlendDone {
-			count++
+	for pageNum := 1; pageNum <= required; pageNum++ {
+		state, ok := j.PageState[pageNum]
+		if !ok || !state.BlendDone {
+			return false
 		}
 	}
-	return count
+	return true
 }
 
 // AllPagesComplete returns true if all pages have completed the page-level pipeline.

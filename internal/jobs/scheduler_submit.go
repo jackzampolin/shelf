@@ -82,6 +82,25 @@ func (s *Scheduler) startJobAsync(job Job) {
 
 	s.logger.Info("job started", "job_id", job.ID(), "work_units", len(units))
 
+	// Check if job completed synchronously with no work units (e.g., ingest jobs)
+	if len(units) == 0 && job.Done() {
+		jobID := job.ID()
+		s.logger.Info("job completed synchronously", "id", jobID, "type", job.Type())
+
+		s.mu.Lock()
+		delete(s.jobs, jobID)
+		delete(s.pending, jobID)
+		s.mu.Unlock()
+
+		// Update DefraDB status to completed
+		if s.manager != nil {
+			if err := s.manager.UpdateStatus(ctx, jobID, StatusCompleted, ""); err != nil {
+				s.logger.Warn("failed to update job status in DefraDB", "error", err)
+			}
+		}
+		return
+	}
+
 	// Enqueue initial work units
 	s.enqueueUnits(job.ID(), units)
 }
@@ -134,6 +153,22 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 			s.logger.Error("failed to resume job",
 				"job_id", record.ID, "error", err)
 			s.manager.UpdateStatus(enrichedCtx, record.ID, StatusFailed, err.Error())
+			continue
+		}
+
+		// Check if job completed synchronously with no work units
+		if len(units) == 0 && job.Done() {
+			s.logger.Info("resumed job completed synchronously", "id", record.ID, "type", record.JobType)
+
+			s.mu.Lock()
+			delete(s.jobs, job.ID())
+			delete(s.pending, job.ID())
+			s.mu.Unlock()
+
+			if err := s.manager.UpdateStatus(enrichedCtx, record.ID, StatusCompleted, ""); err != nil {
+				s.logger.Warn("failed to update job status in DefraDB", "error", err)
+			}
+			resumed++
 			continue
 		}
 

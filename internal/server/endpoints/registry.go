@@ -33,6 +33,7 @@ func All(cfg Config) []api.Endpoint {
 		&UploadIngestEndpoint{},
 		&ListBooksEndpoint{},
 		&GetBookEndpoint{},
+		&RerunTocEndpoint{ProcessPagesConfig: cfg.ProcessPagesConfig},
 
 		// Page endpoints
 		&PageImageEndpoint{},
@@ -42,6 +43,11 @@ func All(cfg Config) []api.Endpoint {
 		// Job start/status endpoints
 		&StartJobEndpoint{ProcessPagesConfig: cfg.ProcessPagesConfig},
 		&JobStatusEndpoint{},
+		&DetailedJobStatusEndpoint{},
+
+		// Agent log endpoints
+		&ListAgentLogsEndpoint{},
+		&GetAgentLogEndpoint{},
 
 		// Metrics endpoints
 		&ListMetricsEndpoint{},

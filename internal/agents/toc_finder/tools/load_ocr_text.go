@@ -25,7 +25,23 @@ func (t *ToCFinderTools) loadOcrText(ctx context.Context) (string, error) {
 
 	text, err := t.getPageBlendedText(ctx, *t.currentPageNum)
 	if err != nil {
-		return jsonError(fmt.Sprintf("No blended OCR data found for page %d. Ensure page processing has run.", *t.currentPageNum)), nil
+		// Check if this page was in the failed_pages list from grep report
+		isKnownFailed := false
+		if t.grepReportCache != nil {
+			for _, fp := range t.grepReportCache.FailedPages {
+				if fp == *t.currentPageNum {
+					isKnownFailed = true
+					break
+				}
+			}
+		}
+
+		if isKnownFailed {
+			return jsonError(fmt.Sprintf(
+				"Page %d is in failed_pages list (not yet processed). SKIP this page and check a different one. Use grep report's categorized_pages to find pages WITH data.",
+				*t.currentPageNum)), nil
+		}
+		return jsonError(fmt.Sprintf("No blended OCR data for page %d.", *t.currentPageNum)), nil
 	}
 
 	return jsonSuccess(map[string]any{

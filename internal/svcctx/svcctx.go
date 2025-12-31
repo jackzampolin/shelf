@@ -9,19 +9,21 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // Services holds all core services that flow through context.
 // Components extract what they need via the individual extractors.
 type Services struct {
-	DefraClient *defra.Client
-	DefraSink   *defra.Sink
-	JobManager  *jobs.Manager
-	Registry    *providers.Registry
-	Scheduler   *jobs.Scheduler
-	Logger      *slog.Logger
-	Home        *home.Dir
+	DefraClient  *defra.Client
+	DefraSink    *defra.Sink
+	JobManager   *jobs.Manager
+	Registry     *providers.Registry
+	Scheduler    *jobs.Scheduler
+	Logger       *slog.Logger
+	Home         *home.Dir
+	MetricsQuery *metrics.Query
 }
 
 type servicesKey struct{}
@@ -90,6 +92,14 @@ func LoggerFrom(ctx context.Context) *slog.Logger {
 func HomeFrom(ctx context.Context) *home.Dir {
 	if s := ServicesFrom(ctx); s != nil {
 		return s.Home
+	}
+	return nil
+}
+
+// MetricsQueryFrom extracts the metrics query helper from context.
+func MetricsQueryFrom(ctx context.Context) *metrics.Query {
+	if s := ServicesFrom(ctx); s != nil {
+		return s.MetricsQuery
 	}
 	return nil
 }

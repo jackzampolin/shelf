@@ -1,6 +1,7 @@
 package endpoints
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -8,8 +9,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jackzampolin/shelf/internal/api"
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
+	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -244,4 +247,516 @@ func (e *JobStatusEndpoint) Command(getServerURL func() string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&jobType, "job-type", process_pages.JobType, "Job type to check")
 	return cmd
+}
+
+// DetailedJobStatusResponse is a comprehensive status response with per-provider data.
+type DetailedJobStatusResponse struct {
+	BookID     string `json:"book_id"`
+	TotalPages int    `json:"total_pages"`
+
+	// Per-provider OCR progress
+	OcrProgress map[string]ProviderProgress `json:"ocr_progress"`
+
+	// Stage progress with costs
+	Stages StageProgress `json:"stages"`
+
+	// Metadata status
+	Metadata MetadataStatus `json:"metadata"`
+
+	// ToC status
+	ToC ToCStatus `json:"toc"`
+
+	// Agent logs summary
+	AgentLogs []AgentLogSummary `json:"agent_logs,omitempty"`
+}
+
+// ProviderProgress tracks completion for a single provider.
+type ProviderProgress struct {
+	Complete int     `json:"complete"`
+	Total    int     `json:"total"`
+	CostUSD  float64 `json:"cost_usd"`
+}
+
+// StageProgress tracks progress and cost for each stage.
+type StageProgress struct {
+	OCR struct {
+		Complete       int                `json:"complete"`
+		Total          int                `json:"total"`
+		CostByProvider map[string]float64 `json:"cost_by_provider"`
+		TotalCostUSD   float64            `json:"total_cost_usd"`
+	} `json:"ocr"`
+	Blend struct {
+		Complete int     `json:"complete"`
+		Total    int     `json:"total"`
+		CostUSD  float64 `json:"cost_usd"`
+	} `json:"blend"`
+	Label struct {
+		Complete int     `json:"complete"`
+		Total    int     `json:"total"`
+		CostUSD  float64 `json:"cost_usd"`
+	} `json:"label"`
+}
+
+// MetadataStatus represents metadata extraction status.
+type MetadataStatus struct {
+	Started  bool            `json:"started"`
+	Complete bool            `json:"complete"`
+	Failed   bool            `json:"failed"`
+	CostUSD  float64         `json:"cost_usd"`
+	Data     *BookMetadata   `json:"data,omitempty"`
+}
+
+// BookMetadata contains extracted book metadata.
+type BookMetadata struct {
+	Title           string   `json:"title,omitempty"`
+	Author          string   `json:"author,omitempty"`
+	Authors         []string `json:"authors,omitempty"`
+	ISBN            string   `json:"isbn,omitempty"`
+	LCCN            string   `json:"lccn,omitempty"`
+	Publisher       string   `json:"publisher,omitempty"`
+	PublicationYear int      `json:"publication_year,omitempty"`
+	Language        string   `json:"language,omitempty"`
+	Description     string   `json:"description,omitempty"`
+	Subjects        []string `json:"subjects,omitempty"`
+}
+
+// ToCStatus represents ToC finding and extraction status.
+type ToCStatus struct {
+	// Finder stage
+	FinderStarted  bool `json:"finder_started"`
+	FinderComplete bool `json:"finder_complete"`
+	FinderFailed   bool `json:"finder_failed"`
+	Found          bool `json:"found"`
+	StartPage      int  `json:"start_page,omitempty"`
+	EndPage        int  `json:"end_page,omitempty"`
+
+	// Extract stage
+	ExtractStarted  bool `json:"extract_started"`
+	ExtractComplete bool `json:"extract_complete"`
+	ExtractFailed   bool `json:"extract_failed"`
+
+	// Entries (when extracted)
+	EntryCount int        `json:"entry_count"`
+	Entries    []ToCEntry `json:"entries,omitempty"`
+
+	CostUSD float64 `json:"cost_usd"`
+}
+
+// ToCEntry represents a single ToC entry.
+type ToCEntry struct {
+	EntryNumber       string `json:"entry_number,omitempty"`
+	Title             string `json:"title"`
+	Level             int    `json:"level"`
+	LevelName         string `json:"level_name,omitempty"`
+	PrintedPageNumber string `json:"printed_page_number,omitempty"`
+	SortOrder         int    `json:"sort_order"`
+}
+
+// AgentLogSummary is a brief summary of an agent log.
+type AgentLogSummary struct {
+	ID          string `json:"id"`
+	AgentType   string `json:"agent_type"`
+	StartedAt   string `json:"started_at"`
+	CompletedAt string `json:"completed_at,omitempty"`
+	Iterations  int    `json:"iterations"`
+	Success     bool   `json:"success"`
+	Error       string `json:"error,omitempty"`
+}
+
+// DetailedJobStatusEndpoint handles GET /api/jobs/status/{book_id}/detailed.
+type DetailedJobStatusEndpoint struct{}
+
+func (e *DetailedJobStatusEndpoint) Route() (string, string, http.HandlerFunc) {
+	return "GET", "/api/jobs/status/{book_id}/detailed", e.handler
+}
+
+func (e *DetailedJobStatusEndpoint) RequiresInit() bool { return true }
+
+// handler godoc
+//
+//	@Summary		Get detailed job status for a book
+//	@Description	Get comprehensive processing status including per-provider OCR progress, costs, metadata, and ToC details
+//	@Tags			jobs
+//	@Produce		json
+//	@Param			book_id	path		string	true	"Book ID"
+//	@Success		200		{object}	DetailedJobStatusResponse
+//	@Failure		400		{object}	ErrorResponse
+//	@Failure		500		{object}	ErrorResponse
+//	@Failure		503		{object}	ErrorResponse
+//	@Router			/api/jobs/status/{book_id}/detailed [get]
+func (e *DetailedJobStatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
+	bookID := r.PathValue("book_id")
+	if bookID == "" {
+		writeError(w, http.StatusBadRequest, "book_id is required")
+		return
+	}
+
+	defraClient := svcctx.DefraClientFrom(r.Context())
+	if defraClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "defra client not initialized")
+		return
+	}
+
+	resp, err := getDetailedStatus(r.Context(), defraClient, bookID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (e *DetailedJobStatusEndpoint) Command(getServerURL func() string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "status-detailed <book_id>",
+		Short: "Get detailed job status for a book",
+		Long: `Get comprehensive processing status including:
+- Per-provider OCR progress and costs
+- Blend and label progress with costs
+- Metadata extraction status and extracted data
+- ToC finder and extraction status with entries
+- Agent execution logs`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			bookID := args[0]
+
+			client := api.NewClient(getServerURL())
+			var resp DetailedJobStatusResponse
+			if err := client.Get(ctx, fmt.Sprintf("/api/jobs/status/%s/detailed", bookID), &resp); err != nil {
+				return err
+			}
+
+			return api.Output(resp)
+		},
+	}
+}
+
+// getDetailedStatus fetches comprehensive status from DefraDB
+func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string) (*DetailedJobStatusResponse, error) {
+	resp := &DetailedJobStatusResponse{
+		BookID:      bookID,
+		OcrProgress: make(map[string]ProviderProgress),
+	}
+	resp.Stages.OCR.CostByProvider = make(map[string]float64)
+
+	// Query book info
+	bookQuery := fmt.Sprintf(`{
+		Book(filter: {_docID: {_eq: "%s"}}) {
+			page_count
+			title
+			author
+			isbn
+			lccn
+			publisher
+			publication_year
+			language
+			description
+			metadata_started
+			metadata_complete
+			metadata_failed
+		}
+	}`, bookID)
+
+	bookResp, err := client.Execute(ctx, bookQuery, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query book: %w", err)
+	}
+
+	if books, ok := bookResp.Data["Book"].([]any); ok && len(books) > 0 {
+		if book, ok := books[0].(map[string]any); ok {
+			if pc, ok := book["page_count"].(float64); ok {
+				resp.TotalPages = int(pc)
+			}
+
+			// Metadata status
+			if v, ok := book["metadata_started"].(bool); ok {
+				resp.Metadata.Started = v
+			}
+			if v, ok := book["metadata_complete"].(bool); ok {
+				resp.Metadata.Complete = v
+			}
+			if v, ok := book["metadata_failed"].(bool); ok {
+				resp.Metadata.Failed = v
+			}
+
+			// If metadata is complete, include the data
+			if resp.Metadata.Complete {
+				resp.Metadata.Data = &BookMetadata{}
+				if v, ok := book["title"].(string); ok {
+					resp.Metadata.Data.Title = v
+				}
+				if v, ok := book["author"].(string); ok {
+					resp.Metadata.Data.Author = v
+				}
+				if v, ok := book["isbn"].(string); ok {
+					resp.Metadata.Data.ISBN = v
+				}
+				if v, ok := book["lccn"].(string); ok {
+					resp.Metadata.Data.LCCN = v
+				}
+				if v, ok := book["publisher"].(string); ok {
+					resp.Metadata.Data.Publisher = v
+				}
+				if v, ok := book["publication_year"].(float64); ok {
+					resp.Metadata.Data.PublicationYear = int(v)
+				}
+				if v, ok := book["language"].(string); ok {
+					resp.Metadata.Data.Language = v
+				}
+				if v, ok := book["description"].(string); ok {
+					resp.Metadata.Data.Description = v
+				}
+			}
+		}
+	}
+
+	// Set totals for stages
+	resp.Stages.OCR.Total = resp.TotalPages
+	resp.Stages.Blend.Total = resp.TotalPages
+	resp.Stages.Label.Total = resp.TotalPages
+
+	// Query pages for completion counts
+	pageQuery := fmt.Sprintf(`{
+		Page(filter: {book_id: {_eq: "%s"}}) {
+			ocr_complete
+			blend_complete
+			label_complete
+		}
+	}`, bookID)
+
+	pageResp, err := client.Execute(ctx, pageQuery, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query pages: %w", err)
+	}
+
+	if pages, ok := pageResp.Data["Page"].([]any); ok {
+		for _, p := range pages {
+			page, ok := p.(map[string]any)
+			if !ok {
+				continue
+			}
+			if ocrComplete, ok := page["ocr_complete"].(bool); ok && ocrComplete {
+				resp.Stages.OCR.Complete++
+			}
+			if blendComplete, ok := page["blend_complete"].(bool); ok && blendComplete {
+				resp.Stages.Blend.Complete++
+			}
+			if labelComplete, ok := page["label_complete"].(bool); ok && labelComplete {
+				resp.Stages.Label.Complete++
+			}
+		}
+	}
+
+	// Query OCR results for per-provider progress
+	ocrQuery := fmt.Sprintf(`{
+		OcrResult(filter: {page: {book_id: {_eq: "%s"}}}) {
+			provider
+		}
+	}`, bookID)
+
+	ocrResp, err := client.Execute(ctx, ocrQuery, nil)
+	if err == nil {
+		providerCounts := make(map[string]int)
+		if results, ok := ocrResp.Data["OcrResult"].([]any); ok {
+			for _, r := range results {
+				if result, ok := r.(map[string]any); ok {
+					if provider, ok := result["provider"].(string); ok {
+						providerCounts[provider]++
+					}
+				}
+			}
+		}
+		for provider, count := range providerCounts {
+			resp.OcrProgress[provider] = ProviderProgress{
+				Complete: count,
+				Total:    resp.TotalPages,
+			}
+		}
+	}
+
+	// Query ToC status via the Book->ToC relationship
+	// ToC doesn't have book_id field, it's linked via Book.toc_id
+	tocQuery := fmt.Sprintf(`{
+		Book(filter: {_docID: {_eq: "%s"}}) {
+			toc {
+				finder_started
+				finder_complete
+				finder_failed
+				toc_found
+				start_page
+				end_page
+				extract_started
+				extract_complete
+				extract_failed
+				entries {
+					entry_number
+					title
+					level
+					level_name
+					printed_page_number
+					sort_order
+				}
+			}
+		}
+	}`, bookID)
+
+	tocResp, err := client.Execute(ctx, tocQuery, nil)
+	if err == nil {
+		// Parse Book -> toc relationship
+		if books, ok := tocResp.Data["Book"].([]any); ok && len(books) > 0 {
+			if book, ok := books[0].(map[string]any); ok {
+				if toc, ok := book["toc"].(map[string]any); ok {
+					if v, ok := toc["finder_started"].(bool); ok {
+					resp.ToC.FinderStarted = v
+				}
+				if v, ok := toc["finder_complete"].(bool); ok {
+					resp.ToC.FinderComplete = v
+				}
+				if v, ok := toc["finder_failed"].(bool); ok {
+					resp.ToC.FinderFailed = v
+				}
+				if v, ok := toc["toc_found"].(bool); ok {
+					resp.ToC.Found = v
+				}
+				if v, ok := toc["start_page"].(float64); ok {
+					resp.ToC.StartPage = int(v)
+				}
+				if v, ok := toc["end_page"].(float64); ok {
+					resp.ToC.EndPage = int(v)
+				}
+				if v, ok := toc["extract_started"].(bool); ok {
+					resp.ToC.ExtractStarted = v
+				}
+				if v, ok := toc["extract_complete"].(bool); ok {
+					resp.ToC.ExtractComplete = v
+				}
+				if v, ok := toc["extract_failed"].(bool); ok {
+					resp.ToC.ExtractFailed = v
+				}
+
+				// Parse ToC entries
+				if entries, ok := toc["entries"].([]any); ok {
+					resp.ToC.EntryCount = len(entries)
+					for _, e := range entries {
+						if entry, ok := e.(map[string]any); ok {
+							tocEntry := ToCEntry{}
+							if v, ok := entry["entry_number"].(string); ok {
+								tocEntry.EntryNumber = v
+							}
+							if v, ok := entry["title"].(string); ok {
+								tocEntry.Title = v
+							}
+							if v, ok := entry["level"].(float64); ok {
+								tocEntry.Level = int(v)
+							}
+							if v, ok := entry["level_name"].(string); ok {
+								tocEntry.LevelName = v
+							}
+							if v, ok := entry["printed_page_number"].(string); ok {
+								tocEntry.PrintedPageNumber = v
+							}
+							if v, ok := entry["sort_order"].(float64); ok {
+								tocEntry.SortOrder = int(v)
+							}
+							resp.ToC.Entries = append(resp.ToC.Entries, tocEntry)
+						}
+					}
+				}
+				}
+			}
+		}
+	}
+
+	// Query costs from metrics
+	metricsQuery := svcctx.MetricsQueryFrom(ctx)
+	if metricsQuery != nil {
+		// Get all costs by operation type (parses item_key to get operation type)
+		// item_key format: page_XXXX_<type> where type is provider (mistral/paddle) for OCR
+		// or operation (blend/label) for LLM operations
+		if costByOp, err := metricsQuery.CostByOperationType(ctx, metrics.Filter{BookID: bookID}); err == nil {
+			// OCR costs - providers like "mistral", "paddle"
+			for provider := range resp.OcrProgress {
+				if cost, ok := costByOp[provider]; ok {
+					resp.Stages.OCR.CostByProvider[provider] = cost
+					resp.Stages.OCR.TotalCostUSD += cost
+					if prog, ok := resp.OcrProgress[provider]; ok {
+						prog.CostUSD = cost
+						resp.OcrProgress[provider] = prog
+					}
+				}
+			}
+
+			// Blend cost
+			if cost, ok := costByOp["blend"]; ok {
+				resp.Stages.Blend.CostUSD = cost
+			}
+
+			// Label cost
+			if cost, ok := costByOp["label"]; ok {
+				resp.Stages.Label.CostUSD = cost
+			}
+
+			// Metadata cost
+			if cost, ok := costByOp["metadata"]; ok {
+				resp.Metadata.CostUSD = cost
+			}
+
+			// ToC costs
+			if cost, ok := costByOp["toc"]; ok {
+				resp.ToC.CostUSD = cost
+			}
+			if cost, ok := costByOp["finder"]; ok {
+				resp.ToC.CostUSD += cost
+			}
+		}
+	}
+
+	// Query agent logs
+	agentQuery := fmt.Sprintf(`{
+		AgentRun(filter: {book_id: {_eq: "%s"}}) {
+			_docID
+			agent_type
+			started_at
+			completed_at
+			iterations
+			success
+			error
+		}
+	}`, bookID)
+
+	agentResp, err := client.Execute(ctx, agentQuery, nil)
+	if err == nil {
+		if runs, ok := agentResp.Data["AgentRun"].([]any); ok {
+			for _, r := range runs {
+				if run, ok := r.(map[string]any); ok {
+					log := AgentLogSummary{}
+					if v, ok := run["_docID"].(string); ok {
+						log.ID = v
+					}
+					if v, ok := run["agent_type"].(string); ok {
+						log.AgentType = v
+					}
+					if v, ok := run["started_at"].(string); ok {
+						log.StartedAt = v
+					}
+					if v, ok := run["completed_at"].(string); ok {
+						log.CompletedAt = v
+					}
+					if v, ok := run["iterations"].(float64); ok {
+						log.Iterations = int(v)
+					}
+					if v, ok := run["success"].(bool); ok {
+						log.Success = v
+					}
+					if v, ok := run["error"].(string); ok {
+						log.Error = v
+					}
+					resp.AgentLogs = append(resp.AgentLogs, log)
+				}
+			}
+		}
+	}
+
+	return resp, nil
 }

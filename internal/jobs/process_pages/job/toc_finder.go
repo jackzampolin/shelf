@@ -110,7 +110,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 			{Role: "system", Content: toc_finder.SystemPrompt},
 			{Role: "user", Content: userPrompt},
 		},
-		MaxIterations: 15,
+		MaxIterations: 25,
 		// Observability config
 		AgentType: "toc_finder",
 		BookID:    j.BookID,

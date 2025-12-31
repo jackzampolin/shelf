@@ -22,6 +22,59 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/agent-logs/{id}": {
+            "get": {
+                "description": "Get full agent log including messages and tool calls",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agent-logs"
+                ],
+                "summary": "Get agent log details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent Log ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.AgentLogDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/books": {
             "get": {
                 "description": "List all books in the library",
@@ -145,6 +198,53 @@ const docTemplate = `{
                         "description": "Accepted",
                         "schema": {
                             "$ref": "#/definitions/internal_server_endpoints.IngestResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{book_id}/agent-logs": {
+            "get": {
+                "description": "Get all agent execution logs for a book",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agent-logs"
+                ],
+                "summary": "List agent logs for a book",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.AgentLogsListResponse"
                         }
                     },
                     "400": {
@@ -619,6 +719,53 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_server_endpoints.JobStatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/jobs/status/{book_id}/detailed": {
+            "get": {
+                "description": "Get comprehensive processing status including per-provider OCR progress, costs, metadata, and ToC details",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jobs"
+                ],
+                "summary": "Get detailed job status for a book",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.DetailedJobStatusResponse"
                         }
                     },
                     "400": {
@@ -1259,6 +1406,120 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_server_endpoints.AgentLogDetailResponse": {
+            "type": "object",
+            "properties": {
+                "agent_type": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "string"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "iterations": {
+                    "type": "integer"
+                },
+                "messages": {
+                    "description": "Detailed data",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "result": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "tool_calls": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "internal_server_endpoints.AgentLogSummary": {
+            "type": "object",
+            "properties": {
+                "agent_type": {
+                    "type": "string"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "iterations": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_server_endpoints.AgentLogSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "agent_type": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "string"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "iterations": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_server_endpoints.AgentLogsListResponse": {
+            "type": "object",
+            "properties": {
+                "logs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.AgentLogSummaryResponse"
+                    }
+                }
+            }
+        },
         "internal_server_endpoints.Book": {
             "type": "object",
             "properties": {
@@ -1276,6 +1537,47 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_server_endpoints.BookMetadata": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "authors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "isbn": {
+                    "type": "string"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "lccn": {
+                    "type": "string"
+                },
+                "publication_year": {
+                    "type": "integer"
+                },
+                "publisher": {
+                    "type": "string"
+                },
+                "subjects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "title": {
                     "type": "string"
@@ -1313,6 +1615,55 @@ const docTemplate = `{
                 },
                 "url": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_server_endpoints.DetailedJobStatusResponse": {
+            "type": "object",
+            "properties": {
+                "agent_logs": {
+                    "description": "Agent logs summary",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.AgentLogSummary"
+                    }
+                },
+                "book_id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "Metadata status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_server_endpoints.MetadataStatus"
+                        }
+                    ]
+                },
+                "ocr_progress": {
+                    "description": "Per-provider OCR progress",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/internal_server_endpoints.ProviderProgress"
+                    }
+                },
+                "stages": {
+                    "description": "Stage progress with costs",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_server_endpoints.StageProgress"
+                        }
+                    ]
+                },
+                "toc": {
+                    "description": "ToC status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_server_endpoints.ToCStatus"
+                        }
+                    ]
+                },
+                "total_pages": {
+                    "type": "integer"
                 }
             }
         },
@@ -1532,6 +1883,26 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_server_endpoints.MetadataStatus": {
+            "type": "object",
+            "properties": {
+                "complete": {
+                    "type": "boolean"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "data": {
+                    "$ref": "#/definitions/internal_server_endpoints.BookMetadata"
+                },
+                "failed": {
+                    "type": "boolean"
+                },
+                "started": {
+                    "type": "boolean"
+                }
+            }
+        },
         "internal_server_endpoints.MetricsCostResponse": {
             "type": "object",
             "properties": {
@@ -1647,6 +2018,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_server_endpoints.ProviderProgress": {
+            "type": "object",
+            "properties": {
+                "complete": {
+                    "type": "integer"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_server_endpoints.ProvidersStatus": {
             "type": "object",
             "properties": {
@@ -1660,6 +2045,60 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_server_endpoints.StageProgress": {
+            "type": "object",
+            "properties": {
+                "blend": {
+                    "type": "object",
+                    "properties": {
+                        "complete": {
+                            "type": "integer"
+                        },
+                        "cost_usd": {
+                            "type": "number"
+                        },
+                        "total": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "label": {
+                    "type": "object",
+                    "properties": {
+                        "complete": {
+                            "type": "integer"
+                        },
+                        "cost_usd": {
+                            "type": "number"
+                        },
+                        "total": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "ocr": {
+                    "type": "object",
+                    "properties": {
+                        "complete": {
+                            "type": "integer"
+                        },
+                        "cost_by_provider": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "number",
+                                "format": "float64"
+                            }
+                        },
+                        "total": {
+                            "type": "integer"
+                        },
+                        "total_cost_usd": {
+                            "type": "number"
+                        }
                     }
                 }
             }
@@ -1701,6 +2140,76 @@ const docTemplate = `{
                 },
                 "server": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_server_endpoints.ToCEntry": {
+            "type": "object",
+            "properties": {
+                "entry_number": {
+                    "type": "string"
+                },
+                "level": {
+                    "type": "integer"
+                },
+                "level_name": {
+                    "type": "string"
+                },
+                "printed_page_number": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_server_endpoints.ToCStatus": {
+            "type": "object",
+            "properties": {
+                "cost_usd": {
+                    "type": "number"
+                },
+                "end_page": {
+                    "type": "integer"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.ToCEntry"
+                    }
+                },
+                "entry_count": {
+                    "description": "Entries (when extracted)",
+                    "type": "integer"
+                },
+                "extract_complete": {
+                    "type": "boolean"
+                },
+                "extract_failed": {
+                    "type": "boolean"
+                },
+                "extract_started": {
+                    "description": "Extract stage",
+                    "type": "boolean"
+                },
+                "finder_complete": {
+                    "type": "boolean"
+                },
+                "finder_failed": {
+                    "type": "boolean"
+                },
+                "finder_started": {
+                    "description": "Finder stage",
+                    "type": "boolean"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "start_page": {
+                    "type": "integer"
                 }
             }
         },
