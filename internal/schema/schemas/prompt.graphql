@@ -3,16 +3,16 @@
 # This collection is synced from embedded files on server startup.
 type Prompt {
     # Hierarchical key: stages.blend.system, agents.toc_finder.user
-    key: String! @index(unique: true)
+    key: String @index(unique: true)
 
     # The prompt text (Go template syntax)
-    text: String!
+    text: String
 
     # Human-readable description of what this prompt does
     description: String
 
     # Template variables extracted from the text (e.g., ["BookTitle", "PageCount"])
-    variables: [String!]
+    variables: [String]
 
     # Hash of the embedded file content, used for auto-sync detection
     embedded_hash: String

@@ -97,6 +97,10 @@ shelf-go/
 pages, _ := defra.Query(ctx, `{ pages(filter: {...}) { ... } }`)
 ```
 
+**DefraDB Schema Limitations:**
+- **No NonNull fields** - Use `field: String` not `field: String!`
+- Schemas in `internal/schema/schemas/*.graphql`
+
 **2. Jobs for all mutations**
 ```go
 // All work goes through jobs
@@ -297,6 +301,7 @@ git branch --show-current
 - All state in DefraDB, not files
 - Jobs for mutations
 - Provider workers for rate limits
+- **NO NonNull fields** - DefraDB doesn't support `!` in GraphQL schemas (e.g., use `key: String` not `key: String!`)
 
 **4. ENDPOINT PATTERN (Go)**
 - Each endpoint defines both HTTP route AND CLI command
