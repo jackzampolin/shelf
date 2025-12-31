@@ -1,5 +1,5 @@
 type Config {
-    key: String! @index(unique: true)
-    value: JSON!
+    key: String @index(unique: true)
+    value: JSON
     description: String
 }

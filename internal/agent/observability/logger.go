@@ -166,14 +166,14 @@ func (l *Logger) Save(ctx context.Context, success bool, iterations int, result 
 // Schema returns the DefraDB schema for agent observability.
 const Schema = `
 type AgentRun {
-	agent_id: String! @index
-	agent_type: String! @index
-	book_id: String! @index
+	agent_id: String @index
+	agent_type: String @index
+	book_id: String @index
 	job_id: String @index
-	started_at: DateTime!
+	started_at: DateTime
 	completed_at: DateTime
-	iterations: Int!
-	success: Boolean!
+	iterations: Int
+	success: Boolean
 	error: String
 	messages_json: String
 	tool_calls_json: String
