@@ -35,12 +35,12 @@ func mockDefraServer(t *testing.T, handler func(query string) map[string]any) *h
 
 func TestDefraStore_Get(t *testing.T) {
 	server := mockDefraServer(t, func(query string) map[string]any {
-		if strings.Contains(query, `key: {_eq: "providers.ocr.mistral.type"}`) {
+		if strings.Contains(query, `name: {_eq: "providers.ocr.mistral.type"}`) {
 			return map[string]any{
 				"Config": []any{
 					map[string]any{
 						"_docID":      "doc123",
-						"key":         "providers.ocr.mistral.type",
+						"name":        "providers.ocr.mistral.type",
 						"value":       `"mistral-ocr"`,
 						"description": "OCR provider type",
 					},
@@ -87,13 +87,13 @@ func TestDefraStore_GetAll(t *testing.T) {
 			"Config": []any{
 				map[string]any{
 					"_docID":      "doc1",
-					"key":         "providers.ocr.mistral.type",
+					"name":         "providers.ocr.mistral.type",
 					"value":       `"mistral-ocr"`,
 					"description": "OCR provider type",
 				},
 				map[string]any{
 					"_docID":      "doc2",
-					"key":         "providers.llm.openrouter.model",
+					"name":         "providers.llm.openrouter.model",
 					"value":       `"gpt-4"`,
 					"description": "LLM model name",
 				},
@@ -128,17 +128,17 @@ func TestDefraStore_GetByPrefix(t *testing.T) {
 			"Config": []any{
 				map[string]any{
 					"_docID": "doc1",
-					"key":    "providers.ocr.mistral.type",
+					"name":    "providers.ocr.mistral.type",
 					"value":  `"mistral-ocr"`,
 				},
 				map[string]any{
 					"_docID": "doc2",
-					"key":    "providers.ocr.paddle.type",
+					"name":    "providers.ocr.paddle.type",
 					"value":  `"deepinfra"`,
 				},
 				map[string]any{
 					"_docID": "doc3",
-					"key":    "providers.llm.openrouter.type",
+					"name":    "providers.llm.openrouter.type",
 					"value":  `"openrouter"`,
 				},
 			},

@@ -1,4 +1,4 @@
-package job
+package ocr
 
 import (
 	"context"
@@ -54,9 +54,44 @@ func (j *Job) HandleExtractComplete(ctx context.Context, info WorkUnitInfo, resu
 	// Mark extraction done
 	state.ExtractDone = true
 
-	// Persist to DefraDB using common function
-	common.PersistExtractState(ctx, state.PageDocID)
+	// Persist to DefraDB
+	j.PersistExtractState(ctx, pageNum)
 
 	// Generate OCR work units now that image is on disk
-	return j.GeneratePageWorkUnits(ctx, pageNum, state), nil
+	return j.GenerateOcrWorkUnitsForPage(pageNum), nil
+}
+
+// PersistExtractState saves extraction completion to DefraDB.
+func (j *Job) PersistExtractState(ctx context.Context, pageNum int) {
+	state := j.PageState[pageNum]
+	if state == nil {
+		return
+	}
+	common.PersistExtractState(ctx, state.PageDocID)
+}
+
+// GenerateOcrWorkUnitsForPage creates OCR work units for a single page.
+func (j *Job) GenerateOcrWorkUnitsForPage(pageNum int) []jobs.WorkUnit {
+	var units []jobs.WorkUnit
+	state := j.PageState[pageNum]
+	if state == nil {
+		return units
+	}
+
+	for _, provider := range j.OcrProviders {
+		if !state.OcrDone[provider] {
+			unit := j.CreateOcrWorkUnit(pageNum, provider)
+			if unit != nil {
+				units = append(units, *unit)
+			}
+		}
+	}
+	return units
+}
+
+// NeedsExtraction checks if a page needs extraction (image doesn't exist).
+func (j *Job) NeedsExtraction(pageNum int) bool {
+	state := j.PageState[pageNum]
+	extractDone := state != nil && state.ExtractDone
+	return common.NeedsExtraction(j.HomeDir, j.BookID, pageNum, extractDone)
 }
