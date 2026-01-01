@@ -7,6 +7,8 @@ import (
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
+	"github.com/jackzampolin/shelf/internal/jobs/ocr"
 )
 
 // LabelThresholdForBookOps is the number of labeled pages before triggering book-level operations.
@@ -31,17 +33,11 @@ const FrontMatterPageCount = 50
 const ConsecutiveFrontMatterRequired = 50
 
 // PageState tracks the processing state of a single page.
+// Embeds ocr.PageState for OCR-related fields.
 type PageState struct {
-	PageDocID string // DefraDB document ID for the Page record
+	*ocr.PageState // Embedded: PageDocID, ExtractDone, OcrResults
 
-	// Extraction state (from PDF)
-	ExtractDone bool
-
-	// OCR state per provider
-	OcrResults map[string]string // provider -> OCR text
-	OcrDone    map[string]bool   // provider -> completed
-
-	// Pipeline state
+	// Pipeline state (beyond OCR)
 	BlendDone   bool
 	BlendedText string // Cached blend result for label work unit
 	LabelDone   bool
@@ -50,8 +46,7 @@ type PageState struct {
 // NewPageState creates a new page state.
 func NewPageState() *PageState {
 	return &PageState{
-		OcrResults: make(map[string]string),
-		OcrDone:    make(map[string]bool),
+		PageState: ocr.NewPageState(),
 	}
 }
 
@@ -155,20 +150,26 @@ type BookState struct {
 // MaxPageOpRetries is the maximum number of retries for page-level operations.
 const MaxPageOpRetries = 3
 
+// WorkUnitType constants for type-safe work unit handling.
+// Uses ocr.WorkUnitTypeExtract and ocr.WorkUnitTypeOCR for shared types.
+const (
+	WorkUnitTypeBlend      = "blend"
+	WorkUnitTypeLabel      = "label"
+	WorkUnitTypeMetadata   = "metadata"
+	WorkUnitTypeTocFinder  = "toc_finder"
+	WorkUnitTypeTocExtract = "toc_extract"
+)
+
 // WorkUnitInfo tracks pending work units.
 type WorkUnitInfo struct {
 	PageNum    int
-	UnitType   string // "extract", "ocr", "blend", "label", "metadata", "toc_finder", "toc_extract"
+	UnitType   string // Use WorkUnitType* constants or ocr.WorkUnitType* for extract/ocr
 	Provider   string // for OCR units
 	RetryCount int    // number of times this work unit has been retried
 }
 
-// PDFInfo describes a PDF file and its page range.
-type PDFInfo struct {
-	Path      string // Full path to the PDF
-	StartPage int    // First page number (1-indexed, cumulative)
-	EndPage   int    // Last page number (inclusive)
-}
+// PDFInfo is an alias for common.PDFInfo for backwards compatibility.
+type PDFInfo = common.PDFInfo
 
 // Job processes all pages through Extract -> OCR -> Blend -> Label,
 // then triggers book-level operations (metadata, ToC).
@@ -189,7 +190,7 @@ type Job struct {
 	DebugAgents      bool // Enable debug logging for agent executions
 
 	// PDF sources for extraction
-	PDFs []PDFInfo // Sorted by StartPage
+	PDFs common.PDFList // Sorted by StartPage
 
 	// Job state
 	RecordID string
@@ -238,7 +239,7 @@ type Config struct {
 	BookID           string
 	TotalPages       int
 	HomeDir          *home.Dir
-	PDFs             []PDFInfo // PDF sources for extraction
+	PDFs             common.PDFList // PDF sources for extraction
 	OcrProviders     []string
 	BlendProvider    string
 	LabelProvider    string
@@ -322,14 +323,7 @@ func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 // FindPDFForPage returns the PDF path and page number within that PDF for a given output page number.
 // Returns empty string and 0 if page is out of range.
 func (j *Job) FindPDFForPage(pageNum int) (pdfPath string, pageInPDF int) {
-	for _, pdf := range j.PDFs {
-		if pageNum >= pdf.StartPage && pageNum <= pdf.EndPage {
-			// pageInPDF is 1-indexed within this PDF
-			pageInPDF = pageNum - pdf.StartPage + 1
-			return pdf.Path, pageInPDF
-		}
-	}
-	return "", 0
+	return j.PDFs.FindPDFForPage(pageNum)
 }
 
 // ProviderProgress returns progress by provider for the Progress() method.
@@ -352,7 +346,7 @@ func (j *Job) ProviderProgress() map[string]jobs.ProviderProgress {
 	for _, provider := range j.OcrProviders {
 		completed := 0
 		for _, state := range j.PageState {
-			if state.OcrDone[provider] {
+			if state.OcrComplete(provider) {
 				completed++
 			}
 		}

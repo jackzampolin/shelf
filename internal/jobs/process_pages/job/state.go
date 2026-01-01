@@ -93,9 +93,9 @@ func (j *Job) LoadPageState(ctx context.Context) error {
 				}
 				provider, _ := result["provider"].(string)
 				text, _ := result["text"].(string)
-				if provider != "" && text != "" {
-					state.OcrResults[provider] = text
-					state.OcrDone[provider] = true
+				if provider != "" {
+					// Mark as complete even if text is empty (blank page)
+					state.MarkOcrComplete(provider, text)
 				}
 			}
 		}
@@ -244,9 +244,9 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 	// Check if OCR is needed
 	allOcrDone := true
 	for _, provider := range j.OcrProviders {
-		if !state.OcrDone[provider] {
+		if !state.OcrComplete(provider) {
 			allOcrDone = false
-			unit := j.CreateOcrWorkUnit(pageNum, provider)
+			unit := j.CreateOcrWorkUnit(ctx, pageNum, provider)
 			if unit != nil {
 				units = append(units, *unit)
 			}

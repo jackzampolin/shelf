@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { createFileRoute, Link, useNavigate, Outlet, useRouterState } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/react'
+import { Disclosure, DisclosureButton, DisclosurePanel, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { client, unwrap } from '@/api/client'
 
 export const Route = createFileRoute('/books/$bookId')({
@@ -30,11 +30,12 @@ function BookDetailPage() {
   const [agentLogModalOpen, setAgentLogModalOpen] = useState(false)
   const [selectedAgentLogId, setSelectedAgentLogId] = useState<string | null>(null)
 
-  const startProcessingMutation = useMutation({
-    mutationFn: async () =>
+  const startJobMutation = useMutation({
+    mutationFn: async (jobType?: string) =>
       unwrap(
         await client.POST('/api/jobs/start/{book_id}', {
           params: { path: { book_id: bookId } },
+          body: jobType ? { job_type: jobType } : undefined,
         })
       ),
     onSuccess: (data) => {
@@ -45,6 +46,12 @@ function BookDetailPage() {
       }
     },
   })
+
+  // Available job types for the dropdown
+  const jobTypes = [
+    { id: 'process-pages', label: 'Full Pipeline', description: 'OCR → Blend → Label → Metadata → ToC' },
+    { id: 'ocr', label: 'OCR Only', description: 'Run OCR on all pages' },
+  ]
 
   const { data: book, isLoading, error } = useQuery({
     queryKey: ['books', bookId],
@@ -148,19 +155,53 @@ function BookDetailPage() {
           >
             Prompts
           </Link>
-          {book.status === 'ingested' && (
-            <button
-              onClick={() => startProcessingMutation.mutate()}
-              disabled={startProcessingMutation.isPending}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {startProcessingMutation.isPending ? 'Starting...' : 'Start Processing'}
-            </button>
+          {/* Job buttons - show for ingested or complete books */}
+          {(book.status === 'ingested' || book.status === 'complete') && (
+            <div className="flex items-center">
+              {/* Main Start Processing button */}
+              <button
+                onClick={() => startJobMutation.mutate(undefined)}
+                disabled={startJobMutation.isPending}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-l-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {startJobMutation.isPending ? 'Starting...' : 'Start Processing'}
+              </button>
+              {/* Dropdown for other job types */}
+              <Menu as="div" className="relative">
+                <MenuButton
+                  disabled={startJobMutation.isPending}
+                  className="inline-flex items-center px-2 py-2 border border-transparent text-sm font-medium rounded-r-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed border-l border-blue-500"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </MenuButton>
+                <MenuItems className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                  <div className="py-1">
+                    {jobTypes.map((job) => (
+                      <MenuItem key={job.id}>
+                        {({ active }) => (
+                          <button
+                            onClick={() => startJobMutation.mutate(job.id)}
+                            className={`${
+                              active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
+                            } block w-full text-left px-4 py-2 text-sm`}
+                          >
+                            <div className="font-medium">{job.label}</div>
+                            <div className="text-xs text-gray-500">{job.description}</div>
+                          </button>
+                        )}
+                      </MenuItem>
+                    ))}
+                  </div>
+                </MenuItems>
+              </Menu>
+            </div>
           )}
         </div>
-        {startProcessingMutation.isError && (
+        {startJobMutation.isError && (
           <p className="text-sm text-red-600 mt-2">
-            Error: {startProcessingMutation.error?.message || 'Failed to start processing'}
+            Error: {startJobMutation.error?.message || 'Failed to start job'}
           </p>
         )}
       </div>

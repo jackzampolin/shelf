@@ -351,7 +351,7 @@ func (j *Job) createRetryUnit(ctx context.Context, info WorkUnitInfo, logger *sl
 	case "extract":
 		unit = j.CreateExtractWorkUnit(info.PageNum)
 	case "ocr":
-		unit = j.CreateOcrWorkUnit(info.PageNum, info.Provider)
+		unit = j.CreateOcrWorkUnit(ctx, info.PageNum, info.Provider)
 	case "blend":
 		unit = j.CreateBlendWorkUnit(info.PageNum, state)
 	case "label":
@@ -388,7 +388,7 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		}
 		allOcr := true
 		for _, provider := range j.OcrProviders {
-			if !state.OcrDone[provider] {
+			if !state.OcrComplete(provider) {
 				allOcr = false
 				break
 			}

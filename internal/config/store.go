@@ -13,6 +13,9 @@ import (
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
+// ErrAlreadyExists is returned when trying to create a document that already exists.
+var ErrAlreadyExists = errors.New("document already exists")
+
 // ErrInvalidKey is returned when a config key contains invalid characters.
 var ErrInvalidKey = errors.New("invalid config key")
 
@@ -55,6 +58,9 @@ type Store interface {
 }
 
 // Entry represents a single configuration entry.
+// Note: Key maps to "name" in the DefraDB schema. We use "key" in the Go API
+// because it's more semantically correct for a key-value config store.
+// The json:"key" tag is for API serialization; DB queries use "name" directly.
 type Entry struct {
 	Key         string `json:"key"`
 	Value       any    `json:"value"`
@@ -75,9 +81,9 @@ func NewStore(client *defra.Client) *DefraStore {
 // Get returns a single config entry by key.
 func (s *DefraStore) Get(ctx context.Context, key string) (*Entry, error) {
 	query := fmt.Sprintf(`{
-		Config(filter: {key: {_eq: %q}}) {
+		Config(filter: {name: {_eq: %q}}) {
 			_docID
-			key
+			name
 			value
 			description
 		}
@@ -116,7 +122,7 @@ func (s *DefraStore) Set(ctx context.Context, key string, value any, description
 	}
 
 	input := map[string]any{
-		"key":         key,
+		"name":        key,
 		"value":       string(valueJSON),
 		"description": description,
 	}
@@ -131,6 +137,11 @@ func (s *DefraStore) Set(ctx context.Context, key string, value any, description
 		// Create new entry
 		_, err = s.client.Create(ctx, "Config", input)
 		if err != nil {
+			// If document already exists, that's fine - it's already seeded
+			if strings.Contains(err.Error(), "already exists") {
+				slog.Debug("config entry already seeded", "key", key)
+				return nil
+			}
 			return fmt.Errorf("create failed: %w", err)
 		}
 	}
@@ -142,7 +153,7 @@ func (s *DefraStore) GetAll(ctx context.Context) (map[string]Entry, error) {
 	query := `{
 		Config {
 			_docID
-			key
+			name
 			value
 			description
 		}
@@ -227,7 +238,7 @@ func parseConfigEntries(data map[string]any) ([]Entry, error) {
 		if v, ok := doc["_docID"].(string); ok {
 			entry.DocID = v
 		}
-		if v, ok := doc["key"].(string); ok {
+		if v, ok := doc["name"].(string); ok {
 			entry.Key = v
 		}
 		if v, ok := doc["description"].(string); ok {

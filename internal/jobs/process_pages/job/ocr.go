@@ -2,98 +2,63 @@ package job
 
 import (
 	"context"
-	"fmt"
-	"os"
 
-	"github.com/google/uuid"
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/ocr"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateOcrWorkUnit creates an OCR work unit for a page and provider.
-func (j *Job) CreateOcrWorkUnit(pageNum int, provider string) *jobs.WorkUnit {
-	imagePath := j.HomeDir.SourceImagePath(j.BookID, pageNum)
-	imageData, err := os.ReadFile(imagePath)
-	if err != nil {
-		return nil // Skip if image not found
-	}
-
-	unitID := uuid.New().String()
-	j.RegisterWorkUnit(unitID, WorkUnitInfo{
-		PageNum:  pageNum,
-		UnitType: "ocr",
-		Provider: provider,
-	})
-
-	metrics := j.MetricsFor()
-	metrics.ItemKey = fmt.Sprintf("page_%04d_%s", pageNum, provider)
-
-	return &jobs.WorkUnit{
-		ID:       unitID,
-		Type:     jobs.WorkUnitTypeOCR,
-		Provider: provider,
-		JobID:    j.RecordID,
-		OCRRequest: &jobs.OCRWorkRequest{
-			Image:   imageData,
-			PageNum: pageNum,
+// Uses the shared ocr.CreateOcrWorkUnitFunc.
+func (j *Job) CreateOcrWorkUnit(ctx context.Context, pageNum int, provider string) *jobs.WorkUnit {
+	unit, err := ocr.CreateOcrWorkUnitFunc(
+		ocr.OcrWorkUnitParams{
+			HomeDir:  j.HomeDir,
+			BookID:   j.BookID,
+			JobID:    j.RecordID,
+			PageNum:  pageNum,
+			Provider: provider,
+			Stage:    j.Type(),
 		},
-		Metrics: metrics,
+		func(unitID string) {
+			j.RegisterWorkUnit(unitID, WorkUnitInfo{
+				PageNum:  pageNum,
+				UnitType: "ocr",
+				Provider: provider,
+			})
+		},
+	)
+	if err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("failed to create OCR work unit",
+				"page_num", pageNum,
+				"provider", provider,
+				"error", err)
+		}
+		return nil
 	}
+	return unit
 }
 
 // HandleOcrComplete processes OCR completion.
+// Uses the shared ocr.HandleOcrResultFunc and triggers blend if all OCR done.
 func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
 	state := j.PageState[info.PageNum]
-	if state == nil {
-		return nil, fmt.Errorf("no state for page %d", info.PageNum)
+
+	allDone, err := ocr.HandleOcrResultFunc(ctx, ocr.HandleOcrResultParams{
+		PageNum:   info.PageNum,
+		Provider:  info.Provider,
+		PageDocID: state.PageDocID,
+		Result:    result.OCRResult,
+	}, state.PageState, j.OcrProviders)
+
+	if err != nil {
+		return nil, err
 	}
 
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return nil, fmt.Errorf("defra sink not in context")
-	}
-
-	if result.OCRResult != nil {
-		// Fire-and-forget write - sink batches these
-		// In-memory state is source of truth during execution; DB is recovery source
-		sink.Send(defra.WriteOp{
-			Collection: "OcrResult",
-			Document: map[string]any{
-				"page_id":  state.PageDocID,
-				"provider": info.Provider,
-				"text":     result.OCRResult.Text,
-			},
-			Op: defra.OpCreate,
-		})
-
-		// Update in-memory state immediately (no blocking)
-		state.OcrResults[info.Provider] = result.OCRResult.Text
-		state.OcrDone[info.Provider] = true
-	}
-
-	// Check if all OCR providers are done
-	allOcrDone := true
-	for _, provider := range j.OcrProviders {
-		if !state.OcrDone[provider] {
-			allOcrDone = false
-			break
-		}
-	}
-
-	// If all OCR done, mark complete and trigger blend
+	// If all OCR done, trigger blend
 	var units []jobs.WorkUnit
-	if allOcrDone {
-		// Fire-and-forget - no need to block
-		sink.Send(defra.WriteOp{
-			Collection: "Page",
-			DocID:      state.PageDocID,
-			Document: map[string]any{
-				"ocr_complete": true,
-			},
-			Op: defra.OpUpdate,
-		})
-
+	if allDone {
 		blendUnit := j.CreateBlendWorkUnit(info.PageNum, state)
 		if blendUnit != nil {
 			units = append(units, *blendUnit)
