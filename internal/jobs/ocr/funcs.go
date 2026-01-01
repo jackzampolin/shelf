@@ -28,16 +28,20 @@ type OcrWorkUnitParams struct {
 }
 
 // CreateOcrWorkUnitFunc creates an OCR work unit for a page and provider.
-// Returns nil if the image file doesn't exist.
+// Returns (nil, nil) if the image file doesn't exist (expected case - needs extraction).
+// Returns (nil, error) for unexpected errors like permission denied.
 // The registerFn callback is called with the unit ID for tracking.
 func CreateOcrWorkUnitFunc(
 	params OcrWorkUnitParams,
 	registerFn func(unitID string),
-) *jobs.WorkUnit {
+) (*jobs.WorkUnit, error) {
 	imagePath := params.HomeDir.SourceImagePath(params.BookID, params.PageNum)
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
-		return nil // Skip if image not found
+		if os.IsNotExist(err) {
+			return nil, nil // Expected: image needs extraction first
+		}
+		return nil, fmt.Errorf("failed to read image %s: %w", imagePath, err)
 	}
 
 	unitID := uuid.New().String()
@@ -60,7 +64,7 @@ func CreateOcrWorkUnitFunc(
 			Stage:   params.Stage,
 			ItemKey: fmt.Sprintf("page_%04d_%s", params.PageNum, params.Provider),
 		},
-	}
+	}, nil
 }
 
 // HandleOcrResultParams contains parameters for handling OCR completion.
@@ -101,8 +105,7 @@ func HandleOcrResultFunc(
 		})
 
 		// Update in-memory state immediately
-		state.OcrResults[params.Provider] = params.Result.Text
-		state.OcrDone[params.Provider] = true
+		state.MarkOcrComplete(params.Provider, params.Result.Text)
 	}
 
 	// Check if all OCR providers are done
@@ -126,7 +129,7 @@ func NeedsOcr(state *PageState, provider string) bool {
 	if state == nil {
 		return true
 	}
-	return !state.OcrDone[provider]
+	return !state.OcrComplete(provider)
 }
 
 // CountOcrComplete counts how many pages have all OCR providers complete.
@@ -144,7 +147,7 @@ func CountOcrComplete(pageState map[int]*PageState, providers []string) int {
 func CountProviderComplete(pageState map[int]*PageState, provider string) int {
 	count := 0
 	for _, state := range pageState {
-		if state.OcrDone[provider] {
+		if state.OcrComplete(provider) {
 			count++
 		}
 	}

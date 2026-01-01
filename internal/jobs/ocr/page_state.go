@@ -8,23 +8,34 @@ type PageState struct {
 	// Extraction state
 	ExtractDone bool
 
-	// OCR state per provider
+	// OCR state per provider.
+	// Key presence indicates completion; value is the OCR text (may be empty for blank pages).
+	// Use OcrComplete() to check completion, MarkOcrComplete() to set.
 	OcrResults map[string]string // provider -> OCR text
-	OcrDone    map[string]bool   // provider -> completed
 }
 
 // NewPageState creates a new page state with initialized maps.
 func NewPageState() *PageState {
 	return &PageState{
 		OcrResults: make(map[string]string),
-		OcrDone:    make(map[string]bool),
 	}
+}
+
+// OcrComplete returns true if OCR is complete for the given provider.
+func (p *PageState) OcrComplete(provider string) bool {
+	_, ok := p.OcrResults[provider]
+	return ok
+}
+
+// MarkOcrComplete marks OCR as complete for a provider with the given result.
+func (p *PageState) MarkOcrComplete(provider, text string) {
+	p.OcrResults[provider] = text
 }
 
 // AllOcrDone returns true if all providers have completed OCR for this page.
 func (p *PageState) AllOcrDone(providers []string) bool {
 	for _, provider := range providers {
-		if !p.OcrDone[provider] {
+		if !p.OcrComplete(provider) {
 			return false
 		}
 	}
@@ -37,13 +48,9 @@ func (p *PageState) Clone() *PageState {
 		PageDocID:   p.PageDocID,
 		ExtractDone: p.ExtractDone,
 		OcrResults:  make(map[string]string),
-		OcrDone:     make(map[string]bool),
 	}
 	for k, v := range p.OcrResults {
 		clone.OcrResults[k] = v
-	}
-	for k, v := range p.OcrDone {
-		clone.OcrDone[k] = v
 	}
 	return clone
 }

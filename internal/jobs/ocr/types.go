@@ -1,6 +1,7 @@
 package ocr
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/jackzampolin/shelf/internal/home"
@@ -9,6 +10,12 @@ import (
 
 // JobType is the type identifier for OCR jobs.
 const JobType = "ocr"
+
+// WorkUnitType constants for type-safe work unit handling.
+const (
+	WorkUnitTypeExtract = "extract"
+	WorkUnitTypeOCR     = "ocr"
+)
 
 // Config for creating a new OCR job.
 type Config struct {
@@ -19,11 +26,28 @@ type Config struct {
 	OcrProviders []string
 }
 
+// Validate checks that the Config has all required fields set.
+func (c Config) Validate() error {
+	if c.BookID == "" {
+		return fmt.Errorf("BookID is required")
+	}
+	if c.TotalPages <= 0 {
+		return fmt.Errorf("TotalPages must be positive")
+	}
+	if c.HomeDir == nil {
+		return fmt.Errorf("HomeDir is required")
+	}
+	if len(c.OcrProviders) == 0 {
+		return fmt.Errorf("at least one OcrProvider is required")
+	}
+	return nil
+}
+
 // WorkUnitInfo tracks pending work units for the OCR job.
 type WorkUnitInfo struct {
 	PageNum    int
 	Provider   string // Empty for extract work units
-	UnitType   string // "extract" or "ocr"
+	UnitType   string // Use WorkUnitTypeExtract or WorkUnitTypeOCR constants
 	RetryCount int
 }
 
@@ -31,26 +55,20 @@ type WorkUnitInfo struct {
 type Job struct {
 	mu sync.Mutex
 
-	// Configuration
+	// Configuration (immutable after construction)
 	BookID       string
 	TotalPages   int
 	HomeDir      *home.Dir
 	PDFs         common.PDFList // PDF sources for extraction
 	OcrProviders []string
 
-	// Job state
-	RecordID string
-	IsDone   bool
-
-	// Page tracking
-	PageState map[int]*PageState // page_num -> state
-
-	// Work unit tracking
-	PendingUnits map[string]WorkUnitInfo // work_unit_id -> info
-
-	// Counts for progress
-	TotalExpected  int // Total work units expected (pages × providers)
-	TotalCompleted int // Work units completed
+	// Job state (mutable, protected by mu)
+	RecordID       string
+	isDone         bool
+	pageState      map[int]*PageState    // page_num -> state
+	pendingUnits   map[string]WorkUnitInfo // work_unit_id -> info
+	totalExpected  int // Total work units expected (pages × providers)
+	totalCompleted int // Work units completed
 }
 
 // New creates a new OCR job.
@@ -61,7 +79,7 @@ func New(cfg Config) *Job {
 		HomeDir:      cfg.HomeDir,
 		PDFs:         cfg.PDFs,
 		OcrProviders: cfg.OcrProviders,
-		PageState:    make(map[int]*PageState),
-		PendingUnits: make(map[string]WorkUnitInfo),
+		pageState:    make(map[int]*PageState),
+		pendingUnits: make(map[string]WorkUnitInfo),
 	}
 }

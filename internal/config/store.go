@@ -58,6 +58,9 @@ type Store interface {
 }
 
 // Entry represents a single configuration entry.
+// Note: Key maps to "name" in the DefraDB schema. We use "key" in the Go API
+// because it's more semantically correct for a key-value config store.
+// The json:"key" tag is for API serialization; DB queries use "name" directly.
 type Entry struct {
 	Key         string `json:"key"`
 	Value       any    `json:"value"`

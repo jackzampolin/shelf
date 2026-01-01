@@ -35,7 +35,7 @@ const ConsecutiveFrontMatterRequired = 50
 // PageState tracks the processing state of a single page.
 // Embeds ocr.PageState for OCR-related fields.
 type PageState struct {
-	*ocr.PageState // Embedded: PageDocID, ExtractDone, OcrResults, OcrDone
+	*ocr.PageState // Embedded: PageDocID, ExtractDone, OcrResults
 
 	// Pipeline state (beyond OCR)
 	BlendDone   bool
@@ -150,10 +150,20 @@ type BookState struct {
 // MaxPageOpRetries is the maximum number of retries for page-level operations.
 const MaxPageOpRetries = 3
 
+// WorkUnitType constants for type-safe work unit handling.
+// Uses ocr.WorkUnitTypeExtract and ocr.WorkUnitTypeOCR for shared types.
+const (
+	WorkUnitTypeBlend      = "blend"
+	WorkUnitTypeLabel      = "label"
+	WorkUnitTypeMetadata   = "metadata"
+	WorkUnitTypeTocFinder  = "toc_finder"
+	WorkUnitTypeTocExtract = "toc_extract"
+)
+
 // WorkUnitInfo tracks pending work units.
 type WorkUnitInfo struct {
 	PageNum    int
-	UnitType   string // "extract", "ocr", "blend", "label", "metadata", "toc_finder", "toc_extract"
+	UnitType   string // Use WorkUnitType* constants or ocr.WorkUnitType* for extract/ocr
 	Provider   string // for OCR units
 	RetryCount int    // number of times this work unit has been retried
 }
@@ -336,7 +346,7 @@ func (j *Job) ProviderProgress() map[string]jobs.ProviderProgress {
 	for _, provider := range j.OcrProviders {
 		completed := 0
 		for _, state := range j.PageState {
-			if state.OcrDone[provider] {
+			if state.OcrComplete(provider) {
 				completed++
 			}
 		}

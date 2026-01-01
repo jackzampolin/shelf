@@ -6,9 +6,9 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 )
 
-// HandleOcrComplete processes OCR completion for a work unit.
-func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) error {
-	state := j.PageState[info.PageNum]
+// handleOcrComplete processes OCR completion for a work unit.
+func (j *Job) handleOcrComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) error {
+	state := j.pageState[info.PageNum]
 
 	allDone, err := HandleOcrResultFunc(ctx, HandleOcrResultParams{
 		PageNum:   info.PageNum,
@@ -23,16 +23,16 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 
 	// Update job-level completed count
 	if result.OCRResult != nil {
-		j.TotalCompleted++
+		j.totalCompleted++
 	}
 
 	_ = allDone // OCR job doesn't need to trigger next stage
 	return nil
 }
 
-// CreateRetryUnit creates a retry work unit for a failed operation.
-func (j *Job) CreateRetryUnit(info WorkUnitInfo) *jobs.WorkUnit {
-	state := j.PageState[info.PageNum]
+// createRetryUnit creates a retry work unit for a failed operation.
+func (j *Job) createRetryUnit(ctx context.Context, info WorkUnitInfo) *jobs.WorkUnit {
+	state := j.pageState[info.PageNum]
 	if state == nil {
 		return nil
 	}
@@ -40,22 +40,22 @@ func (j *Job) CreateRetryUnit(info WorkUnitInfo) *jobs.WorkUnit {
 	var unit *jobs.WorkUnit
 
 	switch info.UnitType {
-	case "extract":
-		unit = j.CreateExtractWorkUnit(info.PageNum)
+	case WorkUnitTypeExtract:
+		unit = j.createExtractWorkUnit(info.PageNum)
 		if unit != nil {
-			j.PendingUnits[unit.ID] = WorkUnitInfo{
+			j.pendingUnits[unit.ID] = WorkUnitInfo{
 				PageNum:    info.PageNum,
-				UnitType:   "extract",
+				UnitType:   WorkUnitTypeExtract,
 				RetryCount: info.RetryCount + 1,
 			}
 		}
-	case "ocr":
-		unit = j.CreateOcrWorkUnit(info.PageNum, info.Provider)
+	case WorkUnitTypeOCR:
+		unit = j.createOcrWorkUnit(ctx, info.PageNum, info.Provider)
 		if unit != nil {
-			j.PendingUnits[unit.ID] = WorkUnitInfo{
+			j.pendingUnits[unit.ID] = WorkUnitInfo{
 				PageNum:    info.PageNum,
 				Provider:   info.Provider,
-				UnitType:   "ocr",
+				UnitType:   WorkUnitTypeOCR,
 				RetryCount: info.RetryCount + 1,
 			}
 		}

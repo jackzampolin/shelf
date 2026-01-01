@@ -5,12 +5,13 @@ import (
 
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateOcrWorkUnit creates an OCR work unit for a page and provider.
 // Uses the shared ocr.CreateOcrWorkUnitFunc.
-func (j *Job) CreateOcrWorkUnit(pageNum int, provider string) *jobs.WorkUnit {
-	return ocr.CreateOcrWorkUnitFunc(
+func (j *Job) CreateOcrWorkUnit(ctx context.Context, pageNum int, provider string) *jobs.WorkUnit {
+	unit, err := ocr.CreateOcrWorkUnitFunc(
 		ocr.OcrWorkUnitParams{
 			HomeDir:  j.HomeDir,
 			BookID:   j.BookID,
@@ -27,6 +28,16 @@ func (j *Job) CreateOcrWorkUnit(pageNum int, provider string) *jobs.WorkUnit {
 			})
 		},
 	)
+	if err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("failed to create OCR work unit",
+				"page_num", pageNum,
+				"provider", provider,
+				"error", err)
+		}
+		return nil
+	}
+	return unit
 }
 
 // HandleOcrComplete processes OCR completion.

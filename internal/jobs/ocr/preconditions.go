@@ -20,9 +20,9 @@ func (e *PreconditionError) Error() string {
 	return fmt.Sprintf("precondition failed: %s", e.Condition)
 }
 
-// CheckPreconditions verifies all requirements are met before starting the job.
+// checkPreconditions verifies all requirements are met before starting the job.
 // Returns nil if all preconditions pass, otherwise returns a PreconditionError.
-func (j *Job) CheckPreconditions(ctx context.Context) error {
+func (j *Job) checkPreconditions(ctx context.Context) error {
 	// Check DefraDB client is available
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {

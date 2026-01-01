@@ -37,7 +37,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	defer j.mu.Unlock()
 
 	// Check basic preconditions (book exists, PDFs available)
-	if err := j.CheckPreconditions(ctx); err != nil {
+	if err := j.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
 
@@ -55,18 +55,18 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	}
 
 	// Load existing page state from DefraDB
-	if err := j.LoadPageState(ctx); err != nil {
+	if err := j.loadPageState(ctx); err != nil {
 		return nil, fmt.Errorf("failed to load page state: %w", err)
 	}
 
 	if logger != nil {
-		logger.Info("ocr.Start: loaded existing state", "existing_pages", len(j.PageState))
+		logger.Info("ocr.Start: loaded existing state", "existing_pages", len(j.pageState))
 	}
 
 	// Create page records for pages that don't exist yet
 	var newPageNums []int
 	for pageNum := 1; pageNum <= j.TotalPages; pageNum++ {
-		if j.PageState[pageNum] == nil {
+		if j.pageState[pageNum] == nil {
 			newPageNums = append(newPageNums, pageNum)
 		}
 	}
@@ -100,30 +100,30 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		for i, pageNum := range newPageNums {
 			state := NewPageState()
 			state.PageDocID = results[i].DocID
-			j.PageState[pageNum] = state
+			j.pageState[pageNum] = state
 		}
 	}
 
 	// Calculate expected work units
-	j.TotalExpected = j.TotalPages * len(j.OcrProviders)
+	j.totalExpected = j.TotalPages * len(j.OcrProviders)
 
 	// Count already completed
-	for _, state := range j.PageState {
+	for _, state := range j.pageState {
 		for _, provider := range j.OcrProviders {
-			if state.OcrDone[provider] {
-				j.TotalCompleted++
+			if state.OcrComplete(provider) {
+				j.totalCompleted++
 			}
 		}
 	}
 
 	if logger != nil {
 		logger.Info("ocr.Start: generating work units",
-			"total_expected", j.TotalExpected,
-			"already_completed", j.TotalCompleted)
+			"total_expected", j.totalExpected,
+			"already_completed", j.totalCompleted)
 	}
 
 	// Generate work units for all pages (extract + OCR)
-	units := j.GenerateAllWorkUnits()
+	units := j.generateAllWorkUnits(ctx)
 
 	if logger != nil {
 		logger.Info("ocr.Start: work units generated", "count", len(units))
@@ -131,7 +131,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 	// If no work units needed, we're already done
 	if len(units) == 0 {
-		j.IsDone = true
+		j.isDone = true
 	}
 
 	return units, nil
@@ -142,13 +142,20 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
-	// Get work unit info
-	info, ok := j.GetWorkUnit(result.WorkUnitID)
-	if !ok {
-		return nil, nil // Not our work unit
-	}
-
 	logger := svcctx.LoggerFrom(ctx)
+
+	// Get work unit info
+	info, ok := j.getWorkUnit(result.WorkUnitID)
+	if !ok {
+		// This is expected when the result is dispatched to multiple jobs
+		// and this job didn't create the work unit
+		if logger != nil {
+			logger.Debug("work unit not found in pending units",
+				"work_unit_id", result.WorkUnitID,
+				"job_id", j.RecordID)
+		}
+		return nil, nil
+	}
 
 	if !result.Success {
 		// Handle failure with retry
@@ -161,9 +168,9 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 					"retry_count", info.RetryCount,
 					"error", result.Error)
 			}
-			retryUnit := j.CreateRetryUnit(info)
+			retryUnit := j.createRetryUnit(ctx, info)
 			if retryUnit != nil {
-				j.RemoveWorkUnit(result.WorkUnitID)
+				j.removeWorkUnit(result.WorkUnitID)
 				return []jobs.WorkUnit{*retryUnit}, nil
 			}
 		}
@@ -176,7 +183,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 				"retry_count", info.RetryCount,
 				"error", result.Error)
 		}
-		j.RemoveWorkUnit(result.WorkUnitID)
+		j.removeWorkUnit(result.WorkUnitID)
 		return nil, fmt.Errorf("%s failed for page %d: %v",
 			info.UnitType, info.PageNum, result.Error)
 	}
@@ -186,23 +193,23 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 	// Handle successful completion based on work unit type
 	switch info.UnitType {
-	case "extract":
-		newUnits, err = j.HandleExtractComplete(ctx, info, result)
-	case "ocr":
-		err = j.HandleOcrComplete(ctx, info, result)
+	case WorkUnitTypeExtract:
+		newUnits, err = j.handleExtractComplete(ctx, info, result)
+	case WorkUnitTypeOCR:
+		err = j.handleOcrComplete(ctx, info, result)
 	default:
 		err = fmt.Errorf("unknown work unit type: %s", info.UnitType)
 	}
 
 	if err != nil {
-		j.RemoveWorkUnit(result.WorkUnitID)
+		j.removeWorkUnit(result.WorkUnitID)
 		return nil, err
 	}
 
-	j.RemoveWorkUnit(result.WorkUnitID)
+	j.removeWorkUnit(result.WorkUnitID)
 
 	// Check if job is complete
-	j.CheckCompletion()
+	j.checkCompletion()
 
 	return newUnits, nil
 }
@@ -211,7 +218,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 func (j *Job) Done() bool {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	return j.IsDone
+	return j.isDone
 }
 
 // Status returns the current status of the job.
@@ -221,7 +228,7 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 
 	// Count completed pages (all providers done)
 	pagesComplete := 0
-	for _, state := range j.PageState {
+	for _, state := range j.pageState {
 		if state.AllOcrDone(j.OcrProviders) {
 			pagesComplete++
 		}
@@ -232,10 +239,10 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		"total_pages":     fmt.Sprintf("%d", j.TotalPages),
 		"pages_complete":  fmt.Sprintf("%d", pagesComplete),
 		"providers":       fmt.Sprintf("%v", j.OcrProviders),
-		"total_expected":  fmt.Sprintf("%d", j.TotalExpected),
-		"total_completed": fmt.Sprintf("%d", j.TotalCompleted),
-		"pending_units":   fmt.Sprintf("%d", len(j.PendingUnits)),
-		"done":            fmt.Sprintf("%v", j.IsDone),
+		"total_expected":  fmt.Sprintf("%d", j.totalExpected),
+		"total_completed": fmt.Sprintf("%d", j.totalCompleted),
+		"pending_units":   fmt.Sprintf("%d", len(j.pendingUnits)),
+		"done":            fmt.Sprintf("%v", j.isDone),
 	}, nil
 }
 
@@ -248,8 +255,8 @@ func (j *Job) Progress() map[string]jobs.ProviderProgress {
 
 	for _, provider := range j.OcrProviders {
 		completed := 0
-		for _, state := range j.PageState {
-			if state.OcrDone[provider] {
+		for _, state := range j.pageState {
+			if state.OcrComplete(provider) {
 				completed++
 			}
 		}
@@ -270,8 +277,8 @@ func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 	}
 }
 
-// LoadPageState loads existing page state from DefraDB.
-func (j *Job) LoadPageState(ctx context.Context) error {
+// loadPageState loads existing page state from DefraDB.
+func (j *Job) loadPageState(ctx context.Context) error {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return fmt.Errorf("defra client not in context")
@@ -302,9 +309,16 @@ func (j *Job) LoadPageState(ctx context.Context) error {
 		return nil // No pages yet
 	}
 
-	for _, p := range pages {
+	logger := svcctx.LoggerFrom(ctx)
+
+	for i, p := range pages {
 		page, ok := p.(map[string]any)
 		if !ok {
+			if logger != nil {
+				logger.Warn("loadPageState: invalid page document type",
+					"index", i,
+					"type", fmt.Sprintf("%T", p))
+			}
 			continue
 		}
 
@@ -313,6 +327,11 @@ func (j *Job) LoadPageState(ctx context.Context) error {
 			pageNum = int(pn)
 		}
 		if pageNum == 0 {
+			if logger != nil {
+				logger.Warn("loadPageState: page missing or invalid page_num",
+					"index", i,
+					"page_num_raw", page["page_num"])
+			}
 			continue
 		}
 
@@ -324,31 +343,37 @@ func (j *Job) LoadPageState(ctx context.Context) error {
 
 		// Load OCR results
 		if ocrResults, ok := page["ocr_results"].([]any); ok {
-			for _, r := range ocrResults {
+			for ri, r := range ocrResults {
 				result, ok := r.(map[string]any)
 				if !ok {
+					if logger != nil {
+						logger.Warn("loadPageState: invalid OCR result type",
+							"page_num", pageNum,
+							"result_index", ri,
+							"type", fmt.Sprintf("%T", r))
+					}
 					continue
 				}
 				provider, _ := result["provider"].(string)
 				text, _ := result["text"].(string)
-				if provider != "" && text != "" {
-					state.OcrResults[provider] = text
-					state.OcrDone[provider] = true
+				if provider != "" {
+					// Mark as complete even if text is empty (blank page)
+					state.MarkOcrComplete(provider, text)
 				}
 			}
 		}
 
-		j.PageState[pageNum] = state
+		j.pageState[pageNum] = state
 	}
 
 	return nil
 }
 
-// CheckCompletion checks if all OCR work is complete.
-func (j *Job) CheckCompletion() {
+// checkCompletion checks if all OCR work is complete.
+func (j *Job) checkCompletion() {
 	// Check if all pages have all providers complete
 	for pageNum := 1; pageNum <= j.TotalPages; pageNum++ {
-		state := j.PageState[pageNum]
+		state := j.pageState[pageNum]
 		if state == nil {
 			return // Missing page state
 		}
@@ -357,5 +382,5 @@ func (j *Job) CheckCompletion() {
 		}
 	}
 
-	j.IsDone = true
+	j.isDone = true
 }
