@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/prompts/label"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -85,44 +85,11 @@ func (j *Job) HandleLabelComplete(ctx context.Context, info WorkUnitInfo, result
 		return nil, fmt.Errorf("label result missing for page %d", info.PageNum)
 	}
 
-	if err := j.SaveLabelResult(ctx, state, result.ChatResult.ParsedJSON); err != nil {
+	// Use common handler for persistence and state update
+	if err := common.SaveLabelResult(ctx, state, result.ChatResult.ParsedJSON); err != nil {
 		return nil, fmt.Errorf("failed to save label result: %w", err)
 	}
-	state.LabelDone = true
 
 	// Check if we should start book-level operations
 	return j.MaybeStartBookOperations(ctx), nil
-}
-
-// SaveLabelResult saves the label result to DefraDB.
-func (j *Job) SaveLabelResult(ctx context.Context, state *PageState, parsedJSON any) error {
-	labelResult, err := label.ParseResult(parsedJSON)
-	if err != nil {
-		return err
-	}
-
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	update := map[string]any{
-		"label_complete": true,
-	}
-
-	if labelResult.PageNumber != nil {
-		update["page_number_label"] = *labelResult.PageNumber
-	}
-	if labelResult.RunningHeader != nil {
-		update["running_header"] = *labelResult.RunningHeader
-	}
-
-	// Fire-and-forget - no need to block
-	sink.Send(defra.WriteOp{
-		Collection: "Page",
-		DocID:      state.PageDocID,
-		Document:   update,
-		Op:         defra.OpUpdate,
-	})
-	return nil
 }

@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -64,39 +64,8 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 		return nil, fmt.Errorf("no state for page %d", info.PageNum)
 	}
 
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return nil, fmt.Errorf("defra sink not in context")
-	}
-
-	if result.OCRResult != nil {
-		// Fire-and-forget write - sink batches these
-		sink.Send(defra.WriteOp{
-			Collection: "OcrResult",
-			Document: map[string]any{
-				"page_id":  state.PageDocID,
-				"provider": info.Provider,
-				"text":     result.OCRResult.Text,
-			},
-			Op: defra.OpCreate,
-		})
-
-		// Update in-memory state immediately
-		state.MarkOcrComplete(info.Provider, result.OCRResult.Text)
-	}
-
-	// Check if all OCR providers are done
-	allDone := state.AllOcrDone(j.Book.OcrProviders)
-
-	if allDone {
-		// Mark page as OCR complete
-		sink.Send(defra.WriteOp{
-			Collection: "Page",
-			DocID:      state.PageDocID,
-			Document:   map[string]any{"ocr_complete": true},
-			Op:         defra.OpUpdate,
-		})
-	}
+	// Use common handler for persistence and state update
+	allDone := common.PersistOCRResult(ctx, state, j.Book.OcrProviders, info.Provider, result.OCRResult)
 
 	// If all OCR done, trigger blend
 	var units []jobs.WorkUnit

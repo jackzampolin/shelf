@@ -2,14 +2,12 @@ package job
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/prompts/blend"
-	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateBlendWorkUnit creates a blend LLM work unit.
@@ -63,14 +61,12 @@ func (j *Job) HandleBlendComplete(ctx context.Context, info WorkUnitInfo, result
 		return nil, fmt.Errorf("blend result missing for page %d", info.PageNum)
 	}
 
-	blendedText, err := j.SaveBlendResult(ctx, state, result.ChatResult.ParsedJSON)
+	// Use common handler for persistence and state update
+	primaryProvider := j.Book.OcrProviders[0]
+	_, err := common.SaveBlendResult(ctx, state, primaryProvider, result.ChatResult.ParsedJSON)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save blend result: %w", err)
 	}
-
-	// Cache blended text for label work unit to avoid re-query
-	state.BlendedText = blendedText
-	state.BlendDone = true
 
 	var units []jobs.WorkUnit
 	labelUnit := j.CreateLabelWorkUnit(ctx, info.PageNum, state)
@@ -79,37 +75,4 @@ func (j *Job) HandleBlendComplete(ctx context.Context, info WorkUnitInfo, result
 	}
 
 	return units, nil
-}
-
-// SaveBlendResult saves the blend result to DefraDB and returns the blended text.
-func (j *Job) SaveBlendResult(ctx context.Context, state *PageState, parsedJSON any) (string, error) {
-	blendResult, err := blend.ParseResult(parsedJSON)
-	if err != nil {
-		return "", err
-	}
-
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return "", fmt.Errorf("defra sink not in context")
-	}
-
-	primaryProvider := j.Book.OcrProviders[0]
-	baseText := state.OcrResults[primaryProvider]
-	blendedText := blend.ApplyCorrections(baseText, blendResult.Corrections)
-
-	correctionsJSON, _ := json.Marshal(blendResult.Corrections)
-
-	// Fire-and-forget - no need to block
-	sink.Send(defra.WriteOp{
-		Collection: "Page",
-		DocID:      state.PageDocID,
-		Document: map[string]any{
-			"blend_markdown":    blendedText,
-			"blend_corrections": string(correctionsJSON),
-			"blend_confidence":  blendResult.Confidence,
-			"blend_complete":    true,
-		},
-		Op: defra.OpUpdate,
-	})
-	return blendedText, nil
 }
