@@ -15,7 +15,7 @@ import (
 // CreateOcrWorkUnit creates an OCR work unit for a page and provider.
 // Returns nil if the image file doesn't exist (expected case - needs extraction first).
 func (j *Job) CreateOcrWorkUnit(ctx context.Context, pageNum int, provider string) *jobs.WorkUnit {
-	imagePath := j.HomeDir.SourceImagePath(j.BookID, pageNum)
+	imagePath := j.Book.HomeDir.SourceImagePath(j.Book.BookID, pageNum)
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -49,7 +49,7 @@ func (j *Job) CreateOcrWorkUnit(ctx context.Context, pageNum int, provider strin
 			PageNum: pageNum,
 		},
 		Metrics: &jobs.WorkUnitMetrics{
-			BookID:  j.BookID,
+			BookID:  j.Book.BookID,
 			Stage:   j.Type(),
 			ItemKey: fmt.Sprintf("page_%04d_%s", pageNum, provider),
 		},
@@ -59,7 +59,7 @@ func (j *Job) CreateOcrWorkUnit(ctx context.Context, pageNum int, provider strin
 // HandleOcrComplete processes OCR completion.
 // Updates state, persists to DefraDB, and triggers blend if all OCR done.
 func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
-	state := j.PageState[info.PageNum]
+	state := j.Book.GetPage(info.PageNum)
 	if state == nil {
 		return nil, fmt.Errorf("no state for page %d", info.PageNum)
 	}
@@ -86,7 +86,7 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 	}
 
 	// Check if all OCR providers are done
-	allDone := state.AllOcrDone(j.OcrProviders)
+	allDone := state.AllOcrDone(j.Book.OcrProviders)
 
 	if allDone {
 		// Mark page as OCR complete

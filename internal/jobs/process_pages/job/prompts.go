@@ -34,11 +34,11 @@ func (j *Job) ResolvePrompts(ctx context.Context) error {
 		var cid string
 
 		if resolver != nil {
-			resolved, err := resolver.Resolve(ctx, key, j.BookID)
+			resolved, err := resolver.Resolve(ctx, key, j.Book.BookID)
 			if err != nil {
 				if logger != nil {
 					logger.Warn("failed to resolve prompt, using embedded default",
-						"key", key, "book_id", j.BookID, "error", err)
+						"key", key, "book_id", j.Book.BookID, "error", err)
 				}
 				// Fall through to use embedded default
 			} else {
@@ -46,7 +46,7 @@ func (j *Job) ResolvePrompts(ctx context.Context) error {
 				cid = resolved.CID
 				if resolved.IsOverride && logger != nil {
 					logger.Info("using book-level prompt override",
-						"key", key, "book_id", j.BookID)
+						"key", key, "book_id", j.Book.BookID)
 				}
 			}
 		}
@@ -56,12 +56,12 @@ func (j *Job) ResolvePrompts(ctx context.Context) error {
 			text = getEmbeddedDefault(key)
 		}
 
-		j.ResolvedPrompts[key] = text
-		j.ResolvedCIDs[key] = cid
+		j.Book.Prompts[key] = text
+		j.Book.PromptCIDs[key] = cid
 	}
 
 	if logger != nil {
-		logger.Debug("resolved prompts for job", "book_id", j.BookID, "count", len(j.ResolvedPrompts))
+		logger.Debug("resolved prompts for job", "book_id", j.Book.BookID, "count", len(j.Book.Prompts))
 	}
 
 	return nil
@@ -94,7 +94,7 @@ func getEmbeddedDefault(key string) string {
 // GetPrompt returns the resolved prompt text for a key.
 // Falls back to embedded default if not resolved.
 func (j *Job) GetPrompt(key string) string {
-	if text, ok := j.ResolvedPrompts[key]; ok && text != "" {
+	if text, ok := j.Book.Prompts[key]; ok && text != "" {
 		return text
 	}
 	return getEmbeddedDefault(key)
@@ -103,5 +103,5 @@ func (j *Job) GetPrompt(key string) string {
 // GetPromptCID returns the CID for a resolved prompt.
 // Returns empty string if not available (e.g., when using embedded default without DB sync).
 func (j *Job) GetPromptCID(key string) string {
-	return j.ResolvedCIDs[key]
+	return j.Book.PromptCIDs[key]
 }

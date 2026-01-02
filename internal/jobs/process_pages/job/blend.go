@@ -15,7 +15,7 @@ import (
 // CreateBlendWorkUnit creates a blend LLM work unit.
 func (j *Job) CreateBlendWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit {
 	var outputs []blend.OCROutput
-	for _, provider := range j.OcrProviders {
+	for _, provider := range j.Book.OcrProviders {
 		if text, ok := state.OcrResults[provider]; ok && text != "" {
 			outputs = append(outputs, blend.OCROutput{
 				ProviderName: provider,
@@ -39,7 +39,7 @@ func (j *Job) CreateBlendWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit 
 		SystemPromptOverride: j.GetPrompt(blend.PromptKey),
 	})
 	unit.ID = unitID
-	unit.Provider = j.BlendProvider
+	unit.Provider = j.Book.BlendProvider
 	unit.JobID = j.RecordID
 
 	metrics := j.MetricsFor()
@@ -53,7 +53,7 @@ func (j *Job) CreateBlendWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit 
 
 // HandleBlendComplete processes blend completion.
 func (j *Job) HandleBlendComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
-	state := j.PageState[info.PageNum]
+	state := j.Book.GetPage(info.PageNum)
 	if state == nil {
 		return nil, fmt.Errorf("no state for page %d", info.PageNum)
 	}
@@ -93,7 +93,7 @@ func (j *Job) SaveBlendResult(ctx context.Context, state *PageState, parsedJSON 
 		return "", fmt.Errorf("defra sink not in context")
 	}
 
-	primaryProvider := j.OcrProviders[0]
+	primaryProvider := j.Book.OcrProviders[0]
 	baseText := state.OcrResults[primaryProvider]
 	blendedText := blend.ApplyCorrections(baseText, blendResult.Corrections)
 

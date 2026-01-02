@@ -34,7 +34,7 @@ func (j *Job) CreateMetadataWorkUnit(ctx context.Context) *jobs.WorkUnit {
 		SystemPromptOverride: j.GetPrompt(metadata.SystemPromptKey),
 	})
 	unit.ID = unitID
-	unit.Provider = j.MetadataProvider
+	unit.Provider = j.Book.MetadataProvider
 	unit.JobID = j.RecordID
 
 	metrics := j.MetricsFor()
@@ -58,7 +58,7 @@ func (j *Job) LoadPagesForMetadata(ctx context.Context, maxPages int) ([]metadat
 			page_num
 			blend_markdown
 		}
-	}`, j.BookID)
+	}`, j.Book.BookID)
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
@@ -108,7 +108,7 @@ func (j *Job) HandleMetadataComplete(ctx context.Context, result jobs.WorkResult
 		return fmt.Errorf("failed to save metadata: %w", err)
 	}
 
-	j.BookState.Metadata.Complete()
+	j.Book.Metadata.Complete()
 	return nil
 }
 
@@ -148,7 +148,7 @@ func (j *Job) SaveMetadataResult(ctx context.Context, result metadata.Result) er
 	// Fire-and-forget - no need to block
 	sink.Send(defra.WriteOp{
 		Collection: "Book",
-		DocID:      j.BookID,
+		DocID:      j.Book.BookID,
 		Document:   update,
 		Op:         defra.OpUpdate,
 	})

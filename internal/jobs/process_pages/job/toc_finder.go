@@ -39,7 +39,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 					_docID
 				}
 			}
-		}`, j.BookID)
+		}`, j.Book.BookID)
 		resp, err := defraClient.Execute(ctx, query, nil)
 		if err == nil {
 			if books, ok := resp.Data["Book"].([]any); ok && len(books) > 0 {
@@ -78,7 +78,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 			// the relationship exists before we return
 			_, err = sink.SendSync(ctx, defra.WriteOp{
 				Collection: "Book",
-				DocID:      j.BookID,
+				DocID:      j.Book.BookID,
 				Document: map[string]any{
 					"toc_id": j.TocDocID,
 				},
@@ -96,14 +96,14 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 
 	// Create tools for the agent
 	tocTools := tools.New(tools.Config{
-		BookID:      j.BookID,
-		TotalPages:  j.TotalPages,
+		BookID:      j.Book.BookID,
+		TotalPages:  j.Book.TotalPages,
 		DefraClient: defraClient,
-		HomeDir:     j.HomeDir,
+		HomeDir:     j.Book.HomeDir,
 	})
 
 	// Create agent with resolved prompt (supports book-level overrides)
-	userPrompt := toc_finder.BuildUserPrompt(j.BookID, j.TotalPages, nil)
+	userPrompt := toc_finder.BuildUserPrompt(j.Book.BookID, j.Book.TotalPages, nil)
 	systemPrompt := j.GetPrompt(toc_finder.PromptKey)
 	j.TocAgent = agent.New(agent.Config{
 		Tools: tocTools,
@@ -114,9 +114,9 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 		MaxIterations: 25,
 		// Observability config
 		AgentType: "toc_finder",
-		BookID:    j.BookID,
+		BookID:    j.Book.BookID,
 		JobID:     j.RecordID,
-		Debug:     j.DebugAgents,
+		Debug:     j.Book.DebugAgents,
 	})
 
 	// Get first work unit from agent
@@ -166,7 +166,7 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 			}
 		}
 
-		j.BookState.TocFinder.Complete()
+		j.Book.TocFinder.Complete()
 		agentResult := j.TocAgent.Result()
 
 		if agentResult != nil && agentResult.Success {
@@ -175,15 +175,15 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 				if err := j.saveTocFinderResult(ctx, tocResult); err != nil {
 					return nil, fmt.Errorf("failed to save ToC finder result: %w", err)
 				}
-				j.BookState.TocFound = tocResult.ToCFound
+				j.Book.TocFound = tocResult.ToCFound
 				if tocResult.ToCPageRange != nil {
-					j.BookState.TocStartPage = tocResult.ToCPageRange.StartPage
-					j.BookState.TocEndPage = tocResult.ToCPageRange.EndPage
+					j.Book.TocStartPage = tocResult.ToCPageRange.StartPage
+					j.Book.TocEndPage = tocResult.ToCPageRange.EndPage
 				}
 			}
 		} else {
 			// Agent failed or no ToC found - mark finder as done with no ToC
-			j.BookState.TocFound = false
+			j.Book.TocFound = false
 			sink := svcctx.DefraSinkFrom(ctx)
 			if sink == nil {
 				return nil, fmt.Errorf("defra sink not in context")
@@ -247,7 +247,7 @@ func (j *Job) convertTocAgentUnits(agentUnits []agent.WorkUnit) []jobs.WorkUnit 
 			units = append(units, jobs.WorkUnit{
 				ID:          unitID,
 				Type:        jobs.WorkUnitTypeLLM,
-				Provider:    j.TocProvider,
+				Provider:    j.Book.TocProvider,
 				JobID:       j.RecordID,
 				ChatRequest: au.ChatRequest,
 				Tools:       au.Tools,

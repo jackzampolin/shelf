@@ -60,7 +60,7 @@ func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageS
 		SystemPromptOverride: j.GetPrompt(label.SystemPromptKey),
 	})
 	unit.ID = unitID
-	unit.Provider = j.LabelProvider
+	unit.Provider = j.Book.LabelProvider
 	unit.JobID = j.RecordID
 
 	metrics := j.MetricsFor()
@@ -75,7 +75,7 @@ func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageS
 // HandleLabelComplete processes label completion.
 // Must be called with j.Mu held.
 func (j *Job) HandleLabelComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
-	state := j.PageState[info.PageNum]
+	state := j.Book.GetPage(info.PageNum)
 	if state == nil {
 		return nil, fmt.Errorf("no state for page %d", info.PageNum)
 	}

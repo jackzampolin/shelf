@@ -53,7 +53,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 	logger := svcctx.LoggerFrom(ctx)
 	if logger != nil {
-		logger.Info("job.Start: loading page state", "book_id", j.BookID, "total_pages", j.TotalPages)
+		logger.Info("job.Start: loading page state", "book_id", j.Book.BookID, "total_pages", j.Book.TotalPages)
 	}
 
 	// Resolve prompts once at job start (supports book-level overrides)
@@ -67,7 +67,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	}
 
 	if logger != nil {
-		logger.Info("job.Start: loaded page state", "existing_pages", len(j.PageState))
+		logger.Info("job.Start: loaded page state", "existing_pages", j.Book.CountPages())
 	}
 
 	// Load book-level state
@@ -84,28 +84,28 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 	// Recover from crash during metadata operation
 	// If metadata was started but not done, reset to retry
-	if j.BookState.Metadata.IsStarted() {
-		j.BookState.Metadata.Fail(MaxBookOpRetries)
+	if j.Book.Metadata.IsStarted() {
+		j.Book.Metadata.Fail(MaxBookOpRetries)
 		j.PersistMetadataState(ctx)
 	}
 
 	// Recover from crash during ToC operations
 	// If ToC finder was started but not done and agent is nil, reset to retry
-	if j.BookState.TocFinder.IsStarted() && j.TocAgent == nil {
-		j.BookState.TocFinder.Fail(MaxBookOpRetries)
+	if j.Book.TocFinder.IsStarted() && j.TocAgent == nil {
+		j.Book.TocFinder.Fail(MaxBookOpRetries)
 		j.PersistTocFinderState(ctx)
 	}
 
 	// Same for ToC extract
-	if j.BookState.TocExtract.IsStarted() && j.TocAgent == nil {
-		j.BookState.TocExtract.Fail(MaxBookOpRetries)
+	if j.Book.TocExtract.IsStarted() && j.TocAgent == nil {
+		j.Book.TocExtract.Fail(MaxBookOpRetries)
 		j.PersistTocExtractState(ctx)
 	}
 
 	// First pass: identify pages that need creation
 	var newPageNums []int
-	for pageNum := 1; pageNum <= j.TotalPages; pageNum++ {
-		if j.PageState[pageNum] == nil {
+	for pageNum := 1; pageNum <= j.Book.TotalPages; pageNum++ {
+		if j.Book.GetPage(pageNum) == nil {
 			newPageNums = append(newPageNums, pageNum)
 		}
 	}
@@ -127,7 +127,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			ops[i] = defra.WriteOp{
 				Collection: "Page",
 				Document: map[string]any{
-					"book_id":          j.BookID,
+					"book_id":          j.Book.BookID,
 					"page_num":         pageNum,
 					"extract_complete": false,
 					"ocr_complete":     false,
@@ -144,11 +144,11 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			return nil, fmt.Errorf("failed to batch create page records: %w", err)
 		}
 
-		// Assign DocIDs to PageState
+		// Assign DocIDs to PageState via BookState
 		for i, pageNum := range newPageNums {
 			state := NewPageState()
 			state.PageDocID = results[i].DocID
-			j.PageState[pageNum] = state
+			j.Book.Pages[pageNum] = state
 		}
 
 		if logger != nil {
@@ -158,7 +158,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 	// Second pass: generate work units for all pages
 	var units []jobs.WorkUnit
-	for pageNum := 1; pageNum <= j.TotalPages; pageNum++ {
+	for pageNum := 1; pageNum <= j.Book.TotalPages; pageNum++ {
 		// Check for cancellation periodically
 		if pageNum%100 == 0 {
 			if err := checkCancelled(ctx); err != nil {
@@ -166,7 +166,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			}
 		}
 
-		state := j.PageState[pageNum]
+		state := j.Book.GetPage(pageNum)
 		if state == nil {
 			// Should not happen after batch create, but be safe
 			continue
@@ -217,13 +217,13 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		// Handle failures with retry logic
 		switch info.UnitType {
 		case "metadata":
-			j.BookState.Metadata.Fail(MaxBookOpRetries)
+			j.Book.Metadata.Fail(MaxBookOpRetries)
 			j.PersistMetadataState(ctx)
 		case "toc_finder":
-			j.BookState.TocFinder.Fail(MaxBookOpRetries)
+			j.Book.TocFinder.Fail(MaxBookOpRetries)
 			j.PersistTocFinderState(ctx)
 		case "toc_extract":
-			j.BookState.TocExtract.Fail(MaxBookOpRetries)
+			j.Book.TocExtract.Fail(MaxBookOpRetries)
 			j.PersistTocExtractState(ctx)
 		default:
 			// Page-level operations (extract, ocr, blend, label) - retry if under limit
@@ -333,7 +333,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 // createRetryUnit creates a retry work unit for a failed page-level operation.
 func (j *Job) createRetryUnit(ctx context.Context, info WorkUnitInfo, logger *slog.Logger) *jobs.WorkUnit {
-	state := j.PageState[info.PageNum]
+	state := j.Book.GetPage(info.PageNum)
 	if state == nil {
 		return nil
 	}
@@ -382,12 +382,12 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 	defer j.mu.Unlock()
 
 	extractDone, ocrDone, blendDone, labelDone := 0, 0, 0, 0
-	for _, state := range j.PageState {
+	j.Book.ForEachPage(func(pageNum int, state *PageState) {
 		if state.ExtractDone {
 			extractDone++
 		}
 		allOcr := true
-		for _, provider := range j.OcrProviders {
+		for _, provider := range j.Book.OcrProviders {
 			if !state.OcrComplete(provider) {
 				allOcr = false
 				break
@@ -402,24 +402,24 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		if state.LabelDone {
 			labelDone++
 		}
-	}
+	})
 
 	return map[string]string{
-		"book_id":             j.BookID,
-		"total_pages":         fmt.Sprintf("%d", j.TotalPages),
+		"book_id":             j.Book.BookID,
+		"total_pages":         fmt.Sprintf("%d", j.Book.TotalPages),
 		"extract_complete":    fmt.Sprintf("%d", extractDone),
 		"ocr_complete":        fmt.Sprintf("%d", ocrDone),
 		"blend_complete":      fmt.Sprintf("%d", blendDone),
 		"label_complete":      fmt.Sprintf("%d", labelDone),
-		"metadata_started":    fmt.Sprintf("%v", j.BookState.Metadata.IsStarted()),
-		"metadata_complete":   fmt.Sprintf("%v", j.BookState.Metadata.IsComplete()),
-		"toc_finder_started":  fmt.Sprintf("%v", j.BookState.TocFinder.IsStarted()),
-		"toc_finder_done":     fmt.Sprintf("%v", j.BookState.TocFinder.IsDone()),
-		"toc_found":           fmt.Sprintf("%v", j.BookState.TocFound),
-		"toc_start_page":      fmt.Sprintf("%d", j.BookState.TocStartPage),
-		"toc_end_page":        fmt.Sprintf("%d", j.BookState.TocEndPage),
-		"toc_extract_started": fmt.Sprintf("%v", j.BookState.TocExtract.IsStarted()),
-		"toc_extract_done":    fmt.Sprintf("%v", j.BookState.TocExtract.IsDone()),
+		"metadata_started":    fmt.Sprintf("%v", j.Book.Metadata.IsStarted()),
+		"metadata_complete":   fmt.Sprintf("%v", j.Book.Metadata.IsComplete()),
+		"toc_finder_started":  fmt.Sprintf("%v", j.Book.TocFinder.IsStarted()),
+		"toc_finder_done":     fmt.Sprintf("%v", j.Book.TocFinder.IsDone()),
+		"toc_found":           fmt.Sprintf("%v", j.Book.TocFound),
+		"toc_start_page":      fmt.Sprintf("%d", j.Book.TocStartPage),
+		"toc_end_page":        fmt.Sprintf("%d", j.Book.TocEndPage),
+		"toc_extract_started": fmt.Sprintf("%v", j.Book.TocExtract.IsStarted()),
+		"toc_extract_done":    fmt.Sprintf("%v", j.Book.TocExtract.IsDone()),
 		"done":                fmt.Sprintf("%v", j.IsDone),
 	}, nil
 }

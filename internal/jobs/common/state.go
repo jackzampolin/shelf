@@ -7,6 +7,9 @@ import (
 	"github.com/jackzampolin/shelf/internal/home"
 )
 
+// HomeDir is an alias for home.Dir for external use.
+type HomeDir = home.Dir
+
 // PageState tracks the processing state of a single page.
 type PageState struct {
 	// DefraDB document ID for the Page record
@@ -158,6 +161,7 @@ type BookState struct {
 	LabelProvider    string
 	MetadataProvider string
 	TocProvider      string
+	DebugAgents      bool // Enable debug logging for agent executions
 
 	// Resolved prompts (cached at job start, supports per-book overrides)
 	Prompts    map[string]string // prompt_key -> resolved text

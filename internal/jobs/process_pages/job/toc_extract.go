@@ -28,8 +28,8 @@ func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	if len(tocPages) == 0 {
 		if logger != nil {
 			logger.Warn("no ToC pages found",
-				"start_page", j.BookState.TocStartPage,
-				"end_page", j.BookState.TocEndPage)
+				"start_page", j.Book.TocStartPage,
+				"end_page", j.Book.TocEndPage)
 		}
 		return nil
 	}
@@ -48,7 +48,7 @@ func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
 		SystemPromptOverride: j.GetPrompt(extract_toc.PromptKey),
 	})
 	unit.ID = unitID
-	unit.Provider = j.TocProvider
+	unit.Provider = j.Book.TocProvider
 	unit.JobID = j.RecordID
 
 	metrics := j.MetricsFor()
@@ -63,22 +63,22 @@ func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
 // HandleTocExtractComplete processes ToC extraction completion.
 func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResult) error {
 	if result.ChatResult == nil || result.ChatResult.ParsedJSON == nil {
-		j.BookState.TocExtract.Complete()
+		j.Book.TocExtract.Complete()
 		return nil
 	}
 
 	extractResult, err := extract_toc.ParseResult(result.ChatResult.ParsedJSON)
 	if err != nil {
-		j.BookState.TocExtract.Complete()
+		j.Book.TocExtract.Complete()
 		return fmt.Errorf("failed to parse ToC extract result: %w", err)
 	}
 
 	if err := j.saveTocExtractResult(ctx, extractResult); err != nil {
-		j.BookState.TocExtract.Complete()
+		j.Book.TocExtract.Complete()
 		return fmt.Errorf("failed to save ToC extract result: %w", err)
 	}
 
-	j.BookState.TocExtract.Complete()
+	j.Book.TocExtract.Complete()
 	return nil
 }
 
@@ -86,7 +86,7 @@ func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResu
 func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
 	logger := svcctx.LoggerFrom(ctx)
 
-	if j.BookState.TocStartPage == 0 || j.BookState.TocEndPage == 0 {
+	if j.Book.TocStartPage == 0 || j.Book.TocEndPage == 0 {
 		return nil, fmt.Errorf("ToC page range not set")
 	}
 
@@ -97,12 +97,12 @@ func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
 
 	// Build page filter - use _in for range or _eq for single page
 	var pageFilter string
-	if j.BookState.TocStartPage == j.BookState.TocEndPage {
-		pageFilter = fmt.Sprintf("page_num: {_eq: %d}", j.BookState.TocStartPage)
+	if j.Book.TocStartPage == j.Book.TocEndPage {
+		pageFilter = fmt.Sprintf("page_num: {_eq: %d}", j.Book.TocStartPage)
 	} else {
 		// Build array of page numbers for _in filter
 		var pages []string
-		for p := j.BookState.TocStartPage; p <= j.BookState.TocEndPage; p++ {
+		for p := j.Book.TocStartPage; p <= j.Book.TocEndPage; p++ {
 			pages = append(pages, fmt.Sprintf("%d", p))
 		}
 		pageFilter = fmt.Sprintf("page_num: {_in: [%s]}", strings.Join(pages, ", "))
@@ -116,7 +116,7 @@ func (j *Job) loadTocPages(ctx context.Context) ([]extract_toc.ToCPage, error) {
 			page_num
 			blend_markdown
 		}
-	}`, j.BookID, pageFilter)
+	}`, j.Book.BookID, pageFilter)
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {

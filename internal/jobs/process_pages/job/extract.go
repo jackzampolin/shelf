@@ -12,7 +12,7 @@ import (
 
 // CreateExtractWorkUnit creates a CPU work unit to extract a page from PDF.
 func (j *Job) CreateExtractWorkUnit(pageNum int) *jobs.WorkUnit {
-	pdfPath, pageInPDF := j.PDFs.FindPDFForPage(pageNum)
+	pdfPath, pageInPDF := j.Book.PDFs.FindPDFForPage(pageNum)
 	if pdfPath == "" {
 		return nil // Page out of range
 	}
@@ -35,7 +35,7 @@ func (j *Job) CreateExtractWorkUnit(pageNum int) *jobs.WorkUnit {
 				PDFPath:   pdfPath,
 				PageNum:   pageInPDF,         // Page number within the PDF
 				OutputNum: pageNum,           // Sequential output page number
-				OutputDir: j.HomeDir.SourceImagesDir(j.BookID),
+				OutputDir: j.Book.HomeDir.SourceImagesDir(j.Book.BookID),
 			},
 		},
 	}
@@ -44,12 +44,7 @@ func (j *Job) CreateExtractWorkUnit(pageNum int) *jobs.WorkUnit {
 // HandleExtractComplete processes the result of a page extraction.
 func (j *Job) HandleExtractComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
 	pageNum := info.PageNum
-	state := j.PageState[pageNum]
-	if state == nil {
-		// This shouldn't happen, but be safe
-		state = NewPageState()
-		j.PageState[pageNum] = state
-	}
+	state := j.Book.GetOrCreatePage(pageNum)
 
 	// Mark extraction done
 	state.ExtractDone = true
