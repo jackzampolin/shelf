@@ -11,7 +11,7 @@ import (
 )
 
 // SaveBlendResult parses the blend result, applies corrections, persists to DefraDB,
-// and returns the blended text. Also updates the page state.
+// and returns the blended text. Also updates the page state (thread-safe).
 func SaveBlendResult(ctx context.Context, state *PageState, primaryProvider string, parsedJSON any) (string, error) {
 	blendResult, err := blend.ParseResult(parsedJSON)
 	if err != nil {
@@ -23,15 +23,18 @@ func SaveBlendResult(ctx context.Context, state *PageState, primaryProvider stri
 		return "", fmt.Errorf("defra sink not in context")
 	}
 
-	baseText := state.OcrResults[primaryProvider]
+	baseText, _ := state.GetOcrResult(primaryProvider)
 	blendedText := blend.ApplyCorrections(baseText, blendResult.Corrections)
 
-	correctionsJSON, _ := json.Marshal(blendResult.Corrections)
+	correctionsJSON, err := json.Marshal(blendResult.Corrections)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal corrections: %w", err)
+	}
 
-	// Fire-and-forget - no need to block
+	// Fire-and-forget write - sink batches and logs errors internally
 	sink.Send(defra.WriteOp{
 		Collection: "Page",
-		DocID:      state.PageDocID,
+		DocID:      state.GetPageDocID(),
 		Document: map[string]any{
 			"blend_markdown":    blendedText,
 			"blend_corrections": string(correctionsJSON),
@@ -41,9 +44,8 @@ func SaveBlendResult(ctx context.Context, state *PageState, primaryProvider stri
 		Op: defra.OpUpdate,
 	})
 
-	// Update in-memory state
-	state.BlendedText = blendedText
-	state.BlendDone = true
+	// Update in-memory state (thread-safe)
+	state.SetBlendResult(blendedText)
 
 	return blendedText, nil
 }

@@ -187,9 +187,10 @@ func (j *Job) PersistMetadataState(ctx context.Context) error {
 		Collection: "Book",
 		DocID:      j.Book.BookID,
 		Document: map[string]any{
-			"metadata_started": j.Book.Metadata.IsStarted(),
-			"metadata_failed":  j.Book.Metadata.IsFailed(),
-			"metadata_retries": j.Book.Metadata.Retries,
+			"metadata_started":  j.Book.Metadata.IsStarted(),
+			"metadata_complete": j.Book.Metadata.IsComplete(),
+			"metadata_failed":   j.Book.Metadata.IsFailed(),
+			"metadata_retries":  j.Book.Metadata.Retries,
 		},
 		Op: defra.OpUpdate,
 	})
@@ -212,9 +213,10 @@ func (j *Job) PersistTocFinderState(ctx context.Context) error {
 		Collection: "ToC",
 		DocID:      j.TocDocID,
 		Document: map[string]any{
-			"finder_started": j.Book.TocFinder.IsStarted(),
-			"finder_failed":  j.Book.TocFinder.IsFailed(),
-			"finder_retries": j.Book.TocFinder.Retries,
+			"finder_started":  j.Book.TocFinder.IsStarted(),
+			"finder_complete": j.Book.TocFinder.IsComplete(),
+			"finder_failed":   j.Book.TocFinder.IsFailed(),
+			"finder_retries":  j.Book.TocFinder.Retries,
 		},
 		Op: defra.OpUpdate,
 	})
@@ -237,9 +239,10 @@ func (j *Job) PersistTocExtractState(ctx context.Context) error {
 		Collection: "ToC",
 		DocID:      j.TocDocID,
 		Document: map[string]any{
-			"extract_started": j.Book.TocExtract.IsStarted(),
-			"extract_failed":  j.Book.TocExtract.IsFailed(),
-			"extract_retries": j.Book.TocExtract.Retries,
+			"extract_started":  j.Book.TocExtract.IsStarted(),
+			"extract_complete": j.Book.TocExtract.IsComplete(),
+			"extract_failed":   j.Book.TocExtract.IsFailed(),
+			"extract_retries":  j.Book.TocExtract.Retries,
 		},
 		Op: defra.OpUpdate,
 	})

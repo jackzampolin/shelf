@@ -11,7 +11,10 @@ import (
 type HomeDir = home.Dir
 
 // PageState tracks the processing state of a single page.
+// All fields are protected by an internal mutex for thread-safe access.
 type PageState struct {
+	mu sync.RWMutex
+
 	// DefraDB document ID for the Page record
 	PageDocID string
 
@@ -35,25 +38,103 @@ func NewPageState() *PageState {
 	}
 }
 
-// OcrComplete returns true if OCR is complete for the given provider.
+// OcrComplete returns true if OCR is complete for the given provider (thread-safe).
 func (p *PageState) OcrComplete(provider string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	_, ok := p.OcrResults[provider]
 	return ok
 }
 
-// MarkOcrComplete marks OCR as complete for a provider with the given result.
+// MarkOcrComplete marks OCR as complete for a provider with the given result (thread-safe).
 func (p *PageState) MarkOcrComplete(provider, text string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.OcrResults[provider] = text
 }
 
-// AllOcrDone returns true if all providers have completed OCR for this page.
+// AllOcrDone returns true if all providers have completed OCR for this page (thread-safe).
 func (p *PageState) AllOcrDone(providers []string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	for _, provider := range providers {
-		if !p.OcrComplete(provider) {
+		if _, ok := p.OcrResults[provider]; !ok {
 			return false
 		}
 	}
 	return true
+}
+
+// SetExtractDone marks extraction as complete (thread-safe).
+func (p *PageState) SetExtractDone(done bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.ExtractDone = done
+}
+
+// IsExtractDone returns true if extraction is complete (thread-safe).
+func (p *PageState) IsExtractDone() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ExtractDone
+}
+
+// SetBlendResult sets the blend result and marks blend as done (thread-safe).
+func (p *PageState) SetBlendResult(blendedText string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.BlendedText = blendedText
+	p.BlendDone = true
+}
+
+// GetBlendedText returns the blended text (thread-safe).
+func (p *PageState) GetBlendedText() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.BlendedText
+}
+
+// IsBlendDone returns true if blend is complete (thread-safe).
+func (p *PageState) IsBlendDone() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.BlendDone
+}
+
+// SetLabelDone marks label as complete (thread-safe).
+func (p *PageState) SetLabelDone(done bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.LabelDone = done
+}
+
+// IsLabelDone returns true if label is complete (thread-safe).
+func (p *PageState) IsLabelDone() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.LabelDone
+}
+
+// GetOcrResult returns the OCR result for a provider (thread-safe).
+func (p *PageState) GetOcrResult(provider string) (string, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	text, ok := p.OcrResults[provider]
+	return text, ok
+}
+
+// GetPageDocID returns the page document ID (thread-safe).
+func (p *PageState) GetPageDocID() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.PageDocID
+}
+
+// SetPageDocID sets the page document ID (thread-safe).
+func (p *PageState) SetPageDocID(docID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.PageDocID = docID
 }
 
 // OpStatus represents the status of a book-level operation.

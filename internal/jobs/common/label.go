@@ -9,7 +9,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
-// SaveLabelResult parses the label result, persists to DefraDB, and updates page state.
+// SaveLabelResult parses the label result, persists to DefraDB, and updates page state (thread-safe).
 func SaveLabelResult(ctx context.Context, state *PageState, parsedJSON any) error {
 	labelResult, err := label.ParseResult(parsedJSON)
 	if err != nil {
@@ -32,16 +32,16 @@ func SaveLabelResult(ctx context.Context, state *PageState, parsedJSON any) erro
 		update["running_header"] = *labelResult.RunningHeader
 	}
 
-	// Fire-and-forget - no need to block
+	// Fire-and-forget write - sink batches and logs errors internally
 	sink.Send(defra.WriteOp{
 		Collection: "Page",
-		DocID:      state.PageDocID,
+		DocID:      state.GetPageDocID(),
 		Document:   update,
 		Op:         defra.OpUpdate,
 	})
 
-	// Update in-memory state
-	state.LabelDone = true
+	// Update in-memory state (thread-safe)
+	state.SetLabelDone(true)
 
 	return nil
 }
