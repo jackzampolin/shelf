@@ -1,14 +1,12 @@
 package job
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
-	"github.com/jackzampolin/shelf/internal/jobs/ocr"
 )
 
 // LabelThresholdForBookOps is the number of labeled pages before triggering book-level operations.
@@ -32,110 +30,33 @@ const FrontMatterPageCount = 50
 // Set to 50 to ensure adequate coverage for books with longer front matter.
 const ConsecutiveFrontMatterRequired = 50
 
-// PageState tracks the processing state of a single page.
-// Embeds ocr.PageState for OCR-related fields.
-type PageState struct {
-	*ocr.PageState // Embedded: PageDocID, ExtractDone, OcrResults
+// PageState is an alias for common.PageState.
+type PageState = common.PageState
 
-	// Pipeline state (beyond OCR)
-	BlendDone   bool
-	BlendedText string // Cached blend result for label work unit
-	LabelDone   bool
-}
-
-// NewPageState creates a new page state.
+// NewPageState creates a new page state with initialized maps.
 func NewPageState() *PageState {
-	return &PageState{
-		PageState: ocr.NewPageState(),
-	}
+	return common.NewPageState()
 }
+
+// OpStatus is an alias for common.OpStatus.
+type OpStatus = common.OpStatus
+
+// Operation status constants - re-export from common.
+const (
+	OpNotStarted = common.OpNotStarted
+	OpInProgress = common.OpInProgress
+	OpComplete   = common.OpComplete
+	OpFailed     = common.OpFailed
+)
+
+// OperationState is an alias for common.OperationState.
+type OperationState = common.OperationState
 
 // MaxBookOpRetries is the maximum number of retries for book-level operations.
 const MaxBookOpRetries = 3
 
-// OpStatus represents the status of a book-level operation.
-type OpStatus int
-
-const (
-	OpNotStarted OpStatus = iota
-	OpInProgress
-	OpComplete
-	OpFailed
-)
-
-// String returns the string representation of the status.
-func (s OpStatus) String() string {
-	switch s {
-	case OpNotStarted:
-		return "not_started"
-	case OpInProgress:
-		return "in_progress"
-	case OpComplete:
-		return "complete"
-	case OpFailed:
-		return "failed"
-	default:
-		return "unknown"
-	}
-}
-
-// OperationState tracks the state of a retriable book-level operation.
-type OperationState struct {
-	Status  OpStatus
-	Retries int
-}
-
-// Start marks the operation as in progress. Returns error if already started.
-func (o *OperationState) Start() error {
-	if o.Status != OpNotStarted {
-		return fmt.Errorf("operation already %s", o.Status)
-	}
-	o.Status = OpInProgress
-	return nil
-}
-
-// Complete marks the operation as successfully completed.
-func (o *OperationState) Complete() {
-	o.Status = OpComplete
-}
-
-// Fail records a failure and returns true if permanently failed (max retries reached).
-func (o *OperationState) Fail(maxRetries int) bool {
-	o.Retries++
-	if o.Retries >= maxRetries {
-		o.Status = OpFailed
-		return true
-	}
-	o.Status = OpNotStarted // Allow retry
-	return false
-}
-
-// IsStarted returns true if the operation has been started.
-func (o *OperationState) IsStarted() bool {
-	return o.Status == OpInProgress
-}
-
-// IsDone returns true if the operation is complete or permanently failed.
-func (o *OperationState) IsDone() bool {
-	return o.Status == OpComplete || o.Status == OpFailed
-}
-
-// IsFailed returns true if the operation permanently failed.
-func (o *OperationState) IsFailed() bool {
-	return o.Status == OpFailed
-}
-
-// IsComplete returns true if the operation completed successfully.
-func (o *OperationState) IsComplete() bool {
-	return o.Status == OpComplete
-}
-
-// CanStart returns true if the operation can be started (not started, not done).
-func (o *OperationState) CanStart() bool {
-	return o.Status == OpNotStarted
-}
-
 // BookState tracks book-level processing state.
+// This is a subset of common.BookState - just the operation state fields.
 type BookState struct {
 	Metadata   OperationState
 	TocFinder  OperationState
@@ -151,8 +72,9 @@ type BookState struct {
 const MaxPageOpRetries = 3
 
 // WorkUnitType constants for type-safe work unit handling.
-// Uses ocr.WorkUnitTypeExtract and ocr.WorkUnitTypeOCR for shared types.
 const (
+	WorkUnitTypeExtract    = "extract"
+	WorkUnitTypeOCR        = "ocr"
 	WorkUnitTypeBlend      = "blend"
 	WorkUnitTypeLabel      = "label"
 	WorkUnitTypeMetadata   = "metadata"
@@ -163,7 +85,7 @@ const (
 // WorkUnitInfo tracks pending work units.
 type WorkUnitInfo struct {
 	PageNum    int
-	UnitType   string // Use WorkUnitType* constants or ocr.WorkUnitType* for extract/ocr
+	UnitType   string // Use WorkUnitType* constants
 	Provider   string // for OCR units
 	RetryCount int    // number of times this work unit has been retried
 }

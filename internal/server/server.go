@@ -16,7 +16,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/jobs/ocr"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
 	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
@@ -276,7 +275,6 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Register job factories for resumption
 	s.scheduler.RegisterFactory(process_pages.JobType, process_pages.JobFactory(s.processPagesCfg))
-	s.scheduler.RegisterFactory(ocr.JobType, ocr.JobFactory())
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)

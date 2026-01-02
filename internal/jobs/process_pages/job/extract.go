@@ -8,7 +8,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
-	"github.com/jackzampolin/shelf/internal/jobs/ocr"
 )
 
 // CreateExtractWorkUnit creates a CPU work unit to extract a page from PDF.
@@ -23,7 +22,7 @@ func (j *Job) CreateExtractWorkUnit(pageNum int) *jobs.WorkUnit {
 	// Register for tracking
 	j.RegisterWorkUnit(unitID, WorkUnitInfo{
 		PageNum:  pageNum,
-		UnitType: ocr.WorkUnitTypeExtract,
+		UnitType: WorkUnitTypeExtract,
 	})
 
 	return &jobs.WorkUnit{
