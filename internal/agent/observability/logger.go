@@ -25,6 +25,7 @@ type AgentRun struct {
 	StartedAt   time.Time `json:"started_at"`
 	CompletedAt time.Time `json:"completed_at,omitempty"`
 	Iterations  int       `json:"iterations"`
+	Status      string    `json:"status"` // "running", "completed", "failed"
 
 	// Result
 	Success bool   `json:"success"`
@@ -56,21 +57,55 @@ type Logger struct {
 	agentType string
 	bookID    string
 	jobID     string
+	docID     string // DefraDB document ID for this run
 
 	startedAt time.Time
 	toolCalls []ToolCallLog
 	messages  []providers.Message
 }
 
-// NewLogger creates a new agent logger.
-func NewLogger(agentID, agentType, bookID, jobID string) *Logger {
-	return &Logger{
+// NewLogger creates a new agent logger and persists the initial "running" record.
+func NewLogger(ctx context.Context, agentID, agentType, bookID, jobID string) *Logger {
+	l := &Logger{
 		agentID:   agentID,
 		agentType: agentType,
 		bookID:    bookID,
 		jobID:     jobID,
 		startedAt: time.Now(),
 		toolCalls: make([]ToolCallLog, 0),
+	}
+
+	// Create initial "running" record in DefraDB
+	l.saveInitial(ctx)
+
+	return l
+}
+
+// saveInitial creates the initial AgentRun record with status="running".
+func (l *Logger) saveInitial(ctx context.Context) {
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return
+	}
+
+	run := map[string]any{
+		"agent_id":   l.agentID,
+		"agent_type": l.agentType,
+		"book_id":    l.bookID,
+		"job_id":     l.jobID,
+		"started_at": l.startedAt.Format(time.RFC3339),
+		"iterations": 0,
+		"success":    false,
+		"status":     "running",
+	}
+
+	result, err := sink.SendSync(ctx, defra.WriteOp{
+		Collection: "AgentRun",
+		Document:   run,
+		Op:         defra.OpCreate,
+	})
+	if err == nil {
+		l.docID = result.DocID
 	}
 }
 
@@ -91,12 +126,41 @@ func (l *Logger) LogToolCall(iteration int, toolName string, args map[string]any
 	})
 }
 
+// UpdateProgress persists the current iteration and tool calls to DefraDB.
+// Call this after each iteration to show real-time agent progress.
+func (l *Logger) UpdateProgress(ctx context.Context, iteration int) {
+	if l.docID == "" {
+		return // No record to update
+	}
+
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return
+	}
+
+	// Serialize tool calls so far
+	toolCallsJSON, _ := json.Marshal(l.toolCalls)
+
+	update := map[string]any{
+		"iterations":      iteration,
+		"tool_calls_json": string(toolCallsJSON),
+	}
+
+	sink.Send(defra.WriteOp{
+		Collection: "AgentRun",
+		DocID:      l.docID,
+		Document:   update,
+		Op:         defra.OpUpdate,
+	})
+}
+
 // SetMessages captures the final message history.
 func (l *Logger) SetMessages(messages []providers.Message) {
 	l.messages = messages
 }
 
-// Save persists the agent run to DefraDB.
+// Save persists the final agent run state to DefraDB.
+// Updates the existing record if one was created at start, otherwise creates a new one.
 func (l *Logger) Save(ctx context.Context, success bool, iterations int, result any, err error) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
@@ -139,26 +203,44 @@ func (l *Logger) Save(ctx context.Context, success bool, iterations int, result 
 		errStr = err.Error()
 	}
 
+	// Determine status
+	status := "completed"
+	if !success {
+		status = "failed"
+	}
+
 	run := map[string]any{
-		"agent_id":        l.agentID,
-		"agent_type":      l.agentType,
-		"book_id":         l.bookID,
-		"job_id":          l.jobID,
-		"started_at":      l.startedAt.Format(time.RFC3339),
 		"completed_at":    time.Now().Format(time.RFC3339),
 		"iterations":      iterations,
 		"success":         success,
+		"status":          status,
 		"error":           errStr,
 		"messages_json":   string(messagesJSON),
 		"tool_calls_json": string(toolCallsJSON),
 		"result_json":     string(resultJSON),
 	}
 
-	sink.Send(defra.WriteOp{
-		Collection: "AgentRun",
-		Document:   run,
-		Op:         defra.OpCreate,
-	})
+	// Update existing record if we have a docID, otherwise create new
+	if l.docID != "" {
+		sink.Send(defra.WriteOp{
+			Collection: "AgentRun",
+			DocID:      l.docID,
+			Document:   run,
+			Op:         defra.OpUpdate,
+		})
+	} else {
+		// Fallback: create new record with all fields
+		run["agent_id"] = l.agentID
+		run["agent_type"] = l.agentType
+		run["book_id"] = l.bookID
+		run["job_id"] = l.jobID
+		run["started_at"] = l.startedAt.Format(time.RFC3339)
+		sink.Send(defra.WriteOp{
+			Collection: "AgentRun",
+			Document:   run,
+			Op:         defra.OpCreate,
+		})
+	}
 
 	return nil
 }
@@ -173,6 +255,7 @@ type AgentRun {
 	started_at: DateTime
 	completed_at: DateTime
 	iterations: Int
+	status: String @index
 	success: Boolean
 	error: String
 	messages_json: String
@@ -200,6 +283,7 @@ func ListAgentRuns(ctx context.Context, bookID string, limit int) ([]AgentRun, e
 			started_at
 			completed_at
 			iterations
+			status
 			success
 			error
 			messages_json
@@ -231,6 +315,7 @@ func ListAgentRuns(ctx context.Context, bookID string, limit int) ([]AgentRun, e
 				BookID:        getString(r, "book_id"),
 				JobID:         getString(r, "job_id"),
 				Iterations:    getInt(r, "iterations"),
+				Status:        getString(r, "status"),
 				Success:       getBool(r, "success"),
 				Error:         getString(r, "error"),
 				MessagesJSON:  getString(r, "messages_json"),
@@ -267,6 +352,7 @@ func GetAgentRun(ctx context.Context, docID string) (*AgentRun, error) {
 			started_at
 			completed_at
 			iterations
+			status
 			success
 			error
 			messages_json
@@ -301,6 +387,7 @@ func GetAgentRun(ctx context.Context, docID string) (*AgentRun, error) {
 		BookID:        getString(r, "book_id"),
 		JobID:         getString(r, "job_id"),
 		Iterations:    getInt(r, "iterations"),
+		Status:        getString(r, "status"),
 		Success:       getBool(r, "success"),
 		Error:         getString(r, "error"),
 		MessagesJSON:  getString(r, "messages_json"),

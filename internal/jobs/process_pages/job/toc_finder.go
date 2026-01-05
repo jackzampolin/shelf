@@ -92,8 +92,8 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 		}
 	}
 
-	// Create agent via factory
-	j.TocAgent = agents.NewTocFinderAgent(agents.TocFinderConfig{
+	// Create agent via factory (passing context for observability logging)
+	j.TocAgent = agents.NewTocFinderAgent(ctx, agents.TocFinderConfig{
 		BookID:       j.Book.BookID,
 		TotalPages:   j.Book.TotalPages,
 		DefraClient:  defraClient,

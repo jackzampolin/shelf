@@ -64,7 +64,8 @@ type Agent struct {
 }
 
 // New creates a new Agent with the given configuration.
-func New(cfg Config) *Agent {
+// Context is required for observability logging (creating initial "running" record).
+func New(ctx context.Context, cfg Config) *Agent {
 	id := cfg.ID
 	if id == "" {
 		id = uuid.New().String()
@@ -82,7 +83,7 @@ func New(cfg Config) *Agent {
 	// Create logger if debug enabled
 	var logger *observability.Logger
 	if cfg.Debug {
-		logger = observability.NewLogger(id, cfg.AgentType, cfg.BookID, cfg.JobID)
+		logger = observability.NewLogger(ctx, id, cfg.AgentType, cfg.BookID, cfg.JobID)
 	}
 
 	return &Agent{
@@ -341,6 +342,18 @@ func (a *Agent) SaveLog(ctx context.Context) error {
 // HasLogger returns true if debug logging is enabled.
 func (a *Agent) HasLogger() bool {
 	return a.logger != nil
+}
+
+// UpdateProgress persists current iteration and tool calls to the database.
+// Call this after each iteration to show real-time agent progress.
+// No-op if debug logging is disabled.
+func (a *Agent) UpdateProgress(ctx context.Context) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.logger != nil {
+		a.logger.UpdateProgress(ctx, a.iteration)
+	}
 }
 
 // WorkUnit represents a unit of work the agent needs executed.

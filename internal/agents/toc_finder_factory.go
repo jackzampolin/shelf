@@ -1,6 +1,8 @@
 package agents
 
 import (
+	"context"
+
 	"github.com/jackzampolin/shelf/internal/agent"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 	"github.com/jackzampolin/shelf/internal/agents/toc_finder/tools"
@@ -22,7 +24,8 @@ type TocFinderConfig struct {
 
 // NewTocFinderAgent creates a configured ToC finder agent.
 // The agent is ready for iteration via NextWorkUnits().
-func NewTocFinderAgent(cfg TocFinderConfig) *agent.Agent {
+// Context is required for observability logging (creating initial "running" record).
+func NewTocFinderAgent(ctx context.Context, cfg TocFinderConfig) *agent.Agent {
 	tocTools := tools.New(tools.Config{
 		BookID:      cfg.BookID,
 		TotalPages:  cfg.TotalPages,
@@ -32,7 +35,7 @@ func NewTocFinderAgent(cfg TocFinderConfig) *agent.Agent {
 
 	userPrompt := toc_finder.BuildUserPrompt(cfg.BookID, cfg.TotalPages, nil)
 
-	return agent.New(agent.Config{
+	return agent.New(ctx, agent.Config{
 		Tools: tocTools,
 		InitialMessages: []providers.Message{
 			{Role: "system", Content: cfg.SystemPrompt},

@@ -13,6 +13,7 @@ import (
 //
 // Tool calls are executed in-process since they're fast local operations (grep, file reads).
 // Only LLM calls become work units dispatched to provider workers.
+// After each tool batch, progress is persisted to show real-time agent status.
 func ExecuteToolLoop(ctx context.Context, ag *agent.Agent) []agent.WorkUnit {
 	for {
 		units := ag.NextWorkUnits()
@@ -28,10 +29,13 @@ func ExecuteToolLoop(ctx context.Context, ag *agent.Agent) []agent.WorkUnit {
 					ag.HandleToolResult(unit.ToolCall.ID, result, err)
 				}
 			}
+			// Update progress after tool execution for real-time visibility
+			ag.UpdateProgress(ctx)
 			continue
 		}
 
-		// LLM call - return to caller for dispatch
+		// LLM call - update progress then return to caller for dispatch
+		ag.UpdateProgress(ctx)
 		return units
 	}
 }
