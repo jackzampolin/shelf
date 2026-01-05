@@ -2,17 +2,15 @@ package job
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/agent"
+	"github.com/jackzampolin/shelf/internal/agents"
+	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
-	"github.com/jackzampolin/shelf/internal/agents/toc_finder/tools"
-	"github.com/jackzampolin/shelf/internal/providers"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -94,33 +92,29 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 		}
 	}
 
-	// Create tools for the agent
-	tocTools := tools.New(tools.Config{
-		BookID:      j.Book.BookID,
-		TotalPages:  j.Book.TotalPages,
-		DefraClient: defraClient,
-		HomeDir:     j.Book.HomeDir,
+	// Create agent via factory
+	j.TocAgent = agents.NewTocFinderAgent(agents.TocFinderConfig{
+		BookID:       j.Book.BookID,
+		TotalPages:   j.Book.TotalPages,
+		DefraClient:  defraClient,
+		HomeDir:      j.Book.HomeDir,
+		SystemPrompt: j.GetPrompt(toc_finder.PromptKey),
+		Debug:        j.Book.DebugAgents,
+		JobID:        j.RecordID,
 	})
 
-	// Create agent with resolved prompt (supports book-level overrides)
-	userPrompt := toc_finder.BuildUserPrompt(j.Book.BookID, j.Book.TotalPages, nil)
-	systemPrompt := j.GetPrompt(toc_finder.PromptKey)
-	j.TocAgent = agent.New(agent.Config{
-		Tools: tocTools,
-		InitialMessages: []providers.Message{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: userPrompt},
-		},
-		MaxIterations: 25,
-		// Observability config
-		AgentType: "toc_finder",
-		BookID:    j.Book.BookID,
-		JobID:     j.RecordID,
-		Debug:     j.Book.DebugAgents,
-	})
+	// Get first work unit using helper
+	agentUnits := agents.ExecuteToolLoop(ctx, j.TocAgent)
+	if len(agentUnits) == 0 {
+		return nil
+	}
 
-	// Get first work unit from agent
-	return j.getNextTocFinderWorkUnit()
+	// Convert and return first work unit
+	jobUnits := j.convertTocAgentUnits(agentUnits)
+	if len(jobUnits) == 0 {
+		return nil
+	}
+	return &jobUnits[0]
 }
 
 // HandleTocFinderComplete processes ToC finder agent work unit completion.
@@ -134,25 +128,11 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 	if result.ChatResult != nil {
 		j.TocAgent.HandleLLMResult(result.ChatResult)
 
-		// Execute any tool calls synchronously (they're fast local operations)
-		for {
-			units := j.TocAgent.NextWorkUnits()
-			if len(units) == 0 {
-				break
-			}
-
-			// Check if it's a tool call
-			if units[0].Type == agent.WorkUnitTypeTool {
-				for _, unit := range units {
-					if unit.ToolCall != nil {
-						resultStr, err := j.TocAgent.ExecuteTool(ctx, *unit.ToolCall)
-						j.TocAgent.HandleToolResult(unit.ToolCall.ID, resultStr, err)
-					}
-				}
-			} else {
-				// It's an LLM call, return as work unit
-				return j.convertTocAgentUnits(units), nil
-			}
+		// Execute tool loop using helper
+		agentUnits := agents.ExecuteToolLoop(ctx, j.TocAgent)
+		if len(agentUnits) > 0 {
+			// It's an LLM call, return as work unit
+			return j.convertTocAgentUnits(agentUnits), nil
 		}
 	}
 
@@ -172,7 +152,7 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		if agentResult != nil && agentResult.Success {
 			// Save result to DefraDB
 			if tocResult, ok := agentResult.ToolResult.(*toc_finder.Result); ok {
-				if err := j.saveTocFinderResult(ctx, tocResult); err != nil {
+				if err := common.SaveTocFinderResult(ctx, j.TocDocID, tocResult); err != nil {
 					return nil, fmt.Errorf("failed to save ToC finder result: %w", err)
 				}
 				j.Book.TocFound = tocResult.ToCFound
@@ -184,110 +164,35 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		} else {
 			// Agent failed or no ToC found - mark finder as done with no ToC
 			j.Book.TocFound = false
-			sink := svcctx.DefraSinkFrom(ctx)
-			if sink == nil {
-				return nil, fmt.Errorf("defra sink not in context")
+			if err := common.SaveTocFinderNoResult(ctx, j.TocDocID); err != nil {
+				return nil, err
 			}
-			// Fire-and-forget - no need to block
-			sink.Send(defra.WriteOp{
-				Collection: "ToC",
-				DocID:      j.TocDocID,
-				Document: map[string]any{
-					"toc_found":       false,
-					"finder_complete": true,
-				},
-				Op: defra.OpUpdate,
-			})
 		}
 
 		// Check if we should start ToC extraction
 		return j.MaybeStartBookOperations(ctx), nil
 	}
 
-	// Get more work units from agent
-	nextUnit := j.getNextTocFinderWorkUnit()
-	if nextUnit == nil {
-		return nil, nil
-	}
-	return []jobs.WorkUnit{*nextUnit}, nil
-}
-
-// getNextTocFinderWorkUnit gets the next work unit from the ToC finder agent.
-// Must be called with j.Mu held.
-func (j *Job) getNextTocFinderWorkUnit() *jobs.WorkUnit {
-	if j.TocAgent == nil {
-		return nil
-	}
-	units := j.TocAgent.NextWorkUnits()
-	if len(units) == 0 {
-		return nil
-	}
-	converted := j.convertTocAgentUnits(units)
-	if len(converted) == 0 {
-		return nil
-	}
-	return &converted[0]
+	// Agent not done but no LLM work units - shouldn't happen
+	return nil, nil
 }
 
 // convertTocAgentUnits converts agent work units to job work units.
 func (j *Job) convertTocAgentUnits(agentUnits []agent.WorkUnit) []jobs.WorkUnit {
-	var units []jobs.WorkUnit
-	for _, au := range agentUnits {
-		if au.Type == agent.WorkUnitTypeLLM && au.ChatRequest != nil {
-			unitID := uuid.New().String()
-			j.RegisterWorkUnit(unitID, WorkUnitInfo{
-				UnitType: "toc_finder",
-			})
-
-			metrics := j.MetricsFor()
-			metrics.ItemKey = "toc_finder"
-			metrics.PromptKey = toc_finder.PromptKey
-			metrics.PromptCID = j.GetPromptCID(toc_finder.PromptKey)
-
-			units = append(units, jobs.WorkUnit{
-				ID:          unitID,
-				Type:        jobs.WorkUnitTypeLLM,
-				Provider:    j.Book.TocProvider,
-				JobID:       j.RecordID,
-				ChatRequest: au.ChatRequest,
-				Tools:       au.Tools,
-				Metrics:     metrics,
-			})
-		}
-	}
-	return units
-}
-
-// saveTocFinderResult saves the ToC finder result to DefraDB.
-func (j *Job) saveTocFinderResult(ctx context.Context, result *toc_finder.Result) error {
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	update := map[string]any{
-		"toc_found":       result.ToCFound,
-		"finder_complete": true,
-	}
-
-	if result.ToCPageRange != nil {
-		update["start_page"] = result.ToCPageRange.StartPage
-		update["end_page"] = result.ToCPageRange.EndPage
-	}
-
-	if result.StructureSummary != nil {
-		summaryJSON, err := json.Marshal(result.StructureSummary)
-		if err == nil {
-			update["structure_summary"] = string(summaryJSON)
-		}
-	}
-
-	// Fire-and-forget - no need to block
-	sink.Send(defra.WriteOp{
-		Collection: "ToC",
-		DocID:      j.TocDocID,
-		Document:   update,
-		Op:         defra.OpUpdate,
+	jobUnits := agents.ConvertToJobUnits(agentUnits, agents.ConvertConfig{
+		JobID:     j.RecordID,
+		Provider:  j.Book.TocProvider,
+		Stage:     j.Type(),
+		ItemKey:   "toc_finder",
+		PromptKey: toc_finder.PromptKey,
+		PromptCID: j.GetPromptCID(toc_finder.PromptKey),
+		BookID:    j.Book.BookID,
 	})
-	return nil
+
+	// Register work units (Job keeps tracking)
+	for _, u := range jobUnits {
+		j.RegisterWorkUnit(u.ID, WorkUnitInfo{UnitType: WorkUnitTypeTocFinder})
+	}
+
+	return jobUnits
 }
