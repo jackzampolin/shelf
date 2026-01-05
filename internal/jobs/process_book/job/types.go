@@ -1,8 +1,6 @@
 package job
 
 import (
-	"sync"
-
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
@@ -84,31 +82,54 @@ type PDFInfo = common.PDFInfo
 // Services (DefraClient, DefraSink) are accessed via svcctx from the context
 // passed to Start() and OnComplete().
 type Job struct {
-	mu sync.Mutex
-
-	// Book state (config, pages, prompts, operation state)
-	Book *common.BookState
-
-	// Job-specific state
-	RecordID string
-	IsDone   bool
+	common.BaseJob
+	Tracker *common.WorkUnitTracker[WorkUnitInfo]
 
 	// ToC agent (stateful during execution)
 	TocAgent *agent.Agent
 	TocDocID string
-
-	// Work unit tracking
-	PendingUnits map[string]WorkUnitInfo // work_unit_id -> info
 }
 
 // NewFromLoadResult creates a Job from a common.LoadBookResult.
 // This is the primary constructor - LoadBook does all the loading.
 func NewFromLoadResult(result *common.LoadBookResult) *Job {
 	return &Job{
-		Book:         result.Book,
-		TocDocID:     result.TocDocID,
-		PendingUnits: make(map[string]WorkUnitInfo),
+		BaseJob: common.BaseJob{
+			Book: result.Book,
+		},
+		Tracker:  common.NewWorkUnitTracker[WorkUnitInfo](),
+		TocDocID: result.TocDocID,
 	}
+}
+
+// Type returns the job type identifier.
+func (j *Job) Type() string {
+	return "process-book"
+}
+
+// MetricsFor returns base metrics attribution for this job.
+func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
+	return j.BaseJob.MetricsFor(j.Type())
+}
+
+// RegisterWorkUnit registers a pending work unit.
+func (j *Job) RegisterWorkUnit(unitID string, info WorkUnitInfo) {
+	j.Tracker.Register(unitID, info)
+}
+
+// GetWorkUnit gets a pending work unit without removing it.
+func (j *Job) GetWorkUnit(unitID string) (WorkUnitInfo, bool) {
+	return j.Tracker.Get(unitID)
+}
+
+// RemoveWorkUnit removes a pending work unit.
+func (j *Job) RemoveWorkUnit(unitID string) {
+	j.Tracker.Remove(unitID)
+}
+
+// GetAndRemoveWorkUnit gets and removes a pending work unit.
+func (j *Job) GetAndRemoveWorkUnit(unitID string) (WorkUnitInfo, bool) {
+	return j.Tracker.GetAndRemove(unitID)
 }
 
 // CountLabeledPages returns the number of pages that have completed labeling.
@@ -128,56 +149,8 @@ func (j *Job) AllPagesComplete() bool {
 	return j.Book.AllPagesComplete()
 }
 
-// RegisterWorkUnit registers a pending work unit.
-func (j *Job) RegisterWorkUnit(unitID string, info WorkUnitInfo) {
-	j.PendingUnits[unitID] = info
-}
-
-// GetWorkUnit gets a pending work unit without removing it.
-func (j *Job) GetWorkUnit(unitID string) (WorkUnitInfo, bool) {
-	info, ok := j.PendingUnits[unitID]
-	return info, ok
-}
-
-// RemoveWorkUnit removes a pending work unit.
-func (j *Job) RemoveWorkUnit(unitID string) {
-	delete(j.PendingUnits, unitID)
-}
-
-// GetAndRemoveWorkUnit gets and removes a pending work unit.
-func (j *Job) GetAndRemoveWorkUnit(unitID string) (WorkUnitInfo, bool) {
-	info, ok := j.PendingUnits[unitID]
-	if ok {
-		delete(j.PendingUnits, unitID)
-	}
-	return info, ok
-}
-
-// MetricsFor returns base metrics attribution for this job.
-// Returns BookID and Stage pre-filled. Callers add ItemKey for specific work units.
-func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
-	return &jobs.WorkUnitMetrics{
-		BookID: j.Book.BookID,
-		Stage:  j.Type(),
-	}
-}
-
 // FindPDFForPage returns the PDF path and page number within that PDF for a given output page number.
 // Returns empty string and 0 if page is out of range.
 func (j *Job) FindPDFForPage(pageNum int) (pdfPath string, pageInPDF int) {
 	return j.Book.PDFs.FindPDFForPage(pageNum)
-}
-
-// ProviderProgress returns progress by provider for the Progress() method.
-func (j *Job) ProviderProgress() map[string]jobs.ProviderProgress {
-	// Get progress from BookState and convert to jobs.ProviderProgress
-	bookProgress := j.Book.GetProviderProgress()
-	progress := make(map[string]jobs.ProviderProgress, len(bookProgress))
-	for key, p := range bookProgress {
-		progress[key] = jobs.ProviderProgress{
-			TotalExpected: p.TotalExpected,
-			Completed:     p.Completed,
-		}
-	}
-	return progress
 }

@@ -1,8 +1,6 @@
 package job
 
 import (
-	"sync"
-
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 )
@@ -24,47 +22,41 @@ type WorkUnitInfo struct {
 // Job extracts metadata from a book.
 // Requires pages to already have blend_complete (uses first N pages of text).
 type Job struct {
-	mu sync.Mutex
-
-	// Book state
-	Book *common.BookState
-
-	// Job-specific state
-	RecordID string
-	IsDone   bool
-
-	// Work unit tracking
-	PendingUnits map[string]WorkUnitInfo
+	common.BaseJob
+	Tracker *common.WorkUnitTracker[WorkUnitInfo]
 }
 
 // NewFromLoadResult creates a Job from a common.LoadBookResult.
 func NewFromLoadResult(result *common.LoadBookResult) *Job {
 	return &Job{
-		Book:         result.Book,
-		PendingUnits: make(map[string]WorkUnitInfo),
+		BaseJob: common.BaseJob{
+			Book: result.Book,
+		},
+		Tracker: common.NewWorkUnitTracker[WorkUnitInfo](),
 	}
 }
 
-// RegisterWorkUnit registers a pending work unit.
-func (j *Job) RegisterWorkUnit(unitID string, info WorkUnitInfo) {
-	j.PendingUnits[unitID] = info
-}
-
-// GetWorkUnit gets a pending work unit without removing it.
-func (j *Job) GetWorkUnit(unitID string) (WorkUnitInfo, bool) {
-	info, ok := j.PendingUnits[unitID]
-	return info, ok
-}
-
-// RemoveWorkUnit removes a pending work unit.
-func (j *Job) RemoveWorkUnit(unitID string) {
-	delete(j.PendingUnits, unitID)
+// Type returns the job type identifier.
+func (j *Job) Type() string {
+	return "metadata-book"
 }
 
 // MetricsFor returns base metrics attribution for this job.
 func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
-	return &jobs.WorkUnitMetrics{
-		BookID: j.Book.BookID,
-		Stage:  "metadata-book",
-	}
+	return j.BaseJob.MetricsFor(j.Type())
+}
+
+// RegisterWorkUnit registers a pending work unit.
+func (j *Job) RegisterWorkUnit(unitID string, info WorkUnitInfo) {
+	j.Tracker.Register(unitID, info)
+}
+
+// GetWorkUnit gets a pending work unit without removing it.
+func (j *Job) GetWorkUnit(unitID string) (WorkUnitInfo, bool) {
+	return j.Tracker.Get(unitID)
+}
+
+// RemoveWorkUnit removes a pending work unit.
+func (j *Job) RemoveWorkUnit(unitID string) {
+	j.Tracker.Remove(unitID)
 }

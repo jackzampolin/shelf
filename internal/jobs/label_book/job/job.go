@@ -13,25 +13,11 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
-func (j *Job) ID() string {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	return j.RecordID
-}
-
-func (j *Job) SetRecordID(id string) {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.RecordID = id
-}
-
-func (j *Job) Type() string {
-	return "label-book"
-}
+// ID, SetRecordID, Done are inherited from common.BaseJob
 
 func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Mu.Lock()
+	defer j.Mu.Unlock()
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -86,8 +72,8 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 }
 
 func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Mu.Lock()
+	defer j.Mu.Unlock()
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -143,15 +129,9 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 	return nil, nil
 }
 
-func (j *Job) Done() bool {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	return j.IsDone
-}
-
 func (j *Job) Status(ctx context.Context) (map[string]string, error) {
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.Mu.Lock()
+	defer j.Mu.Unlock()
 
 	blendDone, labelDone := 0, 0
 	j.Book.ForEachPage(func(pageNum int, state *PageState) {
@@ -173,9 +153,9 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 }
 
 func (j *Job) Progress() map[string]jobs.ProviderProgress {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	return j.ProviderProgress()
+	j.Mu.Lock()
+	defer j.Mu.Unlock()
+	return j.BaseJob.ProviderProgress()
 }
 
 // CheckCompletion checks if the entire job is complete.
@@ -294,11 +274,11 @@ func (j *Job) createRetryUnit(ctx context.Context, info WorkUnitInfo, logger *sl
 
 	unit := j.CreateLabelWorkUnit(ctx, info.PageNum, state)
 	if unit != nil {
-		j.PendingUnits[unit.ID] = WorkUnitInfo{
+		j.Tracker.Register(unit.ID, WorkUnitInfo{
 			PageNum:    info.PageNum,
 			UnitType:   WorkUnitTypeLabel,
 			RetryCount: newRetryCount,
-		}
+		})
 	}
 
 	return unit

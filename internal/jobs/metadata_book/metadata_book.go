@@ -61,18 +61,7 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 
 // JobFactory returns a factory function for recreating jobs from stored metadata.
 func JobFactory(cfg Config) jobs.JobFactory {
-	return func(ctx context.Context, id string, metadata map[string]any) (jobs.Job, error) {
-		bookID, ok := metadata["book_id"].(string)
-		if !ok {
-			return nil, fmt.Errorf("missing book_id in job metadata")
-		}
-
-		job, err := NewJob(ctx, cfg, bookID)
-		if err != nil {
-			return nil, err
-		}
-
-		job.SetRecordID(id)
-		return job, nil
-	}
+	return common.MakeJobFactory(func(ctx context.Context, bookID string) (jobs.Job, error) {
+		return NewJob(ctx, cfg, bookID)
+	})
 }
