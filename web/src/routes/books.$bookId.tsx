@@ -156,8 +156,8 @@ function BookDetailPage() {
           >
             Prompts
           </Link>
-          {/* Job buttons - show for ingested or complete books */}
-          {(book.status === 'ingested' || book.status === 'complete') && (
+          {/* Job buttons - always show so users can run different job types */}
+          {(book.status !== 'error') && (
             <div className="flex items-center">
               {/* Main Start Processing button */}
               <button
