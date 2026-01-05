@@ -2,28 +2,11 @@ package job
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
-
-// LoadPageState loads existing page state from DefraDB using common.LoadPageStates.
-func (j *Job) LoadPageState(ctx context.Context) error {
-	return common.LoadPageStates(ctx, j.Book)
-}
-
-// LoadBookState loads book-level processing state from DefraDB using common.LoadBookOperationState.
-func (j *Job) LoadBookState(ctx context.Context) error {
-	tocDocID, err := common.LoadBookOperationState(ctx, j.Book)
-	if err != nil {
-		return err
-	}
-	j.TocDocID = tocDocID
-	return nil
-}
 
 // GeneratePageWorkUnits creates work units for a page based on its current state.
 // Must be called with j.Mu held.
@@ -158,93 +141,20 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 
 // PersistBookStatus persists book status to DefraDB.
 func (j *Job) PersistBookStatus(ctx context.Context, status BookStatus) error {
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	// Fire-and-forget - no need to block
-	sink.Send(defra.WriteOp{
-		Collection: "Book",
-		DocID:      j.Book.BookID,
-		Document: map[string]any{
-			"status": string(status),
-		},
-		Op: defra.OpUpdate,
-	})
-	return nil
+	return common.PersistBookStatus(ctx, j.Book.BookID, string(status))
 }
 
 // PersistMetadataState persists metadata state to DefraDB.
 func (j *Job) PersistMetadataState(ctx context.Context) error {
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	// Fire-and-forget - no need to block
-	sink.Send(defra.WriteOp{
-		Collection: "Book",
-		DocID:      j.Book.BookID,
-		Document: map[string]any{
-			"metadata_started":  j.Book.Metadata.IsStarted(),
-			"metadata_complete": j.Book.Metadata.IsComplete(),
-			"metadata_failed":   j.Book.Metadata.IsFailed(),
-			"metadata_retries":  j.Book.Metadata.GetRetries(),
-		},
-		Op: defra.OpUpdate,
-	})
-	return nil
+	return common.PersistMetadataState(ctx, j.Book.BookID, &j.Book.Metadata)
 }
 
 // PersistTocFinderState persists ToC finder state to DefraDB.
 func (j *Job) PersistTocFinderState(ctx context.Context) error {
-	if j.TocDocID == "" {
-		return nil // No ToC record yet
-	}
-
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	// Fire-and-forget - no need to block
-	sink.Send(defra.WriteOp{
-		Collection: "ToC",
-		DocID:      j.TocDocID,
-		Document: map[string]any{
-			"finder_started":  j.Book.TocFinder.IsStarted(),
-			"finder_complete": j.Book.TocFinder.IsComplete(),
-			"finder_failed":   j.Book.TocFinder.IsFailed(),
-			"finder_retries":  j.Book.TocFinder.GetRetries(),
-		},
-		Op: defra.OpUpdate,
-	})
-	return nil
+	return common.PersistTocFinderState(ctx, j.TocDocID, &j.Book.TocFinder)
 }
 
 // PersistTocExtractState persists ToC extract state to DefraDB.
 func (j *Job) PersistTocExtractState(ctx context.Context) error {
-	if j.TocDocID == "" {
-		return nil // No ToC record yet
-	}
-
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	// Fire-and-forget - no need to block
-	sink.Send(defra.WriteOp{
-		Collection: "ToC",
-		DocID:      j.TocDocID,
-		Document: map[string]any{
-			"extract_started":  j.Book.TocExtract.IsStarted(),
-			"extract_complete": j.Book.TocExtract.IsComplete(),
-			"extract_failed":   j.Book.TocExtract.IsFailed(),
-			"extract_retries":  j.Book.TocExtract.GetRetries(),
-		},
-		Op: defra.OpUpdate,
-	})
-	return nil
+	return common.PersistTocExtractState(ctx, j.TocDocID, &j.Book.TocExtract)
 }

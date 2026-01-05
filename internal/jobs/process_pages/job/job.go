@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -45,121 +45,43 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		return nil, err
 	}
 
-	// Get sink for writes
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return nil, fmt.Errorf("defra sink not in context")
-	}
+	// Book state is already fully loaded by common.LoadBook in the factory.
+	// Start() just does business logic: crash recovery, page creation, work unit generation.
 
 	logger := svcctx.LoggerFrom(ctx)
-	if logger != nil {
-		logger.Info("job.Start: loading page state", "book_id", j.Book.BookID, "total_pages", j.Book.TotalPages)
-	}
-
-	// Resolve prompts once at job start (supports book-level overrides)
-	if err := j.ResolvePrompts(ctx); err != nil {
-		return nil, fmt.Errorf("failed to resolve prompts: %w", err)
-	}
-
-	// Load existing page state from DefraDB
-	if err := j.LoadPageState(ctx); err != nil {
-		return nil, fmt.Errorf("failed to load page state: %w", err)
-	}
-
-	if logger != nil {
-		logger.Info("job.Start: loaded page state", "existing_pages", j.Book.CountPages())
-	}
-
-	// Load book-level state
-	if err := j.LoadBookState(ctx); err != nil {
-		return nil, fmt.Errorf("failed to load book state: %w", err)
-	}
-
-	if logger != nil {
-		logger.Info("job.Start: loaded book state")
-	}
 
 	// Set book status to processing
 	j.PersistBookStatus(ctx, BookStatusProcessing)
 
-	// Recover from crash during metadata operation
-	// If metadata was started but not done, reset to retry
+	// Crash recovery: if operations were started but not done, reset to retry
 	if j.Book.Metadata.IsStarted() {
 		j.Book.Metadata.Fail(MaxBookOpRetries)
 		j.PersistMetadataState(ctx)
 	}
-
-	// Recover from crash during ToC operations
-	// If ToC finder was started but not done and agent is nil, reset to retry
 	if j.Book.TocFinder.IsStarted() && j.TocAgent == nil {
 		j.Book.TocFinder.Fail(MaxBookOpRetries)
 		j.PersistTocFinderState(ctx)
 	}
-
-	// Same for ToC extract
 	if j.Book.TocExtract.IsStarted() && j.TocAgent == nil {
 		j.Book.TocExtract.Fail(MaxBookOpRetries)
 		j.PersistTocExtractState(ctx)
 	}
 
-	// First pass: identify pages that need creation
-	var newPageNums []int
-	for pageNum := 1; pageNum <= j.Book.TotalPages; pageNum++ {
-		if j.Book.GetPage(pageNum) == nil {
-			newPageNums = append(newPageNums, pageNum)
-		}
+	// Create any missing page records in DB
+	if err := checkCancelled(ctx); err != nil {
+		return nil, err
+	}
+	createdCount, err := common.CreateMissingPages(ctx, j.Book)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create page records: %w", err)
+	}
+	if createdCount > 0 && logger != nil {
+		logger.Info("created page records", "count", createdCount)
 	}
 
-	// Batch create all new pages
-	if len(newPageNums) > 0 {
-		if logger != nil {
-			logger.Info("job.Start: creating page records", "pages_to_create", len(newPageNums))
-		}
-
-		// Check for cancellation before batch operation
-		if err := checkCancelled(ctx); err != nil {
-			return nil, err
-		}
-
-		// Build batch of create operations
-		ops := make([]defra.WriteOp, len(newPageNums))
-		for i, pageNum := range newPageNums {
-			ops[i] = defra.WriteOp{
-				Collection: "Page",
-				Document: map[string]any{
-					"book_id":          j.Book.BookID,
-					"page_num":         pageNum,
-					"extract_complete": false,
-					"ocr_complete":     false,
-					"blend_complete":   false,
-					"label_complete":   false,
-				},
-				Op: defra.OpCreate,
-			}
-		}
-
-		// Send all creates at once - sink will batch them efficiently
-		results, err := sink.SendManySync(ctx, ops)
-		if err != nil {
-			return nil, fmt.Errorf("failed to batch create page records: %w", err)
-		}
-
-		// Assign DocIDs to PageState via BookState (using thread-safe setter)
-		for i, pageNum := range newPageNums {
-			state := NewPageState()
-			state.SetPageDocID(results[i].DocID)
-			j.Book.Pages[pageNum] = state
-		}
-
-		if logger != nil {
-			logger.Info("job.Start: batch page creation complete", "created", len(newPageNums))
-		}
-	}
-
-	// Second pass: generate work units for all pages
+	// Generate work units for all pages
 	var units []jobs.WorkUnit
 	for pageNum := 1; pageNum <= j.Book.TotalPages; pageNum++ {
-		// Check for cancellation periodically
 		if pageNum%100 == 0 {
 			if err := checkCancelled(ctx); err != nil {
 				return nil, err
@@ -168,30 +90,29 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 		state := j.Book.GetPage(pageNum)
 		if state == nil {
-			// Should not happen after batch create, but be safe
 			continue
 		}
 
-		// Generate work units based on current state (thread-safe accessor)
 		if !state.IsExtractDone() {
-			// Page needs extraction first
 			if unit := j.CreateExtractWorkUnit(pageNum); unit != nil {
 				units = append(units, *unit)
 			}
 		} else {
-			// Page is extracted, check what other work is needed
 			newUnits := j.GeneratePageWorkUnits(ctx, pageNum, state)
 			units = append(units, newUnits...)
 		}
 	}
 
-	if logger != nil {
-		logger.Info("job.Start: work unit generation complete", "work_units", len(units))
-	}
-
-	// Check if we should start book-level operations
+	// Add book-level operations if ready
 	bookUnits := j.MaybeStartBookOperations(ctx)
 	units = append(units, bookUnits...)
+
+	if logger != nil {
+		logger.Info("job started",
+			"book_id", j.Book.BookID,
+			"total_pages", j.Book.TotalPages,
+			"work_units", len(units))
+	}
 
 	return units, nil
 }

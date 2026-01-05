@@ -4,8 +4,185 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
+
+// LoadBookConfig configures what to load for a book.
+type LoadBookConfig struct {
+	// Required
+	HomeDir *home.Dir
+
+	// Provider config
+	OcrProviders     []string
+	BlendProvider    string
+	LabelProvider    string
+	MetadataProvider string
+	TocProvider      string
+	DebugAgents      bool
+
+	// Optional prompt resolution
+	// If PromptKeys is non-empty, prompts will be resolved and stored in BookState
+	PromptKeys     []string
+	PromptDefaults func(string) string // fallback for keys not in resolver
+}
+
+// LoadBookResult contains the fully loaded book state.
+type LoadBookResult struct {
+	Book     *BookState
+	TocDocID string // ToC document ID (needed by jobs but not part of BookState)
+}
+
+// LoadBook loads everything about a book in one call:
+// 1. Query DB for book record (page_count)
+// 2. Load PDFs from disk
+// 3. Load page states from DB
+// 4. Load operation states from DB
+// 5. Resolve prompts (if PromptKeys provided)
+func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBookResult, error) {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil, fmt.Errorf("defra client not in context")
+	}
+
+	if cfg.HomeDir == nil {
+		return nil, fmt.Errorf("HomeDir is required")
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	book := NewBookState(bookID)
+
+	// 1. Query book record for page_count
+	bookQuery := fmt.Sprintf(`{
+		Book(filter: {_docID: {_eq: "%s"}}) {
+			page_count
+		}
+	}`, bookID)
+
+	bookResp, err := defraClient.Execute(ctx, bookQuery, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query book: %w", err)
+	}
+
+	if books, ok := bookResp.Data["Book"].([]any); ok && len(books) > 0 {
+		if bookData, ok := books[0].(map[string]any); ok {
+			if pc, ok := bookData["page_count"].(float64); ok {
+				book.TotalPages = int(pc)
+			}
+		}
+	}
+
+	if book.TotalPages == 0 {
+		return nil, fmt.Errorf("book %s has no pages or not found", bookID)
+	}
+
+	// 2. Set config
+	book.HomeDir = cfg.HomeDir
+	book.OcrProviders = cfg.OcrProviders
+	book.BlendProvider = cfg.BlendProvider
+	book.LabelProvider = cfg.LabelProvider
+	book.MetadataProvider = cfg.MetadataProvider
+	book.TocProvider = cfg.TocProvider
+	book.DebugAgents = cfg.DebugAgents
+
+	// 3. Load PDFs from disk
+	pdfs, err := LoadPDFsFromOriginals(cfg.HomeDir, bookID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load PDFs: %w", err)
+	}
+	if len(pdfs) == 0 {
+		return nil, fmt.Errorf("no PDFs found in originals directory for book %s", bookID)
+	}
+	book.PDFs = pdfs
+
+	if logger != nil {
+		logger.Debug("LoadBook: loaded PDFs", "book_id", bookID, "pdf_count", len(pdfs))
+	}
+
+	// 4. Load page states from DB
+	if err := LoadPageStates(ctx, book); err != nil {
+		return nil, fmt.Errorf("failed to load page states: %w", err)
+	}
+
+	if logger != nil {
+		logger.Debug("LoadBook: loaded page states", "book_id", bookID, "pages", book.CountPages())
+	}
+
+	// 5. Load operation states from DB
+	tocDocID, err := LoadBookOperationState(ctx, book)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load book operation state: %w", err)
+	}
+
+	if logger != nil {
+		logger.Debug("LoadBook: loaded operation states", "book_id", bookID, "toc_doc_id", tocDocID)
+	}
+
+	// 6. Resolve prompts (optional)
+	if len(cfg.PromptKeys) > 0 {
+		if err := ResolvePrompts(ctx, book, cfg.PromptKeys, cfg.PromptDefaults); err != nil {
+			return nil, fmt.Errorf("failed to resolve prompts: %w", err)
+		}
+
+		if logger != nil {
+			logger.Debug("LoadBook: resolved prompts", "book_id", bookID, "count", len(cfg.PromptKeys))
+		}
+	}
+
+	if logger != nil {
+		logger.Info("LoadBook: complete",
+			"book_id", bookID,
+			"total_pages", book.TotalPages,
+			"loaded_pages", book.CountPages(),
+			"toc_doc_id", tocDocID)
+	}
+
+	return &LoadBookResult{
+		Book:     book,
+		TocDocID: tocDocID,
+	}, nil
+}
+
+// ResolvePrompts resolves prompts for a book and stores them in BookState.
+// Uses the PromptResolver from context if available, falls back to defaults.
+func ResolvePrompts(ctx context.Context, book *BookState, keys []string, defaults func(string) string) error {
+	resolver := svcctx.PromptResolverFrom(ctx)
+	logger := svcctx.LoggerFrom(ctx)
+
+	for _, key := range keys {
+		var text string
+		var cid string
+
+		if resolver != nil {
+			resolved, err := resolver.Resolve(ctx, key, book.BookID)
+			if err != nil {
+				if logger != nil {
+					logger.Warn("failed to resolve prompt, using default",
+						"key", key, "book_id", book.BookID, "error", err)
+				}
+				// Fall through to defaults
+			} else {
+				text = resolved.Text
+				cid = resolved.CID
+				if resolved.IsOverride && logger != nil {
+					logger.Info("using book-level prompt override",
+						"key", key, "book_id", book.BookID)
+				}
+			}
+		}
+
+		// If we didn't get text from resolver, use defaults
+		if text == "" && defaults != nil {
+			text = defaults(key)
+		}
+
+		book.Prompts[key] = text
+		book.PromptCIDs[key] = cid
+	}
+
+	return nil
+}
 
 // LoadPageStates loads all page state from DefraDB for a book into the BookState.
 func LoadPageStates(ctx context.Context, book *BookState) error {

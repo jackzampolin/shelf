@@ -337,3 +337,104 @@ func (b *BookState) CountPages() int {
 	defer b.mu.RUnlock()
 	return len(b.Pages)
 }
+
+// CountLabeledPages returns the number of pages that have completed labeling.
+func (b *BookState) CountLabeledPages() int {
+	count := 0
+	b.ForEachPage(func(pageNum int, state *PageState) {
+		if state.IsLabelDone() {
+			count++
+		}
+	})
+	return count
+}
+
+// AllPagesComplete returns true if all pages have completed the page-level pipeline.
+func (b *BookState) AllPagesComplete() bool {
+	allDone := true
+	b.ForEachPage(func(pageNum int, state *PageState) {
+		if !state.IsLabelDone() {
+			allDone = false
+		}
+	})
+	return allDone && b.CountPages() >= b.TotalPages
+}
+
+// ConsecutivePagesComplete returns true if pages 1 through `required` all have blend_complete.
+// If TotalPages < required, checks up to TotalPages.
+func (b *BookState) ConsecutivePagesComplete(required int) bool {
+	if b.TotalPages < required {
+		required = b.TotalPages
+	}
+	for pageNum := 1; pageNum <= required; pageNum++ {
+		state := b.GetPage(pageNum)
+		if state == nil || !state.IsBlendDone() {
+			return false
+		}
+	}
+	return true
+}
+
+// ProviderProgress contains progress data for a single provider.
+type ProviderProgress struct {
+	TotalExpected int
+	Completed     int
+}
+
+// GetProviderProgress returns progress by provider for tracking job completion.
+// Includes extract, OCR per provider, blend, and label progress.
+func (b *BookState) GetProviderProgress() map[string]ProviderProgress {
+	progress := make(map[string]ProviderProgress)
+
+	// Track extraction progress
+	extractCompleted := 0
+	b.ForEachPage(func(pageNum int, state *PageState) {
+		if state.IsExtractDone() {
+			extractCompleted++
+		}
+	})
+	progress["extract"] = ProviderProgress{
+		TotalExpected: b.TotalPages,
+		Completed:     extractCompleted,
+	}
+
+	// Track OCR progress per provider
+	for _, provider := range b.OcrProviders {
+		completed := 0
+		b.ForEachPage(func(pageNum int, state *PageState) {
+			if state.OcrComplete(provider) {
+				completed++
+			}
+		})
+		progress[provider] = ProviderProgress{
+			TotalExpected: b.TotalPages,
+			Completed:     completed,
+		}
+	}
+
+	// Track blend progress
+	blendCompleted := 0
+	b.ForEachPage(func(pageNum int, state *PageState) {
+		if state.IsBlendDone() {
+			blendCompleted++
+		}
+	})
+	progress["blend"] = ProviderProgress{
+		TotalExpected: b.TotalPages,
+		Completed:     blendCompleted,
+	}
+
+	// Track label progress
+	labelCompleted := 0
+	b.ForEachPage(func(pageNum int, state *PageState) {
+		if state.IsLabelDone() {
+			labelCompleted++
+		}
+	})
+	progress["label"] = ProviderProgress{
+		TotalExpected: b.TotalPages,
+		Completed:     labelCompleted,
+	}
+
+	return progress
+}

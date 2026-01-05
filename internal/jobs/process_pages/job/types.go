@@ -101,76 +101,31 @@ type Job struct {
 	PendingUnits map[string]WorkUnitInfo // work_unit_id -> info
 }
 
-// New creates a new Job with initialized BookState.
-func New(cfg Config) *Job {
-	book := common.NewBookState(cfg.BookID)
-	book.TotalPages = cfg.TotalPages
-	book.HomeDir = cfg.HomeDir
-	book.PDFs = cfg.PDFs
-	book.OcrProviders = cfg.OcrProviders
-	book.BlendProvider = cfg.BlendProvider
-	book.LabelProvider = cfg.LabelProvider
-	book.MetadataProvider = cfg.MetadataProvider
-	book.TocProvider = cfg.TocProvider
-	book.DebugAgents = cfg.DebugAgents
-
+// NewFromLoadResult creates a Job from a common.LoadBookResult.
+// This is the primary constructor - LoadBook does all the loading.
+func NewFromLoadResult(result *common.LoadBookResult) *Job {
 	return &Job{
-		Book:         book,
+		Book:         result.Book,
+		TocDocID:     result.TocDocID,
 		PendingUnits: make(map[string]WorkUnitInfo),
 	}
 }
 
-// Config for creating a new Job.
-type Config struct {
-	BookID           string
-	TotalPages       int
-	HomeDir          *common.HomeDir
-	PDFs             common.PDFList // PDF sources for extraction
-	OcrProviders     []string
-	BlendProvider    string
-	LabelProvider    string
-	MetadataProvider string
-	TocProvider      string
-	DebugAgents      bool // Enable debug logging for agent executions
-}
-
 // CountLabeledPages returns the number of pages that have completed labeling.
 func (j *Job) CountLabeledPages() int {
-	count := 0
-	j.Book.ForEachPage(func(pageNum int, state *PageState) {
-		if state.IsLabelDone() {
-			count++
-		}
-	})
-	return count
+	return j.Book.CountLabeledPages()
 }
 
 // ConsecutiveFrontMatterComplete returns true if pages 1 through ConsecutiveFrontMatterRequired
 // all have blend_complete. This ensures the ToC finder has OCR data for the pages where
 // the ToC is typically located.
 func (j *Job) ConsecutiveFrontMatterComplete() bool {
-	required := ConsecutiveFrontMatterRequired
-	if j.Book.TotalPages < required {
-		required = j.Book.TotalPages
-	}
-	for pageNum := 1; pageNum <= required; pageNum++ {
-		state := j.Book.GetPage(pageNum)
-		if state == nil || !state.IsBlendDone() {
-			return false
-		}
-	}
-	return true
+	return j.Book.ConsecutivePagesComplete(ConsecutiveFrontMatterRequired)
 }
 
 // AllPagesComplete returns true if all pages have completed the page-level pipeline.
 func (j *Job) AllPagesComplete() bool {
-	allDone := true
-	j.Book.ForEachPage(func(pageNum int, state *PageState) {
-		if !state.IsLabelDone() {
-			allDone = false
-		}
-	})
-	return allDone && j.Book.CountPages() >= j.Book.TotalPages
+	return j.Book.AllPagesComplete()
 }
 
 // RegisterWorkUnit registers a pending work unit.
@@ -215,57 +170,14 @@ func (j *Job) FindPDFForPage(pageNum int) (pdfPath string, pageInPDF int) {
 
 // ProviderProgress returns progress by provider for the Progress() method.
 func (j *Job) ProviderProgress() map[string]jobs.ProviderProgress {
-	progress := make(map[string]jobs.ProviderProgress)
-
-	// Track extraction progress (using thread-safe accessors)
-	extractCompleted := 0
-	j.Book.ForEachPage(func(pageNum int, state *PageState) {
-		if state.IsExtractDone() {
-			extractCompleted++
-		}
-	})
-	progress["extract"] = jobs.ProviderProgress{
-		TotalExpected: j.Book.TotalPages,
-		Completed:     extractCompleted,
-	}
-
-	// Track OCR progress per provider
-	for _, provider := range j.Book.OcrProviders {
-		completed := 0
-		j.Book.ForEachPage(func(pageNum int, state *PageState) {
-			if state.OcrComplete(provider) {
-				completed++
-			}
-		})
-		progress[provider] = jobs.ProviderProgress{
-			TotalExpected: j.Book.TotalPages,
-			Completed:     completed,
+	// Get progress from BookState and convert to jobs.ProviderProgress
+	bookProgress := j.Book.GetProviderProgress()
+	progress := make(map[string]jobs.ProviderProgress, len(bookProgress))
+	for key, p := range bookProgress {
+		progress[key] = jobs.ProviderProgress{
+			TotalExpected: p.TotalExpected,
+			Completed:     p.Completed,
 		}
 	}
-
-	// Track blend progress (using thread-safe accessors)
-	blendCompleted := 0
-	j.Book.ForEachPage(func(pageNum int, state *PageState) {
-		if state.IsBlendDone() {
-			blendCompleted++
-		}
-	})
-	progress["blend"] = jobs.ProviderProgress{
-		TotalExpected: j.Book.TotalPages,
-		Completed:     blendCompleted,
-	}
-
-	// Track label progress (using thread-safe accessors)
-	labelCompleted := 0
-	j.Book.ForEachPage(func(pageNum int, state *PageState) {
-		if state.IsLabelDone() {
-			labelCompleted++
-		}
-	})
-	progress["label"] = jobs.ProviderProgress{
-		TotalExpected: j.Book.TotalPages,
-		Completed:     labelCompleted,
-	}
-
 	return progress
 }

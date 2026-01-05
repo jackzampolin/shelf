@@ -3,18 +3,10 @@ package process_pages
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"regexp"
-	"sort"
-	"strconv"
-	"strings"
-
-	"github.com/pdfcpu/pdfcpu/pkg/api"
 
 	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	pjob "github.com/jackzampolin/shelf/internal/jobs/process_pages/job"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -165,14 +157,10 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 }
 
 // NewJob creates a new process pages job for the given book.
+// Uses common.LoadBook to load everything in one call.
 func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
-	}
-
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return nil, fmt.Errorf("defra client not in context")
 	}
 
 	homeDir := svcctx.HomeFrom(ctx)
@@ -180,59 +168,31 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 		return nil, fmt.Errorf("home directory not in context")
 	}
 
-	// Get book info
-	bookQuery := fmt.Sprintf(`{
-		Book(filter: {_docID: {_eq: "%s"}}) {
-			page_count
-		}
-	}`, bookID)
-
-	bookResp, err := defraClient.Execute(ctx, bookQuery, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query book: %w", err)
-	}
-
-	var totalPages int
-	if books, ok := bookResp.Data["Book"].([]any); ok && len(books) > 0 {
-		if book, ok := books[0].(map[string]any); ok {
-			if pc, ok := book["page_count"].(float64); ok {
-				totalPages = int(pc)
-			}
-		}
-	}
-
-	if totalPages == 0 {
-		return nil, fmt.Errorf("book %s has no pages", bookID)
-	}
-
-	// Load PDFs from originals directory
-	pdfs, err := loadPDFsFromOriginals(homeDir, bookID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load PDFs: %w", err)
-	}
-
-	if len(pdfs) == 0 {
-		return nil, fmt.Errorf("no PDFs found in originals directory for book %s", bookID)
-	}
-
-	logger := svcctx.LoggerFrom(ctx)
-	if logger != nil {
-		logger.Info("creating page processing job", "book_id", bookID, "ocr_providers", cfg.OcrProviders)
-	}
-
-	// Job accesses services via svcctx from context passed to Start/OnComplete
-	return pjob.New(pjob.Config{
-		BookID:           bookID,
-		TotalPages:       totalPages,
+	// Load everything about this book in one call
+	result, err := common.LoadBook(ctx, bookID, common.LoadBookConfig{
 		HomeDir:          homeDir,
-		PDFs:             pdfs,
 		OcrProviders:     cfg.OcrProviders,
 		BlendProvider:    cfg.BlendProvider,
 		LabelProvider:    cfg.LabelProvider,
 		MetadataProvider: cfg.MetadataProvider,
 		TocProvider:      cfg.TocProvider,
 		DebugAgents:      cfg.DebugAgents,
-	}), nil
+		PromptKeys:       pjob.PromptKeys(),
+		PromptDefaults:   pjob.GetEmbeddedDefault,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load book: %w", err)
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+	if logger != nil {
+		logger.Info("creating page processing job",
+			"book_id", bookID,
+			"total_pages", result.Book.TotalPages,
+			"ocr_providers", cfg.OcrProviders)
+	}
+
+	return pjob.NewFromLoadResult(result), nil
 }
 
 // JobFactory returns a factory function for recreating jobs from stored metadata.
@@ -255,87 +215,3 @@ func JobFactory(cfg Config) jobs.JobFactory {
 	}
 }
 
-// loadPDFsFromOriginals scans the originals directory for PDFs
-// and builds PDFInfo with cumulative page ranges.
-func loadPDFsFromOriginals(homeDir *home.Dir, bookID string) ([]pjob.PDFInfo, error) {
-	originalsDir := homeDir.OriginalsDir(bookID)
-
-	entries, err := os.ReadDir(originalsDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read originals directory: %w", err)
-	}
-
-	// Find all PDFs
-	var pdfPaths []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		if strings.HasSuffix(strings.ToLower(entry.Name()), ".pdf") {
-			pdfPaths = append(pdfPaths, filepath.Join(originalsDir, entry.Name()))
-		}
-	}
-
-	// Sort by numeric suffix
-	pdfPaths = sortPDFsByNumber(pdfPaths)
-
-	// Build PDFInfo with cumulative page ranges
-	var pdfs []pjob.PDFInfo
-	cumulativePage := 1
-
-	for _, pdfPath := range pdfPaths {
-		f, err := os.Open(pdfPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open PDF %s: %w", pdfPath, err)
-		}
-		pageCount, err := api.PageCount(f, nil)
-		f.Close()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get page count for %s: %w", pdfPath, err)
-		}
-
-		pdfs = append(pdfs, pjob.PDFInfo{
-			Path:      pdfPath,
-			StartPage: cumulativePage,
-			EndPage:   cumulativePage + pageCount - 1,
-		})
-
-		cumulativePage += pageCount
-	}
-
-	return pdfs, nil
-}
-
-// sortPDFsByNumber sorts PDF paths by their numeric suffix.
-// e.g., ["book-2.pdf", "book-1.pdf", "book-10.pdf"] -> ["book-1.pdf", "book-2.pdf", "book-10.pdf"]
-func sortPDFsByNumber(paths []string) []string {
-	sorted := make([]string, len(paths))
-	copy(sorted, paths)
-
-	re := regexp.MustCompile(`-(\d+)\.pdf$`)
-
-	sort.Slice(sorted, func(i, j int) bool {
-		mi := re.FindStringSubmatch(strings.ToLower(sorted[i]))
-		mj := re.FindStringSubmatch(strings.ToLower(sorted[j]))
-
-		// If both have numbers, sort numerically
-		if len(mi) > 1 && len(mj) > 1 {
-			ni, _ := strconv.Atoi(mi[1])
-			nj, _ := strconv.Atoi(mj[1])
-			return ni < nj
-		}
-
-		// Files without numbers come first
-		if len(mi) > 1 {
-			return false
-		}
-		if len(mj) > 1 {
-			return true
-		}
-
-		// Both without numbers: alphabetical
-		return sorted[i] < sorted[j]
-	})
-
-	return sorted
-}
