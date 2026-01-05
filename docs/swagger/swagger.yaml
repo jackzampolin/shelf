@@ -1,5 +1,16 @@
 basePath: /
 definitions:
+  github_com_jackzampolin_shelf_internal_config.Entry:
+    properties:
+      _docID:
+        description: DefraDB document ID
+        type: string
+      description:
+        type: string
+      key:
+        type: string
+      value: {}
+    type: object
   github_com_jackzampolin_shelf_internal_jobs.ProviderProgress:
     properties:
       completed:
@@ -60,6 +71,54 @@ definitions:
         $ref: '#/definitions/github_com_jackzampolin_shelf_internal_providers.RateLimiterStatus'
       type:
         type: string
+    type: object
+  github_com_jackzampolin_shelf_internal_llmcall.Call:
+    properties:
+      book_id:
+        description: Context references
+        type: string
+      error:
+        type: string
+      id:
+        description: Unique identifier
+        type: string
+      input_tokens:
+        description: Token usage
+        type: integer
+      job_id:
+        type: string
+      latency_ms:
+        type: integer
+      model:
+        type: string
+      output_tokens:
+        type: integer
+      page_id:
+        type: string
+      prompt_cid:
+        description: Content-addressed ID linking to the exact prompt version used
+        type: string
+      prompt_key:
+        description: Prompt traceability
+        type: string
+      provider:
+        description: Model info
+        type: string
+      response:
+        description: Response
+        type: string
+      success:
+        description: Status
+        type: boolean
+      temperature:
+        type: number
+      timestamp:
+        description: Timing
+        type: string
+      tool_calls:
+        items:
+          type: integer
+        type: array
     type: object
   github_com_jackzampolin_shelf_internal_metrics.Metric:
     properties:
@@ -250,6 +309,30 @@ definitions:
       title:
         type: string
     type: object
+  internal_server_endpoints.BookPromptResponse:
+    properties:
+      cid:
+        type: string
+      is_override:
+        type: boolean
+      key:
+        type: string
+      text:
+        type: string
+      variables:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_server_endpoints.BookPromptsListResponse:
+    properties:
+      book_id:
+        type: string
+      prompts:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
+        type: array
+    type: object
   internal_server_endpoints.CreateJobRequest:
     properties:
       job_type:
@@ -410,6 +493,29 @@ definitions:
       total_pages:
         type: integer
     type: object
+  internal_server_endpoints.LLMCallCountsResponse:
+    properties:
+      counts:
+        additionalProperties:
+          type: integer
+        type: object
+    type: object
+  internal_server_endpoints.LLMCallResponse:
+    properties:
+      call:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_llmcall.Call'
+      error:
+        type: string
+    type: object
+  internal_server_endpoints.LLMCallsResponse:
+    properties:
+      calls:
+        items:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_llmcall.Call'
+        type: array
+      total:
+        type: integer
+    type: object
   internal_server_endpoints.ListBooksResponse:
     properties:
       books:
@@ -530,6 +636,30 @@ definitions:
       page_num:
         type: integer
     type: object
+  internal_server_endpoints.PromptResponse:
+    properties:
+      description:
+        type: string
+      doc_id:
+        type: string
+      hash:
+        type: string
+      key:
+        type: string
+      text:
+        type: string
+      variables:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_server_endpoints.PromptsListResponse:
+    properties:
+      prompts:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.PromptResponse'
+        type: array
+    type: object
   internal_server_endpoints.ProviderProgress:
     properties:
       complete:
@@ -549,6 +679,34 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  internal_server_endpoints.RerunTocResponse:
+    properties:
+      job_id:
+        type: string
+      message:
+        type: string
+    type: object
+  internal_server_endpoints.SetPromptRequest:
+    properties:
+      note:
+        type: string
+      text:
+        type: string
+    type: object
+  internal_server_endpoints.SettingResponse:
+    properties:
+      entry:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_config.Entry'
+      error:
+        type: string
+    type: object
+  internal_server_endpoints.SettingsResponse:
+    properties:
+      settings:
+        additionalProperties:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_config.Entry'
+        type: object
     type: object
   internal_server_endpoints.StageProgress:
     properties:
@@ -588,7 +746,7 @@ definitions:
   internal_server_endpoints.StartJobRequest:
     properties:
       job_type:
-        description: 'Optional: defaults to "process-pages"'
+        description: 'Optional: defaults to "process-book"'
         type: string
     type: object
   internal_server_endpoints.StartJobResponse:
@@ -667,6 +825,12 @@ definitions:
         type: object
       status:
         type: string
+    type: object
+  internal_server_endpoints.UpdateSettingRequest:
+    properties:
+      description:
+        type: string
+      value: {}
     type: object
   time.Duration:
     enum:
@@ -896,6 +1060,45 @@ paths:
       summary: Get page image
       tags:
       - pages
+  /api/books/{book_id}/rerun-toc:
+    post:
+      description: Reset ToC state and rerun the ToC finder and extractor agents
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.RerunTocResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "412":
+          description: Not enough pages have blend complete
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Rerun ToC finder and extractor
+      tags:
+      - books
   /api/books/{id}:
     get:
       description: Get detailed information about a book
@@ -966,6 +1169,131 @@ paths:
       summary: Get book processing cost
       tags:
       - books
+  /api/books/{id}/prompts:
+    get:
+      description: Get all prompts resolved for a specific book (with overrides applied)
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.BookPromptsListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List prompts for a book
+      tags:
+      - prompts
+  /api/books/{id}/prompts/{key}:
+    delete:
+      description: Remove a custom prompt override for a book (reverts to default)
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Prompt key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Clear a book prompt override
+      tags:
+      - prompts
+    get:
+      description: Get a specific prompt resolved for a book (with override if exists)
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Prompt key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get a prompt for a book
+      tags:
+      - prompts
+    put:
+      consumes:
+      - application/json
+      description: Set a custom prompt for a specific book
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Prompt key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Prompt override
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.SetPromptRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Set a book prompt override
+      tags:
+      - prompts
   /api/books/ingest:
     post:
       consumes:
@@ -1255,7 +1583,7 @@ paths:
         name: book_id
         required: true
         type: string
-      - description: 'Job type (default: process-pages)'
+      - description: 'Job type (default: process-book)'
         in: query
         name: job_type
         type: string
@@ -1313,6 +1641,122 @@ paths:
       summary: Get detailed job status for a book
       tags:
       - jobs
+  /api/llmcalls:
+    get:
+      description: Get LLM call history with optional filters
+      parameters:
+      - description: Filter by book ID
+        in: query
+        name: book_id
+        type: string
+      - description: Filter by page ID
+        in: query
+        name: page_id
+        type: string
+      - description: Filter by job ID
+        in: query
+        name: job_id
+        type: string
+      - description: Filter by prompt key
+        in: query
+        name: prompt_key
+        type: string
+      - description: Filter by provider
+        in: query
+        name: provider
+        type: string
+      - description: Filter by model
+        in: query
+        name: model
+        type: string
+      - description: Filter by success status (true or false)
+        in: query
+        name: success
+        type: boolean
+      - description: Max results (default 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Result offset
+        in: query
+        name: offset
+        type: integer
+      - description: Filter calls after this RFC3339 timestamp
+        in: query
+        name: after
+        type: string
+      - description: Filter calls before this RFC3339 timestamp
+        in: query
+        name: before
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.LLMCallsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List LLM calls
+      tags:
+      - llmcalls
+  /api/llmcalls/{id}:
+    get:
+      description: Get a single LLM call by ID
+      parameters:
+      - description: LLM call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.LLMCallResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get an LLM call
+      tags:
+      - llmcalls
+  /api/llmcalls/counts/{book_id}:
+    get:
+      description: Get count of LLM calls grouped by prompt key for a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.LLMCallCountsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get LLM call counts by prompt key
+      tags:
+      - llmcalls
   /api/metrics:
     get:
       description: List LLM/OCR call metrics with optional filtering
@@ -1447,6 +1891,159 @@ paths:
       summary: Get metrics summary
       tags:
       - metrics
+  /api/prompts:
+    get:
+      description: Get all registered prompts with their embedded defaults
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.PromptsListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List all prompts
+      tags:
+      - prompts
+  /api/prompts/{key}:
+    get:
+      description: Get a specific prompt by key
+      parameters:
+      - description: Prompt key (e.g., stages.blend.system)
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.PromptResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get a prompt
+      tags:
+      - prompts
+  /api/settings:
+    get:
+      description: Get all configuration settings
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.SettingsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List all settings
+      tags:
+      - settings
+  /api/settings/{key}:
+    get:
+      description: Get a single configuration setting by key
+      parameters:
+      - description: Setting key (URL-encoded)
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.SettingResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get a setting
+      tags:
+      - settings
+    put:
+      consumes:
+      - application/json
+      description: Update a configuration setting
+      parameters:
+      - description: Setting key (URL-encoded)
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: New value
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.UpdateSettingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.SettingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Update a setting
+      tags:
+      - settings
+  /api/settings/reset/{key}:
+    post:
+      description: Reset a configuration setting to its default value
+      parameters:
+      - description: Setting key (URL-encoded)
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.SettingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Reset a setting to default
+      tags:
+      - settings
   /health:
     get:
       description: Basic health check endpoint

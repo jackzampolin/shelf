@@ -579,6 +579,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/{book_id}/rerun-toc": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rerun ToC finder and extractor
+         * @description Reset ToC state and rerun the ToC finder and extractor agents
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.RerunTocResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not enough pages have blend complete */
+                412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{id}": {
         parameters: {
             query?: never;
@@ -724,6 +811,216 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{id}/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List prompts for a book
+         * @description Get all prompts resolved for a specific book (with overrides applied)
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.BookPromptsListResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{id}/prompts/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a prompt for a book
+         * @description Get a specific prompt resolved for a book (with override if exists)
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    id: string;
+                    /** @description Prompt key */
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.BookPromptResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        /**
+         * Set a book prompt override
+         * @description Set a custom prompt for a specific book
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    id: string;
+                    /** @description Prompt key */
+                    key: string;
+                };
+                cookie?: never;
+            };
+            /** @description Prompt override */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["internal_server_endpoints.SetPromptRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.BookPromptResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        /**
+         * Clear a book prompt override
+         * @description Remove a custom prompt override for a book (reverts to default)
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    id: string;
+                    /** @description Prompt key */
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.BookPromptResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -1257,6 +1554,197 @@ export interface paths {
         };
         trace?: never;
     };
+    "/api/llmcalls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List LLM calls
+         * @description Get LLM call history with optional filters
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Filter by book ID */
+                    book_id?: string;
+                    /** @description Filter by page ID */
+                    page_id?: string;
+                    /** @description Filter by job ID */
+                    job_id?: string;
+                    /** @description Filter by prompt key */
+                    prompt_key?: string;
+                    /** @description Filter by provider */
+                    provider?: string;
+                    /** @description Filter by model */
+                    model?: string;
+                    /** @description Filter by success status (true or false) */
+                    success?: boolean;
+                    /** @description Max results (default 100) */
+                    limit?: number;
+                    /** @description Result offset */
+                    offset?: number;
+                    /** @description Filter calls after this RFC3339 timestamp */
+                    after?: string;
+                    /** @description Filter calls before this RFC3339 timestamp */
+                    before?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.LLMCallsResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llmcalls/counts/{book_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get LLM call counts by prompt key
+         * @description Get count of LLM calls grouped by prompt key for a book
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.LLMCallCountsResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llmcalls/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an LLM call
+         * @description Get a single LLM call by ID
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description LLM call ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.LLMCallResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics": {
         parameters: {
             query?: never;
@@ -1465,6 +1953,340 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all prompts
+         * @description Get all registered prompts with their embedded defaults
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.PromptsListResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/prompts/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a prompt
+         * @description Get a specific prompt by key
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Prompt key (e.g., stages.blend.system) */
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.PromptResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all settings
+         * @description Get all configuration settings
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.SettingsResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/reset/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset a setting to default
+         * @description Reset a configuration setting to its default value
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Setting key (URL-encoded) */
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.SettingResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a setting
+         * @description Get a single configuration setting by key
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Setting key (URL-encoded) */
+                    key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.SettingResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        /**
+         * Update a setting
+         * @description Update a configuration setting
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Setting key (URL-encoded) */
+                    key: string;
+                };
+                cookie?: never;
+            };
+            /** @description New value */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["internal_server_endpoints.UpdateSettingRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.SettingResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1595,6 +2417,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        "github_com_jackzampolin_shelf_internal_config.Entry": {
+            /** @description DefraDB document ID */
+            _docID?: string;
+            description?: string;
+            key?: string;
+            value?: unknown;
+        };
         "github_com_jackzampolin_shelf_internal_jobs.ProviderProgress": {
             /** @description Completed during this job execution */
             completed?: number;
@@ -1625,6 +2454,34 @@ export interface components {
             queue_depth?: number;
             rate_limiter?: components["schemas"]["github_com_jackzampolin_shelf_internal_providers.RateLimiterStatus"];
             type?: string;
+        };
+        "github_com_jackzampolin_shelf_internal_llmcall.Call": {
+            /** @description Context references */
+            book_id?: string;
+            error?: string;
+            /** @description Unique identifier */
+            id?: string;
+            /** @description Token usage */
+            input_tokens?: number;
+            job_id?: string;
+            latency_ms?: number;
+            model?: string;
+            output_tokens?: number;
+            page_id?: string;
+            /** @description Content-addressed ID linking to the exact prompt version used */
+            prompt_cid?: string;
+            /** @description Prompt traceability */
+            prompt_key?: string;
+            /** @description Model info */
+            provider?: string;
+            /** @description Response */
+            response?: string;
+            /** @description Status */
+            success?: boolean;
+            temperature?: number;
+            /** @description Timing */
+            timestamp?: string;
+            tool_calls?: number[];
         };
         "github_com_jackzampolin_shelf_internal_metrics.Metric": {
             _docID?: string;
@@ -1724,6 +2581,17 @@ export interface components {
             subjects?: string[];
             title?: string;
         };
+        "internal_server_endpoints.BookPromptResponse": {
+            cid?: string;
+            is_override?: boolean;
+            key?: string;
+            text?: string;
+            variables?: string[];
+        };
+        "internal_server_endpoints.BookPromptsListResponse": {
+            book_id?: string;
+            prompts?: components["schemas"]["internal_server_endpoints.BookPromptResponse"][];
+        };
         "internal_server_endpoints.CreateJobRequest": {
             job_type?: string;
             metadata?: {
@@ -1815,6 +2683,19 @@ export interface components {
             toc_found?: boolean;
             total_pages?: number;
         };
+        "internal_server_endpoints.LLMCallCountsResponse": {
+            counts?: {
+                [key: string]: number;
+            };
+        };
+        "internal_server_endpoints.LLMCallResponse": {
+            call?: components["schemas"]["github_com_jackzampolin_shelf_internal_llmcall.Call"];
+            error?: string;
+        };
+        "internal_server_endpoints.LLMCallsResponse": {
+            calls?: components["schemas"]["github_com_jackzampolin_shelf_internal_llmcall.Call"][];
+            total?: number;
+        };
         "internal_server_endpoints.ListBooksResponse": {
             books?: components["schemas"]["internal_server_endpoints.Book"][];
         };
@@ -1877,6 +2758,17 @@ export interface components {
             ocr_complete?: boolean;
             page_num?: number;
         };
+        "internal_server_endpoints.PromptResponse": {
+            description?: string;
+            doc_id?: string;
+            hash?: string;
+            key?: string;
+            text?: string;
+            variables?: string[];
+        };
+        "internal_server_endpoints.PromptsListResponse": {
+            prompts?: components["schemas"]["internal_server_endpoints.PromptResponse"][];
+        };
         "internal_server_endpoints.ProviderProgress": {
             complete?: number;
             cost_usd?: number;
@@ -1885,6 +2777,23 @@ export interface components {
         "internal_server_endpoints.ProvidersStatus": {
             llm?: string[];
             ocr?: string[];
+        };
+        "internal_server_endpoints.RerunTocResponse": {
+            job_id?: string;
+            message?: string;
+        };
+        "internal_server_endpoints.SetPromptRequest": {
+            note?: string;
+            text?: string;
+        };
+        "internal_server_endpoints.SettingResponse": {
+            entry?: components["schemas"]["github_com_jackzampolin_shelf_internal_config.Entry"];
+            error?: string;
+        };
+        "internal_server_endpoints.SettingsResponse": {
+            settings?: {
+                [key: string]: components["schemas"]["github_com_jackzampolin_shelf_internal_config.Entry"];
+            };
         };
         "internal_server_endpoints.StageProgress": {
             blend?: {
@@ -1952,6 +2861,10 @@ export interface components {
                 [key: string]: unknown;
             };
             status?: string;
+        };
+        "internal_server_endpoints.UpdateSettingRequest": {
+            description?: string;
+            value?: unknown;
         };
         /**
          * Format: int64

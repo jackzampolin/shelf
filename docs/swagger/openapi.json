@@ -545,6 +545,88 @@
                 }
             }
         },
+        "/api/books/{book_id}/rerun-toc": {
+            "post": {
+                "description": "Reset ToC state and rerun the ToC finder and extractor agents",
+                "tags": [
+                    "books"
+                ],
+                "summary": "Rerun ToC finder and extractor",
+                "parameters": [
+                    {
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.RerunTocResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "412": {
+                        "description": "Not enough pages have blend complete",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/books/{id}": {
             "get": {
                 "description": "Get detailed information about a book",
@@ -676,6 +758,238 @@
                     },
                     "503": {
                         "description": "Service Unavailable",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{id}/prompts": {
+            "get": {
+                "description": "Get all prompts resolved for a specific book (with overrides applied)",
+                "tags": [
+                    "prompts"
+                ],
+                "summary": "List prompts for a book",
+                "parameters": [
+                    {
+                        "description": "Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.BookPromptsListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{id}/prompts/{key}": {
+            "get": {
+                "description": "Get a specific prompt resolved for a book (with override if exists)",
+                "tags": [
+                    "prompts"
+                ],
+                "summary": "Get a prompt for a book",
+                "parameters": [
+                    {
+                        "description": "Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Prompt key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.BookPromptResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Set a custom prompt for a specific book",
+                "tags": [
+                    "prompts"
+                ],
+                "summary": "Set a book prompt override",
+                "parameters": [
+                    {
+                        "description": "Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Prompt key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/internal_server_endpoints.SetPromptRequest"
+                            }
+                        }
+                    },
+                    "description": "Prompt override",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.BookPromptResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove a custom prompt override for a book (reverts to default)",
+                "tags": [
+                    "prompts"
+                ],
+                "summary": "Clear a book prompt override",
+                "parameters": [
+                    {
+                        "description": "Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Prompt key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.BookPromptResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -896,7 +1210,7 @@
                         }
                     },
                     {
-                        "description": "Job type (default: process-pages)",
+                        "description": "Job type (default: process-book)",
                         "name": "job_type",
                         "in": "query",
                         "schema": {
@@ -1216,6 +1530,231 @@
                 }
             }
         },
+        "/api/llmcalls": {
+            "get": {
+                "description": "Get LLM call history with optional filters",
+                "tags": [
+                    "llmcalls"
+                ],
+                "summary": "List LLM calls",
+                "parameters": [
+                    {
+                        "description": "Filter by book ID",
+                        "name": "book_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by page ID",
+                        "name": "page_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by job ID",
+                        "name": "job_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by prompt key",
+                        "name": "prompt_key",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by provider",
+                        "name": "provider",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by model",
+                        "name": "model",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by success status (true or false)",
+                        "name": "success",
+                        "in": "query",
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "description": "Max results (default 100)",
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Result offset",
+                        "name": "offset",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Filter calls after this RFC3339 timestamp",
+                        "name": "after",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter calls before this RFC3339 timestamp",
+                        "name": "before",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.LLMCallsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/llmcalls/counts/{book_id}": {
+            "get": {
+                "description": "Get count of LLM calls grouped by prompt key for a book",
+                "tags": [
+                    "llmcalls"
+                ],
+                "summary": "Get LLM call counts by prompt key",
+                "parameters": [
+                    {
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.LLMCallCountsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/llmcalls/{id}": {
+            "get": {
+                "description": "Get a single LLM call by ID",
+                "tags": [
+                    "llmcalls"
+                ],
+                "summary": "Get an LLM call",
+                "parameters": [
+                    {
+                        "description": "LLM call ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.LLMCallResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/metrics": {
             "get": {
                 "description": "List LLM/OCR call metrics with optional filtering",
@@ -1481,6 +2020,295 @@
                 }
             }
         },
+        "/api/prompts": {
+            "get": {
+                "description": "Get all registered prompts with their embedded defaults",
+                "tags": [
+                    "prompts"
+                ],
+                "summary": "List all prompts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.PromptsListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/prompts/{key}": {
+            "get": {
+                "description": "Get a specific prompt by key",
+                "tags": [
+                    "prompts"
+                ],
+                "summary": "Get a prompt",
+                "parameters": [
+                    {
+                        "description": "Prompt key (e.g., stages.blend.system)",
+                        "name": "key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.PromptResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/settings": {
+            "get": {
+                "description": "Get all configuration settings",
+                "tags": [
+                    "settings"
+                ],
+                "summary": "List all settings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.SettingsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/settings/reset/{key}": {
+            "post": {
+                "description": "Reset a configuration setting to its default value",
+                "tags": [
+                    "settings"
+                ],
+                "summary": "Reset a setting to default",
+                "parameters": [
+                    {
+                        "description": "Setting key (URL-encoded)",
+                        "name": "key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.SettingResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/settings/{key}": {
+            "get": {
+                "description": "Get a single configuration setting by key",
+                "tags": [
+                    "settings"
+                ],
+                "summary": "Get a setting",
+                "parameters": [
+                    {
+                        "description": "Setting key (URL-encoded)",
+                        "name": "key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.SettingResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update a configuration setting",
+                "tags": [
+                    "settings"
+                ],
+                "summary": "Update a setting",
+                "parameters": [
+                    {
+                        "description": "Setting key (URL-encoded)",
+                        "name": "key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/internal_server_endpoints.UpdateSettingRequest"
+                            }
+                        }
+                    },
+                    "description": "New value",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.SettingResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "description": "Basic health check endpoint",
@@ -1562,6 +2390,22 @@
     ],
     "components": {
         "schemas": {
+            "github_com_jackzampolin_shelf_internal_config.Entry": {
+                "type": "object",
+                "properties": {
+                    "_docID": {
+                        "description": "DefraDB document ID",
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "key": {
+                        "type": "string"
+                    },
+                    "value": {}
+                }
+            },
             "github_com_jackzampolin_shelf_internal_jobs.ProviderProgress": {
                 "type": "object",
                 "properties": {
@@ -1645,6 +2489,74 @@
                     },
                     "type": {
                         "type": "string"
+                    }
+                }
+            },
+            "github_com_jackzampolin_shelf_internal_llmcall.Call": {
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "description": "Context references",
+                        "type": "string"
+                    },
+                    "error": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "description": "Unique identifier",
+                        "type": "string"
+                    },
+                    "input_tokens": {
+                        "description": "Token usage",
+                        "type": "integer"
+                    },
+                    "job_id": {
+                        "type": "string"
+                    },
+                    "latency_ms": {
+                        "type": "integer"
+                    },
+                    "model": {
+                        "type": "string"
+                    },
+                    "output_tokens": {
+                        "type": "integer"
+                    },
+                    "page_id": {
+                        "type": "string"
+                    },
+                    "prompt_cid": {
+                        "description": "Content-addressed ID linking to the exact prompt version used",
+                        "type": "string"
+                    },
+                    "prompt_key": {
+                        "description": "Prompt traceability",
+                        "type": "string"
+                    },
+                    "provider": {
+                        "description": "Model info",
+                        "type": "string"
+                    },
+                    "response": {
+                        "description": "Response",
+                        "type": "string"
+                    },
+                    "success": {
+                        "description": "Status",
+                        "type": "boolean"
+                    },
+                    "temperature": {
+                        "type": "number"
+                    },
+                    "timestamp": {
+                        "description": "Timing",
+                        "type": "string"
+                    },
+                    "tool_calls": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
                     }
                 }
             },
@@ -1930,6 +2842,43 @@
                     }
                 }
             },
+            "internal_server_endpoints.BookPromptResponse": {
+                "type": "object",
+                "properties": {
+                    "cid": {
+                        "type": "string"
+                    },
+                    "is_override": {
+                        "type": "boolean"
+                    },
+                    "key": {
+                        "type": "string"
+                    },
+                    "text": {
+                        "type": "string"
+                    },
+                    "variables": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "internal_server_endpoints.BookPromptsListResponse": {
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "string"
+                    },
+                    "prompts": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/internal_server_endpoints.BookPromptResponse"
+                        }
+                    }
+                }
+            },
             "internal_server_endpoints.CreateJobRequest": {
                 "type": "object",
                 "properties": {
@@ -2179,6 +3128,42 @@
                     }
                 }
             },
+            "internal_server_endpoints.LLMCallCountsResponse": {
+                "type": "object",
+                "properties": {
+                    "counts": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer"
+                        }
+                    }
+                }
+            },
+            "internal_server_endpoints.LLMCallResponse": {
+                "type": "object",
+                "properties": {
+                    "call": {
+                        "$ref": "#/components/schemas/github_com_jackzampolin_shelf_internal_llmcall.Call"
+                    },
+                    "error": {
+                        "type": "string"
+                    }
+                }
+            },
+            "internal_server_endpoints.LLMCallsResponse": {
+                "type": "object",
+                "properties": {
+                    "calls": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/github_com_jackzampolin_shelf_internal_llmcall.Call"
+                        }
+                    },
+                    "total": {
+                        "type": "integer"
+                    }
+                }
+            },
             "internal_server_endpoints.ListBooksResponse": {
                 "type": "object",
                 "properties": {
@@ -2364,6 +3349,43 @@
                     }
                 }
             },
+            "internal_server_endpoints.PromptResponse": {
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string"
+                    },
+                    "doc_id": {
+                        "type": "string"
+                    },
+                    "hash": {
+                        "type": "string"
+                    },
+                    "key": {
+                        "type": "string"
+                    },
+                    "text": {
+                        "type": "string"
+                    },
+                    "variables": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "internal_server_endpoints.PromptsListResponse": {
+                "type": "object",
+                "properties": {
+                    "prompts": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/internal_server_endpoints.PromptResponse"
+                        }
+                    }
+                }
+            },
             "internal_server_endpoints.ProviderProgress": {
                 "type": "object",
                 "properties": {
@@ -2391,6 +3413,50 @@
                         "type": "array",
                         "items": {
                             "type": "string"
+                        }
+                    }
+                }
+            },
+            "internal_server_endpoints.RerunTocResponse": {
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            },
+            "internal_server_endpoints.SetPromptRequest": {
+                "type": "object",
+                "properties": {
+                    "note": {
+                        "type": "string"
+                    },
+                    "text": {
+                        "type": "string"
+                    }
+                }
+            },
+            "internal_server_endpoints.SettingResponse": {
+                "type": "object",
+                "properties": {
+                    "entry": {
+                        "$ref": "#/components/schemas/github_com_jackzampolin_shelf_internal_config.Entry"
+                    },
+                    "error": {
+                        "type": "string"
+                    }
+                }
+            },
+            "internal_server_endpoints.SettingsResponse": {
+                "type": "object",
+                "properties": {
+                    "settings": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/github_com_jackzampolin_shelf_internal_config.Entry"
                         }
                     }
                 }
@@ -2453,7 +3519,7 @@
                 "type": "object",
                 "properties": {
                     "job_type": {
-                        "description": "Optional: defaults to \"process-pages\"",
+                        "description": "Optional: defaults to \"process-book\"",
                         "type": "string"
                     }
                 }
@@ -2572,6 +3638,15 @@
                     "status": {
                         "type": "string"
                     }
+                }
+            },
+            "internal_server_endpoints.UpdateSettingRequest": {
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string"
+                    },
+                    "value": {}
                 }
             },
             "time.Duration": {
