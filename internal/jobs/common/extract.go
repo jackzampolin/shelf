@@ -2,30 +2,22 @@ package common
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // PersistExtractState saves extraction completion to DefraDB.
-// Logs warnings if pageDocID is empty or sink is not in context.
-func PersistExtractState(ctx context.Context, pageDocID string) {
-	logger := svcctx.LoggerFrom(ctx)
-
+// Returns error if pageDocID is empty or sink is not in context.
+func PersistExtractState(ctx context.Context, pageDocID string) error {
 	if pageDocID == "" {
-		if logger != nil {
-			logger.Warn("cannot persist extract state: empty page document ID")
-		}
-		return
+		return fmt.Errorf("cannot persist extract state: empty page document ID")
 	}
 
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		if logger != nil {
-			logger.Warn("defra sink not in context, extract state will not be persisted",
-				"page_doc_id", pageDocID)
-		}
-		return
+		return fmt.Errorf("defra sink not in context, extract state will not be persisted for page %s", pageDocID)
 	}
 
 	// Fire-and-forget write - sink batches and logs errors internally
@@ -35,4 +27,6 @@ func PersistExtractState(ctx context.Context, pageDocID string) {
 		Document:   map[string]any{"extract_complete": true},
 		Op:         defra.OpUpdate,
 	})
+
+	return nil
 }

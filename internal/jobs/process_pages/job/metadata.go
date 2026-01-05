@@ -13,14 +13,32 @@ import (
 
 // CreateMetadataWorkUnit creates a metadata extraction work unit.
 func (j *Job) CreateMetadataWorkUnit(ctx context.Context) *jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
 	// Load first 20 pages of blended text
 	pages, err := j.LoadPagesForMetadata(ctx, LabelThresholdForBookOps)
-	if err != nil || len(pages) == 0 {
+	if err != nil {
+		if logger != nil {
+			logger.Warn("failed to load pages for metadata extraction",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+		return nil
+	}
+	if len(pages) == 0 {
+		if logger != nil {
+			logger.Debug("no pages available for metadata extraction",
+				"book_id", j.Book.BookID)
+		}
 		return nil
 	}
 
 	bookText := metadata.PrepareBookText(pages, LabelThresholdForBookOps)
 	if bookText == "" {
+		if logger != nil {
+			logger.Debug("no book text available for metadata extraction",
+				"book_id", j.Book.BookID)
+		}
 		return nil
 	}
 
@@ -96,7 +114,7 @@ func (j *Job) LoadPagesForMetadata(ctx context.Context, maxPages int) ([]metadat
 // HandleMetadataComplete processes metadata extraction completion.
 func (j *Job) HandleMetadataComplete(ctx context.Context, result jobs.WorkResult) error {
 	if result.ChatResult == nil || result.ChatResult.ParsedJSON == nil {
-		return nil
+		return fmt.Errorf("metadata extraction returned no result")
 	}
 
 	metadataResult, err := metadata.ParseResult(result.ChatResult.ParsedJSON)

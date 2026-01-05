@@ -23,7 +23,10 @@ func SaveBlendResult(ctx context.Context, state *PageState, primaryProvider stri
 		return "", fmt.Errorf("defra sink not in context")
 	}
 
-	baseText, _ := state.GetOcrResult(primaryProvider)
+	baseText, ok := state.GetOcrResult(primaryProvider)
+	if !ok {
+		return "", fmt.Errorf("primary provider %q OCR result not found for page %s", primaryProvider, state.GetPageDocID())
+	}
 	blendedText := blend.ApplyCorrections(baseText, blendResult.Corrections)
 
 	correctionsJSON, err := json.Marshal(blendResult.Corrections)

@@ -12,16 +12,22 @@ import (
 )
 
 // CreateLabelWorkUnit creates a label extraction LLM work unit.
-// Must be called with j.Mu held. Uses state.BlendedText if available,
-// otherwise queries DefraDB.
+// Uses state.BlendedText if available, otherwise queries DefraDB.
 func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageState) *jobs.WorkUnit {
-	// First try to use cached blended text from state
-	blendedText := state.BlendedText
+	logger := svcctx.LoggerFrom(ctx)
+
+	// First try to use cached blended text from state (thread-safe accessor)
+	blendedText := state.GetBlendedText()
 
 	// If not cached, query DefraDB
 	if blendedText == "" {
 		defraClient := svcctx.DefraClientFrom(ctx)
 		if defraClient == nil {
+			if logger != nil {
+				logger.Warn("cannot create label work unit: defra client not in context",
+					"page_num", pageNum,
+					"page_doc_id", state.GetPageDocID())
+			}
 			return nil
 		}
 
@@ -29,10 +35,15 @@ func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageS
 			Page(filter: {_docID: {_eq: "%s"}}) {
 				blend_markdown
 			}
-		}`, state.PageDocID)
+		}`, state.GetPageDocID())
 
 		resp, err := defraClient.Query(ctx, query)
 		if err != nil {
+			if logger != nil {
+				logger.Warn("failed to query blend text for label work unit",
+					"page_num", pageNum,
+					"error", err)
+			}
 			return nil
 		}
 
@@ -46,6 +57,10 @@ func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageS
 	}
 
 	if blendedText == "" {
+		if logger != nil {
+			logger.Debug("cannot create label work unit: no blended text available",
+				"page_num", pageNum)
+		}
 		return nil
 	}
 

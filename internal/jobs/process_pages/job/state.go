@@ -42,16 +42,16 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 		}
 	}
 
-	// If all OCR done but blend not done, create blend unit
-	if allOcrDone && !state.BlendDone {
+	// If all OCR done but blend not done, create blend unit (thread-safe accessor)
+	if allOcrDone && !state.IsBlendDone() {
 		unit := j.CreateBlendWorkUnit(pageNum, state)
 		if unit != nil {
 			units = append(units, *unit)
 		}
 	}
 
-	// If blend done but label not done, create label unit
-	if state.BlendDone && !state.LabelDone {
+	// If blend done but label not done, create label unit (thread-safe accessors)
+	if state.IsBlendDone() && !state.IsLabelDone() {
 		unit := j.CreateLabelWorkUnit(ctx, pageNum, state)
 		if unit != nil {
 			units = append(units, *unit)
@@ -74,7 +74,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		if unit != nil {
 			if err := j.Book.Metadata.Start(); err == nil {
 				if err := j.PersistMetadataState(ctx); err != nil {
-					j.Book.Metadata.Status = OpNotStarted // Rollback on failure
+					j.Book.Metadata.Reset() // Rollback on failure
 				} else {
 					units = append(units, *unit)
 				}
@@ -90,7 +90,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		if unit != nil {
 			if err := j.Book.TocFinder.Start(); err == nil {
 				if err := j.PersistTocFinderState(ctx); err != nil {
-					j.Book.TocFinder.Status = OpNotStarted // Rollback on failure
+					j.Book.TocFinder.Reset() // Rollback on failure
 				} else {
 					units = append(units, *unit)
 				}
@@ -111,7 +111,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		if unit != nil {
 			if err := j.Book.TocExtract.Start(); err == nil {
 				if err := j.PersistTocExtractState(ctx); err != nil {
-					j.Book.TocExtract.Status = OpNotStarted // Rollback on failure
+					j.Book.TocExtract.Reset() // Rollback on failure
 				} else {
 					units = append(units, *unit)
 				}
@@ -190,7 +190,7 @@ func (j *Job) PersistMetadataState(ctx context.Context) error {
 			"metadata_started":  j.Book.Metadata.IsStarted(),
 			"metadata_complete": j.Book.Metadata.IsComplete(),
 			"metadata_failed":   j.Book.Metadata.IsFailed(),
-			"metadata_retries":  j.Book.Metadata.Retries,
+			"metadata_retries":  j.Book.Metadata.GetRetries(),
 		},
 		Op: defra.OpUpdate,
 	})
@@ -216,7 +216,7 @@ func (j *Job) PersistTocFinderState(ctx context.Context) error {
 			"finder_started":  j.Book.TocFinder.IsStarted(),
 			"finder_complete": j.Book.TocFinder.IsComplete(),
 			"finder_failed":   j.Book.TocFinder.IsFailed(),
-			"finder_retries":  j.Book.TocFinder.Retries,
+			"finder_retries":  j.Book.TocFinder.GetRetries(),
 		},
 		Op: defra.OpUpdate,
 	})
@@ -242,7 +242,7 @@ func (j *Job) PersistTocExtractState(ctx context.Context) error {
 			"extract_started":  j.Book.TocExtract.IsStarted(),
 			"extract_complete": j.Book.TocExtract.IsComplete(),
 			"extract_failed":   j.Book.TocExtract.IsFailed(),
-			"extract_retries":  j.Book.TocExtract.Retries,
+			"extract_retries":  j.Book.TocExtract.GetRetries(),
 		},
 		Op: defra.OpUpdate,
 	})

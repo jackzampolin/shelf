@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/providers"
@@ -9,19 +10,15 @@ import (
 )
 
 // PersistOCRResult persists an OCR result to DefraDB and updates the page state (thread-safe).
-// Returns true if all OCR providers are now complete for this page.
-func PersistOCRResult(ctx context.Context, state *PageState, ocrProviders []string, provider string, result *providers.OCRResult) bool {
+// Returns (allDone, error) where allDone is true if all OCR providers are now complete for this page.
+// Returns error if sink is not available (callers should distinguish failure from incomplete).
+func PersistOCRResult(ctx context.Context, state *PageState, ocrProviders []string, provider string, result *providers.OCRResult) (bool, error) {
 	logger := svcctx.LoggerFrom(ctx)
 	pageDocID := state.GetPageDocID()
 
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		if logger != nil {
-			logger.Warn("defra sink not in context, OCR result will not be persisted",
-				"page_doc_id", pageDocID,
-				"provider", provider)
-		}
-		return false
+		return false, fmt.Errorf("defra sink not in context, OCR result will not be persisted for page %s provider %s", pageDocID, provider)
 	}
 
 	if result != nil {
@@ -58,5 +55,5 @@ func PersistOCRResult(ctx context.Context, state *PageState, ocrProviders []stri
 		})
 	}
 
-	return allDone
+	return allDone, nil
 }

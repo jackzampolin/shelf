@@ -63,21 +63,19 @@ func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
 // HandleTocExtractComplete processes ToC extraction completion.
 func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResult) error {
 	if result.ChatResult == nil || result.ChatResult.ParsedJSON == nil {
-		j.Book.TocExtract.Complete()
-		return nil
+		return fmt.Errorf("ToC extraction returned no result")
 	}
 
 	extractResult, err := extract_toc.ParseResult(result.ChatResult.ParsedJSON)
 	if err != nil {
-		j.Book.TocExtract.Complete()
 		return fmt.Errorf("failed to parse ToC extract result: %w", err)
 	}
 
 	if err := j.saveTocExtractResult(ctx, extractResult); err != nil {
-		j.Book.TocExtract.Complete()
 		return fmt.Errorf("failed to save ToC extract result: %w", err)
 	}
 
+	// Only mark complete on success (allows retries on failure)
 	j.Book.TocExtract.Complete()
 	return nil
 }

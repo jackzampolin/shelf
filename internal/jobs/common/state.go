@@ -11,30 +11,31 @@ import (
 type HomeDir = home.Dir
 
 // PageState tracks the processing state of a single page.
-// All fields are protected by an internal mutex for thread-safe access.
+// All fields are unexported and protected by an internal mutex for thread-safe access.
+// Use the provided accessor methods to read/write state.
 type PageState struct {
 	mu sync.RWMutex
 
 	// DefraDB document ID for the Page record
-	PageDocID string
+	pageDocID string
 
 	// Extraction state
-	ExtractDone bool
+	extractDone bool
 
 	// OCR state per provider.
 	// Key presence indicates completion; value is the OCR text (may be empty for blank pages).
-	OcrResults map[string]string // provider -> OCR text
+	ocrResults map[string]string // provider -> OCR text
 
 	// Pipeline state (beyond OCR)
-	BlendDone   bool
-	BlendedText string // Cached blend result for label work unit
-	LabelDone   bool
+	blendDone   bool
+	blendedText string // Cached blend result for label work unit
+	labelDone   bool
 }
 
 // NewPageState creates a new page state with initialized maps.
 func NewPageState() *PageState {
 	return &PageState{
-		OcrResults: make(map[string]string),
+		ocrResults: make(map[string]string),
 	}
 }
 
@@ -42,7 +43,7 @@ func NewPageState() *PageState {
 func (p *PageState) OcrComplete(provider string) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	_, ok := p.OcrResults[provider]
+	_, ok := p.ocrResults[provider]
 	return ok
 }
 
@@ -50,7 +51,7 @@ func (p *PageState) OcrComplete(provider string) bool {
 func (p *PageState) MarkOcrComplete(provider, text string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.OcrResults[provider] = text
+	p.ocrResults[provider] = text
 }
 
 // AllOcrDone returns true if all providers have completed OCR for this page (thread-safe).
@@ -58,7 +59,7 @@ func (p *PageState) AllOcrDone(providers []string) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	for _, provider := range providers {
-		if _, ok := p.OcrResults[provider]; !ok {
+		if _, ok := p.ocrResults[provider]; !ok {
 			return false
 		}
 	}
@@ -69,57 +70,65 @@ func (p *PageState) AllOcrDone(providers []string) bool {
 func (p *PageState) SetExtractDone(done bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.ExtractDone = done
+	p.extractDone = done
 }
 
 // IsExtractDone returns true if extraction is complete (thread-safe).
 func (p *PageState) IsExtractDone() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.ExtractDone
+	return p.extractDone
 }
 
 // SetBlendResult sets the blend result and marks blend as done (thread-safe).
 func (p *PageState) SetBlendResult(blendedText string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.BlendedText = blendedText
-	p.BlendDone = true
+	p.blendedText = blendedText
+	p.blendDone = true
 }
 
 // GetBlendedText returns the blended text (thread-safe).
 func (p *PageState) GetBlendedText() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.BlendedText
+	return p.blendedText
 }
 
 // IsBlendDone returns true if blend is complete (thread-safe).
 func (p *PageState) IsBlendDone() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.BlendDone
+	return p.blendDone
+}
+
+// SetBlendDone marks blend as complete without updating blended text (thread-safe).
+// Use this when loading state from DB where blend_complete is true but text isn't cached.
+func (p *PageState) SetBlendDone(done bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.blendDone = done
 }
 
 // SetLabelDone marks label as complete (thread-safe).
 func (p *PageState) SetLabelDone(done bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.LabelDone = done
+	p.labelDone = done
 }
 
 // IsLabelDone returns true if label is complete (thread-safe).
 func (p *PageState) IsLabelDone() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.LabelDone
+	return p.labelDone
 }
 
 // GetOcrResult returns the OCR result for a provider (thread-safe).
 func (p *PageState) GetOcrResult(provider string) (string, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	text, ok := p.OcrResults[provider]
+	text, ok := p.ocrResults[provider]
 	return text, ok
 }
 
@@ -127,14 +136,14 @@ func (p *PageState) GetOcrResult(provider string) (string, bool) {
 func (p *PageState) GetPageDocID() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.PageDocID
+	return p.pageDocID
 }
 
 // SetPageDocID sets the page document ID (thread-safe).
 func (p *PageState) SetPageDocID(docID string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.PageDocID = docID
+	p.pageDocID = docID
 }
 
 // OpStatus represents the status of a book-level operation.
@@ -164,59 +173,76 @@ func (s OpStatus) String() string {
 }
 
 // OperationState tracks the state of a retriable book-level operation.
+// Fields are unexported; use the provided methods for all access.
 type OperationState struct {
-	Status  OpStatus
-	Retries int
+	status  OpStatus
+	retries int
+}
+
+// NewOperationState creates an OperationState with given status and retries.
+// Used for loading state from database.
+func NewOperationState(status OpStatus, retries int) OperationState {
+	return OperationState{status: status, retries: retries}
 }
 
 // Start marks the operation as in progress. Returns error if already started.
 func (o *OperationState) Start() error {
-	if o.Status != OpNotStarted {
-		return fmt.Errorf("operation already %s", o.Status)
+	if o.status != OpNotStarted {
+		return fmt.Errorf("operation already %s", o.status)
 	}
-	o.Status = OpInProgress
+	o.status = OpInProgress
 	return nil
 }
 
 // Complete marks the operation as successfully completed.
 func (o *OperationState) Complete() {
-	o.Status = OpComplete
+	o.status = OpComplete
 }
 
 // Fail records a failure and returns true if permanently failed (max retries reached).
 func (o *OperationState) Fail(maxRetries int) bool {
-	o.Retries++
-	if o.Retries >= maxRetries {
-		o.Status = OpFailed
+	o.retries++
+	if o.retries >= maxRetries {
+		o.status = OpFailed
 		return true
 	}
-	o.Status = OpNotStarted // Allow retry
+	o.status = OpNotStarted // Allow retry
 	return false
+}
+
+// Reset resets the operation to not started state (for rollback on persist failure).
+func (o *OperationState) Reset() {
+	o.status = OpNotStarted
 }
 
 // IsStarted returns true if the operation has been started.
 func (o *OperationState) IsStarted() bool {
-	return o.Status == OpInProgress
+	return o.status == OpInProgress
 }
 
 // IsDone returns true if the operation is complete or permanently failed.
 func (o *OperationState) IsDone() bool {
-	return o.Status == OpComplete || o.Status == OpFailed
+	return o.status == OpComplete || o.status == OpFailed
 }
 
 // IsFailed returns true if the operation permanently failed.
 func (o *OperationState) IsFailed() bool {
-	return o.Status == OpFailed
+	return o.status == OpFailed
 }
 
 // IsComplete returns true if the operation completed successfully.
 func (o *OperationState) IsComplete() bool {
-	return o.Status == OpComplete
+	return o.status == OpComplete
 }
 
 // CanStart returns true if the operation can be started (not started, not done).
 func (o *OperationState) CanStart() bool {
-	return o.Status == OpNotStarted
+	return o.status == OpNotStarted
+}
+
+// GetRetries returns the current retry count.
+func (o *OperationState) GetRetries() int {
+	return o.retries
 }
 
 // BookState tracks all state for a book: identity, context, pages, config, prompts, operations.

@@ -144,10 +144,10 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			return nil, fmt.Errorf("failed to batch create page records: %w", err)
 		}
 
-		// Assign DocIDs to PageState via BookState
+		// Assign DocIDs to PageState via BookState (using thread-safe setter)
 		for i, pageNum := range newPageNums {
 			state := NewPageState()
-			state.PageDocID = results[i].DocID
+			state.SetPageDocID(results[i].DocID)
 			j.Book.Pages[pageNum] = state
 		}
 
@@ -172,8 +172,8 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			continue
 		}
 
-		// Generate work units based on current state
-		if !state.ExtractDone {
+		// Generate work units based on current state (thread-safe accessor)
+		if !state.IsExtractDone() {
 			// Page needs extraction first
 			if unit := j.CreateExtractWorkUnit(pageNum); unit != nil {
 				units = append(units, *unit)
@@ -383,7 +383,8 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 
 	extractDone, ocrDone, blendDone, labelDone := 0, 0, 0, 0
 	j.Book.ForEachPage(func(pageNum int, state *PageState) {
-		if state.ExtractDone {
+		// Use thread-safe accessors for all field reads
+		if state.IsExtractDone() {
 			extractDone++
 		}
 		allOcr := true
@@ -396,10 +397,10 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		if allOcr {
 			ocrDone++
 		}
-		if state.BlendDone {
+		if state.IsBlendDone() {
 			blendDone++
 		}
-		if state.LabelDone {
+		if state.IsLabelDone() {
 			labelDone++
 		}
 	})

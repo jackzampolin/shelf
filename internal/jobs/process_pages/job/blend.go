@@ -14,7 +14,8 @@ import (
 func (j *Job) CreateBlendWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit {
 	var outputs []blend.OCROutput
 	for _, provider := range j.Book.OcrProviders {
-		if text, ok := state.OcrResults[provider]; ok && text != "" {
+		// Use thread-safe accessor for OCR results
+		if text, ok := state.GetOcrResult(provider); ok && text != "" {
 			outputs = append(outputs, blend.OCROutput{
 				ProviderName: provider,
 				Text:         text,

@@ -62,11 +62,12 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 
 		state := NewPageState()
 
+		// Use thread-safe setters for all field assignments
 		if docID, ok := page["_docID"].(string); ok {
-			state.PageDocID = docID
+			state.SetPageDocID(docID)
 		}
 		if extractComplete, ok := page["extract_complete"].(bool); ok {
-			state.ExtractDone = extractComplete
+			state.SetExtractDone(extractComplete)
 		}
 
 		// Load OCR results from the relationship
@@ -86,10 +87,10 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 		}
 
 		if blendComplete, ok := page["blend_complete"].(bool); ok {
-			state.BlendDone = blendComplete
+			state.SetBlendDone(blendComplete)
 		}
 		if labelComplete, ok := page["label_complete"].(bool); ok {
-			state.LabelDone = labelComplete
+			state.SetLabelDone(labelComplete)
 		}
 
 		book.Pages[pageNum] = state
@@ -111,7 +112,7 @@ func boolsToOpState(started, complete, failed bool, retries int) OperationState 
 	default:
 		status = OpNotStarted
 	}
-	return OperationState{Status: status, Retries: retries}
+	return NewOperationState(status, retries)
 }
 
 // LoadBookOperationState loads book-level operation state from DefraDB.
@@ -179,7 +180,13 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 
 	tocResp, err := defraClient.Execute(ctx, tocQuery, nil)
 	if err != nil {
-		// ToC query errors are not fatal
+		// ToC query errors are not fatal, but log them for debugging
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Warn("ToC query failed, proceeding without ToC state",
+				"book_id", book.BookID,
+				"error", err)
+		}
 		return "", nil
 	}
 

@@ -65,7 +65,10 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 	}
 
 	// Use common handler for persistence and state update
-	allDone := common.PersistOCRResult(ctx, state, j.Book.OcrProviders, info.Provider, result.OCRResult)
+	allDone, err := common.PersistOCRResult(ctx, state, j.Book.OcrProviders, info.Provider, result.OCRResult)
+	if err != nil {
+		return nil, fmt.Errorf("failed to persist OCR result for page %d provider %s: %w", info.PageNum, info.Provider, err)
+	}
 
 	// If all OCR done, trigger blend
 	var units []jobs.WorkUnit

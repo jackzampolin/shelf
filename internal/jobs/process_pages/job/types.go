@@ -138,7 +138,7 @@ type Config struct {
 func (j *Job) CountLabeledPages() int {
 	count := 0
 	j.Book.ForEachPage(func(pageNum int, state *PageState) {
-		if state.LabelDone {
+		if state.IsLabelDone() {
 			count++
 		}
 	})
@@ -155,7 +155,7 @@ func (j *Job) ConsecutiveFrontMatterComplete() bool {
 	}
 	for pageNum := 1; pageNum <= required; pageNum++ {
 		state := j.Book.GetPage(pageNum)
-		if state == nil || !state.BlendDone {
+		if state == nil || !state.IsBlendDone() {
 			return false
 		}
 	}
@@ -166,7 +166,7 @@ func (j *Job) ConsecutiveFrontMatterComplete() bool {
 func (j *Job) AllPagesComplete() bool {
 	allDone := true
 	j.Book.ForEachPage(func(pageNum int, state *PageState) {
-		if !state.LabelDone {
+		if !state.IsLabelDone() {
 			allDone = false
 		}
 	})
@@ -217,10 +217,10 @@ func (j *Job) FindPDFForPage(pageNum int) (pdfPath string, pageInPDF int) {
 func (j *Job) ProviderProgress() map[string]jobs.ProviderProgress {
 	progress := make(map[string]jobs.ProviderProgress)
 
-	// Track extraction progress
+	// Track extraction progress (using thread-safe accessors)
 	extractCompleted := 0
 	j.Book.ForEachPage(func(pageNum int, state *PageState) {
-		if state.ExtractDone {
+		if state.IsExtractDone() {
 			extractCompleted++
 		}
 	})
@@ -243,10 +243,10 @@ func (j *Job) ProviderProgress() map[string]jobs.ProviderProgress {
 		}
 	}
 
-	// Track blend progress
+	// Track blend progress (using thread-safe accessors)
 	blendCompleted := 0
 	j.Book.ForEachPage(func(pageNum int, state *PageState) {
-		if state.BlendDone {
+		if state.IsBlendDone() {
 			blendCompleted++
 		}
 	})
@@ -255,10 +255,10 @@ func (j *Job) ProviderProgress() map[string]jobs.ProviderProgress {
 		Completed:     blendCompleted,
 	}
 
-	// Track label progress
+	// Track label progress (using thread-safe accessors)
 	labelCompleted := 0
 	j.Book.ForEachPage(func(pageNum int, state *PageState) {
-		if state.LabelDone {
+		if state.IsLabelDone() {
 			labelCompleted++
 		}
 	})
