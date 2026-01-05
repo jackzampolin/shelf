@@ -50,7 +50,7 @@ function BookDetailPage() {
   // Available job types for the dropdown
   const jobTypes = [
     { id: 'process-pages', label: 'Full Pipeline', description: 'OCR → Blend → Label → Metadata → ToC' },
-    { id: 'ocr', label: 'OCR Only', description: 'Run OCR on all pages' },
+    { id: 'ocr-book', label: 'OCR + Blend Only', description: 'OCR and blend all pages (no labeling)' },
   ]
 
   const { data: book, isLoading, error } = useQuery({
