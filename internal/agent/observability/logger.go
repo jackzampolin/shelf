@@ -85,6 +85,12 @@ func NewLogger(ctx context.Context, agentID, agentType, bookID, jobID string) *L
 func (l *Logger) saveInitial(ctx context.Context) {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
+		// Log that observability is disabled (sink not available)
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Debug("agent observability disabled: no defra sink in context",
+				"agent_id", l.agentID,
+				"agent_type", l.agentType)
+		}
 		return
 	}
 
@@ -104,9 +110,16 @@ func (l *Logger) saveInitial(ctx context.Context) {
 		Document:   run,
 		Op:         defra.OpCreate,
 	})
-	if err == nil {
-		l.docID = result.DocID
+	if err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("failed to create initial agent run record",
+				"agent_id", l.agentID,
+				"agent_type", l.agentType,
+				"error", err)
+		}
+		return
 	}
+	l.docID = result.DocID
 }
 
 // LogToolCall records a tool call.
@@ -130,16 +143,31 @@ func (l *Logger) LogToolCall(iteration int, toolName string, args map[string]any
 // Call this after each iteration to show real-time agent progress.
 func (l *Logger) UpdateProgress(ctx context.Context, iteration int) {
 	if l.docID == "" {
-		return // No record to update
+		// No initial record was created (saveInitial failed or sink unavailable)
+		return
 	}
 
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Debug("cannot update agent progress: no defra sink in context",
+				"agent_id", l.agentID,
+				"iteration", iteration)
+		}
 		return
 	}
 
 	// Serialize tool calls so far
-	toolCallsJSON, _ := json.Marshal(l.toolCalls)
+	toolCallsJSON, err := json.Marshal(l.toolCalls)
+	if err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("failed to marshal tool calls for progress update",
+				"agent_id", l.agentID,
+				"iteration", iteration,
+				"error", err)
+		}
+		return
+	}
 
 	update := map[string]any{
 		"iterations":      iteration,

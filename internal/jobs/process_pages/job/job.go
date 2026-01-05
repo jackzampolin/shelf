@@ -326,6 +326,9 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		}
 	})
 
+	// Get ToC page range using thread-safe accessor
+	tocStartPage, tocEndPage := j.Book.GetTocPageRange()
+
 	return map[string]string{
 		"book_id":             j.Book.BookID,
 		"total_pages":         fmt.Sprintf("%d", j.Book.TotalPages),
@@ -337,9 +340,9 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		"metadata_complete":   fmt.Sprintf("%v", j.Book.Metadata.IsComplete()),
 		"toc_finder_started":  fmt.Sprintf("%v", j.Book.TocFinder.IsStarted()),
 		"toc_finder_done":     fmt.Sprintf("%v", j.Book.TocFinder.IsDone()),
-		"toc_found":           fmt.Sprintf("%v", j.Book.TocFound),
-		"toc_start_page":      fmt.Sprintf("%d", j.Book.TocStartPage),
-		"toc_end_page":        fmt.Sprintf("%d", j.Book.TocEndPage),
+		"toc_found":           fmt.Sprintf("%v", j.Book.GetTocFound()),
+		"toc_start_page":      fmt.Sprintf("%d", tocStartPage),
+		"toc_end_page":        fmt.Sprintf("%d", tocEndPage),
 		"toc_extract_started": fmt.Sprintf("%v", j.Book.TocExtract.IsStarted()),
 		"toc_extract_done":    fmt.Sprintf("%v", j.Book.TocExtract.IsDone()),
 		"done":                fmt.Sprintf("%v", j.IsDone),

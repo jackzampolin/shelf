@@ -15,8 +15,11 @@ import (
 func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	logger := svcctx.LoggerFrom(ctx)
 
+	// Get ToC page range using thread-safe accessor
+	tocStartPage, tocEndPage := j.Book.GetTocPageRange()
+
 	// Load ToC pages
-	tocPages, err := common.LoadTocPages(ctx, j.Book.BookID, j.Book.TocStartPage, j.Book.TocEndPage)
+	tocPages, err := common.LoadTocPages(ctx, j.Book.BookID, tocStartPage, tocEndPage)
 	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to load ToC pages", "error", err)
@@ -26,8 +29,8 @@ func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	if len(tocPages) == 0 {
 		if logger != nil {
 			logger.Warn("no ToC pages found",
-				"start_page", j.Book.TocStartPage,
-				"end_page", j.Book.TocEndPage)
+				"start_page", tocStartPage,
+				"end_page", tocEndPage)
 		}
 		return nil
 	}

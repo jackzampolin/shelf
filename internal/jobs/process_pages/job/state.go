@@ -82,12 +82,13 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	}
 
 	// Start ToC extraction if finder is done and found a ToC
-	if j.Book.TocFinder.IsDone() && j.Book.TocFound && j.Book.TocExtract.CanStart() {
+	if j.Book.TocFinder.IsDone() && j.Book.GetTocFound() && j.Book.TocExtract.CanStart() {
 		logger := svcctx.LoggerFrom(ctx)
+		tocStart, tocEnd := j.Book.GetTocPageRange()
 		if logger != nil {
 			logger.Info("attempting to create ToC extract work unit",
-				"toc_start_page", j.Book.TocStartPage,
-				"toc_end_page", j.Book.TocEndPage,
+				"toc_start_page", tocStart,
+				"toc_end_page", tocEnd,
 				"toc_doc_id", j.TocDocID)
 		}
 		unit := j.CreateTocExtractWorkUnit(ctx)
@@ -101,8 +102,8 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 			}
 		} else if logger != nil {
 			logger.Warn("failed to create ToC extract work unit",
-				"toc_start_page", j.Book.TocStartPage,
-				"toc_end_page", j.Book.TocEndPage)
+				"toc_start_page", tocStart,
+				"toc_end_page", tocEnd)
 		}
 	}
 
@@ -129,7 +130,7 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 	}
 
 	// If ToC was found, extraction must also be done
-	if j.Book.TocFound && !j.Book.TocExtract.IsDone() {
+	if j.Book.GetTocFound() && !j.Book.TocExtract.IsDone() {
 		return
 	}
 

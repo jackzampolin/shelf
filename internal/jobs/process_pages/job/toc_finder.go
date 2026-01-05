@@ -155,15 +155,16 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 				if err := common.SaveTocFinderResult(ctx, j.TocDocID, tocResult); err != nil {
 					return nil, fmt.Errorf("failed to save ToC finder result: %w", err)
 				}
-				j.Book.TocFound = tocResult.ToCFound
+				// Update in-memory state using thread-safe accessor
 				if tocResult.ToCPageRange != nil {
-					j.Book.TocStartPage = tocResult.ToCPageRange.StartPage
-					j.Book.TocEndPage = tocResult.ToCPageRange.EndPage
+					j.Book.SetTocResult(tocResult.ToCFound, tocResult.ToCPageRange.StartPage, tocResult.ToCPageRange.EndPage)
+				} else {
+					j.Book.SetTocFound(tocResult.ToCFound)
 				}
 			}
 		} else {
 			// Agent failed or no ToC found - mark finder as done with no ToC
-			j.Book.TocFound = false
+			j.Book.SetTocFound(false)
 			if err := common.SaveTocFinderNoResult(ctx, j.TocDocID); err != nil {
 				return nil, err
 			}

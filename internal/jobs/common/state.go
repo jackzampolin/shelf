@@ -247,22 +247,28 @@ func (o *OperationState) GetRetries() int {
 
 // BookState tracks all state for a book: identity, context, pages, config, prompts, operations.
 // This consolidates everything about a book so the Job struct can be thin.
+//
+// Thread-safety: Fields are categorized as:
+//   - Immutable: Set during LoadBook, never modified. Safe to read without lock.
+//   - Mutable: Modified during job execution. Use accessor methods for thread-safe access.
+//
+// Prefer using accessor methods for all field access.
 type BookState struct {
-	mu sync.RWMutex // Thread-safe access
+	mu sync.RWMutex // Protects mutable fields
 
-	// Identity
+	// Identity (immutable after LoadBook)
 	BookID    string
 	BookDocID string
 
-	// Context
+	// Context (immutable after LoadBook)
 	HomeDir    *home.Dir
 	PDFs       PDFList
 	TotalPages int
 
-	// Page state (loaded from DB, updated during job)
+	// Page state - use GetPage/GetOrCreatePage/ForEachPage methods
 	Pages map[int]*PageState
 
-	// Provider config (resolved at job start, can be per-book)
+	// Provider config (immutable after LoadBook)
 	OcrProviders     []string
 	BlendProvider    string
 	LabelProvider    string
@@ -270,16 +276,16 @@ type BookState struct {
 	TocProvider      string
 	DebugAgents      bool // Enable debug logging for agent executions
 
-	// Resolved prompts (cached at job start, supports per-book overrides)
+	// Resolved prompts (immutable after LoadBook)
 	Prompts    map[string]string // prompt_key -> resolved text
 	PromptCIDs map[string]string // prompt_key -> CID for traceability
 
-	// Book-level operation state
+	// Book-level operation state (mutable - use accessor methods)
 	Metadata   OperationState
 	TocFinder  OperationState
 	TocExtract OperationState
 
-	// ToC finder results (set when TocFinder completes successfully)
+	// ToC finder results (mutable - use accessor methods)
 	TocFound     bool
 	TocStartPage int
 	TocEndPage   int
@@ -437,4 +443,61 @@ func (b *BookState) GetProviderProgress() map[string]ProviderProgress {
 	}
 
 	return progress
+}
+
+// --- Thread-safe accessors for mutable ToC fields ---
+
+// GetTocFound returns whether a ToC was found (thread-safe).
+func (b *BookState) GetTocFound() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.TocFound
+}
+
+// SetTocFound sets whether a ToC was found (thread-safe).
+func (b *BookState) SetTocFound(found bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.TocFound = found
+}
+
+// GetTocPageRange returns the ToC page range (thread-safe).
+// Returns (startPage, endPage).
+func (b *BookState) GetTocPageRange() (int, int) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.TocStartPage, b.TocEndPage
+}
+
+// SetTocPageRange sets the ToC page range (thread-safe).
+func (b *BookState) SetTocPageRange(startPage, endPage int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.TocStartPage = startPage
+	b.TocEndPage = endPage
+}
+
+// SetTocResult sets all ToC finder results atomically (thread-safe).
+func (b *BookState) SetTocResult(found bool, startPage, endPage int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.TocFound = found
+	b.TocStartPage = startPage
+	b.TocEndPage = endPage
+}
+
+// --- Thread-safe accessors for Prompts ---
+
+// GetPrompt returns the resolved prompt text for a key (thread-safe).
+func (b *BookState) GetPrompt(key string) string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.Prompts[key]
+}
+
+// GetPromptCID returns the prompt CID for a key (thread-safe).
+func (b *BookState) GetPromptCID(key string) string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.PromptCIDs[key]
 }
