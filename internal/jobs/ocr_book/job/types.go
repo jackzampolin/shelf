@@ -38,7 +38,7 @@ type WorkUnitInfo struct {
 type PageState = common.PageState
 
 // Job processes all pages through Extract -> OCR -> Blend.
-// This is a simpler job than process_pages - no label, metadata, or ToC.
+// This is a simpler job than process_book - no label, metadata, or ToC.
 type Job struct {
 	mu sync.Mutex
 

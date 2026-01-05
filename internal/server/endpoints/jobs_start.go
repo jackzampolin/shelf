@@ -12,14 +12,14 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs/label_book"
 	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
-	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
+	"github.com/jackzampolin/shelf/internal/jobs/process_book"
 	"github.com/jackzampolin/shelf/internal/jobs/toc_book"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // StartJobRequest is the request body for starting a job.
 type StartJobRequest struct {
-	JobType string `json:"job_type,omitempty"` // Optional: defaults to "process-pages"
+	JobType string `json:"job_type,omitempty"` // Optional: defaults to "process-book"
 }
 
 // StartJobResponse is the response for starting a job.
@@ -32,8 +32,8 @@ type StartJobResponse struct {
 
 // StartJobEndpoint handles POST /api/jobs/start/{book_id}.
 type StartJobEndpoint struct {
-	// ProcessPagesConfig holds config for process-pages jobs
-	ProcessPagesConfig process_pages.Config
+	// ProcessBookConfig holds config for process-book jobs
+	ProcessBookConfig process_book.Config
 	// OcrBookConfig holds config for ocr-book jobs
 	OcrBookConfig ocr_book.Config
 	// LabelBookConfig holds config for label-book jobs
@@ -81,7 +81,7 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 	jobType := req.JobType
 	if jobType == "" {
-		jobType = process_pages.JobType
+		jobType = process_book.JobType
 	}
 
 	scheduler := svcctx.SchedulerFrom(r.Context())
@@ -95,8 +95,8 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	switch jobType {
-	case process_pages.JobType:
-		job, err = process_pages.NewJob(r.Context(), e.ProcessPagesConfig, bookID)
+	case process_book.JobType:
+		job, err = process_book.NewJob(r.Context(), e.ProcessBookConfig, bookID)
 	case ocr_book.JobType:
 		job, err = ocr_book.NewJob(r.Context(), e.OcrBookConfig, bookID)
 	case label_book.JobType:
@@ -136,7 +136,7 @@ func (e *StartJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 		Short: "Start job processing for a book",
 		Long: `Start a processing job for a book.
 
-The default job type is 'process-pages' which processes all pages through
+The default job type is 'process-book' which processes all pages through
 OCR, blend, and label stages, then triggers book-level operations
 (metadata extraction, ToC finding).
 
@@ -158,6 +158,6 @@ Use 'shelf api jobs get <job-id>' to check progress.`,
 			return api.Output(resp)
 		},
 	}
-	cmd.Flags().StringVar(&jobType, "job-type", process_pages.JobType, "Job type to run")
+	cmd.Flags().StringVar(&jobType, "job-type", process_book.JobType, "Job type to run")
 	return cmd
 }

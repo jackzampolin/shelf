@@ -44,7 +44,7 @@ func ExecuteToolLoop(ctx context.Context, ag *agent.Agent) []agent.WorkUnit {
 type ConvertConfig struct {
 	JobID     string // Job record ID for correlation
 	Provider  string // LLM provider to use
-	Stage     string // Pipeline stage (e.g., "process-pages")
+	Stage     string // Pipeline stage (e.g., "process-book")
 	ItemKey   string // Item identifier (e.g., "toc_finder")
 	PromptKey string // Prompt key for tracing
 	PromptCID string // Content-addressed prompt ID

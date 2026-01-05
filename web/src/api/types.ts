@@ -934,7 +934,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    /** @description Job type (default: process-pages) */
+                    /** @description Job type (default: process-book) */
                     job_type?: string;
                 };
                 header?: never;
@@ -1907,7 +1907,7 @@ export interface components {
             };
         };
         "internal_server_endpoints.StartJobRequest": {
-            /** @description Optional: defaults to "process-pages" */
+            /** @description Optional: defaults to "process-book" */
             job_type?: string;
         };
         "internal_server_endpoints.StartJobResponse": {

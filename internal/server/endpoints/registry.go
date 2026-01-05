@@ -6,14 +6,14 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs/label_book"
 	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
-	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
+	"github.com/jackzampolin/shelf/internal/jobs/process_book"
 	"github.com/jackzampolin/shelf/internal/jobs/toc_book"
 )
 
 // Config holds dependencies needed by some endpoints.
 type Config struct {
-	DefraManager       *defra.DockerManager
-	ProcessPagesConfig process_pages.Config
+	DefraManager      *defra.DockerManager
+	ProcessBookConfig process_book.Config
 	OcrBookConfig      ocr_book.Config
 	LabelBookConfig    label_book.Config
 	MetadataBookConfig metadata_book.Config
@@ -41,7 +41,7 @@ func All(cfg Config) []api.Endpoint {
 		&UploadIngestEndpoint{},
 		&ListBooksEndpoint{},
 		&GetBookEndpoint{},
-		&RerunTocEndpoint{ProcessPagesConfig: cfg.ProcessPagesConfig},
+		&RerunTocEndpoint{ProcessBookConfig: cfg.ProcessBookConfig},
 
 		// Page endpoints
 		&PageImageEndpoint{},
@@ -50,7 +50,7 @@ func All(cfg Config) []api.Endpoint {
 
 		// Job start/status endpoints
 		&StartJobEndpoint{
-			ProcessPagesConfig:  cfg.ProcessPagesConfig,
+			ProcessBookConfig:   cfg.ProcessBookConfig,
 			OcrBookConfig:       cfg.OcrBookConfig,
 			LabelBookConfig:     cfg.LabelBookConfig,
 			MetadataBookConfig:  cfg.MetadataBookConfig,

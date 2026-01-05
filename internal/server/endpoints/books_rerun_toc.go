@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
+	"github.com/jackzampolin/shelf/internal/jobs/process_book"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -20,7 +20,7 @@ type RerunTocResponse struct {
 
 // RerunTocEndpoint handles POST /api/books/{book_id}/rerun-toc.
 type RerunTocEndpoint struct {
-	ProcessPagesConfig process_pages.Config
+	ProcessBookConfig process_book.Config
 }
 
 func (e *RerunTocEndpoint) Route() (string, string, http.HandlerFunc) {
@@ -188,8 +188,8 @@ func (e *RerunTocEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create a new process-pages job
-	job, err := process_pages.NewJob(r.Context(), e.ProcessPagesConfig, bookID)
+	// Create a new process-book job
+	job, err := process_book.NewJob(r.Context(), e.ProcessBookConfig, bookID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError,
 			fmt.Sprintf("failed to create job: %v", err))

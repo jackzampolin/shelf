@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jackzampolin/shelf/internal/api"
-	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
+	"github.com/jackzampolin/shelf/internal/jobs/process_book"
 )
 
 // JobStatusResponse is the response for job status.
@@ -40,7 +40,7 @@ func (e *JobStatusEndpoint) RequiresInit() bool { return true }
 //	@Tags			jobs
 //	@Produce		json
 //	@Param			book_id		path		string	true	"Book ID"
-//	@Param			job_type	query		string	false	"Job type (default: process-pages)"
+//	@Param			job_type	query		string	false	"Job type (default: process-book)"
 //	@Success		200			{object}	JobStatusResponse
 //	@Failure		400			{object}	ErrorResponse
 //	@Failure		500			{object}	ErrorResponse
@@ -55,7 +55,7 @@ func (e *JobStatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 	jobType := r.URL.Query().Get("job_type")
 	if jobType == "" {
-		jobType = process_pages.JobType
+		jobType = process_book.JobType
 	}
 
 	// Get status based on job type
@@ -64,8 +64,8 @@ func (e *JobStatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	resp.JobType = jobType
 
 	switch jobType {
-	case process_pages.JobType:
-		status, err := process_pages.GetStatus(r.Context(), bookID)
+	case process_book.JobType:
+		status, err := process_book.GetStatus(r.Context(), bookID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get status: %v", err))
 			return
@@ -97,7 +97,7 @@ func (e *JobStatusEndpoint) Command(getServerURL func() string) *cobra.Command {
 			bookID := args[0]
 
 			path := fmt.Sprintf("/api/jobs/status/%s", bookID)
-			if jobType != process_pages.JobType {
+			if jobType != process_book.JobType {
 				path += "?job_type=" + jobType
 			}
 
@@ -110,6 +110,6 @@ func (e *JobStatusEndpoint) Command(getServerURL func() string) *cobra.Command {
 			return api.Output(resp)
 		},
 	}
-	cmd.Flags().StringVar(&jobType, "job-type", process_pages.JobType, "Job type to check")
+	cmd.Flags().StringVar(&jobType, "job-type", process_book.JobType, "Job type to check")
 	return cmd
 }

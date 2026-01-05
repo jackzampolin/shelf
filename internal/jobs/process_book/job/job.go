@@ -33,7 +33,7 @@ func (j *Job) SetRecordID(id string) {
 }
 
 func (j *Job) Type() string {
-	return "process-pages"
+	return "process-book"
 }
 
 func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {

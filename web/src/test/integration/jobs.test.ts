@@ -32,7 +32,7 @@ describe('Jobs Endpoints', () => {
 
     it('should support job_type filter', async () => {
       const { data, error } = await testClient.GET('/api/jobs', {
-        params: { query: { job_type: 'process-pages' } },
+        params: { query: { job_type: 'process-book' } },
       })
 
       expect(error).toBeUndefined()
@@ -42,7 +42,7 @@ describe('Jobs Endpoints', () => {
       // All returned jobs should have the filtered type
       if (data?.jobs && data.jobs.length > 0) {
         data.jobs.forEach((job) => {
-          expect(job.job_type).toBe('process-pages')
+          expect(job.job_type).toBe('process-book')
         })
       }
     })
@@ -157,7 +157,7 @@ describe('Jobs Endpoints', () => {
     it('should return 400 for non-existent book', async () => {
       const { response } = await testClient.POST('/api/jobs/start/{book_id}', {
         params: { path: { book_id: 'non-existent-book' } },
-        body: { job_type: 'process-pages' },
+        body: { job_type: 'process-book' },
       })
 
       // Should fail because book doesn't exist

@@ -10,7 +10,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 )
 
-// promptKeys used by the process-pages job.
+// promptKeys used by the process-book job.
 var promptKeys = []string{
 	blend.PromptKey,
 	label.SystemPromptKey,

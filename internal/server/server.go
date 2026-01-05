@@ -19,8 +19,8 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs/label_book"
 	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
+	"github.com/jackzampolin/shelf/internal/jobs/process_book"
 	"github.com/jackzampolin/shelf/internal/jobs/toc_book"
-	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
 	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/prompts"
@@ -53,8 +53,8 @@ type Server struct {
 	logger         *slog.Logger
 	home           *home.Dir
 
-	// processPagesCfg is saved for job factory registration
-	processPagesCfg process_pages.Config
+	// processBookCfg is saved for job factory registration
+	processBookCfg process_book.Config
 	// ocrBookCfg is saved for job factory registration
 	ocrBookCfg ocr_book.Config
 	// labelBookCfg is saved for job factory registration
@@ -147,8 +147,8 @@ func New(cfg Config) (*Server, error) {
 		})
 	}
 
-	// Save process pages config for job factory registration
-	processPagesCfg := process_pages.Config{
+	// Save process book config for job factory registration
+	processBookCfg := process_book.Config{
 		OcrProviders:     cfg.PipelineConfig.OcrProviders,
 		BlendProvider:    cfg.PipelineConfig.BlendProvider,
 		LabelProvider:    cfg.PipelineConfig.LabelProvider,
@@ -182,7 +182,7 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{
 		defraManager:     defraManager,
 		registry:         registry,
-		processPagesCfg:  processPagesCfg,
+		processBookCfg:   processBookCfg,
 		ocrBookCfg:       ocrBookCfg,
 		labelBookCfg:     labelBookCfg,
 		metadataBookCfg:  metadataBookCfg,
@@ -195,8 +195,8 @@ func New(cfg Config) (*Server, error) {
 	// Create endpoint registry and register all endpoints
 	s.endpointRegistry = api.NewRegistry()
 	for _, ep := range endpoints.All(endpoints.Config{
-		DefraManager:        defraManager,
-		ProcessPagesConfig:  processPagesCfg,
+		DefraManager:       defraManager,
+		ProcessBookConfig:  processBookCfg,
 		OcrBookConfig:       ocrBookCfg,
 		LabelBookConfig:     labelBookCfg,
 		MetadataBookConfig:  metadataBookCfg,
@@ -316,7 +316,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.scheduler.RegisterCPUHandler(ingest.TaskExtractPage, ingest.ExtractPageHandler())
 
 	// Register job factories for resumption
-	s.scheduler.RegisterFactory(process_pages.JobType, process_pages.JobFactory(s.processPagesCfg))
+	s.scheduler.RegisterFactory(process_book.JobType, process_book.JobFactory(s.processBookCfg))
 	s.scheduler.RegisterFactory(ocr_book.JobType, ocr_book.JobFactory(s.ocrBookCfg))
 	s.scheduler.RegisterFactory(label_book.JobType, label_book.JobFactory(s.labelBookCfg))
 	s.scheduler.RegisterFactory(metadata_book.JobType, metadata_book.JobFactory(s.metadataBookCfg))

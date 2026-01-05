@@ -1,4 +1,4 @@
-package process_pages
+package process_book
 
 import (
 	"context"
@@ -7,12 +7,12 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
-	pjob "github.com/jackzampolin/shelf/internal/jobs/process_pages/job"
+	pjob "github.com/jackzampolin/shelf/internal/jobs/process_book/job"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // JobType is the identifier for this job type.
-const JobType = "process-pages"
+const JobType = "process-book"
 
 // Config configures the process pages job.
 type Config struct {
