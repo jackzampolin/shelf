@@ -53,6 +53,7 @@ function BookDetailPage() {
     { id: 'ocr-book', label: 'OCR + Blend Only', description: 'OCR and blend all pages (no labeling)' },
     { id: 'label-book', label: 'Label Only', description: 'Label pages that have blend complete' },
     { id: 'metadata-book', label: 'Metadata Only', description: 'Extract book metadata (title, author, etc.)' },
+    { id: 'toc-book', label: 'ToC Only', description: 'Find and extract table of contents' },
   ]
 
   const { data: book, isLoading, error } = useQuery({

@@ -19,6 +19,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs/label_book"
 	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
+	"github.com/jackzampolin/shelf/internal/jobs/toc_book"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
 	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
@@ -60,6 +61,8 @@ type Server struct {
 	labelBookCfg label_book.Config
 	// metadataBookCfg is saved for job factory registration
 	metadataBookCfg metadata_book.Config
+	// tocBookCfg is saved for job factory registration
+	tocBookCfg toc_book.Config
 
 	// services holds all core services for context enrichment
 	services *svcctx.Services
@@ -170,6 +173,12 @@ func New(cfg Config) (*Server, error) {
 		MetadataProvider: cfg.PipelineConfig.MetadataProvider,
 	}
 
+	// Save toc book config for job factory registration
+	tocBookCfg := toc_book.Config{
+		TocProvider: cfg.PipelineConfig.TocProvider,
+		DebugAgents: cfg.PipelineConfig.DebugAgents,
+	}
+
 	s := &Server{
 		defraManager:     defraManager,
 		registry:         registry,
@@ -177,6 +186,7 @@ func New(cfg Config) (*Server, error) {
 		ocrBookCfg:       ocrBookCfg,
 		labelBookCfg:     labelBookCfg,
 		metadataBookCfg:  metadataBookCfg,
+		tocBookCfg:       tocBookCfg,
 		configMgr:       cfg.ConfigManager,
 		logger:          cfg.Logger,
 		home:            cfg.Home,
@@ -190,6 +200,7 @@ func New(cfg Config) (*Server, error) {
 		OcrBookConfig:       ocrBookCfg,
 		LabelBookConfig:     labelBookCfg,
 		MetadataBookConfig:  metadataBookCfg,
+		TocBookConfig:       tocBookCfg,
 	}) {
 		s.endpointRegistry.Register(ep)
 	}
@@ -309,6 +320,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.scheduler.RegisterFactory(ocr_book.JobType, ocr_book.JobFactory(s.ocrBookCfg))
 	s.scheduler.RegisterFactory(label_book.JobType, label_book.JobFactory(s.labelBookCfg))
 	s.scheduler.RegisterFactory(metadata_book.JobType, metadata_book.JobFactory(s.metadataBookCfg))
+	s.scheduler.RegisterFactory(toc_book.JobType, toc_book.JobFactory(s.tocBookCfg))
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)

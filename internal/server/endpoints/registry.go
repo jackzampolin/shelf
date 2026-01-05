@@ -7,6 +7,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
+	"github.com/jackzampolin/shelf/internal/jobs/toc_book"
 )
 
 // Config holds dependencies needed by some endpoints.
@@ -16,6 +17,7 @@ type Config struct {
 	OcrBookConfig      ocr_book.Config
 	LabelBookConfig    label_book.Config
 	MetadataBookConfig metadata_book.Config
+	TocBookConfig      toc_book.Config
 	SwaggerSpecPath    string
 }
 
@@ -52,6 +54,7 @@ func All(cfg Config) []api.Endpoint {
 			OcrBookConfig:       cfg.OcrBookConfig,
 			LabelBookConfig:     cfg.LabelBookConfig,
 			MetadataBookConfig:  cfg.MetadataBookConfig,
+			TocBookConfig:       cfg.TocBookConfig,
 		},
 		&JobStatusEndpoint{},
 		&DetailedJobStatusEndpoint{},

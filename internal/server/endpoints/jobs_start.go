@@ -13,6 +13,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
+	"github.com/jackzampolin/shelf/internal/jobs/toc_book"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -39,6 +40,8 @@ type StartJobEndpoint struct {
 	LabelBookConfig label_book.Config
 	// MetadataBookConfig holds config for metadata-book jobs
 	MetadataBookConfig metadata_book.Config
+	// TocBookConfig holds config for toc-book jobs
+	TocBookConfig toc_book.Config
 }
 
 func (e *StartJobEndpoint) Route() (string, string, http.HandlerFunc) {
@@ -100,6 +103,8 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		job, err = label_book.NewJob(r.Context(), e.LabelBookConfig, bookID)
 	case metadata_book.JobType:
 		job, err = metadata_book.NewJob(r.Context(), e.MetadataBookConfig, bookID)
+	case toc_book.JobType:
+		job, err = toc_book.NewJob(r.Context(), e.TocBookConfig, bookID)
 	default:
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown job type: %s", jobType))
 		return
