@@ -51,6 +51,7 @@ function BookDetailPage() {
   const jobTypes = [
     { id: 'process-pages', label: 'Full Pipeline', description: 'OCR → Blend → Label → Metadata → ToC' },
     { id: 'ocr-book', label: 'OCR + Blend Only', description: 'OCR and blend all pages (no labeling)' },
+    { id: 'label-book', label: 'Label Only', description: 'Label pages that have blend complete' },
   ]
 
   const { data: book, isLoading, error } = useQuery({

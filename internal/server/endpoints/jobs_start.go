@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/label_book"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
 	"github.com/jackzampolin/shelf/internal/svcctx"
@@ -33,6 +34,8 @@ type StartJobEndpoint struct {
 	ProcessPagesConfig process_pages.Config
 	// OcrBookConfig holds config for ocr-book jobs
 	OcrBookConfig ocr_book.Config
+	// LabelBookConfig holds config for label-book jobs
+	LabelBookConfig label_book.Config
 }
 
 func (e *StartJobEndpoint) Route() (string, string, http.HandlerFunc) {
@@ -90,6 +93,8 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		job, err = process_pages.NewJob(r.Context(), e.ProcessPagesConfig, bookID)
 	case ocr_book.JobType:
 		job, err = ocr_book.NewJob(r.Context(), e.OcrBookConfig, bookID)
+	case label_book.JobType:
+		job, err = label_book.NewJob(r.Context(), e.LabelBookConfig, bookID)
 	default:
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown job type: %s", jobType))
 		return

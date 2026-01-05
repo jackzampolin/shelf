@@ -16,6 +16,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/label_book"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
 	"github.com/jackzampolin/shelf/internal/llmcall"
@@ -54,6 +55,8 @@ type Server struct {
 	processPagesCfg process_pages.Config
 	// ocrBookCfg is saved for job factory registration
 	ocrBookCfg ocr_book.Config
+	// labelBookCfg is saved for job factory registration
+	labelBookCfg label_book.Config
 
 	// services holds all core services for context enrichment
 	services *svcctx.Services
@@ -154,11 +157,17 @@ func New(cfg Config) (*Server, error) {
 		BlendProvider: cfg.PipelineConfig.BlendProvider,
 	}
 
+	// Save label book config for job factory registration
+	labelBookCfg := label_book.Config{
+		LabelProvider: cfg.PipelineConfig.LabelProvider,
+	}
+
 	s := &Server{
 		defraManager:    defraManager,
 		registry:        registry,
 		processPagesCfg: processPagesCfg,
 		ocrBookCfg:      ocrBookCfg,
+		labelBookCfg:    labelBookCfg,
 		configMgr:       cfg.ConfigManager,
 		logger:          cfg.Logger,
 		home:            cfg.Home,
@@ -170,6 +179,7 @@ func New(cfg Config) (*Server, error) {
 		DefraManager:       defraManager,
 		ProcessPagesConfig: processPagesCfg,
 		OcrBookConfig:      ocrBookCfg,
+		LabelBookConfig:    labelBookCfg,
 	}) {
 		s.endpointRegistry.Register(ep)
 	}
@@ -287,6 +297,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// Register job factories for resumption
 	s.scheduler.RegisterFactory(process_pages.JobType, process_pages.JobFactory(s.processPagesCfg))
 	s.scheduler.RegisterFactory(ocr_book.JobType, ocr_book.JobFactory(s.ocrBookCfg))
+	s.scheduler.RegisterFactory(label_book.JobType, label_book.JobFactory(s.labelBookCfg))
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)
