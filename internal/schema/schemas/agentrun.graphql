@@ -13,6 +13,7 @@ type AgentRun {
     iterations: Int
 
     # Result
+    status: String @index  # "running", "completed", "failed"
     success: Boolean
     error: String
 
