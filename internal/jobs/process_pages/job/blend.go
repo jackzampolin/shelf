@@ -27,6 +27,9 @@ func (j *Job) CreateBlendWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit 
 		return nil
 	}
 
+	// Filter out garbage OCR (hallucinated repeated characters)
+	outputs = common.FilterOcrQuality(outputs, 1.75)
+
 	unitID := uuid.New().String()
 	j.RegisterWorkUnit(unitID, WorkUnitInfo{
 		PageNum:  pageNum,
