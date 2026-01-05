@@ -180,8 +180,9 @@ type AgentJobConfig struct {
 }
 
 // NewAgentJobFromConfig creates an agent job from configuration.
-func NewAgentJobFromConfig(cfg AgentJobConfig) *AgentJob {
-	agent := New(Config{
+// Context is required for observability logging (creating initial "running" record).
+func NewAgentJobFromConfig(ctx context.Context, cfg AgentJobConfig) *AgentJob {
+	agent := New(ctx, Config{
 		ID:              cfg.ID,
 		Tools:           cfg.Tools,
 		InitialMessages: cfg.InitialMessages,

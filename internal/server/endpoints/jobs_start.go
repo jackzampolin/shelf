@@ -9,7 +9,6 @@ import (
 
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/jobs/ocr"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -86,8 +85,6 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	switch jobType {
 	case process_pages.JobType:
 		job, err = process_pages.NewJob(r.Context(), e.ProcessPagesConfig, bookID)
-	case ocr.JobType:
-		job, err = ocr.NewJob(r.Context(), bookID)
 	default:
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown job type: %s", jobType))
 		return

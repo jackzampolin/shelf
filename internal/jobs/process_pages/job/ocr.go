@@ -2,58 +2,72 @@ package job
 
 import (
 	"context"
+	"fmt"
+	"os"
+
+	"github.com/google/uuid"
 
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/jobs/ocr"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateOcrWorkUnit creates an OCR work unit for a page and provider.
-// Uses the shared ocr.CreateOcrWorkUnitFunc.
+// Returns nil if the image file doesn't exist (expected case - needs extraction first).
 func (j *Job) CreateOcrWorkUnit(ctx context.Context, pageNum int, provider string) *jobs.WorkUnit {
-	unit, err := ocr.CreateOcrWorkUnitFunc(
-		ocr.OcrWorkUnitParams{
-			HomeDir:  j.HomeDir,
-			BookID:   j.BookID,
-			JobID:    j.RecordID,
-			PageNum:  pageNum,
-			Provider: provider,
-			Stage:    j.Type(),
-		},
-		func(unitID string) {
-			j.RegisterWorkUnit(unitID, WorkUnitInfo{
-				PageNum:  pageNum,
-				UnitType: "ocr",
-				Provider: provider,
-			})
-		},
-	)
+	imagePath := j.Book.HomeDir.SourceImagePath(j.Book.BookID, pageNum)
+	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // Expected: image needs extraction first
+		}
 		if logger := svcctx.LoggerFrom(ctx); logger != nil {
-			logger.Warn("failed to create OCR work unit",
+			logger.Warn("failed to read image for OCR",
 				"page_num", pageNum,
 				"provider", provider,
 				"error", err)
 		}
 		return nil
 	}
-	return unit
+
+	unitID := uuid.New().String()
+
+	// Register for tracking
+	j.RegisterWorkUnit(unitID, WorkUnitInfo{
+		PageNum:  pageNum,
+		UnitType: WorkUnitTypeOCR,
+		Provider: provider,
+	})
+
+	return &jobs.WorkUnit{
+		ID:       unitID,
+		Type:     jobs.WorkUnitTypeOCR,
+		Provider: provider,
+		JobID:    j.RecordID,
+		OCRRequest: &jobs.OCRWorkRequest{
+			Image:   imageData,
+			PageNum: pageNum,
+		},
+		Metrics: &jobs.WorkUnitMetrics{
+			BookID:  j.Book.BookID,
+			Stage:   j.Type(),
+			ItemKey: fmt.Sprintf("page_%04d_%s", pageNum, provider),
+		},
+	}
 }
 
 // HandleOcrComplete processes OCR completion.
-// Uses the shared ocr.HandleOcrResultFunc and triggers blend if all OCR done.
+// Updates state, persists to DefraDB, and triggers blend if all OCR done.
 func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
-	state := j.PageState[info.PageNum]
+	state := j.Book.GetPage(info.PageNum)
+	if state == nil {
+		return nil, fmt.Errorf("no state for page %d", info.PageNum)
+	}
 
-	allDone, err := ocr.HandleOcrResultFunc(ctx, ocr.HandleOcrResultParams{
-		PageNum:   info.PageNum,
-		Provider:  info.Provider,
-		PageDocID: state.PageDocID,
-		Result:    result.OCRResult,
-	}, state.PageState, j.OcrProviders)
-
+	// Use common handler for persistence and state update
+	allDone, err := common.PersistOCRResult(ctx, state, j.Book.OcrProviders, info.Provider, result.OCRResult)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to persist OCR result for page %d provider %s: %w", info.PageNum, info.Provider, err)
 	}
 
 	// If all OCR done, trigger blend

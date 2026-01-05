@@ -34,7 +34,7 @@ func TestAgentIntegration_SingleAgent(t *testing.T) {
 
 	// Create tools and agent
 	tools := NewFileTools(tmpDir)
-	agentJob := NewAgentJobFromConfig(AgentJobConfig{
+	agentJob := NewAgentJobFromConfig(context.Background(), AgentJobConfig{
 		ID:    "test-agent-1",
 		Tools: tools,
 		InitialMessages: []providers.Message{
@@ -204,7 +204,7 @@ func TestAgentIntegration_MultipleAgents(t *testing.T) {
 		task.setup(tmpDir)
 
 		tools := NewFileTools(tmpDir)
-		agentJob := NewAgentJobFromConfig(AgentJobConfig{
+		agentJob := NewAgentJobFromConfig(context.Background(), AgentJobConfig{
 			ID:    task.name,
 			Tools: tools,
 			InitialMessages: []providers.Message{
@@ -314,7 +314,7 @@ func TestAgentIntegration_MaxIterations(t *testing.T) {
 	tmpDir := t.TempDir()
 	tools := NewFileTools(tmpDir)
 
-	agentJob := NewAgentJobFromConfig(AgentJobConfig{
+	agentJob := NewAgentJobFromConfig(context.Background(), AgentJobConfig{
 		ID:    "impossible-task",
 		Tools: tools,
 		InitialMessages: []providers.Message{
@@ -457,7 +457,7 @@ func TestAgentJob_Unit(t *testing.T) {
 		},
 	}
 
-	agentJob := NewAgentJobFromConfig(AgentJobConfig{
+	agentJob := NewAgentJobFromConfig(context.Background(), AgentJobConfig{
 		ID:    "test",
 		Tools: tools,
 		InitialMessages: []providers.Message{

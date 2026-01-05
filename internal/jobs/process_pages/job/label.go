@@ -5,23 +5,29 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/prompts/label"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateLabelWorkUnit creates a label extraction LLM work unit.
-// Must be called with j.Mu held. Uses state.BlendedText if available,
-// otherwise queries DefraDB.
+// Uses state.BlendedText if available, otherwise queries DefraDB.
 func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageState) *jobs.WorkUnit {
-	// First try to use cached blended text from state
-	blendedText := state.BlendedText
+	logger := svcctx.LoggerFrom(ctx)
+
+	// First try to use cached blended text from state (thread-safe accessor)
+	blendedText := state.GetBlendedText()
 
 	// If not cached, query DefraDB
 	if blendedText == "" {
 		defraClient := svcctx.DefraClientFrom(ctx)
 		if defraClient == nil {
+			if logger != nil {
+				logger.Warn("cannot create label work unit: defra client not in context",
+					"page_num", pageNum,
+					"page_doc_id", state.GetPageDocID())
+			}
 			return nil
 		}
 
@@ -29,10 +35,15 @@ func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageS
 			Page(filter: {_docID: {_eq: "%s"}}) {
 				blend_markdown
 			}
-		}`, state.PageDocID)
+		}`, state.GetPageDocID())
 
 		resp, err := defraClient.Query(ctx, query)
 		if err != nil {
+			if logger != nil {
+				logger.Warn("failed to query blend text for label work unit",
+					"page_num", pageNum,
+					"error", err)
+			}
 			return nil
 		}
 
@@ -46,6 +57,10 @@ func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageS
 	}
 
 	if blendedText == "" {
+		if logger != nil {
+			logger.Debug("cannot create label work unit: no blended text available",
+				"page_num", pageNum)
+		}
 		return nil
 	}
 
@@ -60,7 +75,7 @@ func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageS
 		SystemPromptOverride: j.GetPrompt(label.SystemPromptKey),
 	})
 	unit.ID = unitID
-	unit.Provider = j.LabelProvider
+	unit.Provider = j.Book.LabelProvider
 	unit.JobID = j.RecordID
 
 	metrics := j.MetricsFor()
@@ -75,7 +90,7 @@ func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageS
 // HandleLabelComplete processes label completion.
 // Must be called with j.Mu held.
 func (j *Job) HandleLabelComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
-	state := j.PageState[info.PageNum]
+	state := j.Book.GetPage(info.PageNum)
 	if state == nil {
 		return nil, fmt.Errorf("no state for page %d", info.PageNum)
 	}
@@ -85,44 +100,11 @@ func (j *Job) HandleLabelComplete(ctx context.Context, info WorkUnitInfo, result
 		return nil, fmt.Errorf("label result missing for page %d", info.PageNum)
 	}
 
-	if err := j.SaveLabelResult(ctx, state, result.ChatResult.ParsedJSON); err != nil {
+	// Use common handler for persistence and state update
+	if err := common.SaveLabelResult(ctx, state, result.ChatResult.ParsedJSON); err != nil {
 		return nil, fmt.Errorf("failed to save label result: %w", err)
 	}
-	state.LabelDone = true
 
 	// Check if we should start book-level operations
 	return j.MaybeStartBookOperations(ctx), nil
-}
-
-// SaveLabelResult saves the label result to DefraDB.
-func (j *Job) SaveLabelResult(ctx context.Context, state *PageState, parsedJSON any) error {
-	labelResult, err := label.ParseResult(parsedJSON)
-	if err != nil {
-		return err
-	}
-
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	update := map[string]any{
-		"label_complete": true,
-	}
-
-	if labelResult.PageNumber != nil {
-		update["page_number_label"] = *labelResult.PageNumber
-	}
-	if labelResult.RunningHeader != nil {
-		update["running_header"] = *labelResult.RunningHeader
-	}
-
-	// Fire-and-forget - no need to block
-	sink.Send(defra.WriteOp{
-		Collection: "Page",
-		DocID:      state.PageDocID,
-		Document:   update,
-		Op:         defra.OpUpdate,
-	})
-	return nil
 }
