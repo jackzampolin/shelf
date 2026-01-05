@@ -4,42 +4,20 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
-
-	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 )
 
 // CreateExtractWorkUnit creates a CPU work unit to extract a page from PDF.
 func (j *Job) CreateExtractWorkUnit(pageNum int) *jobs.WorkUnit {
-	pdfPath, pageInPDF := j.Book.PDFs.FindPDFForPage(pageNum)
-	if pdfPath == "" {
-		return nil // Page out of range
+	unit, unitID := common.CreateExtractWorkUnit(j, pageNum)
+	if unit != nil {
+		j.RegisterWorkUnit(unitID, WorkUnitInfo{
+			PageNum:  pageNum,
+			UnitType: WorkUnitTypeExtract,
+		})
 	}
-
-	unitID := uuid.New().String()
-
-	// Register for tracking
-	j.RegisterWorkUnit(unitID, WorkUnitInfo{
-		PageNum:  pageNum,
-		UnitType: WorkUnitTypeExtract,
-	})
-
-	return &jobs.WorkUnit{
-		ID:    unitID,
-		Type:  jobs.WorkUnitTypeCPU,
-		JobID: j.RecordID,
-		CPURequest: &jobs.CPUWorkRequest{
-			Task: ingest.TaskExtractPage,
-			Data: ingest.PageExtractRequest{
-				PDFPath:   pdfPath,
-				PageNum:   pageInPDF,         // Page number within the PDF
-				OutputNum: pageNum,           // Sequential output page number
-				OutputDir: j.Book.HomeDir.SourceImagesDir(j.Book.BookID),
-			},
-		},
-	}
+	return unit
 }
 
 // HandleExtractComplete processes the result of a page extraction.

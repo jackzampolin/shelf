@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
-
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/prompts/metadata"
@@ -162,54 +160,12 @@ func (j *Job) Progress() map[string]jobs.ProviderProgress {
 
 // CreateMetadataWorkUnit creates a metadata extraction work unit.
 func (j *Job) CreateMetadataWorkUnit(ctx context.Context) *jobs.WorkUnit {
-	logger := svcctx.LoggerFrom(ctx)
-
-	// Load first N pages of blended text
-	pages, err := common.LoadPagesForMetadata(ctx, j.Book.BookID, MaxPagesForMetadata)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to load pages for metadata extraction",
-				"book_id", j.Book.BookID,
-				"error", err)
-		}
-		return nil
+	unit, unitID := common.CreateMetadataWorkUnit(ctx, j)
+	if unit != nil {
+		j.RegisterWorkUnit(unitID, WorkUnitInfo{
+			UnitType: WorkUnitTypeMetadata,
+		})
 	}
-	if len(pages) == 0 {
-		if logger != nil {
-			logger.Debug("no pages available for metadata extraction",
-				"book_id", j.Book.BookID)
-		}
-		return nil
-	}
-
-	bookText := metadata.PrepareBookText(pages, MaxPagesForMetadata)
-	if bookText == "" {
-		if logger != nil {
-			logger.Debug("no book text available for metadata extraction",
-				"book_id", j.Book.BookID)
-		}
-		return nil
-	}
-
-	unitID := uuid.New().String()
-	j.RegisterWorkUnit(unitID, WorkUnitInfo{
-		UnitType: WorkUnitTypeMetadata,
-	})
-
-	unit := metadata.CreateWorkUnit(metadata.Input{
-		BookText:             bookText,
-		SystemPromptOverride: j.GetPrompt(metadata.SystemPromptKey),
-	})
-	unit.ID = unitID
-	unit.Provider = j.Book.MetadataProvider
-	unit.JobID = j.RecordID
-
-	metrics := j.MetricsFor()
-	metrics.ItemKey = "metadata"
-	metrics.PromptKey = metadata.SystemPromptKey
-	metrics.PromptCID = j.GetPromptCID(metadata.SystemPromptKey)
-	unit.Metrics = metrics
-
 	return unit
 }
 

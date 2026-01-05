@@ -4,10 +4,88 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
+
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/prompts/label"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
+
+// CreateLabelWorkUnit creates a label extraction LLM work unit.
+// Returns nil if no blended text is available.
+// The caller is responsible for registering the work unit with their tracker.
+func CreateLabelWorkUnit(ctx context.Context, jc JobContext, pageNum int, state *PageState) (*jobs.WorkUnit, string) {
+	book := jc.GetBook()
+	logger := svcctx.LoggerFrom(ctx)
+
+	// First try to use cached blended text from state
+	blendedText := state.GetBlendedText()
+
+	// If not cached, query DefraDB
+	if blendedText == "" {
+		defraClient := svcctx.DefraClientFrom(ctx)
+		if defraClient == nil {
+			if logger != nil {
+				logger.Warn("cannot create label work unit: defra client not in context",
+					"page_num", pageNum)
+			}
+			return nil, ""
+		}
+
+		query := fmt.Sprintf(`{
+			Page(filter: {_docID: {_eq: "%s"}}) {
+				blend_markdown
+			}
+		}`, state.GetPageDocID())
+
+		resp, err := defraClient.Query(ctx, query)
+		if err != nil {
+			if logger != nil {
+				logger.Warn("failed to query blend text for label work unit",
+					"page_num", pageNum,
+					"error", err)
+			}
+			return nil, ""
+		}
+
+		if pages, ok := resp.Data["Page"].([]any); ok && len(pages) > 0 {
+			if page, ok := pages[0].(map[string]any); ok {
+				if bm, ok := page["blend_markdown"].(string); ok {
+					blendedText = bm
+				}
+			}
+		}
+	}
+
+	if blendedText == "" {
+		if logger != nil {
+			logger.Debug("cannot create label work unit: no blended text available",
+				"page_num", pageNum)
+		}
+		return nil, ""
+	}
+
+	unitID := uuid.New().String()
+
+	unit := label.CreateWorkUnit(label.Input{
+		BlendedText:          blendedText,
+		SystemPromptOverride: book.GetPrompt(label.SystemPromptKey),
+	})
+	unit.ID = unitID
+	unit.Provider = book.LabelProvider
+	unit.JobID = jc.ID()
+
+	unit.Metrics = &jobs.WorkUnitMetrics{
+		BookID:    book.BookID,
+		Stage:     jc.Type(),
+		ItemKey:   fmt.Sprintf("page_%04d_label", pageNum),
+		PromptKey: label.SystemPromptKey,
+		PromptCID: book.GetPromptCID(label.SystemPromptKey),
+	}
+
+	return unit, unitID
+}
 
 // SaveLabelResult parses the label result, persists to DefraDB, and updates page state (thread-safe).
 func SaveLabelResult(ctx context.Context, state *PageState, parsedJSON any) error {

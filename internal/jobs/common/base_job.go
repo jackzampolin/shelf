@@ -6,6 +6,14 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 )
 
+// JobContext provides access to common job properties needed by work unit creators.
+// Jobs that embed BaseJob and implement Type() automatically satisfy this interface.
+type JobContext interface {
+	GetBook() *BookState
+	ID() string
+	Type() string
+}
+
 // BaseJob provides common job functionality that can be embedded in specific jobs.
 // Embedding jobs must still provide their own Type() method.
 //
@@ -29,6 +37,13 @@ func (j *BaseJob) ID() string {
 	j.Mu.Lock()
 	defer j.Mu.Unlock()
 	return j.RecordID
+}
+
+// GetBook returns the book state.
+// Note: This is not thread-safe for the Book pointer itself, but BookState
+// has its own internal synchronization for field access.
+func (j *BaseJob) GetBook() *BookState {
+	return j.Book
 }
 
 // SetRecordID sets the job record ID (thread-safe).

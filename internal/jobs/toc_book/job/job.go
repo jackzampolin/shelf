@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/agents"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
@@ -403,51 +401,12 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 
 // CreateTocExtractWorkUnit creates a ToC extraction work unit.
 func (j *Job) CreateTocExtractWorkUnit(ctx context.Context) *jobs.WorkUnit {
-	logger := svcctx.LoggerFrom(ctx)
-
-	// Get ToC page range
-	tocStartPage, tocEndPage := j.Book.GetTocPageRange()
-
-	// Load ToC pages
-	tocPages, err := common.LoadTocPages(ctx, j.Book.BookID, tocStartPage, tocEndPage)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to load ToC pages", "error", err)
-		}
-		return nil
+	unit, unitID := common.CreateTocExtractWorkUnit(ctx, j, j.TocDocID)
+	if unit != nil {
+		j.RegisterWorkUnit(unitID, WorkUnitInfo{
+			UnitType: WorkUnitTypeTocExtract,
+		})
 	}
-	if len(tocPages) == 0 {
-		if logger != nil {
-			logger.Warn("no ToC pages found",
-				"start_page", tocStartPage,
-				"end_page", tocEndPage)
-		}
-		return nil
-	}
-
-	// Load structure summary from finder (if available)
-	structureSummary, _ := common.LoadTocStructureSummary(ctx, j.TocDocID)
-
-	unitID := uuid.New().String()
-	j.RegisterWorkUnit(unitID, WorkUnitInfo{
-		UnitType: WorkUnitTypeTocExtract,
-	})
-
-	unit := extract_toc.CreateWorkUnit(extract_toc.Input{
-		ToCPages:             tocPages,
-		StructureSummary:     structureSummary,
-		SystemPromptOverride: j.GetPrompt(extract_toc.PromptKey),
-	})
-	unit.ID = unitID
-	unit.Provider = j.Book.TocProvider
-	unit.JobID = j.RecordID
-
-	metrics := j.MetricsFor()
-	metrics.ItemKey = "toc_extract"
-	metrics.PromptKey = extract_toc.PromptKey
-	metrics.PromptCID = j.GetPromptCID(extract_toc.PromptKey)
-	unit.Metrics = metrics
-
 	return unit
 }
 

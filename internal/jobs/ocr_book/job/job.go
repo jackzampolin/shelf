@@ -4,14 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 
-	"github.com/google/uuid"
-
-	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
-	"github.com/jackzampolin/shelf/internal/prompts/blend"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -246,112 +241,38 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 
 // CreateExtractWorkUnit creates a CPU work unit to extract a page from PDF.
 func (j *Job) CreateExtractWorkUnit(pageNum int) *jobs.WorkUnit {
-	pdfPath, pageInPDF := j.Book.PDFs.FindPDFForPage(pageNum)
-	if pdfPath == "" {
-		return nil
+	unit, unitID := common.CreateExtractWorkUnit(j, pageNum)
+	if unit != nil {
+		j.RegisterWorkUnit(unitID, WorkUnitInfo{
+			PageNum:  pageNum,
+			UnitType: WorkUnitTypeExtract,
+		})
 	}
-
-	unitID := uuid.New().String()
-	j.RegisterWorkUnit(unitID, WorkUnitInfo{
-		PageNum:  pageNum,
-		UnitType: WorkUnitTypeExtract,
-	})
-
-	return &jobs.WorkUnit{
-		ID:    unitID,
-		Type:  jobs.WorkUnitTypeCPU,
-		JobID: j.RecordID,
-		CPURequest: &jobs.CPUWorkRequest{
-			Task: ingest.TaskExtractPage,
-			Data: ingest.PageExtractRequest{
-				PDFPath:   pdfPath,
-				PageNum:   pageInPDF,
-				OutputNum: pageNum,
-				OutputDir: j.Book.HomeDir.SourceImagesDir(j.Book.BookID),
-			},
-		},
-	}
+	return unit
 }
 
 // CreateOcrWorkUnit creates an OCR work unit for a page and provider.
 func (j *Job) CreateOcrWorkUnit(ctx context.Context, pageNum int, provider string) *jobs.WorkUnit {
-	imagePath := j.Book.HomeDir.SourceImagePath(j.Book.BookID, pageNum)
-	imageData, err := os.ReadFile(imagePath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			if logger := svcctx.LoggerFrom(ctx); logger != nil {
-				logger.Warn("failed to read image for OCR",
-					"page_num", pageNum,
-					"provider", provider,
-					"error", err)
-			}
-		}
-		return nil
+	unit, unitID := common.CreateOcrWorkUnit(ctx, j, pageNum, provider)
+	if unit != nil {
+		j.RegisterWorkUnit(unitID, WorkUnitInfo{
+			PageNum:  pageNum,
+			UnitType: WorkUnitTypeOCR,
+			Provider: provider,
+		})
 	}
-
-	unitID := uuid.New().String()
-	j.RegisterWorkUnit(unitID, WorkUnitInfo{
-		PageNum:  pageNum,
-		UnitType: WorkUnitTypeOCR,
-		Provider: provider,
-	})
-
-	return &jobs.WorkUnit{
-		ID:       unitID,
-		Type:     jobs.WorkUnitTypeOCR,
-		Provider: provider,
-		JobID:    j.RecordID,
-		OCRRequest: &jobs.OCRWorkRequest{
-			Image:   imageData,
-			PageNum: pageNum,
-		},
-		Metrics: &jobs.WorkUnitMetrics{
-			BookID:  j.Book.BookID,
-			Stage:   j.Type(),
-			ItemKey: fmt.Sprintf("page_%04d_%s", pageNum, provider),
-		},
-	}
+	return unit
 }
 
 // CreateBlendWorkUnit creates a blend LLM work unit.
 func (j *Job) CreateBlendWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit {
-	var outputs []blend.OCROutput
-	for _, provider := range j.Book.OcrProviders {
-		if text, ok := state.GetOcrResult(provider); ok && text != "" {
-			outputs = append(outputs, blend.OCROutput{
-				ProviderName: provider,
-				Text:         text,
-			})
-		}
+	unit, unitID := common.CreateBlendWorkUnit(j, pageNum, state)
+	if unit != nil {
+		j.RegisterWorkUnit(unitID, WorkUnitInfo{
+			PageNum:  pageNum,
+			UnitType: WorkUnitTypeBlend,
+		})
 	}
-
-	if len(outputs) == 0 {
-		return nil
-	}
-
-	// Filter out garbage OCR (hallucinated repeated characters)
-	outputs = common.FilterOcrQuality(outputs, 1.75)
-
-	unitID := uuid.New().String()
-	j.RegisterWorkUnit(unitID, WorkUnitInfo{
-		PageNum:  pageNum,
-		UnitType: WorkUnitTypeBlend,
-	})
-
-	unit := blend.CreateWorkUnit(blend.Input{
-		OCROutputs:           outputs,
-		SystemPromptOverride: j.Book.GetPrompt(blend.PromptKey),
-	})
-	unit.ID = unitID
-	unit.Provider = j.Book.BlendProvider
-	unit.JobID = j.RecordID
-
-	metrics := j.MetricsFor()
-	metrics.ItemKey = fmt.Sprintf("page_%04d_blend", pageNum)
-	metrics.PromptKey = blend.PromptKey
-	metrics.PromptCID = j.Book.GetPromptCID(blend.PromptKey)
-	unit.Metrics = metrics
-
 	return unit
 }
 

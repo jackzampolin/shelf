@@ -6,11 +6,66 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/google/uuid"
+
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
+	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/prompts/extract_toc"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
+
+// CreateTocExtractWorkUnit creates a ToC extraction work unit.
+// Returns nil if no ToC pages are available.
+// The caller is responsible for registering the work unit with their tracker.
+func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID string) (*jobs.WorkUnit, string) {
+	book := jc.GetBook()
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Get ToC page range
+	tocStartPage, tocEndPage := book.GetTocPageRange()
+
+	// Load ToC pages
+	tocPages, err := LoadTocPages(ctx, book.BookID, tocStartPage, tocEndPage)
+	if err != nil {
+		if logger != nil {
+			logger.Warn("failed to load ToC pages", "error", err)
+		}
+		return nil, ""
+	}
+	if len(tocPages) == 0 {
+		if logger != nil {
+			logger.Warn("no ToC pages found",
+				"start_page", tocStartPage,
+				"end_page", tocEndPage)
+		}
+		return nil, ""
+	}
+
+	// Load structure summary from finder (if available)
+	structureSummary, _ := LoadTocStructureSummary(ctx, tocDocID)
+
+	unitID := uuid.New().String()
+
+	unit := extract_toc.CreateWorkUnit(extract_toc.Input{
+		ToCPages:             tocPages,
+		StructureSummary:     structureSummary,
+		SystemPromptOverride: book.GetPrompt(extract_toc.PromptKey),
+	})
+	unit.ID = unitID
+	unit.Provider = book.TocProvider
+	unit.JobID = jc.ID()
+
+	unit.Metrics = &jobs.WorkUnitMetrics{
+		BookID:    book.BookID,
+		Stage:     jc.Type(),
+		ItemKey:   "toc_extract",
+		PromptKey: extract_toc.PromptKey,
+		PromptCID: book.GetPromptCID(extract_toc.PromptKey),
+	}
+
+	return unit, unitID
+}
 
 // LoadTocPages loads ToC page content for extraction from DefraDB.
 func LoadTocPages(ctx context.Context, bookID string, startPage, endPage int) ([]extract_toc.ToCPage, error) {

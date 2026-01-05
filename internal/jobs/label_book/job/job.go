@@ -5,11 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/google/uuid"
-
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
-	"github.com/jackzampolin/shelf/internal/prompts/label"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -168,75 +165,13 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 
 // CreateLabelWorkUnit creates a label LLM work unit.
 func (j *Job) CreateLabelWorkUnit(ctx context.Context, pageNum int, state *PageState) *jobs.WorkUnit {
-	logger := svcctx.LoggerFrom(ctx)
-
-	// First try cached blended text
-	blendedText := state.GetBlendedText()
-
-	// If not cached, query DefraDB
-	if blendedText == "" {
-		defraClient := svcctx.DefraClientFrom(ctx)
-		if defraClient == nil {
-			if logger != nil {
-				logger.Warn("cannot create label work unit: defra client not in context",
-					"page_num", pageNum)
-			}
-			return nil
-		}
-
-		query := fmt.Sprintf(`{
-			Page(filter: {_docID: {_eq: "%s"}}) {
-				blend_markdown
-			}
-		}`, state.GetPageDocID())
-
-		resp, err := defraClient.Query(ctx, query)
-		if err != nil {
-			if logger != nil {
-				logger.Warn("failed to query blend text for label work unit",
-					"page_num", pageNum,
-					"error", err)
-			}
-			return nil
-		}
-
-		if pages, ok := resp.Data["Page"].([]any); ok && len(pages) > 0 {
-			if page, ok := pages[0].(map[string]any); ok {
-				if bm, ok := page["blend_markdown"].(string); ok {
-					blendedText = bm
-				}
-			}
-		}
+	unit, unitID := common.CreateLabelWorkUnit(ctx, j, pageNum, state)
+	if unit != nil {
+		j.RegisterWorkUnit(unitID, WorkUnitInfo{
+			PageNum:  pageNum,
+			UnitType: WorkUnitTypeLabel,
+		})
 	}
-
-	if blendedText == "" {
-		if logger != nil {
-			logger.Debug("cannot create label work unit: no blended text",
-				"page_num", pageNum)
-		}
-		return nil
-	}
-
-	unitID := uuid.New().String()
-	j.RegisterWorkUnit(unitID, WorkUnitInfo{
-		PageNum:  pageNum,
-		UnitType: WorkUnitTypeLabel,
-	})
-
-	unit := label.CreateWorkUnit(label.Input{
-		BlendedText:          blendedText,
-		SystemPromptOverride: j.GetPrompt(label.SystemPromptKey),
-	})
-	unit.ID = unitID
-	unit.Provider = j.Book.LabelProvider
-	unit.JobID = j.RecordID
-
-	metrics := j.MetricsFor()
-	metrics.ItemKey = fmt.Sprintf("page_%04d_label", pageNum)
-	metrics.PromptKey = label.SystemPromptKey
-	metrics.PromptCID = j.GetPromptCID(label.SystemPromptKey)
-	unit.Metrics = metrics
-
 	return unit
 }
 

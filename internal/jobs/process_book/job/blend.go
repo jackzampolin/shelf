@@ -4,52 +4,19 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
-	"github.com/jackzampolin/shelf/internal/prompts/blend"
 )
 
 // CreateBlendWorkUnit creates a blend LLM work unit.
 func (j *Job) CreateBlendWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit {
-	var outputs []blend.OCROutput
-	for _, provider := range j.Book.OcrProviders {
-		// Use thread-safe accessor for OCR results
-		if text, ok := state.GetOcrResult(provider); ok && text != "" {
-			outputs = append(outputs, blend.OCROutput{
-				ProviderName: provider,
-				Text:         text,
-			})
-		}
+	unit, unitID := common.CreateBlendWorkUnit(j, pageNum, state)
+	if unit != nil {
+		j.RegisterWorkUnit(unitID, WorkUnitInfo{
+			PageNum:  pageNum,
+			UnitType: WorkUnitTypeBlend,
+		})
 	}
-
-	if len(outputs) == 0 {
-		return nil
-	}
-
-	// Filter out garbage OCR (hallucinated repeated characters)
-	outputs = common.FilterOcrQuality(outputs, 1.75)
-
-	unitID := uuid.New().String()
-	j.RegisterWorkUnit(unitID, WorkUnitInfo{
-		PageNum:  pageNum,
-		UnitType: "blend",
-	})
-
-	unit := blend.CreateWorkUnit(blend.Input{
-		OCROutputs:           outputs,
-		SystemPromptOverride: j.GetPrompt(blend.PromptKey),
-	})
-	unit.ID = unitID
-	unit.Provider = j.Book.BlendProvider
-	unit.JobID = j.RecordID
-
-	metrics := j.MetricsFor()
-	metrics.ItemKey = fmt.Sprintf("page_%04d_blend", pageNum)
-	metrics.PromptKey = blend.PromptKey
-	metrics.PromptCID = j.GetPromptCID(blend.PromptKey)
-	unit.Metrics = metrics
-
 	return unit
 }
 
