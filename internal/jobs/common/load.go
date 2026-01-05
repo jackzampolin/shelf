@@ -23,8 +23,8 @@ type LoadBookConfig struct {
 
 	// Optional prompt resolution
 	// If PromptKeys is non-empty, prompts will be resolved and stored in BookState
-	PromptKeys     []string
-	PromptDefaults func(string) string // fallback for keys not in resolver
+	// Uses GetEmbeddedDefault for fallbacks when resolver doesn't have the prompt
+	PromptKeys []string
 }
 
 // LoadBookResult contains the fully loaded book state.
@@ -121,7 +121,7 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 
 	// 6. Resolve prompts (optional)
 	if len(cfg.PromptKeys) > 0 {
-		if err := ResolvePrompts(ctx, book, cfg.PromptKeys, cfg.PromptDefaults); err != nil {
+		if err := ResolvePrompts(ctx, book, cfg.PromptKeys, GetEmbeddedDefault); err != nil {
 			return nil, fmt.Errorf("failed to resolve prompts: %w", err)
 		}
 

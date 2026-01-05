@@ -16,6 +16,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
 	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
@@ -51,6 +52,8 @@ type Server struct {
 
 	// processPagesCfg is saved for job factory registration
 	processPagesCfg process_pages.Config
+	// ocrBookCfg is saved for job factory registration
+	ocrBookCfg ocr_book.Config
 
 	// services holds all core services for context enrichment
 	services *svcctx.Services
@@ -145,10 +148,17 @@ func New(cfg Config) (*Server, error) {
 		DebugAgents:      cfg.PipelineConfig.DebugAgents,
 	}
 
+	// Save OCR book config for job factory registration (subset of process pages)
+	ocrBookCfg := ocr_book.Config{
+		OcrProviders:  cfg.PipelineConfig.OcrProviders,
+		BlendProvider: cfg.PipelineConfig.BlendProvider,
+	}
+
 	s := &Server{
 		defraManager:    defraManager,
 		registry:        registry,
 		processPagesCfg: processPagesCfg,
+		ocrBookCfg:      ocrBookCfg,
 		configMgr:       cfg.ConfigManager,
 		logger:          cfg.Logger,
 		home:            cfg.Home,
@@ -159,6 +169,7 @@ func New(cfg Config) (*Server, error) {
 	for _, ep := range endpoints.All(endpoints.Config{
 		DefraManager:       defraManager,
 		ProcessPagesConfig: processPagesCfg,
+		OcrBookConfig:      ocrBookCfg,
 	}) {
 		s.endpointRegistry.Register(ep)
 	}
@@ -275,6 +286,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Register job factories for resumption
 	s.scheduler.RegisterFactory(process_pages.JobType, process_pages.JobFactory(s.processPagesCfg))
+	s.scheduler.RegisterFactory(ocr_book.JobType, ocr_book.JobFactory(s.ocrBookCfg))
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)

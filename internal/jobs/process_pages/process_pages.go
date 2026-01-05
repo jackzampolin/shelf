@@ -178,7 +178,6 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 		TocProvider:      cfg.TocProvider,
 		DebugAgents:      cfg.DebugAgents,
 		PromptKeys:       pjob.PromptKeys(),
-		PromptDefaults:   pjob.GetEmbeddedDefault,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to load book: %w", err)
