@@ -143,7 +143,9 @@ func (c *Call) ToMap() map[string]any {
 		m["error"] = c.Error
 	}
 	if len(c.ToolCalls) > 0 {
-		m["tool_calls"] = c.ToolCalls
+		// Convert to string so GraphQL sees it as a JSON string literal,
+		// not raw JSON syntax that the parser would try to interpret
+		m["tool_calls"] = string(c.ToolCalls)
 	}
 
 	return m
