@@ -4,6 +4,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs/label_book"
+	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
 )
@@ -14,6 +15,7 @@ type Config struct {
 	ProcessPagesConfig process_pages.Config
 	OcrBookConfig      ocr_book.Config
 	LabelBookConfig    label_book.Config
+	MetadataBookConfig metadata_book.Config
 	SwaggerSpecPath    string
 }
 
@@ -46,9 +48,10 @@ func All(cfg Config) []api.Endpoint {
 
 		// Job start/status endpoints
 		&StartJobEndpoint{
-			ProcessPagesConfig: cfg.ProcessPagesConfig,
-			OcrBookConfig:      cfg.OcrBookConfig,
-			LabelBookConfig:    cfg.LabelBookConfig,
+			ProcessPagesConfig:  cfg.ProcessPagesConfig,
+			OcrBookConfig:       cfg.OcrBookConfig,
+			LabelBookConfig:     cfg.LabelBookConfig,
+			MetadataBookConfig:  cfg.MetadataBookConfig,
 		},
 		&JobStatusEndpoint{},
 		&DetailedJobStatusEndpoint{},

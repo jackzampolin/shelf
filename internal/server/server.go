@@ -17,6 +17,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/label_book"
+	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
 	"github.com/jackzampolin/shelf/internal/jobs/process_pages"
 	"github.com/jackzampolin/shelf/internal/llmcall"
@@ -57,6 +58,8 @@ type Server struct {
 	ocrBookCfg ocr_book.Config
 	// labelBookCfg is saved for job factory registration
 	labelBookCfg label_book.Config
+	// metadataBookCfg is saved for job factory registration
+	metadataBookCfg metadata_book.Config
 
 	// services holds all core services for context enrichment
 	services *svcctx.Services
@@ -162,12 +165,18 @@ func New(cfg Config) (*Server, error) {
 		LabelProvider: cfg.PipelineConfig.LabelProvider,
 	}
 
+	// Save metadata book config for job factory registration
+	metadataBookCfg := metadata_book.Config{
+		MetadataProvider: cfg.PipelineConfig.MetadataProvider,
+	}
+
 	s := &Server{
-		defraManager:    defraManager,
-		registry:        registry,
-		processPagesCfg: processPagesCfg,
-		ocrBookCfg:      ocrBookCfg,
-		labelBookCfg:    labelBookCfg,
+		defraManager:     defraManager,
+		registry:         registry,
+		processPagesCfg:  processPagesCfg,
+		ocrBookCfg:       ocrBookCfg,
+		labelBookCfg:     labelBookCfg,
+		metadataBookCfg:  metadataBookCfg,
 		configMgr:       cfg.ConfigManager,
 		logger:          cfg.Logger,
 		home:            cfg.Home,
@@ -176,10 +185,11 @@ func New(cfg Config) (*Server, error) {
 	// Create endpoint registry and register all endpoints
 	s.endpointRegistry = api.NewRegistry()
 	for _, ep := range endpoints.All(endpoints.Config{
-		DefraManager:       defraManager,
-		ProcessPagesConfig: processPagesCfg,
-		OcrBookConfig:      ocrBookCfg,
-		LabelBookConfig:    labelBookCfg,
+		DefraManager:        defraManager,
+		ProcessPagesConfig:  processPagesCfg,
+		OcrBookConfig:       ocrBookCfg,
+		LabelBookConfig:     labelBookCfg,
+		MetadataBookConfig:  metadataBookCfg,
 	}) {
 		s.endpointRegistry.Register(ep)
 	}
@@ -298,6 +308,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.scheduler.RegisterFactory(process_pages.JobType, process_pages.JobFactory(s.processPagesCfg))
 	s.scheduler.RegisterFactory(ocr_book.JobType, ocr_book.JobFactory(s.ocrBookCfg))
 	s.scheduler.RegisterFactory(label_book.JobType, label_book.JobFactory(s.labelBookCfg))
+	s.scheduler.RegisterFactory(metadata_book.JobType, metadata_book.JobFactory(s.metadataBookCfg))
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)
