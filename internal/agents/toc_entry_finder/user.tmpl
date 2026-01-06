@@ -1,0 +1,4 @@
+Find: "{{.SearchTerm}}"{{if .PrintedPage}} (printed page {{.PrintedPage}}, but use scan pages){{end}} [{{.TotalPages}} pages in book]
+{{if .BackMatterStart}}
+BOOK STRUCTURE: Back matter (including {{.BackMatterTypes}}) starts around page {{.BackMatterStart}}. Results from pages {{.BackMatterStart}}+ are likely footnote references, not chapter starts.
+{{end}}

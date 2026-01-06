@@ -284,6 +284,7 @@ type BookState struct {
 	Metadata   OperationState
 	TocFinder  OperationState
 	TocExtract OperationState
+	TocLink    OperationState
 
 	// ToC finder results (mutable - use accessor methods)
 	TocFound     bool

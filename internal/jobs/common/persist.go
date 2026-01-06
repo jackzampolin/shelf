@@ -83,3 +83,18 @@ func PersistTocExtractState(ctx context.Context, tocDocID string, op *OperationS
 		Op: defra.OpUpdate,
 	})
 }
+
+// PersistTocLinkState persists ToC link operation state to DefraDB.
+func PersistTocLinkState(ctx context.Context, tocDocID string, op *OperationState) error {
+	if tocDocID == "" {
+		return nil // No ToC record yet
+	}
+	return SendToSink(ctx, defra.WriteOp{
+		Collection: "ToC",
+		DocID:      tocDocID,
+		Document: map[string]any{
+			"link_complete": op.IsComplete(),
+		},
+		Op: defra.OpUpdate,
+	})
+}
