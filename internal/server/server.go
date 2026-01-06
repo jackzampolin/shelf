@@ -208,10 +208,11 @@ func New(cfg Config) (*Server, error) {
 	for _, ep := range endpoints.All(endpoints.Config{
 		DefraManager:       defraManager,
 		ProcessBookConfig:  processBookCfg,
-		OcrBookConfig:       ocrBookCfg,
-		LabelBookConfig:     labelBookCfg,
-		MetadataBookConfig:  metadataBookCfg,
-		TocBookConfig:       tocBookCfg,
+		OcrBookConfig:      ocrBookCfg,
+		LabelBookConfig:    labelBookCfg,
+		MetadataBookConfig: metadataBookCfg,
+		TocBookConfig:      tocBookCfg,
+		LinkTocConfig:      linkTocCfg,
 	}) {
 		s.endpointRegistry.Register(ep)
 	}
