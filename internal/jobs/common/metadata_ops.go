@@ -54,6 +54,7 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 	unit := metadata.CreateWorkUnit(metadata.Input{
 		BookText:             bookText,
 		SystemPromptOverride: book.GetPrompt(metadata.SystemPromptKey),
+		UserPromptOverride:   book.GetPrompt(metadata.UserPromptKey),
 	})
 	unit.ID = unitID
 	unit.Provider = book.MetadataProvider

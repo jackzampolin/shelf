@@ -12,13 +12,21 @@ import (
 
 // promptKeys used by the process-book job.
 var promptKeys = []string{
-	blend.PromptKey,
+	// Blend stage
+	blend.SystemPromptKey,
+	blend.UserPromptKey,
+	// Label stage
 	label.SystemPromptKey,
 	label.UserPromptKey,
+	// Metadata stage
 	metadata.SystemPromptKey,
 	metadata.UserPromptKey,
-	extract_toc.PromptKey,
-	toc_finder.PromptKey,
+	// ToC extraction stage
+	extract_toc.SystemPromptKey,
+	extract_toc.UserPromptKey,
+	// ToC finder agent
+	toc_finder.SystemPromptKey,
+	toc_finder.UserPromptKey,
 }
 
 // PromptKeys returns the prompt keys needed by this job type.

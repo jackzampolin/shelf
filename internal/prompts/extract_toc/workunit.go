@@ -12,15 +12,27 @@ type Input struct {
 	ToCPages         []ToCPage
 	StructureSummary *StructureSummary // Optional, from toc_finder
 
-	// SystemPromptOverride allows using a book-level prompt override.
+	// SystemPromptOverride allows using a book-level system prompt override.
 	// If empty, uses the embedded default.
 	SystemPromptOverride string
+
+	// UserPromptOverride allows using a book-level user prompt template override.
+	// If empty, uses the embedded default template.
+	UserPromptOverride string
 }
 
 // CreateWorkUnit creates a ToC extraction LLM work unit.
 // The caller must set ID, JobID, and Provider on the returned unit.
 func CreateWorkUnit(input Input) *jobs.WorkUnit {
-	userPrompt := BuildUserPrompt(input.ToCPages, input.StructureSummary)
+	// Build user prompt data
+	data := UserPromptData{
+		TocPages:         input.ToCPages,
+		TotalPages:       len(input.ToCPages),
+		StructureSummary: input.StructureSummary,
+	}
+
+	// Render user prompt with optional override
+	userPrompt := UserPromptWithOverride(data, input.UserPromptOverride)
 
 	systemPrompt := input.SystemPromptOverride
 	if systemPrompt == "" {

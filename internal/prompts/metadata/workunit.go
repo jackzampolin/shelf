@@ -19,9 +19,13 @@ type Page struct {
 type Input struct {
 	BookText string // OCR text from first ~20 pages
 
-	// SystemPromptOverride allows using a book-level prompt override.
+	// SystemPromptOverride allows using a book-level system prompt override.
 	// If empty, uses the embedded default.
 	SystemPromptOverride string
+
+	// UserPromptOverride allows using a book-level user prompt template override.
+	// If empty, uses the embedded default template.
+	UserPromptOverride string
 }
 
 // PrepareBookText prepares book text from pages for metadata extraction.
@@ -48,12 +52,16 @@ func CreateWorkUnit(input Input) *jobs.WorkUnit {
 		systemPrompt = SystemPrompt()
 	}
 
+	// Render user prompt with optional override
+	data := UserPromptData{BookText: input.BookText}
+	userPrompt := UserPromptWithOverride(data, input.UserPromptOverride)
+
 	return &jobs.WorkUnit{
 		Type: jobs.WorkUnitTypeLLM,
 		ChatRequest: &providers.ChatRequest{
 			Messages: []providers.Message{
 				{Role: "system", Content: systemPrompt},
-				{Role: "user", Content: UserPrompt(input.BookText)},
+				{Role: "user", Content: userPrompt},
 			},
 			ResponseFormat: buildResponseFormat(),
 			Temperature:    0.1,

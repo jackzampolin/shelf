@@ -50,7 +50,8 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	unit := extract_toc.CreateWorkUnit(extract_toc.Input{
 		ToCPages:             tocPages,
 		StructureSummary:     structureSummary,
-		SystemPromptOverride: book.GetPrompt(extract_toc.PromptKey),
+		SystemPromptOverride: book.GetPrompt(extract_toc.SystemPromptKey),
+		UserPromptOverride:   book.GetPrompt(extract_toc.UserPromptKey),
 	})
 	unit.ID = unitID
 	unit.Provider = book.TocProvider
@@ -60,8 +61,8 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 		BookID:    book.BookID,
 		Stage:     jc.Type(),
 		ItemKey:   "toc_extract",
-		PromptKey: extract_toc.PromptKey,
-		PromptCID: book.GetPromptCID(extract_toc.PromptKey),
+		PromptKey: extract_toc.SystemPromptKey,
+		PromptCID: book.GetPromptCID(extract_toc.SystemPromptKey),
 	}
 
 	return unit, unitID

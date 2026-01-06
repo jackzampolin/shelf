@@ -7,7 +7,8 @@ import (
 
 // promptKeys used by the ocr-book job.
 var promptKeys = []string{
-	blend.PromptKey,
+	blend.SystemPromptKey,
+	blend.UserPromptKey,
 }
 
 // PromptKeys returns the prompt keys needed by this job type.

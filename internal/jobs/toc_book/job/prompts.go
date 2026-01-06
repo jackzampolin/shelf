@@ -8,8 +8,12 @@ import (
 
 // promptKeys used by the toc-book job.
 var promptKeys = []string{
-	toc_finder.PromptKey,
-	extract_toc.PromptKey,
+	// ToC finder agent
+	toc_finder.SystemPromptKey,
+	toc_finder.UserPromptKey,
+	// ToC extraction stage
+	extract_toc.SystemPromptKey,
+	extract_toc.UserPromptKey,
 }
 
 // PromptKeys returns the prompt keys needed by this job type.

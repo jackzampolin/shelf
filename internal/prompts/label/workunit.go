@@ -11,9 +11,13 @@ import (
 type Input struct {
 	BlendedText string
 
-	// SystemPromptOverride allows using a book-level prompt override.
+	// SystemPromptOverride allows using a book-level system prompt override.
 	// If empty, uses the embedded default.
 	SystemPromptOverride string
+
+	// UserPromptOverride allows using a book-level user prompt template override.
+	// If empty, uses the embedded default template.
+	UserPromptOverride string
 }
 
 // CreateWorkUnit creates a label extraction LLM work unit.
@@ -24,12 +28,16 @@ func CreateWorkUnit(input Input) *jobs.WorkUnit {
 		systemPrompt = SystemPrompt()
 	}
 
+	// Render user prompt with optional override
+	data := UserPromptData{BlendedText: input.BlendedText}
+	userPrompt := UserPromptWithOverride(data, input.UserPromptOverride)
+
 	return &jobs.WorkUnit{
 		Type: jobs.WorkUnitTypeLLM,
 		ChatRequest: &providers.ChatRequest{
 			Messages: []providers.Message{
 				{Role: "system", Content: systemPrompt},
-				{Role: "user", Content: UserPrompt(input.BlendedText)},
+				{Role: "user", Content: userPrompt},
 			},
 			ResponseFormat: buildResponseFormat(),
 			Temperature:    0.1,

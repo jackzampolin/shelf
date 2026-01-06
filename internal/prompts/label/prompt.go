@@ -21,13 +21,39 @@ func SystemPrompt() string {
 	return systemPrompt
 }
 
+// UserPromptData contains the data needed to render the user prompt template.
+type UserPromptData struct {
+	BlendedText string
+}
+
 // UserPrompt builds the user prompt for label extraction.
 func UserPrompt(blendedText string) string {
+	return UserPromptFromData(UserPromptData{BlendedText: blendedText})
+}
+
+// UserPromptFromData renders the user prompt template with the given data.
+func UserPromptFromData(data UserPromptData) string {
 	var buf bytes.Buffer
-	data := struct{ BlendedText string }{BlendedText: blendedText}
 	if err := userTemplate.Execute(&buf, data); err != nil {
 		// Fallback to raw template on error
 		return userPromptTmpl
+	}
+	return buf.String()
+}
+
+// UserPromptWithOverride renders a user prompt, using an override template if provided.
+func UserPromptWithOverride(data UserPromptData, override string) string {
+	if override == "" {
+		return UserPromptFromData(data)
+	}
+	// Parse and execute the override template
+	tmpl, err := template.New("override").Parse(override)
+	if err != nil {
+		return UserPromptFromData(data) // Fallback to default on parse error
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return UserPromptFromData(data) // Fallback to default on execute error
 	}
 	return buf.String()
 }

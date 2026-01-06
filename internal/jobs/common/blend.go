@@ -40,7 +40,8 @@ func CreateBlendWorkUnit(jc JobContext, pageNum int, state *PageState) (*jobs.Wo
 
 	unit := blend.CreateWorkUnit(blend.Input{
 		OCROutputs:           outputs,
-		SystemPromptOverride: book.GetPrompt(blend.PromptKey),
+		SystemPromptOverride: book.GetPrompt(blend.SystemPromptKey),
+		UserPromptOverride:   book.GetPrompt(blend.UserPromptKey),
 	})
 	unit.ID = unitID
 	unit.Provider = book.BlendProvider
@@ -50,8 +51,8 @@ func CreateBlendWorkUnit(jc JobContext, pageNum int, state *PageState) (*jobs.Wo
 		BookID:    book.BookID,
 		Stage:     jc.Type(),
 		ItemKey:   fmt.Sprintf("page_%04d_blend", pageNum),
-		PromptKey: blend.PromptKey,
-		PromptCID: book.GetPromptCID(blend.PromptKey),
+		PromptKey: blend.SystemPromptKey,
+		PromptCID: book.GetPromptCID(blend.SystemPromptKey),
 	}
 
 	return unit, unitID

@@ -71,6 +71,7 @@ func CreateLabelWorkUnit(ctx context.Context, jc JobContext, pageNum int, state 
 	unit := label.CreateWorkUnit(label.Input{
 		BlendedText:          blendedText,
 		SystemPromptOverride: book.GetPrompt(label.SystemPromptKey),
+		UserPromptOverride:   book.GetPrompt(label.UserPromptKey),
 	})
 	unit.ID = unitID
 	unit.Provider = book.LabelProvider

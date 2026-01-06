@@ -21,12 +21,38 @@ func SystemPrompt() string {
 	return systemPrompt
 }
 
+// UserPromptData contains the data needed to render the user prompt template.
+type UserPromptData struct {
+	BookText string
+}
+
 // UserPrompt builds the user prompt for metadata extraction.
 func UserPrompt(bookText string) string {
+	return UserPromptFromData(UserPromptData{BookText: bookText})
+}
+
+// UserPromptFromData renders the user prompt template with the given data.
+func UserPromptFromData(data UserPromptData) string {
 	var buf bytes.Buffer
-	data := struct{ BookText string }{BookText: bookText}
 	if err := userTemplate.Execute(&buf, data); err != nil {
 		return userPromptTmpl
+	}
+	return buf.String()
+}
+
+// UserPromptWithOverride renders a user prompt, using an override template if provided.
+func UserPromptWithOverride(data UserPromptData, override string) string {
+	if override == "" {
+		return UserPromptFromData(data)
+	}
+	// Parse and execute the override template
+	tmpl, err := template.New("override").Parse(override)
+	if err != nil {
+		return UserPromptFromData(data) // Fallback to default on parse error
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return UserPromptFromData(data) // Fallback to default on execute error
 	}
 	return buf.String()
 }

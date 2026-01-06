@@ -2,7 +2,6 @@ package blend
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/jackzampolin/shelf/internal/jobs"
@@ -22,15 +21,23 @@ type Input struct {
 	OCROutputs []OCROutput
 	PageImage  []byte // Optional: page image for vision-based correction
 
-	// SystemPromptOverride allows using a book-level prompt override.
+	// SystemPromptOverride allows using a book-level system prompt override.
 	// If empty, uses the embedded default.
 	SystemPromptOverride string
+
+	// UserPromptOverride allows using a book-level user prompt template override.
+	// If empty, uses the embedded default template.
+	UserPromptOverride string
 }
 
 // CreateWorkUnit creates a blend LLM work unit.
 // The caller must set ID, JobID, and Provider on the returned unit.
 func CreateWorkUnit(input Input) *jobs.WorkUnit {
-	userPrompt := buildUserPrompt(input.OCROutputs)
+	// Build user prompt data
+	data := buildUserPromptData(input.OCROutputs)
+
+	// Render user prompt with optional override
+	userPrompt := UserPromptWithOverride(data, input.UserPromptOverride)
 
 	systemPrompt := input.SystemPromptOverride
 	if systemPrompt == "" {
@@ -102,25 +109,18 @@ func replaceFirst(s, old, new string) string {
 	return s
 }
 
-// buildUserPrompt constructs the user prompt from OCR outputs.
-// First provider is marked as PRIMARY, others are REFERENCE.
-func buildUserPrompt(outputs []OCROutput) string {
-	if len(outputs) == 0 {
-		return ""
+// buildUserPromptData converts OCROutputs to UserPromptData for template rendering.
+func buildUserPromptData(outputs []OCROutput) UserPromptData {
+	data := UserPromptData{
+		OCROutputs: make([]OCROutputData, 0, len(outputs)),
 	}
-
-	var parts []string
-	for i, out := range outputs {
-		tagName := strings.ToLower(out.ProviderName) + "_ocr"
-		var label string
-		if i == 0 {
-			label = " [PRIMARY - correct errors in this output]"
-		} else {
-			label = " [REFERENCE]"
-		}
-		parts = append(parts, fmt.Sprintf("<%s>%s\n%s\n</%s>", tagName, label, out.Text, tagName))
+	for _, out := range outputs {
+		data.OCROutputs = append(data.OCROutputs, OCROutputData{
+			TagName: strings.ToLower(out.ProviderName) + "_ocr",
+			Text:    out.Text,
+		})
 	}
-	return strings.Join(parts, "\n\n")
+	return data
 }
 
 // PrimaryProviderName returns the name of the primary provider (first in list).
