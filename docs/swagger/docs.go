@@ -3038,8 +3038,14 @@ const docTemplate = `{
         "internal_server_endpoints.ToCEntry": {
             "type": "object",
             "properties": {
+                "actual_page_num": {
+                    "type": "integer"
+                },
                 "entry_number": {
                     "type": "string"
+                },
+                "is_linked": {
+                    "type": "boolean"
                 },
                 "level": {
                     "type": "integer"
@@ -3073,6 +3079,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/internal_server_endpoints.ToCEntry"
                     }
                 },
+                "entries_linked": {
+                    "type": "integer"
+                },
                 "entry_count": {
                     "description": "Entries (when extracted)",
                     "type": "integer"
@@ -3098,6 +3107,19 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "found": {
+                    "type": "boolean"
+                },
+                "link_complete": {
+                    "type": "boolean"
+                },
+                "link_failed": {
+                    "type": "boolean"
+                },
+                "link_retries": {
+                    "type": "integer"
+                },
+                "link_started": {
+                    "description": "Link stage",
                     "type": "boolean"
                 },
                 "start_page": {

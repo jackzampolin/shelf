@@ -771,8 +771,12 @@ definitions:
     type: object
   internal_server_endpoints.ToCEntry:
     properties:
+      actual_page_num:
+        type: integer
       entry_number:
         type: string
+      is_linked:
+        type: boolean
       level:
         type: integer
       level_name:
@@ -794,6 +798,8 @@ definitions:
         items:
           $ref: '#/definitions/internal_server_endpoints.ToCEntry'
         type: array
+      entries_linked:
+        type: integer
       entry_count:
         description: Entries (when extracted)
         type: integer
@@ -812,6 +818,15 @@ definitions:
         description: Finder stage
         type: boolean
       found:
+        type: boolean
+      link_complete:
+        type: boolean
+      link_failed:
+        type: boolean
+      link_retries:
+        type: integer
+      link_started:
+        description: Link stage
         type: boolean
       start_page:
         type: integer

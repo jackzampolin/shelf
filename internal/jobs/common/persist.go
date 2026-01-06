@@ -93,7 +93,10 @@ func PersistTocLinkState(ctx context.Context, tocDocID string, op *OperationStat
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document: map[string]any{
+			"link_started":  op.IsStarted(),
 			"link_complete": op.IsComplete(),
+			"link_failed":   op.IsFailed(),
+			"link_retries":  op.GetRetries(),
 		},
 		Op: defra.OpUpdate,
 	})

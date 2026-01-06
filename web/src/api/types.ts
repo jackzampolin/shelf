@@ -2831,7 +2831,9 @@ export interface components {
             server?: string;
         };
         "internal_server_endpoints.ToCEntry": {
+            actual_page_num?: number;
             entry_number?: string;
+            is_linked?: boolean;
             level?: number;
             level_name?: string;
             printed_page_number?: string;
@@ -2842,6 +2844,7 @@ export interface components {
             cost_usd?: number;
             end_page?: number;
             entries?: components["schemas"]["internal_server_endpoints.ToCEntry"][];
+            entries_linked?: number;
             /** @description Entries (when extracted) */
             entry_count?: number;
             extract_complete?: boolean;
@@ -2853,6 +2856,11 @@ export interface components {
             /** @description Finder stage */
             finder_started?: boolean;
             found?: boolean;
+            link_complete?: boolean;
+            link_failed?: boolean;
+            link_retries?: number;
+            /** @description Link stage */
+            link_started?: boolean;
             start_page?: number;
         };
         "internal_server_endpoints.UpdateJobRequest": {

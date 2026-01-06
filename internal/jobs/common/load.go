@@ -349,7 +349,10 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				extract_complete
 				extract_failed
 				extract_retries
+				link_started
 				link_complete
+				link_failed
+				link_retries
 				start_page
 				end_page
 			}
@@ -413,9 +416,21 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				book.TocExtract = boolsToOpState(eStarted, eComplete, eFailed, eRetries)
 
 				// Link state
-				if lc, ok := toc["link_complete"].(bool); ok && lc {
-					book.TocLink = boolsToOpState(false, true, false, 0)
+				var lStarted, lComplete, lFailed bool
+				var lRetries int
+				if ls, ok := toc["link_started"].(bool); ok {
+					lStarted = ls
 				}
+				if lc, ok := toc["link_complete"].(bool); ok {
+					lComplete = lc
+				}
+				if lf, ok := toc["link_failed"].(bool); ok {
+					lFailed = lf
+				}
+				if lr, ok := toc["link_retries"].(float64); ok {
+					lRetries = int(lr)
+				}
+				book.TocLink = boolsToOpState(lStarted, lComplete, lFailed, lRetries)
 
 				// Page range
 				if sp, ok := toc["start_page"].(float64); ok {
