@@ -94,14 +94,6 @@ OCR Error Pattern: "Chapter Vil" is probably "Chapter VII" - use vision to verif
 Not Found: No matches in grep, no heading matches → report scan_page: null
 </patterns>
 
-<cost_awareness>
-Vision model calls cost money. Grep and OCR are cheaper.
-- Use grep to narrow candidates significantly
-- Verify with OCR before using vision
-- Stop when confident - don't over-verify
-- Typical search: 1-3 tool calls total
-</cost_awareness>
-
 <output>
 Call write_result with:
 - scan_page: The page where the entry begins (or null if not found)
