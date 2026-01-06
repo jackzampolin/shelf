@@ -79,6 +79,15 @@ func (s *Scheduler) SetContextEnricher(enricher func(context.Context) context.Co
 	s.contextEnricher = enricher
 }
 
+// removeJob removes a job from the scheduler's tracking maps.
+// Thread-safe: acquires lock internally.
+func (s *Scheduler) removeJob(jobID string) {
+	s.mu.Lock()
+	delete(s.jobs, jobID)
+	delete(s.pending, jobID)
+	s.mu.Unlock()
+}
+
 // Start begins the scheduler and all registered pools.
 // Blocks until context is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {

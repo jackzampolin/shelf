@@ -213,12 +213,7 @@ func SaveTocFinderResult(ctx context.Context, tocDocID string, result *toc_finde
 
 // SaveTocFinderNoResult marks ToC finder as complete with no ToC found.
 func SaveTocFinderNoResult(ctx context.Context, tocDocID string) error {
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	sink.Send(defra.WriteOp{
+	return SendToSink(ctx, defra.WriteOp{
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document: map[string]any{
@@ -227,7 +222,6 @@ func SaveTocFinderNoResult(ctx context.Context, tocDocID string) error {
 		},
 		Op: defra.OpUpdate,
 	})
-	return nil
 }
 
 // SaveTocExtractResult saves the ToC extraction result to DefraDB.

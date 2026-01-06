@@ -38,17 +38,13 @@ type PageState = common.PageState
 // Job processes all pages through Extract -> OCR -> Blend.
 // This is a simpler job than process_book - no label, metadata, or ToC.
 type Job struct {
-	common.BaseJob
-	Tracker *common.WorkUnitTracker[WorkUnitInfo]
+	common.TrackedBaseJob[WorkUnitInfo]
 }
 
 // NewFromLoadResult creates a Job from a common.LoadBookResult.
 func NewFromLoadResult(result *common.LoadBookResult) *Job {
 	return &Job{
-		BaseJob: common.BaseJob{
-			Book: result.Book,
-		},
-		Tracker: common.NewWorkUnitTracker[WorkUnitInfo](),
+		TrackedBaseJob: common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
 	}
 }
 
@@ -60,21 +56,6 @@ func (j *Job) Type() string {
 // MetricsFor returns base metrics attribution for this job.
 func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 	return j.BaseJob.MetricsFor(j.Type())
-}
-
-// RegisterWorkUnit registers a pending work unit.
-func (j *Job) RegisterWorkUnit(unitID string, info WorkUnitInfo) {
-	j.Tracker.Register(unitID, info)
-}
-
-// GetWorkUnit gets a pending work unit without removing it.
-func (j *Job) GetWorkUnit(unitID string) (WorkUnitInfo, bool) {
-	return j.Tracker.Get(unitID)
-}
-
-// RemoveWorkUnit removes a pending work unit.
-func (j *Job) RemoveWorkUnit(unitID string) {
-	j.Tracker.Remove(unitID)
 }
 
 // FindPDFForPage returns the PDF path and page number within that PDF.

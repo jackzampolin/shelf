@@ -8,14 +8,22 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
-// PersistBookStatus persists book status to DefraDB.
-func PersistBookStatus(ctx context.Context, bookID string, status string) error {
+// SendToSink sends a write operation to the DefraDB sink from context.
+// Returns an error if sink is not in context.
+// This is a convenience helper that consolidates the common pattern of
+// extracting the sink, checking nil, and sending.
+func SendToSink(ctx context.Context, op defra.WriteOp) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
 		return fmt.Errorf("defra sink not in context")
 	}
+	sink.Send(op)
+	return nil
+}
 
-	sink.Send(defra.WriteOp{
+// PersistBookStatus persists book status to DefraDB.
+func PersistBookStatus(ctx context.Context, bookID string, status string) error {
+	return SendToSink(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      bookID,
 		Document: map[string]any{
@@ -23,17 +31,11 @@ func PersistBookStatus(ctx context.Context, bookID string, status string) error 
 		},
 		Op: defra.OpUpdate,
 	})
-	return nil
 }
 
 // PersistMetadataState persists metadata operation state to DefraDB.
 func PersistMetadataState(ctx context.Context, bookID string, op *OperationState) error {
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	sink.Send(defra.WriteOp{
+	return SendToSink(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      bookID,
 		Document: map[string]any{
@@ -44,7 +46,6 @@ func PersistMetadataState(ctx context.Context, bookID string, op *OperationState
 		},
 		Op: defra.OpUpdate,
 	})
-	return nil
 }
 
 // PersistTocFinderState persists ToC finder operation state to DefraDB.
@@ -52,13 +53,7 @@ func PersistTocFinderState(ctx context.Context, tocDocID string, op *OperationSt
 	if tocDocID == "" {
 		return nil // No ToC record yet
 	}
-
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	sink.Send(defra.WriteOp{
+	return SendToSink(ctx, defra.WriteOp{
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document: map[string]any{
@@ -69,7 +64,6 @@ func PersistTocFinderState(ctx context.Context, tocDocID string, op *OperationSt
 		},
 		Op: defra.OpUpdate,
 	})
-	return nil
 }
 
 // PersistTocExtractState persists ToC extract operation state to DefraDB.
@@ -77,13 +71,7 @@ func PersistTocExtractState(ctx context.Context, tocDocID string, op *OperationS
 	if tocDocID == "" {
 		return nil // No ToC record yet
 	}
-
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	sink.Send(defra.WriteOp{
+	return SendToSink(ctx, defra.WriteOp{
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document: map[string]any{
@@ -94,5 +82,4 @@ func PersistTocExtractState(ctx context.Context, tocDocID string, op *OperationS
 		},
 		Op: defra.OpUpdate,
 	})
-	return nil
 }

@@ -24,8 +24,7 @@ type WorkUnitInfo struct {
 // Job runs ToC finder and extraction for a book.
 // Requires pages to already have blend_complete (uses labeled pages for ToC finding).
 type Job struct {
-	common.BaseJob
-	Tracker *common.WorkUnitTracker[WorkUnitInfo]
+	common.TrackedBaseJob[WorkUnitInfo]
 
 	// ToC-specific state
 	TocDocID string
@@ -35,11 +34,8 @@ type Job struct {
 // NewFromLoadResult creates a Job from a common.LoadBookResult.
 func NewFromLoadResult(result *common.LoadBookResult) *Job {
 	return &Job{
-		BaseJob: common.BaseJob{
-			Book: result.Book,
-		},
-		Tracker:  common.NewWorkUnitTracker[WorkUnitInfo](),
-		TocDocID: result.TocDocID,
+		TrackedBaseJob: common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
+		TocDocID:       result.TocDocID,
 	}
 }
 
@@ -51,19 +47,4 @@ func (j *Job) Type() string {
 // MetricsFor returns base metrics attribution for this job.
 func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 	return j.BaseJob.MetricsFor(j.Type())
-}
-
-// RegisterWorkUnit registers a pending work unit.
-func (j *Job) RegisterWorkUnit(unitID string, info WorkUnitInfo) {
-	j.Tracker.Register(unitID, info)
-}
-
-// GetWorkUnit gets a pending work unit without removing it.
-func (j *Job) GetWorkUnit(unitID string) (WorkUnitInfo, bool) {
-	return j.Tracker.Get(unitID)
-}
-
-// RemoveWorkUnit removes a pending work unit.
-func (j *Job) RemoveWorkUnit(unitID string) {
-	j.Tracker.Remove(unitID)
 }

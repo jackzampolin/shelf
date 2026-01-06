@@ -67,11 +67,7 @@ func (s *Scheduler) startJobAsync(job Job) {
 	if err != nil {
 		jobID := job.ID()
 		s.logger.Error("job start failed", "job_id", jobID, "error", err)
-
-		s.mu.Lock()
-		delete(s.jobs, jobID)
-		delete(s.pending, jobID)
-		s.mu.Unlock()
+		s.removeJob(jobID)
 
 		// Mark as failed in DefraDB
 		if s.manager != nil && jobID != "" {
@@ -86,11 +82,7 @@ func (s *Scheduler) startJobAsync(job Job) {
 	if len(units) == 0 && job.Done() {
 		jobID := job.ID()
 		s.logger.Info("job completed synchronously", "id", jobID, "type", job.Type())
-
-		s.mu.Lock()
-		delete(s.jobs, jobID)
-		delete(s.pending, jobID)
-		s.mu.Unlock()
+		s.removeJob(jobID)
 
 		// Update DefraDB status to completed
 		if s.manager != nil {
@@ -159,11 +151,7 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 		// Check if job completed synchronously with no work units
 		if len(units) == 0 && job.Done() {
 			s.logger.Info("resumed job completed synchronously", "id", record.ID, "type", record.JobType)
-
-			s.mu.Lock()
-			delete(s.jobs, job.ID())
-			delete(s.pending, job.ID())
-			s.mu.Unlock()
+			s.removeJob(job.ID())
 
 			if err := s.manager.UpdateStatus(enrichedCtx, record.ID, StatusCompleted, ""); err != nil {
 				s.logger.Warn("failed to update job status in DefraDB", "error", err)

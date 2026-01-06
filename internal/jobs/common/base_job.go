@@ -89,3 +89,58 @@ func (j *BaseJob) ProviderProgress() map[string]jobs.ProviderProgress {
 	}
 	return progress
 }
+
+// TrackedBaseJob extends BaseJob with generic work unit tracking.
+// This eliminates boilerplate Register/Get/RemoveWorkUnit methods from job implementations.
+//
+// Usage:
+//
+//	type WorkUnitInfo struct {
+//	    PageNum    int
+//	    UnitType   string
+//	    RetryCount int
+//	}
+//
+//	type Job struct {
+//	    common.TrackedBaseJob[WorkUnitInfo]
+//	    // job-specific fields
+//	}
+//
+//	func (j *Job) Type() string { return "my-job" }
+type TrackedBaseJob[T any] struct {
+	BaseJob
+	Tracker *WorkUnitTracker[T]
+}
+
+// NewTrackedBaseJob creates a TrackedBaseJob with an initialized tracker.
+func NewTrackedBaseJob[T any](book *BookState) TrackedBaseJob[T] {
+	return TrackedBaseJob[T]{
+		BaseJob: BaseJob{Book: book},
+		Tracker: NewWorkUnitTracker[T](),
+	}
+}
+
+// RegisterWorkUnit registers a pending work unit.
+func (j *TrackedBaseJob[T]) RegisterWorkUnit(unitID string, info T) {
+	j.Tracker.Register(unitID, info)
+}
+
+// GetWorkUnit gets a pending work unit without removing it.
+func (j *TrackedBaseJob[T]) GetWorkUnit(unitID string) (T, bool) {
+	return j.Tracker.Get(unitID)
+}
+
+// RemoveWorkUnit removes a pending work unit.
+func (j *TrackedBaseJob[T]) RemoveWorkUnit(unitID string) {
+	j.Tracker.Remove(unitID)
+}
+
+// GetAndRemoveWorkUnit gets and removes a pending work unit atomically.
+func (j *TrackedBaseJob[T]) GetAndRemoveWorkUnit(unitID string) (T, bool) {
+	return j.Tracker.GetAndRemove(unitID)
+}
+
+// PendingWorkUnits returns the number of pending work units.
+func (j *TrackedBaseJob[T]) PendingWorkUnits() int {
+	return j.Tracker.Count()
+}

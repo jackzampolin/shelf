@@ -82,8 +82,7 @@ type PDFInfo = common.PDFInfo
 // Services (DefraClient, DefraSink) are accessed via svcctx from the context
 // passed to Start() and OnComplete().
 type Job struct {
-	common.BaseJob
-	Tracker *common.WorkUnitTracker[WorkUnitInfo]
+	common.TrackedBaseJob[WorkUnitInfo]
 
 	// ToC agent (stateful during execution)
 	TocAgent *agent.Agent
@@ -94,11 +93,8 @@ type Job struct {
 // This is the primary constructor - LoadBook does all the loading.
 func NewFromLoadResult(result *common.LoadBookResult) *Job {
 	return &Job{
-		BaseJob: common.BaseJob{
-			Book: result.Book,
-		},
-		Tracker:  common.NewWorkUnitTracker[WorkUnitInfo](),
-		TocDocID: result.TocDocID,
+		TrackedBaseJob: common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
+		TocDocID:       result.TocDocID,
 	}
 }
 
@@ -110,26 +106,6 @@ func (j *Job) Type() string {
 // MetricsFor returns base metrics attribution for this job.
 func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 	return j.BaseJob.MetricsFor(j.Type())
-}
-
-// RegisterWorkUnit registers a pending work unit.
-func (j *Job) RegisterWorkUnit(unitID string, info WorkUnitInfo) {
-	j.Tracker.Register(unitID, info)
-}
-
-// GetWorkUnit gets a pending work unit without removing it.
-func (j *Job) GetWorkUnit(unitID string) (WorkUnitInfo, bool) {
-	return j.Tracker.Get(unitID)
-}
-
-// RemoveWorkUnit removes a pending work unit.
-func (j *Job) RemoveWorkUnit(unitID string) {
-	j.Tracker.Remove(unitID)
-}
-
-// GetAndRemoveWorkUnit gets and removes a pending work unit.
-func (j *Job) GetAndRemoveWorkUnit(unitID string) (WorkUnitInfo, bool) {
-	return j.Tracker.GetAndRemove(unitID)
 }
 
 // CountLabeledPages returns the number of pages that have completed labeling.

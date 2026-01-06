@@ -9,7 +9,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateExtractWorkUnit creates a CPU work unit to extract a page from PDF.
@@ -46,19 +45,10 @@ func PersistExtractState(ctx context.Context, pageDocID string) error {
 	if pageDocID == "" {
 		return fmt.Errorf("cannot persist extract state: empty page document ID")
 	}
-
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context, extract state will not be persisted for page %s", pageDocID)
-	}
-
-	// Fire-and-forget write - sink batches and logs errors internally
-	sink.Send(defra.WriteOp{
+	return SendToSink(ctx, defra.WriteOp{
 		Collection: "Page",
 		DocID:      pageDocID,
 		Document:   map[string]any{"extract_complete": true},
 		Op:         defra.OpUpdate,
 	})
-
-	return nil
 }
