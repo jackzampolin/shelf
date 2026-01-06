@@ -7,6 +7,7 @@ type Page {
     blend_markdown: String
     blend_confidence: Float
     blend_corrections: JSON
+    headings: JSON
 
     # Label fields
     page_number_label: String

@@ -56,6 +56,7 @@ func New(cfg Config) *TocEntryFinderTools {
 // GetTools returns the tool definitions for the LLM.
 func (t *TocEntryFinderTools) GetTools() []providers.Tool {
 	return []providers.Tool{
+		getHeadingPagesTool(),
 		grepTextTool(),
 		getPageOcrTool(),
 		loadPageImageTool(),
@@ -66,6 +67,17 @@ func (t *TocEntryFinderTools) GetTools() []providers.Tool {
 // ExecuteTool runs a tool and returns the result as JSON.
 func (t *TocEntryFinderTools) ExecuteTool(ctx context.Context, name string, args map[string]any) (string, error) {
 	switch name {
+	case "get_heading_pages":
+		var startPage, endPage *int
+		if sp, ok := args["start_page"].(float64); ok {
+			i := int(sp)
+			startPage = &i
+		}
+		if ep, ok := args["end_page"].(float64); ok {
+			i := int(ep)
+			endPage = &i
+		}
+		return t.getHeadingPages(ctx, startPage, endPage)
 	case "grep_text":
 		query, _ := args["query"].(string)
 		return t.grepText(ctx, query)
