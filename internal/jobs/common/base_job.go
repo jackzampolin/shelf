@@ -32,10 +32,10 @@ type BaseJob struct {
 	IsDone   bool
 }
 
-// ID returns the job record ID (thread-safe).
+// ID returns the job record ID.
+// RecordID is set once during job submission and never changes,
+// so no lock is needed for reads.
 func (j *BaseJob) ID() string {
-	j.Mu.Lock()
-	defer j.Mu.Unlock()
 	return j.RecordID
 }
 

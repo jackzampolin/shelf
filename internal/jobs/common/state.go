@@ -318,16 +318,6 @@ func (b *BookState) GetOrCreatePage(pageNum int) *PageState {
 	return b.Pages[pageNum]
 }
 
-// UpdatePage updates the page state for a page with a function (thread-safe).
-func (b *BookState) UpdatePage(pageNum int, fn func(*PageState)) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.Pages[pageNum] == nil {
-		b.Pages[pageNum] = NewPageState()
-	}
-	fn(b.Pages[pageNum])
-}
-
 // ForEachPage calls the function for each page (thread-safe, read lock).
 func (b *BookState) ForEachPage(fn func(pageNum int, state *PageState)) {
 	b.mu.RLock()
