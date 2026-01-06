@@ -1,6 +1,7 @@
 package job
 
 import (
+	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 	"github.com/jackzampolin/shelf/internal/prompts/blend"
 	"github.com/jackzampolin/shelf/internal/prompts/extract_toc"
@@ -27,6 +28,9 @@ var promptKeys = []string{
 	// ToC finder agent
 	toc_finder.SystemPromptKey,
 	toc_finder.UserPromptKey,
+	// ToC entry finder agent (link_toc)
+	toc_entry_finder.PromptKey,
+	toc_entry_finder.UserPromptKey,
 }
 
 // PromptKeys returns the prompt keys needed by this job type.

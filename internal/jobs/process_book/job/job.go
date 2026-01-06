@@ -52,6 +52,10 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		j.Book.TocExtract.Fail(MaxBookOpRetries)
 		j.PersistTocExtractState(ctx)
 	}
+	if j.Book.TocLink.IsStarted() && len(j.LinkTocEntryAgents) == 0 {
+		j.Book.TocLink.Fail(MaxBookOpRetries)
+		j.PersistTocLinkState(ctx)
+	}
 
 	// Create any missing page records in DB
 	if err := checkCancelled(ctx); err != nil {
@@ -132,6 +136,31 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		case "toc_extract":
 			j.Book.TocExtract.Fail(MaxBookOpRetries)
 			j.PersistTocExtractState(ctx)
+		case WorkUnitTypeLinkToc:
+			// Link ToC entry failures - retry individual entry
+			if info.RetryCount < MaxPageOpRetries {
+				retryUnit := j.createLinkTocRetryUnit(ctx, info)
+				if retryUnit != nil {
+					j.RemoveWorkUnit(result.WorkUnitID)
+					return []jobs.WorkUnit{*retryUnit}, nil
+				}
+			}
+			// Permanent failure for this entry - mark as done and continue
+			j.LinkTocEntriesDone++
+			if logger != nil {
+				logger.Error("link_toc entry failed after retries",
+					"entry_doc_id", info.EntryDocID,
+					"retry_count", info.RetryCount,
+					"error", result.Error)
+			}
+			// Check if all entries are done
+			if j.LinkTocEntriesDone >= len(j.LinkTocEntries) {
+				j.Book.TocLink.Complete()
+				j.PersistTocLinkState(ctx)
+			}
+			j.RemoveWorkUnit(result.WorkUnitID)
+			j.CheckCompletion(ctx)
+			return nil, nil
 		default:
 			// Page-level operations (extract, ocr, blend, label) - retry if under limit
 			if info.RetryCount < MaxPageOpRetries {
@@ -205,6 +234,22 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 	case "toc_extract":
 		if err := j.HandleTocExtractComplete(ctx, result); err != nil {
 			handlerErr = err
+		} else {
+			// ToC extraction complete - check if we should start link_toc
+			newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
+		}
+
+	case WorkUnitTypeLinkToc:
+		units, err := j.HandleLinkTocComplete(ctx, result, info)
+		if err != nil {
+			handlerErr = err
+		} else {
+			newUnits = append(newUnits, units...)
+			// Check if all entries are done
+			if j.LinkTocEntriesDone >= len(j.LinkTocEntries) {
+				j.Book.TocLink.Complete()
+				j.PersistTocLinkState(ctx)
+			}
 		}
 	}
 
@@ -325,6 +370,10 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		"toc_end_page":        fmt.Sprintf("%d", tocEndPage),
 		"toc_extract_started": fmt.Sprintf("%v", j.Book.TocExtract.IsStarted()),
 		"toc_extract_done":    fmt.Sprintf("%v", j.Book.TocExtract.IsDone()),
+		"toc_link_started":    fmt.Sprintf("%v", j.Book.TocLink.IsStarted()),
+		"toc_link_done":       fmt.Sprintf("%v", j.Book.TocLink.IsDone()),
+		"toc_link_entries":    fmt.Sprintf("%d", len(j.LinkTocEntries)),
+		"toc_link_complete":   fmt.Sprintf("%d", j.LinkTocEntriesDone),
 		"done":                fmt.Sprintf("%v", j.IsDone),
 	}, nil
 }

@@ -2,6 +2,7 @@ package job
 
 import (
 	"github.com/jackzampolin/shelf/internal/agent"
+	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 )
@@ -64,6 +65,7 @@ const (
 	WorkUnitTypeMetadata   = "metadata"
 	WorkUnitTypeTocFinder  = "toc_finder"
 	WorkUnitTypeTocExtract = "toc_extract"
+	WorkUnitTypeLinkToc    = "link_toc"
 )
 
 // WorkUnitInfo tracks pending work units.
@@ -72,6 +74,7 @@ type WorkUnitInfo struct {
 	UnitType   string // Use WorkUnitType* constants
 	Provider   string // for OCR units
 	RetryCount int    // number of times this work unit has been retried
+	EntryDocID string // for link_toc units - which ToC entry this belongs to
 }
 
 // PDFInfo is an alias for common.PDFInfo for backwards compatibility.
@@ -87,14 +90,20 @@ type Job struct {
 	// ToC agent (stateful during execution)
 	TocAgent *agent.Agent
 	TocDocID string
+
+	// Link ToC entry agents (one per ToC entry)
+	LinkTocEntries     []*toc_entry_finder.TocEntry
+	LinkTocEntryAgents map[string]*agent.Agent // keyed by entry DocID
+	LinkTocEntriesDone int                     // count of completed entries
 }
 
 // NewFromLoadResult creates a Job from a common.LoadBookResult.
 // This is the primary constructor - LoadBook does all the loading.
 func NewFromLoadResult(result *common.LoadBookResult) *Job {
 	return &Job{
-		TrackedBaseJob: common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
-		TocDocID:       result.TocDocID,
+		TrackedBaseJob:     common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
+		TocDocID:           result.TocDocID,
+		LinkTocEntryAgents: make(map[string]*agent.Agent),
 	}
 }
 
