@@ -43,7 +43,7 @@ type PageDataReader interface {
 
 	// GetPagesWithHeadings returns pages that have chapter-level headings (level 1-2).
 	// Optionally filter by page range. Pass nil for no limit.
-	// Excludes ToC pages (is_toc_page=true) from results.
+	// Note: Does not filter ToC pages - use GetPagesWithHeadingsFiltered for that.
 	GetPagesWithHeadings(ctx context.Context, startPage, endPage *int) ([]PageWithHeading, error)
 
 	// GetTotalPages returns the total number of pages in the book.

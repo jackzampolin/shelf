@@ -3,6 +3,7 @@ package common
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
@@ -248,7 +249,10 @@ func (p *PageState) PopulateFromDBResult(data map[string]any) {
 
 	if h, ok := data["headings"].(string); ok && h != "" {
 		var headings []HeadingItem
-		if err := json.Unmarshal([]byte(h), &headings); err == nil {
+		if err := json.Unmarshal([]byte(h), &headings); err != nil {
+			slog.Debug("failed to parse headings JSON in PopulateFromDBResult",
+				"error", err)
+		} else {
 			p.headings = headings
 		}
 	}

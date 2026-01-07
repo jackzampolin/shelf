@@ -344,7 +344,14 @@ func (b *BookState) GetPagesWithHeadingsFiltered(ctx context.Context, startPage,
 		// Parse headings
 		var headings []HeadingItem
 		if h, ok := page["headings"].(string); ok && h != "" {
-			json.Unmarshal([]byte(h), &headings)
+			if err := json.Unmarshal([]byte(h), &headings); err != nil {
+				if logger := svcctx.LoggerFrom(ctx); logger != nil {
+					logger.Debug("failed to parse headings JSON",
+						"book_id", b.BookID,
+						"page_num", pageNum,
+						"error", err)
+				}
+			}
 		}
 
 		// Find first chapter-level heading
