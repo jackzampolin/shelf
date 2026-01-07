@@ -383,8 +383,17 @@ func (j *Job) loadCandidateHeadings(ctx context.Context) ([]*CandidateHeading, e
 			pageNum = int(pn)
 		}
 
-		headings, ok := page["headings"].([]any)
-		if !ok {
+		// headings is a JSON field - may come as []any or as a JSON string
+		var headings []any
+		switch h := page["headings"].(type) {
+		case []any:
+			headings = h
+		case string:
+			// Parse JSON string
+			if err := json.Unmarshal([]byte(h), &headings); err != nil {
+				continue
+			}
+		default:
 			continue
 		}
 

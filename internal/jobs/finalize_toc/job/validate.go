@@ -204,6 +204,9 @@ func (j *Job) CreateGapWorkUnits(ctx context.Context) ([]jobs.WorkUnit, error) {
 func (j *Job) CreateGapInvestigatorWorkUnit(ctx context.Context, gap *Gap) *jobs.WorkUnit {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Error("defra client not in context", "gap_key", gap.Key)
+		}
 		return nil
 	}
 

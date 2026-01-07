@@ -97,13 +97,13 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 	}
 }
 
-func (j *Job) handlePatternComplete(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo, logger interface{ Info(string, ...any) }) ([]jobs.WorkUnit, error) {
+func (j *Job) handlePatternComplete(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo, logger interface{ Info(string, ...any); Warn(string, ...any) }) ([]jobs.WorkUnit, error) {
 	j.RemoveWorkUnit(result.WorkUnitID)
 
 	if !result.Success {
 		if info.RetryCount < MaxRetries {
 			if logger != nil {
-				logger.Info("pattern analysis failed, retrying",
+				logger.Warn("pattern analysis failed, retrying",
 					"retry_count", info.RetryCount,
 					"error", result.Error)
 			}
@@ -128,7 +128,7 @@ func (j *Job) handlePatternComplete(ctx context.Context, result jobs.WorkResult,
 	// Process pattern analysis result
 	if err := j.ProcessPatternResult(ctx, result); err != nil {
 		if logger != nil {
-			logger.Info("failed to process pattern result", "error", err)
+			logger.Warn("failed to process pattern result", "error", err)
 		}
 	}
 

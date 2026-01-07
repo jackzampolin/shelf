@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/jackzampolin/shelf/internal/prompts"
 )
@@ -52,7 +53,7 @@ func BuildUserPrompt(entry *EntryToFind, totalPages int, excludedRanges []Exclud
 	if entry.HeadingFormat != "" {
 		searchTerm = strings.ReplaceAll(entry.HeadingFormat, "{n}", entry.Identifier)
 	} else if entry.LevelName != "" {
-		searchTerm = fmt.Sprintf("%s %s", strings.Title(entry.LevelName), entry.Identifier)
+		searchTerm = fmt.Sprintf("%s %s", titleCase(entry.LevelName), entry.Identifier)
 	} else {
 		searchTerm = entry.Identifier
 	}
@@ -85,4 +86,14 @@ func BuildUserPrompt(entry *EntryToFind, totalPages int, excludedRanges []Exclud
 type Result struct {
 	ScanPage  *int   `json:"scan_page"`
 	Reasoning string `json:"reasoning"`
+}
+
+// titleCase capitalizes the first letter of a string.
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
 }

@@ -3,7 +3,7 @@ package job
 import (
 	"context"
 	"fmt"
-	"strings"
+	"unicode"
 
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/agents"
@@ -12,6 +12,16 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
+
+// titleCase capitalizes the first letter of a string.
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
+}
 
 // CreateDiscoverWorkUnits creates work units for all entries to discover.
 func (j *Job) CreateDiscoverWorkUnits(ctx context.Context) ([]jobs.WorkUnit, error) {
@@ -31,6 +41,9 @@ func (j *Job) CreateDiscoverWorkUnits(ctx context.Context) ([]jobs.WorkUnit, err
 func (j *Job) CreateChapterFinderWorkUnit(ctx context.Context, entry *EntryToFind) *jobs.WorkUnit {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Error("defra client not in context", "entry_key", entry.Key)
+		}
 		return nil
 	}
 
@@ -169,7 +182,7 @@ func (j *Job) SaveDiscoveredEntry(ctx context.Context, entryKey string, result *
 	sortOrder := j.calculateSortOrder(*result.ScanPage)
 
 	// Build title from entry metadata (chapter_finder.Result doesn't have Title)
-	title := fmt.Sprintf("%s %s", strings.Title(entry.LevelName), entry.Identifier)
+	title := fmt.Sprintf("%s %s", titleCase(entry.LevelName), entry.Identifier)
 
 	// Create new TocEntry
 	newEntry := map[string]any{

@@ -78,11 +78,17 @@ func (t *GapInvestigatorTools) ExecuteTool(ctx context.Context, name string, arg
 	case "get_gap_context":
 		return t.getGapContext(ctx)
 	case "get_page_ocr":
-		pageNumF, _ := args["page_num"].(float64)
+		pageNumF, ok := args["page_num"].(float64)
+		if !ok {
+			return jsonError("missing or invalid 'page_num' parameter"), nil
+		}
 		return t.getPageOcr(ctx, int(pageNumF))
 	case "load_page_image":
-		pageNumF, _ := args["page_num"].(float64)
-		observations, _ := args["current_page_observations"].(string)
+		pageNumF, ok := args["page_num"].(float64)
+		if !ok {
+			return jsonError("missing or invalid 'page_num' parameter"), nil
+		}
+		observations, _ := args["current_page_observations"].(string) // Optional parameter
 		return t.loadPageImage(ctx, int(pageNumF), observations)
 	case "write_fix":
 		return t.writeFix(ctx, args)
@@ -154,6 +160,7 @@ func jsonError(msg string) string {
 }
 
 // mustMarshal marshals a value to JSON, panicking on error.
+// Used for static tool schemas - failure indicates a programming bug.
 func mustMarshal(v any) json.RawMessage {
 	b, err := json.Marshal(v)
 	if err != nil {
