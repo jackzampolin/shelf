@@ -23,6 +23,15 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 	logger := svcctx.LoggerFrom(ctx)
 
+	// Handle force restart - reset state if requested
+	if j.Force && j.Book.TocLink.IsComplete() {
+		if logger != nil {
+			logger.Info("force restart requested, resetting link toc state", "book_id", j.Book.BookID)
+		}
+		j.Book.TocLink.Reset()
+		j.PersistTocLinkState(ctx)
+	}
+
 	// Check if already complete
 	if j.Book.TocLink.IsComplete() {
 		if logger != nil {
@@ -54,9 +63,31 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		return nil, nil
 	}
 
+	// Preload all pages ONCE before creating agents
+	// This avoids O(N) preload calls when N agents each try to preload on first tool use
+	if err := j.Book.PreloadPages(ctx, 1, j.Book.TotalPages); err != nil {
+		if logger != nil {
+			logger.Warn("failed to preload pages at job start",
+				"book_id", j.Book.BookID,
+				"total_pages", j.Book.TotalPages,
+				"error", err)
+		}
+		// Continue anyway - agents will preload on demand
+	} else if logger != nil {
+		logger.Info("preloaded all pages for link toc job",
+			"book_id", j.Book.BookID,
+			"total_pages", j.Book.TotalPages)
+	}
+
 	// Create work units for all entries
 	var units []jobs.WorkUnit
-	for _, entry := range j.Entries {
+	for i, entry := range j.Entries {
+		if logger != nil {
+			logger.Debug("creating work unit for entry",
+				"index", i,
+				"entry_doc_id", entry.DocID,
+				"title", entry.Title)
+		}
 		unit := j.CreateEntryFinderWorkUnit(ctx, entry)
 		if unit != nil {
 			units = append(units, *unit)

@@ -107,8 +107,10 @@ func (b *BookState) PreloadPages(ctx context.Context, startPage, endPage int) er
 			"pages_to_load", needsLoad)
 	}
 
+	// Note: DefraDB doesn't support _gte/_lte on Int fields without index
+	// Fetch all pages for the book and filter in-memory
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_gte: %d, _lte: %d}}) {
+		Page(filter: {book_id: {_eq: "%s"}}) {
 			page_num
 			blend_markdown
 			headings
@@ -116,7 +118,7 @@ func (b *BookState) PreloadPages(ctx context.Context, startPage, endPage int) er
 			running_header
 			is_toc_page
 		}
-	}`, b.BookID, startPage, endPage)
+	}`, b.BookID)
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
@@ -144,6 +146,11 @@ func (b *BookState) PreloadPages(ctx context.Context, startPage, endPage int) er
 			pageNum = int(pn)
 		}
 		if pageNum == 0 {
+			continue
+		}
+
+		// Filter by requested range (since we fetch all pages)
+		if pageNum < startPage || pageNum > endPage {
 			continue
 		}
 
@@ -289,16 +296,17 @@ func (b *BookState) GetPagesWithHeadingsFiltered(ctx context.Context, startPage,
 		end = *endPage
 	}
 
-	// Query with is_toc_page for filtering
+	// Note: DefraDB doesn't support _gte/_lte on Int fields without index
+	// Fetch all pages for the book and filter in-memory
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_gte: %d, _lte: %d}}) {
+		Page(filter: {book_id: {_eq: "%s"}}) {
 			page_num
 			blend_markdown
 			headings
 			page_number_label
 			is_toc_page
 		}
-	}`, b.BookID, start, end)
+	}`, b.BookID)
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
@@ -332,6 +340,11 @@ func (b *BookState) GetPagesWithHeadingsFiltered(ctx context.Context, startPage,
 			pageNum = int(pn)
 		}
 		if pageNum == 0 {
+			continue
+		}
+
+		// Filter by requested range (since we fetch all pages)
+		if pageNum < start || pageNum > end {
 			continue
 		}
 

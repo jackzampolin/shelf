@@ -2816,6 +2816,8 @@ export interface components {
             };
         };
         "internal_server_endpoints.StartJobRequest": {
+            /** @description Optional: force restart even if already complete */
+            force?: boolean;
             /** @description Optional: defaults to "process-book" */
             job_type?: string;
         };
