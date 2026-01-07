@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -119,7 +120,23 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 		logger.Debug("LoadBook: loaded operation states", "book_id", bookID, "toc_doc_id", tocDocID)
 	}
 
-	// 6. Resolve prompts (optional)
+	// 6. Load ToC entries if extraction is complete (for link_toc phase)
+	if tocDocID != "" && book.TocExtract.IsComplete() {
+		entries, err := LoadTocEntries(ctx, tocDocID)
+		if err != nil {
+			// Non-fatal - just log and continue
+			if logger != nil {
+				logger.Warn("failed to load ToC entries", "book_id", bookID, "error", err)
+			}
+		} else {
+			book.TocEntries = entries
+			if logger != nil {
+				logger.Debug("LoadBook: loaded ToC entries", "book_id", bookID, "count", len(entries))
+			}
+		}
+	}
+
+	// 7. Resolve prompts (optional)
 	if len(cfg.PromptKeys) > 0 {
 		if err := ResolvePrompts(ctx, book, cfg.PromptKeys, GetEmbeddedDefault); err != nil {
 			return nil, fmt.Errorf("failed to resolve prompts: %w", err)
@@ -444,4 +461,87 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 	}
 
 	return tocDocID, nil
+}
+
+// LoadTocEntries loads all TocEntry records for a ToC that haven't been linked yet.
+// Returns entries that don't have an actual_page set.
+func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.TocEntry, error) {
+	if tocDocID == "" {
+		return nil, nil // No ToC, no entries
+	}
+
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil, fmt.Errorf("defra client not in context")
+	}
+
+	query := fmt.Sprintf(`{
+		TocEntry(filter: {toc_id: {_eq: "%s"}}, order: {sort_order: ASC}) {
+			_docID
+			entry_number
+			title
+			level
+			level_name
+			printed_page_number
+			sort_order
+			actual_page {
+				_docID
+			}
+		}
+	}`, tocDocID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	rawEntries, ok := resp.Data["TocEntry"].([]any)
+	if !ok {
+		return nil, nil // No entries
+	}
+
+	var entries []*toc_entry_finder.TocEntry
+	for _, e := range rawEntries {
+		entry, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// Skip entries that already have actual_page linked
+		if actualPage, ok := entry["actual_page"].(map[string]any); ok {
+			if _, hasDoc := actualPage["_docID"]; hasDoc {
+				continue // Already linked
+			}
+		}
+
+		te := &toc_entry_finder.TocEntry{}
+
+		if docID, ok := entry["_docID"].(string); ok {
+			te.DocID = docID
+		}
+		if entryNum, ok := entry["entry_number"].(string); ok {
+			te.EntryNumber = entryNum
+		}
+		if title, ok := entry["title"].(string); ok {
+			te.Title = title
+		}
+		if level, ok := entry["level"].(float64); ok {
+			te.Level = int(level)
+		}
+		if levelName, ok := entry["level_name"].(string); ok {
+			te.LevelName = levelName
+		}
+		if printedPage, ok := entry["printed_page_number"].(string); ok {
+			te.PrintedPageNumber = printedPage
+		}
+		if sortOrder, ok := entry["sort_order"].(float64); ok {
+			te.SortOrder = int(sortOrder)
+		}
+
+		if te.DocID != "" {
+			entries = append(entries, te)
+		}
+	}
+
+	return entries, nil
 }

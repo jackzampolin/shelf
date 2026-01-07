@@ -90,6 +90,12 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 	info, ok := j.GetWorkUnit(result.WorkUnitID)
 	if !ok {
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Warn("received result for unknown work unit",
+				"work_unit_id", result.WorkUnitID,
+				"book_id", j.Book.BookID)
+		}
 		return nil, nil
 	}
 
@@ -204,6 +210,11 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_finder.TocEntry) *jobs.WorkUnit {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("defra client not in context for entry finder",
+				"book_id", j.Book.BookID,
+				"entry_doc_id", entry.DocID)
+		}
 		return nil
 	}
 
@@ -233,12 +244,22 @@ func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 	// Get first work unit
 	agentUnits := agents.ExecuteToolLoop(ctx, ag)
 	if len(agentUnits) == 0 {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Debug("agent produced no work units",
+				"book_id", j.Book.BookID,
+				"entry_doc_id", entry.DocID)
+		}
 		return nil
 	}
 
 	// Convert and return first work unit
 	jobUnits := j.convertEntryAgentUnits(agentUnits, entry.DocID)
 	if len(jobUnits) == 0 {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Debug("agent units converted to zero job units",
+				"book_id", j.Book.BookID,
+				"entry_doc_id", entry.DocID)
+		}
 		return nil
 	}
 
@@ -352,6 +373,11 @@ func (j *Job) getPageDocID(ctx context.Context, pageNum int) (string, error) {
 		}
 	}
 
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Debug("page not found in database",
+			"book_id", j.Book.BookID,
+			"page_num", pageNum)
+	}
 	return "", nil
 }
 
@@ -400,6 +426,11 @@ func (j *Job) createRetryUnit(ctx context.Context, info WorkUnitInfo) *jobs.Work
 		}
 	}
 	if entry == nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("entry not found for retry",
+				"book_id", j.Book.BookID,
+				"entry_doc_id", info.EntryDocID)
+		}
 		return nil
 	}
 

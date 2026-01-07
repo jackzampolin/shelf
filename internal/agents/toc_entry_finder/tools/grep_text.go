@@ -127,7 +127,7 @@ type Cluster struct {
 	PageCount int `json:"page_count"`
 }
 
-// identifyClusters finds contiguous page clusters (gaps of <= 2 pages allowed).
+// identifyClusters finds contiguous page clusters (gaps of <= 3 pages allowed).
 func identifyClusters(matches []GrepMatch) []Cluster {
 	if len(matches) == 0 {
 		return nil

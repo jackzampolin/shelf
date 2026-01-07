@@ -38,11 +38,12 @@ type Job struct {
 }
 
 // NewFromLoadResult creates a Job from a common.LoadBookResult.
-func NewFromLoadResult(result *common.LoadBookResult, entries []*toc_entry_finder.TocEntry) *Job {
+// Entries are taken from BookState.TocEntries (loaded during LoadBook).
+func NewFromLoadResult(result *common.LoadBookResult) *Job {
 	return &Job{
 		TrackedBaseJob: common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
 		TocDocID:       result.TocDocID,
-		Entries:        entries,
+		Entries:        result.Book.GetTocEntries(),
 		EntryAgents:    make(map[string]*agent.Agent),
 	}
 }

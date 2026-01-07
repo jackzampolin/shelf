@@ -16,21 +16,17 @@ import (
 // CreateLinkTocWorkUnits creates work units for all ToC entries.
 // Must be called with j.Mu held.
 func (j *Job) CreateLinkTocWorkUnits(ctx context.Context) []jobs.WorkUnit {
-	// Load entries if not already loaded
+	// Get entries from BookState (loaded during LoadBook)
 	if len(j.LinkTocEntries) == 0 {
-		entries, err := LoadTocEntries(ctx, j.TocDocID)
-		if err != nil {
-			logger := svcctx.LoggerFrom(ctx)
-			if logger != nil {
-				logger.Error("failed to load ToC entries", "error", err)
-			}
-			return nil
-		}
-		j.LinkTocEntries = entries
+		j.LinkTocEntries = j.Book.GetTocEntries()
 	}
 
 	// No entries to process
 	if len(j.LinkTocEntries) == 0 {
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Info("no ToC entries to link", "book_id", j.Book.BookID)
+		}
 		return nil
 	}
 
@@ -50,6 +46,11 @@ func (j *Job) CreateLinkTocWorkUnits(ctx context.Context) []jobs.WorkUnit {
 func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_finder.TocEntry) *jobs.WorkUnit {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("defra client not in context for entry finder",
+				"book_id", j.Book.BookID,
+				"entry_doc_id", entry.DocID)
+		}
 		return nil
 	}
 
@@ -79,12 +80,22 @@ func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 	// Get first work unit
 	agentUnits := agents.ExecuteToolLoop(ctx, ag)
 	if len(agentUnits) == 0 {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Debug("agent produced no work units",
+				"book_id", j.Book.BookID,
+				"entry_doc_id", entry.DocID)
+		}
 		return nil
 	}
 
 	// Convert and return first work unit
 	jobUnits := j.convertLinkTocAgentUnits(agentUnits, entry.DocID)
 	if len(jobUnits) == 0 {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Debug("agent units converted to zero job units",
+				"book_id", j.Book.BookID,
+				"entry_doc_id", entry.DocID)
+		}
 		return nil
 	}
 
@@ -196,6 +207,11 @@ func (j *Job) getPageDocID(ctx context.Context, pageNum int) (string, error) {
 		}
 	}
 
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Debug("page not found in database",
+			"book_id", j.Book.BookID,
+			"page_num", pageNum)
+	}
 	return "", nil
 }
 
@@ -238,6 +254,11 @@ func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo) *jo
 		}
 	}
 	if entry == nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("entry not found for retry",
+				"book_id", j.Book.BookID,
+				"entry_doc_id", info.EntryDocID)
+		}
 		return nil
 	}
 
@@ -256,86 +277,4 @@ func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo) *jo
 	}
 
 	return unit
-}
-
-// LoadTocEntries loads all TocEntry records for a ToC.
-func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.TocEntry, error) {
-	if tocDocID == "" {
-		return nil, fmt.Errorf("ToC document ID is required")
-	}
-
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return nil, fmt.Errorf("defra client not in context")
-	}
-
-	query := fmt.Sprintf(`{
-		TocEntry(filter: {toc_id: {_eq: "%s"}}, order: {sort_order: ASC}) {
-			_docID
-			entry_number
-			title
-			level
-			level_name
-			printed_page_number
-			sort_order
-			actual_page {
-				_docID
-			}
-		}
-	}`, tocDocID)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	rawEntries, ok := resp.Data["TocEntry"].([]any)
-	if !ok {
-		return nil, nil // No entries
-	}
-
-	var entries []*toc_entry_finder.TocEntry
-	for _, e := range rawEntries {
-		entry, ok := e.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		// Skip entries that already have actual_page linked
-		if actualPage, ok := entry["actual_page"].(map[string]any); ok {
-			if _, hasDoc := actualPage["_docID"]; hasDoc {
-				continue // Already linked
-			}
-		}
-
-		te := &toc_entry_finder.TocEntry{}
-
-		if docID, ok := entry["_docID"].(string); ok {
-			te.DocID = docID
-		}
-		if entryNum, ok := entry["entry_number"].(string); ok {
-			te.EntryNumber = entryNum
-		}
-		if title, ok := entry["title"].(string); ok {
-			te.Title = title
-		}
-		if level, ok := entry["level"].(float64); ok {
-			te.Level = int(level)
-		}
-		if levelName, ok := entry["level_name"].(string); ok {
-			te.LevelName = levelName
-		}
-		if printedPage, ok := entry["printed_page_number"].(string); ok {
-			te.PrintedPageNumber = printedPage
-		}
-		if sortOrder, ok := entry["sort_order"].(float64); ok {
-			te.SortOrder = int(sortOrder)
-		}
-
-		if te.DocID != "" {
-			entries = append(entries, te)
-		}
-	}
-
-	return entries, nil
 }
