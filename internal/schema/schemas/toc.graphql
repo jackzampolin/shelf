@@ -27,6 +27,11 @@ type ToC {
     link_failed: Boolean
     link_retries: Int
 
+    finalize_started: Boolean
+    finalize_complete: Boolean
+    finalize_failed: Boolean
+    finalize_retries: Int
+
     # Relationships
     # One-to-many: ToC has many TocEntries
     entries: [TocEntry]

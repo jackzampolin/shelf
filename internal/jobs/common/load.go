@@ -370,6 +370,10 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				link_complete
 				link_failed
 				link_retries
+				finalize_started
+				finalize_complete
+				finalize_failed
+				finalize_retries
 				start_page
 				end_page
 			}
@@ -448,6 +452,23 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 					lRetries = int(lr)
 				}
 				book.TocLink = boolsToOpState(lStarted, lComplete, lFailed, lRetries)
+
+				// Finalize state
+				var finStarted, finComplete, finFailed bool
+				var finRetries int
+				if fs, ok := toc["finalize_started"].(bool); ok {
+					finStarted = fs
+				}
+				if fc, ok := toc["finalize_complete"].(bool); ok {
+					finComplete = fc
+				}
+				if ff, ok := toc["finalize_failed"].(bool); ok {
+					finFailed = ff
+				}
+				if fr, ok := toc["finalize_retries"].(float64); ok {
+					finRetries = int(fr)
+				}
+				book.TocFinalize = boolsToOpState(finStarted, finComplete, finFailed, finRetries)
 
 				// Page range
 				if sp, ok := toc["start_page"].(float64); ok {

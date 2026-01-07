@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -355,6 +356,9 @@ func (j *Job) Progress() map[string]jobs.ProviderProgress {
 
 // PersistTocFinalizeState persists ToC finalize state to DefraDB.
 func (j *Job) PersistTocFinalizeState(ctx context.Context) {
-	// TODO: Implement when TocFinalize field exists in Book
-	// For now, we'll rely on the job completion status
+	if err := common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize); err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("failed to persist ToC finalize state", "error", err)
+		}
+	}
 }
