@@ -17,6 +17,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/label_book"
+	"github.com/jackzampolin/shelf/internal/jobs/link_toc"
 	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
@@ -33,6 +34,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/server/endpoints"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 
+	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 )
 
@@ -63,6 +65,8 @@ type Server struct {
 	metadataBookCfg metadata_book.Config
 	// tocBookCfg is saved for job factory registration
 	tocBookCfg toc_book.Config
+	// linkTocCfg is saved for job factory registration
+	linkTocCfg link_toc.Config
 
 	// services holds all core services for context enrichment
 	services *svcctx.Services
@@ -179,6 +183,12 @@ func New(cfg Config) (*Server, error) {
 		DebugAgents: cfg.PipelineConfig.DebugAgents,
 	}
 
+	// Save link toc config for job factory registration
+	linkTocCfg := link_toc.Config{
+		TocProvider: cfg.PipelineConfig.TocProvider,
+		DebugAgents: cfg.PipelineConfig.DebugAgents,
+	}
+
 	s := &Server{
 		defraManager:     defraManager,
 		registry:         registry,
@@ -187,6 +197,7 @@ func New(cfg Config) (*Server, error) {
 		labelBookCfg:     labelBookCfg,
 		metadataBookCfg:  metadataBookCfg,
 		tocBookCfg:       tocBookCfg,
+		linkTocCfg:       linkTocCfg,
 		configMgr:       cfg.ConfigManager,
 		logger:          cfg.Logger,
 		home:            cfg.Home,
@@ -197,10 +208,11 @@ func New(cfg Config) (*Server, error) {
 	for _, ep := range endpoints.All(endpoints.Config{
 		DefraManager:       defraManager,
 		ProcessBookConfig:  processBookCfg,
-		OcrBookConfig:       ocrBookCfg,
-		LabelBookConfig:     labelBookCfg,
-		MetadataBookConfig:  metadataBookCfg,
-		TocBookConfig:       tocBookCfg,
+		OcrBookConfig:      ocrBookCfg,
+		LabelBookConfig:    labelBookCfg,
+		MetadataBookConfig: metadataBookCfg,
+		TocBookConfig:      tocBookCfg,
+		LinkTocConfig:      linkTocCfg,
 	}) {
 		s.endpointRegistry.Register(ep)
 	}
@@ -278,6 +290,7 @@ func (s *Server) Start(ctx context.Context) error {
 	metadata.RegisterPrompts(s.promptResolver)
 	extract_toc.RegisterPrompts(s.promptResolver)
 	toc_finder.RegisterPrompts(s.promptResolver)
+	toc_entry_finder.RegisterPrompts(s.promptResolver)
 
 	// Sync prompts to database (creates new, updates modified)
 	s.logger.Info("syncing prompts to database")
@@ -321,6 +334,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.scheduler.RegisterFactory(label_book.JobType, label_book.JobFactory(s.labelBookCfg))
 	s.scheduler.RegisterFactory(metadata_book.JobType, metadata_book.JobFactory(s.metadataBookCfg))
 	s.scheduler.RegisterFactory(toc_book.JobType, toc_book.JobFactory(s.tocBookCfg))
+	s.scheduler.RegisterFactory(link_toc.JobType, link_toc.JobFactory(s.linkTocCfg))
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)

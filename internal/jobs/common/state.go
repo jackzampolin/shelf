@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/home"
 )
 
@@ -284,11 +285,15 @@ type BookState struct {
 	Metadata   OperationState
 	TocFinder  OperationState
 	TocExtract OperationState
+	TocLink    OperationState
 
 	// ToC finder results (mutable - use accessor methods)
 	TocFound     bool
 	TocStartPage int
 	TocEndPage   int
+
+	// ToC entries loaded from DB (immutable after LoadBook when ToC extraction is complete)
+	TocEntries []*toc_entry_finder.TocEntry
 }
 
 // NewBookState creates a new BookState with initialized maps.
@@ -490,4 +495,29 @@ func (b *BookState) GetPromptCID(key string) string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.PromptCIDs[key]
+}
+
+// --- Thread-safe accessors for TocEntries ---
+
+// GetTocEntries returns the ToC entries (thread-safe).
+func (b *BookState) GetTocEntries() []*toc_entry_finder.TocEntry {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.TocEntries
+}
+
+// SetTocEntries sets the ToC entries (thread-safe).
+func (b *BookState) SetTocEntries(entries []*toc_entry_finder.TocEntry) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.TocEntries = entries
+}
+
+// GetUnlinkedTocEntries returns only entries without actual_page linked.
+// This filters the cached entries rather than re-querying DB.
+func (b *BookState) GetUnlinkedTocEntries() []*toc_entry_finder.TocEntry {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	// TocEntries are already filtered to unlinked during load
+	return b.TocEntries
 }

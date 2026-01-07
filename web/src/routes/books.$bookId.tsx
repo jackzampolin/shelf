@@ -49,11 +49,12 @@ function BookDetailPage() {
 
   // Available job types for the dropdown
   const jobTypes = [
-    { id: 'process-book', label: 'Full Pipeline', description: 'OCR → Blend → Label → Metadata → ToC' },
+    { id: 'process-book', label: 'Full Pipeline', description: 'OCR → Blend → Label → Metadata → ToC → Link' },
     { id: 'ocr-book', label: 'OCR + Blend Only', description: 'OCR and blend all pages (no labeling)' },
     { id: 'label-book', label: 'Label Only', description: 'Label pages that have blend complete' },
     { id: 'metadata-book', label: 'Metadata Only', description: 'Extract book metadata (title, author, etc.)' },
     { id: 'toc-book', label: 'ToC Only', description: 'Find and extract table of contents' },
+    { id: 'link-toc', label: 'Link ToC Only', description: 'Link ToC entries to actual pages' },
   ]
 
   const { data: book, isLoading, error } = useQuery({
@@ -403,6 +404,25 @@ function BookDetailPage() {
                     </span>
                   )}
                 </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-gray-500">Link:</span>
+                  <StatusBadge
+                    status={
+                      detailedStatus.toc?.link_complete
+                        ? 'complete'
+                        : detailedStatus.toc?.link_failed
+                        ? 'failed'
+                        : detailedStatus.toc?.link_started
+                        ? 'in_progress'
+                        : 'pending'
+                    }
+                  />
+                  {detailedStatus.toc?.entry_count !== undefined && detailedStatus.toc.entry_count > 0 && (
+                    <span className="text-gray-600">
+                      {detailedStatus.toc.entries_linked ?? 0} of {detailedStatus.toc.entry_count} linked
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center space-x-4">
                   {detailedStatus.toc?.found && detailedStatus.toc?.start_page && (
                     <Link
@@ -537,9 +557,22 @@ function BookDetailPage() {
                     <span className="text-xs text-gray-400">({entry.level_name})</span>
                   )}
                 </div>
-                {entry.printed_page_number && (
-                  <span className="text-gray-500 font-mono">{entry.printed_page_number}</span>
-                )}
+                <div className="flex items-center space-x-2">
+                  {entry.printed_page_number && (
+                    <span className="text-gray-500 font-mono">{entry.printed_page_number}</span>
+                  )}
+                  {entry.is_linked && entry.actual_page_num ? (
+                    <Link
+                      to="/books/$bookId/pages/$pageNum"
+                      params={{ bookId, pageNum: String(entry.actual_page_num) }}
+                      className="text-blue-600 hover:text-blue-800 font-mono text-xs"
+                    >
+                      → p.{entry.actual_page_num}
+                    </Link>
+                  ) : (
+                    <span className="text-gray-300 font-mono text-xs">—</span>
+                  )}
+                </div>
               </div>
             ))}
           </div>

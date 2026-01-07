@@ -4,6 +4,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs/label_book"
+	"github.com/jackzampolin/shelf/internal/jobs/link_toc"
 	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
 	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
@@ -12,12 +13,13 @@ import (
 
 // Config holds dependencies needed by some endpoints.
 type Config struct {
-	DefraManager      *defra.DockerManager
-	ProcessBookConfig process_book.Config
+	DefraManager       *defra.DockerManager
+	ProcessBookConfig  process_book.Config
 	OcrBookConfig      ocr_book.Config
 	LabelBookConfig    label_book.Config
 	MetadataBookConfig metadata_book.Config
 	TocBookConfig      toc_book.Config
+	LinkTocConfig      link_toc.Config
 	SwaggerSpecPath    string
 }
 
@@ -50,11 +52,12 @@ func All(cfg Config) []api.Endpoint {
 
 		// Job start/status endpoints
 		&StartJobEndpoint{
-			ProcessBookConfig:   cfg.ProcessBookConfig,
-			OcrBookConfig:       cfg.OcrBookConfig,
-			LabelBookConfig:     cfg.LabelBookConfig,
-			MetadataBookConfig:  cfg.MetadataBookConfig,
-			TocBookConfig:       cfg.TocBookConfig,
+			ProcessBookConfig:  cfg.ProcessBookConfig,
+			OcrBookConfig:      cfg.OcrBookConfig,
+			LabelBookConfig:    cfg.LabelBookConfig,
+			MetadataBookConfig: cfg.MetadataBookConfig,
+			TocBookConfig:      cfg.TocBookConfig,
+			LinkTocConfig:      cfg.LinkTocConfig,
 		},
 		&JobStatusEndpoint{},
 		&DetailedJobStatusEndpoint{},

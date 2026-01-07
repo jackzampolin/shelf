@@ -100,9 +100,16 @@ type ToCStatus struct {
 	ExtractComplete bool `json:"extract_complete"`
 	ExtractFailed   bool `json:"extract_failed"`
 
+	// Link stage
+	LinkStarted  bool `json:"link_started"`
+	LinkComplete bool `json:"link_complete"`
+	LinkFailed   bool `json:"link_failed"`
+	LinkRetries  int  `json:"link_retries"`
+
 	// Entries (when extracted)
-	EntryCount int        `json:"entry_count"`
-	Entries    []ToCEntry `json:"entries,omitempty"`
+	EntryCount   int        `json:"entry_count"`
+	EntriesLinked int       `json:"entries_linked"`
+	Entries      []ToCEntry `json:"entries,omitempty"`
 
 	CostUSD float64 `json:"cost_usd"`
 }
@@ -115,6 +122,8 @@ type ToCEntry struct {
 	LevelName         string `json:"level_name,omitempty"`
 	PrintedPageNumber string `json:"printed_page_number,omitempty"`
 	SortOrder         int    `json:"sort_order"`
+	ActualPageNum     int    `json:"actual_page_num,omitempty"`
+	IsLinked          bool   `json:"is_linked"`
 }
 
 // AgentLogSummary is a brief summary of an agent log.
@@ -354,6 +363,10 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 				extract_started
 				extract_complete
 				extract_failed
+				link_started
+				link_complete
+				link_failed
+				link_retries
 				entries {
 					entry_number
 					title
@@ -361,6 +374,9 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 					level_name
 					printed_page_number
 					sort_order
+					actual_page {
+						page_num
+					}
 				}
 			}
 		}
@@ -399,6 +415,18 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 					if v, ok := toc["extract_failed"].(bool); ok {
 						resp.ToC.ExtractFailed = v
 					}
+					if v, ok := toc["link_started"].(bool); ok {
+						resp.ToC.LinkStarted = v
+					}
+					if v, ok := toc["link_complete"].(bool); ok {
+						resp.ToC.LinkComplete = v
+					}
+					if v, ok := toc["link_failed"].(bool); ok {
+						resp.ToC.LinkFailed = v
+					}
+					if v, ok := toc["link_retries"].(float64); ok {
+						resp.ToC.LinkRetries = int(v)
+					}
 
 					// Parse ToC entries
 					if entries, ok := toc["entries"].([]any); ok {
@@ -423,6 +451,14 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 								}
 								if v, ok := entry["sort_order"].(float64); ok {
 									tocEntry.SortOrder = int(v)
+								}
+								// Check if entry is linked to actual page
+								if actualPage, ok := entry["actual_page"].(map[string]any); ok {
+									if pageNum, ok := actualPage["page_num"].(float64); ok {
+										tocEntry.ActualPageNum = int(pageNum)
+										tocEntry.IsLinked = true
+										resp.ToC.EntriesLinked++
+									}
 								}
 								resp.ToC.Entries = append(resp.ToC.Entries, tocEntry)
 							}

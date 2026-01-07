@@ -22,7 +22,10 @@ type ToC {
     extract_failed: Boolean
     extract_retries: Int
 
+    link_started: Boolean
     link_complete: Boolean
+    link_failed: Boolean
+    link_retries: Int
 
     # Relationships
     # One-to-many: ToC has many TocEntries

@@ -107,6 +107,38 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
+	// Start ToC linking if extraction is done
+	if j.Book.TocExtract.IsDone() && j.Book.TocLink.CanStart() {
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Info("starting ToC link operation",
+				"book_id", j.Book.BookID,
+				"toc_doc_id", j.TocDocID)
+		}
+		linkUnits := j.CreateLinkTocWorkUnits(ctx)
+		if len(linkUnits) > 0 {
+			if err := j.Book.TocLink.Start(); err == nil {
+				if err := j.PersistTocLinkState(ctx); err != nil {
+					j.Book.TocLink.Reset() // Rollback on failure
+				} else {
+					units = append(units, linkUnits...)
+					if logger != nil {
+						logger.Info("created link toc work units",
+							"count", len(linkUnits),
+							"entries", len(j.LinkTocEntries))
+					}
+				}
+			}
+		} else {
+			// No entries to link - mark as complete
+			j.Book.TocLink.Complete()
+			j.PersistTocLinkState(ctx)
+			if logger != nil {
+				logger.Info("no ToC entries to link - marking complete")
+			}
+		}
+	}
+
 	return units
 }
 
@@ -131,6 +163,11 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 
 	// If ToC was found, extraction must also be done
 	if j.Book.GetTocFound() && !j.Book.TocExtract.IsDone() {
+		return
+	}
+
+	// If ToC was extracted, linking must also be done
+	if j.Book.TocExtract.IsDone() && !j.Book.TocLink.IsDone() {
 		return
 	}
 
