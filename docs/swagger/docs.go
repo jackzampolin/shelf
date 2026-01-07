@@ -2998,6 +2998,10 @@ const docTemplate = `{
         "internal_server_endpoints.StartJobRequest": {
             "type": "object",
             "properties": {
+                "force": {
+                    "description": "Optional: force restart even if already complete",
+                    "type": "boolean"
+                },
                 "job_type": {
                     "description": "Optional: defaults to \"process-book\"",
                     "type": "string"

@@ -149,8 +149,8 @@ func SaveBlendResult(ctx context.Context, state *PageState, primaryProvider stri
 		Op:         defra.OpUpdate,
 	})
 
-	// Update in-memory state (thread-safe)
-	state.SetBlendResult(blendedText)
+	// Write-through: Update in-memory cache with all persisted data (thread-safe)
+	state.SetBlendResultWithHeadings(blendedText, headings)
 
 	return blendedText, nil
 }

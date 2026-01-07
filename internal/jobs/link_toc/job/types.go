@@ -35,16 +35,21 @@ type Job struct {
 	EntryAgents     map[string]*agent.Agent      // EntryDocID -> Agent
 	EntriesComplete int                          // Count of completed entries
 	EntriesFound    int                          // Count of entries with actual_page found
+
+	// Control flags
+	Force bool // If true, reset state and re-run even if already complete
 }
 
 // NewFromLoadResult creates a Job from a common.LoadBookResult.
 // Entries are taken from BookState.TocEntries (loaded during LoadBook).
-func NewFromLoadResult(result *common.LoadBookResult) *Job {
+// If force is true, the job will reset state and re-run even if already complete.
+func NewFromLoadResult(result *common.LoadBookResult, force bool) *Job {
 	return &Job{
 		TrackedBaseJob: common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
 		TocDocID:       result.TocDocID,
 		Entries:        result.Book.GetTocEntries(),
 		EntryAgents:    make(map[string]*agent.Agent),
+		Force:          force,
 	}
 }
 

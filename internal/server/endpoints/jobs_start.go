@@ -21,6 +21,7 @@ import (
 // StartJobRequest is the request body for starting a job.
 type StartJobRequest struct {
 	JobType string `json:"job_type,omitempty"` // Optional: defaults to "process-book"
+	Force   bool   `json:"force,omitempty"`    // Optional: force restart even if already complete
 }
 
 // StartJobResponse is the response for starting a job.
@@ -109,7 +110,10 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	case toc_book.JobType:
 		job, err = toc_book.NewJob(r.Context(), e.TocBookConfig, bookID)
 	case link_toc.JobType:
-		job, err = link_toc.NewJob(r.Context(), e.LinkTocConfig, bookID)
+		// Copy config and apply force flag from request
+		cfg := e.LinkTocConfig
+		cfg.Force = req.Force
+		job, err = link_toc.NewJob(r.Context(), cfg, bookID)
 	default:
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown job type: %s", jobType))
 		return

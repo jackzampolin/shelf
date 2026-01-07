@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jackzampolin/shelf/internal/providers"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // GrepMatch represents a match on a single page.
@@ -53,9 +54,24 @@ func (t *TocEntryFinderTools) grepText(ctx context.Context, query string) (strin
 	// Estimate back matter start (last 20% of book)
 	backMatterStart := int(float64(t.totalPages) * 0.8)
 
+	// Preload ALL pages in one batch query if pageReader is available
+	// This turns O(N) queries into O(1) + in-memory iteration
+	if t.pageReader != nil {
+		if err := t.pageReader.PreloadPages(ctx, 1, t.totalPages); err != nil {
+			// Log but continue - fallback to per-page queries will work
+			// This could indicate DB issues causing performance degradation
+			if logger := svcctx.LoggerFrom(ctx); logger != nil {
+				logger.Warn("PreloadPages failed, falling back to per-page queries",
+					"book_id", t.bookID,
+					"total_pages", t.totalPages,
+					"error", err)
+			}
+		}
+	}
+
 	var matches []GrepMatch
 
-	// Search all pages
+	// Search all pages (now from cache if preloaded)
 	for pageNum := 1; pageNum <= t.totalPages; pageNum++ {
 		text, err := t.getPageBlendedText(ctx, pageNum)
 		if err != nil {

@@ -31,30 +31,38 @@ function BookDetailPage() {
   const [selectedAgentLogId, setSelectedAgentLogId] = useState<string | null>(null)
 
   const startJobMutation = useMutation({
-    mutationFn: async (jobType?: string) =>
-      unwrap(
-        await client.POST('/api/jobs/start/{book_id}', {
-          params: { path: { book_id: bookId } },
-          body: jobType ? { job_type: jobType } : undefined,
-        })
-      ),
+    mutationFn: async (params: { jobType?: string; force?: boolean }) => {
+      const { jobType, force } = params
+      console.log('Starting job:', { bookId, jobType: jobType || 'process-book', force })
+      const result = await client.POST('/api/jobs/start/{book_id}', {
+        params: { path: { book_id: bookId } },
+        body: { job_type: jobType || 'process-book', force: force || false },
+      })
+      console.log('Job start result:', result)
+      return unwrap(result)
+    },
     onSuccess: (data) => {
+      console.log('Job started successfully:', data)
       queryClient.invalidateQueries({ queryKey: ['jobs', 'status', bookId] })
       queryClient.invalidateQueries({ queryKey: ['books', bookId] })
       if (data?.job_id) {
         navigate({ to: '/jobs/$jobId', params: { jobId: data.job_id } })
       }
     },
+    onError: (error) => {
+      console.error('Failed to start job:', error)
+    },
   })
 
   // Available job types for the dropdown
   const jobTypes = [
-    { id: 'process-book', label: 'Full Pipeline', description: 'OCR → Blend → Label → Metadata → ToC → Link' },
-    { id: 'ocr-book', label: 'OCR + Blend Only', description: 'OCR and blend all pages (no labeling)' },
-    { id: 'label-book', label: 'Label Only', description: 'Label pages that have blend complete' },
-    { id: 'metadata-book', label: 'Metadata Only', description: 'Extract book metadata (title, author, etc.)' },
-    { id: 'toc-book', label: 'ToC Only', description: 'Find and extract table of contents' },
-    { id: 'link-toc', label: 'Link ToC Only', description: 'Link ToC entries to actual pages' },
+    { id: 'process-book', label: 'Full Pipeline', description: 'OCR → Blend → Label → Metadata → ToC → Link', force: false },
+    { id: 'ocr-book', label: 'OCR + Blend Only', description: 'OCR and blend all pages (no labeling)', force: false },
+    { id: 'label-book', label: 'Label Only', description: 'Label pages that have blend complete', force: false },
+    { id: 'metadata-book', label: 'Metadata Only', description: 'Extract book metadata (title, author, etc.)', force: false },
+    { id: 'toc-book', label: 'ToC Only', description: 'Find and extract table of contents', force: false },
+    { id: 'link-toc', label: 'Link ToC Only', description: 'Link ToC entries to actual pages', force: false },
+    { id: 'link-toc', label: 'Link ToC (Force)', description: 'Re-link ToC entries even if already complete', force: true },
   ]
 
   const { data: book, isLoading, error } = useQuery({
@@ -164,7 +172,7 @@ function BookDetailPage() {
             <div className="flex items-center">
               {/* Main Start Processing button */}
               <button
-                onClick={() => startJobMutation.mutate(undefined)}
+                onClick={() => startJobMutation.mutate({ jobType: 'process-book' })}
                 disabled={startJobMutation.isPending}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-l-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -182,11 +190,11 @@ function BookDetailPage() {
                 </MenuButton>
                 <MenuItems className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
                   <div className="py-1">
-                    {jobTypes.map((job) => (
-                      <MenuItem key={job.id}>
+                    {jobTypes.map((job, index) => (
+                      <MenuItem key={`${job.id}-${index}`}>
                         {({ active }) => (
                           <button
-                            onClick={() => startJobMutation.mutate(job.id)}
+                            onClick={() => startJobMutation.mutate({ jobType: job.id, force: job.force })}
                             className={`${
                               active ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
                             } block w-full text-left px-4 py-2 text-sm`}

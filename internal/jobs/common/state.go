@@ -1,7 +1,9 @@
 package common
 
 import (
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
@@ -31,6 +33,13 @@ type PageState struct {
 	blendDone   bool
 	blendedText string // Cached blend result for label work unit
 	labelDone   bool
+
+	// Cached data fields (populated on write-through or lazy load from DB)
+	// These avoid re-querying DB for data we just wrote or need repeatedly.
+	headings        []HeadingItem // Parsed headings from blend_markdown
+	pageNumberLabel *string       // nil = not loaded, empty string = loaded but no label
+	runningHeader   *string       // nil = not loaded
+	dataLoaded      bool          // True if blend_markdown/headings/labels loaded from DB
 }
 
 // NewPageState creates a new page state with initialized maps.
@@ -145,6 +154,118 @@ func (p *PageState) SetPageDocID(docID string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.pageDocID = docID
+}
+
+// --- Cache accessor methods ---
+
+// GetHeadings returns the cached headings (thread-safe).
+func (p *PageState) GetHeadings() []HeadingItem {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.headings
+}
+
+// SetHeadings sets the cached headings (thread-safe).
+func (p *PageState) SetHeadings(headings []HeadingItem) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.headings = headings
+}
+
+// GetPageNumberLabel returns the cached page number label (thread-safe).
+// Returns nil if not loaded from DB.
+func (p *PageState) GetPageNumberLabel() *string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.pageNumberLabel
+}
+
+// SetPageNumberLabel sets the cached page number label (thread-safe).
+func (p *PageState) SetPageNumberLabel(label *string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pageNumberLabel = label
+}
+
+// GetRunningHeader returns the cached running header (thread-safe).
+// Returns nil if not loaded from DB.
+func (p *PageState) GetRunningHeader() *string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.runningHeader
+}
+
+// SetRunningHeader sets the cached running header (thread-safe).
+func (p *PageState) SetRunningHeader(header *string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.runningHeader = header
+}
+
+// IsDataLoaded returns true if page data has been loaded from DB (thread-safe).
+func (p *PageState) IsDataLoaded() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.dataLoaded
+}
+
+// SetDataLoaded marks the page data as loaded from DB (thread-safe).
+func (p *PageState) SetDataLoaded(loaded bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.dataLoaded = loaded
+}
+
+// SetBlendResultWithHeadings sets the blend result and headings together (thread-safe).
+// Use this for write-through caching when persisting blend results.
+func (p *PageState) SetBlendResultWithHeadings(blendedText string, headings []HeadingItem) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.blendedText = blendedText
+	p.headings = headings
+	p.blendDone = true
+	p.dataLoaded = true // Mark as loaded since we have the data
+}
+
+// SetLabelResultCached sets the label results in cache (thread-safe).
+// Use this for write-through caching when persisting label results.
+func (p *PageState) SetLabelResultCached(pageNumberLabel, runningHeader *string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pageNumberLabel = pageNumberLabel
+	p.runningHeader = runningHeader
+	p.labelDone = true
+}
+
+// PopulateFromDBResult populates cache fields from a DB query result map.
+// This is used for lazy loading and batch preloading.
+func (p *PageState) PopulateFromDBResult(data map[string]any) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if bm, ok := data["blend_markdown"].(string); ok {
+		p.blendedText = bm
+	}
+
+	if h, ok := data["headings"].(string); ok && h != "" {
+		var headings []HeadingItem
+		if err := json.Unmarshal([]byte(h), &headings); err != nil {
+			slog.Debug("failed to parse headings JSON in PopulateFromDBResult",
+				"error", err)
+		} else {
+			p.headings = headings
+		}
+	}
+
+	if pnl, ok := data["page_number_label"].(string); ok {
+		p.pageNumberLabel = &pnl
+	}
+
+	if rh, ok := data["running_header"].(string); ok {
+		p.runningHeader = &rh
+	}
+
+	p.dataLoaded = true
 }
 
 // OpStatus represents the status of a book-level operation.

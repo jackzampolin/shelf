@@ -17,6 +17,7 @@ const JobType = "link-toc"
 type Config struct {
 	TocProvider string
 	DebugAgents bool
+	Force       bool // If true, reset state and re-run even if already complete
 }
 
 // Validate checks that the config has all required fields.
@@ -63,10 +64,11 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 			"book_id", bookID,
 			"total_pages", result.Book.TotalPages,
 			"toc_provider", cfg.TocProvider,
-			"entries_count", len(entries))
+			"entries_count", len(entries),
+			"force", cfg.Force)
 	}
 
-	return ljob.NewFromLoadResult(result), nil
+	return ljob.NewFromLoadResult(result, cfg.Force), nil
 }
 
 // JobFactory returns a factory function for recreating jobs from stored metadata.
