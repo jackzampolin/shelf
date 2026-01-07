@@ -231,6 +231,7 @@ func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 		TotalPages:    j.Book.TotalPages,
 		DefraClient:   defraClient,
 		HomeDir:       j.Book.HomeDir,
+		PageReader:    j.Book, // Cached page data access
 		SystemPrompt:  j.GetPrompt(toc_entry_finder.PromptKey),
 		Entry:         entry,
 		BookStructure: bookStructure,

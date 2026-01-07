@@ -8,6 +8,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/agents/toc_entry_finder/tools"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
@@ -17,6 +18,7 @@ type TocEntryFinderConfig struct {
 	TotalPages    int
 	DefraClient   *defra.Client
 	HomeDir       *home.Dir
+	PageReader    common.PageDataReader // Optional: cached page data access
 	SystemPrompt  string
 	Entry         *toc_entry_finder.TocEntry
 	BookStructure *toc_entry_finder.BookStructure
@@ -34,6 +36,7 @@ func NewTocEntryFinderAgent(ctx context.Context, cfg TocEntryFinderConfig) *agen
 		DefraClient: cfg.DefraClient,
 		HomeDir:     cfg.HomeDir,
 		Entry:       cfg.Entry,
+		PageReader:  cfg.PageReader,
 	})
 
 	userPrompt := toc_entry_finder.BuildUserPrompt(cfg.Entry, cfg.TotalPages, cfg.BookStructure)

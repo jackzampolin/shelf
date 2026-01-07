@@ -8,6 +8,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/agents/toc_finder/tools"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
@@ -17,6 +18,7 @@ type TocFinderConfig struct {
 	TotalPages   int
 	DefraClient  *defra.Client
 	HomeDir      *home.Dir
+	PageReader   common.PageDataReader // Optional: cached page data access
 	SystemPrompt string
 	Debug        bool
 	JobID        string
@@ -31,6 +33,7 @@ func NewTocFinderAgent(ctx context.Context, cfg TocFinderConfig) *agent.Agent {
 		TotalPages:  cfg.TotalPages,
 		DefraClient: cfg.DefraClient,
 		HomeDir:     cfg.HomeDir,
+		PageReader:  cfg.PageReader,
 	})
 
 	userPrompt := toc_finder.BuildUserPrompt(cfg.BookID, cfg.TotalPages, nil)

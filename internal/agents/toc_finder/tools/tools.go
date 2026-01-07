@@ -8,6 +8,7 @@ import (
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
@@ -17,13 +18,14 @@ type ToCFinderTools struct {
 	totalPages  int
 	defraClient *defra.Client
 	homeDir     *home.Dir
+	pageReader  common.PageDataReader // Cached page data access
 
 	// State
-	grepReportCache   *GrepReport
-	currentPageNum    *int
-	currentImages     [][]byte
-	pageObservations  []PageObservation
-	pendingResult     *toc_finder.Result
+	grepReportCache  *GrepReport
+	currentPageNum   *int
+	currentImages    [][]byte
+	pageObservations []PageObservation
+	pendingResult    *toc_finder.Result
 }
 
 // PageObservation records what the agent saw on a page.
@@ -38,6 +40,7 @@ type Config struct {
 	TotalPages  int
 	DefraClient *defra.Client
 	HomeDir     *home.Dir
+	PageReader  common.PageDataReader // Optional: cached page data access
 }
 
 // New creates a new ToC finder tools instance.
@@ -47,6 +50,7 @@ func New(cfg Config) *ToCFinderTools {
 		totalPages:       cfg.TotalPages,
 		defraClient:      cfg.DefraClient,
 		homeDir:          cfg.HomeDir,
+		pageReader:       cfg.PageReader,
 		pageObservations: make([]PageObservation, 0),
 	}
 }
@@ -94,8 +98,14 @@ func (t *ToCFinderTools) GetResult() any {
 	return t.pendingResult
 }
 
-// getPageBlendedText retrieves blended OCR text from DefraDB.
+// getPageBlendedText retrieves blended OCR text, using cache if available.
 func (t *ToCFinderTools) getPageBlendedText(ctx context.Context, pageNum int) (string, error) {
+	// Use cached page reader if available
+	if t.pageReader != nil {
+		return t.pageReader.GetBlendedText(ctx, pageNum)
+	}
+
+	// Fallback to direct DB query
 	query := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
 			blend_markdown

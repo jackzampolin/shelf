@@ -57,6 +57,11 @@ func (t *ToCFinderTools) getFrontmatterGrepReport(ctx context.Context) (string, 
 		PageDetails:        make(map[int]CategoryHits),
 	}
 
+	// Preload all pages in one batch query if pageReader is available
+	if t.pageReader != nil {
+		_ = t.pageReader.PreloadPages(ctx, 1, maxPages)
+	}
+
 	// Query blended text for each page, tracking failures
 	var failedPages []int
 	pagesWithData := 0

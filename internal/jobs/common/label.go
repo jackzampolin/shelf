@@ -119,8 +119,8 @@ func SaveLabelResult(ctx context.Context, state *PageState, parsedJSON any) erro
 		Op:         defra.OpUpdate,
 	})
 
-	// Update in-memory state (thread-safe)
-	state.SetLabelDone(true)
+	// Write-through: Update in-memory cache with all persisted data (thread-safe)
+	state.SetLabelResultCached(labelResult.PageNumber, labelResult.RunningHeader)
 
 	return nil
 }
