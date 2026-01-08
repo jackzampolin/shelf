@@ -17,9 +17,9 @@ const (
 	PhaseFinalize = "finalize"
 )
 
-// WorkUnitType constants.
+// WorkUnitType constants for LLM work units.
+// Note: Extract phase runs synchronously (no work units needed for text processing).
 const (
-	WorkUnitTypeExtract  = "extract_text"
 	WorkUnitTypeClassify = "classify_matter"
 	WorkUnitTypePolish   = "polish_chapter"
 )
