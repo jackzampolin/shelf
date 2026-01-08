@@ -52,8 +52,9 @@ type Job struct {
 	ExtractsFailed     int
 
 	// Classify phase tracking
-	ClassifyPending bool
-	Classifications map[string]string // entry_id -> matter_type
+	ClassifyPending       bool
+	Classifications       map[string]string // entry_id -> matter_type
+	ClassifyReasonings    map[string]string // entry_id -> reasoning
 
 	// Polish phase tracking
 	ChaptersToPolish int
@@ -67,12 +68,13 @@ type Job struct {
 // NewFromLoadResult creates a Job from a common.LoadBookResult.
 func NewFromLoadResult(result *common.LoadBookResult, linkedEntries []*LinkedTocEntry) *Job {
 	return &Job{
-		TrackedBaseJob:  common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
-		TocDocID:        result.TocDocID,
-		CurrentPhase:    PhaseBuild,
-		LinkedEntries:   linkedEntries,
-		Chapters:        make([]*ChapterState, 0),
-		Classifications: make(map[string]string),
+		TrackedBaseJob:     common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
+		TocDocID:           result.TocDocID,
+		CurrentPhase:       PhaseBuild,
+		LinkedEntries:      linkedEntries,
+		Chapters:           make([]*ChapterState, 0),
+		Classifications:    make(map[string]string),
+		ClassifyReasonings: make(map[string]string),
 	}
 }
 
@@ -112,7 +114,8 @@ type ChapterState struct {
 	ParentID string // entry_id of parent chapter
 
 	// Matter classification (set in classify phase)
-	MatterType string // "front_matter", "body", "back_matter"
+	MatterType         string // "front_matter", "body", "back_matter"
+	ClassifyReasoning  string // Why this classification was chosen
 
 	// Text content (set in extract phase)
 	RawPageTexts   []PageText
@@ -162,6 +165,7 @@ type TextEdit struct {
 // ClassifyResult represents the LLM classification response.
 type ClassifyResult struct {
 	Classifications map[string]string `json:"classifications"`
+	Reasoning       map[string]string `json:"reasoning"`
 }
 
 // PolishResult represents the LLM polish response.

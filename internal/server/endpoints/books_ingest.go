@@ -22,10 +22,12 @@ type IngestRequest struct {
 
 // IngestResponse is the response for a successful ingest job submission.
 type IngestResponse struct {
-	JobID  string `json:"job_id"`
-	Title  string `json:"title"`
-	Author string `json:"author,omitempty"`
-	Status string `json:"status"`
+	JobID        string `json:"job_id"`
+	BookID       string `json:"book_id,omitempty"`
+	Title        string `json:"title"`
+	Author       string `json:"author,omitempty"`
+	Status       string `json:"status"`
+	ProcessJobID string `json:"process_job_id,omitempty"`
 }
 
 // IngestEndpoint handles POST /api/books/ingest.

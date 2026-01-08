@@ -177,6 +177,7 @@ const (
 type Record struct {
 	ID          string         `json:"_docID,omitempty"`
 	JobType     string         `json:"job_type"`
+	BookID      string         `json:"book_id,omitempty"`
 	Status      Status         `json:"status"`
 	CreatedAt   time.Time      `json:"created_at"`
 	StartedAt   *time.Time     `json:"started_at,omitempty"`
@@ -185,10 +186,27 @@ type Record struct {
 	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
+// Duration returns the job duration if started and completed.
+func (r *Record) Duration() *float64 {
+	if r.StartedAt == nil || r.CompletedAt == nil {
+		return nil
+	}
+	d := r.CompletedAt.Sub(*r.StartedAt).Seconds()
+	return &d
+}
+
 // NewRecord creates a new job record for submission.
 func NewRecord(jobType string, metadata map[string]any) *Record {
+	// Extract book_id from metadata if present
+	var bookID string
+	if metadata != nil {
+		if bid, ok := metadata["book_id"].(string); ok {
+			bookID = bid
+		}
+	}
 	return &Record{
 		JobType:   jobType,
+		BookID:    bookID,
 		Status:    StatusQueued,
 		CreatedAt: time.Now().UTC(),
 		Metadata:  metadata,

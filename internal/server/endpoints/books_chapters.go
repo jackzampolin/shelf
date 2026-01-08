@@ -13,26 +13,30 @@ import (
 
 // Chapter represents a chapter in the book structure.
 type Chapter struct {
-	ID             string `json:"id"`
-	EntryID        string `json:"entry_id,omitempty"`
-	Title          string `json:"title"`
-	Level          int    `json:"level"`
-	LevelName      string `json:"level_name,omitempty"`
-	EntryNumber    string `json:"entry_number,omitempty"`
-	StartPage      int    `json:"start_page"`
-	EndPage        int    `json:"end_page"`
-	MatterType     string `json:"matter_type"`
-	SortOrder      int    `json:"sort_order"`
-	WordCount      int    `json:"word_count,omitempty"`
-	PageCount      int    `json:"page_count"`
-	PolishComplete bool   `json:"polish_complete"`
-	PolishFailed   bool   `json:"polish_failed"`
+	ID                      string `json:"id"`
+	EntryID                 string `json:"entry_id,omitempty"`
+	Title                   string `json:"title"`
+	Level                   int    `json:"level"`
+	LevelName               string `json:"level_name,omitempty"`
+	EntryNumber             string `json:"entry_number,omitempty"`
+	StartPage               int    `json:"start_page"`
+	EndPage                 int    `json:"end_page"`
+	MatterType              string `json:"matter_type"`
+	ClassificationReasoning string `json:"classification_reasoning,omitempty"`
+	SortOrder               int    `json:"sort_order"`
+	WordCount               int    `json:"word_count,omitempty"`
+	PageCount               int    `json:"page_count"`
+	PolishComplete          bool   `json:"polish_complete"`
+	PolishFailed            bool   `json:"polish_failed"`
+	PolishedText            string `json:"polished_text,omitempty"`
+	EditsAppliedJSON        string `json:"edits_applied_json,omitempty"`
 }
 
 // ChapterWithText includes the chapter plus page content.
 type ChapterWithText struct {
 	Chapter
-	Pages []ChapterPage `json:"pages"`
+	Pages      []ChapterPage      `json:"pages,omitempty"`
+	Paragraphs []ChapterParagraph `json:"paragraphs,omitempty"`
 }
 
 // ChapterPage represents a single page within a chapter.
@@ -40,6 +44,16 @@ type ChapterPage struct {
 	PageNum     int    `json:"page_num"`
 	BlendedText string `json:"blended_text,omitempty"`
 	Label       string `json:"label,omitempty"`
+}
+
+// ChapterParagraph represents a paragraph within a chapter.
+type ChapterParagraph struct {
+	ID           string `json:"id"`
+	SortOrder    int    `json:"sort_order"`
+	StartPage    int    `json:"start_page"`
+	RawText      string `json:"raw_text,omitempty"`
+	PolishedText string `json:"polished_text,omitempty"`
+	WordCount    int    `json:"word_count"`
 }
 
 // ChaptersResponse is the response for the chapters endpoint.
@@ -67,7 +81,8 @@ func (e *GetBookChaptersEndpoint) RequiresInit() bool { return true }
 //	@Tags			books
 //	@Produce		json
 //	@Param			id			path		string	true	"Book ID"
-//	@Param			include_text	query		bool	false	"Include page text content"
+//	@Param			include_text		query		bool	false	"Include page text content"
+//	@Param			include_paragraphs	query		bool	false	"Include paragraphs"
 //	@Success		200			{object}	ChaptersResponse
 //	@Failure		400			{object}	ErrorResponse
 //	@Failure		404			{object}	ErrorResponse
@@ -81,6 +96,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 	}
 
 	includeText := r.URL.Query().Get("include_text") == "true"
+	includeParagraphs := r.URL.Query().Get("include_paragraphs") == "true"
 
 	client := svcctx.DefraClientFrom(r.Context())
 	if client == nil {
@@ -128,10 +144,13 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 			start_page
 			end_page
 			matter_type
+			classification_reasoning
 			sort_order
 			word_count
 			polish_complete
 			polish_failed
+			polished_text
+			edits_applied_json
 		}
 	}`, bookID)
 
@@ -153,22 +172,26 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 		startPage := getInt(cm, "start_page")
 		endPage := getInt(cm, "end_page")
 
+		chapterDocID := getString(cm, "_docID")
 		chapter := ChapterWithText{
 			Chapter: Chapter{
-				ID:             getString(cm, "_docID"),
-				EntryID:        getString(cm, "entry_id"),
-				Title:          getString(cm, "title"),
-				Level:          getInt(cm, "level"),
-				LevelName:      getString(cm, "level_name"),
-				EntryNumber:    getString(cm, "entry_number"),
-				StartPage:      startPage,
-				EndPage:        endPage,
-				MatterType:     getString(cm, "matter_type"),
-				SortOrder:      getInt(cm, "sort_order"),
-				WordCount:      getInt(cm, "word_count"),
-				PageCount:      endPage - startPage + 1,
-				PolishComplete: getBool(cm, "polish_complete"),
-				PolishFailed:   getBool(cm, "polish_failed"),
+				ID:                      chapterDocID,
+				EntryID:                 getString(cm, "entry_id"),
+				Title:                   getString(cm, "title"),
+				Level:                   getInt(cm, "level"),
+				LevelName:               getString(cm, "level_name"),
+				EntryNumber:             getString(cm, "entry_number"),
+				StartPage:               startPage,
+				EndPage:                 endPage,
+				MatterType:              getString(cm, "matter_type"),
+				ClassificationReasoning: getString(cm, "classification_reasoning"),
+				SortOrder:               getInt(cm, "sort_order"),
+				WordCount:               getInt(cm, "word_count"),
+				PageCount:               endPage - startPage + 1,
+				PolishComplete:          getBool(cm, "polish_complete"),
+				PolishFailed:            getBool(cm, "polish_failed"),
+				PolishedText:            getString(cm, "polished_text"),
+				EditsAppliedJSON:        getString(cm, "edits_applied_json"),
 			},
 		}
 
@@ -203,6 +226,40 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 					sort.Slice(chapter.Pages, func(i, j int) bool {
 						return chapter.Pages[i].PageNum < chapter.Pages[j].PageNum
 					})
+				}
+			}
+		}
+
+		// Fetch paragraphs if requested
+		if includeParagraphs && chapterDocID != "" {
+			paraQuery := fmt.Sprintf(`{
+				Paragraph(filter: {chapter: {_docID: {_eq: %q}}}, order: {sort_order: ASC}) {
+					_docID
+					sort_order
+					start_page
+					raw_text
+					polished_text
+					word_count
+				}
+			}`, chapterDocID)
+
+			paraResp, err := client.Query(r.Context(), paraQuery)
+			if err == nil {
+				if paraData, ok := paraResp.Data["Paragraph"].([]any); ok {
+					for _, p := range paraData {
+						pm, ok := p.(map[string]any)
+						if !ok {
+							continue
+						}
+						chapter.Paragraphs = append(chapter.Paragraphs, ChapterParagraph{
+							ID:           getString(pm, "_docID"),
+							SortOrder:    getInt(pm, "sort_order"),
+							StartPage:    getInt(pm, "start_page"),
+							RawText:      getString(pm, "raw_text"),
+							PolishedText: getString(pm, "polished_text"),
+							WordCount:    getInt(pm, "word_count"),
+						})
+					}
 				}
 			}
 		}
@@ -244,6 +301,7 @@ func getBool(m map[string]any, key string) bool {
 
 func (e *GetBookChaptersEndpoint) Command(getServerURL func() string) *cobra.Command {
 	var includeText bool
+	var includeParagraphs bool
 
 	cmd := &cobra.Command{
 		Use:   "chapters <book-id>",
@@ -254,8 +312,18 @@ func (e *GetBookChaptersEndpoint) Command(getServerURL func() string) *cobra.Com
 			client := api.NewClient(getServerURL())
 
 			path := "/api/books/" + args[0] + "/chapters"
+			params := []string{}
 			if includeText {
-				path += "?include_text=true"
+				params = append(params, "include_text=true")
+			}
+			if includeParagraphs {
+				params = append(params, "include_paragraphs=true")
+			}
+			if len(params) > 0 {
+				path += "?" + params[0]
+				for _, p := range params[1:] {
+					path += "&" + p
+				}
 			}
 
 			var resp ChaptersResponse
@@ -267,5 +335,6 @@ func (e *GetBookChaptersEndpoint) Command(getServerURL func() string) *cobra.Com
 	}
 
 	cmd.Flags().BoolVar(&includeText, "include-text", false, "Include page text content")
+	cmd.Flags().BoolVar(&includeParagraphs, "include-paragraphs", false, "Include chapter paragraphs")
 	return cmd
 }

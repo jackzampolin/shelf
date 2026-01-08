@@ -36,6 +36,10 @@ type Book {
     total_paragraphs: Int
     total_words: Int
 
+    # Pattern analysis from finalize_toc (JSON)
+    # Contains: discovered_patterns, excluded_ranges, entries_to_find, reasoning
+    pattern_analysis_json: String
+
     # Relationships
     # One-to-many: Book has many Pages
     pages: [Page]

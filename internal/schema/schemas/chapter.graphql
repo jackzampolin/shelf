@@ -21,6 +21,7 @@ type Chapter {
 
     # Matter classification
     matter_type: String
+    classification_reasoning: String
 
     # Hierarchy
     parent_id: String
@@ -32,6 +33,9 @@ type Chapter {
     mechanical_text: String
     polished_text: String
     word_count: Int
+
+    # Polish edits (JSON array of {old_text, new_text, reason})
+    edits_applied_json: String
 
     # Processing state
     extract_complete: Boolean

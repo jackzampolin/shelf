@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/svcctx"
@@ -138,6 +139,59 @@ func (j *Job) ProcessPatternResult(ctx context.Context, result jobs.WorkResult) 
 			"excluded_ranges", len(j.PatternResult.Excluded),
 			"entries_to_find", len(j.EntriesToFind))
 	}
+
+	// Persist pattern results to Book
+	if err := j.PersistPatternResults(ctx); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist pattern results", "error", err)
+		}
+	}
+
+	return nil
+}
+
+// PatternAnalysisData is the structure persisted to Book.pattern_analysis_json.
+type PatternAnalysisData struct {
+	Patterns      []DiscoveredPattern `json:"patterns"`
+	Excluded      []ExcludedRange     `json:"excluded_ranges"`
+	EntriesToFind []*EntryToFind      `json:"entries_to_find"`
+	Reasoning     string              `json:"reasoning"`
+}
+
+// PersistPatternResults persists pattern analysis results to the Book record.
+func (j *Job) PersistPatternResults(ctx context.Context) error {
+	if j.PatternResult == nil {
+		return nil
+	}
+
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+
+	// Build the pattern analysis data structure
+	data := PatternAnalysisData{
+		Patterns:      j.PatternResult.Patterns,
+		Excluded:      j.PatternResult.Excluded,
+		EntriesToFind: j.EntriesToFind,
+		Reasoning:     j.PatternResult.Reasoning,
+	}
+
+	// Serialize to JSON
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal pattern analysis: %w", err)
+	}
+
+	// Update Book with pattern analysis
+	sink.Send(defra.WriteOp{
+		Collection: "Book",
+		DocID:      j.Book.BookID,
+		Document: map[string]any{
+			"pattern_analysis_json": string(jsonBytes),
+		},
+		Op: defra.OpUpdate,
+	})
 
 	return nil
 }

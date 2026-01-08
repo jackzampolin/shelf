@@ -11,6 +11,7 @@ import {
   AgentLogsSection,
   AgentLogModal,
   MetadataModal,
+  JobHistorySection,
   type StageMetrics,
 } from '@/components/book'
 
@@ -413,6 +414,9 @@ function BookDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Job History */}
+      <JobHistorySection bookId={bookId} />
 
       {/* Metadata Modal */}
       {metadataModalOpen && detailedStatus?.metadata?.data && (

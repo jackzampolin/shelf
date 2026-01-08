@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -11,11 +12,17 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
+// joinStrings joins strings with a separator.
+func joinStrings(strs []string, sep string) string {
+	return strings.Join(strs, sep)
+}
+
 // AgentLogSummaryResponse is a brief summary of an agent log.
 type AgentLogSummaryResponse struct {
 	ID          string `json:"id"`
 	AgentType   string `json:"agent_type"`
 	BookID      string `json:"book_id"`
+	JobID       string `json:"job_id,omitempty"`
 	StartedAt   string `json:"started_at"`
 	CompletedAt string `json:"completed_at,omitempty"`
 	Iterations  int    `json:"iterations"`
@@ -37,17 +44,31 @@ func (e *ListAgentLogsEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *ListAgentLogsEndpoint) RequiresInit() bool { return true }
 
+// stageToAgentTypes maps stage names to agent types.
+var stageToAgentTypes = map[string][]string{
+	"toc-pattern":        {"pattern_analyzer"},
+	"toc-discover":       {"chapter_finder"},
+	"toc-validate":       {"gap_investigator"},
+	"structure-classify": {"chapter_classifier"},
+	"structure-polish":   {"chapter_polisher"},
+	"toc":                {"toc_finder", "toc_extract"},
+	"toc-link":           {"toc_entry_finder"},
+}
+
 // handler godoc
 //
 //	@Summary		List agent logs for a book
 //	@Description	Get all agent execution logs for a book
 //	@Tags			agent-logs
 //	@Produce		json
-//	@Param			book_id	path		string	true	"Book ID"
-//	@Success		200		{object}	AgentLogsListResponse
-//	@Failure		400		{object}	ErrorResponse
-//	@Failure		500		{object}	ErrorResponse
-//	@Failure		503		{object}	ErrorResponse
+//	@Param			book_id		path		string	true	"Book ID"
+//	@Param			stage		query		string	false	"Filter by stage (toc-pattern, toc-discover, toc-validate, structure-classify, structure-polish)"
+//	@Param			agent_type	query		string	false	"Filter by agent type"
+//	@Param			job_id		query		string	false	"Filter by job ID"
+//	@Success		200			{object}	AgentLogsListResponse
+//	@Failure		400			{object}	ErrorResponse
+//	@Failure		500			{object}	ErrorResponse
+//	@Failure		503			{object}	ErrorResponse
 //	@Router			/api/books/{book_id}/agent-logs [get]
 func (e *ListAgentLogsEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	bookID := r.PathValue("book_id")
@@ -56,24 +77,53 @@ func (e *ListAgentLogsEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Parse optional filters
+	stage := r.URL.Query().Get("stage")
+	agentType := r.URL.Query().Get("agent_type")
+	jobID := r.URL.Query().Get("job_id")
+
 	defraClient := svcctx.DefraClientFrom(r.Context())
 	if defraClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "defra client not initialized")
 		return
 	}
 
+	// Build filter
+	filters := []string{fmt.Sprintf(`book_id: {_eq: "%s"}`, bookID)}
+
+	if jobID != "" {
+		filters = append(filters, fmt.Sprintf(`job_id: {_eq: "%s"}`, jobID))
+	}
+
+	// Handle stage -> agent_type mapping
+	if stage != "" {
+		if agentTypes, ok := stageToAgentTypes[stage]; ok {
+			if len(agentTypes) == 1 {
+				filters = append(filters, fmt.Sprintf(`agent_type: {_eq: "%s"}`, agentTypes[0]))
+			} else {
+				// Multiple agent types for this stage
+				filters = append(filters, fmt.Sprintf(`agent_type: {_in: ["%s"]}`, joinStrings(agentTypes, `", "`)))
+			}
+		}
+	} else if agentType != "" {
+		filters = append(filters, fmt.Sprintf(`agent_type: {_eq: "%s"}`, agentType))
+	}
+
+	filterStr := "{" + joinStrings(filters, ", ") + "}"
+
 	query := fmt.Sprintf(`{
-		AgentRun(filter: {book_id: {_eq: "%s"}}) {
+		AgentRun(filter: %s) {
 			_docID
 			agent_type
 			book_id
+			job_id
 			started_at
 			completed_at
 			iterations
 			success
 			error
 		}
-	}`, bookID)
+	}`, filterStr)
 
 	queryResp, err := defraClient.Execute(r.Context(), query, nil)
 	if err != nil {
@@ -97,6 +147,9 @@ func (e *ListAgentLogsEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 				}
 				if v, ok := run["book_id"].(string); ok {
 					log.BookID = v
+				}
+				if v, ok := run["job_id"].(string); ok {
+					log.JobID = v
 				}
 				if v, ok := run["started_at"].(string); ok {
 					log.StartedAt = v
@@ -146,6 +199,7 @@ type AgentLogDetailResponse struct {
 	ID          string `json:"id"`
 	AgentType   string `json:"agent_type"`
 	BookID      string `json:"book_id"`
+	JobID       string `json:"job_id,omitempty"`
 	StartedAt   string `json:"started_at"`
 	CompletedAt string `json:"completed_at,omitempty"`
 	Iterations  int    `json:"iterations"`
@@ -198,6 +252,7 @@ func (e *GetAgentLogEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 			_docID
 			agent_type
 			book_id
+			job_id
 			started_at
 			completed_at
 			iterations
@@ -236,6 +291,9 @@ func (e *GetAgentLogEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := run["book_id"].(string); ok {
 		resp.BookID = v
+	}
+	if v, ok := run["job_id"].(string); ok {
+		resp.JobID = v
 	}
 	if v, ok := run["started_at"].(string); ok {
 		resp.StartedAt = v

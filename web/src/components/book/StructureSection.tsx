@@ -181,8 +181,8 @@ export function StructureSection({ structure, bookId, metrics }: StructureSectio
           </button>
           {metricsExpanded && (
             <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-              {metrics['structure-classify'] && <StructureMetricsCard label="Matter Classification" metrics={metrics['structure-classify']} />}
-              {metrics['structure-polish'] && <StructureMetricsCard label="Text Polish" metrics={metrics['structure-polish']} />}
+              {metrics['structure-classify'] && <StructureMetricsCard label="Matter Classification" metrics={metrics['structure-classify']} stage="structure-classify" bookId={bookId} />}
+              {metrics['structure-polish'] && <StructureMetricsCard label="Text Polish" metrics={metrics['structure-polish']} stage="structure-polish" bookId={bookId} />}
             </div>
           )}
         </div>
@@ -217,15 +217,39 @@ function hasStructureMetrics(metrics: Record<string, StageMetrics>): boolean {
   return structureKeys.some(key => metrics[key] && metrics[key].count > 0)
 }
 
-function StructureMetricsCard({ label, metrics }: { label: string; metrics: StageMetrics }) {
+interface StructureMetricsCardProps {
+  label: string
+  metrics: StageMetrics
+  stage?: string
+  bookId?: string
+}
+
+function StructureMetricsCard({ label, metrics, stage, bookId }: StructureMetricsCardProps) {
   const formatLatency = (ms: number) => {
     if (ms < 1000) return `${ms.toFixed(0)}ms`
     return `${(ms / 1000).toFixed(1)}s`
   }
 
+  const logsUrl = stage && bookId
+    ? `/api/books/${bookId}/agent-logs?stage=${encodeURIComponent(stage)}`
+    : null
+
   return (
     <div className="bg-gray-50 rounded px-3 py-2 text-xs">
-      <div className="font-medium text-gray-700 mb-1">{label}</div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-medium text-gray-700">{label}</span>
+        {logsUrl && (
+          <a
+            href={logsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800 text-xs"
+            title="View agent logs"
+          >
+            Logs
+          </a>
+        )}
+      </div>
       <div className="space-y-0.5 text-gray-600">
         <div className="flex justify-between">
           <span>Calls:</span>

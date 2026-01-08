@@ -33,6 +33,7 @@ func (e *ListJobsEndpoint) RequiresInit() bool { return true }
 //	@Produce		json
 //	@Param			status		query		string	false	"Filter by status"
 //	@Param			job_type	query		string	false	"Filter by job type"
+//	@Param			book_id		query		string	false	"Filter by book ID"
 //	@Success		200			{object}	ListJobsResponse
 //	@Failure		500			{object}	ErrorResponse
 //	@Failure		503			{object}	ErrorResponse
@@ -47,6 +48,7 @@ func (e *ListJobsEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	filter := jobs.ListFilter{
 		Status:  jobs.Status(r.URL.Query().Get("status")),
 		JobType: r.URL.Query().Get("job_type"),
+		BookID:  r.URL.Query().Get("book_id"),
 	}
 
 	jobsList, err := jm.List(r.Context(), filter)
@@ -59,7 +61,7 @@ func (e *ListJobsEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (e *ListJobsEndpoint) Command(getServerURL func() string) *cobra.Command {
-	var status, jobType string
+	var status, jobType, bookID string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List jobs",
@@ -76,6 +78,9 @@ func (e *ListJobsEndpoint) Command(getServerURL func() string) *cobra.Command {
 			if jobType != "" {
 				params.Set("job_type", jobType)
 			}
+			if bookID != "" {
+				params.Set("book_id", bookID)
+			}
 			if len(params) > 0 {
 				path += "?" + params.Encode()
 			}
@@ -90,5 +95,6 @@ func (e *ListJobsEndpoint) Command(getServerURL func() string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&status, "status", "", "Filter by status")
 	cmd.Flags().StringVar(&jobType, "type", "", "Filter by job type")
+	cmd.Flags().StringVar(&bookID, "book", "", "Filter by book ID")
 	return cmd
 }

@@ -200,20 +200,18 @@ func (j *Job) PersistPolishResults(ctx context.Context) error {
 			editsJSON = []byte("[]")
 		}
 
-		// Update chapter with polished text
+		// Update chapter with polished text and edits
 		sink.Send(defra.WriteOp{
 			Collection: "Chapter",
 			DocID:      chapter.DocID,
 			Document: map[string]any{
-				"polished_text":   chapter.PolishedText,
-				"word_count":      chapter.WordCount,
-				"polish_complete": true,
+				"polished_text":      chapter.PolishedText,
+				"word_count":         chapter.WordCount,
+				"polish_complete":    true,
+				"edits_applied_json": string(editsJSON),
 			},
 			Op: defra.OpUpdate,
 		})
-
-		// Note: edits_applied could be stored on Chapter if we add that field
-		_ = editsJSON
 	}
 
 	return nil

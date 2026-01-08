@@ -33,7 +33,9 @@ Consider:
 2. Title keywords and conventions
 3. Surrounding context (a "Notes" section after chapters is back matter)
 
-Return a JSON object with entry_id -> classification mapping.`
+Return a JSON object with:
+- "classifications": entry_id -> category mapping
+- "reasoning": entry_id -> brief explanation of why that category was chosen`
 
 // PolishSystemPrompt is the system prompt for text polishing.
 const PolishSystemPrompt = `You are a text editor cleaning up OCR output from a scanned book.
@@ -78,7 +80,7 @@ func BuildClassifyPrompt(chapters []*ChapterState) string {
 		lines = append(lines, line)
 	}
 
-	lines = append(lines, "\nReturn JSON: {\"classifications\": {\"entry_id\": \"category\", ...}}")
+	lines = append(lines, "\nReturn JSON with classifications and reasoning for each entry.")
 	return strings.Join(lines, "\n")
 }
 
@@ -116,8 +118,14 @@ func ClassifyJSONSchema() map[string]any {
 						"enum": []string{"front_matter", "body", "back_matter"},
 					},
 				},
+				"reasoning": map[string]any{
+					"type": "object",
+					"additionalProperties": map[string]any{
+						"type": "string",
+					},
+				},
 			},
-			"required":             []string{"classifications"},
+			"required":             []string{"classifications", "reasoning"},
 			"additionalProperties": false,
 		},
 	}

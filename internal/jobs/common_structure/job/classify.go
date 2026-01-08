@@ -94,13 +94,19 @@ func (j *Job) ProcessClassifyResult(ctx context.Context, result jobs.WorkResult)
 		return fmt.Errorf("failed to parse classification result: %w", err)
 	}
 
-	// Store classifications
+	// Store classifications and reasoning
 	j.Classifications = classifyResult.Classifications
+	if classifyResult.Reasoning != nil {
+		j.ClassifyReasonings = classifyResult.Reasoning
+	}
 
 	// Apply to chapters
 	for _, chapter := range j.Chapters {
 		if matterType, ok := j.Classifications[chapter.EntryID]; ok {
 			chapter.MatterType = matterType
+		}
+		if reasoning, ok := j.ClassifyReasonings[chapter.EntryID]; ok {
+			chapter.ClassifyReasoning = reasoning
 		}
 	}
 
@@ -126,14 +132,19 @@ func (j *Job) PersistClassifyResults(ctx context.Context) error {
 			continue
 		}
 
-		// Update chapter with matter_type
+		// Update chapter with matter_type and reasoning
+		doc := map[string]any{
+			"matter_type": chapter.MatterType,
+		}
+		if chapter.ClassifyReasoning != "" {
+			doc["classification_reasoning"] = chapter.ClassifyReasoning
+		}
+
 		sink.Send(defra.WriteOp{
 			Collection: "Chapter",
 			DocID:      chapter.DocID,
-			Document: map[string]any{
-				"matter_type": chapter.MatterType,
-			},
-			Op: defra.OpUpdate,
+			Document:   doc,
+			Op:         defra.OpUpdate,
 		})
 	}
 
