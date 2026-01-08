@@ -431,6 +431,20 @@ function BookDetailPage() {
                     </span>
                   )}
                 </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-gray-500">Finalize:</span>
+                  <StatusBadge
+                    status={
+                      detailedStatus.toc?.finalize_complete
+                        ? 'complete'
+                        : detailedStatus.toc?.finalize_failed
+                        ? 'failed'
+                        : detailedStatus.toc?.finalize_started
+                        ? 'in_progress'
+                        : 'pending'
+                    }
+                  />
+                </div>
                 <div className="flex items-center space-x-4">
                   {detailedStatus.toc?.found && detailedStatus.toc?.start_page && (
                     <Link
@@ -451,6 +465,38 @@ function BookDetailPage() {
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Structure Section */}
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm font-medium text-gray-700">Structure</span>
+                  <StatusBadge
+                    status={
+                      detailedStatus.structure?.complete
+                        ? 'complete'
+                        : detailedStatus.structure?.failed
+                        ? 'failed'
+                        : detailedStatus.structure?.started
+                        ? 'in_progress'
+                        : 'pending'
+                    }
+                  />
+                </div>
+                <div className="flex items-center space-x-2">
+                  {detailedStatus.structure?.cost_usd !== undefined && detailedStatus.structure.cost_usd > 0 && (
+                    <span className="font-mono text-sm text-gray-500">
+                      ${detailedStatus.structure.cost_usd.toFixed(4)}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {detailedStatus.structure?.started && !detailedStatus.structure?.complete && (
+                <div className="mt-2 pl-4 text-sm text-gray-500">
+                  Building unified book structure...
+                </div>
+              )}
             </div>
 
             {/* Agent Logs Section */}

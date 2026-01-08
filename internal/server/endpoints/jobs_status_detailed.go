@@ -31,6 +31,9 @@ type DetailedJobStatusResponse struct {
 	// ToC status
 	ToC ToCStatus `json:"toc"`
 
+	// Structure status (common-structure job)
+	Structure StructureStatus `json:"structure"`
+
 	// Agent logs summary
 	AgentLogs []AgentLogSummary `json:"agent_logs,omitempty"`
 }
@@ -106,12 +109,27 @@ type ToCStatus struct {
 	LinkFailed   bool `json:"link_failed"`
 	LinkRetries  int  `json:"link_retries"`
 
+	// Finalize stage
+	FinalizeStarted  bool `json:"finalize_started"`
+	FinalizeComplete bool `json:"finalize_complete"`
+	FinalizeFailed   bool `json:"finalize_failed"`
+	FinalizeRetries  int  `json:"finalize_retries"`
+
 	// Entries (when extracted)
-	EntryCount   int        `json:"entry_count"`
-	EntriesLinked int       `json:"entries_linked"`
-	Entries      []ToCEntry `json:"entries,omitempty"`
+	EntryCount    int        `json:"entry_count"`
+	EntriesLinked int        `json:"entries_linked"`
+	Entries       []ToCEntry `json:"entries,omitempty"`
 
 	CostUSD float64 `json:"cost_usd"`
+}
+
+// StructureStatus represents book structure building status.
+type StructureStatus struct {
+	Started  bool `json:"started"`
+	Complete bool `json:"complete"`
+	Failed   bool `json:"failed"`
+	Retries  int  `json:"retries"`
+	CostUSD  float64 `json:"cost_usd"`
 }
 
 // ToCEntry represents a single ToC entry.
@@ -229,6 +247,10 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			metadata_started
 			metadata_complete
 			metadata_failed
+			structure_started
+			structure_complete
+			structure_failed
+			structure_retries
 		}
 	}`, bookID)
 
@@ -281,6 +303,20 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 				if v, ok := book["description"].(string); ok {
 					resp.Metadata.Data.Description = v
 				}
+			}
+
+			// Structure status
+			if v, ok := book["structure_started"].(bool); ok {
+				resp.Structure.Started = v
+			}
+			if v, ok := book["structure_complete"].(bool); ok {
+				resp.Structure.Complete = v
+			}
+			if v, ok := book["structure_failed"].(bool); ok {
+				resp.Structure.Failed = v
+			}
+			if v, ok := book["structure_retries"].(float64); ok {
+				resp.Structure.Retries = int(v)
 			}
 		}
 	}
@@ -367,6 +403,10 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 				link_complete
 				link_failed
 				link_retries
+				finalize_started
+				finalize_complete
+				finalize_failed
+				finalize_retries
 				entries {
 					entry_number
 					title
@@ -426,6 +466,18 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 					}
 					if v, ok := toc["link_retries"].(float64); ok {
 						resp.ToC.LinkRetries = int(v)
+					}
+					if v, ok := toc["finalize_started"].(bool); ok {
+						resp.ToC.FinalizeStarted = v
+					}
+					if v, ok := toc["finalize_complete"].(bool); ok {
+						resp.ToC.FinalizeComplete = v
+					}
+					if v, ok := toc["finalize_failed"].(bool); ok {
+						resp.ToC.FinalizeFailed = v
+					}
+					if v, ok := toc["finalize_retries"].(float64); ok {
+						resp.ToC.FinalizeRetries = int(v)
 					}
 
 					// Parse ToC entries

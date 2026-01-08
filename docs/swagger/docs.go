@@ -2429,6 +2429,14 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "structure": {
+                    "description": "Structure status (common-structure job)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_server_endpoints.StructureStatus"
+                        }
+                    ]
+                },
                 "toc": {
                     "description": "ToC status",
                     "allOf": [
@@ -3039,6 +3047,26 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_server_endpoints.StructureStatus": {
+            "type": "object",
+            "properties": {
+                "complete": {
+                    "type": "boolean"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "failed": {
+                    "type": "boolean"
+                },
+                "retries": {
+                    "type": "integer"
+                },
+                "started": {
+                    "type": "boolean"
+                }
+            }
+        },
         "internal_server_endpoints.ToCEntry": {
             "type": "object",
             "properties": {
@@ -3098,6 +3126,19 @@ const docTemplate = `{
                 },
                 "extract_started": {
                     "description": "Extract stage",
+                    "type": "boolean"
+                },
+                "finalize_complete": {
+                    "type": "boolean"
+                },
+                "finalize_failed": {
+                    "type": "boolean"
+                },
+                "finalize_retries": {
+                    "type": "integer"
+                },
+                "finalize_started": {
+                    "description": "Finalize stage",
                     "type": "boolean"
                 },
                 "finder_complete": {

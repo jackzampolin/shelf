@@ -2618,6 +2618,8 @@ export interface components {
             };
             /** @description Stage progress with costs */
             stages?: components["schemas"]["internal_server_endpoints.StageProgress"];
+            /** @description Structure status (common-structure job) */
+            structure?: components["schemas"]["internal_server_endpoints.StructureStatus"];
             /** @description ToC status */
             toc?: components["schemas"]["internal_server_endpoints.ToCStatus"];
             total_pages?: number;
@@ -2832,6 +2834,13 @@ export interface components {
             providers?: components["schemas"]["internal_server_endpoints.ProvidersStatus"];
             server?: string;
         };
+        "internal_server_endpoints.StructureStatus": {
+            complete?: boolean;
+            cost_usd?: number;
+            failed?: boolean;
+            retries?: number;
+            started?: boolean;
+        };
         "internal_server_endpoints.ToCEntry": {
             actual_page_num?: number;
             entry_number?: string;
@@ -2853,6 +2862,11 @@ export interface components {
             extract_failed?: boolean;
             /** @description Extract stage */
             extract_started?: boolean;
+            finalize_complete?: boolean;
+            finalize_failed?: boolean;
+            finalize_retries?: number;
+            /** @description Finalize stage */
+            finalize_started?: boolean;
             finder_complete?: boolean;
             finder_failed?: boolean;
             /** @description Finder stage */

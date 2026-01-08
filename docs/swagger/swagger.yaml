@@ -377,6 +377,10 @@ definitions:
         allOf:
         - $ref: '#/definitions/internal_server_endpoints.StageProgress'
         description: Stage progress with costs
+      structure:
+        allOf:
+        - $ref: '#/definitions/internal_server_endpoints.StructureStatus'
+        description: Structure status (common-structure job)
       toc:
         allOf:
         - $ref: '#/definitions/internal_server_endpoints.ToCStatus'
@@ -772,6 +776,19 @@ definitions:
       server:
         type: string
     type: object
+  internal_server_endpoints.StructureStatus:
+    properties:
+      complete:
+        type: boolean
+      cost_usd:
+        type: number
+      failed:
+        type: boolean
+      retries:
+        type: integer
+      started:
+        type: boolean
+    type: object
   internal_server_endpoints.ToCEntry:
     properties:
       actual_page_num:
@@ -812,6 +829,15 @@ definitions:
         type: boolean
       extract_started:
         description: Extract stage
+        type: boolean
+      finalize_complete:
+        type: boolean
+      finalize_failed:
+        type: boolean
+      finalize_retries:
+        type: integer
+      finalize_started:
+        description: Finalize stage
         type: boolean
       finder_complete:
         type: boolean
