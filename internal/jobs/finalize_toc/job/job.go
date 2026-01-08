@@ -301,7 +301,45 @@ func (j *Job) completeJob(ctx context.Context) ([]jobs.WorkUnit, error) {
 			"gaps_fixed", j.GapsFixes)
 	}
 
+	// Submit common-structure job if ready
+	if j.Book.Structure.CanStart() {
+		j.SubmitCommonStructureJob(ctx)
+	}
+
 	return nil, nil
+}
+
+// SubmitCommonStructureJob submits the common-structure job to build unified book structure.
+func (j *Job) SubmitCommonStructureJob(ctx context.Context) {
+	scheduler := svcctx.SchedulerFrom(ctx)
+	if scheduler == nil {
+		return
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Mark structure as started to prevent duplicate submissions
+	if err := j.Book.Structure.Start(); err != nil {
+		if logger != nil {
+			logger.Warn("failed to start structure operation", "error", err)
+		}
+		return
+	}
+	common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+
+	if err := scheduler.SubmitByType(ctx, "common-structure", j.Book.BookID); err != nil {
+		if logger != nil {
+			logger.Error("failed to submit common-structure job",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+		// Reset state on failure to allow retry
+		j.Book.Structure.Reset()
+		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+	} else if logger != nil {
+		logger.Info("submitted common-structure job",
+			"book_id", j.Book.BookID)
+	}
 }
 
 func (j *Job) Status(ctx context.Context) (map[string]string, error) {
