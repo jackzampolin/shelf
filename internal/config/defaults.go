@@ -14,6 +14,10 @@ var ErrNoDefault = errors.New("no default exists")
 // These are seeded into DefraDB on first run.
 func DefaultEntries() []Entry {
 	return []Entry{
+		// ===================
+		// OCR Providers
+		// ===================
+
 		// OCR Providers - Mistral
 		{
 			Key:         "providers.ocr.mistral.type",
@@ -34,6 +38,21 @@ func DefaultEntries() []Entry {
 			Key:         "providers.ocr.mistral.enabled",
 			Value:       true,
 			Description: "Whether Mistral OCR provider is enabled",
+		},
+		{
+			Key:         "providers.ocr.mistral.timeout_seconds",
+			Value:       500,
+			Description: "HTTP timeout in seconds for Mistral OCR requests",
+		},
+		{
+			Key:         "providers.ocr.mistral.max_retries",
+			Value:       7,
+			Description: "Maximum retry attempts for failed Mistral requests",
+		},
+		{
+			Key:         "providers.ocr.mistral.max_concurrency",
+			Value:       30,
+			Description: "Maximum concurrent requests to Mistral",
 		},
 
 		// OCR Providers - Paddle
@@ -62,6 +81,25 @@ func DefaultEntries() []Entry {
 			Value:       true,
 			Description: "Whether Paddle OCR provider is enabled",
 		},
+		{
+			Key:         "providers.ocr.paddle.timeout_seconds",
+			Value:       500,
+			Description: "HTTP timeout in seconds for Paddle OCR requests",
+		},
+		{
+			Key:         "providers.ocr.paddle.max_retries",
+			Value:       7,
+			Description: "Maximum retry attempts for failed Paddle requests",
+		},
+		{
+			Key:         "providers.ocr.paddle.max_concurrency",
+			Value:       30,
+			Description: "Maximum concurrent requests to Paddle",
+		},
+
+		// ===================
+		// LLM Providers
+		// ===================
 
 		// LLM Providers - OpenRouter
 		{
@@ -89,22 +127,165 @@ func DefaultEntries() []Entry {
 			Value:       true,
 			Description: "Whether OpenRouter LLM provider is enabled",
 		},
+		{
+			Key:         "providers.llm.openrouter.timeout_seconds",
+			Value:       500,
+			Description: "HTTP timeout in seconds for OpenRouter requests",
+		},
+		{
+			Key:         "providers.llm.openrouter.max_retries",
+			Value:       7,
+			Description: "Maximum retry attempts for failed OpenRouter requests",
+		},
+		{
+			Key:         "providers.llm.openrouter.max_concurrency",
+			Value:       30,
+			Description: "Maximum concurrent requests to OpenRouter",
+		},
 
-		// Defaults
+		// ===================
+		// Pipeline Defaults
+		// ===================
 		{
 			Key:         "defaults.ocr_providers",
 			Value:       []string{"mistral", "paddle"},
-			Description: "Ordered list of OCR providers to use",
+			Description: "Ordered list of OCR providers to use for blending",
 		},
 		{
 			Key:         "defaults.llm_provider",
 			Value:       "openrouter",
-			Description: "Default LLM provider name",
+			Description: "Default LLM provider for all pipeline stages",
 		},
 		{
-			Key:         "defaults.max_workers",
-			Value:       10,
-			Description: "Maximum concurrent workers for processing",
+			Key:         "defaults.debug_agents",
+			Value:       false,
+			Description: "Enable verbose debug logging for agent executions",
+		},
+
+		// ===================
+		// Stage: process_book
+		// ===================
+		{
+			Key:         "stages.process_book.label_threshold",
+			Value:       20,
+			Description: "Pages labeled before triggering book-level operations (metadata, ToC)",
+		},
+		{
+			Key:         "stages.process_book.front_matter_pages",
+			Value:       50,
+			Description: "Number of pages from start to search for table of contents",
+		},
+		{
+			Key:         "stages.process_book.consecutive_front_matter_required",
+			Value:       50,
+			Description: "Consecutive pages from page 1 that must be blend_complete before ToC search",
+		},
+		{
+			Key:         "stages.process_book.max_book_op_retries",
+			Value:       3,
+			Description: "Maximum retries for book-level operations (metadata, ToC)",
+		},
+		{
+			Key:         "stages.process_book.max_page_op_retries",
+			Value:       3,
+			Description: "Maximum retries for page-level operations (OCR, blend, label)",
+		},
+
+		// ===================
+		// Stage: ocr_book
+		// ===================
+		{
+			Key:         "stages.ocr_book.checkpoint_interval",
+			Value:       100,
+			Description: "Log progress every N pages during OCR",
+		},
+		{
+			Key:         "stages.ocr_book.max_retries",
+			Value:       3,
+			Description: "Maximum retries for failed OCR page operations",
+		},
+
+		// ===================
+		// Stage: label_book
+		// ===================
+		{
+			Key:         "stages.label_book.max_retries",
+			Value:       3,
+			Description: "Maximum retries for failed label page operations",
+		},
+
+		// ===================
+		// Stage: metadata_book
+		// ===================
+		{
+			Key:         "stages.metadata_book.page_count",
+			Value:       20,
+			Description: "Number of front pages to analyze for metadata extraction",
+		},
+		{
+			Key:         "stages.metadata_book.max_retries",
+			Value:       3,
+			Description: "Maximum retries for metadata extraction",
+		},
+
+		// ===================
+		// Stage: toc_book
+		// ===================
+		{
+			Key:         "stages.toc_book.max_retries",
+			Value:       3,
+			Description: "Maximum retries for ToC extraction agent",
+		},
+
+		// ===================
+		// Stage: link_toc
+		// ===================
+		{
+			Key:         "stages.link_toc.max_retries",
+			Value:       3,
+			Description: "Maximum retries for ToC linking agent",
+		},
+
+		// ===================
+		// Stage: finalize_toc
+		// ===================
+		{
+			Key:         "stages.finalize_toc.min_gap_size",
+			Value:       15,
+			Description: "Minimum pages between ToC entries to consider a gap significant",
+		},
+		{
+			Key:         "stages.finalize_toc.max_retries",
+			Value:       3,
+			Description: "Maximum retries for gap validation agent",
+		},
+
+		// ===================
+		// Stage: common_structure
+		// ===================
+		{
+			Key:         "stages.common_structure.max_retries",
+			Value:       3,
+			Description: "Maximum retries for structure classification/polish",
+		},
+
+		// ===================
+		// Scheduler
+		// ===================
+		{
+			Key:         "scheduler.queue_size",
+			Value:       10000,
+			Description: "Size of work queue for provider and CPU pools",
+		},
+		{
+			Key:         "scheduler.results_buffer",
+			Value:       1000,
+			Description: "Buffer size for results channel",
+		},
+		{
+			Key:         "scheduler.cpu_workers",
+			Value:       0,
+			Description: "Number of CPU workers (0 = use runtime.NumCPU())",
 		},
 	}
 }

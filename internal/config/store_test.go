@@ -172,7 +172,7 @@ func TestExtractProviders(t *testing.T) {
 		"providers.ocr.mistral.enabled":    {Key: "providers.ocr.mistral.enabled", Value: true},
 		"providers.ocr.paddle.type":        {Key: "providers.ocr.paddle.type", Value: "deepinfra"},
 		"providers.llm.openrouter.type":    {Key: "providers.llm.openrouter.type", Value: "openrouter"},
-		"defaults.max_workers":             {Key: "defaults.max_workers", Value: float64(10)},
+		"scheduler.cpu_workers":            {Key: "scheduler.cpu_workers", Value: float64(0)},
 	}
 
 	t.Run("extract_ocr_providers", func(t *testing.T) {
@@ -256,7 +256,7 @@ func TestValidateKey(t *testing.T) {
 	}{
 		{"valid simple key", "foo", false},
 		{"valid dotted key", "providers.ocr.mistral.type", false},
-		{"valid with underscore", "defaults.max_workers", false},
+		{"valid with underscore", "scheduler.cpu_workers", false},
 		{"valid with hyphen", "my-setting", false},
 		{"valid with numbers", "provider1.config2", false},
 		{"empty key", "", true},

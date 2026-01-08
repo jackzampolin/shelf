@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/jobcfg"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -19,9 +20,8 @@ type RerunTocResponse struct {
 }
 
 // RerunTocEndpoint handles POST /api/books/{book_id}/rerun-toc.
-type RerunTocEndpoint struct {
-	ProcessBookConfig process_book.Config
-}
+// Config is read from DefraDB at request time.
+type RerunTocEndpoint struct{}
 
 func (e *RerunTocEndpoint) Route() (string, string, http.HandlerFunc) {
 	return "POST", "/api/books/{book_id}/rerun-toc", e.handler
@@ -63,6 +63,13 @@ func (e *RerunTocEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	scheduler := svcctx.SchedulerFrom(r.Context())
 	if scheduler == nil {
 		writeError(w, http.StatusServiceUnavailable, "scheduler not initialized")
+		return
+	}
+
+	// Get config store for reading settings
+	configStore := svcctx.ConfigStoreFrom(r.Context())
+	if configStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "config store not initialized")
 		return
 	}
 
@@ -188,8 +195,16 @@ func (e *RerunTocEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create a new process-book job
-	job, err := process_book.NewJob(r.Context(), e.ProcessBookConfig, bookID)
+	// Build config from DefraDB and create job
+	builder := jobcfg.NewBuilder(configStore)
+	cfg, err := builder.ProcessBookConfig(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError,
+			fmt.Sprintf("failed to load config: %v", err))
+		return
+	}
+
+	job, err := process_book.NewJob(r.Context(), cfg, bookID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError,
 			fmt.Sprintf("failed to create job: %v", err))

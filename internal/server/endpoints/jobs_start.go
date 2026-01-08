@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jackzampolin/shelf/internal/api"
+	"github.com/jackzampolin/shelf/internal/jobcfg"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common_structure"
 	"github.com/jackzampolin/shelf/internal/jobs/finalize_toc"
@@ -35,24 +36,9 @@ type StartJobResponse struct {
 }
 
 // StartJobEndpoint handles POST /api/jobs/start/{book_id}.
-type StartJobEndpoint struct {
-	// ProcessBookConfig holds config for process-book jobs
-	ProcessBookConfig process_book.Config
-	// OcrBookConfig holds config for ocr-book jobs
-	OcrBookConfig ocr_book.Config
-	// LabelBookConfig holds config for label-book jobs
-	LabelBookConfig label_book.Config
-	// MetadataBookConfig holds config for metadata-book jobs
-	MetadataBookConfig metadata_book.Config
-	// TocBookConfig holds config for toc-book jobs
-	TocBookConfig toc_book.Config
-	// LinkTocConfig holds config for link-toc jobs
-	LinkTocConfig link_toc.Config
-	// FinalizeTocConfig holds config for finalize-toc jobs
-	FinalizeTocConfig finalize_toc.Config
-	// CommonStructureConfig holds config for common-structure jobs
-	CommonStructureConfig common_structure.Config
-}
+// Job configs are read from DefraDB at request time, so settings changes
+// via the UI take effect immediately.
+type StartJobEndpoint struct{}
 
 func (e *StartJobEndpoint) Route() (string, string, http.HandlerFunc) {
 	return "POST", "/api/jobs/start/{book_id}", e.handler
@@ -100,30 +86,85 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create job based on job type
+	// Get config store and create builder to read configs at request time
+	configStore := svcctx.ConfigStoreFrom(r.Context())
+	if configStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "config store not initialized")
+		return
+	}
+	builder := jobcfg.NewBuilder(configStore)
+
+	// Create job based on job type - configs are read from DefraDB
 	var job jobs.Job
 	var err error
 
 	switch jobType {
 	case process_book.JobType:
-		job, err = process_book.NewJob(r.Context(), e.ProcessBookConfig, bookID)
+		cfg, cfgErr := builder.ProcessBookConfig(r.Context())
+		if cfgErr != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
+			return
+		}
+		job, err = process_book.NewJob(r.Context(), cfg, bookID)
+
 	case ocr_book.JobType:
-		job, err = ocr_book.NewJob(r.Context(), e.OcrBookConfig, bookID)
+		cfg, cfgErr := builder.OcrBookConfig(r.Context())
+		if cfgErr != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
+			return
+		}
+		job, err = ocr_book.NewJob(r.Context(), cfg, bookID)
+
 	case label_book.JobType:
-		job, err = label_book.NewJob(r.Context(), e.LabelBookConfig, bookID)
+		cfg, cfgErr := builder.LabelBookConfig(r.Context())
+		if cfgErr != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
+			return
+		}
+		job, err = label_book.NewJob(r.Context(), cfg, bookID)
+
 	case metadata_book.JobType:
-		job, err = metadata_book.NewJob(r.Context(), e.MetadataBookConfig, bookID)
+		cfg, cfgErr := builder.MetadataBookConfig(r.Context())
+		if cfgErr != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
+			return
+		}
+		job, err = metadata_book.NewJob(r.Context(), cfg, bookID)
+
 	case toc_book.JobType:
-		job, err = toc_book.NewJob(r.Context(), e.TocBookConfig, bookID)
+		cfg, cfgErr := builder.TocBookConfig(r.Context())
+		if cfgErr != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
+			return
+		}
+		job, err = toc_book.NewJob(r.Context(), cfg, bookID)
+
 	case link_toc.JobType:
-		// Copy config and apply force flag from request
-		cfg := e.LinkTocConfig
+		cfg, cfgErr := builder.LinkTocConfig(r.Context())
+		if cfgErr != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
+			return
+		}
+		// Apply force flag from request
 		cfg.Force = req.Force
 		job, err = link_toc.NewJob(r.Context(), cfg, bookID)
+
 	case finalize_toc.JobType:
-		job, err = finalize_toc.NewJob(r.Context(), e.FinalizeTocConfig, bookID)
+		cfg, cfgErr := builder.FinalizeTocConfig(r.Context())
+		if cfgErr != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
+			return
+		}
+		job, err = finalize_toc.NewJob(r.Context(), cfg, bookID)
+
 	case common_structure.JobType:
-		job, err = common_structure.NewJob(r.Context(), e.CommonStructureConfig, bookID)
+		cfg, cfgErr := builder.CommonStructureConfig(r.Context())
+		if cfgErr != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
+			return
+		}
+		job, err = common_structure.NewJob(r.Context(), cfg, bookID)
+
 	default:
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown job type: %s", jobType))
 		return
@@ -150,6 +191,7 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 func (e *StartJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 	var jobType string
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "start <book_id>",
 		Short: "Start job processing for a book",
@@ -170,6 +212,7 @@ Use 'shelf api jobs get <job-id>' to check progress.`,
 			var resp StartJobResponse
 			if err := client.Post(ctx, "/api/jobs/start/"+bookID, StartJobRequest{
 				JobType: jobType,
+				Force:   force,
 			}, &resp); err != nil {
 				return err
 			}
@@ -178,5 +221,6 @@ Use 'shelf api jobs get <job-id>' to check progress.`,
 		},
 	}
 	cmd.Flags().StringVar(&jobType, "job-type", process_book.JobType, "Job type to run")
+	cmd.Flags().BoolVar(&force, "force", false, "Force restart even if already complete (for link-toc)")
 	return cmd
 }
