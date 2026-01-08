@@ -168,11 +168,11 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 			pageQuery := fmt.Sprintf(`{
 				Page(filter: {
 					book_id: {_eq: %q},
-					page_num: {_gte: %d, _lte: %d}
+					page_num: {_ge: %d, _le: %d}
 				}) {
 					page_num
-					blended_text
-					label
+					blend_markdown
+					page_number_label
 				}
 			}`, bookID, startPage, endPage)
 
@@ -186,8 +186,8 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 						}
 						chapter.Pages = append(chapter.Pages, ChapterPage{
 							PageNum:     getInt(pm, "page_num"),
-							BlendedText: getString(pm, "blended_text"),
-							Label:       getString(pm, "label"),
+							BlendedText: getString(pm, "blend_markdown"),
+							Label:       getString(pm, "page_number_label"),
 						})
 					}
 					// Sort pages by page number
