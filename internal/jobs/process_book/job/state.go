@@ -139,16 +139,16 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Submit finalize-toc job if linking is done and finalize not yet started
-	// Finalize runs as a separate job due to its complex multi-phase logic
+	// Start finalize-toc inline if linking is done and finalize not yet started
 	if j.Book.TocLink.IsComplete() && j.Book.TocFinalize.CanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
-			logger.Info("link_toc complete, submitting finalize-toc job",
+			logger.Info("link_toc complete, starting finalize-toc inline",
 				"book_id", j.Book.BookID,
 				"toc_doc_id", j.TocDocID)
 		}
-		j.SubmitFinalizeTocJob(ctx)
+		finalizeUnits := j.StartFinalizeTocInline(ctx)
+		units = append(units, finalizeUnits...)
 	}
 
 	return units
@@ -180,6 +180,16 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 
 	// If ToC was extracted, linking must also be done
 	if j.Book.TocExtract.IsDone() && !j.Book.TocLink.IsDone() {
+		return
+	}
+
+	// If ToC was linked, finalize must also be done
+	if j.Book.TocLink.IsComplete() && !j.Book.TocFinalize.IsDone() {
+		return
+	}
+
+	// If finalize is complete, structure must also be done
+	if j.Book.TocFinalize.IsComplete() && !j.Book.Structure.IsDone() {
 		return
 	}
 

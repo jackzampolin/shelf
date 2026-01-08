@@ -5,6 +5,8 @@ import (
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
+	common_structure "github.com/jackzampolin/shelf/internal/jobs/common_structure/job"
+	finalize_toc "github.com/jackzampolin/shelf/internal/jobs/finalize_toc/job"
 )
 
 // LabelThresholdForBookOps is the number of labeled pages before triggering book-level operations.
@@ -66,6 +68,35 @@ const (
 	WorkUnitTypeTocFinder  = "toc_finder"
 	WorkUnitTypeTocExtract = "toc_extract"
 	WorkUnitTypeLinkToc    = "link_toc"
+
+	// Finalize ToC work unit types
+	WorkUnitTypeFinalizePattern  = "finalize_pattern"
+	WorkUnitTypeFinalizeDiscover = "finalize_discover"
+	WorkUnitTypeFinalizeGap      = "finalize_gap"
+
+	// Common structure work unit types
+	WorkUnitTypeStructureClassify = "structure_classify"
+	WorkUnitTypeStructurePolish   = "structure_polish"
+)
+
+// Finalize ToC phase constants.
+const (
+	FinalizePhasePending  = ""
+	FinalizePhasePattern  = "pattern"
+	FinalizePhaseDiscover = "discover"
+	FinalizePhaseValidate = "validate"
+	FinalizePhaseDone     = "done"
+)
+
+// Common structure phase constants.
+const (
+	StructurePhasePending  = ""
+	StructurePhaseBuild    = "build"
+	StructurePhaseExtract  = "extract"
+	StructurePhaseClassify = "classify"
+	StructurePhasePolish   = "polish"
+	StructurePhaseFinalize = "finalize"
+	StructurePhaseDone     = "done"
 )
 
 // WorkUnitInfo tracks pending work units.
@@ -75,13 +106,21 @@ type WorkUnitInfo struct {
 	Provider   string // for OCR units
 	RetryCount int    // number of times this work unit has been retried
 	EntryDocID string // for link_toc units - which ToC entry this belongs to
+
+	// Finalize ToC fields
+	FinalizePhase string // pattern, discover, validate
+	FinalizeKey   string // entry key or gap key
+
+	// Structure fields
+	StructurePhase string // classify, polish
+	ChapterID      string // chapter entry ID for polish
 }
 
 // PDFInfo is an alias for common.PDFInfo for backwards compatibility.
 type PDFInfo = common.PDFInfo
 
 // Job processes all pages through Extract -> OCR -> Blend -> Label,
-// then triggers book-level operations (metadata, ToC).
+// then triggers book-level operations (metadata, ToC, finalize, structure).
 // Services (DefraClient, DefraSink) are accessed via svcctx from the context
 // passed to Start() and OnComplete().
 type Job struct {
@@ -95,6 +134,12 @@ type Job struct {
 	LinkTocEntries     []*toc_entry_finder.TocEntry
 	LinkTocEntryAgents map[string]*agent.Agent // keyed by entry DocID
 	LinkTocEntriesDone int                     // count of completed entries
+
+	// Finalize ToC sub-job (embedded, runs inline within process_book)
+	FinalizeJob *finalize_toc.Job
+
+	// Common structure sub-job (embedded, runs inline within process_book)
+	StructureJob *common_structure.Job
 }
 
 // NewFromLoadResult creates a Job from a common.LoadBookResult.

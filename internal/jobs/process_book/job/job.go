@@ -253,6 +253,14 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 				newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
 			}
 		}
+
+	case WorkUnitTypeFinalizePattern, WorkUnitTypeFinalizeDiscover, WorkUnitTypeFinalizeGap:
+		units, err := j.HandleFinalizeComplete(ctx, result, info)
+		if err != nil {
+			handlerErr = err
+		} else {
+			newUnits = append(newUnits, units...)
+		}
 	}
 
 	// Handle handler errors with retry for page-level operations
