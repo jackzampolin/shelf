@@ -16,28 +16,20 @@ var CorrectionsSchema = map[string]any{
 						"properties": map[string]any{
 							"original": map[string]any{
 								"type":        "string",
-								"description": "Exact text to find in Mistral output",
+								"description": "Exact text to find in primary OCR output",
 							},
 							"replacement": map[string]any{
 								"type":        "string",
 								"description": "Corrected text",
 							},
-							"reason": map[string]any{
-								"type":        "string",
-								"description": "Brief explanation",
-							},
 						},
-						"required":             []string{"original", "replacement", "reason"},
+						"required":             []string{"original", "replacement"},
 						"additionalProperties": false,
 					},
-					"description": "List of corrections to apply",
-				},
-				"confidence": map[string]any{
-					"type":        "number",
-					"description": "Overall confidence (0.0-1.0)",
+					"description": "List of corrections to apply. Empty array if no corrections needed.",
 				},
 			},
-			"required":             []string{"corrections", "confidence"},
+			"required":             []string{"corrections"},
 			"additionalProperties": false,
 		},
 	},
@@ -47,11 +39,9 @@ var CorrectionsSchema = map[string]any{
 type Correction struct {
 	Original    string `json:"original"`
 	Replacement string `json:"replacement"`
-	Reason      string `json:"reason"`
 }
 
 // Result represents the parsed result from blend LLM call.
 type Result struct {
 	Corrections []Correction `json:"corrections"`
-	Confidence  float64      `json:"confidence"`
 }

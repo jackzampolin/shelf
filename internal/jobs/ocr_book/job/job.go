@@ -215,7 +215,7 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 
 	// If all OCR done but blend not done, create blend unit
 	if allOcrDone && !state.IsBlendDone() {
-		unit := j.CreateBlendWorkUnit(pageNum, state)
+		unit := j.CreateBlendWorkUnit(ctx, pageNum, state)
 		if unit != nil {
 			units = append(units, *unit)
 		}
@@ -265,8 +265,8 @@ func (j *Job) CreateOcrWorkUnit(ctx context.Context, pageNum int, provider strin
 }
 
 // CreateBlendWorkUnit creates a blend LLM work unit.
-func (j *Job) CreateBlendWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit {
-	unit, unitID := common.CreateBlendWorkUnit(j, pageNum, state)
+func (j *Job) CreateBlendWorkUnit(ctx context.Context, pageNum int, state *PageState) *jobs.WorkUnit {
+	unit, unitID := common.CreateBlendWorkUnit(ctx, j, pageNum, state)
 	if unit != nil {
 		j.RegisterWorkUnit(unitID, WorkUnitInfo{
 			PageNum:  pageNum,
@@ -302,7 +302,7 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 
 	var units []jobs.WorkUnit
 	if allDone {
-		blendUnit := j.CreateBlendWorkUnit(info.PageNum, state)
+		blendUnit := j.CreateBlendWorkUnit(ctx, info.PageNum, state)
 		if blendUnit != nil {
 			units = append(units, *blendUnit)
 		}
@@ -356,7 +356,7 @@ func (j *Job) createRetryUnit(ctx context.Context, info WorkUnitInfo, logger *sl
 	case WorkUnitTypeOCR:
 		unit = j.CreateOcrWorkUnit(ctx, info.PageNum, info.Provider)
 	case WorkUnitTypeBlend:
-		unit = j.CreateBlendWorkUnit(info.PageNum, state)
+		unit = j.CreateBlendWorkUnit(ctx, info.PageNum, state)
 	}
 
 	if unit != nil {

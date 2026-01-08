@@ -541,6 +541,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/books/{id}/chapters": {
+            "get": {
+                "description": "Get chapter structure with page content",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "books"
+                ],
+                "summary": "Get book chapters",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include page text content",
+                        "name": "include_text",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ChaptersResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/books/{id}/cost": {
             "get": {
                 "description": "Get total cost for processing a specific book",
@@ -2359,6 +2412,87 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_server_endpoints.ChapterPage": {
+            "type": "object",
+            "properties": {
+                "blended_text": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "page_num": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_server_endpoints.ChapterWithText": {
+            "type": "object",
+            "properties": {
+                "end_page": {
+                    "type": "integer"
+                },
+                "entry_number": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "level": {
+                    "type": "integer"
+                },
+                "level_name": {
+                    "type": "string"
+                },
+                "matter_type": {
+                    "type": "string"
+                },
+                "page_count": {
+                    "type": "integer"
+                },
+                "pages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.ChapterPage"
+                    }
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "start_page": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "word_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_server_endpoints.ChaptersResponse": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "string"
+                },
+                "book_title": {
+                    "type": "string"
+                },
+                "chapters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.ChapterWithText"
+                    }
+                },
+                "has_chapters": {
+                    "type": "boolean"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_server_endpoints.CreateJobRequest": {
             "type": "object",
             "properties": {
@@ -3050,6 +3184,9 @@ const docTemplate = `{
         "internal_server_endpoints.StructureStatus": {
             "type": "object",
             "properties": {
+                "chapter_count": {
+                    "type": "integer"
+                },
                 "complete": {
                     "type": "boolean"
                 },
@@ -3091,6 +3228,10 @@ const docTemplate = `{
                 "sort_order": {
                     "type": "integer"
                 },
+                "source": {
+                    "description": "\"extracted\" or \"discovered\"",
+                    "type": "string"
+                },
                 "title": {
                     "type": "string"
                 }
@@ -3110,6 +3251,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/internal_server_endpoints.ToCEntry"
                     }
+                },
+                "entries_discovered": {
+                    "type": "integer"
                 },
                 "entries_linked": {
                     "type": "integer"

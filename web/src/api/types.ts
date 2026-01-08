@@ -744,6 +744,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/{id}/chapters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get book chapters
+         * @description Get chapter structure with page content
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Include page text content */
+                    include_text?: boolean;
+                };
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ChaptersResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{id}/cost": {
         parameters: {
             query?: never;
@@ -2592,6 +2664,32 @@ export interface components {
             book_id?: string;
             prompts?: components["schemas"]["internal_server_endpoints.BookPromptResponse"][];
         };
+        "internal_server_endpoints.ChapterPage": {
+            blended_text?: string;
+            label?: string;
+            page_num?: number;
+        };
+        "internal_server_endpoints.ChapterWithText": {
+            end_page?: number;
+            entry_number?: string;
+            id?: string;
+            level?: number;
+            level_name?: string;
+            matter_type?: string;
+            page_count?: number;
+            pages?: components["schemas"]["internal_server_endpoints.ChapterPage"][];
+            sort_order?: number;
+            start_page?: number;
+            title?: string;
+            word_count?: number;
+        };
+        "internal_server_endpoints.ChaptersResponse": {
+            book_id?: string;
+            book_title?: string;
+            chapters?: components["schemas"]["internal_server_endpoints.ChapterWithText"][];
+            has_chapters?: boolean;
+            total_pages?: number;
+        };
         "internal_server_endpoints.CreateJobRequest": {
             job_type?: string;
             metadata?: {
@@ -2835,6 +2933,7 @@ export interface components {
             server?: string;
         };
         "internal_server_endpoints.StructureStatus": {
+            chapter_count?: number;
             complete?: boolean;
             cost_usd?: number;
             failed?: boolean;
@@ -2849,12 +2948,15 @@ export interface components {
             level_name?: string;
             printed_page_number?: string;
             sort_order?: number;
+            /** @description "extracted" or "discovered" */
+            source?: string;
             title?: string;
         };
         "internal_server_endpoints.ToCStatus": {
             cost_usd?: number;
             end_page?: number;
             entries?: components["schemas"]["internal_server_endpoints.ToCEntry"][];
+            entries_discovered?: number;
             entries_linked?: number;
             /** @description Entries (when extracted) */
             entry_count?: number;

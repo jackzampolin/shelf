@@ -333,6 +333,59 @@ definitions:
           $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
         type: array
     type: object
+  internal_server_endpoints.ChapterPage:
+    properties:
+      blended_text:
+        type: string
+      label:
+        type: string
+      page_num:
+        type: integer
+    type: object
+  internal_server_endpoints.ChapterWithText:
+    properties:
+      end_page:
+        type: integer
+      entry_number:
+        type: string
+      id:
+        type: string
+      level:
+        type: integer
+      level_name:
+        type: string
+      matter_type:
+        type: string
+      page_count:
+        type: integer
+      pages:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.ChapterPage'
+        type: array
+      sort_order:
+        type: integer
+      start_page:
+        type: integer
+      title:
+        type: string
+      word_count:
+        type: integer
+    type: object
+  internal_server_endpoints.ChaptersResponse:
+    properties:
+      book_id:
+        type: string
+      book_title:
+        type: string
+      chapters:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.ChapterWithText'
+        type: array
+      has_chapters:
+        type: boolean
+      total_pages:
+        type: integer
+    type: object
   internal_server_endpoints.CreateJobRequest:
     properties:
       job_type:
@@ -778,6 +831,8 @@ definitions:
     type: object
   internal_server_endpoints.StructureStatus:
     properties:
+      chapter_count:
+        type: integer
       complete:
         type: boolean
       cost_usd:
@@ -805,6 +860,9 @@ definitions:
         type: string
       sort_order:
         type: integer
+      source:
+        description: '"extracted" or "discovered"'
+        type: string
       title:
         type: string
     type: object
@@ -818,6 +876,8 @@ definitions:
         items:
           $ref: '#/definitions/internal_server_endpoints.ToCEntry'
         type: array
+      entries_discovered:
+        type: integer
       entries_linked:
         type: integer
       entry_count:
@@ -1176,6 +1236,41 @@ paths:
           schema:
             $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
       summary: Get book by ID
+      tags:
+      - books
+  /api/books/{id}/chapters:
+    get:
+      description: Get chapter structure with page content
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Include page text content
+        in: query
+        name: include_text
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ChaptersResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get book chapters
       tags:
       - books
   /api/books/{id}/cost:

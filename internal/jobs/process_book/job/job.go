@@ -315,7 +315,7 @@ func (j *Job) createRetryUnit(ctx context.Context, info WorkUnitInfo, logger *sl
 	case "ocr":
 		unit = j.CreateOcrWorkUnit(ctx, info.PageNum, info.Provider)
 	case "blend":
-		unit = j.CreateBlendWorkUnit(info.PageNum, state)
+		unit = j.CreateBlendWorkUnit(ctx, info.PageNum, state)
 	case "label":
 		unit = j.CreateLabelWorkUnit(ctx, info.PageNum, state)
 	}

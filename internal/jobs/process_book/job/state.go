@@ -27,7 +27,7 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 
 	// If all OCR done but blend not done, create blend unit (thread-safe accessor)
 	if allOcrDone && !state.IsBlendDone() {
-		unit := j.CreateBlendWorkUnit(pageNum, state)
+		unit := j.CreateBlendWorkUnit(ctx, pageNum, state)
 		if unit != nil {
 			units = append(units, *unit)
 		}
