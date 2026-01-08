@@ -249,6 +249,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			if j.LinkTocEntriesDone >= len(j.LinkTocEntries) {
 				j.Book.TocLink.Complete()
 				j.PersistTocLinkState(ctx)
+				// Trigger finalize if needed
+				newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
 			}
 		}
 	}

@@ -139,6 +139,18 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
+	// Submit finalize-toc job if linking is done and finalize not yet started
+	// Finalize runs as a separate job due to its complex multi-phase logic
+	if j.Book.TocLink.IsComplete() && j.Book.TocFinalize.CanStart() {
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Info("link_toc complete, submitting finalize-toc job",
+				"book_id", j.Book.BookID,
+				"toc_doc_id", j.TocDocID)
+		}
+		j.SubmitFinalizeTocJob(ctx)
+	}
+
 	return units
 }
 

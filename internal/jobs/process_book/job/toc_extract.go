@@ -48,6 +48,11 @@ func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResu
 	if err != nil {
 		return fmt.Errorf("failed to reload ToC entries: %w", err)
 	}
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Info("loaded ToC entries after extraction",
+			"toc_doc_id", j.TocDocID,
+			"entry_count", len(entries))
+	}
 	j.Book.SetTocEntries(entries)
 
 	// Only mark complete on success (allows retries on failure)

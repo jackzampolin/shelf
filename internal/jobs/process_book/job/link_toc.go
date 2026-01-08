@@ -244,6 +244,48 @@ func (j *Job) PersistTocLinkState(ctx context.Context) error {
 	return common.PersistTocLinkState(ctx, j.TocDocID, &j.Book.TocLink)
 }
 
+// SubmitFinalizeTocJob submits a finalize-toc job for the book.
+// This is called when link_toc completes to trigger the finalize phase.
+func (j *Job) SubmitFinalizeTocJob(ctx context.Context) {
+	logger := svcctx.LoggerFrom(ctx)
+	scheduler := svcctx.SchedulerFrom(ctx)
+
+	if scheduler == nil {
+		if logger != nil {
+			logger.Warn("scheduler not in context, cannot submit finalize-toc job")
+		}
+		return
+	}
+
+	// Mark finalize as started to prevent duplicate submissions
+	if err := j.Book.TocFinalize.Start(); err != nil {
+		if logger != nil {
+			logger.Debug("finalize already started", "error", err)
+		}
+		return
+	}
+	common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
+
+	// Use the scheduler to submit a finalize-toc job by type
+	err := scheduler.SubmitByType(ctx, "finalize-toc", j.Book.BookID)
+	if err != nil {
+		if logger != nil {
+			logger.Error("failed to submit finalize-toc job",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+		// Reset state on failure
+		j.Book.TocFinalize.Reset()
+		common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
+		return
+	}
+
+	if logger != nil {
+		logger.Info("submitted finalize-toc job",
+			"book_id", j.Book.BookID)
+	}
+}
+
 // createLinkTocRetryUnit creates a retry work unit for a failed link_toc operation.
 func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo) *jobs.WorkUnit {
 	// Find the entry for this doc ID

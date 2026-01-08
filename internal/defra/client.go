@@ -288,26 +288,94 @@ func (c *Client) Delete(ctx context.Context, collection string, docID string) er
 	return nil
 }
 
+// Upsert creates or updates a document based on a filter.
+// If the filter matches exactly one document, it updates with updateInput.
+// If no match, it creates with createInput.
+// The filter must match 0 or 1 documents (errors if multiple matches).
+func (c *Client) Upsert(ctx context.Context, collection string, filter, createInput, updateInput map[string]any) (string, error) {
+	filterGQL, err := mapToGraphQLInput(filter)
+	if err != nil {
+		return "", fmt.Errorf("failed to build filter: %w", err)
+	}
+	createGQL, err := mapToGraphQLInput(createInput)
+	if err != nil {
+		return "", fmt.Errorf("failed to build create input: %w", err)
+	}
+	updateGQL, err := mapToGraphQLInput(updateInput)
+	if err != nil {
+		return "", fmt.Errorf("failed to build update input: %w", err)
+	}
+
+	query := fmt.Sprintf(`mutation { upsert_%s(filter: %s, create: %s, update: %s) { _docID } }`,
+		collection, filterGQL, createGQL, updateGQL)
+
+	resp, err := c.Execute(ctx, query, nil)
+	if err != nil {
+		return "", err
+	}
+	if errMsg := resp.Error(); errMsg != "" {
+		return "", fmt.Errorf("upsert error: %s", errMsg)
+	}
+
+	// Extract _docID from response
+	upsertKey := fmt.Sprintf("upsert_%s", collection)
+	if docs, ok := resp.Data[upsertKey].([]any); ok && len(docs) > 0 {
+		if doc, ok := docs[0].(map[string]any); ok {
+			if docID, ok := doc["_docID"].(string); ok {
+				return docID, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("unexpected response format: %+v", resp.Data)
+}
+
 // mapToGraphQLInput converts a map to GraphQL input format.
 func mapToGraphQLInput(input map[string]any) (string, error) {
 	var parts []string
 	for k, v := range input {
-		var valStr string
-		switch val := v.(type) {
-		case string:
-			valStr = fmt.Sprintf("%q", val)
-		case int, int64, float64:
-			valStr = fmt.Sprintf("%v", val)
-		case bool:
-			valStr = fmt.Sprintf("%v", val)
-		default:
-			b, err := json.Marshal(val)
-			if err != nil {
-				return "", fmt.Errorf("failed to marshal value for key %q: %w", k, err)
-			}
-			valStr = string(b)
+		valStr, err := valueToGraphQL(v)
+		if err != nil {
+			return "", fmt.Errorf("failed to convert value for key %q: %w", k, err)
 		}
 		parts = append(parts, fmt.Sprintf("%s: %s", k, valStr))
 	}
 	return "{" + strings.Join(parts, ", ") + "}", nil
+}
+
+// valueToGraphQL converts a Go value to GraphQL syntax.
+func valueToGraphQL(v any) (string, error) {
+	switch val := v.(type) {
+	case string:
+		return fmt.Sprintf("%q", val), nil
+	case int:
+		return fmt.Sprintf("%d", val), nil
+	case int64:
+		return fmt.Sprintf("%d", val), nil
+	case float64:
+		return fmt.Sprintf("%v", val), nil
+	case bool:
+		return fmt.Sprintf("%v", val), nil
+	case map[string]any:
+		// Recursively convert nested maps
+		return mapToGraphQLInput(val)
+	case []any:
+		// Handle arrays
+		var items []string
+		for _, item := range val {
+			itemStr, err := valueToGraphQL(item)
+			if err != nil {
+				return "", err
+			}
+			items = append(items, itemStr)
+		}
+		return "[" + strings.Join(items, ", ") + "]", nil
+	default:
+		// Fallback to JSON for complex types
+		b, err := json.Marshal(val)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal value: %w", err)
+		}
+		return string(b), nil
+	}
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/agents"
 	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -150,14 +149,15 @@ func (j *Job) HandleDiscoverResult(ctx context.Context, result jobs.WorkResult, 
 }
 
 // SaveDiscoveredEntry creates a new TocEntry for a discovered chapter.
+// Uses upsert with unique_key to avoid DocID collisions.
 func (j *Job) SaveDiscoveredEntry(ctx context.Context, entryKey string, result *chapter_finder.Result) error {
 	if result.ScanPage == nil || *result.ScanPage == 0 {
 		return nil // No page found
 	}
 
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
 	}
 
 	// Find the entry to get metadata
@@ -184,9 +184,14 @@ func (j *Job) SaveDiscoveredEntry(ctx context.Context, entryKey string, result *
 	// Build title from entry metadata (chapter_finder.Result doesn't have Title)
 	title := fmt.Sprintf("%s %s", titleCase(entry.LevelName), entry.Identifier)
 
-	// Create new TocEntry
-	newEntry := map[string]any{
+	// unique_key ensures content-based DocID uniqueness across ToCs
+	// Format: toc_id:discovered:entryKey
+	uniqueKey := fmt.Sprintf("%s:discovered:%s", j.TocDocID, entryKey)
+
+	// Create new TocEntry via upsert for idempotency
+	entryData := map[string]any{
 		"toc_id":       j.TocDocID,
+		"unique_key":   uniqueKey,
 		"entry_number": entry.Identifier,
 		"title":        title,
 		"level":        entry.Level,
@@ -196,14 +201,19 @@ func (j *Job) SaveDiscoveredEntry(ctx context.Context, entryKey string, result *
 	}
 
 	if pageDocID != "" {
-		newEntry["actual_page_id"] = pageDocID
+		entryData["actual_page_id"] = pageDocID
 	}
 
-	sink.Send(defra.WriteOp{
-		Collection: "TocEntry",
-		Document:   newEntry,
-		Op:         defra.OpCreate,
-	})
+	// Filter by unique_key for upsert
+	filter := map[string]any{
+		"unique_key": map[string]any{"_eq": uniqueKey},
+	}
+
+	// Upsert: create if not exists, update if exists
+	_, err = defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData)
+	if err != nil {
+		return fmt.Errorf("failed to upsert discovered entry: %w", err)
+	}
 
 	return nil
 }

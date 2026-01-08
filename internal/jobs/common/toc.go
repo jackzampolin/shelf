@@ -226,22 +226,32 @@ func SaveTocFinderNoResult(ctx context.Context, tocDocID string) error {
 }
 
 // SaveTocExtractResult saves the ToC extraction result to DefraDB.
-// This operation is idempotent - it deletes existing entries before creating new ones.
+// This operation is idempotent - uses upsert to create or update entries.
 func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_toc.Result) error {
+	logger := svcctx.LoggerFrom(ctx)
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	// Delete existing entries for this ToC (makes operation idempotent for retries)
-	if err := DeleteExistingTocEntries(ctx, tocDocID); err != nil {
-		return fmt.Errorf("failed to delete existing ToC entries: %w", err)
+	if logger != nil {
+		logger.Info("SaveTocExtractResult: upserting entries",
+			"toc_doc_id", tocDocID,
+			"entry_count", len(result.Entries))
 	}
 
-	// Create TocEntry records for each entry
+	// Upsert each TocEntry (filter by unique_key for uniqueness)
 	for i, entry := range result.Entries {
+		// unique_key ensures content-based DocID uniqueness across ToCs
+		uniqueKey := fmt.Sprintf("%s:%d", tocDocID, i)
+
 		entryData := map[string]any{
 			"toc_id":     tocDocID,
+			"unique_key": uniqueKey,
 			"title":      entry.Title,
 			"level":      entry.Level,
 			"sort_order": i,
@@ -257,11 +267,28 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 			entryData["printed_page_number"] = *entry.PrintedPageNumber
 		}
 
-		sink.Send(defra.WriteOp{
-			Collection: "TocEntry",
-			Document:   entryData,
-			Op:         defra.OpCreate,
-		})
+		// Filter by unique_key for upsert
+		filter := map[string]any{
+			"unique_key": map[string]any{"_eq": uniqueKey},
+		}
+
+		// Upsert: create if not exists, update if exists
+		_, err := defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData)
+		if err != nil {
+			if logger != nil {
+				logger.Error("SaveTocExtractResult: upsert failed",
+					"sort_order", i,
+					"title", entry.Title,
+					"error", err)
+			}
+			return fmt.Errorf("failed to upsert TocEntry %d: %w", i, err)
+		}
+	}
+
+	if logger != nil {
+		logger.Info("SaveTocExtractResult: upserted all entries",
+			"toc_doc_id", tocDocID,
+			"count", len(result.Entries))
 	}
 
 	// Mark extraction complete
@@ -278,7 +305,12 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 
 // DeleteExistingTocEntries deletes any existing TocEntry records for a ToC.
 func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
+	logger := svcctx.LoggerFrom(ctx)
+
 	if tocDocID == "" {
+		if logger != nil {
+			logger.Warn("DeleteExistingTocEntries: empty tocDocID")
+		}
 		return nil
 	}
 
@@ -298,14 +330,32 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 		}
 	}`, tocDocID)
 
+	if logger != nil {
+		logger.Info("DeleteExistingTocEntries: querying entries", "toc_doc_id", tocDocID)
+	}
+
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
+		if logger != nil {
+			logger.Error("DeleteExistingTocEntries: query failed", "error", err)
+		}
 		return err
 	}
 
 	entries, ok := resp.Data["TocEntry"].([]any)
 	if !ok || len(entries) == 0 {
+		if logger != nil {
+			logger.Info("DeleteExistingTocEntries: no existing entries to delete",
+				"toc_doc_id", tocDocID,
+				"raw_type", fmt.Sprintf("%T", resp.Data["TocEntry"]))
+		}
 		return nil // No existing entries
+	}
+
+	if logger != nil {
+		logger.Info("DeleteExistingTocEntries: found entries to delete",
+			"toc_doc_id", tocDocID,
+			"count", len(entries))
 	}
 
 	// Delete each entry synchronously to ensure ordering before creates

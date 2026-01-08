@@ -318,7 +318,12 @@ func (j *Job) HandleGapResult(ctx context.Context, result jobs.WorkResult, info 
 }
 
 // ApplyGapFix applies a gap fix to DefraDB.
+// Uses upsert with unique_key to avoid DocID collisions.
 func (j *Job) ApplyGapFix(ctx context.Context, gapKey string, result *gap_investigator.Result) error {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
 		return fmt.Errorf("defra sink not in context")
@@ -339,9 +344,14 @@ func (j *Job) ApplyGapFix(ctx context.Context, gapKey string, result *gap_invest
 		// Calculate sort order
 		sortOrder := j.calculateSortOrder(result.ScanPage)
 
-		// Create new TocEntry
-		newEntry := map[string]any{
+		// unique_key ensures content-based DocID uniqueness
+		// Format: toc_id:validated:gapKey
+		uniqueKey := fmt.Sprintf("%s:validated:%s", j.TocDocID, gapKey)
+
+		// Create new TocEntry via upsert for idempotency
+		entryData := map[string]any{
 			"toc_id":     j.TocDocID,
+			"unique_key": uniqueKey,
 			"title":      result.Title,
 			"level":      result.Level,
 			"level_name": result.LevelName,
@@ -350,14 +360,18 @@ func (j *Job) ApplyGapFix(ctx context.Context, gapKey string, result *gap_invest
 		}
 
 		if pageDocID != "" {
-			newEntry["actual_page_id"] = pageDocID
+			entryData["actual_page_id"] = pageDocID
 		}
 
-		sink.Send(defra.WriteOp{
-			Collection: "TocEntry",
-			Document:   newEntry,
-			Op:         defra.OpCreate,
-		})
+		// Filter by unique_key for upsert
+		filter := map[string]any{
+			"unique_key": map[string]any{"_eq": uniqueKey},
+		}
+
+		// Upsert: create if not exists, update if exists
+		if _, err := defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData); err != nil {
+			return fmt.Errorf("failed to upsert validated entry: %w", err)
+		}
 
 	case "correct_entry":
 		if result.EntryDocID == "" || result.ScanPage == 0 {
