@@ -566,6 +566,11 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			if cost, ok := costByOp["finder"]; ok {
 				resp.ToC.CostUSD += cost
 			}
+
+			// Structure cost
+			if cost, ok := costByOp["structure"]; ok {
+				resp.Structure.CostUSD = cost
+			}
 		}
 	}
 
