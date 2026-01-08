@@ -284,6 +284,7 @@ function BookDetailPage() {
                   total={progress.total || 0}
                   cost={progress.cost_usd}
                   metrics={detailedMetrics?.stages?.[`ocr:${provider}`]}
+                  stageType="ocr"
                 >
                   <div className="pl-4 border-l-2 border-gray-200">
                     <ProgressBar
@@ -300,6 +301,7 @@ function BookDetailPage() {
                 current={detailedStatus.stages?.ocr?.complete || 0}
                 total={detailedStatus.stages?.ocr?.total || 0}
                 cost={detailedStatus.stages?.ocr?.total_cost_usd}
+                stageType="ocr"
               >
                 <p className="text-sm text-gray-400 pl-4">No OCR results yet</p>
               </CollapsibleSection>
@@ -312,6 +314,7 @@ function BookDetailPage() {
               total={detailedStatus.stages?.blend?.total || 0}
               cost={detailedStatus.stages?.blend?.cost_usd}
               metrics={detailedMetrics?.stages?.['blend']}
+              stageType="blend"
             >
               <div className="pl-4 border-l-2 border-gray-200">
                 <ProgressBar

@@ -2,12 +2,15 @@ import { useState, ReactNode } from 'react'
 import { formatNumber } from '@/lib/format'
 import type { StageMetrics } from './types'
 
+type StageType = 'ocr' | 'blend' | 'llm'
+
 interface CollapsibleSectionProps {
   title: string
   current: number
   total: number
   cost?: number
   metrics?: StageMetrics
+  stageType?: StageType
   children: ReactNode
 }
 
@@ -17,10 +20,16 @@ export function CollapsibleSection({
   total,
   cost,
   metrics,
+  stageType = 'llm',
   children,
 }: CollapsibleSectionProps) {
   const [isOpen, setIsOpen] = useState(false)
   const percentage = total > 0 ? (current / total) * 100 : 0
+
+  // Calculate actual output tokens (completion - reasoning for models that include reasoning in completion)
+  const avgOutputTokens = metrics
+    ? metrics.avg_completion_tokens - metrics.avg_reasoning_tokens
+    : 0
 
   return (
     <div className="border-b pb-4">
@@ -67,18 +76,32 @@ export function CollapsibleSection({
                     <strong>{metrics.latency_p95.toFixed(1)}s</strong> p95
                   </span>
                 </div>
-                <div className="flex items-center space-x-4">
+                {/* Token display varies by stage type */}
+                {stageType === 'blend' && (
                   <span className="text-gray-600">
-                    Tokens: <strong>{formatNumber(metrics.avg_prompt_tokens)}</strong> in
+                    Avg per page: <strong>{formatNumber(metrics.avg_prompt_tokens)}</strong> in
                     <span className="text-gray-400 mx-1">→</span>
-                    <strong>{formatNumber(metrics.avg_completion_tokens)}</strong> out
+                    <strong>{formatNumber(avgOutputTokens)}</strong> out
                     {metrics.avg_reasoning_tokens > 0 && (
                       <span className="text-purple-600 ml-1">
-                        (+{formatNumber(metrics.avg_reasoning_tokens)} reason)
+                        (+{formatNumber(metrics.avg_reasoning_tokens)} reasoning)
                       </span>
                     )}
                   </span>
-                </div>
+                )}
+                {stageType === 'llm' && (
+                  <span className="text-gray-600">
+                    Tokens: <strong>{formatNumber(metrics.avg_prompt_tokens)}</strong> in
+                    <span className="text-gray-400 mx-1">→</span>
+                    <strong>{formatNumber(avgOutputTokens)}</strong> out
+                    {metrics.avg_reasoning_tokens > 0 && (
+                      <span className="text-purple-600 ml-1">
+                        (+{formatNumber(metrics.avg_reasoning_tokens)} reasoning)
+                      </span>
+                    )}
+                  </span>
+                )}
+                {/* OCR stages don't have tokens - they're not LLM calls */}
               </div>
             </div>
           )}
