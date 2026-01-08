@@ -10,7 +10,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
-	"github.com/jackzampolin/shelf/internal/jobs/finalize_toc"
+	common_structure "github.com/jackzampolin/shelf/internal/jobs/common_structure/job"
 	finalize_toc_job "github.com/jackzampolin/shelf/internal/jobs/finalize_toc/job"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -261,7 +261,7 @@ func (j *Job) StartFinalizeTocInline(ctx context.Context) []jobs.WorkUnit {
 	common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
 
 	// Load linked entries for the finalize sub-job
-	entries, err := finalize_toc.LoadLinkedEntries(ctx, j.TocDocID)
+	entries, err := common.LoadLinkedEntries(ctx, j.TocDocID)
 	if err != nil {
 		if logger != nil {
 			logger.Error("failed to load linked entries for finalize",
@@ -449,15 +449,117 @@ func (j *Job) MaybeStartStructureInline(ctx context.Context) []jobs.WorkUnit {
 	}
 	common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
 
-	// TODO: Implement structure sub-job inline
-	// For now, just mark as complete (placeholder)
-	j.Book.Structure.Complete()
-	common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
-
-	if logger != nil {
-		logger.Info("common-structure completed (placeholder)",
-			"book_id", j.Book.BookID)
+	// Load linked entries (finalized after finalize_toc)
+	linkedEntries, err := common.LoadLinkedEntries(ctx, j.TocDocID)
+	if err != nil {
+		if logger != nil {
+			logger.Error("failed to load linked entries for structure",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+		j.Book.Structure.Fail(MaxBookOpRetries)
+		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+		return nil
 	}
 
-	return nil
+	// Create the structure sub-job using our already-loaded book
+	loadResult := &common.LoadBookResult{
+		Book:     j.Book,
+		TocDocID: j.TocDocID,
+	}
+	j.StructureJob = common_structure.NewFromLoadResult(loadResult, linkedEntries)
+	j.StructureJob.SetRecordID(j.RecordID) // Use parent job's record ID
+
+	// Start the structure sub-job to get initial work units
+	units, err := j.StructureJob.Start(ctx)
+	if err != nil {
+		if logger != nil {
+			logger.Error("failed to start structure sub-job",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+		j.Book.Structure.Fail(MaxBookOpRetries)
+		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+		return nil
+	}
+
+	// If structure completed immediately (no work to do)
+	if j.StructureJob.Done() {
+		j.Book.Structure.Complete()
+		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+		if logger != nil {
+			logger.Info("common-structure completed immediately (no work needed)",
+				"book_id", j.Book.BookID)
+		}
+		return nil
+	}
+
+	// Register structure work units in our tracker
+	for _, unit := range units {
+		j.RegisterWorkUnit(unit.ID, WorkUnitInfo{
+			UnitType:       WorkUnitTypeStructureClassify,
+			StructurePhase: StructurePhaseClassify,
+		})
+	}
+
+	if logger != nil {
+		logger.Info("common-structure started",
+			"book_id", j.Book.BookID,
+			"work_units", len(units))
+	}
+
+	return units
+}
+
+// HandleStructureComplete routes structure work unit completion to the sub-job.
+func (j *Job) HandleStructureComplete(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo) ([]jobs.WorkUnit, error) {
+	if j.StructureJob == nil {
+		return nil, fmt.Errorf("structure sub-job not initialized")
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Delegate to the structure sub-job's OnComplete
+	units, err := j.StructureJob.OnComplete(ctx, result)
+	if err != nil {
+		if logger != nil {
+			logger.Error("structure sub-job OnComplete failed",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+		return nil, err
+	}
+
+	// Check if structure is done
+	if j.StructureJob.Done() {
+		j.Book.Structure.Complete()
+		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+		if logger != nil {
+			logger.Info("common-structure completed",
+				"book_id", j.Book.BookID)
+		}
+	}
+
+	// Register new work units from structure sub-job
+	for _, unit := range units {
+		// Determine unit type based on sub-job phase
+		unitType := WorkUnitTypeStructureClassify
+		phase := StructurePhaseClassify
+		if j.StructureJob != nil {
+			status, _ := j.StructureJob.Status(ctx)
+			if p, ok := status["phase"]; ok {
+				switch p {
+				case "polish":
+					unitType = WorkUnitTypeStructurePolish
+					phase = StructurePhasePolish
+				}
+			}
+		}
+		j.RegisterWorkUnit(unit.ID, WorkUnitInfo{
+			UnitType:       unitType,
+			StructurePhase: phase,
+		})
+	}
+
+	return units, nil
 }

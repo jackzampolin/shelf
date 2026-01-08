@@ -86,19 +86,8 @@ func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 	return j.BaseJob.MetricsFor(j.Type())
 }
 
-// LinkedTocEntry represents a ToC entry with its page link.
-// Reused from finalize_toc.
-type LinkedTocEntry struct {
-	DocID             string
-	Title             string
-	EntryNumber       string
-	Level             int
-	LevelName         string
-	SortOrder         int
-	ActualPage        *int   // Scan page number (should not be nil after finalize_toc)
-	ActualPageDocID   string // Page document ID
-	PrintedPageNumber string
-}
+// LinkedTocEntry is an alias to common.LinkedTocEntry for use in this package.
+type LinkedTocEntry = common.LinkedTocEntry
 
 // ChapterState tracks chapter during processing.
 type ChapterState struct {

@@ -303,6 +303,113 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 	return nil
 }
 
+// LinkedTocEntry represents a ToC entry with its page link.
+// Used by finalize_toc and common_structure jobs.
+type LinkedTocEntry struct {
+	DocID             string
+	Title             string
+	EntryNumber       string
+	Level             int
+	LevelName         string
+	SortOrder         int
+	ActualPage        *int   // May be nil if not linked
+	ActualPageDocID   string // Page document ID if linked
+	PrintedPageNumber string
+	Source            string // "extracted" or "discovered"
+}
+
+// LoadLinkedEntries loads all TocEntry records with their page links from DefraDB.
+// Used by both finalize_toc and common_structure jobs.
+func LoadLinkedEntries(ctx context.Context, tocDocID string) ([]*LinkedTocEntry, error) {
+	if tocDocID == "" {
+		return nil, fmt.Errorf("ToC document ID is required")
+	}
+
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil, fmt.Errorf("defra client not in context")
+	}
+
+	query := fmt.Sprintf(`{
+		TocEntry(filter: {toc_id: {_eq: "%s"}}, order: {sort_order: ASC}) {
+			_docID
+			entry_number
+			title
+			level
+			level_name
+			printed_page_number
+			sort_order
+			source
+			actual_page {
+				_docID
+				page_num
+			}
+		}
+	}`, tocDocID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	rawEntries, ok := resp.Data["TocEntry"].([]any)
+	if !ok {
+		return nil, nil // No entries
+	}
+
+	var entries []*LinkedTocEntry
+	for _, e := range rawEntries {
+		entry, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		le := &LinkedTocEntry{}
+
+		if docID, ok := entry["_docID"].(string); ok {
+			le.DocID = docID
+		}
+		if entryNum, ok := entry["entry_number"].(string); ok {
+			le.EntryNumber = entryNum
+		}
+		if title, ok := entry["title"].(string); ok {
+			le.Title = title
+		}
+		if level, ok := entry["level"].(float64); ok {
+			le.Level = int(level)
+		}
+		if levelName, ok := entry["level_name"].(string); ok {
+			le.LevelName = levelName
+		}
+		if printedPage, ok := entry["printed_page_number"].(string); ok {
+			le.PrintedPageNumber = printedPage
+		}
+		if sortOrder, ok := entry["sort_order"].(float64); ok {
+			le.SortOrder = int(sortOrder)
+		}
+		if source, ok := entry["source"].(string); ok {
+			le.Source = source
+		}
+
+		// Extract actual_page link
+		if actualPage, ok := entry["actual_page"].(map[string]any); ok {
+			if pageDocID, ok := actualPage["_docID"].(string); ok {
+				le.ActualPageDocID = pageDocID
+			}
+			if pageNum, ok := actualPage["page_num"].(float64); ok {
+				pn := int(pageNum)
+				le.ActualPage = &pn
+			}
+		}
+
+		if le.DocID != "" {
+			entries = append(entries, le)
+		}
+	}
+
+	return entries, nil
+}
+
 // DeleteExistingTocEntries deletes any existing TocEntry records for a ToC.
 func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 	logger := svcctx.LoggerFrom(ctx)

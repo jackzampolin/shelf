@@ -84,18 +84,8 @@ func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 	return j.BaseJob.MetricsFor(j.Type())
 }
 
-// LinkedTocEntry represents a ToC entry with its page link.
-type LinkedTocEntry struct {
-	DocID             string
-	Title             string
-	EntryNumber       string
-	Level             int
-	LevelName         string
-	SortOrder         int
-	ActualPage        *int   // May be nil if not linked
-	ActualPageDocID   string // Page document ID if linked
-	PrintedPageNumber string
-}
+// LinkedTocEntry is an alias to common.LinkedTocEntry for use in this package.
+type LinkedTocEntry = common.LinkedTocEntry
 
 // PatternResult holds the results of pattern analysis.
 type PatternResult struct {

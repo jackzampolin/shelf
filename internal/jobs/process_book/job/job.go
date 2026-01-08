@@ -261,6 +261,14 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		} else {
 			newUnits = append(newUnits, units...)
 		}
+
+	case WorkUnitTypeStructureClassify, WorkUnitTypeStructurePolish:
+		units, err := j.HandleStructureComplete(ctx, result, info)
+		if err != nil {
+			handlerErr = err
+		} else {
+			newUnits = append(newUnits, units...)
+		}
 	}
 
 	// Handle handler errors with retry for page-level operations
