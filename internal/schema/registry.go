@@ -28,10 +28,12 @@ var registry = []Schema{
 	{Name: "OcrResult", Order: 5},           // depends on Page
 	{Name: "ToC", Order: 6},                 // depends on Book
 	{Name: "TocEntry", Order: 7},            // depends on ToC, Page
-	{Name: "AgentRun", Order: 8},            // standalone, for debugging agent executions
-	{Name: "LLMCall", Order: 9},             // standalone, tracks all LLM API calls
-	{Name: "Prompt", Order: 10},             // embedded prompt sync for UI/traceability
-	{Name: "BookPromptOverride", Order: 11}, // per-book prompt customizations
+	{Name: "Chapter", Order: 8},             // depends on Book, TocEntry
+	{Name: "Paragraph", Order: 9},           // depends on Chapter
+	{Name: "AgentRun", Order: 10},           // standalone, for debugging agent executions
+	{Name: "LLMCall", Order: 11},            // standalone, tracks all LLM API calls
+	{Name: "Prompt", Order: 12},             // embedded prompt sync for UI/traceability
+	{Name: "BookPromptOverride", Order: 13}, // per-book prompt customizations
 }
 
 // All returns all schemas in dependency order.

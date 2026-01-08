@@ -16,6 +16,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common_structure"
 	"github.com/jackzampolin/shelf/internal/jobs/finalize_toc"
 	"github.com/jackzampolin/shelf/internal/jobs/label_book"
 	"github.com/jackzampolin/shelf/internal/jobs/link_toc"
@@ -70,6 +71,8 @@ type Server struct {
 	linkTocCfg link_toc.Config
 	// finalizeTocCfg is saved for job factory registration
 	finalizeTocCfg finalize_toc.Config
+	// commonStructureCfg is saved for job factory registration
+	commonStructureCfg common_structure.Config
 
 	// services holds all core services for context enrichment
 	services *svcctx.Services
@@ -198,32 +201,40 @@ func New(cfg Config) (*Server, error) {
 		DebugAgents: cfg.PipelineConfig.DebugAgents,
 	}
 
+	// Save common structure config for job factory registration
+	commonStructureCfg := common_structure.Config{
+		StructureProvider: cfg.PipelineConfig.TocProvider, // Reuse ToC provider
+		DebugAgents:       cfg.PipelineConfig.DebugAgents,
+	}
+
 	s := &Server{
-		defraManager:     defraManager,
-		registry:         registry,
-		processBookCfg:   processBookCfg,
-		ocrBookCfg:       ocrBookCfg,
-		labelBookCfg:     labelBookCfg,
-		metadataBookCfg:  metadataBookCfg,
-		tocBookCfg:       tocBookCfg,
-		linkTocCfg:       linkTocCfg,
-		finalizeTocCfg:   finalizeTocCfg,
-		configMgr:       cfg.ConfigManager,
-		logger:          cfg.Logger,
-		home:            cfg.Home,
+		defraManager:       defraManager,
+		registry:           registry,
+		processBookCfg:     processBookCfg,
+		ocrBookCfg:         ocrBookCfg,
+		labelBookCfg:       labelBookCfg,
+		metadataBookCfg:    metadataBookCfg,
+		tocBookCfg:         tocBookCfg,
+		linkTocCfg:         linkTocCfg,
+		finalizeTocCfg:     finalizeTocCfg,
+		commonStructureCfg: commonStructureCfg,
+		configMgr:          cfg.ConfigManager,
+		logger:             cfg.Logger,
+		home:               cfg.Home,
 	}
 
 	// Create endpoint registry and register all endpoints
 	s.endpointRegistry = api.NewRegistry()
 	for _, ep := range endpoints.All(endpoints.Config{
-		DefraManager:        defraManager,
-		ProcessBookConfig:   processBookCfg,
-		OcrBookConfig:       ocrBookCfg,
-		LabelBookConfig:     labelBookCfg,
-		MetadataBookConfig:  metadataBookCfg,
-		TocBookConfig:       tocBookCfg,
-		LinkTocConfig:       linkTocCfg,
-		FinalizeTocConfig:   finalizeTocCfg,
+		DefraManager:          defraManager,
+		ProcessBookConfig:     processBookCfg,
+		OcrBookConfig:         ocrBookCfg,
+		LabelBookConfig:       labelBookCfg,
+		MetadataBookConfig:    metadataBookCfg,
+		TocBookConfig:         tocBookCfg,
+		LinkTocConfig:         linkTocCfg,
+		FinalizeTocConfig:     finalizeTocCfg,
+		CommonStructureConfig: commonStructureCfg,
 	}) {
 		s.endpointRegistry.Register(ep)
 	}
@@ -347,6 +358,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.scheduler.RegisterFactory(toc_book.JobType, toc_book.JobFactory(s.tocBookCfg))
 	s.scheduler.RegisterFactory(link_toc.JobType, link_toc.JobFactory(s.linkTocCfg))
 	s.scheduler.RegisterFactory(finalize_toc.JobType, finalize_toc.JobFactory(s.finalizeTocCfg))
+	s.scheduler.RegisterFactory(common_structure.JobType, common_structure.JobFactory(s.commonStructureCfg))
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)
