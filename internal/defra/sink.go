@@ -177,14 +177,43 @@ func (s *Sink) SendSync(ctx context.Context, op WriteOp) (WriteResult, error) {
 	}
 }
 
-// Flush forces an immediate flush of the current batch.
+// Flush forces an immediate flush and waits until all pending operations complete.
+// This ensures that any prior Send() calls have been written to the database.
 func (s *Sink) Flush(ctx context.Context) error {
+	// Send a sentinel no-op with a result channel.
+	// When this returns, all prior operations in the queue have been processed.
+	resultCh := make(chan WriteResult, 1)
+	sentinelOp := WriteOp{
+		Collection: "_flush_sentinel",
+		Op:         OpUpdate,
+		result:     resultCh,
+	}
+
+	// Queue the sentinel
+	select {
+	case s.queue <- sentinelOp:
+	case <-s.ctx.Done():
+		return ErrSinkClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	// Signal the batcher to flush immediately
 	select {
 	case s.flushCh <- struct{}{}:
 	default:
 		// Flush already pending
 	}
-	return nil
+
+	// Wait for the sentinel to be processed
+	select {
+	case <-resultCh:
+		return nil
+	case <-s.ctx.Done():
+		return ErrSinkClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // SendManySync queues multiple write operations and waits for all results.
@@ -425,6 +454,15 @@ func (s *Sink) processCreates(collection string, ops []WriteOp) {
 // processUpdates handles batched update operations.
 func (s *Sink) processUpdates(collection string, ops []WriteOp) {
 	for _, op := range ops {
+		// Handle flush sentinel - just acknowledge without DB operation
+		if collection == "_flush_sentinel" {
+			if op.result != nil {
+				op.result <- WriteResult{}
+				close(op.result)
+			}
+			continue
+		}
+
 		err := s.client.Update(s.ctx, collection, op.DocID, op.Document)
 		result := WriteResult{DocID: op.DocID, Err: err}
 

@@ -7,6 +7,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/prompts/extract_toc"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateTocExtractWorkUnit creates a ToC extraction work unit.
@@ -34,6 +35,25 @@ func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResu
 	if err := common.SaveTocExtractResult(ctx, j.TocDocID, extractResult); err != nil {
 		return fmt.Errorf("failed to save ToC extract result: %w", err)
 	}
+
+	// Flush sink to ensure entries are written before loading
+	if sink := svcctx.DefraSinkFrom(ctx); sink != nil {
+		if err := sink.Flush(ctx); err != nil {
+			return fmt.Errorf("failed to flush ToC entries: %w", err)
+		}
+	}
+
+	// Reload entries into memory so link_toc can use them
+	entries, err := common.LoadTocEntries(ctx, j.TocDocID)
+	if err != nil {
+		return fmt.Errorf("failed to reload ToC entries: %w", err)
+	}
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Info("loaded ToC entries after extraction",
+			"toc_doc_id", j.TocDocID,
+			"entry_count", len(entries))
+	}
+	j.Book.SetTocEntries(entries)
 
 	// Only mark complete on success (allows retries on failure)
 	j.Book.TocExtract.Complete()

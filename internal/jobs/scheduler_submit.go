@@ -97,6 +97,37 @@ func (s *Scheduler) startJobAsync(job Job) {
 	s.enqueueUnits(job.ID(), units)
 }
 
+// SubmitByType creates a job from a registered factory and submits it.
+// This is used to chain jobs (e.g., process_book triggering finalize_toc).
+func (s *Scheduler) SubmitByType(ctx context.Context, jobType string, bookID string) error {
+	s.mu.RLock()
+	factory, ok := s.factories[jobType]
+	s.mu.RUnlock()
+
+	if !ok {
+		return fmt.Errorf("no factory registered for job type: %s", jobType)
+	}
+
+	// Inject services into context for factory
+	enrichedCtx := s.injectServices(ctx)
+
+	// Create metadata for the factory
+	metadata := map[string]any{
+		"book_id": bookID,
+	}
+
+	// Create job from factory
+	// The factory signature is: func(ctx, recordID, metadata) (Job, error)
+	// For a new job, we pass empty recordID - the factory will load by book_id
+	job, err := factory(enrichedCtx, "", metadata)
+	if err != nil {
+		return fmt.Errorf("failed to create %s job: %w", jobType, err)
+	}
+
+	// Submit the job
+	return s.Submit(enrichedCtx, job)
+}
+
 // Resume restarts jobs that were interrupted (status: running).
 // Requires job factories to be registered for each job type.
 func (s *Scheduler) Resume(ctx context.Context) (int, error) {

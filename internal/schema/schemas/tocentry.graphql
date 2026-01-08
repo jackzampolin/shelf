@@ -2,6 +2,9 @@ type TocEntry {
     # Many-to-one: TocEntry belongs to ToC
     toc: ToC
 
+    # Unique key for content-based DocID uniqueness (toc_id:sort_order)
+    unique_key: String
+
     # Core fields
     entry_number: String
     title: String

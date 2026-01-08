@@ -101,3 +101,21 @@ func PersistTocLinkState(ctx context.Context, tocDocID string, op *OperationStat
 		Op: defra.OpUpdate,
 	})
 }
+
+// PersistTocFinalizeState persists ToC finalize operation state to DefraDB.
+func PersistTocFinalizeState(ctx context.Context, tocDocID string, op *OperationState) error {
+	if tocDocID == "" {
+		return nil // No ToC record yet
+	}
+	return SendToSink(ctx, defra.WriteOp{
+		Collection: "ToC",
+		DocID:      tocDocID,
+		Document: map[string]any{
+			"finalize_started":  op.IsStarted(),
+			"finalize_complete": op.IsComplete(),
+			"finalize_failed":   op.IsFailed(),
+			"finalize_retries":  op.GetRetries(),
+		},
+		Op: defra.OpUpdate,
+	})
+}

@@ -370,6 +370,10 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				link_complete
 				link_failed
 				link_retries
+				finalize_started
+				finalize_complete
+				finalize_failed
+				finalize_retries
 				start_page
 				end_page
 			}
@@ -449,6 +453,23 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				}
 				book.TocLink = boolsToOpState(lStarted, lComplete, lFailed, lRetries)
 
+				// Finalize state
+				var finStarted, finComplete, finFailed bool
+				var finRetries int
+				if fs, ok := toc["finalize_started"].(bool); ok {
+					finStarted = fs
+				}
+				if fc, ok := toc["finalize_complete"].(bool); ok {
+					finComplete = fc
+				}
+				if ff, ok := toc["finalize_failed"].(bool); ok {
+					finFailed = ff
+				}
+				if fr, ok := toc["finalize_retries"].(float64); ok {
+					finRetries = int(fr)
+				}
+				book.TocFinalize = boolsToOpState(finStarted, finComplete, finFailed, finRetries)
+
 				// Page range
 				if sp, ok := toc["start_page"].(float64); ok {
 					book.TocStartPage = int(sp)
@@ -466,7 +487,12 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 // LoadTocEntries loads all TocEntry records for a ToC that haven't been linked yet.
 // Returns entries that don't have an actual_page set.
 func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.TocEntry, error) {
+	logger := svcctx.LoggerFrom(ctx)
+
 	if tocDocID == "" {
+		if logger != nil {
+			logger.Warn("LoadTocEntries: empty tocDocID")
+		}
 		return nil, nil // No ToC, no entries
 	}
 
@@ -492,12 +518,26 @@ func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.T
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
+		if logger != nil {
+			logger.Error("LoadTocEntries: query failed", "error", err)
+		}
 		return nil, err
+	}
+
+	if logger != nil {
+		logger.Info("LoadTocEntries: query response", "data_keys", fmt.Sprintf("%v", resp.Data))
 	}
 
 	rawEntries, ok := resp.Data["TocEntry"].([]any)
 	if !ok {
+		if logger != nil {
+			logger.Warn("LoadTocEntries: TocEntry not []any", "type", fmt.Sprintf("%T", resp.Data["TocEntry"]))
+		}
 		return nil, nil // No entries
+	}
+
+	if logger != nil {
+		logger.Info("LoadTocEntries: raw entries count", "count", len(rawEntries))
 	}
 
 	var entries []*toc_entry_finder.TocEntry

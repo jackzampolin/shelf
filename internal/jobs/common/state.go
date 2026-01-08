@@ -403,10 +403,11 @@ type BookState struct {
 	PromptCIDs map[string]string // prompt_key -> CID for traceability
 
 	// Book-level operation state (mutable - use accessor methods)
-	Metadata   OperationState
-	TocFinder  OperationState
-	TocExtract OperationState
-	TocLink    OperationState
+	Metadata    OperationState
+	TocFinder   OperationState
+	TocExtract  OperationState
+	TocLink     OperationState
+	TocFinalize OperationState
 
 	// ToC finder results (mutable - use accessor methods)
 	TocFound     bool
@@ -415,6 +416,10 @@ type BookState struct {
 
 	// ToC entries loaded from DB (immutable after LoadBook when ToC extraction is complete)
 	TocEntries []*toc_entry_finder.TocEntry
+
+	// Body page range (set during finalize phase)
+	BodyStart int
+	BodyEnd   int
 }
 
 // NewBookState creates a new BookState with initialized maps.

@@ -1,0 +1,20 @@
+## ToC Entries (linked to scan pages)
+{{range .LinkedEntries}}
+  p{{if .ActualPage}}{{.ActualPage}}{{else}}?{{end}}: {{if .LevelName}}[{{.LevelName}}] {{end}}{{if .EntryNumber}}{{.EntryNumber}}. {{end}}{{.Title}}
+{{end}}
+
+## Candidate Headings (detected but NOT in ToC)
+Body range: pages {{.BodyStart}}-{{.BodyEnd}}
+{{range .Candidates}}
+  p{{.PageNum}}: "{{.Text}}"
+{{end}}
+{{if gt (len .CandidatesTruncated) 0}}
+  ... and {{len .CandidatesTruncated}} more candidates
+{{end}}
+
+## Task
+Analyze the ToC structure and candidate headings to identify:
+1. Sequential patterns (chapters, parts, sections) that exist but are NOT in ToC
+2. Page ranges to exclude (back matter: notes, bibliography, index)
+
+Output JSON with discovered_patterns and excluded_page_ranges.
