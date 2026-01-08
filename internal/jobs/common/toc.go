@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
@@ -484,6 +485,73 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 		if err != nil {
 			return fmt.Errorf("failed to delete TocEntry %s: %w", docID, err)
 		}
+	}
+
+	return nil
+}
+
+// GetPageDocID returns the Page document ID for a given book and page number.
+func GetPageDocID(ctx context.Context, bookID string, pageNum int) (string, error) {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return "", fmt.Errorf("defra client not in context")
+	}
+
+	query := fmt.Sprintf(`{
+		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
+			_docID
+		}
+	}`, bookID, pageNum)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return "", err
+	}
+
+	if pages, ok := resp.Data["Page"].([]any); ok && len(pages) > 0 {
+		if page, ok := pages[0].(map[string]any); ok {
+			if docID, ok := page["_docID"].(string); ok {
+				return docID, nil
+			}
+		}
+	}
+
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Debug("page not found in database",
+			"book_id", bookID,
+			"page_num", pageNum)
+	}
+	return "", nil
+}
+
+// SaveTocEntryResult updates a TocEntry with the found page link.
+// Used by link_toc operations in both process_book and standalone link_toc jobs.
+func SaveTocEntryResult(ctx context.Context, bookID, entryDocID string, result *toc_entry_finder.Result) error {
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+
+	update := map[string]any{}
+
+	if result.ScanPage != nil {
+		// Need to get the Page document ID for this scan page
+		pageDocID, err := GetPageDocID(ctx, bookID, *result.ScanPage)
+		if err != nil {
+			return fmt.Errorf("failed to get page doc ID: %w", err)
+		}
+		if pageDocID != "" {
+			update["actual_page_id"] = pageDocID
+		}
+	}
+
+	if len(update) > 0 {
+		sink.Send(defra.WriteOp{
+			Collection: "TocEntry",
+			DocID:      entryDocID,
+			Document:   update,
+			Op:         defra.OpUpdate,
+		})
 	}
 
 	return nil

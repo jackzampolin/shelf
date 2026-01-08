@@ -7,7 +7,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/agents"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	common_structure "github.com/jackzampolin/shelf/internal/jobs/common_structure/job"
@@ -138,8 +137,8 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 		agentResult := ag.Result()
 		if agentResult != nil && agentResult.Success {
 			if entryResult, ok := agentResult.ToolResult.(*toc_entry_finder.Result); ok {
-				// Update TocEntry with actual_page
-				if err := j.SaveEntryResult(ctx, info.EntryDocID, entryResult); err != nil {
+				// Update TocEntry with actual_page using common utility
+				if err := common.SaveTocEntryResult(ctx, j.Book.BookID, info.EntryDocID, entryResult); err != nil {
 					return nil, fmt.Errorf("failed to save entry result: %w", err)
 				}
 			}
@@ -150,72 +149,6 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 	}
 
 	return nil, nil
-}
-
-// SaveEntryResult updates a TocEntry with the found page.
-func (j *Job) SaveEntryResult(ctx context.Context, entryDocID string, result *toc_entry_finder.Result) error {
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	update := map[string]any{}
-
-	if result.ScanPage != nil {
-		// Need to get the Page document ID for this scan page
-		pageDocID, err := j.getPageDocID(ctx, *result.ScanPage)
-		if err != nil {
-			return fmt.Errorf("failed to get page doc ID: %w", err)
-		}
-		if pageDocID != "" {
-			update["actual_page_id"] = pageDocID
-		}
-	}
-
-	if len(update) > 0 {
-		sink.Send(defra.WriteOp{
-			Collection: "TocEntry",
-			DocID:      entryDocID,
-			Document:   update,
-			Op:         defra.OpUpdate,
-		})
-	}
-
-	return nil
-}
-
-// getPageDocID returns the Page document ID for a given page number.
-func (j *Job) getPageDocID(ctx context.Context, pageNum int) (string, error) {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return "", fmt.Errorf("defra client not in context")
-	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
-			_docID
-		}
-	}`, j.Book.BookID, pageNum)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return "", err
-	}
-
-	if pages, ok := resp.Data["Page"].([]any); ok && len(pages) > 0 {
-		if page, ok := pages[0].(map[string]any); ok {
-			if docID, ok := page["_docID"].(string); ok {
-				return docID, nil
-			}
-		}
-	}
-
-	if logger := svcctx.LoggerFrom(ctx); logger != nil {
-		logger.Debug("page not found in database",
-			"book_id", j.Book.BookID,
-			"page_num", pageNum)
-	}
-	return "", nil
 }
 
 // convertLinkTocAgentUnits converts agent work units to job work units.
