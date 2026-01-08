@@ -47,6 +47,7 @@ func All(cfg Config) []api.Endpoint {
 		&UploadIngestEndpoint{},
 		&ListBooksEndpoint{},
 		&GetBookEndpoint{},
+		&GetBookChaptersEndpoint{},
 		&RerunTocEndpoint{ProcessBookConfig: cfg.ProcessBookConfig},
 
 		// Page endpoints

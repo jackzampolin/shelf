@@ -11,8 +11,8 @@ export const Route = createFileRoute('/books/$bookId')({
 function BookDetailLayout() {
   const routerState = useRouterState()
   const pathname = routerState.location.pathname
-  // Check if we're on a child route (pages list, page viewer, or prompts)
-  const isChildRoute = pathname.includes('/pages') || pathname.includes('/prompts')
+  // Check if we're on a child route (pages list, page viewer, prompts, or chapters)
+  const isChildRoute = pathname.includes('/pages') || pathname.includes('/prompts') || pathname.includes('/chapters')
 
   if (isChildRoute) {
     return <Outlet />
@@ -159,6 +159,13 @@ function BookDetailPage() {
             className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
             View Pages
+          </Link>
+          <Link
+            to="/books/$bookId/chapters"
+            params={{ bookId }}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Chapters
           </Link>
           <Link
             to="/books/$bookId/prompts"
@@ -489,6 +496,15 @@ function BookDetailPage() {
                     <span className="font-mono text-sm text-gray-500">
                       ${detailedStatus.structure.cost_usd.toFixed(4)}
                     </span>
+                  )}
+                  {detailedStatus.structure?.complete && (
+                    <Link
+                      to="/books/$bookId/chapters"
+                      params={{ bookId }}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      View Chapters
+                    </Link>
                   )}
                 </div>
               </div>
