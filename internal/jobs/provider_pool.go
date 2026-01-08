@@ -490,6 +490,10 @@ func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
 			m.CompletionTokens = result.ChatResult.CompletionTokens
 			m.ReasoningTokens = result.ChatResult.ReasoningTokens
 			m.TotalTokens = result.ChatResult.TotalTokens
+			// Add timing data
+			m.QueueSeconds = result.ChatResult.QueueTime.Seconds()
+			m.ExecutionSeconds = result.ChatResult.ExecutionTime.Seconds()
+			m.TotalSeconds = result.ChatResult.TotalTime.Seconds()
 			if !result.ChatResult.Success {
 				m.ErrorType = result.ChatResult.ErrorType
 			}
@@ -498,6 +502,9 @@ func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
 		if result.OCRResult != nil {
 			m.Provider = p.name
 			m.CostUSD = result.OCRResult.CostUSD
+			// Add timing data
+			m.ExecutionSeconds = result.OCRResult.ExecutionTime.Seconds()
+			m.TotalSeconds = result.OCRResult.ExecutionTime.Seconds()
 			if !result.OCRResult.Success {
 				m.ErrorType = "ocr_error"
 			}

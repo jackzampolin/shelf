@@ -290,7 +290,7 @@ func (j *Job) convertDiscoverAgentUnits(agentUnits []agent.WorkUnit, entryKey st
 	jobUnits := agents.ConvertToJobUnits(agentUnits, agents.ConvertConfig{
 		JobID:     j.RecordID,
 		Provider:  j.Book.TocProvider,
-		Stage:     j.Type(),
+		Stage:     "toc-discover",
 		ItemKey:   fmt.Sprintf("discover_%s", entryKey),
 		PromptKey: chapter_finder.PromptKey,
 		PromptCID: j.GetPromptCID(chapter_finder.PromptKey),

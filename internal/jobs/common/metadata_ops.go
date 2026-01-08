@@ -62,7 +62,7 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 
 	unit.Metrics = &jobs.WorkUnitMetrics{
 		BookID:    book.BookID,
-		Stage:     jc.Type(),
+		Stage:     "metadata",
 		ItemKey:   "metadata",
 		PromptKey: metadata.SystemPromptKey,
 		PromptCID: book.GetPromptCID(metadata.SystemPromptKey),

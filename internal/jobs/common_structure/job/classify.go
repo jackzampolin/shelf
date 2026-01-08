@@ -53,7 +53,7 @@ func (j *Job) CreateClassifyWorkUnit(ctx context.Context) (*jobs.WorkUnit, error
 		JobID:       j.RecordID,
 		ChatRequest: request,
 		Metrics: &jobs.WorkUnitMetrics{
-			Stage:     j.Type(),
+			Stage:     "structure-classify",
 			ItemKey:   "classify_matter",
 			PromptKey: PromptKeyClassifySystem,
 			PromptCID: j.Book.GetPromptCID(PromptKeyClassifySystem),

@@ -60,7 +60,7 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 
 	unit.Metrics = &jobs.WorkUnitMetrics{
 		BookID:    book.BookID,
-		Stage:     jc.Type(),
+		Stage:     "toc",
 		ItemKey:   "toc_extract",
 		PromptKey: extract_toc.SystemPromptKey,
 		PromptCID: book.GetPromptCID(extract_toc.SystemPromptKey),

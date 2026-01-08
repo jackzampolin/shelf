@@ -45,7 +45,7 @@ func CreateOcrWorkUnit(ctx context.Context, jc JobContext, pageNum int, provider
 		},
 		Metrics: &jobs.WorkUnitMetrics{
 			BookID:  book.BookID,
-			Stage:   jc.Type(),
+			Stage:   "ocr",
 			ItemKey: fmt.Sprintf("page_%04d_%s", pageNum, provider),
 		},
 	}, unitID

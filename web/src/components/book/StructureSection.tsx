@@ -3,15 +3,17 @@ import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '@/api/client'
 import { StatusBadge, type StatusType } from '@/components/ui'
-import type { StructureStatus } from './types'
+import type { StructureStatus, StageMetrics } from './types'
 
 interface StructureSectionProps {
   structure?: StructureStatus
   bookId: string
+  metrics?: Record<string, StageMetrics>
 }
 
-export function StructureSection({ structure, bookId }: StructureSectionProps) {
+export function StructureSection({ structure, bookId, metrics }: StructureSectionProps) {
   const [expanded, setExpanded] = useState(false)
+  const [metricsExpanded, setMetricsExpanded] = useState(false)
 
   const { data: chapters } = useQuery({
     queryKey: ['books', bookId, 'chapters'],
@@ -166,6 +168,25 @@ export function StructureSection({ structure, bookId }: StructureSectionProps) {
           )}
         </div>
       )}
+
+      {/* Metrics breakdown by Structure stage */}
+      {metrics && hasStructureMetrics(metrics) && (
+        <div className="mt-3">
+          <button
+            onClick={() => setMetricsExpanded(!metricsExpanded)}
+            className="text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-1"
+          >
+            <span>{metricsExpanded ? 'Hide' : 'Show'} Stage Metrics</span>
+            <span className={`transition-transform ${metricsExpanded ? 'rotate-180' : ''}`}>▼</span>
+          </button>
+          {metricsExpanded && (
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+              {metrics['structure-classify'] && <StructureMetricsCard label="Matter Classification" metrics={metrics['structure-classify']} />}
+              {metrics['structure-polish'] && <StructureMetricsCard label="Text Polish" metrics={metrics['structure-polish']} />}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -188,5 +209,56 @@ function MatterTypeBadge({ type }: { type?: string }) {
     <span className={`text-xs px-1.5 py-0.5 rounded ${styles[key] || styles.unknown}`}>
       {labels[key] || key}
     </span>
+  )
+}
+
+function hasStructureMetrics(metrics: Record<string, StageMetrics>): boolean {
+  const structureKeys = ['structure-classify', 'structure-polish']
+  return structureKeys.some(key => metrics[key] && metrics[key].count > 0)
+}
+
+function StructureMetricsCard({ label, metrics }: { label: string; metrics: StageMetrics }) {
+  const formatLatency = (ms: number) => {
+    if (ms < 1000) return `${ms.toFixed(0)}ms`
+    return `${(ms / 1000).toFixed(1)}s`
+  }
+
+  return (
+    <div className="bg-gray-50 rounded px-3 py-2 text-xs">
+      <div className="font-medium text-gray-700 mb-1">{label}</div>
+      <div className="space-y-0.5 text-gray-600">
+        <div className="flex justify-between">
+          <span>Calls:</span>
+          <span className="font-mono">
+            {metrics.count}
+            {metrics.error_count > 0 && (
+              <span className="text-red-500 ml-1">({metrics.error_count} err)</span>
+            )}
+          </span>
+        </div>
+        {metrics.latency_p50 > 0 && (
+          <div className="flex justify-between">
+            <span>Latency:</span>
+            <span className="font-mono">
+              {formatLatency(metrics.latency_p50 * 1000)} p50 / {formatLatency(metrics.latency_p95 * 1000)} p95
+            </span>
+          </div>
+        )}
+        {metrics.total_cost_usd > 0 && (
+          <div className="flex justify-between">
+            <span>Cost:</span>
+            <span className="font-mono">${metrics.total_cost_usd.toFixed(4)}</span>
+          </div>
+        )}
+        {metrics.total_tokens > 0 && (
+          <div className="flex justify-between">
+            <span>Tokens:</span>
+            <span className="font-mono">
+              {metrics.total_prompt_tokens.toLocaleString()}→{metrics.total_completion_tokens.toLocaleString()}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

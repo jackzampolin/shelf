@@ -351,7 +351,7 @@ func (j *Job) convertEntryAgentUnits(agentUnits []agent.WorkUnit, entryDocID str
 	jobUnits := agents.ConvertToJobUnits(agentUnits, agents.ConvertConfig{
 		JobID:     j.RecordID,
 		Provider:  j.Book.TocProvider,
-		Stage:     j.Type(),
+		Stage:     "toc-link",
 		ItemKey:   fmt.Sprintf("entry_%s", entryDocID),
 		PromptKey: toc_entry_finder.PromptKey,
 		PromptCID: j.GetPromptCID(toc_entry_finder.PromptKey),

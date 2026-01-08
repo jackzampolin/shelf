@@ -87,7 +87,7 @@ func (j *Job) createPolishWorkUnit(ctx context.Context, chapter *ChapterState) (
 		JobID:       j.RecordID,
 		ChatRequest: request,
 		Metrics: &jobs.WorkUnitMetrics{
-			Stage:     j.Type(),
+			Stage:     "structure-polish",
 			ItemKey:   fmt.Sprintf("polish_%s", chapter.EntryID),
 			PromptKey: PromptKeyPolishSystem,
 			PromptCID: j.Book.GetPromptCID(PromptKeyPolishSystem),

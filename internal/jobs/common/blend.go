@@ -99,7 +99,7 @@ func CreateBlendWorkUnit(ctx context.Context, jc JobContext, pageNum int, state 
 
 	unit.Metrics = &jobs.WorkUnitMetrics{
 		BookID:    book.BookID,
-		Stage:     jc.Type(),
+		Stage:     "blend",
 		ItemKey:   fmt.Sprintf("page_%04d_blend", pageNum),
 		PromptKey: blend.SystemPromptKey,
 		PromptCID: book.GetPromptCID(blend.SystemPromptKey),

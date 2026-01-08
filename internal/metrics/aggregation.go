@@ -217,6 +217,7 @@ func percentile(sorted []float64, p float64) float64 {
 }
 
 // StageDetailedStats returns detailed stats grouped by stage for a book.
+// For OCR stage, it further groups by provider (e.g., "ocr:mistral", "ocr:google").
 func (q *Query) StageDetailedStats(ctx context.Context, bookID string) (map[string]*DetailedStats, error) {
 	// Get all metrics for this book
 	metrics, err := q.List(ctx, Filter{BookID: bookID}, 0)
@@ -224,65 +225,75 @@ func (q *Query) StageDetailedStats(ctx context.Context, bookID string) (map[stri
 		return nil, err
 	}
 
-	// Group by stage
-	byStage := make(map[string][]Metric)
+	// Group by stage (and by provider for OCR)
+	byKey := make(map[string][]Metric)
 	for _, m := range metrics {
-		if m.Stage != "" {
-			byStage[m.Stage] = append(byStage[m.Stage], m)
-		}
-	}
-
-	// Calculate stats per stage
-	result := make(map[string]*DetailedStats)
-	for stage, stageMetrics := range byStage {
-		stats := &DetailedStats{Count: len(stageMetrics)}
-		if len(stageMetrics) == 0 {
-			result[stage] = stats
+		if m.Stage == "" {
 			continue
 		}
-
-		var latencies []float64
-		for _, m := range stageMetrics {
-			stats.TotalCostUSD += m.CostUSD
-			if m.Success {
-				stats.SuccessCount++
-			} else {
-				stats.ErrorCount++
-			}
-			stats.TotalPromptTokens += m.PromptTokens
-			stats.TotalCompletionTokens += m.CompletionTokens
-			stats.TotalReasoningTokens += m.ReasoningTokens
-			stats.TotalTokens += m.TotalTokens
-			if m.TotalSeconds > 0 {
-				latencies = append(latencies, m.TotalSeconds)
-			}
+		// For OCR, group by stage:provider to get per-provider stats
+		key := m.Stage
+		if m.Stage == "ocr" && m.Provider != "" {
+			key = "ocr:" + m.Provider
 		}
+		byKey[key] = append(byKey[key], m)
+	}
 
-		// Averages
-		count := float64(stats.Count)
-		stats.AvgCostUSD = stats.TotalCostUSD / count
-		stats.AvgPromptTokens = float64(stats.TotalPromptTokens) / count
-		stats.AvgCompletionTokens = float64(stats.TotalCompletionTokens) / count
-		stats.AvgReasoningTokens = float64(stats.TotalReasoningTokens) / count
-		stats.AvgTotalTokens = float64(stats.TotalTokens) / count
-
-		// Latency percentiles
-		if len(latencies) > 0 {
-			sort.Float64s(latencies)
-			stats.LatencyMin = latencies[0]
-			stats.LatencyMax = latencies[len(latencies)-1]
-			var sum float64
-			for _, l := range latencies {
-				sum += l
-			}
-			stats.LatencyAvg = sum / float64(len(latencies))
-			stats.LatencyP50 = percentile(latencies, 50)
-			stats.LatencyP95 = percentile(latencies, 95)
-			stats.LatencyP99 = percentile(latencies, 99)
-		}
-
-		result[stage] = stats
+	// Calculate stats per key
+	result := make(map[string]*DetailedStats)
+	for key, keyMetrics := range byKey {
+		result[key] = calculateDetailedStats(keyMetrics)
 	}
 
 	return result, nil
+}
+
+// calculateDetailedStats computes detailed statistics for a slice of metrics.
+func calculateDetailedStats(metrics []Metric) *DetailedStats {
+	stats := &DetailedStats{Count: len(metrics)}
+	if len(metrics) == 0 {
+		return stats
+	}
+
+	var latencies []float64
+	for _, m := range metrics {
+		stats.TotalCostUSD += m.CostUSD
+		if m.Success {
+			stats.SuccessCount++
+		} else {
+			stats.ErrorCount++
+		}
+		stats.TotalPromptTokens += m.PromptTokens
+		stats.TotalCompletionTokens += m.CompletionTokens
+		stats.TotalReasoningTokens += m.ReasoningTokens
+		stats.TotalTokens += m.TotalTokens
+		if m.TotalSeconds > 0 {
+			latencies = append(latencies, m.TotalSeconds)
+		}
+	}
+
+	// Averages
+	count := float64(stats.Count)
+	stats.AvgCostUSD = stats.TotalCostUSD / count
+	stats.AvgPromptTokens = float64(stats.TotalPromptTokens) / count
+	stats.AvgCompletionTokens = float64(stats.TotalCompletionTokens) / count
+	stats.AvgReasoningTokens = float64(stats.TotalReasoningTokens) / count
+	stats.AvgTotalTokens = float64(stats.TotalTokens) / count
+
+	// Latency percentiles
+	if len(latencies) > 0 {
+		sort.Float64s(latencies)
+		stats.LatencyMin = latencies[0]
+		stats.LatencyMax = latencies[len(latencies)-1]
+		var sum float64
+		for _, l := range latencies {
+			sum += l
+		}
+		stats.LatencyAvg = sum / float64(len(latencies))
+		stats.LatencyP50 = percentile(latencies, 50)
+		stats.LatencyP95 = percentile(latencies, 95)
+		stats.LatencyP99 = percentile(latencies, 99)
+	}
+
+	return stats
 }

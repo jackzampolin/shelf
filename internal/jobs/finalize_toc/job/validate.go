@@ -416,7 +416,7 @@ func (j *Job) convertGapAgentUnits(agentUnits []agent.WorkUnit, gapKey string) [
 	jobUnits := agents.ConvertToJobUnits(agentUnits, agents.ConvertConfig{
 		JobID:     j.RecordID,
 		Provider:  j.Book.TocProvider,
-		Stage:     j.Type(),
+		Stage:     "toc-validate",
 		ItemKey:   fmt.Sprintf("gap_%s", gapKey),
 		PromptKey: gap_investigator.PromptKey,
 		PromptCID: j.GetPromptCID(gap_investigator.PromptKey),

@@ -187,7 +187,7 @@ func (j *Job) convertTocAgentUnits(agentUnits []agent.WorkUnit) []jobs.WorkUnit 
 	jobUnits := agents.ConvertToJobUnits(agentUnits, agents.ConvertConfig{
 		JobID:     j.RecordID,
 		Provider:  j.Book.TocProvider,
-		Stage:     j.Type(),
+		Stage:     "toc",
 		ItemKey:   "toc_finder",
 		PromptKey: toc_finder.PromptKey,
 		PromptCID: j.GetPromptCID(toc_finder.PromptKey),

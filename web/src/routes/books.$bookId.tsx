@@ -273,35 +273,36 @@ function BookDetailPage() {
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Processing Progress</h3>
           <div className="space-y-4">
-            {/* OCR Section */}
-            <CollapsibleSection
-              title="OCR"
-              current={detailedStatus.stages?.ocr?.complete || 0}
-              total={detailedStatus.stages?.ocr?.total || 0}
-              cost={detailedStatus.stages?.ocr?.total_cost_usd}
-              metrics={detailedMetrics?.stages?.['ocr-book']}
-            >
-              {detailedStatus.ocr_progress && Object.entries(detailedStatus.ocr_progress).length > 0 ? (
-                <div className="space-y-2 pl-4 border-l-2 border-gray-200">
-                  {Object.entries(detailedStatus.ocr_progress).map(([provider, progress]) => (
-                    <div key={provider} className="flex items-center justify-between text-sm">
-                      <div className="flex-1">
-                        <ProgressBar
-                          label={provider}
-                          current={progress.complete || 0}
-                          total={progress.total || 0}
-                        />
-                      </div>
-                      <span className="ml-4 font-mono text-gray-500">
-                        ${(progress.cost_usd || 0).toFixed(4)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
+            {/* OCR Section - show per-provider metrics */}
+            {detailedStatus.ocr_progress && Object.entries(detailedStatus.ocr_progress).length > 0 ? (
+              Object.entries(detailedStatus.ocr_progress).map(([provider, progress]) => (
+                <CollapsibleSection
+                  key={provider}
+                  title={`OCR: ${provider}`}
+                  current={progress.complete || 0}
+                  total={progress.total || 0}
+                  cost={progress.cost_usd}
+                  metrics={detailedMetrics?.stages?.[`ocr:${provider}`]}
+                >
+                  <div className="pl-4 border-l-2 border-gray-200">
+                    <ProgressBar
+                      label="Pages"
+                      current={progress.complete || 0}
+                      total={progress.total || 0}
+                    />
+                  </div>
+                </CollapsibleSection>
+              ))
+            ) : (
+              <CollapsibleSection
+                title="OCR"
+                current={detailedStatus.stages?.ocr?.complete || 0}
+                total={detailedStatus.stages?.ocr?.total || 0}
+                cost={detailedStatus.stages?.ocr?.total_cost_usd}
+              >
                 <p className="text-sm text-gray-400 pl-4">No OCR results yet</p>
-              )}
-            </CollapsibleSection>
+              </CollapsibleSection>
+            )}
 
             {/* Blend Section */}
             <CollapsibleSection
@@ -309,7 +310,7 @@ function BookDetailPage() {
               current={detailedStatus.stages?.blend?.complete || 0}
               total={detailedStatus.stages?.blend?.total || 0}
               cost={detailedStatus.stages?.blend?.cost_usd}
-              metrics={detailedMetrics?.stages?.['process-book'] || detailedMetrics?.stages?.['blend']}
+              metrics={detailedMetrics?.stages?.['blend']}
             >
               <div className="pl-4 border-l-2 border-gray-200">
                 <ProgressBar
@@ -326,7 +327,7 @@ function BookDetailPage() {
               current={detailedStatus.stages?.label?.complete || 0}
               total={detailedStatus.stages?.label?.total || 0}
               cost={detailedStatus.stages?.label?.cost_usd}
-              metrics={detailedMetrics?.stages?.['label-book'] || detailedMetrics?.stages?.['label']}
+              metrics={detailedMetrics?.stages?.['label']}
             >
               <div className="pl-4 border-l-2 border-gray-200">
                 <ProgressBar
@@ -379,10 +380,10 @@ function BookDetailPage() {
             </div>
 
             {/* ToC Section */}
-            <TocSection toc={detailedStatus.toc} bookId={bookId} />
+            <TocSection toc={detailedStatus.toc} bookId={bookId} metrics={detailedMetrics?.stages} />
 
             {/* Structure Section */}
-            <StructureSection structure={detailedStatus.structure} bookId={bookId} />
+            <StructureSection structure={detailedStatus.structure} bookId={bookId} metrics={detailedMetrics?.stages} />
 
             {/* Agent Logs Section */}
             {detailedStatus.agent_logs && detailedStatus.agent_logs.length > 0 && (

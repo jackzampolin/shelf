@@ -63,7 +63,7 @@ func (j *Job) CreatePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit, error)
 		JobID:       j.RecordID,
 		ChatRequest: request,
 		Metrics: &jobs.WorkUnitMetrics{
-			Stage:     j.Type(),
+			Stage:     "toc-pattern",
 			ItemKey:   "pattern_analysis",
 			PromptKey: pattern_analyzer.PromptKey,
 			PromptCID: j.GetPromptCID(pattern_analyzer.PromptKey),

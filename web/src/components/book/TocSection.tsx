@@ -1,15 +1,17 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import type { StatusType } from '@/components/ui'
-import type { TocStatus, TocEntry } from './types'
+import type { TocStatus, TocEntry, StageMetrics } from './types'
 
 interface TocSectionProps {
   toc?: TocStatus
   bookId: string
+  metrics?: Record<string, StageMetrics>
 }
 
-export function TocSection({ toc, bookId }: TocSectionProps) {
+export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
   const [entriesExpanded, setEntriesExpanded] = useState(false)
+  const [metricsExpanded, setMetricsExpanded] = useState(false)
 
   if (!toc) return null
 
@@ -96,6 +98,28 @@ export function TocSection({ toc, bookId }: TocSectionProps) {
           </div>
         </div>
       )}
+
+      {/* Metrics breakdown by ToC stage */}
+      {metrics && hasTocMetrics(metrics) && (
+        <div className="mt-3">
+          <button
+            onClick={() => setMetricsExpanded(!metricsExpanded)}
+            className="text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-1"
+          >
+            <span>{metricsExpanded ? 'Hide' : 'Show'} Stage Metrics</span>
+            <span className={`transition-transform ${metricsExpanded ? 'rotate-180' : ''}`}>▼</span>
+          </button>
+          {metricsExpanded && (
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              {metrics['toc'] && <StageMetricsCard label="Find/Extract" metrics={metrics['toc']} />}
+              {metrics['toc-link'] && <StageMetricsCard label="Link" metrics={metrics['toc-link']} />}
+              {metrics['toc-pattern'] && <StageMetricsCard label="Pattern Analysis" metrics={metrics['toc-pattern']} />}
+              {metrics['toc-discover'] && <StageMetricsCard label="Chapter Discovery" metrics={metrics['toc-discover']} />}
+              {metrics['toc-validate'] && <StageMetricsCard label="Gap Validation" metrics={metrics['toc-validate']} />}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -168,6 +192,57 @@ function TocEntryRow({ entry, bookId }: { entry: TocEntry; bookId: string }) {
           </Link>
         ) : (
           <span className="text-gray-300">—</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function hasTocMetrics(metrics: Record<string, StageMetrics>): boolean {
+  const tocKeys = ['toc', 'toc-link', 'toc-pattern', 'toc-discover', 'toc-validate']
+  return tocKeys.some(key => metrics[key] && metrics[key].count > 0)
+}
+
+function StageMetricsCard({ label, metrics }: { label: string; metrics: StageMetrics }) {
+  const formatLatency = (ms: number) => {
+    if (ms < 1000) return `${ms.toFixed(0)}ms`
+    return `${(ms / 1000).toFixed(1)}s`
+  }
+
+  return (
+    <div className="bg-gray-50 rounded px-3 py-2 text-xs">
+      <div className="font-medium text-gray-700 mb-1">{label}</div>
+      <div className="space-y-0.5 text-gray-600">
+        <div className="flex justify-between">
+          <span>Calls:</span>
+          <span className="font-mono">
+            {metrics.count}
+            {metrics.error_count > 0 && (
+              <span className="text-red-500 ml-1">({metrics.error_count} err)</span>
+            )}
+          </span>
+        </div>
+        {metrics.latency_p50 > 0 && (
+          <div className="flex justify-between">
+            <span>Latency:</span>
+            <span className="font-mono">
+              {formatLatency(metrics.latency_p50 * 1000)} p50 / {formatLatency(metrics.latency_p95 * 1000)} p95
+            </span>
+          </div>
+        )}
+        {metrics.total_cost_usd > 0 && (
+          <div className="flex justify-between">
+            <span>Cost:</span>
+            <span className="font-mono">${metrics.total_cost_usd.toFixed(4)}</span>
+          </div>
+        )}
+        {metrics.total_tokens > 0 && (
+          <div className="flex justify-between">
+            <span>Tokens:</span>
+            <span className="font-mono">
+              {metrics.total_prompt_tokens.toLocaleString()}→{metrics.total_completion_tokens.toLocaleString()}
+            </span>
+          </div>
         )}
       </div>
     </div>
