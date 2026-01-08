@@ -26,7 +26,6 @@ function BookDetailPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [metadataModalOpen, setMetadataModalOpen] = useState(false)
-  const [tocModalOpen, setTocModalOpen] = useState(false)
   const [agentLogModalOpen, setAgentLogModalOpen] = useState(false)
   const [selectedAgentLogId, setSelectedAgentLogId] = useState<string | null>(null)
 
@@ -95,6 +94,21 @@ function BookDetailPage() {
         })
       ),
     refetchInterval: 5000,
+  })
+
+  // Fetch detailed metrics with latency percentiles and token stats
+  const { data: detailedMetrics } = useQuery({
+    queryKey: ['books', bookId, 'metrics', 'detailed'],
+    queryFn: async () => {
+      // Use fetch directly since this endpoint isn't in the generated types yet
+      const resp = await fetch(`/api/books/${bookId}/metrics/detailed`)
+      if (!resp.ok) throw new Error('Failed to fetch detailed metrics')
+      return resp.json() as Promise<{
+        book_id: string
+        stages: Record<string, StageMetrics>
+      }>
+    },
+    refetchInterval: 10000, // Less frequent than status
   })
 
   // Fetch agent log detail when selected
@@ -272,9 +286,10 @@ function BookDetailPage() {
               current={detailedStatus.stages?.ocr?.complete || 0}
               total={detailedStatus.stages?.ocr?.total || 0}
               cost={detailedStatus.stages?.ocr?.total_cost_usd}
+              metrics={detailedMetrics?.stages?.['ocr-book']}
             >
               {detailedStatus.ocr_progress && Object.entries(detailedStatus.ocr_progress).length > 0 ? (
-                <div className="space-y-2 mt-2 pl-4 border-l-2 border-gray-200">
+                <div className="space-y-2 pl-4 border-l-2 border-gray-200">
                   {Object.entries(detailedStatus.ocr_progress).map(([provider, progress]) => (
                     <div key={provider} className="flex items-center justify-between text-sm">
                       <div className="flex-1">
@@ -291,7 +306,7 @@ function BookDetailPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-gray-400 mt-2 pl-4">No OCR results yet</p>
+                <p className="text-sm text-gray-400 pl-4">No OCR results yet</p>
               )}
             </CollapsibleSection>
 
@@ -301,8 +316,9 @@ function BookDetailPage() {
               current={detailedStatus.stages?.blend?.complete || 0}
               total={detailedStatus.stages?.blend?.total || 0}
               cost={detailedStatus.stages?.blend?.cost_usd}
+              metrics={detailedMetrics?.stages?.['process-book'] || detailedMetrics?.stages?.['blend']}
             >
-              <div className="mt-2 pl-4 border-l-2 border-gray-200">
+              <div className="pl-4 border-l-2 border-gray-200">
                 <ProgressBar
                   label="Pages"
                   current={detailedStatus.stages?.blend?.complete || 0}
@@ -317,8 +333,9 @@ function BookDetailPage() {
               current={detailedStatus.stages?.label?.complete || 0}
               total={detailedStatus.stages?.label?.total || 0}
               cost={detailedStatus.stages?.label?.cost_usd}
+              metrics={detailedMetrics?.stages?.['label-book'] || detailedMetrics?.stages?.['label']}
             >
-              <div className="mt-2 pl-4 border-l-2 border-gray-200">
+              <div className="pl-4 border-l-2 border-gray-200">
                 <ProgressBar
                   label="Pages"
                   current={detailedStatus.stages?.label?.complete || 0}
@@ -368,192 +385,27 @@ function BookDetailPage() {
               )}
             </div>
 
-            {/* ToC Section */}
-            <div className="border-t pt-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700">Table of Contents</span>
-                <div className="flex items-center space-x-2">
-                  {detailedStatus.toc?.cost_usd !== undefined && (
-                    <span className="font-mono text-sm text-gray-500">
-                      ${detailedStatus.toc.cost_usd.toFixed(4)}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="mt-2 pl-4 space-y-1 text-sm">
-                <div className="flex items-center space-x-2">
-                  <span className="text-gray-500">Finder:</span>
-                  <StatusBadge
-                    status={
-                      detailedStatus.toc?.finder_complete
-                        ? 'complete'
-                        : detailedStatus.toc?.finder_failed
-                        ? 'failed'
-                        : detailedStatus.toc?.finder_started
-                        ? 'in_progress'
-                        : 'pending'
-                    }
-                  />
-                  {detailedStatus.toc?.found && (
-                    <span className="text-green-600">
-                      Found (pages {detailedStatus.toc.start_page}-{detailedStatus.toc.end_page})
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-gray-500">Extract:</span>
-                  <StatusBadge
-                    status={
-                      detailedStatus.toc?.extract_complete
-                        ? 'complete'
-                        : detailedStatus.toc?.extract_failed
-                        ? 'failed'
-                        : detailedStatus.toc?.extract_started
-                        ? 'in_progress'
-                        : 'pending'
-                    }
-                  />
-                  {detailedStatus.toc?.entry_count !== undefined && detailedStatus.toc.entry_count > 0 && (
-                    <span className="text-gray-600">
-                      {detailedStatus.toc.entry_count} entries
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-gray-500">Link:</span>
-                  <StatusBadge
-                    status={
-                      detailedStatus.toc?.link_complete
-                        ? 'complete'
-                        : detailedStatus.toc?.link_failed
-                        ? 'failed'
-                        : detailedStatus.toc?.link_started
-                        ? 'in_progress'
-                        : 'pending'
-                    }
-                  />
-                  {detailedStatus.toc?.entry_count !== undefined && detailedStatus.toc.entry_count > 0 && (
-                    <span className="text-gray-600">
-                      {detailedStatus.toc.entries_linked ?? 0} of {detailedStatus.toc.entry_count} linked
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-gray-500">Finalize:</span>
-                  <StatusBadge
-                    status={
-                      detailedStatus.toc?.finalize_complete
-                        ? 'complete'
-                        : detailedStatus.toc?.finalize_failed
-                        ? 'failed'
-                        : detailedStatus.toc?.finalize_started
-                        ? 'in_progress'
-                        : 'pending'
-                    }
-                  />
-                  {detailedStatus.toc?.entries_discovered !== undefined && detailedStatus.toc.entries_discovered > 0 && (
-                    <span className="text-gray-600">
-                      +{detailedStatus.toc.entries_discovered} discovered
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center space-x-4">
-                  {detailedStatus.toc?.found && detailedStatus.toc?.start_page && (
-                    <Link
-                      to="/books/$bookId/pages/$pageNum"
-                      params={{ bookId, pageNum: String(detailedStatus.toc.start_page) }}
-                      className="text-blue-600 hover:text-blue-800"
-                    >
-                      View ToC Pages
-                    </Link>
-                  )}
-                  {detailedStatus.toc?.extract_complete && detailedStatus.toc?.entries && detailedStatus.toc.entries.length > 0 && (
-                    <button
-                      onClick={() => setTocModalOpen(true)}
-                      className="text-blue-600 hover:text-blue-800"
-                    >
-                      View Entries
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
+            {/* ToC Section - Enhanced with expandable entries */}
+            <TocSection
+              toc={detailedStatus.toc}
+              bookId={bookId}
+            />
 
-            {/* Structure Section */}
-            <div className="border-t pt-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm font-medium text-gray-700">Structure</span>
-                  <StatusBadge
-                    status={
-                      detailedStatus.structure?.complete
-                        ? 'complete'
-                        : detailedStatus.structure?.failed
-                        ? 'failed'
-                        : detailedStatus.structure?.started
-                        ? 'in_progress'
-                        : 'pending'
-                    }
-                  />
-                </div>
-                <div className="flex items-center space-x-2">
-                  {detailedStatus.structure?.chapter_count !== undefined && detailedStatus.structure.chapter_count > 0 && (
-                    <span className="text-gray-600">
-                      {detailedStatus.structure.chapter_count} chapters
-                    </span>
-                  )}
-                  {detailedStatus.structure?.cost_usd !== undefined && detailedStatus.structure.cost_usd > 0 && (
-                    <span className="font-mono text-sm text-gray-500">
-                      ${detailedStatus.structure.cost_usd.toFixed(4)}
-                    </span>
-                  )}
-                  {detailedStatus.structure?.complete && (
-                    <Link
-                      to="/books/$bookId/chapters"
-                      params={{ bookId }}
-                      className="text-sm text-blue-600 hover:text-blue-800"
-                    >
-                      View Chapters
-                    </Link>
-                  )}
-                </div>
-              </div>
-              {detailedStatus.structure?.started && !detailedStatus.structure?.complete && (
-                <div className="mt-2 pl-4 text-sm text-gray-500">
-                  Building unified book structure...
-                </div>
-              )}
-            </div>
+            {/* Structure Section - Enhanced */}
+            <StructureSection
+              structure={detailedStatus.structure}
+              bookId={bookId}
+            />
 
-            {/* Agent Logs Section */}
+            {/* Agent Logs Section - Grouped by operation */}
             {detailedStatus.agent_logs && detailedStatus.agent_logs.length > 0 && (
-              <div className="border-t pt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">Agent Logs</span>
-                </div>
-                <div className="space-y-2 pl-4">
-                  {detailedStatus.agent_logs.map((log) => (
-                    <div key={log.id} className="flex items-center justify-between text-sm">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium">{log.agent_type}</span>
-                        <StatusBadge status={log.success ? 'complete' : 'failed'} />
-                        <span className="text-gray-400">
-                          {log.iterations} iteration{log.iterations !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setSelectedAgentLogId(log.id || null)
-                          setAgentLogModalOpen(true)
-                        }}
-                        className="text-blue-600 hover:text-blue-800"
-                      >
-                        View Log
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <AgentLogsSection
+                logs={detailedStatus.agent_logs}
+                onViewLog={(id) => {
+                  setSelectedAgentLogId(id)
+                  setAgentLogModalOpen(true)
+                }}
+              />
             )}
           </div>
         </div>
@@ -614,50 +466,6 @@ function BookDetailPage() {
                 </dd>
               </div>
             )}
-          </div>
-        </Modal>
-      )}
-
-      {/* ToC Modal */}
-      {tocModalOpen && detailedStatus?.toc?.entries && (
-        <Modal title="Table of Contents" onClose={() => setTocModalOpen(false)}>
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {detailedStatus.toc.entries.map((entry, idx) => (
-              <div
-                key={idx}
-                className={`flex items-center justify-between text-sm py-1 ${entry.source === 'discovered' ? 'bg-green-50 -mx-2 px-2 rounded' : ''}`}
-                style={{ paddingLeft: `${(entry.level || 0) * 16}px` }}
-              >
-                <div className="flex items-center space-x-2">
-                  {entry.entry_number && (
-                    <span className="text-gray-400 font-mono text-xs">{entry.entry_number}</span>
-                  )}
-                  <span className={entry.level === 0 ? 'font-medium' : ''}>{entry.title}</span>
-                  {entry.level_name && (
-                    <span className="text-xs text-gray-400">({entry.level_name})</span>
-                  )}
-                  {entry.source === 'discovered' && (
-                    <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">discovered</span>
-                  )}
-                </div>
-                <div className="flex items-center space-x-2">
-                  {entry.printed_page_number && (
-                    <span className="text-gray-500 font-mono">{entry.printed_page_number}</span>
-                  )}
-                  {entry.is_linked && entry.actual_page_num ? (
-                    <Link
-                      to="/books/$bookId/pages/$pageNum"
-                      params={{ bookId, pageNum: String(entry.actual_page_num) }}
-                      className="text-blue-600 hover:text-blue-800 font-mono text-xs"
-                    >
-                      → p.{entry.actual_page_num}
-                    </Link>
-                  ) : (
-                    <span className="text-gray-300 font-mono text-xs">—</span>
-                  )}
-                </div>
-              </div>
-            ))}
           </div>
         </Modal>
       )}
@@ -741,17 +549,42 @@ function ProgressBar({ label, current, total }: { label: string; current: number
   )
 }
 
+// Detailed metrics for a stage
+interface StageMetrics {
+  count: number
+  success_count: number
+  error_count: number
+  total_cost_usd: number
+  avg_cost_usd: number
+  latency_p50: number
+  latency_p95: number
+  latency_p99: number
+  latency_avg: number
+  latency_min: number
+  latency_max: number
+  total_prompt_tokens: number
+  total_completion_tokens: number
+  total_reasoning_tokens: number
+  total_tokens: number
+  avg_prompt_tokens: number
+  avg_completion_tokens: number
+  avg_reasoning_tokens: number
+  avg_total_tokens: number
+}
+
 function CollapsibleSection({
   title,
   current,
   total,
   cost,
+  metrics,
   children,
 }: {
   title: string
   current: number
   total: number
   cost?: number
+  metrics?: StageMetrics
   children: React.ReactNode
 }) {
   const [isOpen, setIsOpen] = useState(false)
@@ -784,9 +617,52 @@ function CollapsibleSection({
           )}
         </div>
       </button>
-      {isOpen && children}
+      {isOpen && (
+        <div className="mt-2">
+          {/* Metrics summary row */}
+          {metrics && metrics.count > 0 && (
+            <div className="bg-gray-50 rounded px-3 py-2 mb-2 text-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <span className="text-gray-600">
+                    <strong>{metrics.count}</strong> calls
+                    {metrics.error_count > 0 && (
+                      <span className="text-red-500 ml-1">({metrics.error_count} errors)</span>
+                    )}
+                  </span>
+                  <span className="text-gray-600">
+                    Latency: <strong>{metrics.latency_p50.toFixed(1)}s</strong> p50
+                    <span className="text-gray-400 mx-1">/</span>
+                    <strong>{metrics.latency_p95.toFixed(1)}s</strong> p95
+                  </span>
+                </div>
+                <div className="flex items-center space-x-4">
+                  <span className="text-gray-600">
+                    Tokens: <strong>{formatNumber(metrics.avg_prompt_tokens)}</strong> in
+                    <span className="text-gray-400 mx-1">→</span>
+                    <strong>{formatNumber(metrics.avg_completion_tokens)}</strong> out
+                    {metrics.avg_reasoning_tokens > 0 && (
+                      <span className="text-purple-600 ml-1">
+                        (+{formatNumber(metrics.avg_reasoning_tokens)} reason)
+                      </span>
+                    )}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+          {children}
+        </div>
+      )}
     </div>
   )
+}
+
+// Format large numbers with K/M suffix
+function formatNumber(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K'
+  return Math.round(n).toString()
 }
 
 function StatusBadge({ status }: { status: 'pending' | 'in_progress' | 'complete' | 'failed' }) {
@@ -1090,6 +966,585 @@ function ToolCallsSection({ toolCalls }: { toolCalls?: unknown }) {
             )}
           </Disclosure>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ToC Entry type for the ToC section
+interface TocEntry {
+  entry_number?: string
+  title?: string
+  level?: number
+  level_name?: string
+  printed_page_number?: string
+  sort_order?: number
+  actual_page_num?: number
+  is_linked?: boolean
+  source?: string
+}
+
+// ToC Status type
+interface TocStatus {
+  finder_started?: boolean
+  finder_complete?: boolean
+  finder_failed?: boolean
+  found?: boolean
+  start_page?: number
+  end_page?: number
+  extract_started?: boolean
+  extract_complete?: boolean
+  extract_failed?: boolean
+  link_started?: boolean
+  link_complete?: boolean
+  link_failed?: boolean
+  link_retries?: number
+  finalize_started?: boolean
+  finalize_complete?: boolean
+  finalize_failed?: boolean
+  finalize_retries?: number
+  entry_count?: number
+  entries_linked?: number
+  entries_discovered?: number
+  entries?: TocEntry[]
+  cost_usd?: number
+}
+
+// Enhanced ToC Section Component
+function TocSection({ toc, bookId }: { toc?: TocStatus; bookId: string }) {
+  const [entriesExpanded, setEntriesExpanded] = useState(false)
+
+  if (!toc) return null
+
+  // Calculate stage statuses
+  const finderStatus = toc.finder_complete ? 'complete' : toc.finder_failed ? 'failed' : toc.finder_started ? 'in_progress' : 'pending'
+  const extractStatus = toc.extract_complete ? 'complete' : toc.extract_failed ? 'failed' : toc.extract_started ? 'in_progress' : 'pending'
+  const linkStatus = toc.link_complete ? 'complete' : toc.link_failed ? 'failed' : toc.link_started ? 'in_progress' : 'pending'
+  const finalizeStatus = toc.finalize_complete ? 'complete' : toc.finalize_failed ? 'failed' : toc.finalize_started ? 'in_progress' : 'pending'
+
+  // Count entries by source
+  const extractedCount = (toc.entries || []).filter(e => e.source !== 'discovered').length
+  const discoveredCount = toc.entries_discovered || 0
+  const linkedCount = toc.entries_linked || 0
+  const totalCount = toc.entry_count || 0
+
+  return (
+    <div className="border-t pt-4">
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-medium text-gray-700">Table of Contents</span>
+        <div className="flex items-center space-x-3">
+          {toc.cost_usd !== undefined && (
+            <span className="font-mono text-sm text-gray-500">
+              ${toc.cost_usd.toFixed(4)}
+            </span>
+          )}
+          {toc.found && toc.start_page && (
+            <Link
+              to="/books/$bookId/pages/$pageNum"
+              params={{ bookId, pageNum: String(toc.start_page) }}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              View ToC Pages
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* Pipeline Status - horizontal flow */}
+      <div className="flex items-center space-x-1 text-xs mb-3">
+        <TocStageChip label="Find" status={finderStatus} detail={toc.found ? `p${toc.start_page}-${toc.end_page}` : undefined} />
+        <span className="text-gray-300">→</span>
+        <TocStageChip label="Extract" status={extractStatus} detail={extractedCount > 0 ? `${extractedCount}` : undefined} />
+        <span className="text-gray-300">→</span>
+        <TocStageChip label="Link" status={linkStatus} detail={totalCount > 0 ? `${linkedCount}/${totalCount}` : undefined} />
+        <span className="text-gray-300">→</span>
+        <TocStageChip label="Finalize" status={finalizeStatus} detail={discoveredCount > 0 ? `+${discoveredCount}` : undefined} />
+      </div>
+
+      {/* Summary stats */}
+      {totalCount > 0 && (
+        <div className="flex items-center justify-between bg-gray-50 rounded px-3 py-2 mb-3">
+          <div className="flex items-center space-x-4 text-sm">
+            <span className="text-gray-600">
+              <strong>{totalCount}</strong> entries
+            </span>
+            <span className="text-gray-600">
+              <strong>{linkedCount}</strong> linked ({totalCount > 0 ? Math.round((linkedCount / totalCount) * 100) : 0}%)
+            </span>
+            {discoveredCount > 0 && (
+              <span className="text-green-600">
+                <strong>+{discoveredCount}</strong> discovered
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => setEntriesExpanded(!entriesExpanded)}
+            className="text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-1"
+          >
+            <span>{entriesExpanded ? 'Hide' : 'Show'} Entries</span>
+            <span className={`transition-transform ${entriesExpanded ? 'rotate-180' : ''}`}>▼</span>
+          </button>
+        </div>
+      )}
+
+      {/* Expandable entries list */}
+      {entriesExpanded && toc.entries && toc.entries.length > 0 && (
+        <div className="border rounded-lg overflow-hidden">
+          {/* Table header */}
+          <div className="grid grid-cols-12 gap-2 bg-gray-100 px-3 py-2 text-xs font-medium text-gray-600 border-b">
+            <div className="col-span-1">#</div>
+            <div className="col-span-6">Title</div>
+            <div className="col-span-2">Type</div>
+            <div className="col-span-1 text-right">Print</div>
+            <div className="col-span-2 text-right">Scan Page</div>
+          </div>
+          {/* Entries */}
+          <div className="max-h-96 overflow-y-auto">
+            {toc.entries.map((entry, idx) => (
+              <TocEntryRow key={idx} entry={entry} bookId={bookId} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ToC Stage Chip component
+function TocStageChip({ label, status, detail }: { label: string; status: 'pending' | 'in_progress' | 'complete' | 'failed'; detail?: string }) {
+  const statusStyles = {
+    pending: 'bg-gray-100 text-gray-500 border-gray-200',
+    in_progress: 'bg-blue-50 text-blue-700 border-blue-200',
+    complete: 'bg-green-50 text-green-700 border-green-200',
+    failed: 'bg-red-50 text-red-700 border-red-200',
+  }
+
+  const statusIcons = {
+    pending: '○',
+    in_progress: '◐',
+    complete: '●',
+    failed: '✕',
+  }
+
+  return (
+    <div className={`px-2 py-1 rounded border ${statusStyles[status]} flex items-center space-x-1`}>
+      <span>{statusIcons[status]}</span>
+      <span className="font-medium">{label}</span>
+      {detail && <span className="text-xs opacity-75">({detail})</span>}
+    </div>
+  )
+}
+
+// Structure Status type
+interface StructureStatus {
+  started?: boolean
+  complete?: boolean
+  failed?: boolean
+  retries?: number
+  cost_usd?: number
+  chapter_count?: number
+}
+
+// Enhanced Structure Section Component
+function StructureSection({ structure, bookId }: { structure?: StructureStatus; bookId: string }) {
+  const [expanded, setExpanded] = useState(false)
+
+  // Fetch chapter details when structure is complete
+  const { data: chapters } = useQuery({
+    queryKey: ['books', bookId, 'chapters'],
+    queryFn: async () =>
+      unwrap(
+        await client.GET('/api/books/{id}/chapters', {
+          params: { path: { id: bookId } },
+        })
+      ),
+    enabled: !!structure?.complete,
+  })
+
+  if (!structure) return null
+
+  const status = structure.complete
+    ? 'complete'
+    : structure.failed
+    ? 'failed'
+    : structure.started
+    ? 'in_progress'
+    : 'pending'
+
+  // Calculate matter type breakdown from chapters
+  const matterBreakdown = chapters?.chapters?.reduce((acc, ch) => {
+    const matter = ch.matter_type || 'unknown'
+    acc[matter] = (acc[matter] || 0) + 1
+    return acc
+  }, {} as Record<string, number>) || {}
+
+  // Calculate polish progress
+  const polishStats = chapters?.chapters?.reduce(
+    (acc, ch) => {
+      if (ch.polish_complete) acc.complete++
+      else if (ch.polish_failed) acc.failed++
+      else acc.pending++
+      acc.total++
+      return acc
+    },
+    { complete: 0, failed: 0, pending: 0, total: 0 }
+  ) || { complete: 0, failed: 0, pending: 0, total: 0 }
+
+  const hasDetails = chapters && chapters.chapters && chapters.chapters.length > 0
+
+  return (
+    <div className="border-t pt-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <span className="text-sm font-medium text-gray-700">Structure</span>
+          <StatusBadge status={status} />
+        </div>
+        <div className="flex items-center space-x-2">
+          {structure.chapter_count !== undefined && structure.chapter_count > 0 && (
+            <span className="text-gray-600 text-sm">
+              {structure.chapter_count} chapters
+            </span>
+          )}
+          {structure.cost_usd !== undefined && structure.cost_usd > 0 && (
+            <span className="font-mono text-sm text-gray-500">
+              ${structure.cost_usd.toFixed(4)}
+            </span>
+          )}
+          {structure.complete && (
+            <Link
+              to="/books/$bookId/chapters"
+              params={{ bookId }}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              View Chapters
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* In-progress message */}
+      {structure.started && !structure.complete && !structure.failed && (
+        <div className="mt-2 pl-4 text-sm text-gray-500">
+          Building unified book structure...
+        </div>
+      )}
+
+      {/* Completed - show summary */}
+      {hasDetails && (
+        <div className="mt-3">
+          {/* Summary row */}
+          <div className="flex items-center justify-between bg-gray-50 rounded px-3 py-2">
+            <div className="flex items-center space-x-4 text-sm">
+              {/* Matter type breakdown */}
+              {Object.entries(matterBreakdown).map(([matter, count]) => (
+                <span key={matter} className="flex items-center space-x-1">
+                  <MatterTypeBadge type={matter} />
+                  <span className="text-gray-600">{count}</span>
+                </span>
+              ))}
+            </div>
+            {/* Polish progress */}
+            {polishStats.total > 0 && (
+              <div className="flex items-center space-x-2 text-sm">
+                <span className="text-gray-500">Polish:</span>
+                <span className={polishStats.complete === polishStats.total ? 'text-green-600' : 'text-gray-600'}>
+                  {polishStats.complete}/{polishStats.total}
+                </span>
+                {polishStats.failed > 0 && (
+                  <span className="text-red-500">({polishStats.failed} failed)</span>
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-1"
+            >
+              <span>{expanded ? 'Hide' : 'Show'} Details</span>
+              <span className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>▼</span>
+            </button>
+          </div>
+
+          {/* Expanded chapter list */}
+          {expanded && chapters?.chapters && (
+            <div className="border rounded-lg overflow-hidden mt-2">
+              <div className="grid grid-cols-12 gap-2 bg-gray-100 px-3 py-2 text-xs font-medium text-gray-600 border-b">
+                <div className="col-span-1">#</div>
+                <div className="col-span-5">Title</div>
+                <div className="col-span-2">Type</div>
+                <div className="col-span-2">Pages</div>
+                <div className="col-span-2">Polish</div>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {chapters.chapters.map((ch, idx) => (
+                  <div
+                    key={ch.entry_id || idx}
+                    className="grid grid-cols-12 gap-2 px-3 py-2 text-sm border-b last:border-b-0 hover:bg-gray-50"
+                  >
+                    <div className="col-span-1 font-mono text-xs text-gray-400">
+                      {ch.entry_number || idx + 1}
+                    </div>
+                    <div className="col-span-5 flex items-center">
+                      <div style={{ width: `${(ch.level || 0) * 12}px` }} className="flex-shrink-0" />
+                      <span className={ch.level === 0 || ch.level === 1 ? 'font-medium' : ''}>
+                        {ch.title || 'Untitled'}
+                      </span>
+                    </div>
+                    <div className="col-span-2">
+                      <MatterTypeBadge type={ch.matter_type} />
+                    </div>
+                    <div className="col-span-2 font-mono text-xs text-gray-500">
+                      {ch.start_page && ch.end_page ? `${ch.start_page}-${ch.end_page}` : '-'}
+                    </div>
+                    <div className="col-span-2">
+                      {ch.polish_complete ? (
+                        <span className="text-green-600 text-xs">● Complete</span>
+                      ) : ch.polish_failed ? (
+                        <span className="text-red-600 text-xs">✕ Failed</span>
+                      ) : (
+                        <span className="text-gray-400 text-xs">○ Pending</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Matter type badge component
+function MatterTypeBadge({ type }: { type?: string }) {
+  const styles: Record<string, string> = {
+    front_matter: 'bg-purple-100 text-purple-700',
+    body: 'bg-blue-100 text-blue-700',
+    back_matter: 'bg-orange-100 text-orange-700',
+    unknown: 'bg-gray-100 text-gray-600',
+  }
+  const labels: Record<string, string> = {
+    front_matter: 'Front',
+    body: 'Body',
+    back_matter: 'Back',
+    unknown: '?',
+  }
+  const key = type || 'unknown'
+  return (
+    <span className={`text-xs px-1.5 py-0.5 rounded ${styles[key] || styles.unknown}`}>
+      {labels[key] || key}
+    </span>
+  )
+}
+
+// Agent Log type
+interface AgentLogSummary {
+  id?: string
+  agent_type?: string
+  started_at?: string
+  completed_at?: string
+  iterations?: number
+  success?: boolean
+  error?: string
+}
+
+// Agent operation categories
+const AGENT_CATEGORIES: Record<string, { label: string; agents: string[] }> = {
+  toc: {
+    label: 'Table of Contents',
+    agents: ['toc_finder', 'toc_extract', 'toc_entry_finder'],
+  },
+  structure: {
+    label: 'Structure',
+    agents: ['chapter_classifier', 'chapter_polisher', 'common_structure'],
+  },
+  metadata: {
+    label: 'Metadata',
+    agents: ['metadata_extract'],
+  },
+}
+
+function getAgentCategory(agentType: string): string {
+  for (const [category, config] of Object.entries(AGENT_CATEGORIES)) {
+    if (config.agents.some(a => agentType.toLowerCase().includes(a.toLowerCase()))) {
+      return category
+    }
+  }
+  return 'other'
+}
+
+function getAgentDisplayName(agentType: string): string {
+  const names: Record<string, string> = {
+    toc_finder: 'ToC Finder',
+    toc_extract: 'ToC Extract',
+    toc_entry_finder: 'Entry Finder',
+    chapter_classifier: 'Classifier',
+    chapter_polisher: 'Polisher',
+    metadata_extract: 'Metadata',
+    common_structure: 'Structure Build',
+  }
+  for (const [key, name] of Object.entries(names)) {
+    if (agentType.toLowerCase().includes(key.toLowerCase())) {
+      return name
+    }
+  }
+  return agentType
+}
+
+// Grouped Agent Logs Section
+function AgentLogsSection({ logs, onViewLog }: { logs: AgentLogSummary[]; onViewLog: (id: string) => void }) {
+  const [expanded, setExpanded] = useState(false)
+
+  // Group logs by category
+  const grouped = logs.reduce((acc, log) => {
+    const category = getAgentCategory(log.agent_type || '')
+    if (!acc[category]) acc[category] = []
+    acc[category].push(log)
+    return acc
+  }, {} as Record<string, AgentLogSummary[]>)
+
+  // Calculate summary stats
+  const totalLogs = logs.length
+  const successCount = logs.filter(l => l.success).length
+  const failCount = totalLogs - successCount
+  const totalIterations = logs.reduce((sum, l) => sum + (l.iterations || 0), 0)
+
+  return (
+    <div className="border-t pt-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center space-x-3">
+          <span className="text-sm font-medium text-gray-700">Agent Operations</span>
+          <span className="text-xs text-gray-500">
+            {totalLogs} runs
+            {failCount > 0 && <span className="text-red-500 ml-1">({failCount} failed)</span>}
+          </span>
+        </div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-1"
+        >
+          <span>{expanded ? 'Hide' : 'Show'} Details</span>
+          <span className={`transition-transform ${expanded ? 'rotate-180' : ''}`}>▼</span>
+        </button>
+      </div>
+
+      {/* Summary row */}
+      <div className="flex items-center space-x-4 text-xs text-gray-500 mb-2">
+        {Object.entries(grouped).map(([category, categoryLogs]) => {
+          const catSuccess = categoryLogs.filter(l => l.success).length
+          const catTotal = categoryLogs.length
+          const categoryConfig = AGENT_CATEGORIES[category]
+          return (
+            <span key={category} className="flex items-center space-x-1">
+              <span className="font-medium">{categoryConfig?.label || category}:</span>
+              <span className={catSuccess === catTotal ? 'text-green-600' : 'text-gray-600'}>
+                {catSuccess}/{catTotal}
+              </span>
+            </span>
+          )
+        })}
+        <span>
+          <span className="font-medium">Total iterations:</span> {totalIterations}
+        </span>
+      </div>
+
+      {/* Expanded details */}
+      {expanded && (
+        <div className="space-y-3">
+          {Object.entries(grouped).map(([category, categoryLogs]) => {
+            const categoryConfig = AGENT_CATEGORIES[category]
+            return (
+              <div key={category} className="bg-gray-50 rounded p-3">
+                <div className="text-xs font-medium text-gray-600 mb-2">
+                  {categoryConfig?.label || category}
+                </div>
+                <div className="space-y-1">
+                  {categoryLogs.map((log) => (
+                    <div key={log.id} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center space-x-2">
+                        <span className={log.success ? 'text-green-600' : 'text-red-600'}>
+                          {log.success ? '●' : '✕'}
+                        </span>
+                        <span className="font-medium">{getAgentDisplayName(log.agent_type || '')}</span>
+                        <span className="text-gray-400 text-xs">
+                          {log.iterations} iter{(log.iterations || 0) !== 1 ? 's' : ''}
+                        </span>
+                        {log.error && (
+                          <span className="text-red-500 text-xs truncate max-w-xs" title={log.error}>
+                            {log.error.slice(0, 30)}...
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => log.id && onViewLog(log.id)}
+                        className="text-xs text-blue-600 hover:text-blue-800"
+                      >
+                        View
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ToC Entry Row component
+function TocEntryRow({ entry, bookId }: { entry: TocEntry; bookId: string }) {
+  const level = entry.level || 0
+  const isDiscovered = entry.source === 'discovered'
+  const isLinked = entry.is_linked && entry.actual_page_num
+
+  return (
+    <div
+      className={`grid grid-cols-12 gap-2 px-3 py-2 text-sm border-b last:border-b-0 hover:bg-gray-50 ${
+        isDiscovered ? 'bg-green-50/50' : ''
+      }`}
+    >
+      {/* Entry number */}
+      <div className="col-span-1 font-mono text-xs text-gray-400">
+        {entry.entry_number || '-'}
+      </div>
+      {/* Title with indentation */}
+      <div className="col-span-6 flex items-center">
+        <div style={{ width: `${level * 16}px` }} className="flex-shrink-0" />
+        <span className={level === 0 ? 'font-medium' : ''}>
+          {entry.title || 'Untitled'}
+        </span>
+      </div>
+      {/* Type badge */}
+      <div className="col-span-2">
+        <div className="flex items-center space-x-1">
+          {entry.level_name && (
+            <span className="text-xs text-gray-500">{entry.level_name}</span>
+          )}
+          {isDiscovered && (
+            <span className="text-xs bg-green-100 text-green-700 px-1 rounded">new</span>
+          )}
+        </div>
+      </div>
+      {/* Printed page */}
+      <div className="col-span-1 text-right font-mono text-gray-500">
+        {entry.printed_page_number || '-'}
+      </div>
+      {/* Scan page */}
+      <div className="col-span-2 text-right">
+        {isLinked ? (
+          <Link
+            to="/books/$bookId/pages/$pageNum"
+            params={{ bookId, pageNum: String(entry.actual_page_num) }}
+            className="font-mono text-blue-600 hover:text-blue-800"
+          >
+            p.{entry.actual_page_num}
+          </Link>
+        ) : (
+          <span className="text-gray-300">—</span>
+        )}
       </div>
     </div>
   )

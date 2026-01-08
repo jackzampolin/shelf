@@ -839,6 +839,69 @@
                 }
             }
         },
+        "/api/books/{id}/metrics/detailed": {
+            "get": {
+                "description": "Get detailed metrics for a specific book including latency percentiles and token breakdowns per stage",
+                "tags": [
+                    "books",
+                    "metrics"
+                ],
+                "summary": "Get detailed book metrics with percentiles",
+                "parameters": [
+                    {
+                        "description": "Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.MetricsDetailedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/books/{id}/prompts": {
             "get": {
                 "description": "Get all prompts resolved for a specific book (with overrides applied)",
@@ -2007,6 +2070,57 @@
                 }
             }
         },
+        "/api/metrics/detailed": {
+            "get": {
+                "description": "Get detailed metrics including latency percentiles (p50, p95, p99) and token breakdowns per stage",
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Get detailed metrics with percentiles",
+                "parameters": [
+                    {
+                        "description": "Filter by book ID",
+                        "name": "book_id",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.MetricsDetailedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/metrics/summary": {
             "get": {
                 "description": "Get aggregated metrics summary with counts, costs, and timing",
@@ -2630,6 +2744,73 @@
                     }
                 }
             },
+            "github_com_jackzampolin_shelf_internal_metrics.DetailedStats": {
+                "type": "object",
+                "properties": {
+                    "avg_completion_tokens": {
+                        "type": "number"
+                    },
+                    "avg_cost_usd": {
+                        "type": "number"
+                    },
+                    "avg_prompt_tokens": {
+                        "description": "Average tokens per call",
+                        "type": "number"
+                    },
+                    "avg_reasoning_tokens": {
+                        "type": "number"
+                    },
+                    "avg_total_tokens": {
+                        "type": "number"
+                    },
+                    "count": {
+                        "description": "Basic counts",
+                        "type": "integer"
+                    },
+                    "error_count": {
+                        "type": "integer"
+                    },
+                    "latency_avg": {
+                        "type": "number"
+                    },
+                    "latency_max": {
+                        "type": "number"
+                    },
+                    "latency_min": {
+                        "type": "number"
+                    },
+                    "latency_p50": {
+                        "description": "Latency percentiles (seconds)",
+                        "type": "number"
+                    },
+                    "latency_p95": {
+                        "type": "number"
+                    },
+                    "latency_p99": {
+                        "type": "number"
+                    },
+                    "success_count": {
+                        "type": "integer"
+                    },
+                    "total_completion_tokens": {
+                        "type": "integer"
+                    },
+                    "total_cost_usd": {
+                        "description": "Cost",
+                        "type": "number"
+                    },
+                    "total_prompt_tokens": {
+                        "description": "Token stats",
+                        "type": "integer"
+                    },
+                    "total_reasoning_tokens": {
+                        "type": "integer"
+                    },
+                    "total_tokens": {
+                        "type": "integer"
+                    }
+                }
+            },
             "github_com_jackzampolin_shelf_internal_metrics.Metric": {
                 "type": "object",
                 "properties": {
@@ -2969,6 +3150,9 @@
                     "end_page": {
                         "type": "integer"
                     },
+                    "entry_id": {
+                        "type": "string"
+                    },
                     "entry_number": {
                         "type": "string"
                     },
@@ -2992,6 +3176,12 @@
                         "items": {
                             "$ref": "#/components/schemas/internal_server_endpoints.ChapterPage"
                         }
+                    },
+                    "polish_complete": {
+                        "type": "boolean"
+                    },
+                    "polish_failed": {
+                        "type": "boolean"
                     },
                     "sort_order": {
                         "type": "integer"
@@ -3405,6 +3595,20 @@
                     },
                     "total_cost_usd": {
                         "type": "number"
+                    }
+                }
+            },
+            "internal_server_endpoints.MetricsDetailedResponse": {
+                "type": "object",
+                "properties": {
+                    "book_id": {
+                        "type": "string"
+                    },
+                    "stages": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/github_com_jackzampolin_shelf_internal_metrics.DetailedStats"
+                        }
                     }
                 }
             },

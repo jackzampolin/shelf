@@ -13,17 +13,20 @@ import (
 
 // Chapter represents a chapter in the book structure.
 type Chapter struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Level       int    `json:"level"`
-	LevelName   string `json:"level_name,omitempty"`
-	EntryNumber string `json:"entry_number,omitempty"`
-	StartPage   int    `json:"start_page"`
-	EndPage     int    `json:"end_page"`
-	MatterType  string `json:"matter_type"`
-	SortOrder   int    `json:"sort_order"`
-	WordCount   int    `json:"word_count,omitempty"`
-	PageCount   int    `json:"page_count"`
+	ID             string `json:"id"`
+	EntryID        string `json:"entry_id,omitempty"`
+	Title          string `json:"title"`
+	Level          int    `json:"level"`
+	LevelName      string `json:"level_name,omitempty"`
+	EntryNumber    string `json:"entry_number,omitempty"`
+	StartPage      int    `json:"start_page"`
+	EndPage        int    `json:"end_page"`
+	MatterType     string `json:"matter_type"`
+	SortOrder      int    `json:"sort_order"`
+	WordCount      int    `json:"word_count,omitempty"`
+	PageCount      int    `json:"page_count"`
+	PolishComplete bool   `json:"polish_complete"`
+	PolishFailed   bool   `json:"polish_failed"`
 }
 
 // ChapterWithText includes the chapter plus page content.
@@ -117,6 +120,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 	chapterQuery := fmt.Sprintf(`{
 		Chapter(filter: {book: {_docID: {_eq: %q}}}) {
 			_docID
+			entry_id
 			title
 			level
 			level_name
@@ -126,6 +130,8 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 			matter_type
 			sort_order
 			word_count
+			polish_complete
+			polish_failed
 		}
 	}`, bookID)
 
@@ -149,17 +155,20 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 
 		chapter := ChapterWithText{
 			Chapter: Chapter{
-				ID:          getString(cm, "_docID"),
-				Title:       getString(cm, "title"),
-				Level:       getInt(cm, "level"),
-				LevelName:   getString(cm, "level_name"),
-				EntryNumber: getString(cm, "entry_number"),
-				StartPage:   startPage,
-				EndPage:     endPage,
-				MatterType:  getString(cm, "matter_type"),
-				SortOrder:   getInt(cm, "sort_order"),
-				WordCount:   getInt(cm, "word_count"),
-				PageCount:   endPage - startPage + 1,
+				ID:             getString(cm, "_docID"),
+				EntryID:        getString(cm, "entry_id"),
+				Title:          getString(cm, "title"),
+				Level:          getInt(cm, "level"),
+				LevelName:      getString(cm, "level_name"),
+				EntryNumber:    getString(cm, "entry_number"),
+				StartPage:      startPage,
+				EndPage:        endPage,
+				MatterType:     getString(cm, "matter_type"),
+				SortOrder:      getInt(cm, "sort_order"),
+				WordCount:      getInt(cm, "word_count"),
+				PageCount:      endPage - startPage + 1,
+				PolishComplete: getBool(cm, "polish_complete"),
+				PolishFailed:   getBool(cm, "polish_failed"),
 			},
 		}
 
@@ -223,6 +232,14 @@ func getInt(m map[string]any, key string) int {
 		return int(v)
 	}
 	return 0
+}
+
+// getBool extracts a bool from a map, returning false if not found.
+func getBool(m map[string]any, key string) bool {
+	if v, ok := m[key].(bool); ok {
+		return v
+	}
+	return false
 }
 
 func (e *GetBookChaptersEndpoint) Command(getServerURL func() string) *cobra.Command {

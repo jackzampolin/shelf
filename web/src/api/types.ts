@@ -888,6 +888,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/{id}/metrics/detailed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get detailed book metrics with percentiles
+         * @description Get detailed metrics for a specific book including latency percentiles and token breakdowns per stage
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.MetricsDetailedResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{id}/prompts": {
         parameters: {
             query?: never;
@@ -1957,6 +2026,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/metrics/detailed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get detailed metrics with percentiles
+         * @description Get detailed metrics including latency percentiles (p50, p95, p99) and token breakdowns per stage
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Filter by book ID */
+                    book_id?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.MetricsDetailedResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/summary": {
         parameters: {
             query?: never;
@@ -2555,6 +2684,32 @@ export interface components {
             timestamp?: string;
             tool_calls?: number[];
         };
+        "github_com_jackzampolin_shelf_internal_metrics.DetailedStats": {
+            avg_completion_tokens?: number;
+            avg_cost_usd?: number;
+            /** @description Average tokens per call */
+            avg_prompt_tokens?: number;
+            avg_reasoning_tokens?: number;
+            avg_total_tokens?: number;
+            /** @description Basic counts */
+            count?: number;
+            error_count?: number;
+            latency_avg?: number;
+            latency_max?: number;
+            latency_min?: number;
+            /** @description Latency percentiles (seconds) */
+            latency_p50?: number;
+            latency_p95?: number;
+            latency_p99?: number;
+            success_count?: number;
+            total_completion_tokens?: number;
+            /** @description Cost */
+            total_cost_usd?: number;
+            /** @description Token stats */
+            total_prompt_tokens?: number;
+            total_reasoning_tokens?: number;
+            total_tokens?: number;
+        };
         "github_com_jackzampolin_shelf_internal_metrics.Metric": {
             _docID?: string;
             book_id?: string;
@@ -2671,6 +2826,7 @@ export interface components {
         };
         "internal_server_endpoints.ChapterWithText": {
             end_page?: number;
+            entry_id?: string;
             entry_number?: string;
             id?: string;
             level?: number;
@@ -2678,6 +2834,8 @@ export interface components {
             matter_type?: string;
             page_count?: number;
             pages?: components["schemas"]["internal_server_endpoints.ChapterPage"][];
+            polish_complete?: boolean;
+            polish_failed?: boolean;
             sort_order?: number;
             start_page?: number;
             title?: string;
@@ -2822,6 +2980,12 @@ export interface components {
                 [key: string]: number;
             };
             total_cost_usd?: number;
+        };
+        "internal_server_endpoints.MetricsDetailedResponse": {
+            book_id?: string;
+            stages?: {
+                [key: string]: components["schemas"]["github_com_jackzampolin_shelf_internal_metrics.DetailedStats"];
+            };
         };
         "internal_server_endpoints.MetricsSummaryResponse": {
             avg_cost_usd?: number;

@@ -120,6 +120,52 @@ definitions:
           type: integer
         type: array
     type: object
+  github_com_jackzampolin_shelf_internal_metrics.DetailedStats:
+    properties:
+      avg_completion_tokens:
+        type: number
+      avg_cost_usd:
+        type: number
+      avg_prompt_tokens:
+        description: Average tokens per call
+        type: number
+      avg_reasoning_tokens:
+        type: number
+      avg_total_tokens:
+        type: number
+      count:
+        description: Basic counts
+        type: integer
+      error_count:
+        type: integer
+      latency_avg:
+        type: number
+      latency_max:
+        type: number
+      latency_min:
+        type: number
+      latency_p50:
+        description: Latency percentiles (seconds)
+        type: number
+      latency_p95:
+        type: number
+      latency_p99:
+        type: number
+      success_count:
+        type: integer
+      total_completion_tokens:
+        type: integer
+      total_cost_usd:
+        description: Cost
+        type: number
+      total_prompt_tokens:
+        description: Token stats
+        type: integer
+      total_reasoning_tokens:
+        type: integer
+      total_tokens:
+        type: integer
+    type: object
   github_com_jackzampolin_shelf_internal_metrics.Metric:
     properties:
       _docID:
@@ -346,6 +392,8 @@ definitions:
     properties:
       end_page:
         type: integer
+      entry_id:
+        type: string
       entry_number:
         type: string
       id:
@@ -362,6 +410,10 @@ definitions:
         items:
           $ref: '#/definitions/internal_server_endpoints.ChapterPage'
         type: array
+      polish_complete:
+        type: boolean
+      polish_failed:
+        type: boolean
       sort_order:
         type: integer
       start_page:
@@ -627,6 +679,15 @@ definitions:
         type: object
       total_cost_usd:
         type: number
+    type: object
+  internal_server_endpoints.MetricsDetailedResponse:
+    properties:
+      book_id:
+        type: string
+      stages:
+        additionalProperties:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_metrics.DetailedStats'
+        type: object
     type: object
   internal_server_endpoints.MetricsSummaryResponse:
     properties:
@@ -1308,6 +1369,39 @@ paths:
       summary: Get book processing cost
       tags:
       - books
+  /api/books/{id}/metrics/detailed:
+    get:
+      description: Get detailed metrics for a specific book including latency percentiles
+        and token breakdowns per stage
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.MetricsDetailedResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get detailed book metrics with percentiles
+      tags:
+      - books
+      - metrics
   /api/books/{id}/prompts:
     get:
       description: Get all prompts resolved for a specific book (with overrides applied)
@@ -1986,6 +2080,33 @@ paths:
           schema:
             $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
       summary: Get cost breakdown
+      tags:
+      - metrics
+  /api/metrics/detailed:
+    get:
+      description: Get detailed metrics including latency percentiles (p50, p95, p99)
+        and token breakdowns per stage
+      parameters:
+      - description: Filter by book ID
+        in: query
+        name: book_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.MetricsDetailedResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get detailed metrics with percentiles
       tags:
       - metrics
   /api/metrics/summary:

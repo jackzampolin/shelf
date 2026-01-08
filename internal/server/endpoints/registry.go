@@ -77,7 +77,9 @@ func All(cfg Config) []api.Endpoint {
 		&ListMetricsEndpoint{},
 		&MetricsCostEndpoint{},
 		&MetricsSummaryEndpoint{},
+		&MetricsDetailedEndpoint{},
 		&BookCostEndpoint{},
+		&BookMetricsDetailedEndpoint{},
 
 		// Settings endpoints
 		&ListSettingsEndpoint{},
