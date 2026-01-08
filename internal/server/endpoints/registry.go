@@ -3,28 +3,13 @@ package endpoints
 import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/jobs/common_structure"
-	"github.com/jackzampolin/shelf/internal/jobs/finalize_toc"
-	"github.com/jackzampolin/shelf/internal/jobs/label_book"
-	"github.com/jackzampolin/shelf/internal/jobs/link_toc"
-	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
-	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
-	"github.com/jackzampolin/shelf/internal/jobs/process_book"
-	"github.com/jackzampolin/shelf/internal/jobs/toc_book"
 )
 
 // Config holds dependencies needed by some endpoints.
+// Job configs are no longer stored here - they are read from DefraDB at request time.
 type Config struct {
-	DefraManager          *defra.DockerManager
-	ProcessBookConfig     process_book.Config
-	OcrBookConfig         ocr_book.Config
-	LabelBookConfig       label_book.Config
-	MetadataBookConfig    metadata_book.Config
-	TocBookConfig         toc_book.Config
-	LinkTocConfig         link_toc.Config
-	FinalizeTocConfig     finalize_toc.Config
-	CommonStructureConfig common_structure.Config
-	SwaggerSpecPath       string
+	DefraManager    *defra.DockerManager
+	SwaggerSpecPath string
 }
 
 // All returns all endpoint instances.
@@ -48,7 +33,7 @@ func All(cfg Config) []api.Endpoint {
 		&ListBooksEndpoint{},
 		&GetBookEndpoint{},
 		&GetBookChaptersEndpoint{},
-		&RerunTocEndpoint{ProcessBookConfig: cfg.ProcessBookConfig},
+		&RerunTocEndpoint{},
 
 		// Page endpoints
 		&PageImageEndpoint{},
@@ -56,16 +41,7 @@ func All(cfg Config) []api.Endpoint {
 		&GetPageEndpoint{},
 
 		// Job start/status endpoints
-		&StartJobEndpoint{
-			ProcessBookConfig:     cfg.ProcessBookConfig,
-			OcrBookConfig:         cfg.OcrBookConfig,
-			LabelBookConfig:       cfg.LabelBookConfig,
-			MetadataBookConfig:    cfg.MetadataBookConfig,
-			TocBookConfig:         cfg.TocBookConfig,
-			LinkTocConfig:         cfg.LinkTocConfig,
-			FinalizeTocConfig:     cfg.FinalizeTocConfig,
-			CommonStructureConfig: cfg.CommonStructureConfig,
-		},
+		&StartJobEndpoint{},
 		&JobStatusEndpoint{},
 		&DetailedJobStatusEndpoint{},
 

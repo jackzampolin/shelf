@@ -14,6 +14,10 @@ var ErrNoDefault = errors.New("no default exists")
 // These are seeded into DefraDB on first run.
 func DefaultEntries() []Entry {
 	return []Entry{
+		// ===================
+		// OCR Providers
+		// ===================
+
 		// OCR Providers - Mistral
 		{
 			Key:         "providers.ocr.mistral.type",
@@ -34,6 +38,21 @@ func DefaultEntries() []Entry {
 			Key:         "providers.ocr.mistral.enabled",
 			Value:       true,
 			Description: "Whether Mistral OCR provider is enabled",
+		},
+		{
+			Key:         "providers.ocr.mistral.timeout_seconds",
+			Value:       500,
+			Description: "HTTP timeout in seconds for Mistral OCR requests",
+		},
+		{
+			Key:         "providers.ocr.mistral.max_retries",
+			Value:       7,
+			Description: "Maximum retry attempts for failed Mistral requests",
+		},
+		{
+			Key:         "providers.ocr.mistral.max_concurrency",
+			Value:       30,
+			Description: "Maximum concurrent requests to Mistral",
 		},
 
 		// OCR Providers - Paddle
@@ -62,6 +81,25 @@ func DefaultEntries() []Entry {
 			Value:       true,
 			Description: "Whether Paddle OCR provider is enabled",
 		},
+		{
+			Key:         "providers.ocr.paddle.timeout_seconds",
+			Value:       500,
+			Description: "HTTP timeout in seconds for Paddle OCR requests",
+		},
+		{
+			Key:         "providers.ocr.paddle.max_retries",
+			Value:       7,
+			Description: "Maximum retry attempts for failed Paddle requests",
+		},
+		{
+			Key:         "providers.ocr.paddle.max_concurrency",
+			Value:       30,
+			Description: "Maximum concurrent requests to Paddle",
+		},
+
+		// ===================
+		// LLM Providers
+		// ===================
 
 		// LLM Providers - OpenRouter
 		{
@@ -89,22 +127,39 @@ func DefaultEntries() []Entry {
 			Value:       true,
 			Description: "Whether OpenRouter LLM provider is enabled",
 		},
+		{
+			Key:         "providers.llm.openrouter.timeout_seconds",
+			Value:       500,
+			Description: "HTTP timeout in seconds for OpenRouter requests",
+		},
+		{
+			Key:         "providers.llm.openrouter.max_retries",
+			Value:       7,
+			Description: "Maximum retry attempts for failed OpenRouter requests",
+		},
+		{
+			Key:         "providers.llm.openrouter.max_concurrency",
+			Value:       30,
+			Description: "Maximum concurrent requests to OpenRouter",
+		},
 
-		// Defaults
+		// ===================
+		// Pipeline Defaults
+		// ===================
 		{
 			Key:         "defaults.ocr_providers",
 			Value:       []string{"mistral", "paddle"},
-			Description: "Ordered list of OCR providers to use",
+			Description: "Ordered list of OCR providers to use for blending",
 		},
 		{
 			Key:         "defaults.llm_provider",
 			Value:       "openrouter",
-			Description: "Default LLM provider name",
+			Description: "Default LLM provider used for all pipeline stages (blend, label, metadata, toc, structure)",
 		},
 		{
-			Key:         "defaults.max_workers",
-			Value:       10,
-			Description: "Maximum concurrent workers for processing",
+			Key:         "defaults.debug_agents",
+			Value:       false,
+			Description: "Enable verbose debug logging for agent executions",
 		},
 	}
 }

@@ -15,15 +15,25 @@ func TestDefaultEntries(t *testing.T) {
 
 	// Verify required keys exist
 	requiredKeys := []string{
+		// OCR providers
 		"providers.ocr.mistral.type",
 		"providers.ocr.mistral.api_key",
 		"providers.ocr.mistral.rate_limit",
 		"providers.ocr.mistral.enabled",
+		"providers.ocr.mistral.timeout_seconds",
+		"providers.ocr.mistral.max_retries",
+		"providers.ocr.mistral.max_concurrency",
 		"providers.ocr.paddle.type",
+		"providers.ocr.paddle.timeout_seconds",
+		// LLM providers
 		"providers.llm.openrouter.type",
+		"providers.llm.openrouter.timeout_seconds",
+		"providers.llm.openrouter.max_retries",
+		"providers.llm.openrouter.max_concurrency",
+		// Defaults
 		"defaults.ocr_providers",
 		"defaults.llm_provider",
-		"defaults.max_workers",
+		"defaults.debug_agents",
 	}
 
 	keys := make(map[string]bool)
