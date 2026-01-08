@@ -52,15 +52,19 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	var units []jobs.WorkUnit
 
 	// Start metadata extraction after threshold pages are labeled
+	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
+	// if work unit creation has side effects (like creating agent logs)
 	if labeledCount >= LabelThresholdForBookOps && j.Book.Metadata.CanStart() {
-		unit := j.CreateMetadataWorkUnit(ctx)
-		if unit != nil {
-			if err := j.Book.Metadata.Start(); err == nil {
+		if err := j.Book.Metadata.Start(); err == nil {
+			unit := j.CreateMetadataWorkUnit(ctx)
+			if unit != nil {
 				if err := j.PersistMetadataState(ctx); err != nil {
 					j.Book.Metadata.Reset() // Rollback on failure
 				} else {
 					units = append(units, *unit)
 				}
+			} else {
+				j.Book.Metadata.Reset() // No work unit created, allow retry
 			}
 		}
 	}
@@ -68,20 +72,24 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	// Start ToC finder after threshold pages are labeled AND first 30 pages have OCR.
 	// Consecutive check ensures pages 1-30 all have blend_complete before ToC finder starts,
 	// since ToC is typically in the first 20-30 pages.
+	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
 	if labeledCount >= LabelThresholdForBookOps && j.ConsecutiveFrontMatterComplete() && j.Book.TocFinder.CanStart() {
-		unit := j.CreateTocFinderWorkUnit(ctx)
-		if unit != nil {
-			if err := j.Book.TocFinder.Start(); err == nil {
+		if err := j.Book.TocFinder.Start(); err == nil {
+			unit := j.CreateTocFinderWorkUnit(ctx)
+			if unit != nil {
 				if err := j.PersistTocFinderState(ctx); err != nil {
 					j.Book.TocFinder.Reset() // Rollback on failure
 				} else {
 					units = append(units, *unit)
 				}
+			} else {
+				j.Book.TocFinder.Reset() // No work unit created, allow retry
 			}
 		}
 	}
 
 	// Start ToC extraction if finder is done and found a ToC
+	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
 	if j.Book.TocFinder.IsDone() && j.Book.GetTocFound() && j.Book.TocExtract.CanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		tocStart, tocEnd := j.Book.GetTocPageRange()
@@ -91,23 +99,27 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 				"toc_end_page", tocEnd,
 				"toc_doc_id", j.TocDocID)
 		}
-		unit := j.CreateTocExtractWorkUnit(ctx)
-		if unit != nil {
-			if err := j.Book.TocExtract.Start(); err == nil {
+		if err := j.Book.TocExtract.Start(); err == nil {
+			unit := j.CreateTocExtractWorkUnit(ctx)
+			if unit != nil {
 				if err := j.PersistTocExtractState(ctx); err != nil {
 					j.Book.TocExtract.Reset() // Rollback on failure
 				} else {
 					units = append(units, *unit)
 				}
+			} else {
+				j.Book.TocExtract.Reset() // No work unit created, allow retry
+				if logger != nil {
+					logger.Warn("failed to create ToC extract work unit",
+						"toc_start_page", tocStart,
+						"toc_end_page", tocEnd)
+				}
 			}
-		} else if logger != nil {
-			logger.Warn("failed to create ToC extract work unit",
-				"toc_start_page", tocStart,
-				"toc_end_page", tocEnd)
 		}
 	}
 
 	// Start ToC linking if extraction is done
+	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
 	if j.Book.TocExtract.IsDone() && j.Book.TocLink.CanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
@@ -115,9 +127,9 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 				"book_id", j.Book.BookID,
 				"toc_doc_id", j.TocDocID)
 		}
-		linkUnits := j.CreateLinkTocWorkUnits(ctx)
-		if len(linkUnits) > 0 {
-			if err := j.Book.TocLink.Start(); err == nil {
+		if err := j.Book.TocLink.Start(); err == nil {
+			linkUnits := j.CreateLinkTocWorkUnits(ctx)
+			if len(linkUnits) > 0 {
 				if err := j.PersistTocLinkState(ctx); err != nil {
 					j.Book.TocLink.Reset() // Rollback on failure
 				} else {
@@ -128,13 +140,13 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 							"entries", len(j.LinkTocEntries))
 					}
 				}
-			}
-		} else {
-			// No entries to link - mark as complete
-			j.Book.TocLink.Complete()
-			j.PersistTocLinkState(ctx)
-			if logger != nil {
-				logger.Info("no ToC entries to link - marking complete")
+			} else {
+				// No entries to link - mark as complete
+				j.Book.TocLink.Complete()
+				j.PersistTocLinkState(ctx)
+				if logger != nil {
+					logger.Info("no ToC entries to link - marking complete")
+				}
 			}
 		}
 	}
