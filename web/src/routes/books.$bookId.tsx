@@ -451,6 +451,11 @@ function BookDetailPage() {
                         : 'pending'
                     }
                   />
+                  {detailedStatus.toc?.entries_discovered !== undefined && detailedStatus.toc.entries_discovered > 0 && (
+                    <span className="text-gray-600">
+                      +{detailedStatus.toc.entries_discovered} discovered
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center space-x-4">
                   {detailedStatus.toc?.found && detailedStatus.toc?.start_page && (
@@ -492,6 +497,11 @@ function BookDetailPage() {
                   />
                 </div>
                 <div className="flex items-center space-x-2">
+                  {detailedStatus.structure?.chapter_count !== undefined && detailedStatus.structure.chapter_count > 0 && (
+                    <span className="text-gray-600">
+                      {detailedStatus.structure.chapter_count} chapters
+                    </span>
+                  )}
                   {detailedStatus.structure?.cost_usd !== undefined && detailedStatus.structure.cost_usd > 0 && (
                     <span className="font-mono text-sm text-gray-500">
                       ${detailedStatus.structure.cost_usd.toFixed(4)}
@@ -615,7 +625,7 @@ function BookDetailPage() {
             {detailedStatus.toc.entries.map((entry, idx) => (
               <div
                 key={idx}
-                className="flex items-center justify-between text-sm py-1"
+                className={`flex items-center justify-between text-sm py-1 ${entry.source === 'discovered' ? 'bg-green-50 -mx-2 px-2 rounded' : ''}`}
                 style={{ paddingLeft: `${(entry.level || 0) * 16}px` }}
               >
                 <div className="flex items-center space-x-2">
@@ -625,6 +635,9 @@ function BookDetailPage() {
                   <span className={entry.level === 0 ? 'font-medium' : ''}>{entry.title}</span>
                   {entry.level_name && (
                     <span className="text-xs text-gray-400">({entry.level_name})</span>
+                  )}
+                  {entry.source === 'discovered' && (
+                    <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">discovered</span>
                   )}
                 </div>
                 <div className="flex items-center space-x-2">

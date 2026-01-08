@@ -116,20 +116,22 @@ type ToCStatus struct {
 	FinalizeRetries  int  `json:"finalize_retries"`
 
 	// Entries (when extracted)
-	EntryCount    int        `json:"entry_count"`
-	EntriesLinked int        `json:"entries_linked"`
-	Entries       []ToCEntry `json:"entries,omitempty"`
+	EntryCount         int        `json:"entry_count"`
+	EntriesLinked      int        `json:"entries_linked"`
+	EntriesDiscovered  int        `json:"entries_discovered"`
+	Entries            []ToCEntry `json:"entries,omitempty"`
 
 	CostUSD float64 `json:"cost_usd"`
 }
 
 // StructureStatus represents book structure building status.
 type StructureStatus struct {
-	Started  bool `json:"started"`
-	Complete bool `json:"complete"`
-	Failed   bool `json:"failed"`
-	Retries  int  `json:"retries"`
-	CostUSD  float64 `json:"cost_usd"`
+	Started      bool    `json:"started"`
+	Complete     bool    `json:"complete"`
+	Failed       bool    `json:"failed"`
+	Retries      int     `json:"retries"`
+	CostUSD      float64 `json:"cost_usd"`
+	ChapterCount int     `json:"chapter_count,omitempty"`
 }
 
 // ToCEntry represents a single ToC entry.
@@ -142,6 +144,7 @@ type ToCEntry struct {
 	SortOrder         int    `json:"sort_order"`
 	ActualPageNum     int    `json:"actual_page_num,omitempty"`
 	IsLinked          bool   `json:"is_linked"`
+	Source            string `json:"source,omitempty"` // "extracted" or "discovered"
 }
 
 // AgentLogSummary is a brief summary of an agent log.
@@ -414,6 +417,7 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 					level_name
 					printed_page_number
 					sort_order
+					source
 					actual_page {
 						page_num
 					}
@@ -504,6 +508,12 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 								if v, ok := entry["sort_order"].(float64); ok {
 									tocEntry.SortOrder = int(v)
 								}
+								if v, ok := entry["source"].(string); ok {
+									tocEntry.Source = v
+									if v == "discovered" {
+										resp.ToC.EntriesDiscovered++
+									}
+								}
 								// Check if entry is linked to actual page
 								if actualPage, ok := entry["actual_page"].(map[string]any); ok {
 									if pageNum, ok := actualPage["page_num"].(float64); ok {
@@ -521,6 +531,20 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 						})
 					}
 				}
+			}
+		}
+	}
+
+	// Query chapter count for structure status
+	if resp.Structure.Complete {
+		chapterQuery := fmt.Sprintf(`{
+			Chapter(filter: {book: {_docID: {_eq: %q}}}) {
+				_docID
+			}
+		}`, bookID)
+		if chapterResp, err := client.Execute(ctx, chapterQuery, nil); err == nil {
+			if chapters, ok := chapterResp.Data["Chapter"].([]any); ok {
+				resp.Structure.ChapterCount = len(chapters)
 			}
 		}
 	}
