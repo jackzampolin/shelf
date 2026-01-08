@@ -35,6 +35,13 @@ func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResu
 		return fmt.Errorf("failed to save ToC extract result: %w", err)
 	}
 
+	// Reload entries into memory so link_toc can use them
+	entries, err := common.LoadTocEntries(ctx, j.TocDocID)
+	if err != nil {
+		return fmt.Errorf("failed to reload ToC entries: %w", err)
+	}
+	j.Book.SetTocEntries(entries)
+
 	// Only mark complete on success (allows retries on failure)
 	j.Book.TocExtract.Complete()
 	return nil

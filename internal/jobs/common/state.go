@@ -408,6 +408,7 @@ type BookState struct {
 	TocExtract  OperationState
 	TocLink     OperationState
 	TocFinalize OperationState
+	Structure   OperationState
 
 	// ToC finder results (mutable - use accessor methods)
 	TocFound     bool

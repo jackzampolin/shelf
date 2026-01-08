@@ -25,9 +25,22 @@ type Book {
     metadata_failed: Boolean
     metadata_retries: Int
 
+    # Structure processing state
+    structure_started: Boolean
+    structure_complete: Boolean
+    structure_failed: Boolean
+    structure_retries: Int
+
+    # Structure stats
+    total_chapters: Int
+    total_paragraphs: Int
+    total_words: Int
+
     # Relationships
     # One-to-many: Book has many Pages
     pages: [Page]
     # One-to-one: Book has one ToC (@primary on this side)
     toc: ToC @primary
+    # One-to-many: Book has many Chapters
+    chapters: [Chapter]
 }

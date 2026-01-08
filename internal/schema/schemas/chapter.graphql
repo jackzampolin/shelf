@@ -1,0 +1,44 @@
+type Chapter {
+    # Many-to-one: Chapter belongs to Book
+    book: Book
+
+    # Optional link to source ToC entry
+    toc_entry: TocEntry
+
+    # Identity
+    entry_id: String
+    sort_order: Int
+
+    # From ToC
+    title: String
+    level: Int
+    level_name: String
+    entry_number: String
+
+    # Page boundaries (scan page numbers)
+    start_page: Int
+    end_page: Int
+
+    # Matter classification
+    matter_type: String
+
+    # Hierarchy
+    parent_id: String
+
+    # Source tracking
+    source: String
+
+    # Text content
+    mechanical_text: String
+    polished_text: String
+    word_count: Int
+
+    # Processing state
+    extract_complete: Boolean
+    polish_complete: Boolean
+    polish_failed: Boolean
+    polish_retries: Int
+
+    # One-to-many: Chapter has many Paragraphs
+    paragraphs: [Paragraph]
+}

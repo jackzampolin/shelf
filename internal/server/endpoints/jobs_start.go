@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common_structure"
 	"github.com/jackzampolin/shelf/internal/jobs/label_book"
 	"github.com/jackzampolin/shelf/internal/jobs/link_toc"
 	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
@@ -46,6 +47,8 @@ type StartJobEndpoint struct {
 	TocBookConfig toc_book.Config
 	// LinkTocConfig holds config for link-toc jobs
 	LinkTocConfig link_toc.Config
+	// CommonStructureConfig holds config for common-structure jobs
+	CommonStructureConfig common_structure.Config
 }
 
 func (e *StartJobEndpoint) Route() (string, string, http.HandlerFunc) {
@@ -114,6 +117,8 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		cfg := e.LinkTocConfig
 		cfg.Force = req.Force
 		job, err = link_toc.NewJob(r.Context(), cfg, bookID)
+	case common_structure.JobType:
+		job, err = common_structure.NewJob(r.Context(), e.CommonStructureConfig, bookID)
 	default:
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown job type: %s", jobType))
 		return
