@@ -163,11 +163,10 @@ func determineJoin(prevText, nextText string) string {
 	// Hyphenation: word split across pages
 	if strings.HasSuffix(prevStripped, "-") {
 		// Check if it's a real hyphenation (lowercase letter before hyphen)
-		if len(prevStripped) >= 2 {
-			prevChar := rune(prevStripped[len(prevStripped)-2])
-			if unicode.IsLower(prevChar) {
-				return "" // Join without space, hyphen will be removed
-			}
+		// Use runes for proper Unicode handling (e.g., accented characters)
+		runes := []rune(prevStripped)
+		if len(runes) >= 2 && unicode.IsLower(runes[len(runes)-2]) {
+			return "" // Join without space, hyphen will be removed
 		}
 	}
 

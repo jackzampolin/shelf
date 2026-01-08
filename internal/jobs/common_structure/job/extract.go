@@ -6,79 +6,52 @@ import (
 	"strings"
 
 	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
-// CreateExtractWorkUnits creates CPU work units for extracting text from each chapter.
-func (j *Job) CreateExtractWorkUnits(ctx context.Context) ([]jobs.WorkUnit, error) {
-	var units []jobs.WorkUnit
+// ExtractAllChapters extracts text for all chapters synchronously.
+// This is lightweight text processing (string manipulation, no heavy CPU work).
+func (j *Job) ExtractAllChapters(ctx context.Context) error {
+	logger := svcctx.LoggerFrom(ctx)
 
 	for _, chapter := range j.Chapters {
 		if chapter.ExtractDone {
+			j.ChaptersExtracted++
 			continue
 		}
 
-		unit := j.createExtractWorkUnit(chapter)
-		units = append(units, unit)
+		if err := j.ExtractChapterText(ctx, chapter); err != nil {
+			if logger != nil {
+				logger.Warn("failed to extract chapter text",
+					"chapter", chapter.EntryID,
+					"error", err)
+			}
+			j.ExtractsFailed++
+			// Continue with other chapters
+		} else {
+			j.ChaptersExtracted++
+		}
 	}
 
-	j.ChaptersToExtract = len(units)
-	return units, nil
-}
+	j.ChaptersToExtract = len(j.Chapters)
 
-// createExtractWorkUnit creates a single CPU work unit for text extraction.
-func (j *Job) createExtractWorkUnit(chapter *ChapterState) jobs.WorkUnit {
-	unitID := fmt.Sprintf("extract_%s_%s", j.Book.BookID, chapter.EntryID)
-
-	j.Tracker.Register(unitID, WorkUnitInfo{
-		UnitType:  WorkUnitTypeExtract,
-		Phase:     PhaseExtract,
-		ChapterID: chapter.EntryID,
-	})
-
-	return jobs.WorkUnit{
-		ID:       unitID,
-		Type:     jobs.WorkUnitTypeCPU,
-		JobID:    j.ID(),
-		Priority: 0,
-		CPURequest: &jobs.CPUWorkRequest{
-			Task: "extract_chapter_text",
-			Data: map[string]any{
-				"entry_id":   chapter.EntryID,
-				"start_page": chapter.StartPage,
-				"end_page":   chapter.EndPage,
-			},
-		},
-		Metrics: j.MetricsFor(),
+	if logger != nil {
+		logger.Info("extraction complete",
+			"book_id", j.Book.BookID,
+			"extracted", j.ChaptersExtracted,
+			"failed", j.ExtractsFailed)
 	}
-}
-
-// HandleExtractResult processes the result of a text extraction work unit.
-func (j *Job) HandleExtractResult(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo) error {
-	chapter := j.GetChapterByEntryID(info.ChapterID)
-	if chapter == nil {
-		return fmt.Errorf("chapter not found: %s", info.ChapterID)
-	}
-
-	if !result.Success {
-		j.ExtractsFailed++
-		return result.Error
-	}
-
-	// The extraction is done synchronously in ExtractChapterText
-	// The result is already stored in chapter state
-	j.ChaptersExtracted++
 
 	return nil
 }
 
-// ExtractChapterText extracts and cleans text for a chapter.
-// This is called by the CPU worker when processing extract work units.
+// ExtractChapterText extracts and cleans text for a single chapter.
+// This is lightweight text processing - reads cached page data and performs
+// string manipulation (cleaning headers, joining pages, splitting paragraphs).
 func (j *Job) ExtractChapterText(ctx context.Context, chapter *ChapterState) error {
 	logger := svcctx.LoggerFrom(ctx)
 
-	// Preload pages for this chapter's range
+	// Preload pages for this chapter's range (may already be cached)
 	if err := j.Book.PreloadPages(ctx, chapter.StartPage, chapter.EndPage); err != nil {
 		if logger != nil {
 			logger.Warn("failed to preload pages",
@@ -87,7 +60,7 @@ func (j *Job) ExtractChapterText(ctx context.Context, chapter *ChapterState) err
 				"end_page", chapter.EndPage,
 				"error", err)
 		}
-		// Continue anyway - individual page loads may still work
+		// Continue - pages may already be cached or individual loads may work
 	}
 
 	var pageTexts []PageText
@@ -98,6 +71,7 @@ func (j *Job) ExtractChapterText(ctx context.Context, chapter *ChapterState) err
 			if logger != nil {
 				logger.Warn("failed to get page data",
 					"page_num", pageNum,
+					"chapter", chapter.EntryID,
 					"error", err)
 			}
 			continue
@@ -109,7 +83,7 @@ func (j *Job) ExtractChapterText(ctx context.Context, chapter *ChapterState) err
 			Markdown:              pageData.BlendMarkdown,
 			PrintedPage:           pageData.PageNumberLabel,
 			RunningHeader:         pageData.RunningHeader,
-			HasPageNumberInHeader: false, // Could enhance this if needed
+			HasPageNumberInHeader: false,
 		}
 
 		cleaned := CleanPageText(cleanData)
@@ -122,6 +96,11 @@ func (j *Job) ExtractChapterText(ctx context.Context, chapter *ChapterState) err
 			RunningHeader:   pageData.RunningHeader,
 			PageNumberLabel: pageData.PageNumberLabel,
 		})
+	}
+
+	if len(pageTexts) == 0 {
+		return fmt.Errorf("no pages extracted for chapter %s (pages %d-%d)",
+			chapter.EntryID, chapter.StartPage, chapter.EndPage)
 	}
 
 	// Join pages

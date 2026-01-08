@@ -28,7 +28,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		return nil, nil
 	}
 
-	// Phase 1: Build skeleton (CPU-only, immediate)
+	// Phase 1: Build skeleton (synchronous)
 	j.CurrentPhase = PhaseBuild
 	if err := j.BuildSkeleton(ctx); err != nil {
 		return nil, fmt.Errorf("failed to build skeleton: %w", err)
@@ -41,8 +41,21 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			"phase", j.CurrentPhase)
 	}
 
-	// Transition to Extract phase
-	return j.transitionToExtract(ctx)
+	// Phase 2: Extract text (synchronous - lightweight text processing)
+	j.CurrentPhase = PhaseExtract
+	if err := j.ExtractAllChapters(ctx); err != nil {
+		return nil, fmt.Errorf("failed to extract chapters: %w", err)
+	}
+
+	// Persist extract results
+	if err := j.PersistExtractResults(ctx); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist extract results", "error", err)
+		}
+	}
+
+	// Transition to Classify phase (LLM work units start here)
+	return j.transitionToClassify(ctx)
 }
 
 // OnComplete is called when a work unit finishes.
@@ -54,17 +67,20 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		return nil, err
 	}
 
+	logger := svcctx.LoggerFrom(ctx)
+
 	info, ok := j.GetWorkUnit(result.WorkUnitID)
 	if !ok {
+		// Log unexpected work unit - this shouldn't happen in normal operation
+		if logger != nil {
+			logger.Warn("received result for unknown work unit",
+				"work_unit_id", result.WorkUnitID,
+				"job_id", j.ID())
+		}
 		return nil, nil
 	}
 
-	logger := svcctx.LoggerFrom(ctx)
-
 	switch info.UnitType {
-	case WorkUnitTypeExtract:
-		return j.handleExtractComplete(ctx, result, info, logger)
-
 	case WorkUnitTypeClassify:
 		return j.handleClassifyComplete(ctx, result, info, logger)
 
@@ -73,44 +89,13 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 	default:
 		if logger != nil {
-			logger.Warn("unknown work unit type", "type", info.UnitType)
+			logger.Warn("unknown work unit type",
+				"type", info.UnitType,
+				"work_unit_id", result.WorkUnitID)
 		}
 		j.RemoveWorkUnit(result.WorkUnitID)
 		return nil, nil
 	}
-}
-
-// handleExtractComplete handles completion of a text extraction work unit.
-func (j *Job) handleExtractComplete(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo, logger interface{ Info(string, ...any); Warn(string, ...any) }) ([]jobs.WorkUnit, error) {
-	// Process extraction for this chapter
-	chapter := j.GetChapterByEntryID(info.ChapterID)
-	if chapter != nil && !chapter.ExtractDone {
-		if err := j.ExtractChapterText(ctx, chapter); err != nil {
-			if logger != nil {
-				logger.Warn("failed to extract chapter text",
-					"chapter", info.ChapterID,
-					"error", err)
-			}
-			j.ExtractsFailed++
-		} else {
-			j.ChaptersExtracted++
-		}
-	}
-
-	j.RemoveWorkUnit(result.WorkUnitID)
-
-	// Check if all extracts done
-	if j.AllExtractsDone() {
-		// Persist extract results
-		if err := j.PersistExtractResults(ctx); err != nil {
-			if logger != nil {
-				logger.Warn("failed to persist extract results", "error", err)
-			}
-		}
-		return j.transitionToClassify(ctx)
-	}
-
-	return nil, nil
 }
 
 // handleClassifyComplete handles completion of matter classification.
@@ -190,20 +175,6 @@ func (j *Job) handlePolishComplete(ctx context.Context, result jobs.WorkResult, 
 	return nil, nil
 }
 
-// transitionToExtract starts the extract phase.
-func (j *Job) transitionToExtract(ctx context.Context) ([]jobs.WorkUnit, error) {
-	j.CurrentPhase = PhaseExtract
-
-	logger := svcctx.LoggerFrom(ctx)
-	if logger != nil {
-		logger.Info("transitioning to extract phase",
-			"book_id", j.Book.BookID,
-			"chapters", len(j.Chapters))
-	}
-
-	return j.CreateExtractWorkUnits(ctx)
-}
-
 // transitionToClassify starts the classify phase.
 func (j *Job) transitionToClassify(ctx context.Context) ([]jobs.WorkUnit, error) {
 	j.CurrentPhase = PhaseClassify
@@ -216,7 +187,7 @@ func (j *Job) transitionToClassify(ctx context.Context) ([]jobs.WorkUnit, error)
 
 	unit, err := j.CreateClassifyWorkUnit(ctx)
 	if err != nil {
-		// Skip to polish if classify fails
+		// Skip to polish if classify fails to create
 		if logger != nil {
 			logger.Warn("failed to create classify work unit, skipping to polish", "error", err)
 		}
@@ -250,14 +221,15 @@ func (j *Job) transitionToFinalize(ctx context.Context) ([]jobs.WorkUnit, error)
 			"book_id", j.Book.BookID)
 	}
 
-	// Finalize
+	// Finalize - this is critical, failure should be reported
 	if err := j.FinalizeStructure(ctx); err != nil {
 		if logger != nil {
-			logger.Warn("failed to finalize structure", "error", err)
+			logger.Error("failed to finalize structure", "error", err)
 		}
+		return nil, fmt.Errorf("finalization failed: %w", err)
 	}
 
-	// Mark job as done
+	// Mark job as done only on success
 	j.Book.Structure.Complete()
 	j.IsDone = true
 
@@ -301,16 +273,10 @@ func (j *Job) Progress() map[string]jobs.ProviderProgress {
 	j.Mu.Lock()
 	defer j.Mu.Unlock()
 
-	// Total work is: extract (CPU) + classify (1 LLM) + polish (LLM per chapter)
-	total := len(j.Chapters) + 1 + len(j.Chapters) // extract + classify + polish
+	// Total work: classify (1 LLM) + polish (LLM per chapter)
+	// Extract is now synchronous and doesn't contribute to work unit count
+	total := 1 + len(j.Chapters) // classify + polish
 	completed := 0
-
-	// Extract phase
-	if j.CurrentPhase != PhaseExtract && j.CurrentPhase != PhaseBuild {
-		completed += len(j.Chapters) // All extracts done
-	} else {
-		completed += j.ChaptersExtracted
-	}
 
 	// Classify phase
 	if j.CurrentPhase == PhasePolish || j.CurrentPhase == PhaseFinalize || j.IsDone {
