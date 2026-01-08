@@ -1,11 +1,13 @@
 // Package jobcfg provides builders to construct job configurations from the DefraDB config store.
 // This package bridges the config store and job packages, reading settings at job creation time
-// so that UI changes are immediately reflected.
+// so that UI changes are immediately reflected. When a config key is not found in DefraDB,
+// it falls back to the compiled-in defaults from config.DefaultEntries().
 package jobcfg
 
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackzampolin/shelf/internal/config"
 	"github.com/jackzampolin/shelf/internal/jobs"
@@ -189,14 +191,15 @@ func (b *Builder) getString(ctx context.Context, key string) (string, error) {
 			return "", fmt.Errorf("no value or default for key %q", key)
 		}
 		if s, ok := def.Value.(string); ok {
+			slog.Debug("config key not in DB, using default", "key", key, "default", s)
 			return s, nil
 		}
-		return "", fmt.Errorf("default for %q is not a string", key)
+		return "", fmt.Errorf("default for %q is not a string (got %T: %v)", key, def.Value, def.Value)
 	}
 	if s, ok := entry.Value.(string); ok {
 		return s, nil
 	}
-	return "", fmt.Errorf("value for %q is not a string: %T", key, entry.Value)
+	return "", fmt.Errorf("value for %q is not a string (got %T: %v)", key, entry.Value, entry.Value)
 }
 
 func (b *Builder) getBool(ctx context.Context, key string) (bool, error) {
@@ -211,14 +214,15 @@ func (b *Builder) getBool(ctx context.Context, key string) (bool, error) {
 			return false, fmt.Errorf("no value or default for key %q", key)
 		}
 		if v, ok := def.Value.(bool); ok {
+			slog.Debug("config key not in DB, using default", "key", key, "default", v)
 			return v, nil
 		}
-		return false, fmt.Errorf("default for %q is not a bool", key)
+		return false, fmt.Errorf("default for %q is not a bool (got %T: %v)", key, def.Value, def.Value)
 	}
 	if v, ok := entry.Value.(bool); ok {
 		return v, nil
 	}
-	return false, fmt.Errorf("value for %q is not a bool: %T", key, entry.Value)
+	return false, fmt.Errorf("value for %q is not a bool (got %T: %v)", key, entry.Value, entry.Value)
 }
 
 func (b *Builder) getStringSlice(ctx context.Context, key string) ([]string, error) {
@@ -233,9 +237,10 @@ func (b *Builder) getStringSlice(ctx context.Context, key string) ([]string, err
 			return nil, fmt.Errorf("no value or default for key %q", key)
 		}
 		if s, ok := def.Value.([]string); ok {
+			slog.Debug("config key not in DB, using default", "key", key, "default", s)
 			return s, nil
 		}
-		return nil, fmt.Errorf("default for %q is not a string slice", key)
+		return nil, fmt.Errorf("default for %q is not a string slice (got %T: %v)", key, def.Value, def.Value)
 	}
 
 	// Handle both []string and []any (from JSON unmarshaling)
@@ -248,12 +253,12 @@ func (b *Builder) getStringSlice(ctx context.Context, key string) ([]string, err
 			if s, ok := item.(string); ok {
 				result = append(result, s)
 			} else {
-				return nil, fmt.Errorf("value for %q contains non-string item: %T", key, item)
+				return nil, fmt.Errorf("value for %q contains non-string item (got %T: %v)", key, item, item)
 			}
 		}
 		return result, nil
 	default:
-		return nil, fmt.Errorf("value for %q is not a string slice: %T", key, entry.Value)
+		return nil, fmt.Errorf("value for %q is not a string slice (got %T: %v)", key, entry.Value, entry.Value)
 	}
 }
 
@@ -270,7 +275,12 @@ func (b *Builder) GetInt(ctx context.Context, key string) (int, error) {
 		if def == nil {
 			return 0, fmt.Errorf("no value or default for key %q", key)
 		}
-		return toInt(def.Value, key)
+		v, err := toInt(def.Value, key)
+		if err != nil {
+			return 0, err
+		}
+		slog.Debug("config key not in DB, using default", "key", key, "default", v)
+		return v, nil
 	}
 	return toInt(entry.Value, key)
 }
@@ -284,7 +294,7 @@ func toInt(v any, key string) (int, error) {
 	case float64:
 		return int(val), nil
 	default:
-		return 0, fmt.Errorf("value for %q is not an int: %T", key, v)
+		return 0, fmt.Errorf("value for %q is not an int (got %T: %v)", key, v, v)
 	}
 }
 

@@ -34,15 +34,6 @@ func TestDefaultEntries(t *testing.T) {
 		"defaults.ocr_providers",
 		"defaults.llm_provider",
 		"defaults.debug_agents",
-		// Stage configs
-		"stages.process_book.label_threshold",
-		"stages.process_book.front_matter_pages",
-		"stages.ocr_book.checkpoint_interval",
-		"stages.metadata_book.page_count",
-		"stages.finalize_toc.min_gap_size",
-		// Scheduler
-		"scheduler.queue_size",
-		"scheduler.cpu_workers",
 	}
 
 	keys := make(map[string]bool)
