@@ -18,6 +18,7 @@ import (
 // ProviderWorkerPool manages a pool of workers for a single LLM or OCR provider.
 // Uses the dispatcher pattern: a single dispatcher goroutine owns the rate limiter
 // and distributes work to N worker goroutines that execute without rate limit awareness.
+// Work units are processed by priority (high priority first).
 type ProviderWorkerPool struct {
 	name     string
 	poolType PoolType
@@ -32,8 +33,8 @@ type ProviderWorkerPool struct {
 	// Logging
 	logger *slog.Logger
 
-	// Input queue (jobs submit here)
-	queue chan *WorkUnit
+	// Priority queue (jobs submit here)
+	queue *PriorityQueue
 
 	// Internal work channel (dispatcher -> workers)
 	work chan *WorkUnit
@@ -42,7 +43,6 @@ type ProviderWorkerPool struct {
 	results chan<- workerResult
 
 	// Configuration
-	queueSize   int
 	workerCount int
 
 	// In-flight tracking
@@ -69,9 +69,6 @@ type ProviderWorkerPoolConfig struct {
 	// If 0, uses provider's MaxConcurrency or default (30)
 	WorkerCount int
 
-	// Queue size (default 10000)
-	QueueSize int
-
 	// Sink for async metrics writes (optional)
 	Sink *defra.Sink
 }
@@ -90,15 +87,9 @@ func NewProviderWorkerPool(cfg ProviderWorkerPoolConfig) (*ProviderWorkerPool, e
 		logger = slog.Default()
 	}
 
-	queueSize := cfg.QueueSize
-	if queueSize <= 0 {
-		queueSize = 10000
-	}
-
 	p := &ProviderWorkerPool{
-		name:      cfg.Name,
-		queueSize: queueSize,
-		sink:      cfg.Sink,
+		name: cfg.Name,
+		sink: cfg.Sink,
 	}
 
 	// Determine type, RPS, and worker count from provider
@@ -158,9 +149,9 @@ func (p *ProviderWorkerPool) Type() PoolType {
 	return p.poolType
 }
 
-// init initializes channels. Called by scheduler before Start.
+// init initializes the priority queue and channels. Called by scheduler before Start.
 func (p *ProviderWorkerPool) init(results chan<- workerResult) {
-	p.queue = make(chan *WorkUnit, p.queueSize)
+	p.queue = NewPriorityQueue()
 	p.work = make(chan *WorkUnit, p.workerCount) // Buffered to avoid blocking dispatcher
 	p.results = results
 }
@@ -182,38 +173,41 @@ func (p *ProviderWorkerPool) Start(ctx context.Context) {
 	p.logger.Info("pool stopping")
 }
 
-// dispatcher owns the rate limiter. Pulls from queue, waits for token, sends to work channel.
+// dispatcher owns the rate limiter. Pulls from priority queue, waits for token, sends to work channel.
+// Higher priority work units are processed first.
 func (p *ProviderWorkerPool) dispatcher(ctx context.Context) {
+	done := ctx.Done()
 	for {
-		select {
-		case <-ctx.Done():
+		// Pop blocks until an item is available or context is cancelled
+		unit := p.queue.Pop(done)
+		if unit == nil {
+			// Context cancelled
 			return
+		}
 
-		case unit := <-p.queue:
-			// Wait for rate limit token (only dispatcher does this)
-			if err := p.rateLimiter.Wait(ctx); err != nil {
-				// Context cancelled, send failure result
-				p.results <- workerResult{
-					JobID: unit.JobID,
-					Unit:  unit,
-					Result: WorkResult{
-						WorkUnitID: unit.ID,
-						Success:    false,
-						Error:      fmt.Errorf("rate limit wait cancelled: %w", err),
-					},
-				}
-				continue
+		// Wait for rate limit token (only dispatcher does this)
+		if err := p.rateLimiter.Wait(ctx); err != nil {
+			// Context cancelled, send failure result
+			p.results <- workerResult{
+				JobID: unit.JobID,
+				Unit:  unit,
+				Result: WorkResult{
+					WorkUnitID: unit.ID,
+					Success:    false,
+					Error:      fmt.Errorf("rate limit wait cancelled: %w", err),
+				},
 			}
+			continue
+		}
 
-			// Send to work channel for workers to pick up
-			p.inFlight.Add(1)
-			select {
-			case p.work <- unit:
-				// Sent successfully
-			case <-ctx.Done():
-				p.inFlight.Add(-1)
-				return
-			}
+		// Send to work channel for workers to pick up
+		p.inFlight.Add(1)
+		select {
+		case p.work <- unit:
+			// Sent successfully
+		case <-ctx.Done():
+			p.inFlight.Add(-1)
+			return
 		}
 	}
 }
@@ -237,26 +231,25 @@ func (p *ProviderWorkerPool) worker(ctx context.Context, id int) {
 	}
 }
 
-// Submit adds a work unit to the pool's queue.
+// Submit adds a work unit to the pool's priority queue.
+// Higher priority work units will be processed first.
 func (p *ProviderWorkerPool) Submit(unit *WorkUnit) error {
-	select {
-	case p.queue <- unit:
-		return nil
-	default:
-		return fmt.Errorf("%w: %s", ErrWorkerQueueFull, p.name)
-	}
+	p.queue.Push(unit)
+	return nil
 }
 
-// Status returns current pool status.
+// Status returns current pool status with priority queue breakdown.
 func (p *ProviderWorkerPool) Status() PoolStatus {
 	rlStatus := p.rateLimiter.Status()
+	queueStats := p.queue.Stats()
 	return PoolStatus{
-		Name:        p.name,
-		Type:        string(p.poolType),
-		Workers:     p.workerCount,
-		InFlight:    int(p.inFlight.Load()),
-		QueueDepth:  len(p.queue),
-		RateLimiter: &rlStatus,
+		Name:            p.name,
+		Type:            string(p.poolType),
+		Workers:         p.workerCount,
+		InFlight:        int(p.inFlight.Load()),
+		QueueDepth:      queueStats.Total,
+		QueueByPriority: &queueStats,
+		RateLimiter:     &rlStatus,
 	}
 }
 

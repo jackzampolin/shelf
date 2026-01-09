@@ -24,9 +24,10 @@ func CreateExtractWorkUnit(jc JobContext, pageNum int) (*jobs.WorkUnit, string) 
 	unitID := uuid.New().String()
 
 	return &jobs.WorkUnit{
-		ID:    unitID,
-		Type:  jobs.WorkUnitTypeCPU,
-		JobID: jc.ID(),
+		ID:       unitID,
+		Type:     jobs.WorkUnitTypeCPU,
+		JobID:    jc.ID(),
+		Priority: jobs.PriorityForStage("extract"),
 		CPURequest: &jobs.CPUWorkRequest{
 			Task: ingest.TaskExtractPage,
 			Data: ingest.PageExtractRequest{

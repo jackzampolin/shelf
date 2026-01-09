@@ -96,6 +96,7 @@ func CreateBlendWorkUnit(ctx context.Context, jc JobContext, pageNum int, state 
 	unit.ID = unitID
 	unit.Provider = book.BlendProvider
 	unit.JobID = jc.ID()
+	unit.Priority = jobs.PriorityForStage("blend")
 
 	unit.Metrics = &jobs.WorkUnitMetrics{
 		BookID:    book.BookID,

@@ -59,6 +59,7 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 	unit.ID = unitID
 	unit.Provider = book.MetadataProvider
 	unit.JobID = jc.ID()
+	unit.Priority = jobs.PriorityForStage("metadata")
 
 	unit.Metrics = &jobs.WorkUnitMetrics{
 		BookID:    book.BookID,
