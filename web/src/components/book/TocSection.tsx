@@ -9,6 +9,7 @@ interface TocSectionProps {
   toc?: TocStatus
   bookId: string
   metrics?: Record<string, StageMetrics>
+  onViewAgentLog?: (logId: string) => void
 }
 
 interface AgentLog {
@@ -21,7 +22,7 @@ interface AgentLog {
   error?: string
 }
 
-export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
+export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionProps) {
   const [entriesExpanded, setEntriesExpanded] = useState(false)
   const [pipelineExpanded, setPipelineExpanded] = useState(true)
 
@@ -114,7 +115,8 @@ export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
                 detail={toc.found ? `p${toc.start_page}-${toc.end_page}` : undefined}
                 metrics={tocMetrics}
                 logs={logsByType['toc_finder']}
-                              />
+                onViewLog={onViewAgentLog}
+              />
               <Arrow />
               <PipelineStage
                 label="Extract"
@@ -122,7 +124,8 @@ export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
                 detail={extractedCount > 0 ? `${extractedCount} entries` : undefined}
                 metrics={tocMetrics}
                 logs={logsByType['toc_extract']}
-                              />
+                onViewLog={onViewAgentLog}
+              />
             </div>
 
             {/* Row 2: Link (with call count) */}
@@ -134,7 +137,8 @@ export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
                 detail={totalCount > 0 ? `${linkedCount}/${totalCount} linked` : undefined}
                 metrics={linkMetrics}
                 logs={logsByType['toc_entry_finder']}
-                                showCallCount
+                showCallCount
+                onViewLog={onViewAgentLog}
               />
             </div>
 
@@ -150,6 +154,7 @@ export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
                     metrics={patternMetrics}
                     logs={logsByType['pattern_analyzer']}
                     compact
+                    onViewLog={onViewAgentLog}
                   />
 
                   {/* Conditional branch to Chapter Discovery */}
@@ -164,6 +169,7 @@ export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
                       compact
                       dimmed={!hasPatternAnalysis && finalizeStatus !== 'in_progress'}
                       showCallCount
+                      onViewLog={onViewAgentLog}
                     />
                   </div>
 
@@ -177,6 +183,7 @@ export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
                       logs={logsByType['gap_investigator']}
                       compact
                       dimmed={!hasChapterDiscovery && finalizeStatus !== 'in_progress'}
+                      onViewLog={onViewAgentLog}
                     />
                   </div>
                 </div>
@@ -241,9 +248,10 @@ interface PipelineStageProps {
   compact?: boolean
   dimmed?: boolean
   showCallCount?: boolean
+  onViewLog?: (logId: string) => void
 }
 
-function PipelineStage({ label, status, detail, metrics, logs, compact, dimmed, showCallCount }: PipelineStageProps) {
+function PipelineStage({ label, status, detail, metrics, logs, compact, dimmed, showCallCount, onViewLog }: PipelineStageProps) {
   const [expanded, setExpanded] = useState(false)
 
   const statusStyles = {
@@ -295,7 +303,12 @@ function PipelineStage({ label, status, detail, metrics, logs, compact, dimmed, 
           <div className="text-xs font-medium text-gray-500 mb-2">Agent Calls ({logs.length})</div>
           <div className="space-y-1">
             {logs.map((log, idx) => (
-              <AgentCallBadge key={log.id || idx} log={log} index={idx + 1} />
+              <AgentCallBadge
+                key={log.id || idx}
+                log={log}
+                index={idx + 1}
+                onView={onViewLog && log.id ? () => onViewLog(log.id) : undefined}
+              />
             ))}
           </div>
           {metrics && (
@@ -318,22 +331,49 @@ function PipelineStage({ label, status, detail, metrics, logs, compact, dimmed, 
   )
 }
 
-function AgentCallBadge({ log, index }: { log: AgentLog; index: number }) {
+function AgentCallBadge({ log, index, onView }: { log: AgentLog; index: number; onView?: () => void }) {
   const duration = log.completed_at && log.started_at
     ? ((new Date(log.completed_at).getTime() - new Date(log.started_at).getTime()) / 1000).toFixed(1)
     : null
+
+  const content = (
+    <>
+      <div className="flex items-center space-x-2">
+        <span className="font-mono text-gray-400">#{index}</span>
+        <span>{log.success ? '✓' : log.error ? '✕' : '◐'}</span>
+        <span>{log.iterations} iter</span>
+      </div>
+      <div className="flex items-center space-x-2">
+        {duration && <span className="font-mono">{duration}s</span>}
+        {onView && <span className="text-blue-500">→</span>}
+      </div>
+    </>
+  )
+
+  if (onView) {
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          onView()
+        }}
+        className={`
+          w-full flex items-center justify-between px-2 py-1 rounded text-xs
+          ${log.success ? 'bg-green-50 text-green-700 hover:bg-green-100' : log.error ? 'bg-red-50 text-red-700 hover:bg-red-100' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}
+          transition-colors cursor-pointer
+        `}
+      >
+        {content}
+      </button>
+    )
+  }
 
   return (
     <div className={`
       flex items-center justify-between px-2 py-1 rounded text-xs
       ${log.success ? 'bg-green-50 text-green-700' : log.error ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}
     `}>
-      <div className="flex items-center space-x-2">
-        <span className="font-mono text-gray-400">#{index}</span>
-        <span>{log.success ? '✓' : log.error ? '✕' : '◐'}</span>
-        <span>{log.iterations} iter</span>
-      </div>
-      {duration && <span className="font-mono">{duration}s</span>}
+      {content}
     </div>
   )
 }

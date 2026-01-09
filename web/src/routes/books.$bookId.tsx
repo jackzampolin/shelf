@@ -384,7 +384,15 @@ function BookDetailPage() {
             </div>
 
             {/* ToC Section */}
-            <TocSection toc={detailedStatus.toc} bookId={bookId} metrics={detailedMetrics?.stages} />
+            <TocSection
+              toc={detailedStatus.toc}
+              bookId={bookId}
+              metrics={detailedMetrics?.stages}
+              onViewAgentLog={(id) => {
+                setSelectedAgentLogId(id)
+                setAgentLogModalOpen(true)
+              }}
+            />
 
             {/* Structure Section */}
             <StructureSection structure={detailedStatus.structure} bookId={bookId} metrics={detailedMetrics?.stages} />
