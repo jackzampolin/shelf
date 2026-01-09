@@ -50,7 +50,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 	}
 
 	t.Run("health_endpoint", func(t *testing.T) {
-		resp, err := http.Get(cfg.URL() + "/health")
+		resp, err := http.Get(cfg.URL() + "/api/health")
 		if err != nil {
 			t.Fatalf("health check failed: %v", err)
 		}
@@ -71,7 +71,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 	})
 
 	t.Run("ready_endpoint", func(t *testing.T) {
-		resp, err := http.Get(cfg.URL() + "/ready")
+		resp, err := http.Get(cfg.URL() + "/api/ready")
 		if err != nil {
 			t.Fatalf("ready check failed: %v", err)
 		}
@@ -95,7 +95,7 @@ func TestServer_FullLifecycle(t *testing.T) {
 	})
 
 	t.Run("status_endpoint", func(t *testing.T) {
-		resp, err := http.Get(cfg.URL() + "/status")
+		resp, err := http.Get(cfg.URL() + "/api/status")
 		if err != nil {
 			t.Fatalf("status check failed: %v", err)
 		}

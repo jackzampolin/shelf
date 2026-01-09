@@ -191,6 +191,12 @@ const docTemplate = `{
                         "description": "Book author",
                         "name": "author",
                         "in": "formData"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Automatically start processing after ingest",
+                        "name": "auto_process",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -238,6 +244,24 @@ const docTemplate = `{
                         "name": "book_id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by stage (toc-pattern, toc-discover, toc-validate, structure-classify, structure-polish)",
+                        "name": "stage",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by agent type",
+                        "name": "agent_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by job ID",
+                        "name": "job_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -564,6 +588,12 @@ const docTemplate = `{
                         "description": "Include page text content",
                         "name": "include_text",
                         "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include paragraphs",
+                        "name": "include_paragraphs",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -882,6 +912,26 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/health": {
+            "get": {
+                "description": "Basic health check endpoint",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/jobs": {
             "get": {
                 "description": "List all jobs with optional filtering",
@@ -903,6 +953,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by job type",
                         "name": "job_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by book ID",
+                        "name": "book_id",
                         "in": "query"
                     }
                 ],
@@ -1778,6 +1834,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/ready": {
+            "get": {
+                "description": "Readiness check including DefraDB status",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Readiness check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/settings": {
             "get": {
                 "description": "Get all configuration settings",
@@ -1943,53 +2025,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/health": {
-            "get": {
-                "description": "Basic health check endpoint",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "health"
-                ],
-                "summary": "Health check",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/ready": {
-            "get": {
-                "description": "Readiness check including DefraDB status",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "health"
-                ],
-                "summary": "Readiness check",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/status": {
+        "/api/status": {
             "get": {
                 "description": "Get detailed server status including providers and DefraDB",
                 "produces": [
@@ -2056,6 +2092,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "_docID": {
+                    "type": "string"
+                },
+                "book_id": {
                     "type": "string"
                 },
                 "completed_at": {
@@ -2373,6 +2412,9 @@ const docTemplate = `{
                 "iterations": {
                     "type": "integer"
                 },
+                "job_id": {
+                    "type": "string"
+                },
                 "messages": {
                     "description": "Detailed data",
                     "type": "array",
@@ -2446,6 +2488,9 @@ const docTemplate = `{
                 },
                 "iterations": {
                     "type": "integer"
+                },
+                "job_id": {
+                    "type": "string"
                 },
                 "started_at": {
                     "type": "string"
@@ -2581,9 +2626,38 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_server_endpoints.ChapterParagraph": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "polished_text": {
+                    "type": "string"
+                },
+                "raw_text": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "start_page": {
+                    "type": "integer"
+                },
+                "word_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_server_endpoints.ChapterWithText": {
             "type": "object",
             "properties": {
+                "classification_reasoning": {
+                    "type": "string"
+                },
+                "edits_applied_json": {
+                    "type": "string"
+                },
                 "end_page": {
                     "type": "integer"
                 },
@@ -2614,11 +2688,20 @@ const docTemplate = `{
                         "$ref": "#/definitions/internal_server_endpoints.ChapterPage"
                     }
                 },
+                "paragraphs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.ChapterParagraph"
+                    }
+                },
                 "polish_complete": {
                     "type": "boolean"
                 },
                 "polish_failed": {
                     "type": "boolean"
+                },
+                "polished_text": {
+                    "type": "string"
                 },
                 "sort_order": {
                     "type": "integer"
@@ -2762,6 +2845,9 @@ const docTemplate = `{
                 "_docID": {
                     "type": "string"
                 },
+                "book_id": {
+                    "type": "string"
+                },
                 "completed_at": {
                     "type": "string"
                 },
@@ -2868,7 +2954,13 @@ const docTemplate = `{
                 "author": {
                     "type": "string"
                 },
+                "book_id": {
+                    "type": "string"
+                },
                 "job_id": {
+                    "type": "string"
+                },
+                "process_job_id": {
                     "type": "string"
                 },
                 "status": {

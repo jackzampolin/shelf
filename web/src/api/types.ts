@@ -242,6 +242,8 @@ export interface paths {
                         title?: string;
                         /** @description Book author */
                         author?: string;
+                        /** @description Automatically start processing after ingest */
+                        auto_process?: boolean;
                     };
                 };
             };
@@ -303,7 +305,14 @@ export interface paths {
          */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Filter by stage (toc-pattern, toc-discover, toc-validate, structure-classify, structure-polish) */
+                    stage?: string;
+                    /** @description Filter by agent type */
+                    agent_type?: string;
+                    /** @description Filter by job ID */
+                    job_id?: string;
+                };
                 header?: never;
                 path: {
                     /** @description Book ID */
@@ -760,6 +769,8 @@ export interface paths {
                 query?: {
                     /** @description Include page text content */
                     include_text?: boolean;
+                    /** @description Include paragraphs */
+                    include_paragraphs?: boolean;
                 };
                 header?: never;
                 path: {
@@ -1167,6 +1178,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health check
+         * @description Basic health check endpoint
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -1185,6 +1235,8 @@ export interface paths {
                     status?: string;
                     /** @description Filter by job type */
                     job_type?: string;
+                    /** @description Filter by book ID */
+                    book_id?: string;
                 };
                 header?: never;
                 path?: never;
@@ -2262,6 +2314,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readiness check
+         * @description Readiness check including DefraDB status
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -2488,94 +2588,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Health check
-         * @description Basic health check endpoint
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/ready": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Readiness check
-         * @description Readiness check including DefraDB status
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
-                    };
-                };
-                /** @description Service Unavailable */
-                503: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/status": {
+    "/api/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -2639,6 +2652,7 @@ export interface components {
         };
         "github_com_jackzampolin_shelf_internal_jobs.Record": {
             _docID?: string;
+            book_id?: string;
             completed_at?: string;
             created_at?: string;
             error?: string;
@@ -2759,6 +2773,7 @@ export interface components {
             error?: string;
             id?: string;
             iterations?: number;
+            job_id?: string;
             /** @description Detailed data */
             messages?: number[];
             result?: number[];
@@ -2782,6 +2797,7 @@ export interface components {
             error?: string;
             id?: string;
             iterations?: number;
+            job_id?: string;
             started_at?: string;
             success?: boolean;
         };
@@ -2824,7 +2840,17 @@ export interface components {
             label?: string;
             page_num?: number;
         };
+        "internal_server_endpoints.ChapterParagraph": {
+            id?: string;
+            polished_text?: string;
+            raw_text?: string;
+            sort_order?: number;
+            start_page?: number;
+            word_count?: number;
+        };
         "internal_server_endpoints.ChapterWithText": {
+            classification_reasoning?: string;
+            edits_applied_json?: string;
             end_page?: number;
             entry_id?: string;
             entry_number?: string;
@@ -2834,8 +2860,10 @@ export interface components {
             matter_type?: string;
             page_count?: number;
             pages?: components["schemas"]["internal_server_endpoints.ChapterPage"][];
+            paragraphs?: components["schemas"]["internal_server_endpoints.ChapterParagraph"][];
             polish_complete?: boolean;
             polish_failed?: boolean;
+            polished_text?: string;
             sort_order?: number;
             start_page?: number;
             title?: string;
@@ -2885,6 +2913,7 @@ export interface components {
         };
         "internal_server_endpoints.GetJobResponse": {
             _docID?: string;
+            book_id?: string;
             completed_at?: string;
             created_at?: string;
             error?: string;
@@ -2925,7 +2954,9 @@ export interface components {
         };
         "internal_server_endpoints.IngestResponse": {
             author?: string;
+            book_id?: string;
             job_id?: string;
+            process_job_id?: string;
             status?: string;
             title?: string;
         };

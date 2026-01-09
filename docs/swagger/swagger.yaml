@@ -33,6 +33,8 @@ definitions:
     properties:
       _docID:
         type: string
+      book_id:
+        type: string
       completed_at:
         type: string
       created_at:
@@ -252,6 +254,8 @@ definitions:
         type: string
       iterations:
         type: integer
+      job_id:
+        type: string
       messages:
         description: Detailed data
         items:
@@ -301,6 +305,8 @@ definitions:
         type: string
       iterations:
         type: integer
+      job_id:
+        type: string
       started_at:
         type: string
       success:
@@ -388,8 +394,27 @@ definitions:
       page_num:
         type: integer
     type: object
+  internal_server_endpoints.ChapterParagraph:
+    properties:
+      id:
+        type: string
+      polished_text:
+        type: string
+      raw_text:
+        type: string
+      sort_order:
+        type: integer
+      start_page:
+        type: integer
+      word_count:
+        type: integer
+    type: object
   internal_server_endpoints.ChapterWithText:
     properties:
+      classification_reasoning:
+        type: string
+      edits_applied_json:
+        type: string
       end_page:
         type: integer
       entry_id:
@@ -410,10 +435,16 @@ definitions:
         items:
           $ref: '#/definitions/internal_server_endpoints.ChapterPage'
         type: array
+      paragraphs:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.ChapterParagraph'
+        type: array
       polish_complete:
         type: boolean
       polish_failed:
         type: boolean
+      polished_text:
+        type: string
       sort_order:
         type: integer
       start_page:
@@ -502,6 +533,8 @@ definitions:
     properties:
       _docID:
         type: string
+      book_id:
+        type: string
       completed_at:
         type: string
       created_at:
@@ -572,7 +605,11 @@ definitions:
     properties:
       author:
         type: string
+      book_id:
+        type: string
       job_id:
+        type: string
+      process_job_id:
         type: string
       status:
         type: string
@@ -1095,6 +1132,19 @@ paths:
         name: book_id
         required: true
         type: string
+      - description: Filter by stage (toc-pattern, toc-discover, toc-validate, structure-classify,
+          structure-polish)
+        in: query
+        name: stage
+        type: string
+      - description: Filter by agent type
+        in: query
+        name: agent_type
+        type: string
+      - description: Filter by job ID
+        in: query
+        name: job_id
+        type: string
       produces:
       - application/json
       responses:
@@ -1311,6 +1361,10 @@ paths:
       - description: Include page text content
         in: query
         name: include_text
+        type: boolean
+      - description: Include paragraphs
+        in: query
+        name: include_paragraphs
         type: boolean
       produces:
       - application/json
@@ -1580,6 +1634,10 @@ paths:
         in: formData
         name: author
         type: string
+      - description: Automatically start processing after ingest
+        in: formData
+        name: auto_process
+        type: boolean
       produces:
       - application/json
       responses:
@@ -1602,6 +1660,19 @@ paths:
       summary: Upload and ingest book PDFs
       tags:
       - books
+  /api/health:
+    get:
+      description: Basic health check endpoint
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
+      summary: Health check
+      tags:
+      - health
   /api/jobs:
     get:
       description: List all jobs with optional filtering
@@ -1613,6 +1684,10 @@ paths:
       - description: Filter by job type
         in: query
         name: job_type
+        type: string
+      - description: Filter by book ID
+        in: query
+        name: book_id
         type: string
       produces:
       - application/json
@@ -2195,6 +2270,23 @@ paths:
       summary: Get a prompt
       tags:
       - prompts
+  /api/ready:
+    get:
+      description: Readiness check including DefraDB status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
+      summary: Readiness check
+      tags:
+      - health
   /api/settings:
     get:
       description: Get all configuration settings
@@ -2304,37 +2396,7 @@ paths:
       summary: Reset a setting to default
       tags:
       - settings
-  /health:
-    get:
-      description: Basic health check endpoint
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
-      summary: Health check
-      tags:
-      - health
-  /ready:
-    get:
-      description: Readiness check including DefraDB status
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
-      summary: Readiness check
-      tags:
-      - health
-  /status:
+  /api/status:
     get:
       description: Get detailed server status including providers and DefraDB
       produces:

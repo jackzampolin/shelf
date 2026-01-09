@@ -214,6 +214,10 @@
                                     "author": {
                                         "description": "Book author",
                                         "type": "string"
+                                    },
+                                    "auto_process": {
+                                        "description": "Automatically start processing after ingest",
+                                        "type": "boolean"
                                     }
                                 },
                                 "required": [
@@ -281,6 +285,30 @@
                         "name": "book_id",
                         "in": "path",
                         "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by stage (toc-pattern, toc-discover, toc-validate, structure-classify, structure-polish)",
+                        "name": "stage",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by agent type",
+                        "name": "agent_type",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by job ID",
+                        "name": "job_id",
+                        "in": "query",
                         "schema": {
                             "type": "string"
                         }
@@ -723,6 +751,14 @@
                         "schema": {
                             "type": "boolean"
                         }
+                    },
+                    {
+                        "description": "Include paragraphs",
+                        "name": "include_paragraphs",
+                        "in": "query",
+                        "schema": {
+                            "type": "boolean"
+                        }
                     }
                 ],
                 "responses": {
@@ -1134,6 +1170,27 @@
                 }
             }
         },
+        "/api/health": {
+            "get": {
+                "description": "Basic health check endpoint",
+                "tags": [
+                    "health"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.HealthResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/jobs": {
             "get": {
                 "description": "List all jobs with optional filtering",
@@ -1153,6 +1210,14 @@
                     {
                         "description": "Filter by job type",
                         "name": "job_type",
+                        "in": "query",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Filter by book ID",
+                        "name": "book_id",
                         "in": "query",
                         "schema": {
                             "type": "string"
@@ -2287,6 +2352,37 @@
                 }
             }
         },
+        "/api/ready": {
+            "get": {
+                "description": "Readiness check including DefraDB status",
+                "tags": [
+                    "health"
+                ],
+                "summary": "Readiness check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.HealthResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/internal_server_endpoints.HealthResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/settings": {
             "get": {
                 "description": "Get all configuration settings",
@@ -2493,59 +2589,7 @@
                 }
             }
         },
-        "/health": {
-            "get": {
-                "description": "Basic health check endpoint",
-                "tags": [
-                    "health"
-                ],
-                "summary": "Health check",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/internal_server_endpoints.HealthResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/ready": {
-            "get": {
-                "description": "Readiness check including DefraDB status",
-                "tags": [
-                    "health"
-                ],
-                "summary": "Readiness check",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/internal_server_endpoints.HealthResponse"
-                                }
-                            }
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/internal_server_endpoints.HealthResponse"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/status": {
+        "/api/status": {
             "get": {
                 "description": "Get detailed server status including providers and DefraDB",
                 "tags": [
@@ -2619,6 +2663,9 @@
                 "type": "object",
                 "properties": {
                     "_docID": {
+                        "type": "string"
+                    },
+                    "book_id": {
                         "type": "string"
                     },
                     "completed_at": {
@@ -2936,6 +2983,9 @@
                     "iterations": {
                         "type": "integer"
                     },
+                    "job_id": {
+                        "type": "string"
+                    },
                     "messages": {
                         "description": "Detailed data",
                         "type": "array",
@@ -3009,6 +3059,9 @@
                     },
                     "iterations": {
                         "type": "integer"
+                    },
+                    "job_id": {
+                        "type": "string"
                     },
                     "started_at": {
                         "type": "string"
@@ -3144,9 +3197,38 @@
                     }
                 }
             },
+            "internal_server_endpoints.ChapterParagraph": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "polished_text": {
+                        "type": "string"
+                    },
+                    "raw_text": {
+                        "type": "string"
+                    },
+                    "sort_order": {
+                        "type": "integer"
+                    },
+                    "start_page": {
+                        "type": "integer"
+                    },
+                    "word_count": {
+                        "type": "integer"
+                    }
+                }
+            },
             "internal_server_endpoints.ChapterWithText": {
                 "type": "object",
                 "properties": {
+                    "classification_reasoning": {
+                        "type": "string"
+                    },
+                    "edits_applied_json": {
+                        "type": "string"
+                    },
                     "end_page": {
                         "type": "integer"
                     },
@@ -3177,11 +3259,20 @@
                             "$ref": "#/components/schemas/internal_server_endpoints.ChapterPage"
                         }
                     },
+                    "paragraphs": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/internal_server_endpoints.ChapterParagraph"
+                        }
+                    },
                     "polish_complete": {
                         "type": "boolean"
                     },
                     "polish_failed": {
                         "type": "boolean"
+                    },
+                    "polished_text": {
+                        "type": "string"
                     },
                     "sort_order": {
                         "type": "integer"
@@ -3325,6 +3416,9 @@
                     "_docID": {
                         "type": "string"
                     },
+                    "book_id": {
+                        "type": "string"
+                    },
                     "completed_at": {
                         "type": "string"
                     },
@@ -3431,7 +3525,13 @@
                     "author": {
                         "type": "string"
                     },
+                    "book_id": {
+                        "type": "string"
+                    },
                     "job_id": {
+                        "type": "string"
+                    },
+                    "process_job_id": {
                         "type": "string"
                     },
                     "status": {
