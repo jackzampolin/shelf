@@ -52,7 +52,7 @@ type OCRProvider interface {
 }
 
 // DefaultMaxConcurrency is used when provider returns 0 for MaxConcurrency.
-const DefaultMaxConcurrency = 30
+const DefaultMaxConcurrency = 50
 
 // RateLimitError is returned when a provider returns a 429 status.
 // It contains the Retry-After duration if provided by the server.
