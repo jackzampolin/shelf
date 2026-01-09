@@ -114,51 +114,51 @@ type LinkedTocEntry = common.LinkedTocEntry
 
 // PatternResult holds the results of pattern analysis.
 type PatternResult struct {
-	Patterns []DiscoveredPattern
-	Excluded []ExcludedRange
-	Reasoning string
+	Patterns  []DiscoveredPattern `json:"patterns"`
+	Excluded  []ExcludedRange     `json:"excluded_ranges"`
+	Reasoning string              `json:"reasoning"`
 }
 
 // DiscoveredPattern represents a chapter sequence to discover.
 type DiscoveredPattern struct {
-	PatternType   string // "sequential" or "named"
-	LevelName     string // "chapter", "part", "section"
-	HeadingFormat string // "Chapter {n}", "{n}", "CHAPTER {n}"
-	RangeStart    string // "1", "I", "A"
-	RangeEnd      string // "38", "X", "F"
-	Level         int    // Structural depth: 1=part, 2=chapter, 3=section
-	Reasoning     string
+	PatternType   string `json:"pattern_type"`   // "sequential" or "named"
+	LevelName     string `json:"level_name"`     // "chapter", "part", "section"
+	HeadingFormat string `json:"heading_format"` // "Chapter {n}", "{n}", "CHAPTER {n}"
+	RangeStart    string `json:"range_start"`    // "1", "I", "A"
+	RangeEnd      string `json:"range_end"`      // "38", "X", "F"
+	Level         int    `json:"level"`          // Structural depth: 1=part, 2=chapter, 3=section
+	Reasoning     string `json:"reasoning"`
 }
 
 // ExcludedRange represents a page range to skip during discovery.
 type ExcludedRange struct {
-	StartPage int
-	EndPage   int
-	Reason    string // "back_matter", "front_matter", "bibliography", etc.
+	StartPage int    `json:"start_page"`
+	EndPage   int    `json:"end_page"`
+	Reason    string `json:"reason"` // "back_matter", "front_matter", "bibliography", etc.
 }
 
 // EntryToFind represents a missing chapter/section to discover.
 type EntryToFind struct {
-	Key              string // Unique key like "chapter_14"
-	LevelName        string // "chapter", "part"
-	Identifier       string // "14", "III", "A"
-	HeadingFormat    string // "Chapter {n}"
-	Level            int
-	ExpectedNearPage int    // Estimated page based on sequence
-	SearchRangeStart int
-	SearchRangeEnd   int
+	Key              string `json:"key"`               // Unique key like "chapter_14"
+	LevelName        string `json:"level_name"`        // "chapter", "part"
+	Identifier       string `json:"identifier"`        // "14", "III", "A"
+	HeadingFormat    string `json:"heading_format"`    // "Chapter {n}"
+	Level            int    `json:"level"`
+	ExpectedNearPage int    `json:"expected_near_page"` // Estimated page based on sequence
+	SearchRangeStart int    `json:"search_range_start"`
+	SearchRangeEnd   int    `json:"search_range_end"`
 }
 
 // Gap represents a gap in page coverage between entries.
 type Gap struct {
-	Key            string // Unique key like "gap_100_150"
-	StartPage      int
-	EndPage        int
-	Size           int
-	PrevEntryTitle string
-	PrevEntryPage  int
-	NextEntryTitle string
-	NextEntryPage  int
+	Key            string `json:"key"`              // Unique key like "gap_100_150"
+	StartPage      int    `json:"start_page"`
+	EndPage        int    `json:"end_page"`
+	Size           int    `json:"size"`
+	PrevEntryTitle string `json:"prev_entry_title"`
+	PrevEntryPage  int    `json:"prev_entry_page"`
+	NextEntryTitle string `json:"next_entry_title"`
+	NextEntryPage  int    `json:"next_entry_page"`
 }
 
 // GapFix represents a fix suggestion for a gap.
