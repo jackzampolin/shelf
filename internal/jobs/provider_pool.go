@@ -219,7 +219,11 @@ func (p *ProviderWorkerPool) worker(ctx context.Context, id int) {
 		case <-ctx.Done():
 			return
 
-		case unit := <-p.work:
+		case unit, ok := <-p.work:
+			// Handle channel close or nil unit
+			if !ok || unit == nil {
+				return
+			}
 			result := p.process(ctx, unit)
 			p.inFlight.Add(-1)
 			p.results <- workerResult{
@@ -233,9 +237,12 @@ func (p *ProviderWorkerPool) worker(ctx context.Context, id int) {
 
 // Submit adds a work unit to the pool's priority queue.
 // Higher priority work units will be processed first.
+// Returns an error if the pool is not initialized or unit is nil.
 func (p *ProviderWorkerPool) Submit(unit *WorkUnit) error {
-	p.queue.Push(unit)
-	return nil
+	if p.queue == nil {
+		return fmt.Errorf("pool not initialized: call init() before Submit()")
+	}
+	return p.queue.Push(unit)
 }
 
 // Status returns current pool status with priority queue breakdown.

@@ -1,18 +1,28 @@
 package jobs
 
 import (
+	"fmt"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
 )
 
+// mustPush is a test helper that panics if Push fails
+func mustPush(t *testing.T, pq *PriorityQueue, unit *WorkUnit) {
+	t.Helper()
+	if err := pq.Push(unit); err != nil {
+		t.Fatalf("Push failed: %v", err)
+	}
+}
+
 func TestPriorityQueue_BasicOrdering(t *testing.T) {
 	pq := NewPriorityQueue()
 
 	// Push units with different priorities (low first)
-	pq.Push(&WorkUnit{ID: "low", Priority: PriorityLow})
-	pq.Push(&WorkUnit{ID: "normal", Priority: PriorityNormal})
-	pq.Push(&WorkUnit{ID: "high", Priority: PriorityHigh})
+	mustPush(t, pq, &WorkUnit{ID: "low", Priority: PriorityLow})
+	mustPush(t, pq, &WorkUnit{ID: "normal", Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "high", Priority: PriorityHigh})
 
 	// Pop should return in priority order (high first)
 	done := make(chan struct{})
@@ -43,9 +53,9 @@ func TestPriorityQueue_FIFOWithinPriority(t *testing.T) {
 	pq := NewPriorityQueue()
 
 	// Push multiple units with same priority
-	pq.Push(&WorkUnit{ID: "first", Priority: PriorityNormal})
-	pq.Push(&WorkUnit{ID: "second", Priority: PriorityNormal})
-	pq.Push(&WorkUnit{ID: "third", Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "first", Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "second", Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "third", Priority: PriorityNormal})
 
 	// Pop should return in FIFO order within same priority
 	unit := pq.TryPop()
@@ -69,11 +79,11 @@ func TestPriorityQueue_HighPriorityJumpsQueue(t *testing.T) {
 
 	// Simulate the issue from #161: many normal priority items queued
 	for i := 0; i < 100; i++ {
-		pq.Push(&WorkUnit{ID: "page_" + string(rune('0'+i%10)), Priority: PriorityNormal})
+		mustPush(t, pq, &WorkUnit{ID: "page_" + string(rune('0'+i%10)), Priority: PriorityNormal})
 	}
 
 	// Then a high priority item arrives
-	pq.Push(&WorkUnit{ID: "toc_finder", Priority: PriorityHigh})
+	mustPush(t, pq, &WorkUnit{ID: "toc_finder", Priority: PriorityHigh})
 
 	// High priority should come out first despite being added last
 	unit := pq.TryPop()
@@ -85,12 +95,12 @@ func TestPriorityQueue_HighPriorityJumpsQueue(t *testing.T) {
 func TestPriorityQueue_Stats(t *testing.T) {
 	pq := NewPriorityQueue()
 
-	pq.Push(&WorkUnit{ID: "1", Priority: PriorityLow})
-	pq.Push(&WorkUnit{ID: "2", Priority: PriorityLow})
-	pq.Push(&WorkUnit{ID: "3", Priority: PriorityNormal})
-	pq.Push(&WorkUnit{ID: "4", Priority: PriorityNormal})
-	pq.Push(&WorkUnit{ID: "5", Priority: PriorityNormal})
-	pq.Push(&WorkUnit{ID: "6", Priority: PriorityHigh})
+	mustPush(t, pq, &WorkUnit{ID: "1", Priority: PriorityLow})
+	mustPush(t, pq, &WorkUnit{ID: "2", Priority: PriorityLow})
+	mustPush(t, pq, &WorkUnit{ID: "3", Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "4", Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "5", Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "6", Priority: PriorityHigh})
 
 	stats := pq.Stats()
 	if stats.Total != 6 {
@@ -124,7 +134,7 @@ func TestPriorityQueue_BlockingPop(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Push an item
-	pq.Push(&WorkUnit{ID: "test", Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "test", Priority: PriorityNormal})
 
 	// Wait for pop to complete
 	wg.Wait()
@@ -226,10 +236,12 @@ func TestPriorityQueue_ConcurrentAccess(t *testing.T) {
 				if j%10 == 0 {
 					priority = PriorityHigh
 				}
-				pq.Push(&WorkUnit{
+				if err := pq.Push(&WorkUnit{
 					ID:       "test",
 					Priority: priority,
-				})
+				}); err != nil {
+					t.Errorf("Push failed: %v", err)
+				}
 			}
 		}(i)
 	}
@@ -272,5 +284,175 @@ func TestPriorityQueue_ConcurrentAccess(t *testing.T) {
 	// Queue should be empty now
 	if pq.Len() != 0 {
 		t.Errorf("expected empty queue, got %d items", pq.Len())
+	}
+}
+
+func TestPriorityQueue_TryPopEmpty(t *testing.T) {
+	pq := NewPriorityQueue()
+
+	// TryPop on empty queue should return nil without blocking
+	result := pq.TryPop()
+	if result != nil {
+		t.Errorf("expected nil from empty queue, got %+v", result)
+	}
+
+	// Queue should still be usable after TryPop on empty
+	mustPush(t, pq, &WorkUnit{ID: "test", Priority: PriorityNormal})
+	result = pq.TryPop()
+	if result == nil || result.ID != "test" {
+		t.Errorf("queue not usable after TryPop on empty, got %+v", result)
+	}
+}
+
+func TestPriorityQueue_StatsEmpty(t *testing.T) {
+	pq := NewPriorityQueue()
+
+	stats := pq.Stats()
+	if stats.Total != 0 {
+		t.Errorf("expected Total=0 for empty queue, got %d", stats.Total)
+	}
+	if stats.High != 0 {
+		t.Errorf("expected High=0 for empty queue, got %d", stats.High)
+	}
+	if stats.Normal != 0 {
+		t.Errorf("expected Normal=0 for empty queue, got %d", stats.Normal)
+	}
+	if stats.Low != 0 {
+		t.Errorf("expected Low=0 for empty queue, got %d", stats.Low)
+	}
+}
+
+func TestPriorityQueue_PushNil(t *testing.T) {
+	pq := NewPriorityQueue()
+
+	// Push nil should return error
+	err := pq.Push(nil)
+	if err == nil {
+		t.Error("expected error when pushing nil, got nil")
+	}
+	if err != ErrNilWorkUnit {
+		t.Errorf("expected ErrNilWorkUnit, got %v", err)
+	}
+
+	// Queue should still be usable after push error
+	if err := pq.Push(&WorkUnit{ID: "test", Priority: PriorityNormal}); err != nil {
+		t.Errorf("Push failed after nil push: %v", err)
+	}
+	if pq.Len() != 1 {
+		t.Errorf("expected queue length 1, got %d", pq.Len())
+	}
+}
+
+func TestPriorityQueue_MultipleConcurrentConsumers(t *testing.T) {
+	pq := NewPriorityQueue()
+	done := make(chan struct{})
+
+	const numConsumers = 10
+	const numItems = 5
+
+	results := make(chan *WorkUnit, numConsumers)
+	var wg sync.WaitGroup
+
+	// Start consumers before any items exist
+	for i := 0; i < numConsumers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			unit := pq.Pop(done)
+			results <- unit
+		}()
+	}
+
+	// Give consumers time to start waiting
+	time.Sleep(20 * time.Millisecond)
+
+	// Push fewer items than consumers
+	for i := 0; i < numItems; i++ {
+		mustPush(t, pq, &WorkUnit{ID: fmt.Sprintf("item_%d", i), Priority: PriorityNormal})
+	}
+
+	// Give items time to be consumed
+	time.Sleep(20 * time.Millisecond)
+
+	// Close done to unblock remaining consumers
+	close(done)
+	wg.Wait()
+	close(results)
+
+	// Verify exactly numItems were successfully consumed
+	gotItems := 0
+	gotNils := 0
+	for result := range results {
+		if result != nil {
+			gotItems++
+		} else {
+			gotNils++
+		}
+	}
+
+	if gotItems != numItems {
+		t.Errorf("expected %d items consumed, got %d", numItems, gotItems)
+	}
+	expectedNils := numConsumers - numItems
+	if gotNils != expectedNils {
+		t.Errorf("expected %d nil results (cancelled consumers), got %d", expectedNils, gotNils)
+	}
+}
+
+func TestPriorityQueue_NoGoroutineLeak(t *testing.T) {
+	// Get baseline goroutine count
+	runtime.GC()
+	time.Sleep(10 * time.Millisecond)
+	initialGoroutines := runtime.NumGoroutine()
+
+	// Run many pop/cancel cycles
+	for i := 0; i < 50; i++ {
+		pq := NewPriorityQueue()
+		done := make(chan struct{})
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pq.Pop(done)
+		}()
+
+		time.Sleep(time.Millisecond)
+		close(done)
+		wg.Wait()
+	}
+
+	// Allow goroutines to clean up
+	runtime.GC()
+	time.Sleep(50 * time.Millisecond)
+
+	finalGoroutines := runtime.NumGoroutine()
+	// Allow some variance for runtime goroutines
+	if finalGoroutines > initialGoroutines+5 {
+		t.Errorf("possible goroutine leak: started with %d, ended with %d",
+			initialGoroutines, finalGoroutines)
+	}
+}
+
+func TestPriorityForStage_EdgeCases(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected int
+	}{
+		{"lin", PriorityNormal},          // Short prefix that doesn't match
+		{"link_entry_", PriorityHigh},    // Exact prefix match
+		{"a", PriorityNormal},            // Very short input
+		{"abc", PriorityNormal},          // Below length threshold
+		{"link", PriorityNormal},         // Partial prefix
+		{"entry_x", PriorityHigh},        // Valid prefix
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := PriorityForStage(tt.input)
+			if got != tt.expected {
+				t.Errorf("PriorityForStage(%q) = %d, want %d", tt.input, got, tt.expected)
+			}
+		})
 	}
 }

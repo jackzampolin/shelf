@@ -2,8 +2,12 @@ package jobs
 
 import (
 	"container/heap"
+	"errors"
 	"sync"
 )
+
+// ErrNilWorkUnit is returned when attempting to push a nil work unit.
+var ErrNilWorkUnit = errors.New("cannot push nil work unit")
 
 // Priority levels for work units.
 // Higher values are processed first.
@@ -61,75 +65,69 @@ func hasPrefix(s, prefix string) bool {
 // Work units with higher Priority values are dequeued first.
 // When priorities are equal, work units are processed in FIFO order.
 type PriorityQueue struct {
-	mu    sync.Mutex
-	cond  *sync.Cond
-	items workUnitHeap
-	seq   uint64 // Sequence number for FIFO ordering within same priority
+	mu     sync.Mutex
+	items  workUnitHeap
+	seq    uint64          // Sequence number for FIFO ordering within same priority
+	notify chan struct{}   // Signaled when items are pushed
 }
 
 // NewPriorityQueue creates a new priority queue.
 func NewPriorityQueue() *PriorityQueue {
 	pq := &PriorityQueue{
-		items: make(workUnitHeap, 0),
+		items:  make(workUnitHeap, 0),
+		notify: make(chan struct{}, 1), // Buffered to avoid blocking Push
 	}
-	pq.cond = sync.NewCond(&pq.mu)
 	heap.Init(&pq.items)
 	return pq
 }
 
 // Push adds a work unit to the queue.
-func (pq *PriorityQueue) Push(unit *WorkUnit) {
-	pq.mu.Lock()
-	defer pq.mu.Unlock()
+// Returns an error if unit is nil.
+func (pq *PriorityQueue) Push(unit *WorkUnit) error {
+	if unit == nil {
+		return ErrNilWorkUnit
+	}
 
+	pq.mu.Lock()
 	pq.seq++
 	item := &workUnitItem{
 		unit: unit,
 		seq:  pq.seq,
 	}
 	heap.Push(&pq.items, item)
-	pq.cond.Signal() // Wake up one waiting consumer
+	pq.mu.Unlock()
+
+	// Signal waiting consumers (non-blocking)
+	select {
+	case pq.notify <- struct{}{}:
+	default:
+		// Channel already has a pending notification
+	}
+	return nil
 }
 
 // Pop removes and returns the highest priority work unit.
 // Blocks until an item is available or the done channel is closed.
 // Returns nil if done is closed while waiting.
 func (pq *PriorityQueue) Pop(done <-chan struct{}) *WorkUnit {
-	pq.mu.Lock()
-	defer pq.mu.Unlock()
-
-	for pq.items.Len() == 0 {
-		// Check if done before waiting
-		select {
-		case <-done:
-			return nil
-		default:
+	for {
+		// Try to get an item
+		pq.mu.Lock()
+		if pq.items.Len() > 0 {
+			item := heap.Pop(&pq.items).(*workUnitItem)
+			pq.mu.Unlock()
+			return item.unit
 		}
+		pq.mu.Unlock()
 
-		// Wait for signal or done
-		// Use a goroutine to handle done channel since cond.Wait doesn't support select
-		waiting := make(chan struct{})
-		go func() {
-			select {
-			case <-done:
-				pq.cond.Broadcast() // Wake up all waiters
-			case <-waiting:
-			}
-		}()
-
-		pq.cond.Wait()
-		close(waiting)
-
-		// Check done again after waking
+		// Wait for notification or cancellation
 		select {
 		case <-done:
 			return nil
-		default:
+		case <-pq.notify:
+			// Item may have been pushed, loop to check
 		}
 	}
-
-	item := heap.Pop(&pq.items).(*workUnitItem)
-	return item.unit
 }
 
 // TryPop attempts to pop without blocking.
