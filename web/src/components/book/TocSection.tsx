@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
+import { client, unwrap } from '@/api/client'
 import type { StatusType } from '@/components/ui'
 import type { TocStatus, TocEntry, StageMetrics } from './types'
 
@@ -9,11 +11,44 @@ interface TocSectionProps {
   metrics?: Record<string, StageMetrics>
 }
 
+interface AgentLog {
+  id: string
+  agent_type: string
+  started_at: string
+  completed_at?: string
+  iterations: number
+  success: boolean
+  error?: string
+}
+
 export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
   const [entriesExpanded, setEntriesExpanded] = useState(false)
-  const [metricsExpanded, setMetricsExpanded] = useState(false)
+  const [pipelineExpanded, setPipelineExpanded] = useState(true)
+
+  // Fetch agent logs when pipeline is expanded
+  const { data: agentLogs } = useQuery({
+    queryKey: ['book-agent-logs', bookId],
+    queryFn: async () => {
+      const resp = await client.GET('/api/books/{book_id}/agent-logs', {
+        params: { path: { book_id: bookId } }
+      })
+      return unwrap(resp)
+    },
+    enabled: pipelineExpanded,
+    refetchInterval: 5000, // Poll for updates during processing
+  })
 
   if (!toc) return null
+
+  // Group agent logs by type
+  const logsByType: Record<string, AgentLog[]> = {}
+  if (agentLogs?.logs) {
+    for (const log of agentLogs.logs) {
+      const type = log.agent_type || 'unknown'
+      if (!logsByType[type]) logsByType[type] = []
+      logsByType[type].push(log as AgentLog)
+    }
+  }
 
   const finderStatus: StatusType = toc.finder_complete ? 'complete' : toc.finder_failed ? 'failed' : toc.finder_started ? 'in_progress' : 'pending'
   const extractStatus: StatusType = toc.extract_complete ? 'complete' : toc.extract_failed ? 'failed' : toc.extract_started ? 'in_progress' : 'pending'
@@ -25,10 +60,30 @@ export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
   const linkedCount = toc.entries_linked || 0
   const totalCount = toc.entry_count || 0
 
+  // Get metrics for stages
+  const tocMetrics = metrics?.['toc']
+  const linkMetrics = metrics?.['toc-link']
+  const patternMetrics = metrics?.['toc-pattern']
+  const discoverMetrics = metrics?.['toc-discover']
+  const validateMetrics = metrics?.['toc-validate']
+
+  // Determine finalize sub-stage states
+  const hasPatternAnalysis = patternMetrics && patternMetrics.count > 0
+  const hasChapterDiscovery = discoverMetrics && discoverMetrics.count > 0
+  const hasGapValidation = validateMetrics && validateMetrics.count > 0
+
   return (
     <div className="border-t pt-4">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-medium text-gray-700">Table of Contents</span>
+        <div className="flex items-center space-x-2">
+          <span className="text-sm font-medium text-gray-700">Table of Contents</span>
+          <button
+            onClick={() => setPipelineExpanded(!pipelineExpanded)}
+            className="text-xs text-blue-600 hover:text-blue-800"
+          >
+            {pipelineExpanded ? 'Hide' : 'Show'} Pipeline
+          </button>
+        </div>
         <div className="flex items-center space-x-3">
           {toc.cost_usd !== undefined && (
             <span className="font-mono text-sm text-gray-500">
@@ -47,16 +102,90 @@ export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
         </div>
       </div>
 
-      <div className="flex items-center space-x-1 text-xs mb-3">
-        <TocStageChip label="Find" status={finderStatus} detail={toc.found ? `p${toc.start_page}-${toc.end_page}` : undefined} />
-        <span className="text-gray-300">→</span>
-        <TocStageChip label="Extract" status={extractStatus} detail={extractedCount > 0 ? `${extractedCount}` : undefined} />
-        <span className="text-gray-300">→</span>
-        <TocStageChip label="Link" status={linkStatus} detail={totalCount > 0 ? `${linkedCount}/${totalCount}` : undefined} />
-        <span className="text-gray-300">→</span>
-        <TocStageChip label="Finalize" status={finalizeStatus} detail={discoveredCount > 0 ? `+${discoveredCount}` : undefined} />
-      </div>
+      {pipelineExpanded && (
+        <div className="bg-gray-50 rounded-lg p-4 mb-3">
+          {/* Main pipeline flow */}
+          <div className="flex flex-col space-y-3">
+            {/* Row 1: Find → Extract */}
+            <div className="flex items-center space-x-2">
+              <PipelineStage
+                label="Find ToC"
+                status={finderStatus}
+                detail={toc.found ? `p${toc.start_page}-${toc.end_page}` : undefined}
+                metrics={tocMetrics}
+                logs={logsByType['toc_finder']}
+                              />
+              <Arrow />
+              <PipelineStage
+                label="Extract"
+                status={extractStatus}
+                detail={extractedCount > 0 ? `${extractedCount} entries` : undefined}
+                metrics={tocMetrics}
+                logs={logsByType['toc_extract']}
+                              />
+            </div>
 
+            {/* Row 2: Link (with call count) */}
+            <div className="flex items-center space-x-2 pl-4">
+              <span className="text-gray-300 text-xs">↳</span>
+              <PipelineStage
+                label="Link Entries"
+                status={linkStatus}
+                detail={totalCount > 0 ? `${linkedCount}/${totalCount} linked` : undefined}
+                metrics={linkMetrics}
+                logs={logsByType['toc_entry_finder']}
+                                showCallCount
+              />
+            </div>
+
+            {/* Row 3: Finalize sub-stages (branching) */}
+            <div className="flex items-start space-x-2 pl-4">
+              <span className="text-gray-300 text-xs mt-2">↳</span>
+              <div className="flex-1">
+                <div className="text-xs text-gray-500 mb-2">Finalize ({finalizeStatus})</div>
+                <div className="flex items-center space-x-2 flex-wrap gap-y-2">
+                  <PipelineStage
+                    label="Pattern Analysis"
+                    status={hasPatternAnalysis ? 'complete' : finalizeStatus === 'pending' ? 'pending' : 'in_progress'}
+                    metrics={patternMetrics}
+                    logs={logsByType['pattern_analyzer']}
+                                        compact
+                  />
+
+                  {/* Conditional branch to Chapter Discovery */}
+                  <div className="flex items-center space-x-2">
+                    <ConditionalArrow active={!!hasPatternAnalysis} />
+                    <PipelineStage
+                      label="Chapter Discovery"
+                      status={hasChapterDiscovery ? 'complete' : hasPatternAnalysis ? (finalizeStatus === 'complete' ? 'complete' : 'pending') : 'pending'}
+                      detail={discoveredCount > 0 ? `+${discoveredCount}` : undefined}
+                      metrics={discoverMetrics}
+                      logs={logsByType['chapter_finder']}
+                                            compact
+                      dimmed={!hasPatternAnalysis && finalizeStatus !== 'in_progress'}
+                    />
+                  </div>
+
+                  {/* Conditional branch to Gap Validation */}
+                  <div className="flex items-center space-x-2">
+                    <ConditionalArrow active={!!hasChapterDiscovery} />
+                    <PipelineStage
+                      label="Gap Validation"
+                      status={hasGapValidation ? 'complete' : hasChapterDiscovery ? (finalizeStatus === 'complete' ? 'complete' : 'pending') : 'pending'}
+                      metrics={validateMetrics}
+                      logs={logsByType['gap_investigator']}
+                                            compact
+                      dimmed={!hasChapterDiscovery && finalizeStatus !== 'in_progress'}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Entry summary and expand */}
       {totalCount > 0 && (
         <div className="flex items-center justify-between bg-gray-50 rounded px-3 py-2 mb-3">
           <div className="flex items-center space-x-4 text-sm">
@@ -98,36 +227,27 @@ export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
           </div>
         </div>
       )}
-
-      {/* Metrics breakdown by ToC stage */}
-      {metrics && hasTocMetrics(metrics) && (
-        <div className="mt-3">
-          <button
-            onClick={() => setMetricsExpanded(!metricsExpanded)}
-            className="text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-1"
-          >
-            <span>{metricsExpanded ? 'Hide' : 'Show'} Stage Metrics</span>
-            <span className={`transition-transform ${metricsExpanded ? 'rotate-180' : ''}`}>▼</span>
-          </button>
-          {metricsExpanded && (
-            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-              {metrics['toc'] && <StageMetricsCard label="Find/Extract" metrics={metrics['toc']} stage="toc" bookId={bookId} />}
-              {metrics['toc-link'] && <StageMetricsCard label="Link" metrics={metrics['toc-link']} stage="toc-link" bookId={bookId} />}
-              {metrics['toc-pattern'] && <StageMetricsCard label="Pattern Analysis" metrics={metrics['toc-pattern']} stage="toc-pattern" bookId={bookId} />}
-              {metrics['toc-discover'] && <StageMetricsCard label="Chapter Discovery" metrics={metrics['toc-discover']} stage="toc-discover" bookId={bookId} />}
-              {metrics['toc-validate'] && <StageMetricsCard label="Gap Validation" metrics={metrics['toc-validate']} stage="toc-validate" bookId={bookId} />}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   )
 }
 
-function TocStageChip({ label, status, detail }: { label: string; status: StatusType; detail?: string }) {
+interface PipelineStageProps {
+  label: string
+  status: StatusType
+  detail?: string
+  metrics?: StageMetrics
+  logs?: AgentLog[]
+  compact?: boolean
+  dimmed?: boolean
+  showCallCount?: boolean
+}
+
+function PipelineStage({ label, status, detail, metrics, logs, compact, dimmed, showCallCount }: PipelineStageProps) {
+  const [expanded, setExpanded] = useState(false)
+
   const statusStyles = {
     pending: 'bg-gray-100 text-gray-500 border-gray-200',
-    in_progress: 'bg-blue-50 text-blue-700 border-blue-200',
+    in_progress: 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse',
     complete: 'bg-green-50 text-green-700 border-green-200',
     failed: 'bg-red-50 text-red-700 border-red-200',
   }
@@ -139,12 +259,93 @@ function TocStageChip({ label, status, detail }: { label: string; status: Status
     failed: '✕',
   }
 
+  const callCount = metrics?.count || logs?.length || 0
+  const hasLogs = logs && logs.length > 0
+
   return (
-    <div className={`px-2 py-1 rounded border ${statusStyles[status]} flex items-center space-x-1`}>
-      <span>{statusIcons[status]}</span>
-      <span className="font-medium">{label}</span>
-      {detail && <span className="text-xs opacity-75">({detail})</span>}
+    <div className={`relative ${dimmed ? 'opacity-40' : ''}`}>
+      <button
+        onClick={() => hasLogs && setExpanded(!expanded)}
+        className={`
+          ${compact ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm'}
+          rounded border ${statusStyles[status]}
+          flex items-center space-x-1
+          ${hasLogs ? 'cursor-pointer hover:ring-2 hover:ring-blue-300' : 'cursor-default'}
+          transition-all
+        `}
+      >
+        <span>{statusIcons[status]}</span>
+        <span className="font-medium">{label}</span>
+        {detail && <span className="opacity-75">({detail})</span>}
+        {showCallCount && callCount > 0 && (
+          <span className="ml-1 bg-white/50 px-1.5 rounded text-xs font-mono">{callCount} calls</span>
+        )}
+        {!showCallCount && callCount > 1 && (
+          <span className="ml-1 bg-white/50 px-1 rounded text-xs font-mono">×{callCount}</span>
+        )}
+        {hasLogs && (
+          <span className={`ml-1 transition-transform ${expanded ? 'rotate-180' : ''}`}>▾</span>
+        )}
+      </button>
+
+      {/* Expanded call details */}
+      {expanded && hasLogs && (
+        <div className="absolute top-full left-0 mt-1 z-10 bg-white border rounded-lg shadow-lg p-2 min-w-64 max-h-64 overflow-y-auto">
+          <div className="text-xs font-medium text-gray-500 mb-2">Agent Calls ({logs.length})</div>
+          <div className="space-y-1">
+            {logs.map((log, idx) => (
+              <AgentCallBadge key={log.id || idx} log={log} index={idx + 1} />
+            ))}
+          </div>
+          {metrics && (
+            <div className="mt-2 pt-2 border-t text-xs text-gray-500">
+              <div className="flex justify-between">
+                <span>Total Cost:</span>
+                <span className="font-mono">${metrics.total_cost_usd?.toFixed(4) || '0.0000'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Tokens:</span>
+                <span className="font-mono">
+                  {metrics.total_prompt_tokens?.toLocaleString() || 0}→{metrics.total_completion_tokens?.toLocaleString() || 0}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
+  )
+}
+
+function AgentCallBadge({ log, index }: { log: AgentLog; index: number }) {
+  const duration = log.completed_at && log.started_at
+    ? ((new Date(log.completed_at).getTime() - new Date(log.started_at).getTime()) / 1000).toFixed(1)
+    : null
+
+  return (
+    <div className={`
+      flex items-center justify-between px-2 py-1 rounded text-xs
+      ${log.success ? 'bg-green-50 text-green-700' : log.error ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}
+    `}>
+      <div className="flex items-center space-x-2">
+        <span className="font-mono text-gray-400">#{index}</span>
+        <span>{log.success ? '✓' : log.error ? '✕' : '◐'}</span>
+        <span>{log.iterations} iter</span>
+      </div>
+      {duration && <span className="font-mono">{duration}s</span>}
+    </div>
+  )
+}
+
+function Arrow() {
+  return <span className="text-gray-300 text-lg">→</span>
+}
+
+function ConditionalArrow({ active }: { active: boolean }) {
+  return (
+    <span className={`text-lg ${active ? 'text-green-400' : 'text-gray-200'}`}>
+      {active ? '→' : '⇢'}
+    </span>
   )
 }
 
@@ -192,81 +393,6 @@ function TocEntryRow({ entry, bookId }: { entry: TocEntry; bookId: string }) {
           </Link>
         ) : (
           <span className="text-gray-300">—</span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function hasTocMetrics(metrics: Record<string, StageMetrics>): boolean {
-  const tocKeys = ['toc', 'toc-link', 'toc-pattern', 'toc-discover', 'toc-validate']
-  return tocKeys.some(key => metrics[key] && metrics[key].count > 0)
-}
-
-interface StageMetricsCardProps {
-  label: string
-  metrics: StageMetrics
-  stage?: string
-  bookId?: string
-}
-
-function StageMetricsCard({ label, metrics, stage, bookId }: StageMetricsCardProps) {
-  const formatLatency = (ms: number) => {
-    if (ms < 1000) return `${ms.toFixed(0)}ms`
-    return `${(ms / 1000).toFixed(1)}s`
-  }
-
-  const logsUrl = stage && bookId
-    ? `/api/books/${bookId}/agent-logs?stage=${encodeURIComponent(stage)}`
-    : null
-
-  return (
-    <div className="bg-gray-50 rounded px-3 py-2 text-xs">
-      <div className="flex items-center justify-between mb-1">
-        <span className="font-medium text-gray-700">{label}</span>
-        {logsUrl && (
-          <a
-            href={logsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:text-blue-800 text-xs"
-            title="View agent logs"
-          >
-            Logs
-          </a>
-        )}
-      </div>
-      <div className="space-y-0.5 text-gray-600">
-        <div className="flex justify-between">
-          <span>Calls:</span>
-          <span className="font-mono">
-            {metrics.count}
-            {metrics.error_count > 0 && (
-              <span className="text-red-500 ml-1">({metrics.error_count} err)</span>
-            )}
-          </span>
-        </div>
-        {metrics.latency_p50 > 0 && (
-          <div className="flex justify-between">
-            <span>Latency:</span>
-            <span className="font-mono">
-              {formatLatency(metrics.latency_p50 * 1000)} p50 / {formatLatency(metrics.latency_p95 * 1000)} p95
-            </span>
-          </div>
-        )}
-        {metrics.total_cost_usd > 0 && (
-          <div className="flex justify-between">
-            <span>Cost:</span>
-            <span className="font-mono">${metrics.total_cost_usd.toFixed(4)}</span>
-          </div>
-        )}
-        {metrics.total_tokens > 0 && (
-          <div className="flex justify-between">
-            <span>Tokens:</span>
-            <span className="font-mono">
-              {metrics.total_prompt_tokens.toLocaleString()}→{metrics.total_completion_tokens.toLocaleString()}
-            </span>
-          </div>
         )}
       </div>
     </div>
