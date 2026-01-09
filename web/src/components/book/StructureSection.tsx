@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '@/api/client'
-import { StatusBadge, type StatusType } from '@/components/ui'
+import type { StatusType } from '@/components/ui'
 import type { StructureStatus, StageMetrics } from './types'
 
 interface StructureSectionProps {
@@ -11,9 +11,21 @@ interface StructureSectionProps {
   metrics?: Record<string, StageMetrics>
 }
 
+interface LLMCall {
+  id: string
+  timestamp: string
+  prompt_key: string
+  model: string
+  latency_ms: number
+  input_tokens: number
+  output_tokens: number
+  success: boolean
+  response?: string
+}
+
 export function StructureSection({ structure, bookId, metrics }: StructureSectionProps) {
   const [expanded, setExpanded] = useState(false)
-  const [metricsExpanded, setMetricsExpanded] = useState(false)
+  const [pipelineExpanded, setPipelineExpanded] = useState(true)
 
   const { data: chapters } = useQuery({
     queryKey: ['books', bookId, 'chapters'],
@@ -26,15 +38,34 @@ export function StructureSection({ structure, bookId, metrics }: StructureSectio
     enabled: !!structure?.complete,
   })
 
-  if (!structure) return null
+  // Fetch LLM calls for structure stages (classify, polish)
+  const { data: llmCalls } = useQuery({
+    queryKey: ['book-llmcalls', bookId, 'structure-stages'],
+    queryFn: async () => {
+      const resp = await client.GET('/api/llmcalls', {
+        params: { query: { book_id: bookId, limit: 500 } }
+      })
+      return unwrap(resp)
+    },
+    enabled: pipelineExpanded && structure?.started,
+    refetchInterval: structure?.complete ? false : 5000,
+  })
 
-  const status: StatusType = structure.complete
-    ? 'complete'
-    : structure.failed
-    ? 'failed'
-    : structure.started
-    ? 'in_progress'
-    : 'pending'
+  // Group LLM calls by prompt_key
+  const llmCallsByPrompt: Record<string, LLMCall[]> = {}
+  if (llmCalls?.calls) {
+    for (const call of llmCalls.calls) {
+      const key = call.prompt_key || 'unknown'
+      if (!llmCallsByPrompt[key]) llmCallsByPrompt[key] = []
+      llmCallsByPrompt[key].push(call as LLMCall)
+    }
+  }
+
+  // Map prompt keys to structure stages
+  const classifyCalls = llmCallsByPrompt['stages.structure.classify'] || []
+  const polishCalls = llmCallsByPrompt['stages.structure.polish'] || []
+
+  if (!structure) return null
 
   const matterBreakdown = chapters?.chapters?.reduce((acc, ch) => {
     const matter = ch.matter_type || 'unknown'
@@ -55,12 +86,23 @@ export function StructureSection({ structure, bookId, metrics }: StructureSectio
 
   const hasDetails = chapters && chapters.chapters && chapters.chapters.length > 0
 
+  // Determine phase status based on LLM calls and metrics
+  const buildStatus: StatusType = structure.started ? (classifyCalls.length > 0 || structure.complete ? 'complete' : 'in_progress') : 'pending'
+  const extractStatus: StatusType = classifyCalls.length > 0 || structure.complete ? 'complete' : (buildStatus === 'complete' ? 'in_progress' : 'pending')
+  const classifyStatus: StatusType = classifyCalls.length > 0 ? 'complete' : (extractStatus === 'complete' ? 'in_progress' : 'pending')
+  const polishStatus: StatusType = structure.complete ? 'complete' : (polishCalls.length > 0 ? 'in_progress' : (classifyStatus === 'complete' ? 'pending' : 'pending'))
+
   return (
     <div className="border-t pt-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-2">
           <span className="text-sm font-medium text-gray-700">Structure</span>
-          <StatusBadge status={status} />
+          <button
+            onClick={() => setPipelineExpanded(!pipelineExpanded)}
+            className="text-xs text-blue-600 hover:text-blue-800"
+          >
+            {pipelineExpanded ? 'Hide' : 'Show'} Pipeline
+          </button>
         </div>
         <div className="flex items-center space-x-2">
           {structure.chapter_count !== undefined && structure.chapter_count > 0 && (
@@ -85,7 +127,33 @@ export function StructureSection({ structure, bookId, metrics }: StructureSectio
         </div>
       </div>
 
-      {structure.started && !structure.complete && !structure.failed && (
+      {/* Pipeline visualization */}
+      {pipelineExpanded && (
+        <div className="bg-gray-50 rounded-lg p-4 mb-3">
+          <div className="flex items-center space-x-2 flex-wrap gap-y-2">
+            <PipelineStage label="Build" status={buildStatus} detail={structure.chapter_count ? `${structure.chapter_count} ch` : undefined} />
+            <Arrow />
+            <PipelineStage label="Extract" status={extractStatus} />
+            <Arrow />
+            <PipelineStage
+              label="Classify"
+              status={classifyStatus}
+              callCount={classifyCalls.length}
+              metrics={metrics?.['structure-classify']}
+            />
+            <Arrow />
+            <PipelineStage
+              label="Polish"
+              status={polishStatus}
+              detail={polishStats.total > 0 ? `${polishStats.complete}/${polishStats.total}` : undefined}
+              callCount={polishCalls.length}
+              metrics={metrics?.['structure-polish']}
+            />
+          </div>
+        </div>
+      )}
+
+      {structure.started && !structure.complete && !structure.failed && !pipelineExpanded && (
         <div className="mt-2 pl-4 text-sm text-gray-500">
           Building unified book structure...
         </div>
@@ -169,24 +237,6 @@ export function StructureSection({ structure, bookId, metrics }: StructureSectio
         </div>
       )}
 
-      {/* Metrics breakdown by Structure stage */}
-      {metrics && hasStructureMetrics(metrics) && (
-        <div className="mt-3">
-          <button
-            onClick={() => setMetricsExpanded(!metricsExpanded)}
-            className="text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-1"
-          >
-            <span>{metricsExpanded ? 'Hide' : 'Show'} Stage Metrics</span>
-            <span className={`transition-transform ${metricsExpanded ? 'rotate-180' : ''}`}>▼</span>
-          </button>
-          {metricsExpanded && (
-            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-              {metrics['structure-classify'] && <StructureMetricsCard label="Matter Classification" metrics={metrics['structure-classify']} stage="structure-classify" bookId={bookId} />}
-              {metrics['structure-polish'] && <StructureMetricsCard label="Text Polish" metrics={metrics['structure-polish']} stage="structure-polish" bookId={bookId} />}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   )
 }
@@ -212,77 +262,51 @@ function MatterTypeBadge({ type }: { type?: string }) {
   )
 }
 
-function hasStructureMetrics(metrics: Record<string, StageMetrics>): boolean {
-  const structureKeys = ['structure-classify', 'structure-polish']
-  return structureKeys.some(key => metrics[key] && metrics[key].count > 0)
-}
-
-interface StructureMetricsCardProps {
+// Pipeline visualization components
+interface PipelineStageProps {
   label: string
-  metrics: StageMetrics
-  stage?: string
-  bookId?: string
+  status: StatusType
+  detail?: string
+  callCount?: number
+  metrics?: StageMetrics
 }
 
-function StructureMetricsCard({ label, metrics, stage, bookId }: StructureMetricsCardProps) {
-  const formatLatency = (ms: number) => {
-    if (ms < 1000) return `${ms.toFixed(0)}ms`
-    return `${(ms / 1000).toFixed(1)}s`
+function PipelineStage({ label, status, detail, callCount, metrics }: PipelineStageProps) {
+  const statusColors: Record<StatusType, string> = {
+    complete: 'bg-green-100 border-green-300 text-green-800',
+    in_progress: 'bg-blue-100 border-blue-300 text-blue-800',
+    failed: 'bg-red-100 border-red-300 text-red-800',
+    pending: 'bg-gray-100 border-gray-200 text-gray-500',
   }
 
-  const logsUrl = stage && bookId
-    ? `/api/books/${bookId}/agent-logs?stage=${encodeURIComponent(stage)}`
-    : null
+  const statusDots: Record<StatusType, string> = {
+    complete: '●',
+    in_progress: '◐',
+    failed: '✕',
+    pending: '○',
+  }
 
   return (
-    <div className="bg-gray-50 rounded px-3 py-2 text-xs">
-      <div className="flex items-center justify-between mb-1">
-        <span className="font-medium text-gray-700">{label}</span>
-        {logsUrl && (
-          <a
-            href={logsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:text-blue-800 text-xs"
-            title="View agent logs"
-          >
-            Logs
-          </a>
+    <div className={`px-2 py-1 rounded border text-xs ${statusColors[status]}`}>
+      <div className="flex items-center space-x-1">
+        <span>{statusDots[status]}</span>
+        <span className="font-medium">{label}</span>
+        {callCount !== undefined && callCount > 0 && (
+          <span className="text-xs opacity-70">({callCount})</span>
         )}
       </div>
-      <div className="space-y-0.5 text-gray-600">
-        <div className="flex justify-between">
-          <span>Calls:</span>
-          <span className="font-mono">
-            {metrics.count}
-            {metrics.error_count > 0 && (
-              <span className="text-red-500 ml-1">({metrics.error_count} err)</span>
-            )}
-          </span>
+      {detail && (
+        <div className="text-xs opacity-70 mt-0.5">{detail}</div>
+      )}
+      {metrics && metrics.total_cost_usd > 0 && (
+        <div className="text-xs opacity-70 mt-0.5 font-mono">
+          ${metrics.total_cost_usd.toFixed(4)}
         </div>
-        {metrics.latency_p50 > 0 && (
-          <div className="flex justify-between">
-            <span>Latency:</span>
-            <span className="font-mono">
-              {formatLatency(metrics.latency_p50 * 1000)} p50 / {formatLatency(metrics.latency_p95 * 1000)} p95
-            </span>
-          </div>
-        )}
-        {metrics.total_cost_usd > 0 && (
-          <div className="flex justify-between">
-            <span>Cost:</span>
-            <span className="font-mono">${metrics.total_cost_usd.toFixed(4)}</span>
-          </div>
-        )}
-        {metrics.total_tokens > 0 && (
-          <div className="flex justify-between">
-            <span>Tokens:</span>
-            <span className="font-mono">
-              {metrics.total_prompt_tokens.toLocaleString()}→{metrics.total_completion_tokens.toLocaleString()}
-            </span>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   )
+}
+
+function Arrow() {
+  return <span className="text-gray-300 text-sm">→</span>
 }
