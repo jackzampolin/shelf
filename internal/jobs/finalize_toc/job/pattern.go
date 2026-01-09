@@ -220,17 +220,10 @@ func (j *Job) generateEntriesToFind() {
 		}
 	}
 
-	// Build excluded ranges lookup
-	isExcluded := func(page int) bool {
-		for _, ex := range j.PatternResult.Excluded {
-			if page >= ex.StartPage && page <= ex.EndPage {
-				return true
-			}
-		}
-		return false
-	}
-
 	// Generate entries from patterns
+	// Note: excluded ranges are passed to the chapter finder agent to constrain search,
+	// NOT used here to filter entries. The estimated page might be wrong, so we should
+	// still search for all chapters in the pattern range.
 	for _, pattern := range j.PatternResult.Patterns {
 		// Generate sequence from RangeStart to RangeEnd
 		identifiers := generateSequence(pattern.RangeStart, pattern.RangeEnd)
@@ -245,9 +238,6 @@ func (j *Job) generateEntriesToFind() {
 
 			// Estimate page location based on sequence position
 			expectedPage := j.estimatePageLocation(pattern, identifier, i, len(identifiers))
-			if isExcluded(expectedPage) {
-				continue
-			}
 
 			// Calculate search range
 			searchStart := expectedPage - 20
