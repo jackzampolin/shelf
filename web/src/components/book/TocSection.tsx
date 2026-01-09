@@ -149,7 +149,7 @@ export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
                     status={hasPatternAnalysis ? 'complete' : finalizeStatus === 'pending' ? 'pending' : 'in_progress'}
                     metrics={patternMetrics}
                     logs={logsByType['pattern_analyzer']}
-                                        compact
+                    compact
                   />
 
                   {/* Conditional branch to Chapter Discovery */}
@@ -158,11 +158,12 @@ export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
                     <PipelineStage
                       label="Chapter Discovery"
                       status={hasChapterDiscovery ? 'complete' : hasPatternAnalysis ? (finalizeStatus === 'complete' ? 'complete' : 'pending') : 'pending'}
-                      detail={discoveredCount > 0 ? `+${discoveredCount}` : undefined}
+                      detail={discoverMetrics?.count ? `${discoveredCount}/${discoverMetrics.count} found` : discoveredCount > 0 ? `+${discoveredCount}` : undefined}
                       metrics={discoverMetrics}
                       logs={logsByType['chapter_finder']}
-                                            compact
+                      compact
                       dimmed={!hasPatternAnalysis && finalizeStatus !== 'in_progress'}
+                      showCallCount
                     />
                   </div>
 
@@ -174,7 +175,7 @@ export function TocSection({ toc, bookId, metrics }: TocSectionProps) {
                       status={hasGapValidation ? 'complete' : hasChapterDiscovery ? (finalizeStatus === 'complete' ? 'complete' : 'pending') : 'pending'}
                       metrics={validateMetrics}
                       logs={logsByType['gap_investigator']}
-                                            compact
+                      compact
                       dimmed={!hasChapterDiscovery && finalizeStatus !== 'in_progress'}
                     />
                   </div>
