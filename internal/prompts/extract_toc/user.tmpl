@@ -45,22 +45,25 @@ Life and Love in New Culture China
 ```
 This is ONE entry: title="Experiments in Happiness: Life and Love in New Culture China"
 
-Another multi-line example:
+**PARTS WITH TITLES (multi-line entries)**:
+If structure_summary shows total_levels=1 and semantic_type="part", then Part + title + page = ONE entry:
 ```
-# Part I
-All the Presidents Men
-13
+Part I
+The Opening Act
+15
 ```
+→ entry_number="I", title="The Opening Act", printed_page_number="15"
 
 **HIERARCHY FROM INDENTATION**:
 - Level 1: Flush left (no indent)
 - Level 2: Moderate indent (typically 2-4 spaces or visual indent)
 - Level 3: Deep indent (further indented under Level 2)
 
-**STANDALONE MARKERS vs MERGED TITLES**:
-- "PART I" + indented chapters below -> PART I is separate entry (level 1)
-- "PART I/nThis is a title/n5" -> PART 1 with a title and page number
-- "Part One" + "The Path to War" at same indent -> merge into one entry
+**STANDALONE PART MARKERS (2-level structure)**:
+If structure_summary shows total_levels=2, Parts are separate from numbered chapters:
+- "PART I" + "1 First Chapter" below -> two separate entries
+- Part entry: entry_number="I", title="", level=1
+- Chapter entry: entry_number="1", title="First Chapter", level=2
 
 **PAGE NUMBERS**:
 - Extract from right side: "15", "ix", "xiii", "253"

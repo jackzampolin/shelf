@@ -106,21 +106,31 @@ OBSERVATION FOCUS:
 **When Counting Levels** (use TWO-PASS ANALYSIS):
 
 **PASS 1: Semantic Pattern Detection**
-Look for structural markers FIRST, before measuring indentation:
+Look for structural markers, but check if children have their own NUMBERING:
 • "PART I", "PART ONE", "BOOK II", "UNIT 3" = Structural divisions
 • These may appear at SAME indent as children (not visually nested)
-• Example:
-  ```
-  PART I
 
-  1 First Chapter ... 15
-  2 Second Chapter ... 30
-  ```
-  → This is 2 levels (Part + Chapters) even though "PART I" is at same indent
+**KEY QUESTION: Do entries after "PART X" have their own numbering prefix?**
 
-• If you see structural prefixes (Part/Book/Unit), count them as a separate level
-• They often have NO page numbers (parent entries)
-• May use Roman numerals (I, II, III) or spelled out (One, Two, Three)
+2-LEVEL structure (children are numbered):
+```
+PART I
+1 First Chapter ... 15    ← Has prefix "1"
+2 Second Chapter ... 30   ← Has prefix "2"
+```
+→ Entries have numbering prefixes (1, 2, Chapter 3, etc.) = 2 levels
+
+1-LEVEL structure (multi-line entries):
+```
+Part I
+The Opening Act           ← No prefix, just descriptive text
+15                        ← Page number on separate line
+```
+→ No numbering prefix on following text = Part title spans multiple lines = 1 level
+
+**The test**: After a Part/Book/Unit marker, does the next line start with a number or "Chapter N"?
+• YES → separate child entries (2 levels)
+• NO (just text + page number) → multi-line entry (1 level)
 
 **PASS 2: Visual Hierarchy Verification**
 After identifying semantic structure, verify with indentation:
@@ -219,36 +229,36 @@ Flat structure (chapters only):
   }
 }
 
-Flat structure with multi-line entries:
+Flat structure with multi-line entries (Parts with titles, no numbered children):
 {
   "toc_found": true,
   "toc_page_range": {"start_page": 6, "end_page": 7},
   "confidence": 0.90,
   "search_strategy_used": "grep_report",
-  "reasoning": "Single-level part list. Each entry spans multiple lines (prefix, title, page number on separate lines) but ALL at same indentation - no hierarchy.",
+  "reasoning": "Single-level part list. Text after Part markers has no numbering prefix - it's the Part title, not a separate chapter. Each entry spans multiple lines (Part + title + page) at same indentation.",
   "structure_summary": {
     "total_levels": 1,
     "level_patterns": {
-      "1": {"visual": "Flush left, multi-line entries with page numbers on separate lines", "numbering": "Roman numerals (I-V)", "has_page_numbers": true, "semantic_type": "part"}
+      "1": {"visual": "Flush left, multi-line entries", "numbering": "Roman numerals (I-V)", "has_page_numbers": true, "semantic_type": "part"}
     },
-    "consistency_notes": ["Multi-line format: 'Part I' on one line, title on next, page number on third line - all flush left"]
+    "consistency_notes": ["Multi-line format: Part marker, title, page number on separate lines", "No chapter numbering after Part markers"]
   }
 }
 
-2-level with structural markers at same indent:
+2-level with structural markers at same indent (Parts + numbered children):
 {
   "toc_found": true,
   "toc_page_range": {"start_page": 11, "end_page": 12},
   "confidence": 0.92,
   "search_strategy_used": "grep_report",
-  "reasoning": "2-level structure detected via semantic patterns. 'PART I', 'PART II', 'PART III' markers at same indent as chapters, but clearly separate structural level.",
+  "reasoning": "2-level structure: Parts followed by numbered chapters (1, 2, 3...). The numbering prefix on children indicates separate entries, not Part titles.",
   "structure_summary": {
     "total_levels": 2,
     "level_patterns": {
-      "1": {"visual": "Flush left, uppercase, bold, structural marker only", "numbering": "Roman numerals (I-III)", "has_page_numbers": false, "semantic_type": "part"},
-      "2": {"visual": "Flush left (same as level 1), standard font", "numbering": "Arabic (1-31)", "has_page_numbers": true, "semantic_type": "chapter"}
+      "1": {"visual": "Flush left, uppercase", "numbering": "Roman numerals (I-III)", "has_page_numbers": false, "semantic_type": "part"},
+      "2": {"visual": "Flush left (same indent)", "numbering": "Arabic (1-31)", "has_page_numbers": true, "semantic_type": "chapter"}
     },
-    "consistency_notes": ["Parts indicated by 'PART [Roman]' on separate lines with no page numbers", "Chapters numbered sequentially across all parts"]
+    "consistency_notes": ["Parts have no page numbers", "Children have numbering prefix (1, 2, Chapter 3, etc.)"]
   }
 }
 
