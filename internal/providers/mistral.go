@@ -14,7 +14,10 @@ import (
 const (
 	MistralOCRName    = "mistral-ocr"
 	MistralOCRBaseURL = "https://api.mistral.ai/v1"
-	MistralOCRModel   = "mistral-ocr-latest"
+	// Use mistral-ocr-2505 instead of mistral-ocr-latest because the older model
+	// properly outputs markdown headers (e.g., "# 4" for chapter headings) while
+	// the latest model strips markdown formatting from headings.
+	MistralOCRModel = "mistral-ocr-2505"
 
 	// Mistral OCR pricing: $1/1000 pages base + $3/1000 pages for annotations
 	// Actual cost averages ~$0.0012 per page since not all pages have images

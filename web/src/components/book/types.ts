@@ -32,6 +32,28 @@ export interface TocEntry {
   source?: string
 }
 
+export interface PatternAnalysisResult {
+  reasoning?: string
+  patterns?: DiscoveredPattern[]
+  excluded_ranges?: ExcludedRange[]
+}
+
+export interface DiscoveredPattern {
+  pattern_type?: string
+  level_name?: string
+  heading_format?: string
+  range_start?: string
+  range_end?: string
+  level?: number
+  reasoning?: string
+}
+
+export interface ExcludedRange {
+  start_page?: number
+  end_page?: number
+  reason?: string
+}
+
 export interface TocStatus {
   finder_started?: boolean
   finder_complete?: boolean
@@ -50,9 +72,18 @@ export interface TocStatus {
   finalize_complete?: boolean
   finalize_failed?: boolean
   finalize_retries?: number
+  // Finalize sub-phases
+  pattern_complete?: boolean
+  pattern_analysis?: PatternAnalysisResult
+  patterns_found?: number
+  excluded_ranges?: number
+  entries_to_find?: number
+  entries_discovered?: number
+  discover_complete?: boolean
+  validate_complete?: boolean
+  // Entry data
   entry_count?: number
   entries_linked?: number
-  entries_discovered?: number
   entries?: TocEntry[]
   cost_usd?: number
 }

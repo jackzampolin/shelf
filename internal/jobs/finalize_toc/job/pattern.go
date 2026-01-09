@@ -26,6 +26,15 @@ func (j *Job) CreatePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit, error)
 		}
 	}
 
+	// Log candidate count for debugging
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Info("pattern analysis candidates loaded",
+			"candidate_count", len(candidates),
+			"body_start", j.Book.BodyStart,
+			"body_end", j.Book.BodyEnd,
+			"linked_entries", len(j.LinkedEntries))
+	}
+
 	// Build prompts
 	systemPrompt := j.GetPrompt(pattern_analyzer.PromptKey)
 	userPrompt := pattern_analyzer.BuildUserPrompt(pattern_analyzer.UserPromptData{
@@ -401,73 +410,25 @@ func intToRoman(num int) string {
 	return result.String()
 }
 
-// loadCandidateHeadings loads heading candidates from DefraDB.
+// loadCandidateHeadings loads heading candidates from the in-memory BookState.
+// Headings are extracted during the blend phase and cached in PageState.
 func (j *Job) loadCandidateHeadings(ctx context.Context) ([]*CandidateHeading, error) {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return nil, fmt.Errorf("defra client not in context")
-	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_gte: %d, _lte: %d}}) {
-			page_num
-			headings
-		}
-	}`, j.Book.BookID, j.Book.BodyStart, j.Book.BodyEnd)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	rawPages, ok := resp.Data["Page"].([]any)
-	if !ok {
-		return nil, nil
-	}
-
 	var candidates []*CandidateHeading
-	for _, p := range rawPages {
-		page, ok := p.(map[string]any)
-		if !ok {
+
+	// Iterate through pages in the body range
+	for pageNum := j.Book.BodyStart; pageNum <= j.Book.BodyEnd; pageNum++ {
+		pageState := j.Book.GetPage(pageNum)
+		if pageState == nil {
 			continue
 		}
 
-		pageNum := 0
-		if pn, ok := page["page_num"].(float64); ok {
-			pageNum = int(pn)
-		}
-
-		// headings is a JSON field - may come as []any or as a JSON string
-		var headings []any
-		switch h := page["headings"].(type) {
-		case []any:
-			headings = h
-		case string:
-			// Parse JSON string
-			if err := json.Unmarshal([]byte(h), &headings); err != nil {
-				continue
-			}
-		default:
-			continue
-		}
-
+		headings := pageState.GetHeadings()
 		for _, h := range headings {
-			heading, ok := h.(map[string]any)
-			if !ok {
-				continue
-			}
-
-			text, _ := heading["text"].(string)
-			level := 0
-			if lv, ok := heading["level"].(float64); ok {
-				level = int(lv)
-			}
-
-			if text != "" {
+			if h.Text != "" {
 				candidates = append(candidates, &CandidateHeading{
 					PageNum: pageNum,
-					Text:    text,
-					Level:   level,
+					Text:    h.Text,
+					Level:   h.Level,
 				})
 			}
 		}

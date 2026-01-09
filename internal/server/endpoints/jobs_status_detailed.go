@@ -2,6 +2,7 @@ package endpoints
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -109,17 +110,26 @@ type ToCStatus struct {
 	LinkFailed   bool `json:"link_failed"`
 	LinkRetries  int  `json:"link_retries"`
 
-	// Finalize stage
+	// Finalize stage (overall)
 	FinalizeStarted  bool `json:"finalize_started"`
 	FinalizeComplete bool `json:"finalize_complete"`
 	FinalizeFailed   bool `json:"finalize_failed"`
 	FinalizeRetries  int  `json:"finalize_retries"`
 
+	// Finalize sub-phases: Pattern Analysis → Chapter Discovery → Gap Validation
+	PatternComplete   bool                    `json:"pattern_complete"`              // Pattern analysis done (pattern_analysis_json exists)
+	PatternAnalysis   *PatternAnalysisResult  `json:"pattern_analysis,omitempty"`    // Full pattern analysis result
+	PatternsFound     int                     `json:"patterns_found"`                // Number of patterns discovered
+	ExcludedRanges    int                     `json:"excluded_ranges"`               // Number of excluded page ranges
+	EntriesToFind     int                     `json:"entries_to_find"`               // From pattern analysis (how many should be discovered)
+	EntriesDiscovered int                     `json:"entries_discovered"`            // Actually discovered (source="discovered")
+	DiscoverComplete  bool                    `json:"discover_complete"`             // All entries discovered
+	ValidateComplete  bool                    `json:"validate_complete"`             // Gap validation done (same as FinalizeComplete for now)
+
 	// Entries (when extracted)
-	EntryCount         int        `json:"entry_count"`
-	EntriesLinked      int        `json:"entries_linked"`
-	EntriesDiscovered  int        `json:"entries_discovered"`
-	Entries            []ToCEntry `json:"entries,omitempty"`
+	EntryCount    int        `json:"entry_count"`
+	EntriesLinked int        `json:"entries_linked"`
+	Entries       []ToCEntry `json:"entries,omitempty"`
 
 	CostUSD float64 `json:"cost_usd"`
 }
@@ -145,6 +155,31 @@ type ToCEntry struct {
 	ActualPageNum     int    `json:"actual_page_num,omitempty"`
 	IsLinked          bool   `json:"is_linked"`
 	Source            string `json:"source,omitempty"` // "extracted" or "discovered"
+}
+
+// PatternAnalysisResult contains the full pattern analysis output.
+type PatternAnalysisResult struct {
+	Reasoning      string              `json:"reasoning"`
+	Patterns       []DiscoveredPattern `json:"patterns"`
+	ExcludedRanges []ExcludedRange     `json:"excluded_ranges"`
+}
+
+// DiscoveredPattern represents a pattern found by the analyzer.
+type DiscoveredPattern struct {
+	PatternType   string `json:"pattern_type"`
+	LevelName     string `json:"level_name"`
+	HeadingFormat string `json:"heading_format"`
+	RangeStart    string `json:"range_start"`
+	RangeEnd      string `json:"range_end"`
+	Level         int    `json:"level"`
+	Reasoning     string `json:"reasoning"`
+}
+
+// ExcludedRange represents a page range excluded from pattern search.
+type ExcludedRange struct {
+	StartPage int    `json:"start_page"`
+	EndPage   int    `json:"end_page"`
+	Reason    string `json:"reason"`
 }
 
 // AgentLogSummary is a brief summary of an agent log.
@@ -253,6 +288,7 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			structure_started
 			structure_complete
 			structure_failed
+			pattern_analysis_json
 			structure_retries
 		}
 	}`, bookID)
@@ -320,6 +356,58 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			}
 			if v, ok := book["structure_retries"].(float64); ok {
 				resp.Structure.Retries = int(v)
+			}
+
+			// Parse pattern_analysis_json for finalize_toc sub-phase tracking
+			if patternJSON, ok := book["pattern_analysis_json"].(string); ok && patternJSON != "" {
+				var patternData struct {
+					Reasoning     string `json:"reasoning"`
+					Patterns      []struct {
+						PatternType   string `json:"pattern_type"`
+						LevelName     string `json:"level_name"`
+						HeadingFormat string `json:"heading_format"`
+						RangeStart    string `json:"range_start"`
+						RangeEnd      string `json:"range_end"`
+						Level         int    `json:"level"`
+						Reasoning     string `json:"reasoning"`
+					} `json:"patterns"`
+					ExcludedRanges []struct {
+						StartPage int    `json:"start_page"`
+						EndPage   int    `json:"end_page"`
+						Reason    string `json:"reason"`
+					} `json:"excluded_ranges"`
+					EntriesToFind []struct{} `json:"entries_to_find"`
+				}
+				if err := json.Unmarshal([]byte(patternJSON), &patternData); err == nil {
+					resp.ToC.PatternComplete = true
+					resp.ToC.PatternsFound = len(patternData.Patterns)
+					resp.ToC.ExcludedRanges = len(patternData.ExcludedRanges)
+					resp.ToC.EntriesToFind = len(patternData.EntriesToFind)
+
+					// Include full pattern analysis result
+					result := &PatternAnalysisResult{
+						Reasoning: patternData.Reasoning,
+					}
+					for _, p := range patternData.Patterns {
+						result.Patterns = append(result.Patterns, DiscoveredPattern{
+							PatternType:   p.PatternType,
+							LevelName:     p.LevelName,
+							HeadingFormat: p.HeadingFormat,
+							RangeStart:    p.RangeStart,
+							RangeEnd:      p.RangeEnd,
+							Level:         p.Level,
+							Reasoning:     p.Reasoning,
+						})
+					}
+					for _, e := range patternData.ExcludedRanges {
+						result.ExcludedRanges = append(result.ExcludedRanges, ExcludedRange{
+							StartPage: e.StartPage,
+							EndPage:   e.EndPage,
+							Reason:    e.Reason,
+						})
+					}
+					resp.ToC.PatternAnalysis = result
+				}
 			}
 		}
 	}
@@ -534,6 +622,16 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			}
 		}
 	}
+
+	// Set DiscoverComplete and ValidateComplete based on state
+	// DiscoverComplete: pattern analysis done AND all entries discovered (or no entries to find)
+	if resp.ToC.PatternComplete {
+		if resp.ToC.EntriesToFind == 0 || resp.ToC.EntriesDiscovered >= resp.ToC.EntriesToFind {
+			resp.ToC.DiscoverComplete = true
+		}
+	}
+	// ValidateComplete: finalize is complete (gap validation finished)
+	resp.ToC.ValidateComplete = resp.ToC.FinalizeComplete
 
 	// Query chapter count for structure status
 	if resp.Structure.Complete {

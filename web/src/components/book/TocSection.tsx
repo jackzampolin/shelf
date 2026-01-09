@@ -37,6 +37,7 @@ interface LLMCall {
 export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionProps) {
   const [entriesExpanded, setEntriesExpanded] = useState(false)
   const [pipelineExpanded, setPipelineExpanded] = useState(true)
+  const [patternExpanded, setPatternExpanded] = useState(false)
 
   // Fetch agent logs when pipeline is expanded
   const { data: agentLogs } = useQuery({
@@ -107,10 +108,35 @@ export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionP
   const discoverMetrics = metrics?.['toc-discover']
   const validateMetrics = metrics?.['toc-validate']
 
-  // Determine finalize sub-stage states based on LLM calls or agent runs
-  const hasPatternAnalysis = patternCalls.length > 0
-  const hasChapterDiscovery = (logsByType['chapter_finder']?.length || 0) > 0
-  const hasGapValidation = (logsByType['gap_investigator']?.length || 0) > 0
+  // Determine finalize sub-stage states from API data (preferred) or fallback to logs/calls
+  const hasPatternCalls = patternCalls.length > 0
+  const hasChapterLogs = (logsByType['chapter_finder']?.length || 0) > 0
+  const hasGapLogs = (logsByType['gap_investigator']?.length || 0) > 0
+
+  // Use API-provided status when available
+  const patternComplete = toc.pattern_complete ?? hasPatternCalls
+  const entriesToFind = toc.entries_to_find ?? 0
+  const discoverComplete = toc.discover_complete ?? (patternComplete && entriesToFind === 0)
+  const validateComplete = toc.validate_complete ?? toc.finalize_complete
+
+  // Derive phase statuses
+  const patternStatus: StatusType = patternComplete
+    ? 'complete'
+    : (finalizeStatus === 'in_progress' || finalizeStatus === 'complete')
+      ? 'in_progress'
+      : 'pending'
+
+  const discoverStatus: StatusType = discoverComplete
+    ? 'complete'
+    : patternComplete
+      ? (discoveredCount > 0 || hasChapterLogs ? 'in_progress' : 'pending')
+      : 'pending'
+
+  const gapStatus: StatusType = validateComplete
+    ? 'complete'
+    : discoverComplete
+      ? (hasGapLogs ? 'in_progress' : 'pending')
+      : 'pending'
 
   return (
     <div className="border-t pt-4">
@@ -186,11 +212,19 @@ export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionP
             <div className="flex items-start space-x-2 pl-4">
               <span className="text-gray-300 text-xs mt-2">↳</span>
               <div className="flex-1">
-                <div className="text-xs text-gray-500 mb-2">Finalize ({finalizeStatus})</div>
+                <div className="text-xs text-gray-500 mb-2">
+                  Finalize ({finalizeStatus})
+                  {toc.patterns_found !== undefined && toc.patterns_found > 0 && (
+                    <span className="ml-2 text-gray-400">
+                      {toc.patterns_found} patterns, {toc.excluded_ranges || 0} excluded
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center space-x-2 flex-wrap gap-y-2">
                   <PipelineStage
                     label="Pattern Analysis"
-                    status={patternCalls.length > 0 ? 'complete' : finalizeStatus === 'pending' ? 'pending' : 'in_progress'}
+                    status={patternStatus}
+                    detail={patternComplete && entriesToFind === 0 ? '0 to find' : entriesToFind > 0 ? `${entriesToFind} to find` : undefined}
                     metrics={patternMetrics}
                     llmCalls={patternCalls}
                     compact
@@ -198,15 +232,21 @@ export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionP
 
                   {/* Conditional branch to Chapter Discovery */}
                   <div className="flex items-center space-x-2">
-                    <ConditionalArrow active={!!hasPatternAnalysis} />
+                    <ConditionalArrow active={patternComplete} />
                     <PipelineStage
                       label="Chapter Discovery"
-                      status={hasChapterDiscovery ? 'complete' : hasPatternAnalysis ? (finalizeStatus === 'complete' ? 'complete' : 'pending') : 'pending'}
-                      detail={discoverMetrics?.count ? `${discoveredCount}/${discoverMetrics.count} found` : discoveredCount > 0 ? `+${discoveredCount}` : undefined}
+                      status={discoverStatus}
+                      detail={
+                        entriesToFind > 0
+                          ? `${discoveredCount}/${entriesToFind} found`
+                          : patternComplete
+                            ? 'skipped'
+                            : undefined
+                      }
                       metrics={discoverMetrics}
                       logs={logsByType['chapter_finder']}
                       compact
-                      dimmed={!hasPatternAnalysis && finalizeStatus !== 'in_progress'}
+                      dimmed={!patternComplete && finalizeStatus === 'pending'}
                       showCallCount
                       onViewLog={onViewAgentLog}
                     />
@@ -214,14 +254,14 @@ export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionP
 
                   {/* Conditional branch to Gap Validation */}
                   <div className="flex items-center space-x-2">
-                    <ConditionalArrow active={!!hasChapterDiscovery} />
+                    <ConditionalArrow active={discoverComplete} />
                     <PipelineStage
                       label="Gap Validation"
-                      status={hasGapValidation ? 'complete' : hasChapterDiscovery ? (finalizeStatus === 'complete' ? 'complete' : 'pending') : 'pending'}
+                      status={gapStatus}
                       metrics={validateMetrics}
                       logs={logsByType['gap_investigator']}
                       compact
-                      dimmed={!hasChapterDiscovery && finalizeStatus !== 'in_progress'}
+                      dimmed={!discoverComplete && finalizeStatus === 'pending'}
                       onViewLog={onViewAgentLog}
                     />
                   </div>
@@ -229,6 +269,88 @@ export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionP
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Pattern Analysis Details (expandable) */}
+      {toc.pattern_analysis && (
+        <div className="mb-3">
+          <button
+            onClick={() => setPatternExpanded(!patternExpanded)}
+            className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-800"
+          >
+            <span className={`transition-transform ${patternExpanded ? 'rotate-90' : ''}`}>▶</span>
+            <span>Pattern Analysis Details</span>
+            {toc.pattern_analysis.excluded_ranges && toc.pattern_analysis.excluded_ranges.length > 0 && (
+              <span className="text-xs text-gray-400">
+                ({toc.pattern_analysis.excluded_ranges.length} excluded ranges)
+              </span>
+            )}
+          </button>
+
+          {patternExpanded && (
+            <div className="mt-2 bg-gray-50 rounded-lg p-3 text-sm">
+              {/* Reasoning */}
+              {toc.pattern_analysis.reasoning && (
+                <div className="mb-3">
+                  <div className="text-xs font-medium text-gray-500 mb-1">Reasoning</div>
+                  <div className="text-gray-700 whitespace-pre-wrap text-xs bg-white rounded p-2 border">
+                    {toc.pattern_analysis.reasoning}
+                  </div>
+                </div>
+              )}
+
+              {/* Patterns Found */}
+              {toc.pattern_analysis.patterns && toc.pattern_analysis.patterns.length > 0 && (
+                <div className="mb-3">
+                  <div className="text-xs font-medium text-gray-500 mb-1">
+                    Discovered Patterns ({toc.pattern_analysis.patterns.length})
+                  </div>
+                  <div className="space-y-1">
+                    {toc.pattern_analysis.patterns.map((pattern, idx) => (
+                      <div key={idx} className="bg-white rounded p-2 border text-xs">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium">{pattern.level_name}</span>
+                          <span className="text-gray-400">|</span>
+                          <span className="font-mono">{pattern.heading_format}</span>
+                          <span className="text-gray-400">|</span>
+                          <span>{pattern.range_start} → {pattern.range_end}</span>
+                        </div>
+                        {pattern.reasoning && (
+                          <div className="text-gray-500 mt-1">{pattern.reasoning}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Excluded Ranges */}
+              {toc.pattern_analysis.excluded_ranges && toc.pattern_analysis.excluded_ranges.length > 0 && (
+                <div>
+                  <div className="text-xs font-medium text-gray-500 mb-1">
+                    Excluded Ranges ({toc.pattern_analysis.excluded_ranges.length})
+                  </div>
+                  <div className="space-y-1">
+                    {toc.pattern_analysis.excluded_ranges.map((range, idx) => (
+                      <div key={idx} className="bg-white rounded px-2 py-1 border text-xs flex items-center space-x-2">
+                        <span className="font-mono text-gray-600">p{range.start_page}–{range.end_page}</span>
+                        <span className="text-gray-400">|</span>
+                        <span className="text-gray-600">{range.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* No patterns or exclusions */}
+              {(!toc.pattern_analysis.patterns || toc.pattern_analysis.patterns.length === 0) &&
+               (!toc.pattern_analysis.excluded_ranges || toc.pattern_analysis.excluded_ranges.length === 0) &&
+               !toc.pattern_analysis.reasoning && (
+                <div className="text-gray-500 text-xs">No pattern analysis data available</div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

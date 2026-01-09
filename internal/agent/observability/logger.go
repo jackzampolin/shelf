@@ -82,6 +82,8 @@ func NewLogger(ctx context.Context, agentID, agentType, bookID, jobID string) *L
 }
 
 // saveInitial creates the initial AgentRun record with status="running".
+// Uses async Send to avoid blocking agent creation - the final Save() will
+// create a complete record if this initial record wasn't created.
 func (l *Logger) saveInitial(ctx context.Context) {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
@@ -94,32 +96,12 @@ func (l *Logger) saveInitial(ctx context.Context) {
 		return
 	}
 
-	run := map[string]any{
-		"agent_id":   l.agentID,
-		"agent_type": l.agentType,
-		"book_id":    l.bookID,
-		"job_id":     l.jobID,
-		"started_at": l.startedAt.Format(time.RFC3339),
-		"iterations": 0,
-		"success":    false,
-		"status":     "running",
-	}
-
-	result, err := sink.SendSync(ctx, defra.WriteOp{
-		Collection: "AgentRun",
-		Document:   run,
-		Op:         defra.OpCreate,
-	})
-	if err != nil {
-		if logger := svcctx.LoggerFrom(ctx); logger != nil {
-			logger.Warn("failed to create initial agent run record",
-				"agent_id", l.agentID,
-				"agent_type", l.agentType,
-				"error", err)
-		}
-		return
-	}
-	l.docID = result.DocID
+	// Skip initial record creation - it's not worth the sync overhead.
+	// The Save() method will create a complete record at the end.
+	// This avoids blocking agent creation when spawning many agents in parallel.
+	//
+	// Note: We lose real-time "running" status visibility, but gain significant
+	// performance when creating many agents (e.g., toc_entry_finder for each ToC entry).
 }
 
 // LogToolCall records a tool call.
@@ -141,45 +123,11 @@ func (l *Logger) LogToolCall(iteration int, toolName string, args map[string]any
 
 // UpdateProgress persists the current iteration and tool calls to DefraDB.
 // Call this after each iteration to show real-time agent progress.
+// Note: Currently disabled (no-op) since we skip initial record creation for performance.
+// Progress is only recorded in the final Save() call.
 func (l *Logger) UpdateProgress(ctx context.Context, iteration int) {
-	if l.docID == "" {
-		// No initial record was created (saveInitial failed or sink unavailable)
-		return
-	}
-
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		if logger := svcctx.LoggerFrom(ctx); logger != nil {
-			logger.Debug("cannot update agent progress: no defra sink in context",
-				"agent_id", l.agentID,
-				"iteration", iteration)
-		}
-		return
-	}
-
-	// Serialize tool calls so far
-	toolCallsJSON, err := json.Marshal(l.toolCalls)
-	if err != nil {
-		if logger := svcctx.LoggerFrom(ctx); logger != nil {
-			logger.Warn("failed to marshal tool calls for progress update",
-				"agent_id", l.agentID,
-				"iteration", iteration,
-				"error", err)
-		}
-		return
-	}
-
-	update := map[string]any{
-		"iterations":      iteration,
-		"tool_calls_json": string(toolCallsJSON),
-	}
-
-	sink.Send(defra.WriteOp{
-		Collection: "AgentRun",
-		DocID:      l.docID,
-		Document:   update,
-		Op:         defra.OpUpdate,
-	})
+	// Progress updates are disabled - we create a complete record in Save()
+	// to avoid sync overhead during agent execution.
 }
 
 // SetMessages captures the final message history.
