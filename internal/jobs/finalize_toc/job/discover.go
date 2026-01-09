@@ -205,41 +205,12 @@ func (j *Job) SaveDiscoveredEntry(ctx context.Context, entryKey string, result *
 }
 
 // calculateSortOrder determines sort order for a new entry based on page.
+// Uses scan page * 1000 to ensure discovered entries sort correctly by page position.
+// This avoids issues with interpolation when entries are discovered in parallel/out of order.
 func (j *Job) calculateSortOrder(page int) int {
-	// Find entries before and after this page
-	var beforeOrder, afterOrder int
-	beforeFound, afterFound := false, false
-
-	for _, entry := range j.LinkedEntries {
-		if entry.ActualPage == nil {
-			continue
-		}
-		if *entry.ActualPage < page {
-			if !beforeFound || entry.SortOrder > beforeOrder {
-				beforeOrder = entry.SortOrder
-				beforeFound = true
-			}
-		} else if *entry.ActualPage > page {
-			if !afterFound || entry.SortOrder < afterOrder {
-				afterOrder = entry.SortOrder
-				afterFound = true
-			}
-		}
-	}
-
-	if beforeFound && afterFound {
-		// Insert between
-		return (beforeOrder + afterOrder) / 2
-	} else if beforeFound {
-		// After the last entry
-		return beforeOrder + 100
-	} else if afterFound {
-		// Before the first entry
-		return afterOrder - 100
-	}
-
-	// Default
-	return page * 100
+	// Simple approach: use scan page as sort order
+	// Multiply by 1000 to leave room for manual reordering if needed
+	return page * 1000
 }
 
 // getPageDocID returns the Page document ID for a given page number from BookState.
