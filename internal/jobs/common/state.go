@@ -401,6 +401,7 @@ type BookState struct {
 	// Identity (immutable after LoadBook)
 	BookID    string
 	BookDocID string
+	BookTitle string // From metadata extraction, may be empty if not yet extracted
 
 	// Context (immutable after LoadBook)
 	HomeDir    *home.Dir

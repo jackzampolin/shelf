@@ -57,6 +57,7 @@ type PreviousAttemptData struct {
 // UserPromptData contains the data needed to render the user prompt template.
 type UserPromptData struct {
 	ScanID          string
+	BookTitle       string // From metadata, may be empty
 	TotalPages      int
 	PreviousAttempt *PreviousAttemptData
 }
@@ -90,9 +91,10 @@ func UserPromptWithOverride(data UserPromptData, override string) string {
 
 // BuildUserPrompt builds the user prompt for the ToC finder agent.
 // Deprecated: Use UserPrompt(UserPromptData) instead.
-func BuildUserPrompt(scanID string, totalPages int, previousAttempt map[string]any) string {
+func BuildUserPrompt(scanID string, bookTitle string, totalPages int, previousAttempt map[string]any) string {
 	data := UserPromptData{
 		ScanID:     scanID,
+		BookTitle:  bookTitle,
 		TotalPages: totalPages,
 	}
 

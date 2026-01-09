@@ -15,6 +15,7 @@ import (
 // TocFinderConfig configures ToC finder agent creation.
 type TocFinderConfig struct {
 	BookID       string
+	BookTitle    string // From metadata, may be empty
 	TotalPages   int
 	DefraClient  *defra.Client
 	HomeDir      *home.Dir
@@ -36,7 +37,7 @@ func NewTocFinderAgent(ctx context.Context, cfg TocFinderConfig) *agent.Agent {
 		PageReader:  cfg.PageReader,
 	})
 
-	userPrompt := toc_finder.BuildUserPrompt(cfg.BookID, cfg.TotalPages, nil)
+	userPrompt := toc_finder.BuildUserPrompt(cfg.BookID, cfg.BookTitle, cfg.TotalPages, nil)
 
 	return agent.New(ctx, agent.Config{
 		Tools: tocTools,
