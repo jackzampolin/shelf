@@ -44,8 +44,10 @@ Numbered sequences like chapters, parts, appendices:
 
 IMPORTANT:
 - Output the FULL expected range, not just what you see in candidates
+- If notes/back matter references "Chapter 38", the range should extend to 38
+- If candidates show 1, 2, 5, 10, 36 but notes mention chapter 38 -> range "1" to "38"
+- Missing candidates (like chapter 3) are expected - we'll search for them
 - Look at the actual heading_text in candidate_headings to determine heading_format
-- If you see chapters 1, 2, 3, 5, 6 -> output range "1" to "6" (we'll search for all)
 - heading_format MUST match what you see in the candidate headings
 
 Look at:
@@ -62,7 +64,12 @@ Page ranges to skip during discovery. Always exclude:
 - Acknowledgments section
 - Photo/Image sections (if clearly separate from text)
 
-Look at ToC entries to identify back matter sections and their page ranges.
+**IMPORTANT: start_page and end_page must be ACTUAL scan page numbers (integers), not 0**
+- Look at ToC entries to find the actual_page for each back matter section
+- If ToC shows "Notes" linked to page 379, use start_page: 379
+- If you don't know the end_page, estimate based on the next section or body_end
+- Example: Notes at p379, Index at p439 -> Notes range is 379-438
+- NEVER output start_page: 0 or end_page: 0
 
 ## Output Format
 
