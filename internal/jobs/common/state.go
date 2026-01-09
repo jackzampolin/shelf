@@ -39,6 +39,7 @@ type PageState struct {
 	headings        []HeadingItem // Parsed headings from blend_markdown
 	pageNumberLabel *string       // nil = not loaded, empty string = loaded but no label
 	runningHeader   *string       // nil = not loaded
+	isTocPage       *bool         // nil = not loaded, true/false = loaded
 	dataLoaded      bool          // True if blend_markdown/headings/labels loaded from DB
 }
 
@@ -202,6 +203,21 @@ func (p *PageState) SetRunningHeader(header *string) {
 	p.runningHeader = header
 }
 
+// GetIsTocPage returns the cached is_toc_page flag (thread-safe).
+// Returns nil if not loaded from DB.
+func (p *PageState) GetIsTocPage() *bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.isTocPage
+}
+
+// SetIsTocPage sets the cached is_toc_page flag (thread-safe).
+func (p *PageState) SetIsTocPage(isTocPage *bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.isTocPage = isTocPage
+}
+
 // IsDataLoaded returns true if page data has been loaded from DB (thread-safe).
 func (p *PageState) IsDataLoaded() bool {
 	p.mu.RLock()
@@ -263,6 +279,10 @@ func (p *PageState) PopulateFromDBResult(data map[string]any) {
 
 	if rh, ok := data["running_header"].(string); ok {
 		p.runningHeader = &rh
+	}
+
+	if isToc, ok := data["is_toc_page"].(bool); ok {
+		p.isTocPage = &isToc
 	}
 
 	p.dataLoaded = true

@@ -82,6 +82,11 @@ func NewFromLoadResult(result *common.LoadBookResult, linkedEntries []*LinkedToc
 	if minPage > 0 && maxPage > 0 {
 		result.Book.BodyStart = minPage
 		result.Book.BodyEnd = maxPage
+	} else {
+		// Fallback to full book range if no entries have linked pages yet
+		// This ensures pattern analysis can still search the entire book
+		result.Book.BodyStart = 1
+		result.Book.BodyEnd = result.Book.TotalPages
 	}
 
 	return &Job{

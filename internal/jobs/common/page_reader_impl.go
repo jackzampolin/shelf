@@ -206,11 +206,15 @@ func (b *BookState) GetPagesWithHeadings(ctx context.Context, startPage, endPage
 		for _, h := range headings {
 			// Only chapter-level headings (level 1-2)
 			if h.Level <= 2 {
+				isTocPage := false
+				if cached := state.GetIsTocPage(); cached != nil {
+					isTocPage = *cached
+				}
 				results = append(results, PageWithHeading{
 					PageNum:         pageNum,
 					Heading:         h,
 					PageNumberLabel: state.GetPageNumberLabel(),
-					// Note: is_toc_page would need to be cached too if we want to filter
+					IsTocPage:       isTocPage,
 				})
 				break // Only first chapter heading per page
 			}
