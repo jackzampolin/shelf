@@ -27,8 +27,7 @@ const FrontMatterPageCount = 50
 // ConsecutiveFrontMatterRequired is the number of consecutive pages from page 1
 // that must have blend_complete before starting ToC finder. This ensures the ToC
 // pages (typically in first 20-30 pages) have blend output before the agent runs.
-// Set to 50 to ensure adequate coverage for books with longer front matter.
-const ConsecutiveFrontMatterRequired = 50
+const ConsecutiveFrontMatterRequired = 30
 
 // PageState is an alias for common.PageState.
 type PageState = common.PageState

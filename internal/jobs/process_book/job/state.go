@@ -69,11 +69,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Start ToC finder after threshold pages are labeled AND first 30 pages have OCR.
-	// Consecutive check ensures pages 1-30 all have blend_complete before ToC finder starts,
-	// since ToC is typically in the first 20-30 pages.
+	// Start ToC finder after first 30 pages have blend complete.
+	// ToC finder only needs blended text (not labels), so no need to wait for labeling.
 	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
-	if labeledCount >= LabelThresholdForBookOps && j.ConsecutiveFrontMatterComplete() && j.Book.TocFinder.CanStart() {
+	if j.ConsecutiveFrontMatterComplete() && j.Book.TocFinder.CanStart() {
 		if err := j.Book.TocFinder.Start(); err == nil {
 			unit := j.CreateTocFinderWorkUnit(ctx)
 			if unit != nil {
