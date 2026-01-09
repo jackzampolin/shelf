@@ -57,6 +57,7 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	unit.ID = unitID
 	unit.Provider = book.TocProvider
 	unit.JobID = jc.ID()
+	unit.Priority = jobs.PriorityForStage("toc_extract")
 
 	unit.Metrics = &jobs.WorkUnitMetrics{
 		BookID:    book.BookID,

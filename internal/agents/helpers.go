@@ -53,6 +53,7 @@ type ConvertConfig struct {
 
 // ConvertToJobUnits converts agent work units to job work units.
 // Only LLM work units are converted; tool work units should be executed synchronously.
+// Priority is determined by the stage (book-level operations get PriorityHigh).
 func ConvertToJobUnits(agentUnits []agent.WorkUnit, cfg ConvertConfig) []jobs.WorkUnit {
 	var units []jobs.WorkUnit
 	for _, au := range agentUnits {
@@ -64,6 +65,7 @@ func ConvertToJobUnits(agentUnits []agent.WorkUnit, cfg ConvertConfig) []jobs.Wo
 			Type:        jobs.WorkUnitTypeLLM,
 			Provider:    cfg.Provider,
 			JobID:       cfg.JobID,
+			Priority:    jobs.PriorityForStage(cfg.ItemKey), // Use ItemKey for priority (e.g., "toc_finder")
 			ChatRequest: au.ChatRequest,
 			Tools:       au.Tools,
 			Metrics: &jobs.WorkUnitMetrics{

@@ -76,6 +76,7 @@ func CreateLabelWorkUnit(ctx context.Context, jc JobContext, pageNum int, state 
 	unit.ID = unitID
 	unit.Provider = book.LabelProvider
 	unit.JobID = jc.ID()
+	unit.Priority = jobs.PriorityForStage("label")
 
 	unit.Metrics = &jobs.WorkUnitMetrics{
 		BookID:    book.BookID,

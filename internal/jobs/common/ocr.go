@@ -39,6 +39,7 @@ func CreateOcrWorkUnit(ctx context.Context, jc JobContext, pageNum int, provider
 		Type:     jobs.WorkUnitTypeOCR,
 		Provider: provider,
 		JobID:    jc.ID(),
+		Priority: jobs.PriorityForStage("ocr"),
 		OCRRequest: &jobs.OCRWorkRequest{
 			Image:   imageData,
 			PageNum: pageNum,
