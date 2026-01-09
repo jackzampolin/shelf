@@ -4,6 +4,7 @@ import (
 	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
 	gap_investigator "github.com/jackzampolin/shelf/internal/agents/gap_investigator"
 	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
+	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 	"github.com/jackzampolin/shelf/internal/prompts/blend"
 	"github.com/jackzampolin/shelf/internal/prompts/extract_toc"
@@ -44,6 +45,12 @@ func GetEmbeddedDefault(key string) string {
 	case toc_finder.SystemPromptKey:
 		return toc_finder.SystemPrompt()
 	case toc_finder.UserPromptKey:
+		return "" // User prompts are templates, require data to render
+
+	// ToC Entry Finder prompts
+	case toc_entry_finder.PromptKey:
+		return toc_entry_finder.SystemPrompt()
+	case toc_entry_finder.UserPromptKey:
 		return "" // User prompts are templates, require data to render
 
 	// Pattern Analyzer prompts

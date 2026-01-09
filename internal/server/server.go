@@ -37,6 +37,9 @@ import (
 	"github.com/jackzampolin/shelf/internal/server/endpoints"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 
+	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
+	gap_investigator "github.com/jackzampolin/shelf/internal/agents/gap_investigator"
+	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 )
@@ -216,6 +219,9 @@ func (s *Server) Start(ctx context.Context) error {
 	extract_toc.RegisterPrompts(s.promptResolver)
 	toc_finder.RegisterPrompts(s.promptResolver)
 	toc_entry_finder.RegisterPrompts(s.promptResolver)
+	pattern_analyzer.RegisterPrompts(s.promptResolver)
+	chapter_finder.RegisterPrompts(s.promptResolver)
+	gap_investigator.RegisterPrompts(s.promptResolver)
 
 	// Sync prompts to database (creates new, updates modified)
 	s.logger.Info("syncing prompts to database")
