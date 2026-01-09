@@ -6,19 +6,13 @@ import (
 	"github.com/jackzampolin/shelf/internal/agent"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/agents/toc_entry_finder/tools"
-	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // TocEntryFinderConfig configures ToC entry finder agent creation.
 type TocEntryFinderConfig struct {
-	BookID        string
-	TotalPages    int
-	DefraClient   *defra.Client
-	HomeDir       *home.Dir
-	PageReader    common.PageDataReader // Optional: cached page data access
+	Book          *common.BookState
 	SystemPrompt  string
 	Entry         *toc_entry_finder.TocEntry
 	BookStructure *toc_entry_finder.BookStructure
@@ -31,15 +25,11 @@ type TocEntryFinderConfig struct {
 // Context is required for observability logging.
 func NewTocEntryFinderAgent(ctx context.Context, cfg TocEntryFinderConfig) *agent.Agent {
 	entryTools := tools.New(tools.Config{
-		BookID:      cfg.BookID,
-		TotalPages:  cfg.TotalPages,
-		DefraClient: cfg.DefraClient,
-		HomeDir:     cfg.HomeDir,
-		Entry:       cfg.Entry,
-		PageReader:  cfg.PageReader,
+		Book:  cfg.Book,
+		Entry: cfg.Entry,
 	})
 
-	userPrompt := toc_entry_finder.BuildUserPrompt(cfg.Entry, cfg.TotalPages, cfg.BookStructure)
+	userPrompt := toc_entry_finder.BuildUserPrompt(cfg.Entry, cfg.Book.TotalPages, cfg.BookStructure)
 
 	// Build agent ID from entry info for tracing
 	agentID := "entry"
@@ -59,7 +49,7 @@ func NewTocEntryFinderAgent(ctx context.Context, cfg TocEntryFinderConfig) *agen
 		},
 		MaxIterations: 15, // Entry finding should be quick
 		AgentType:     "toc_entry_finder",
-		BookID:        cfg.BookID,
+		BookID:        cfg.Book.BookID,
 		JobID:         cfg.JobID,
 		Debug:         cfg.Debug,
 	})

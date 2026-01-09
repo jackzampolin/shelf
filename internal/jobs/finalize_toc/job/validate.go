@@ -202,14 +202,6 @@ func (j *Job) CreateGapWorkUnits(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 // CreateGapInvestigatorWorkUnit creates a gap investigator agent work unit.
 func (j *Job) CreateGapInvestigatorWorkUnit(ctx context.Context, gap *Gap) *jobs.WorkUnit {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		if logger := svcctx.LoggerFrom(ctx); logger != nil {
-			logger.Error("defra client not in context", "gap_key", gap.Key)
-		}
-		return nil
-	}
-
 	// Convert gap for agent
 	agentGap := &gap_investigator.GapInfo{
 		StartPage:      gap.StartPage,
@@ -237,15 +229,10 @@ func (j *Job) CreateGapInvestigatorWorkUnit(ctx context.Context, gap *Gap) *jobs
 
 	// Create agent
 	ag := agents.NewGapInvestigatorAgent(ctx, agents.GapInvestigatorConfig{
-		BookID:        j.Book.BookID,
-		TotalPages:    j.Book.TotalPages,
-		DefraClient:   defraClient,
-		HomeDir:       j.Book.HomeDir,
+		Book:          j.Book,
 		SystemPrompt:  j.GetPrompt(gap_investigator.PromptKey),
 		Gap:           agentGap,
 		LinkedEntries: linkedEntries,
-		BodyStart:     j.Book.BodyStart,
-		BodyEnd:       j.Book.BodyEnd,
 		Debug:         j.Book.DebugAgents,
 		JobID:         j.RecordID,
 	})

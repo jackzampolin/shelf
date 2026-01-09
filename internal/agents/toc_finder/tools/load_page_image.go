@@ -51,7 +51,7 @@ func (t *ToCFinderTools) loadPageImage(ctx context.Context, pageNum int, current
 	}
 
 	// Load image file
-	imagePath := t.homeDir.SourceImagePath(t.bookID, pageNum)
+	imagePath := t.book.HomeDir.SourceImagePath(t.book.BookID, pageNum)
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
 		return jsonError(fmt.Sprintf("Failed to load page image: %v", err)), nil

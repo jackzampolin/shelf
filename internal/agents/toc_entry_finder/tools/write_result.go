@@ -48,7 +48,7 @@ func (t *TocEntryFinderTools) writeResult(ctx context.Context, args map[string]a
 	// Parse scan_page (can be float64 from JSON or nil)
 	if scanPageF, ok := args["scan_page"].(float64); ok {
 		scanPage := int(scanPageF)
-		if scanPage >= 1 && scanPage <= t.totalPages {
+		if scanPage >= 1 && scanPage <= t.book.TotalPages {
 			result.ScanPage = &scanPage
 		}
 	}

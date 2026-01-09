@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -60,46 +59,15 @@ func getHeadingPagesTool() providers.Tool {
 	}
 }
 
-// getHeadingPages finds pages with chapter-level headings.
-func (t *TocEntryFinderTools) getHeadingPages(ctx context.Context, startPage, endPage *int) (string, error) {
-	// Query pages with headings from DefraDB
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}}, order: {page_num: ASC}) {
-			page_num
-			headings
-			page_number_label
-			is_toc_page
-		}
-	}`, t.bookID)
-
-	resp, err := t.defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to query pages: %w", err)
-	}
-
-	pages, ok := resp.Data["Page"].([]any)
-	if !ok {
-		return "[]", nil
-	}
-
+// getHeadingPages finds pages with chapter-level headings using BookState.
+func (t *TocEntryFinderTools) getHeadingPages(startPage, endPage *int) (string, error) {
 	// Get ToC page range to exclude
-	tocStart, tocEnd := t.getTocPageRange(ctx)
+	tocStart, tocEnd := t.book.GetTocPageRange()
 
 	var results []HeadingPageResult
-	for _, p := range pages {
-		page, ok := p.(map[string]any)
-		if !ok {
-			continue
-		}
 
-		pageNum := 0
-		if pn, ok := page["page_num"].(float64); ok {
-			pageNum = int(pn)
-		}
-		if pageNum == 0 {
-			continue
-		}
-
+	// Iterate through pages in BookState
+	for pageNum := 1; pageNum <= t.book.TotalPages; pageNum++ {
 		// Apply page range filter
 		if startPage != nil && pageNum < *startPage {
 			continue
@@ -112,18 +80,20 @@ func (t *TocEntryFinderTools) getHeadingPages(ctx context.Context, startPage, en
 		if tocStart > 0 && tocEnd > 0 && pageNum >= tocStart && pageNum <= tocEnd {
 			continue
 		}
-		if isToc, ok := page["is_toc_page"].(bool); ok && isToc {
+
+		page := t.book.GetPage(pageNum)
+		if page == nil {
 			continue
 		}
 
-		// Parse headings JSON
-		headingsStr, ok := page["headings"].(string)
-		if !ok || headingsStr == "" {
+		// Skip if marked as ToC page
+		if isToc := page.GetIsTocPage(); isToc != nil && *isToc {
 			continue
 		}
 
-		var headings []HeadingItem
-		if err := json.Unmarshal([]byte(headingsStr), &headings); err != nil {
+		// Get headings from page state
+		headings := page.GetHeadings()
+		if len(headings) == 0 {
 			continue
 		}
 
@@ -131,7 +101,11 @@ func (t *TocEntryFinderTools) getHeadingPages(ctx context.Context, startPage, en
 		var chapterHeadings []HeadingItem
 		for _, h := range headings {
 			if h.Level <= 2 {
-				chapterHeadings = append(chapterHeadings, h)
+				chapterHeadings = append(chapterHeadings, HeadingItem{
+					Level:      h.Level,
+					Text:       h.Text,
+					LineNumber: h.LineNumber,
+				})
 			}
 		}
 		if len(chapterHeadings) == 0 {
@@ -154,8 +128,8 @@ func (t *TocEntryFinderTools) getHeadingPages(ctx context.Context, startPage, en
 		}
 
 		// Add page number if available
-		if pnLabel, ok := page["page_number_label"].(string); ok && pnLabel != "" {
-			result.PageNumber = &PageNumberInfo{Number: pnLabel}
+		if pnLabel := page.GetPageNumberLabel(); pnLabel != nil && *pnLabel != "" {
+			result.PageNumber = &PageNumberInfo{Number: *pnLabel}
 		}
 
 		results = append(results, result)
@@ -185,43 +159,3 @@ func (t *TocEntryFinderTools) getHeadingPages(ctx context.Context, startPage, en
 	return fmt.Sprintf("Found %d pages with chapter headings:\n%s", len(results), string(output)), nil
 }
 
-// getTocPageRange returns the ToC page range for this book.
-func (t *TocEntryFinderTools) getTocPageRange(ctx context.Context) (start, end int) {
-	query := fmt.Sprintf(`{
-		Book(filter: {_docID: {_eq: "%s"}}) {
-			toc {
-				start_page
-				end_page
-			}
-		}
-	}`, t.bookID)
-
-	resp, err := t.defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return 0, 0
-	}
-
-	books, ok := resp.Data["Book"].([]any)
-	if !ok || len(books) == 0 {
-		return 0, 0
-	}
-
-	book, ok := books[0].(map[string]any)
-	if !ok {
-		return 0, 0
-	}
-
-	toc, ok := book["toc"].(map[string]any)
-	if !ok {
-		return 0, 0
-	}
-
-	if sp, ok := toc["start_page"].(float64); ok {
-		start = int(sp)
-	}
-	if ep, ok := toc["end_page"].(float64); ok {
-		end = int(ep)
-	}
-
-	return start, end
-}

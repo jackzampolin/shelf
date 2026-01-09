@@ -308,12 +308,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 
 	// Create agent via factory
 	j.TocAgent = agents.NewTocFinderAgent(ctx, agents.TocFinderConfig{
-		BookID:       j.Book.BookID,
-		BookTitle:    j.Book.BookTitle,
-		TotalPages:   j.Book.TotalPages,
-		DefraClient:  defraClient,
-		HomeDir:      j.Book.HomeDir,
-		PageReader:   j.Book, // Cached page data access
+		Book:         j.Book,
 		SystemPrompt: j.GetPrompt(toc_finder.PromptKey),
 		Debug:        j.Book.DebugAgents,
 		JobID:        j.RecordID,

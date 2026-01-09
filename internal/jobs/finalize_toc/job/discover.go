@@ -38,14 +38,6 @@ func (j *Job) CreateDiscoverWorkUnits(ctx context.Context) ([]jobs.WorkUnit, err
 
 // CreateChapterFinderWorkUnit creates a chapter finder agent work unit.
 func (j *Job) CreateChapterFinderWorkUnit(ctx context.Context, entry *EntryToFind) *jobs.WorkUnit {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		if logger := svcctx.LoggerFrom(ctx); logger != nil {
-			logger.Error("defra client not in context", "entry_key", entry.Key)
-		}
-		return nil
-	}
-
 	// Convert excluded ranges for the agent
 	var excludedRanges []chapter_finder.ExcludedRange
 	if j.PatternResult != nil {
@@ -70,10 +62,7 @@ func (j *Job) CreateChapterFinderWorkUnit(ctx context.Context, entry *EntryToFin
 
 	// Create agent
 	ag := agents.NewChapterFinderAgent(ctx, agents.ChapterFinderConfig{
-		BookID:         j.Book.BookID,
-		TotalPages:     j.Book.TotalPages,
-		DefraClient:    defraClient,
-		HomeDir:        j.Book.HomeDir,
+		Book:           j.Book,
 		SystemPrompt:   j.GetPrompt(chapter_finder.PromptKey),
 		Entry:          agentEntry,
 		ExcludedRanges: excludedRanges,

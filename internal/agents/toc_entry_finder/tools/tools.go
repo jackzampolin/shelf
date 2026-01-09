@@ -6,20 +6,14 @@ import (
 	"fmt"
 
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
-	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // TocEntryFinderTools implements agent.Tools for the ToC entry finder agent.
 type TocEntryFinderTools struct {
-	bookID      string
-	totalPages  int
-	defraClient *defra.Client
-	homeDir     *home.Dir
-	entry       *toc_entry_finder.TocEntry
-	pageReader  common.PageDataReader // Cached page data access
+	book  *common.BookState
+	entry *toc_entry_finder.TocEntry
 
 	// State
 	currentPageNum   *int
@@ -36,23 +30,15 @@ type PageObservation struct {
 
 // Config configures the ToC entry finder tools.
 type Config struct {
-	BookID      string
-	TotalPages  int
-	DefraClient *defra.Client
-	HomeDir     *home.Dir
-	Entry       *toc_entry_finder.TocEntry
-	PageReader  common.PageDataReader // Optional: cached page data access
+	Book  *common.BookState
+	Entry *toc_entry_finder.TocEntry
 }
 
 // New creates a new ToC entry finder tools instance.
 func New(cfg Config) *TocEntryFinderTools {
 	return &TocEntryFinderTools{
-		bookID:           cfg.BookID,
-		totalPages:       cfg.TotalPages,
-		defraClient:      cfg.DefraClient,
-		homeDir:          cfg.HomeDir,
+		book:             cfg.Book,
 		entry:            cfg.Entry,
-		pageReader:       cfg.PageReader,
 		pageObservations: make([]PageObservation, 0),
 	}
 }
@@ -81,7 +67,7 @@ func (t *TocEntryFinderTools) ExecuteTool(ctx context.Context, name string, args
 			i := int(ep)
 			endPage = &i
 		}
-		return t.getHeadingPages(ctx, startPage, endPage)
+		return t.getHeadingPages(startPage, endPage)
 	case "grep_text":
 		query, _ := args["query"].(string)
 		return t.grepText(ctx, query)
@@ -114,44 +100,16 @@ func (t *TocEntryFinderTools) GetResult() any {
 	return t.pendingResult
 }
 
-// getPageBlendedText retrieves blended OCR text, using cache if available.
+// getPageBlendedText retrieves blended OCR text from BookState.
 func (t *TocEntryFinderTools) getPageBlendedText(ctx context.Context, pageNum int) (string, error) {
-	// Use cached page reader if available
-	if t.pageReader != nil {
-		return t.pageReader.GetBlendedText(ctx, pageNum)
+	page := t.book.GetPage(pageNum)
+	if page == nil {
+		return "", fmt.Errorf("page %d not in state", pageNum)
 	}
-
-	// Fallback to direct DB query
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
-			blend_markdown
-		}
-	}`, t.bookID, pageNum)
-
-	resp, err := t.defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return "", err
+	text := page.GetBlendedText()
+	if text == "" {
+		return "", fmt.Errorf("no blended text for page %d", pageNum)
 	}
-
-	if errMsg := resp.Error(); errMsg != "" {
-		return "", fmt.Errorf("query error: %s", errMsg)
-	}
-
-	pages, ok := resp.Data["Page"].([]any)
-	if !ok || len(pages) == 0 {
-		return "", fmt.Errorf("page not found")
-	}
-
-	page, ok := pages[0].(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("invalid page format")
-	}
-
-	text, ok := page["blend_markdown"].(string)
-	if !ok || text == "" {
-		return "", fmt.Errorf("no blended text")
-	}
-
 	return text, nil
 }
 

@@ -34,8 +34,8 @@ func loadPageImageTool() providers.Tool {
 }
 
 func (t *ChapterFinderTools) loadPageImage(ctx context.Context, pageNum int, currentPageObservations string) (string, error) {
-	if pageNum < 1 || pageNum > t.totalPages {
-		return jsonError(fmt.Sprintf("Invalid page number: %d (book has %d pages)", pageNum, t.totalPages)), nil
+	if pageNum < 1 || pageNum > t.book.TotalPages {
+		return jsonError(fmt.Sprintf("Invalid page number: %d (book has %d pages)", pageNum, t.book.TotalPages)), nil
 	}
 
 	// If we already have a page loaded, require observations
@@ -55,7 +55,7 @@ func (t *ChapterFinderTools) loadPageImage(ctx context.Context, pageNum int, cur
 	}
 
 	// Load image file
-	imagePath := t.homeDir.SourceImagePath(t.bookID, pageNum)
+	imagePath := t.book.HomeDir.SourceImagePath(t.book.BookID, pageNum)
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
 		return jsonError(fmt.Sprintf("Failed to load page image: %v", err)), nil

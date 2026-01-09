@@ -45,16 +45,6 @@ func (j *Job) CreateLinkTocWorkUnits(ctx context.Context) []jobs.WorkUnit {
 
 // CreateEntryFinderWorkUnit creates an entry finder agent work unit.
 func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_finder.TocEntry) *jobs.WorkUnit {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		if logger := svcctx.LoggerFrom(ctx); logger != nil {
-			logger.Warn("defra client not in context for entry finder",
-				"book_id", j.Book.BookID,
-				"entry_doc_id", entry.DocID)
-		}
-		return nil
-	}
-
 	// Estimate book structure for back matter detection
 	bookStructure := &toc_entry_finder.BookStructure{
 		TotalPages:      j.Book.TotalPages,
@@ -64,11 +54,7 @@ func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 
 	// Create agent
 	ag := agents.NewTocEntryFinderAgent(ctx, agents.TocEntryFinderConfig{
-		BookID:        j.Book.BookID,
-		TotalPages:    j.Book.TotalPages,
-		DefraClient:   defraClient,
-		HomeDir:       j.Book.HomeDir,
-		PageReader:    j.Book, // Cached page data access
+		Book:          j.Book,
 		SystemPrompt:  j.GetPrompt(toc_entry_finder.PromptKey),
 		Entry:         entry,
 		BookStructure: bookStructure,

@@ -8,9 +8,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
-// Ensure BookState implements PageDataReader at compile time.
-var _ PageDataReader = (*BookState)(nil)
-
 // GetPageData returns cached page data, loading from DB if not cached.
 func (b *BookState) GetPageData(ctx context.Context, pageNum int) (*PageData, error) {
 	state := b.GetPage(pageNum)

@@ -28,8 +28,8 @@ func getPageOcrTool() providers.Tool {
 }
 
 func (t *ChapterFinderTools) getPageOcr(ctx context.Context, pageNum int) (string, error) {
-	if pageNum < 1 || pageNum > t.totalPages {
-		return jsonError(fmt.Sprintf("Invalid page number: %d (book has %d pages)", pageNum, t.totalPages)), nil
+	if pageNum < 1 || pageNum > t.book.TotalPages {
+		return jsonError(fmt.Sprintf("Invalid page number: %d (book has %d pages)", pageNum, t.book.TotalPages)), nil
 	}
 
 	text, err := t.getPageBlendedText(ctx, pageNum)
