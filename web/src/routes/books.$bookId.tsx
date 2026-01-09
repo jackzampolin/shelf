@@ -8,7 +8,6 @@ import {
   CollapsibleSection,
   TocSection,
   StructureSection,
-  AgentLogsSection,
   AgentLogModal,
   MetadataModal,
   JobHistorySection,
@@ -396,17 +395,6 @@ function BookDetailPage() {
 
             {/* Structure Section */}
             <StructureSection structure={detailedStatus.structure} bookId={bookId} metrics={detailedMetrics?.stages} />
-
-            {/* Agent Logs Section */}
-            {detailedStatus.agent_logs && detailedStatus.agent_logs.length > 0 && (
-              <AgentLogsSection
-                logs={detailedStatus.agent_logs}
-                onViewLog={(id) => {
-                  setSelectedAgentLogId(id)
-                  setAgentLogModalOpen(true)
-                }}
-              />
-            )}
           </div>
         </div>
       )}

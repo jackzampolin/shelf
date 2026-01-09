@@ -118,9 +118,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Start ToC linking if extraction is done
+	// Start ToC linking if extraction is done AND all pages are labeled
+	// ToC linker needs page labels to find chapter start pages
 	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
-	if j.Book.TocExtract.IsDone() && j.Book.TocLink.CanStart() {
+	if j.Book.TocExtract.IsDone() && j.AllPagesComplete() && j.Book.TocLink.CanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("starting ToC link operation",

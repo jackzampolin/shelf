@@ -22,6 +22,18 @@ interface AgentLog {
   error?: string
 }
 
+interface LLMCall {
+  id: string
+  timestamp: string
+  prompt_key: string
+  model: string
+  latency_ms: number
+  input_tokens: number
+  output_tokens: number
+  success: boolean
+  response?: string
+}
+
 export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionProps) {
   const [entriesExpanded, setEntriesExpanded] = useState(false)
   const [pipelineExpanded, setPipelineExpanded] = useState(true)
@@ -39,6 +51,19 @@ export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionP
     refetchInterval: 5000, // Poll for updates during processing
   })
 
+  // Fetch LLM calls for non-agent stages (pattern_analyzer, extract_toc)
+  const { data: llmCalls } = useQuery({
+    queryKey: ['book-llmcalls', bookId, 'toc-stages'],
+    queryFn: async () => {
+      const resp = await client.GET('/api/llmcalls', {
+        params: { query: { book_id: bookId, limit: 100 } }
+      })
+      return unwrap(resp)
+    },
+    enabled: pipelineExpanded,
+    refetchInterval: 5000,
+  })
+
   if (!toc) return null
 
   // Group agent logs by type
@@ -50,6 +75,20 @@ export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionP
       logsByType[type].push(log as AgentLog)
     }
   }
+
+  // Group LLM calls by prompt_key for non-agent stages
+  const llmCallsByPrompt: Record<string, LLMCall[]> = {}
+  if (llmCalls?.calls) {
+    for (const call of llmCalls.calls) {
+      const key = call.prompt_key || 'unknown'
+      if (!llmCallsByPrompt[key]) llmCallsByPrompt[key] = []
+      llmCallsByPrompt[key].push(call as LLMCall)
+    }
+  }
+
+  // Map prompt keys to display names for non-agent stages
+  const patternCalls = llmCallsByPrompt['agents.pattern_analyzer.system'] || []
+  const extractCalls = llmCallsByPrompt['stages.extract_toc.system'] || []
 
   const finderStatus: StatusType = toc.finder_complete ? 'complete' : toc.finder_failed ? 'failed' : toc.finder_started ? 'in_progress' : 'pending'
   const extractStatus: StatusType = toc.extract_complete ? 'complete' : toc.extract_failed ? 'failed' : toc.extract_started ? 'in_progress' : 'pending'
@@ -68,10 +107,10 @@ export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionP
   const discoverMetrics = metrics?.['toc-discover']
   const validateMetrics = metrics?.['toc-validate']
 
-  // Determine finalize sub-stage states
-  const hasPatternAnalysis = patternMetrics && patternMetrics.count > 0
-  const hasChapterDiscovery = discoverMetrics && discoverMetrics.count > 0
-  const hasGapValidation = validateMetrics && validateMetrics.count > 0
+  // Determine finalize sub-stage states based on LLM calls or agent runs
+  const hasPatternAnalysis = patternCalls.length > 0
+  const hasChapterDiscovery = (logsByType['chapter_finder']?.length || 0) > 0
+  const hasGapValidation = (logsByType['gap_investigator']?.length || 0) > 0
 
   return (
     <div className="border-t pt-4">
@@ -124,6 +163,7 @@ export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionP
                 detail={extractedCount > 0 ? `${extractedCount} entries` : undefined}
                 metrics={tocMetrics}
                 logs={logsByType['toc_extract']}
+                llmCalls={extractCalls}
                 onViewLog={onViewAgentLog}
               />
             </div>
@@ -150,11 +190,10 @@ export function TocSection({ toc, bookId, metrics, onViewAgentLog }: TocSectionP
                 <div className="flex items-center space-x-2 flex-wrap gap-y-2">
                   <PipelineStage
                     label="Pattern Analysis"
-                    status={hasPatternAnalysis ? 'complete' : finalizeStatus === 'pending' ? 'pending' : 'in_progress'}
+                    status={patternCalls.length > 0 ? 'complete' : finalizeStatus === 'pending' ? 'pending' : 'in_progress'}
                     metrics={patternMetrics}
-                    logs={logsByType['pattern_analyzer']}
+                    llmCalls={patternCalls}
                     compact
-                    onViewLog={onViewAgentLog}
                   />
 
                   {/* Conditional branch to Chapter Discovery */}
@@ -245,13 +284,15 @@ interface PipelineStageProps {
   detail?: string
   metrics?: StageMetrics
   logs?: AgentLog[]
+  llmCalls?: LLMCall[]
   compact?: boolean
   dimmed?: boolean
   showCallCount?: boolean
   onViewLog?: (logId: string) => void
+  onViewLLMCall?: (callId: string) => void
 }
 
-function PipelineStage({ label, status, detail, metrics, logs, compact, dimmed, showCallCount, onViewLog }: PipelineStageProps) {
+function PipelineStage({ label, status, detail, metrics, logs, llmCalls, compact, dimmed, showCallCount, onViewLog, onViewLLMCall }: PipelineStageProps) {
   const [expanded, setExpanded] = useState(false)
 
   const statusStyles = {
@@ -268,49 +309,76 @@ function PipelineStage({ label, status, detail, metrics, logs, compact, dimmed, 
     failed: '✕',
   }
 
-  const callCount = metrics?.count || logs?.length || 0
+  // Count runs - either agent logs or LLM calls
   const hasLogs = logs && logs.length > 0
+  const hasLLMCalls = llmCalls && llmCalls.length > 0
+  const callCount = (logs?.length || 0) + (llmCalls?.length || 0)
+  const hasExpandableContent = hasLogs || hasLLMCalls
 
   return (
     <div className={`relative ${dimmed ? 'opacity-40' : ''}`}>
       <button
-        onClick={() => hasLogs && setExpanded(!expanded)}
+        onClick={() => hasExpandableContent && setExpanded(!expanded)}
         className={`
           ${compact ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm'}
           rounded border ${statusStyles[status]}
           flex items-center space-x-1
-          ${hasLogs ? 'cursor-pointer hover:ring-2 hover:ring-blue-300' : 'cursor-default'}
+          ${hasExpandableContent ? 'cursor-pointer hover:ring-2 hover:ring-blue-300' : 'cursor-default'}
           transition-all
         `}
       >
         <span>{statusIcons[status]}</span>
         <span className="font-medium">{label}</span>
         {detail && <span className="opacity-75">({detail})</span>}
-        {showCallCount && callCount > 0 && (
-          <span className="ml-1 bg-white/50 px-1.5 rounded text-xs font-mono">{callCount} calls</span>
+        {callCount > 1 && (
+          <span className="ml-1 bg-white/50 px-1.5 rounded text-xs font-mono">
+            {showCallCount ? `${callCount} calls` : `×${callCount}`}
+          </span>
         )}
-        {!showCallCount && callCount > 1 && (
-          <span className="ml-1 bg-white/50 px-1 rounded text-xs font-mono">×{callCount}</span>
-        )}
-        {hasLogs && (
+        {hasExpandableContent && (
           <span className={`ml-1 transition-transform ${expanded ? 'rotate-180' : ''}`}>▾</span>
         )}
       </button>
 
       {/* Expanded call details */}
-      {expanded && hasLogs && (
+      {expanded && hasExpandableContent && (
         <div className="absolute top-full left-0 mt-1 z-10 bg-white border rounded-lg shadow-lg p-2 min-w-64 max-h-64 overflow-y-auto">
-          <div className="text-xs font-medium text-gray-500 mb-2">Agent Calls ({logs.length})</div>
-          <div className="space-y-1">
-            {logs.map((log, idx) => (
-              <AgentCallBadge
-                key={log.id || idx}
-                log={log}
-                index={idx + 1}
-                onView={onViewLog && log.id ? () => onViewLog(log.id) : undefined}
-              />
-            ))}
-          </div>
+          {/* Agent runs */}
+          {hasLogs && (
+            <>
+              <div className="text-xs font-medium text-gray-500 mb-2">Agent Runs ({logs.length})</div>
+              <div className="space-y-1">
+                {logs.map((log, idx) => (
+                  <AgentCallBadge
+                    key={log.id || idx}
+                    log={log}
+                    index={idx + 1}
+                    onView={onViewLog && log.id ? () => onViewLog(log.id) : undefined}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* LLM calls (for non-agent stages) */}
+          {hasLLMCalls && (
+            <>
+              <div className={`text-xs font-medium text-gray-500 mb-2 ${hasLogs ? 'mt-3 pt-2 border-t' : ''}`}>
+                LLM Calls ({llmCalls.length})
+              </div>
+              <div className="space-y-1">
+                {llmCalls.map((call, idx) => (
+                  <LLMCallBadge
+                    key={call.id || idx}
+                    call={call}
+                    index={idx + 1}
+                    onView={onViewLLMCall && call.id ? () => onViewLLMCall(call.id) : undefined}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
           {metrics && (
             <div className="mt-2 pt-2 border-t text-xs text-gray-500">
               <div className="flex justify-between">
@@ -372,6 +440,52 @@ function AgentCallBadge({ log, index, onView }: { log: AgentLog; index: number; 
     <div className={`
       flex items-center justify-between px-2 py-1 rounded text-xs
       ${log.success ? 'bg-green-50 text-green-700' : log.error ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}
+    `}>
+      {content}
+    </div>
+  )
+}
+
+function LLMCallBadge({ call, index, onView }: { call: LLMCall; index: number; onView?: () => void }) {
+  const latencySec = (call.latency_ms / 1000).toFixed(1)
+
+  const content = (
+    <>
+      <div className="flex items-center space-x-2">
+        <span className="font-mono text-gray-400">#{index}</span>
+        <span>{call.success ? '✓' : '✕'}</span>
+        <span className="truncate max-w-32" title={call.model}>{call.model.split('/').pop()}</span>
+      </div>
+      <div className="flex items-center space-x-2">
+        <span className="font-mono text-gray-500">{call.input_tokens}→{call.output_tokens}</span>
+        <span className="font-mono">{latencySec}s</span>
+        {onView && <span className="text-blue-500">→</span>}
+      </div>
+    </>
+  )
+
+  if (onView) {
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          onView()
+        }}
+        className={`
+          w-full flex items-center justify-between px-2 py-1 rounded text-xs
+          ${call.success ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-red-50 text-red-700 hover:bg-red-100'}
+          transition-colors cursor-pointer
+        `}
+      >
+        {content}
+      </button>
+    )
+  }
+
+  return (
+    <div className={`
+      flex items-center justify-between px-2 py-1 rounded text-xs
+      ${call.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}
     `}>
       {content}
     </div>
