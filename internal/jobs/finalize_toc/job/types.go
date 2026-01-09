@@ -64,6 +64,26 @@ type Job struct {
 
 // NewFromLoadResult creates a Job from a common.LoadBookResult.
 func NewFromLoadResult(result *common.LoadBookResult, linkedEntries []*LinkedTocEntry) *Job {
+	// Compute body range from linked entries (min/max of actual_page)
+	// This is the page range where ToC entries are linked
+	var minPage, maxPage int
+	for _, entry := range linkedEntries {
+		if entry.ActualPage != nil {
+			page := *entry.ActualPage
+			if minPage == 0 || page < minPage {
+				minPage = page
+			}
+			if page > maxPage {
+				maxPage = page
+			}
+		}
+	}
+	// Set body range on BookState for pattern analysis
+	if minPage > 0 && maxPage > 0 {
+		result.Book.BodyStart = minPage
+		result.Book.BodyEnd = maxPage
+	}
+
 	return &Job{
 		TrackedBaseJob: common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
 		TocDocID:       result.TocDocID,
