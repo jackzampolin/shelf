@@ -161,11 +161,8 @@ func (j *Job) SaveDiscoveredEntry(ctx context.Context, entryKey string, result *
 		return fmt.Errorf("entry not found: %s", entryKey)
 	}
 
-	// Get page document ID
-	pageDocID, err := j.getPageDocID(ctx, *result.ScanPage)
-	if err != nil {
-		return fmt.Errorf("failed to get page doc ID: %w", err)
-	}
+	// Get page document ID from BookState
+	pageDocID := j.getPageDocID(*result.ScanPage)
 
 	// Calculate sort order (insert between existing entries)
 	sortOrder := j.calculateSortOrder(*result.ScanPage)
@@ -199,7 +196,7 @@ func (j *Job) SaveDiscoveredEntry(ctx context.Context, entryKey string, result *
 	}
 
 	// Upsert: create if not exists, update if exists
-	_, err = defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData)
+	_, err := defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData)
 	if err != nil {
 		return fmt.Errorf("failed to upsert discovered entry: %w", err)
 	}
@@ -245,33 +242,13 @@ func (j *Job) calculateSortOrder(page int) int {
 	return page * 100
 }
 
-// getPageDocID returns the Page document ID for a given page number.
-func (j *Job) getPageDocID(ctx context.Context, pageNum int) (string, error) {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return "", fmt.Errorf("defra client not in context")
+// getPageDocID returns the Page document ID for a given page number from BookState.
+func (j *Job) getPageDocID(pageNum int) string {
+	state := j.Book.GetPage(pageNum)
+	if state == nil {
+		return ""
 	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
-			_docID
-		}
-	}`, j.Book.BookID, pageNum)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return "", err
-	}
-
-	if pages, ok := resp.Data["Page"].([]any); ok && len(pages) > 0 {
-		if page, ok := pages[0].(map[string]any); ok {
-			if docID, ok := page["_docID"].(string); ok {
-				return docID, nil
-			}
-		}
-	}
-
-	return "", nil
+	return state.GetPageDocID()
 }
 
 // convertDiscoverAgentUnits converts agent work units to job work units.

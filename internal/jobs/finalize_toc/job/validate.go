@@ -322,11 +322,8 @@ func (j *Job) ApplyGapFix(ctx context.Context, gapKey string, result *gap_invest
 			return nil
 		}
 
-		// Get page document ID
-		pageDocID, err := j.getPageDocID(ctx, result.ScanPage)
-		if err != nil {
-			return fmt.Errorf("failed to get page doc ID: %w", err)
-		}
+		// Get page document ID from BookState
+		pageDocID := j.getPageDocID(result.ScanPage)
 
 		// Calculate sort order
 		sortOrder := j.calculateSortOrder(result.ScanPage)
@@ -365,11 +362,8 @@ func (j *Job) ApplyGapFix(ctx context.Context, gapKey string, result *gap_invest
 			return nil
 		}
 
-		// Get page document ID
-		pageDocID, err := j.getPageDocID(ctx, result.ScanPage)
-		if err != nil {
-			return fmt.Errorf("failed to get page doc ID: %w", err)
-		}
+		// Get page document ID from BookState
+		pageDocID := j.getPageDocID(result.ScanPage)
 
 		if pageDocID != "" {
 			sink.Send(defra.WriteOp{

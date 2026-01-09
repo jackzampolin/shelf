@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/google/uuid"
 
@@ -26,17 +25,11 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	// Get ToC page range
 	tocStartPage, tocEndPage := book.GetTocPageRange()
 
-	// Load ToC pages
-	tocPages, err := LoadTocPages(ctx, book.BookID, tocStartPage, tocEndPage)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to load ToC pages", "error", err)
-		}
-		return nil, ""
-	}
+	// Load ToC pages from BookState
+	tocPages := LoadTocPagesFromState(book, tocStartPage, tocEndPage)
 	if len(tocPages) == 0 {
 		if logger != nil {
-			logger.Warn("no ToC pages found",
+			logger.Warn("no ToC pages found in state",
 				"start_page", tocStartPage,
 				"end_page", tocEndPage)
 		}
@@ -70,78 +63,31 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	return unit, unitID
 }
 
-// LoadTocPages loads ToC page content for extraction from DefraDB.
-func LoadTocPages(ctx context.Context, bookID string, startPage, endPage int) ([]extract_toc.ToCPage, error) {
-	logger := svcctx.LoggerFrom(ctx)
-
+// LoadTocPagesFromState loads ToC page content from BookState.
+func LoadTocPagesFromState(book *BookState, startPage, endPage int) []extract_toc.ToCPage {
 	if startPage == 0 || endPage == 0 {
-		return nil, fmt.Errorf("ToC page range not set")
-	}
-
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return nil, fmt.Errorf("defra client not in context")
-	}
-
-	// Build page filter - use _in for range or _eq for single page
-	var pageFilter string
-	if startPage == endPage {
-		pageFilter = fmt.Sprintf("page_num: {_eq: %d}", startPage)
-	} else {
-		var pages []string
-		for p := startPage; p <= endPage; p++ {
-			pages = append(pages, fmt.Sprintf("%d", p))
-		}
-		pageFilter = fmt.Sprintf("page_num: {_in: [%s]}", strings.Join(pages, ", "))
-	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {
-			book_id: {_eq: "%s"},
-			%s
-		}, order: {page_num: ASC}) {
-			page_num
-			blend_markdown
-		}
-	}`, bookID, pageFilter)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	rawPages, ok := resp.Data["Page"].([]any)
-	if !ok {
-		return nil, fmt.Errorf("no pages found in response")
-	}
-
-	if logger != nil {
-		logger.Debug("LoadTocPages query result", "raw_pages_count", len(rawPages))
+		return nil
 	}
 
 	var tocPages []extract_toc.ToCPage
-	for _, p := range rawPages {
-		page, ok := p.(map[string]any)
-		if !ok {
+	for pageNum := startPage; pageNum <= endPage; pageNum++ {
+		state := book.GetPage(pageNum)
+		if state == nil {
 			continue
 		}
 
-		var tp extract_toc.ToCPage
-		if pn, ok := page["page_num"].(float64); ok {
-			tp.PageNum = int(pn)
-		}
-		if bm, ok := page["blend_markdown"].(string); ok {
-			tp.OCRText = bm
+		blendMarkdown := state.GetBlendedText()
+		if blendMarkdown == "" {
+			continue
 		}
 
-		if tp.OCRText != "" {
-			tocPages = append(tocPages, tp)
-		} else if logger != nil {
-			logger.Debug("page has no blend_markdown", "page_num", tp.PageNum)
-		}
+		tocPages = append(tocPages, extract_toc.ToCPage{
+			PageNum: pageNum,
+			OCRText: blendMarkdown,
+		})
 	}
 
-	return tocPages, nil
+	return tocPages
 }
 
 // LoadTocStructureSummary loads the structure summary from the ToC finder.
@@ -491,43 +437,9 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 	return nil
 }
 
-// GetPageDocID returns the Page document ID for a given book and page number.
-func GetPageDocID(ctx context.Context, bookID string, pageNum int) (string, error) {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return "", fmt.Errorf("defra client not in context")
-	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
-			_docID
-		}
-	}`, bookID, pageNum)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return "", err
-	}
-
-	if pages, ok := resp.Data["Page"].([]any); ok && len(pages) > 0 {
-		if page, ok := pages[0].(map[string]any); ok {
-			if docID, ok := page["_docID"].(string); ok {
-				return docID, nil
-			}
-		}
-	}
-
-	if logger := svcctx.LoggerFrom(ctx); logger != nil {
-		logger.Debug("page not found in database",
-			"book_id", bookID,
-			"page_num", pageNum)
-	}
-	return "", nil
-}
-
 // SaveTocEntryResult updates a TocEntry with the found page link.
 // Used by link_toc operations in both process_book and standalone link_toc jobs.
-func SaveTocEntryResult(ctx context.Context, bookID, entryDocID string, result *toc_entry_finder.Result) error {
+func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string, result *toc_entry_finder.Result) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
 		return fmt.Errorf("defra sink not in context")
@@ -536,13 +448,13 @@ func SaveTocEntryResult(ctx context.Context, bookID, entryDocID string, result *
 	update := map[string]any{}
 
 	if result.ScanPage != nil {
-		// Need to get the Page document ID for this scan page
-		pageDocID, err := GetPageDocID(ctx, bookID, *result.ScanPage)
-		if err != nil {
-			return fmt.Errorf("failed to get page doc ID: %w", err)
-		}
-		if pageDocID != "" {
-			update["actual_page_id"] = pageDocID
+		// Get page doc ID from BookState
+		state := book.GetPage(*result.ScanPage)
+		if state != nil {
+			pageDocID := state.GetPageDocID()
+			if pageDocID != "" {
+				update["actual_page_id"] = pageDocID
+			}
 		}
 	}
 

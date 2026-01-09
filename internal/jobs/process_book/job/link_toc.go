@@ -124,7 +124,7 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 		if agentResult != nil && agentResult.Success {
 			if entryResult, ok := agentResult.ToolResult.(*toc_entry_finder.Result); ok {
 				// Update TocEntry with actual_page using common utility
-				if err := common.SaveTocEntryResult(ctx, j.Book.BookID, info.EntryDocID, entryResult); err != nil {
+				if err := common.SaveTocEntryResult(ctx, j.Book, info.EntryDocID, entryResult); err != nil {
 					return nil, fmt.Errorf("failed to save entry result: %w", err)
 				}
 			}
