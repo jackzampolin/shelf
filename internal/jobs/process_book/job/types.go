@@ -2,7 +2,6 @@ package job
 
 import (
 	"github.com/jackzampolin/shelf/internal/agent"
-	page_pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/page_pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
@@ -133,10 +132,6 @@ type Job struct {
 	// ToC agent (stateful during execution)
 	TocAgent *agent.Agent
 	TocDocID string
-
-	// Pattern analysis intermediate results (used to create boundaries work unit)
-	PageNumberPattern *page_pattern_analyzer.PageNumberPattern
-	ChapterPatterns   []page_pattern_analyzer.ChapterPattern
 
 	// Link ToC entry agents (one per ToC entry)
 	LinkTocEntries     []*toc_entry_finder.TocEntry

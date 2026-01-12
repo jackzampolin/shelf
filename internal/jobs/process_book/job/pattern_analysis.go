@@ -88,8 +88,8 @@ func (j *Job) handlePageNumberPatternComplete(ctx context.Context, result jobs.W
 		return nil, fmt.Errorf("failed to parse page number pattern result: %w", err)
 	}
 
-	// Store result in job state
-	j.PageNumberPattern = wrapper.PageNumberPattern
+	// Store result in book state (thread-safe)
+	j.Book.SetPageNumberPattern(wrapper.PageNumberPattern)
 
 	// Check if we can create boundaries work unit
 	return j.maybeCreateBoundariesWorkUnit(ctx), nil
@@ -111,8 +111,8 @@ func (j *Job) handleChapterPatternsComplete(ctx context.Context, result jobs.Wor
 		return nil, fmt.Errorf("failed to parse chapter patterns result: %w", err)
 	}
 
-	// Store result in job state
-	j.ChapterPatterns = wrapper.ChapterPatterns
+	// Store result in book state (thread-safe)
+	j.Book.SetChapterPatterns(wrapper.ChapterPatterns)
 
 	// Check if we can create boundaries work unit
 	return j.maybeCreateBoundariesWorkUnit(ctx), nil
@@ -134,11 +134,11 @@ func (j *Job) handleBodyBoundariesComplete(ctx context.Context, result jobs.Work
 		return nil, fmt.Errorf("failed to parse body boundaries result: %w", err)
 	}
 
-	// Aggregate all pattern analysis results
+	// Aggregate all pattern analysis results (thread-safe access)
 	aggregatedResult := &page_pattern_analyzer.Result{
-		PageNumberPattern: j.PageNumberPattern,
+		PageNumberPattern: j.Book.GetPageNumberPattern(),
 		BodyBoundaries:    wrapper.BodyBoundaries,
-		ChapterPatterns:   j.ChapterPatterns,
+		ChapterPatterns:   j.Book.GetChapterPatterns(),
 		Reasoning:         "Pattern analysis complete",
 	}
 
@@ -163,8 +163,11 @@ func (j *Job) handleBodyBoundariesComplete(ctx context.Context, result jobs.Work
 
 // maybeCreateBoundariesWorkUnit creates the boundaries work unit if both prerequisites are complete.
 func (j *Job) maybeCreateBoundariesWorkUnit(ctx context.Context) []jobs.WorkUnit {
-	// Check if both page numbers and chapters are available
-	if j.PageNumberPattern == nil || j.ChapterPatterns == nil {
+	// Check if both page numbers and chapters are available (thread-safe access)
+	pageNumberPattern := j.Book.GetPageNumberPattern()
+	chapterPatterns := j.Book.GetChapterPatterns()
+
+	if pageNumberPattern == nil || chapterPatterns == nil {
 		return nil
 	}
 
@@ -172,8 +175,8 @@ func (j *Job) maybeCreateBoundariesWorkUnit(ctx context.Context) []jobs.WorkUnit
 	unit, unitID := common.CreateBodyBoundariesWorkUnit(
 		ctx,
 		j,
-		j.PageNumberPattern,
-		j.ChapterPatterns,
+		pageNumberPattern,
+		chapterPatterns,
 	)
 
 	if unit != nil {

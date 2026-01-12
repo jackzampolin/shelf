@@ -3,6 +3,7 @@ package common
 import (
 	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
 	gap_investigator "github.com/jackzampolin/shelf/internal/agents/gap_investigator"
+	page_pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/page_pattern_analyzer"
 	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
@@ -57,6 +58,20 @@ func GetEmbeddedDefault(key string) string {
 	case pattern_analyzer.PromptKey:
 		return pattern_analyzer.SystemPrompt()
 	case pattern_analyzer.UserPromptKey:
+		return "" // User prompts are templates, require data to render
+
+	// Page Pattern Analyzer prompts
+	case page_pattern_analyzer.SystemPageNumbersKey:
+		return page_pattern_analyzer.SystemPageNumbersPrompt()
+	case page_pattern_analyzer.UserPageNumbersKey:
+		return "" // User prompts are templates, require data to render
+	case page_pattern_analyzer.SystemChaptersKey:
+		return page_pattern_analyzer.SystemChaptersPrompt()
+	case page_pattern_analyzer.UserChaptersKey:
+		return "" // User prompts are templates, require data to render
+	case page_pattern_analyzer.SystemBoundariesKey:
+		return page_pattern_analyzer.SystemBoundariesPrompt()
+	case page_pattern_analyzer.UserBoundariesKey:
 		return "" // User prompts are templates, require data to render
 
 	// Chapter Finder prompts

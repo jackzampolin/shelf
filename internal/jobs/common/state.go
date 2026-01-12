@@ -447,6 +447,14 @@ type BookState struct {
 	// Pattern analysis results (set after pattern analysis completes)
 	PatternAnalysisResult *PagePatternResult
 
+	// Pattern analysis intermediate results (mutable - use accessor methods)
+	// These are populated during the 3-phase pattern analysis process:
+	//   Phase 1: PageNumberPattern and ChapterPatterns are set independently
+	//   Phase 2: Both are used to create the boundaries work unit
+	//   Phase 3: All three are aggregated into PatternAnalysisResult
+	PageNumberPattern *page_pattern_analyzer.PageNumberPattern
+	ChapterPatterns   []page_pattern_analyzer.ChapterPattern
+
 	// Body page range (set during finalize phase)
 	BodyStart int
 	BodyEnd   int
@@ -687,4 +695,32 @@ func (b *BookState) GetUnlinkedTocEntries() []*toc_entry_finder.TocEntry {
 	defer b.mu.RUnlock()
 	// TocEntries are already filtered to unlinked during load
 	return b.TocEntries
+}
+
+// SetPageNumberPattern sets the page number pattern (thread-safe).
+func (b *BookState) SetPageNumberPattern(pattern *page_pattern_analyzer.PageNumberPattern) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.PageNumberPattern = pattern
+}
+
+// GetPageNumberPattern gets the page number pattern (thread-safe).
+func (b *BookState) GetPageNumberPattern() *page_pattern_analyzer.PageNumberPattern {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.PageNumberPattern
+}
+
+// SetChapterPatterns sets the chapter patterns (thread-safe).
+func (b *BookState) SetChapterPatterns(patterns []page_pattern_analyzer.ChapterPattern) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.ChapterPatterns = patterns
+}
+
+// GetChapterPatterns gets the chapter patterns (thread-safe).
+func (b *BookState) GetChapterPatterns() []page_pattern_analyzer.ChapterPattern {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.ChapterPatterns
 }
