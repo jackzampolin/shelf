@@ -1,9 +1,12 @@
 package job
 
 import (
+	"fmt"
+
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
+	"github.com/jackzampolin/shelf/internal/types"
 )
 
 // MaxRetries is the maximum number of retries for finalize ToC operations.
@@ -131,13 +134,13 @@ func buildPagePatternContext(book *common.BookState) PagePatternContext {
 
 		// Chapter patterns from running header clusters
 		for _, cp := range par.ChapterPatterns {
-			detected := DetectedChapter{
+			detected := types.DetectedChapter{
 				PageNum:       cp.StartPage,
 				RunningHeader: cp.RunningHeader,
 				ChapterTitle:  cp.ChapterTitle,
 				ChapterNumber: cp.ChapterNumber,
-				Source:        "pattern_analysis",
-				Confidence:    cp.Confidence,
+				Source:        types.SourcePatternAnalysis,
+				Confidence:    types.ParseConfidenceLevel(cp.Confidence),
 			}
 			ctx.ChapterPatterns = append(ctx.ChapterPatterns, detected)
 		}
@@ -227,17 +230,6 @@ type CandidateHeading struct {
 	Level   int
 }
 
-// DetectedChapter represents a chapter detected from page pattern analysis or labels.
-// This is GROUND TRUTH from actual page content, more reliable than ToC-based patterns.
-type DetectedChapter struct {
-	PageNum       int     // Page where chapter starts
-	RunningHeader string  // Running header text from page pattern analysis
-	ChapterTitle  string  // Chapter title if detected
-	ChapterNumber *int    // Chapter number if numeric
-	Source        string  // "pattern_analysis" or "label"
-	Confidence    string  // "high", "medium", "low"
-}
-
 // PagePatternContext holds page pattern analysis data for enhanced ToC finalization.
 type PagePatternContext struct {
 	// Body boundaries from page pattern analysis
@@ -246,8 +238,22 @@ type PagePatternContext struct {
 	HasBoundaries bool
 
 	// Detected chapters from running header clusters
-	ChapterPatterns []DetectedChapter
+	// Uses types.DetectedChapter for consistency across packages
+	ChapterPatterns []types.DetectedChapter
 
 	// Pages marked as chapter starts from labeling
 	ChapterStartPages []int
+}
+
+// Validate checks that the PagePatternContext has valid values.
+func (ctx *PagePatternContext) Validate() error {
+	if ctx.HasBoundaries {
+		if ctx.BodyStartPage <= 0 || ctx.BodyEndPage <= 0 {
+			return fmt.Errorf("page boundaries must be positive when HasBoundaries is true")
+		}
+		if ctx.BodyStartPage > ctx.BodyEndPage {
+			return fmt.Errorf("BodyStartPage (%d) cannot exceed BodyEndPage (%d)", ctx.BodyStartPage, ctx.BodyEndPage)
+		}
+	}
+	return nil
 }
