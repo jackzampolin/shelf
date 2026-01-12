@@ -191,6 +191,8 @@ func (e *ListPagesEndpoint) Command(_ func() string) *cobra.Command {
 type PageLabels struct {
 	PageNumberLabel string `json:"page_number_label,omitempty"`
 	RunningHeader   string `json:"running_header,omitempty"`
+	ContentType     string `json:"content_type,omitempty"`
+	IsChapterStart  bool   `json:"is_chapter_start"`
 	IsTocPage       bool   `json:"is_toc_page"`
 	IsFrontMatter   bool   `json:"is_front_matter"`
 	IsBackMatter    bool   `json:"is_back_matter"`
@@ -274,6 +276,8 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 			blend_confidence
 			page_number_label
 			running_header
+			content_type
+			is_chapter_start
 			is_toc_page
 			is_front_matter
 			is_back_matter
@@ -333,6 +337,12 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	if rh, ok := m["running_header"].(string); ok {
 		response.Labels.RunningHeader = rh
+	}
+	if ct, ok := m["content_type"].(string); ok {
+		response.Labels.ContentType = ct
+	}
+	if ics, ok := m["is_chapter_start"].(bool); ok {
+		response.Labels.IsChapterStart = ics
 	}
 	if itp, ok := m["is_toc_page"].(bool); ok {
 		response.Labels.IsTocPage = itp

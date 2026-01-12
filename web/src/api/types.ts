@@ -2809,6 +2809,7 @@ export interface components {
             created_at?: string;
             id?: string;
             page_count?: number;
+            page_pattern_analysis_json?: string;
             status?: string;
             title?: string;
         };
@@ -2908,8 +2909,22 @@ export interface components {
             toc?: components["schemas"]["internal_server_endpoints.ToCStatus"];
             total_pages?: number;
         };
+        "internal_server_endpoints.DiscoveredPattern": {
+            heading_format?: string;
+            level?: number;
+            level_name?: string;
+            pattern_type?: string;
+            range_end?: string;
+            range_start?: string;
+            reasoning?: string;
+        };
         "internal_server_endpoints.ErrorResponse": {
             error?: string;
+        };
+        "internal_server_endpoints.ExcludedRange": {
+            end_page?: number;
+            reason?: string;
+            start_page?: number;
         };
         "internal_server_endpoints.GetJobResponse": {
             _docID?: string;
@@ -3035,7 +3050,9 @@ export interface components {
             text?: string;
         };
         "internal_server_endpoints.PageLabels": {
+            content_type?: string;
             is_back_matter?: boolean;
+            is_chapter_start?: boolean;
             is_front_matter?: boolean;
             is_toc_page?: boolean;
             page_number_label?: string;
@@ -3052,6 +3069,11 @@ export interface components {
             label_complete?: boolean;
             ocr_complete?: boolean;
             page_num?: number;
+        };
+        "internal_server_endpoints.PatternAnalysisResult": {
+            excluded_ranges?: components["schemas"]["internal_server_endpoints.ExcludedRange"][];
+            patterns?: components["schemas"]["internal_server_endpoints.DiscoveredPattern"][];
+            reasoning?: string;
         };
         "internal_server_endpoints.PromptResponse": {
             description?: string;
@@ -3149,12 +3171,19 @@ export interface components {
         };
         "internal_server_endpoints.ToCStatus": {
             cost_usd?: number;
+            /** @description All entries discovered */
+            discover_complete?: boolean;
             end_page?: number;
             entries?: components["schemas"]["internal_server_endpoints.ToCEntry"][];
+            /** @description Actually discovered (source="discovered") */
             entries_discovered?: number;
             entries_linked?: number;
+            /** @description From pattern analysis (how many should be discovered) */
+            entries_to_find?: number;
             /** @description Entries (when extracted) */
             entry_count?: number;
+            /** @description Number of excluded page ranges */
+            excluded_ranges?: number;
             extract_complete?: boolean;
             extract_failed?: boolean;
             /** @description Extract stage */
@@ -3162,7 +3191,7 @@ export interface components {
             finalize_complete?: boolean;
             finalize_failed?: boolean;
             finalize_retries?: number;
-            /** @description Finalize stage */
+            /** @description Finalize stage (overall) */
             finalize_started?: boolean;
             finder_complete?: boolean;
             finder_failed?: boolean;
@@ -3174,7 +3203,15 @@ export interface components {
             link_retries?: number;
             /** @description Link stage */
             link_started?: boolean;
+            /** @description Full pattern analysis result */
+            pattern_analysis?: components["schemas"]["internal_server_endpoints.PatternAnalysisResult"];
+            /** @description Finalize sub-phases: Pattern Analysis → Chapter Discovery → Gap Validation */
+            pattern_complete?: boolean;
+            /** @description Number of patterns discovered */
+            patterns_found?: number;
             start_page?: number;
+            /** @description Gap validation done (same as FinalizeComplete for now) */
+            validate_complete?: boolean;
         };
         "internal_server_endpoints.UpdateJobRequest": {
             error?: string;

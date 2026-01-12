@@ -329,6 +329,8 @@ definitions:
         type: string
       page_count:
         type: integer
+      page_pattern_analysis_json:
+        type: string
       status:
         type: string
       title:
@@ -524,10 +526,36 @@ definitions:
       total_pages:
         type: integer
     type: object
+  internal_server_endpoints.DiscoveredPattern:
+    properties:
+      heading_format:
+        type: string
+      level:
+        type: integer
+      level_name:
+        type: string
+      pattern_type:
+        type: string
+      range_end:
+        type: string
+      range_start:
+        type: string
+      reasoning:
+        type: string
+    type: object
   internal_server_endpoints.ErrorResponse:
     properties:
       error:
         type: string
+    type: object
+  internal_server_endpoints.ExcludedRange:
+    properties:
+      end_page:
+        type: integer
+      reason:
+        type: string
+      start_page:
+        type: integer
     type: object
   internal_server_endpoints.GetJobResponse:
     properties:
@@ -758,7 +786,11 @@ definitions:
     type: object
   internal_server_endpoints.PageLabels:
     properties:
+      content_type:
+        type: string
       is_back_matter:
+        type: boolean
+      is_chapter_start:
         type: boolean
       is_front_matter:
         type: boolean
@@ -790,6 +822,19 @@ definitions:
         type: boolean
       page_num:
         type: integer
+    type: object
+  internal_server_endpoints.PatternAnalysisResult:
+    properties:
+      excluded_ranges:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.ExcludedRange'
+        type: array
+      patterns:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.DiscoveredPattern'
+        type: array
+      reasoning:
+        type: string
     type: object
   internal_server_endpoints.PromptResponse:
     properties:
@@ -968,6 +1013,9 @@ definitions:
     properties:
       cost_usd:
         type: number
+      discover_complete:
+        description: All entries discovered
+        type: boolean
       end_page:
         type: integer
       entries:
@@ -975,11 +1023,18 @@ definitions:
           $ref: '#/definitions/internal_server_endpoints.ToCEntry'
         type: array
       entries_discovered:
+        description: Actually discovered (source="discovered")
         type: integer
       entries_linked:
         type: integer
+      entries_to_find:
+        description: From pattern analysis (how many should be discovered)
+        type: integer
       entry_count:
         description: Entries (when extracted)
+        type: integer
+      excluded_ranges:
+        description: Number of excluded page ranges
         type: integer
       extract_complete:
         type: boolean
@@ -995,7 +1050,7 @@ definitions:
       finalize_retries:
         type: integer
       finalize_started:
-        description: Finalize stage
+        description: Finalize stage (overall)
         type: boolean
       finder_complete:
         type: boolean
@@ -1015,8 +1070,22 @@ definitions:
       link_started:
         description: Link stage
         type: boolean
+      pattern_analysis:
+        allOf:
+        - $ref: '#/definitions/internal_server_endpoints.PatternAnalysisResult'
+        description: Full pattern analysis result
+      pattern_complete:
+        description: 'Finalize sub-phases: Pattern Analysis → Chapter Discovery →
+          Gap Validation'
+        type: boolean
+      patterns_found:
+        description: Number of patterns discovered
+        type: integer
       start_page:
         type: integer
+      validate_complete:
+        description: Gap validation done (same as FinalizeComplete for now)
+        type: boolean
     type: object
   internal_server_endpoints.UpdateJobRequest:
     properties:

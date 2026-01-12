@@ -2526,6 +2526,9 @@ const docTemplate = `{
                 "page_count": {
                     "type": "integer"
                 },
+                "page_pattern_analysis_json": {
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -2831,11 +2834,51 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_server_endpoints.DiscoveredPattern": {
+            "type": "object",
+            "properties": {
+                "heading_format": {
+                    "type": "string"
+                },
+                "level": {
+                    "type": "integer"
+                },
+                "level_name": {
+                    "type": "string"
+                },
+                "pattern_type": {
+                    "type": "string"
+                },
+                "range_end": {
+                    "type": "string"
+                },
+                "range_start": {
+                    "type": "string"
+                },
+                "reasoning": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_server_endpoints.ErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_server_endpoints.ExcludedRange": {
+            "type": "object",
+            "properties": {
+                "end_page": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "start_page": {
+                    "type": "integer"
                 }
             }
         },
@@ -3190,7 +3233,13 @@ const docTemplate = `{
         "internal_server_endpoints.PageLabels": {
             "type": "object",
             "properties": {
+                "content_type": {
+                    "type": "string"
+                },
                 "is_back_matter": {
+                    "type": "boolean"
+                },
+                "is_chapter_start": {
                     "type": "boolean"
                 },
                 "is_front_matter": {
@@ -3238,6 +3287,26 @@ const docTemplate = `{
                 },
                 "page_num": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_server_endpoints.PatternAnalysisResult": {
+            "type": "object",
+            "properties": {
+                "excluded_ranges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.ExcludedRange"
+                    }
+                },
+                "patterns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.DiscoveredPattern"
+                    }
+                },
+                "reasoning": {
+                    "type": "string"
                 }
             }
         },
@@ -3513,6 +3582,10 @@ const docTemplate = `{
                 "cost_usd": {
                     "type": "number"
                 },
+                "discover_complete": {
+                    "description": "All entries discovered",
+                    "type": "boolean"
+                },
                 "end_page": {
                     "type": "integer"
                 },
@@ -3523,13 +3596,22 @@ const docTemplate = `{
                     }
                 },
                 "entries_discovered": {
+                    "description": "Actually discovered (source=\"discovered\")",
                     "type": "integer"
                 },
                 "entries_linked": {
                     "type": "integer"
                 },
+                "entries_to_find": {
+                    "description": "From pattern analysis (how many should be discovered)",
+                    "type": "integer"
+                },
                 "entry_count": {
                     "description": "Entries (when extracted)",
+                    "type": "integer"
+                },
+                "excluded_ranges": {
+                    "description": "Number of excluded page ranges",
                     "type": "integer"
                 },
                 "extract_complete": {
@@ -3552,7 +3634,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "finalize_started": {
-                    "description": "Finalize stage",
+                    "description": "Finalize stage (overall)",
                     "type": "boolean"
                 },
                 "finder_complete": {
@@ -3581,8 +3663,28 @@ const docTemplate = `{
                     "description": "Link stage",
                     "type": "boolean"
                 },
+                "pattern_analysis": {
+                    "description": "Full pattern analysis result",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_server_endpoints.PatternAnalysisResult"
+                        }
+                    ]
+                },
+                "pattern_complete": {
+                    "description": "Finalize sub-phases: Pattern Analysis → Chapter Discovery → Gap Validation",
+                    "type": "boolean"
+                },
+                "patterns_found": {
+                    "description": "Number of patterns discovered",
+                    "type": "integer"
+                },
                 "start_page": {
                     "type": "integer"
+                },
+                "validate_complete": {
+                    "description": "Gap validation done (same as FinalizeComplete for now)",
+                    "type": "boolean"
                 }
             }
         },
