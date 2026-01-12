@@ -3473,6 +3473,17 @@ const docTemplate = `{
                             "type": "number"
                         }
                     }
+                },
+                "pattern_analysis": {
+                    "type": "object",
+                    "properties": {
+                        "complete": {
+                            "type": "boolean"
+                        },
+                        "cost_usd": {
+                            "type": "number"
+                        }
+                    }
                 }
             }
         },

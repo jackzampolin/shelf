@@ -3131,6 +3131,10 @@ export interface components {
                 total?: number;
                 total_cost_usd?: number;
             };
+            pattern_analysis?: {
+                complete?: boolean;
+                cost_usd?: number;
+            };
         };
         "internal_server_endpoints.StartJobRequest": {
             /** @description Optional: force restart even if already complete */

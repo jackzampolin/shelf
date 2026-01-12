@@ -942,6 +942,13 @@ definitions:
           total_cost_usd:
             type: number
         type: object
+      pattern_analysis:
+        properties:
+          complete:
+            type: boolean
+          cost_usd:
+            type: number
+        type: object
     type: object
   internal_server_endpoints.StartJobRequest:
     properties:

@@ -59,6 +59,10 @@ type StageProgress struct {
 		Total    int     `json:"total"`
 		CostUSD  float64 `json:"cost_usd"`
 	} `json:"blend"`
+	PatternAnalysis struct {
+		Complete bool    `json:"complete"`
+		CostUSD  float64 `json:"cost_usd"`
+	} `json:"pattern_analysis"`
 	Label struct {
 		Complete int     `json:"complete"`
 		Total    int     `json:"total"`
@@ -285,6 +289,8 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			metadata_started
 			metadata_complete
 			metadata_failed
+			pattern_analysis_started
+			pattern_analysis_complete
 			structure_started
 			structure_complete
 			structure_failed
@@ -313,6 +319,11 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			}
 			if v, ok := book["metadata_failed"].(bool); ok {
 				resp.Metadata.Failed = v
+			}
+
+			// Pattern Analysis status
+			if v, ok := book["pattern_analysis_complete"].(bool); ok {
+				resp.Stages.PatternAnalysis.Complete = v
 			}
 
 			// If metadata is complete, include the data
@@ -669,6 +680,11 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			// Blend cost
 			if cost, ok := costByOp["blend"]; ok {
 				resp.Stages.Blend.CostUSD = cost
+			}
+
+			// Pattern Analysis cost
+			if cost, ok := costByOp["pattern_analysis"]; ok {
+				resp.Stages.PatternAnalysis.CostUSD = cost
 			}
 
 			// Label cost
