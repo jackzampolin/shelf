@@ -1,0 +1,50 @@
+type Book {
+    title: String
+    author: String
+    authors: [String]
+    page_count: Int
+    status: String
+    created_at: DateTime
+
+    # Metadata from agent
+    isbn: String
+    lccn: String
+    publisher: String
+    publication_year: Int
+    language: String
+    description: String
+    subjects: [String]
+
+    # Enrichment (Open Library)
+    cover_url: String
+    open_library_id: String
+
+    # Processing state
+    metadata_started: Boolean
+    metadata_complete: Boolean
+    metadata_failed: Boolean
+    metadata_retries: Int
+
+    # Structure processing state
+    structure_started: Boolean
+    structure_complete: Boolean
+    structure_failed: Boolean
+    structure_retries: Int
+
+    # Structure stats
+    total_chapters: Int
+    total_paragraphs: Int
+    total_words: Int
+
+    # Pattern analysis from finalize_toc (JSON)
+    # Contains: discovered_patterns, excluded_ranges, entries_to_find, reasoning
+    pattern_analysis_json: String
+
+    # Relationships
+    # One-to-many: Book has many Pages
+    pages: [Page]
+    # One-to-one: Book has one ToC (@primary on this side)
+    toc: ToC @primary
+    # One-to-many: Book has many Chapters
+    chapters: [Chapter]
+}

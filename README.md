@@ -23,19 +23,26 @@ uv pip install -e .
 uv run python shelf.py --help
 ```
 
-## Go Implementation (In Progress)
+## Go Implementation
 
 The Go rewrite lives in the `go-rewrite` branch. Key improvements:
 - DefraDB for data storage with versioning and attribution
-- Server-centric job architecture
-- Parallel provider execution
-- Clean metrics from the ground up
+- Server-centric job architecture with rate-limited workers
+- Parallel provider execution (OpenRouter, Mistral, DeepInfra)
+- Hot-reloadable configuration
+- Clean job/worker separation
 
 ```bash
-# Go setup (coming soon)
+# Go setup
 git checkout go-rewrite
 go build -o shelf ./cmd/shelf
 ./shelf --help
+
+# Run the server (starts DefraDB container automatically)
+./shelf serve
+
+# Run tests
+go test ./...
 ```
 
 ## Documentation

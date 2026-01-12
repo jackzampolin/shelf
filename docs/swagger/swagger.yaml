@@ -1,0 +1,2412 @@
+basePath: /
+definitions:
+  github_com_jackzampolin_shelf_internal_config.Entry:
+    properties:
+      _docID:
+        description: DefraDB document ID
+        type: string
+      description:
+        type: string
+      key:
+        type: string
+      value: {}
+    type: object
+  github_com_jackzampolin_shelf_internal_jobs.ProviderProgress:
+    properties:
+      completed:
+        description: Completed during this job execution
+        type: integer
+      completedAtStart:
+        description: Already completed before job started (from DefraDB)
+        type: integer
+      failed:
+        description: Failed during this job execution
+        type: integer
+      queued:
+        description: Currently queued/in-flight
+        type: integer
+      totalExpected:
+        description: Total work units expected for this provider
+        type: integer
+    type: object
+  github_com_jackzampolin_shelf_internal_jobs.Record:
+    properties:
+      _docID:
+        type: string
+      book_id:
+        type: string
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error:
+        type: string
+      job_type:
+        type: string
+      metadata:
+        additionalProperties: {}
+        type: object
+      started_at:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Status'
+    type: object
+  github_com_jackzampolin_shelf_internal_jobs.Status:
+    enum:
+    - queued
+    - running
+    - completed
+    - failed
+    - cancelled
+    type: string
+    x-enum-varnames:
+    - StatusQueued
+    - StatusRunning
+    - StatusCompleted
+    - StatusFailed
+    - StatusCancelled
+  github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo:
+    properties:
+      queue_depth:
+        type: integer
+      rate_limiter:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_providers.RateLimiterStatus'
+      type:
+        type: string
+    type: object
+  github_com_jackzampolin_shelf_internal_llmcall.Call:
+    properties:
+      book_id:
+        description: Context references
+        type: string
+      error:
+        type: string
+      id:
+        description: Unique identifier
+        type: string
+      input_tokens:
+        description: Token usage
+        type: integer
+      job_id:
+        type: string
+      latency_ms:
+        type: integer
+      model:
+        type: string
+      output_tokens:
+        type: integer
+      page_id:
+        type: string
+      prompt_cid:
+        description: Content-addressed ID linking to the exact prompt version used
+        type: string
+      prompt_key:
+        description: Prompt traceability
+        type: string
+      provider:
+        description: Model info
+        type: string
+      response:
+        description: Response
+        type: string
+      success:
+        description: Status
+        type: boolean
+      temperature:
+        type: number
+      timestamp:
+        description: Timing
+        type: string
+      tool_calls:
+        items:
+          type: integer
+        type: array
+    type: object
+  github_com_jackzampolin_shelf_internal_metrics.DetailedStats:
+    properties:
+      avg_completion_tokens:
+        type: number
+      avg_cost_usd:
+        type: number
+      avg_prompt_tokens:
+        description: Average tokens per call
+        type: number
+      avg_reasoning_tokens:
+        type: number
+      avg_total_tokens:
+        type: number
+      count:
+        description: Basic counts
+        type: integer
+      error_count:
+        type: integer
+      latency_avg:
+        type: number
+      latency_max:
+        type: number
+      latency_min:
+        type: number
+      latency_p50:
+        description: Latency percentiles (seconds)
+        type: number
+      latency_p95:
+        type: number
+      latency_p99:
+        type: number
+      success_count:
+        type: integer
+      total_completion_tokens:
+        type: integer
+      total_cost_usd:
+        description: Cost
+        type: number
+      total_prompt_tokens:
+        description: Token stats
+        type: integer
+      total_reasoning_tokens:
+        type: integer
+      total_tokens:
+        type: integer
+    type: object
+  github_com_jackzampolin_shelf_internal_metrics.Metric:
+    properties:
+      _docID:
+        type: string
+      book_id:
+        type: string
+      completion_tokens:
+        type: integer
+      cost_usd:
+        description: Cost and tokens
+        type: number
+      created_at:
+        description: Metadata
+        type: string
+      error_type:
+        type: string
+      execution_seconds:
+        type: number
+      item_key:
+        description: e.g., "page_0001", "toc_entry_5"
+        type: string
+      job_id:
+        description: Attribution (for filtering/aggregation)
+        type: string
+      model:
+        type: string
+      output_cid:
+        description: Exact version (CID)
+        type: string
+      output_doc_id:
+        description: Output reference (version-specific)
+        type: string
+      output_type:
+        description: Collection name
+        type: string
+      prompt_tokens:
+        type: integer
+      provider:
+        description: Provider info
+        type: string
+      queue_seconds:
+        description: Timing
+        type: number
+      reasoning_tokens:
+        type: integer
+      stage:
+        type: string
+      success:
+        description: Status
+        type: boolean
+      total_seconds:
+        type: number
+      total_tokens:
+        type: integer
+    type: object
+  github_com_jackzampolin_shelf_internal_providers.RateLimiterStatus:
+    properties:
+      last_429_time:
+        type: string
+      rps:
+        type: number
+      time_until_token:
+        $ref: '#/definitions/time.Duration'
+      tokens_available:
+        type: number
+      total_consumed:
+        type: integer
+      total_waited:
+        $ref: '#/definitions/time.Duration'
+      utilization:
+        type: number
+    type: object
+  internal_server_endpoints.AgentLogDetailResponse:
+    properties:
+      agent_type:
+        type: string
+      book_id:
+        type: string
+      completed_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      iterations:
+        type: integer
+      job_id:
+        type: string
+      messages:
+        description: Detailed data
+        items:
+          type: integer
+        type: array
+      result:
+        items:
+          type: integer
+        type: array
+      started_at:
+        type: string
+      success:
+        type: boolean
+      tool_calls:
+        items:
+          type: integer
+        type: array
+    type: object
+  internal_server_endpoints.AgentLogSummary:
+    properties:
+      agent_type:
+        type: string
+      completed_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      iterations:
+        type: integer
+      started_at:
+        type: string
+      success:
+        type: boolean
+    type: object
+  internal_server_endpoints.AgentLogSummaryResponse:
+    properties:
+      agent_type:
+        type: string
+      book_id:
+        type: string
+      completed_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      iterations:
+        type: integer
+      job_id:
+        type: string
+      started_at:
+        type: string
+      success:
+        type: boolean
+    type: object
+  internal_server_endpoints.AgentLogsListResponse:
+    properties:
+      logs:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.AgentLogSummaryResponse'
+        type: array
+    type: object
+  internal_server_endpoints.Book:
+    properties:
+      author:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      page_count:
+        type: integer
+      status:
+        type: string
+      title:
+        type: string
+    type: object
+  internal_server_endpoints.BookMetadata:
+    properties:
+      author:
+        type: string
+      authors:
+        items:
+          type: string
+        type: array
+      description:
+        type: string
+      isbn:
+        type: string
+      language:
+        type: string
+      lccn:
+        type: string
+      publication_year:
+        type: integer
+      publisher:
+        type: string
+      subjects:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+    type: object
+  internal_server_endpoints.BookPromptResponse:
+    properties:
+      cid:
+        type: string
+      is_override:
+        type: boolean
+      key:
+        type: string
+      text:
+        type: string
+      variables:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_server_endpoints.BookPromptsListResponse:
+    properties:
+      book_id:
+        type: string
+      prompts:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
+        type: array
+    type: object
+  internal_server_endpoints.ChapterPage:
+    properties:
+      blended_text:
+        type: string
+      label:
+        type: string
+      page_num:
+        type: integer
+    type: object
+  internal_server_endpoints.ChapterParagraph:
+    properties:
+      id:
+        type: string
+      polished_text:
+        type: string
+      raw_text:
+        type: string
+      sort_order:
+        type: integer
+      start_page:
+        type: integer
+      word_count:
+        type: integer
+    type: object
+  internal_server_endpoints.ChapterWithText:
+    properties:
+      classification_reasoning:
+        type: string
+      edits_applied_json:
+        type: string
+      end_page:
+        type: integer
+      entry_id:
+        type: string
+      entry_number:
+        type: string
+      id:
+        type: string
+      level:
+        type: integer
+      level_name:
+        type: string
+      matter_type:
+        type: string
+      page_count:
+        type: integer
+      pages:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.ChapterPage'
+        type: array
+      paragraphs:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.ChapterParagraph'
+        type: array
+      polish_complete:
+        type: boolean
+      polish_failed:
+        type: boolean
+      polished_text:
+        type: string
+      sort_order:
+        type: integer
+      start_page:
+        type: integer
+      title:
+        type: string
+      word_count:
+        type: integer
+    type: object
+  internal_server_endpoints.ChaptersResponse:
+    properties:
+      book_id:
+        type: string
+      book_title:
+        type: string
+      chapters:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.ChapterWithText'
+        type: array
+      has_chapters:
+        type: boolean
+      total_pages:
+        type: integer
+    type: object
+  internal_server_endpoints.CreateJobRequest:
+    properties:
+      job_type:
+        type: string
+      metadata:
+        additionalProperties: {}
+        type: object
+    type: object
+  internal_server_endpoints.CreateJobResponse:
+    properties:
+      id:
+        type: string
+    type: object
+  internal_server_endpoints.DefraStatus:
+    properties:
+      container:
+        type: string
+      health:
+        type: string
+      url:
+        type: string
+    type: object
+  internal_server_endpoints.DetailedJobStatusResponse:
+    properties:
+      agent_logs:
+        description: Agent logs summary
+        items:
+          $ref: '#/definitions/internal_server_endpoints.AgentLogSummary'
+        type: array
+      book_id:
+        type: string
+      metadata:
+        allOf:
+        - $ref: '#/definitions/internal_server_endpoints.MetadataStatus'
+        description: Metadata status
+      ocr_progress:
+        additionalProperties:
+          $ref: '#/definitions/internal_server_endpoints.ProviderProgress'
+        description: Per-provider OCR progress
+        type: object
+      stages:
+        allOf:
+        - $ref: '#/definitions/internal_server_endpoints.StageProgress'
+        description: Stage progress with costs
+      structure:
+        allOf:
+        - $ref: '#/definitions/internal_server_endpoints.StructureStatus'
+        description: Structure status (common-structure job)
+      toc:
+        allOf:
+        - $ref: '#/definitions/internal_server_endpoints.ToCStatus'
+        description: ToC status
+      total_pages:
+        type: integer
+    type: object
+  internal_server_endpoints.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  internal_server_endpoints.GetJobResponse:
+    properties:
+      _docID:
+        type: string
+      book_id:
+        type: string
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error:
+        type: string
+      job_type:
+        type: string
+      live_status:
+        additionalProperties:
+          type: string
+        description: Live status fields (only populated for running jobs)
+        type: object
+      metadata:
+        additionalProperties: {}
+        type: object
+      pending_units:
+        type: integer
+      progress:
+        additionalProperties:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.ProviderProgress'
+        type: object
+      started_at:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Status'
+      worker_status:
+        additionalProperties:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo'
+        type: object
+    type: object
+  internal_server_endpoints.GetPageResponse:
+    properties:
+      blend_confidence:
+        type: number
+      blend_markdown:
+        type: string
+      labels:
+        $ref: '#/definitions/internal_server_endpoints.PageLabels'
+      ocr_results:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.OcrResult'
+        type: array
+      page_num:
+        type: integer
+      status:
+        $ref: '#/definitions/internal_server_endpoints.PageStatus'
+    type: object
+  internal_server_endpoints.HealthResponse:
+    properties:
+      defra:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_server_endpoints.IngestRequest:
+    properties:
+      author:
+        type: string
+      pdf_paths:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+    type: object
+  internal_server_endpoints.IngestResponse:
+    properties:
+      author:
+        type: string
+      book_id:
+        type: string
+      job_id:
+        type: string
+      process_job_id:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+    type: object
+  internal_server_endpoints.JobStatusResponse:
+    properties:
+      blend_complete:
+        type: integer
+      book_id:
+        type: string
+      is_complete:
+        type: boolean
+      job_type:
+        type: string
+      label_complete:
+        type: integer
+      metadata_complete:
+        type: boolean
+      ocr_complete:
+        type: integer
+      toc_extracted:
+        type: boolean
+      toc_found:
+        type: boolean
+      total_pages:
+        type: integer
+    type: object
+  internal_server_endpoints.LLMCallCountsResponse:
+    properties:
+      counts:
+        additionalProperties:
+          type: integer
+        type: object
+    type: object
+  internal_server_endpoints.LLMCallResponse:
+    properties:
+      call:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_llmcall.Call'
+      error:
+        type: string
+    type: object
+  internal_server_endpoints.LLMCallsResponse:
+    properties:
+      calls:
+        items:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_llmcall.Call'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_server_endpoints.ListBooksResponse:
+    properties:
+      books:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.Book'
+        type: array
+    type: object
+  internal_server_endpoints.ListJobsResponse:
+    properties:
+      jobs:
+        items:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Record'
+        type: array
+    type: object
+  internal_server_endpoints.ListMetricsResponse:
+    properties:
+      count:
+        type: integer
+      metrics:
+        items:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_metrics.Metric'
+        type: array
+    type: object
+  internal_server_endpoints.ListPagesResponse:
+    properties:
+      pages:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.PageSummary'
+        type: array
+      total_pages:
+        type: integer
+    type: object
+  internal_server_endpoints.MetadataStatus:
+    properties:
+      complete:
+        type: boolean
+      cost_usd:
+        type: number
+      data:
+        $ref: '#/definitions/internal_server_endpoints.BookMetadata'
+      failed:
+        type: boolean
+      started:
+        type: boolean
+    type: object
+  internal_server_endpoints.MetricsCostResponse:
+    properties:
+      breakdown:
+        additionalProperties:
+          format: float64
+          type: number
+        type: object
+      total_cost_usd:
+        type: number
+    type: object
+  internal_server_endpoints.MetricsDetailedResponse:
+    properties:
+      book_id:
+        type: string
+      stages:
+        additionalProperties:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_metrics.DetailedStats'
+        type: object
+    type: object
+  internal_server_endpoints.MetricsSummaryResponse:
+    properties:
+      avg_cost_usd:
+        type: number
+      avg_time_seconds:
+        type: number
+      avg_tokens:
+        type: number
+      count:
+        type: integer
+      error_count:
+        type: integer
+      success_count:
+        type: integer
+      total_cost_usd:
+        type: number
+      total_time_seconds:
+        type: number
+      total_tokens:
+        type: integer
+    type: object
+  internal_server_endpoints.OcrResult:
+    properties:
+      confidence:
+        type: number
+      provider:
+        type: string
+      text:
+        type: string
+    type: object
+  internal_server_endpoints.PageLabels:
+    properties:
+      is_back_matter:
+        type: boolean
+      is_front_matter:
+        type: boolean
+      is_toc_page:
+        type: boolean
+      page_number_label:
+        type: string
+      running_header:
+        type: string
+    type: object
+  internal_server_endpoints.PageStatus:
+    properties:
+      blend_complete:
+        type: boolean
+      extract_complete:
+        type: boolean
+      label_complete:
+        type: boolean
+      ocr_complete:
+        type: boolean
+    type: object
+  internal_server_endpoints.PageSummary:
+    properties:
+      blend_complete:
+        type: boolean
+      label_complete:
+        type: boolean
+      ocr_complete:
+        type: boolean
+      page_num:
+        type: integer
+    type: object
+  internal_server_endpoints.PromptResponse:
+    properties:
+      description:
+        type: string
+      doc_id:
+        type: string
+      hash:
+        type: string
+      key:
+        type: string
+      text:
+        type: string
+      variables:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_server_endpoints.PromptsListResponse:
+    properties:
+      prompts:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.PromptResponse'
+        type: array
+    type: object
+  internal_server_endpoints.ProviderProgress:
+    properties:
+      complete:
+        type: integer
+      cost_usd:
+        type: number
+      total:
+        type: integer
+    type: object
+  internal_server_endpoints.ProvidersStatus:
+    properties:
+      llm:
+        items:
+          type: string
+        type: array
+      ocr:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_server_endpoints.RerunTocResponse:
+    properties:
+      job_id:
+        type: string
+      message:
+        type: string
+    type: object
+  internal_server_endpoints.SetPromptRequest:
+    properties:
+      note:
+        type: string
+      text:
+        type: string
+    type: object
+  internal_server_endpoints.SettingResponse:
+    properties:
+      entry:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_config.Entry'
+      error:
+        type: string
+    type: object
+  internal_server_endpoints.SettingsResponse:
+    properties:
+      settings:
+        additionalProperties:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_config.Entry'
+        type: object
+    type: object
+  internal_server_endpoints.StageProgress:
+    properties:
+      blend:
+        properties:
+          complete:
+            type: integer
+          cost_usd:
+            type: number
+          total:
+            type: integer
+        type: object
+      label:
+        properties:
+          complete:
+            type: integer
+          cost_usd:
+            type: number
+          total:
+            type: integer
+        type: object
+      ocr:
+        properties:
+          complete:
+            type: integer
+          cost_by_provider:
+            additionalProperties:
+              format: float64
+              type: number
+            type: object
+          total:
+            type: integer
+          total_cost_usd:
+            type: number
+        type: object
+    type: object
+  internal_server_endpoints.StartJobRequest:
+    properties:
+      force:
+        description: 'Optional: force restart even if already complete'
+        type: boolean
+      job_type:
+        description: 'Optional: defaults to "process-book"'
+        type: string
+    type: object
+  internal_server_endpoints.StartJobResponse:
+    properties:
+      book_id:
+        type: string
+      job_id:
+        type: string
+      job_type:
+        type: string
+      status:
+        type: string
+    type: object
+  internal_server_endpoints.StatusResponse:
+    properties:
+      defra:
+        $ref: '#/definitions/internal_server_endpoints.DefraStatus'
+      providers:
+        $ref: '#/definitions/internal_server_endpoints.ProvidersStatus'
+      server:
+        type: string
+    type: object
+  internal_server_endpoints.StructureStatus:
+    properties:
+      chapter_count:
+        type: integer
+      complete:
+        type: boolean
+      cost_usd:
+        type: number
+      failed:
+        type: boolean
+      retries:
+        type: integer
+      started:
+        type: boolean
+    type: object
+  internal_server_endpoints.ToCEntry:
+    properties:
+      actual_page_num:
+        type: integer
+      entry_number:
+        type: string
+      is_linked:
+        type: boolean
+      level:
+        type: integer
+      level_name:
+        type: string
+      printed_page_number:
+        type: string
+      sort_order:
+        type: integer
+      source:
+        description: '"extracted" or "discovered"'
+        type: string
+      title:
+        type: string
+    type: object
+  internal_server_endpoints.ToCStatus:
+    properties:
+      cost_usd:
+        type: number
+      end_page:
+        type: integer
+      entries:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.ToCEntry'
+        type: array
+      entries_discovered:
+        type: integer
+      entries_linked:
+        type: integer
+      entry_count:
+        description: Entries (when extracted)
+        type: integer
+      extract_complete:
+        type: boolean
+      extract_failed:
+        type: boolean
+      extract_started:
+        description: Extract stage
+        type: boolean
+      finalize_complete:
+        type: boolean
+      finalize_failed:
+        type: boolean
+      finalize_retries:
+        type: integer
+      finalize_started:
+        description: Finalize stage
+        type: boolean
+      finder_complete:
+        type: boolean
+      finder_failed:
+        type: boolean
+      finder_started:
+        description: Finder stage
+        type: boolean
+      found:
+        type: boolean
+      link_complete:
+        type: boolean
+      link_failed:
+        type: boolean
+      link_retries:
+        type: integer
+      link_started:
+        description: Link stage
+        type: boolean
+      start_page:
+        type: integer
+    type: object
+  internal_server_endpoints.UpdateJobRequest:
+    properties:
+      error:
+        type: string
+      metadata:
+        additionalProperties: {}
+        type: object
+      status:
+        type: string
+    type: object
+  internal_server_endpoints.UpdateSettingRequest:
+    properties:
+      description:
+        type: string
+      value: {}
+    type: object
+  time.Duration:
+    enum:
+    - -9223372036854775808
+    - 9223372036854775807
+    - 1
+    - 1000
+    - 1000000
+    - 1000000000
+    - 60000000000
+    - 3600000000000
+    format: int64
+    type: integer
+    x-enum-varnames:
+    - minDuration
+    - maxDuration
+    - Nanosecond
+    - Microsecond
+    - Millisecond
+    - Second
+    - Minute
+    - Hour
+host: localhost:8080
+info:
+  contact:
+    name: API Support
+    url: https://github.com/jackzampolin/shelf
+  description: Book digitization pipeline API for managing books, jobs, and processing.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  title: Shelf API
+  version: "1.0"
+paths:
+  /api/agent-logs/{id}:
+    get:
+      description: Get full agent log including messages and tool calls
+      parameters:
+      - description: Agent Log ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.AgentLogDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get agent log details
+      tags:
+      - agent-logs
+  /api/books:
+    get:
+      description: List all books in the library
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ListBooksResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List books
+      tags:
+      - books
+  /api/books/{book_id}/agent-logs:
+    get:
+      description: Get all agent execution logs for a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      - description: Filter by stage (toc-pattern, toc-discover, toc-validate, structure-classify,
+          structure-polish)
+        in: query
+        name: stage
+        type: string
+      - description: Filter by agent type
+        in: query
+        name: agent_type
+        type: string
+      - description: Filter by job ID
+        in: query
+        name: job_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.AgentLogsListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List agent logs for a book
+      tags:
+      - agent-logs
+  /api/books/{book_id}/pages:
+    get:
+      description: List all pages for a book with processing status
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ListPagesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List pages
+      tags:
+      - pages
+  /api/books/{book_id}/pages/{page_num}:
+    get:
+      description: Get full details for a specific page including OCR results, blend
+        output, and labels
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      - description: Page number (1-indexed)
+        in: path
+        name: page_num
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.GetPageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get page details
+      tags:
+      - pages
+  /api/books/{book_id}/pages/{page_num}/image:
+    get:
+      description: Get the PNG image for a specific page of a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      - description: Page number (1-indexed)
+        in: path
+        name: page_num
+        required: true
+        type: integer
+      produces:
+      - image/png
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get page image
+      tags:
+      - pages
+  /api/books/{book_id}/rerun-toc:
+    post:
+      description: Reset ToC state and rerun the ToC finder and extractor agents
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.RerunTocResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "412":
+          description: Not enough pages have blend complete
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Rerun ToC finder and extractor
+      tags:
+      - books
+  /api/books/{id}:
+    get:
+      description: Get detailed information about a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.Book'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get book by ID
+      tags:
+      - books
+  /api/books/{id}/chapters:
+    get:
+      description: Get chapter structure with page content
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Include page text content
+        in: query
+        name: include_text
+        type: boolean
+      - description: Include paragraphs
+        in: query
+        name: include_paragraphs
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ChaptersResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get book chapters
+      tags:
+      - books
+  /api/books/{id}/cost:
+    get:
+      description: Get total cost for processing a specific book
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Breakdown by: stage'
+        in: query
+        name: by
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.MetricsCostResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get book processing cost
+      tags:
+      - books
+  /api/books/{id}/metrics/detailed:
+    get:
+      description: Get detailed metrics for a specific book including latency percentiles
+        and token breakdowns per stage
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.MetricsDetailedResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get detailed book metrics with percentiles
+      tags:
+      - books
+      - metrics
+  /api/books/{id}/prompts:
+    get:
+      description: Get all prompts resolved for a specific book (with overrides applied)
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.BookPromptsListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List prompts for a book
+      tags:
+      - prompts
+  /api/books/{id}/prompts/{key}:
+    delete:
+      description: Remove a custom prompt override for a book (reverts to default)
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Prompt key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Clear a book prompt override
+      tags:
+      - prompts
+    get:
+      description: Get a specific prompt resolved for a book (with override if exists)
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Prompt key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get a prompt for a book
+      tags:
+      - prompts
+    put:
+      consumes:
+      - application/json
+      description: Set a custom prompt for a specific book
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Prompt key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Prompt override
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.SetPromptRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Set a book prompt override
+      tags:
+      - prompts
+  /api/books/ingest:
+    post:
+      consumes:
+      - application/json
+      description: Ingest PDF files as a new book and start processing
+      parameters:
+      - description: Ingest request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.IngestRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.IngestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Ingest book scans
+      tags:
+      - books
+  /api/books/ingest/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload PDF files to ingest as a new book
+      parameters:
+      - description: PDF files to ingest
+        in: formData
+        name: files
+        required: true
+        type: file
+      - description: Book title (derived from filename if not provided)
+        in: formData
+        name: title
+        type: string
+      - description: Book author
+        in: formData
+        name: author
+        type: string
+      - description: Automatically start processing after ingest
+        in: formData
+        name: auto_process
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.IngestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Upload and ingest book PDFs
+      tags:
+      - books
+  /api/health:
+    get:
+      description: Basic health check endpoint
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
+      summary: Health check
+      tags:
+      - health
+  /api/jobs:
+    get:
+      description: List all jobs with optional filtering
+      parameters:
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Filter by job type
+        in: query
+        name: job_type
+        type: string
+      - description: Filter by book ID
+        in: query
+        name: book_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ListJobsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List jobs
+      tags:
+      - jobs
+    post:
+      consumes:
+      - application/json
+      description: Create a new job of the specified type
+      parameters:
+      - description: Job creation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.CreateJobRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.CreateJobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Create a job
+      tags:
+      - jobs
+  /api/jobs/{id}:
+    delete:
+      description: Delete a job by ID
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Delete a job
+      tags:
+      - jobs
+    get:
+      description: Get detailed job information including live status for running
+        jobs
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.GetJobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get job by ID
+      tags:
+      - jobs
+    patch:
+      consumes:
+      - application/json
+      description: Update job status or metadata
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.UpdateJobRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Record'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Update a job
+      tags:
+      - jobs
+  /api/jobs/start/{book_id}:
+    post:
+      consumes:
+      - application/json
+      description: Start processing job (OCR, blend, label) for a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      - description: Optional job type
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.StartJobRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.StartJobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Start job for a book
+      tags:
+      - jobs
+  /api/jobs/status/{book_id}:
+    get:
+      description: Get processing status for a book's jobs
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      - description: 'Job type (default: process-book)'
+        in: query
+        name: job_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.JobStatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get job status for a book
+      tags:
+      - jobs
+  /api/jobs/status/{book_id}/detailed:
+    get:
+      description: Get comprehensive processing status including per-provider OCR
+        progress, costs, metadata, and ToC details
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.DetailedJobStatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get detailed job status for a book
+      tags:
+      - jobs
+  /api/llmcalls:
+    get:
+      description: Get LLM call history with optional filters
+      parameters:
+      - description: Filter by book ID
+        in: query
+        name: book_id
+        type: string
+      - description: Filter by page ID
+        in: query
+        name: page_id
+        type: string
+      - description: Filter by job ID
+        in: query
+        name: job_id
+        type: string
+      - description: Filter by prompt key
+        in: query
+        name: prompt_key
+        type: string
+      - description: Filter by provider
+        in: query
+        name: provider
+        type: string
+      - description: Filter by model
+        in: query
+        name: model
+        type: string
+      - description: Filter by success status (true or false)
+        in: query
+        name: success
+        type: boolean
+      - description: Max results (default 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Result offset
+        in: query
+        name: offset
+        type: integer
+      - description: Filter calls after this RFC3339 timestamp
+        in: query
+        name: after
+        type: string
+      - description: Filter calls before this RFC3339 timestamp
+        in: query
+        name: before
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.LLMCallsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List LLM calls
+      tags:
+      - llmcalls
+  /api/llmcalls/{id}:
+    get:
+      description: Get a single LLM call by ID
+      parameters:
+      - description: LLM call ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.LLMCallResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get an LLM call
+      tags:
+      - llmcalls
+  /api/llmcalls/counts/{book_id}:
+    get:
+      description: Get count of LLM calls grouped by prompt key for a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.LLMCallCountsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get LLM call counts by prompt key
+      tags:
+      - llmcalls
+  /api/metrics:
+    get:
+      description: List LLM/OCR call metrics with optional filtering
+      parameters:
+      - description: Filter by job ID
+        in: query
+        name: job_id
+        type: string
+      - description: Filter by book ID
+        in: query
+        name: book_id
+        type: string
+      - description: Filter by stage
+        in: query
+        name: stage
+        type: string
+      - description: Filter by provider
+        in: query
+        name: provider
+        type: string
+      - description: Filter by model
+        in: query
+        name: model
+        type: string
+      - description: Maximum results (default 100)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ListMetricsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List metrics
+      tags:
+      - metrics
+  /api/metrics/cost:
+    get:
+      description: Get total cost with optional breakdown by stage/provider/model
+      parameters:
+      - description: Filter by job ID
+        in: query
+        name: job_id
+        type: string
+      - description: Filter by book ID
+        in: query
+        name: book_id
+        type: string
+      - description: Filter by stage
+        in: query
+        name: stage
+        type: string
+      - description: Filter by provider
+        in: query
+        name: provider
+        type: string
+      - description: Filter by model
+        in: query
+        name: model
+        type: string
+      - description: 'Breakdown by: stage, provider, or model'
+        in: query
+        name: by
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.MetricsCostResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get cost breakdown
+      tags:
+      - metrics
+  /api/metrics/detailed:
+    get:
+      description: Get detailed metrics including latency percentiles (p50, p95, p99)
+        and token breakdowns per stage
+      parameters:
+      - description: Filter by book ID
+        in: query
+        name: book_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.MetricsDetailedResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get detailed metrics with percentiles
+      tags:
+      - metrics
+  /api/metrics/summary:
+    get:
+      description: Get aggregated metrics summary with counts, costs, and timing
+      parameters:
+      - description: Filter by job ID
+        in: query
+        name: job_id
+        type: string
+      - description: Filter by book ID
+        in: query
+        name: book_id
+        type: string
+      - description: Filter by stage
+        in: query
+        name: stage
+        type: string
+      - description: Filter by provider
+        in: query
+        name: provider
+        type: string
+      - description: Filter by model
+        in: query
+        name: model
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.MetricsSummaryResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get metrics summary
+      tags:
+      - metrics
+  /api/prompts:
+    get:
+      description: Get all registered prompts with their embedded defaults
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.PromptsListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List all prompts
+      tags:
+      - prompts
+  /api/prompts/{key}:
+    get:
+      description: Get a specific prompt by key
+      parameters:
+      - description: Prompt key (e.g., stages.blend.system)
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.PromptResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get a prompt
+      tags:
+      - prompts
+  /api/ready:
+    get:
+      description: Readiness check including DefraDB status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
+      summary: Readiness check
+      tags:
+      - health
+  /api/settings:
+    get:
+      description: Get all configuration settings
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.SettingsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List all settings
+      tags:
+      - settings
+  /api/settings/{key}:
+    get:
+      description: Get a single configuration setting by key
+      parameters:
+      - description: Setting key (URL-encoded)
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.SettingResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get a setting
+      tags:
+      - settings
+    put:
+      consumes:
+      - application/json
+      description: Update a configuration setting
+      parameters:
+      - description: Setting key (URL-encoded)
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: New value
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.UpdateSettingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.SettingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Update a setting
+      tags:
+      - settings
+  /api/settings/reset/{key}:
+    post:
+      description: Reset a configuration setting to its default value
+      parameters:
+      - description: Setting key (URL-encoded)
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.SettingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Reset a setting to default
+      tags:
+      - settings
+  /api/status:
+    get:
+      description: Get detailed server status including providers and DefraDB
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.StatusResponse'
+      summary: Server status
+      tags:
+      - health
+swagger: "2.0"

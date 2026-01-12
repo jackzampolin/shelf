@@ -1,0 +1,83 @@
+package ocr_book
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
+	ojob "github.com/jackzampolin/shelf/internal/jobs/ocr_book/job"
+	"github.com/jackzampolin/shelf/internal/svcctx"
+)
+
+// JobType is the identifier for this job type.
+const JobType = "ocr-book"
+
+// Config configures the OCR book job.
+type Config struct {
+	OcrProviders  []string
+	BlendProvider string
+}
+
+// Validate checks that the config has all required fields.
+func (c Config) Validate() error {
+	if len(c.OcrProviders) == 0 {
+		return fmt.Errorf("at least one OCR provider is required")
+	}
+	if c.BlendProvider == "" {
+		return fmt.Errorf("blend provider is required")
+	}
+	return nil
+}
+
+// Status represents the status of OCR processing for a book.
+type Status struct {
+	TotalPages    int `json:"total_pages"`
+	OcrComplete   int `json:"ocr_complete"`
+	BlendComplete int `json:"blend_complete"`
+}
+
+// IsComplete returns whether OCR processing is complete for this book.
+func (st *Status) IsComplete() bool {
+	return st.BlendComplete >= st.TotalPages
+}
+
+// NewJob creates a new OCR book job for the given book.
+func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	homeDir := svcctx.HomeFrom(ctx)
+	if homeDir == nil {
+		return nil, fmt.Errorf("home directory not in context")
+	}
+
+	// Load everything about this book in one call
+	result, err := common.LoadBook(ctx, bookID, common.LoadBookConfig{
+		HomeDir:       homeDir,
+		OcrProviders:  cfg.OcrProviders,
+		BlendProvider: cfg.BlendProvider,
+		PromptKeys:    ojob.PromptKeys(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load book: %w", err)
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+	if logger != nil {
+		logger.Info("creating OCR book job",
+			"book_id", bookID,
+			"total_pages", result.Book.TotalPages,
+			"ocr_providers", cfg.OcrProviders)
+	}
+
+	return ojob.NewFromLoadResult(result), nil
+}
+
+// JobFactory returns a factory function for recreating jobs from stored metadata.
+func JobFactory(cfg Config) jobs.JobFactory {
+	return common.MakeJobFactory(func(ctx context.Context, bookID string) (jobs.Job, error) {
+		return NewJob(ctx, cfg, bookID)
+	})
+}

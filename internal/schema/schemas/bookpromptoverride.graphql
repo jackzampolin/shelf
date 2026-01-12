@@ -1,0 +1,18 @@
+# BookPromptOverride stores per-book prompt customizations.
+# When a book needs different prompt text than the code default,
+# an override is created here.
+type BookPromptOverride {
+    # Composite key: book_id + prompt_key
+    book_id: String @index
+    prompt_key: String @index
+
+    # Custom prompt text for this book
+    text: String
+
+    # Optional note explaining why this override exists
+    note: String
+
+    # When the override was created/updated
+    created_at: DateTime
+    updated_at: DateTime
+}

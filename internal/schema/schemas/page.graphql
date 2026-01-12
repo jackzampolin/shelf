@@ -1,0 +1,28 @@
+type Page {
+    # Many-to-one: Page belongs to Book
+    book: Book
+    page_num: Int
+
+    # Blend result
+    blend_markdown: String
+    blend_confidence: Float
+    blend_corrections: JSON
+    headings: JSON
+
+    # Label fields
+    page_number_label: String
+    running_header: String
+    is_toc_page: Boolean
+    is_front_matter: Boolean
+    is_back_matter: Boolean
+
+    # Status
+    extract_complete: Boolean
+    ocr_complete: Boolean
+    blend_complete: Boolean
+    label_complete: Boolean
+
+    # Relationships
+    # One-to-many: Page has many OcrResults
+    ocr_results: [OcrResult]
+}

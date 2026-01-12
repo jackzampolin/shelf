@@ -57,21 +57,34 @@ All Go rewrite issues are labeled `go-rewrite`.
 ```
 shelf-go/
 ├── cmd/shelf/           # CLI entry point (Cobra)
+│   ├── main.go
+│   ├── root.go
+│   ├── serve.go         # Server command
+│   └── api.go           # API CLI commands (shelf api ...)
 ├── internal/
+│   ├── api/             # Endpoint interface + HTTP client
+│   │   ├── endpoint.go  # Endpoint interface (Route + Command)
+│   │   ├── registry.go  # Route registration
+│   │   └── client.go    # HTTP client for CLI
+│   ├── svcctx/          # Services context (dependency injection)
+│   │   └── svcctx.go    # Services struct + extractors
+│   ├── server/
+│   │   ├── server.go    # HTTP server + lifecycle
+│   │   └── endpoints/   # Endpoint implementations
+│   │       ├── health.go    # health, ready, status
+│   │       ├── jobs.go      # CRUD for jobs
+│   │       └── registry.go  # All() helper
 │   ├── home/            # Home directory (~/.shelf)
 │   ├── config/          # Config with hot-reload
 │   ├── defra/           # DefraDB client + Docker management
 │   ├── providers/       # LLM/OCR provider workers
-│   ├── jobs/            # Job system
-│   ├── metrics/         # Metrics recording
-│   ├── server/          # HTTP API
+│   ├── jobs/            # Job system (scheduler, workers)
+│   ├── agent/           # LLM agent with tool use
 │   └── pipeline/
 │       ├── stage.go     # Stage interface
 │       ├── registry.go  # Stage registry
 │       └── stages/      # Stage implementations
-│           ├── ocr_pages/
-│           ├── label_structure/
-│           └── ...
+├── docs/decisions/      # Architecture Decision Records
 ├── go.mod
 └── Makefile
 ```
@@ -83,6 +96,10 @@ shelf-go/
 // Query progress from DefraDB, not filesystem
 pages, _ := defra.Query(ctx, `{ pages(filter: {...}) { ... } }`)
 ```
+
+**DefraDB Schema Limitations:**
+- **No NonNull fields** - Use `field: String` not `field: String!`
+- Schemas in `internal/schema/schemas/*.graphql`
 
 **2. Jobs for all mutations**
 ```go
@@ -102,6 +119,61 @@ resp, _ := providers.Get("openrouter").Chat(ctx, req)
 metrics.RecordLLMCall(ctx, opts, resp)
 ```
 
+**5. Unified endpoint pattern** - Each endpoint defines both HTTP route and CLI command (ADR 007)
+```go
+// internal/api/endpoint.go
+type Endpoint interface {
+    Route() (method, path string, handler http.HandlerFunc)
+    RequiresInit() bool
+    Command(getServerURL func() string) *cobra.Command
+}
+
+// Endpoints implement both HTTP handler and CLI command
+// See internal/server/endpoints/ for implementations
+```
+
+**6. Services context** - Dependencies via context, not constructors (ADR 007)
+```go
+// Handlers extract services from context
+func (e *ListJobsEndpoint) handler(w http.ResponseWriter, r *http.Request) {
+    jm := svcctx.JobManagerFrom(r.Context())
+    jobs, _ := jm.List(r.Context(), filter)
+}
+
+// Available extractors in internal/svcctx/:
+// - svcctx.DefraClientFrom(ctx)
+// - svcctx.JobManagerFrom(ctx)
+// - svcctx.RegistryFrom(ctx)
+// - svcctx.SchedulerFrom(ctx)
+// - svcctx.LoggerFrom(ctx)
+```
+
+### CLI Commands
+
+**Prefer `shelf api` over raw curl** - The CLI commands are easier to use and handle auth/formatting:
+
+```bash
+# Server management
+shelf serve                    # Start server (with DefraDB)
+
+# API commands (talk to running server) - USE THESE INSTEAD OF CURL
+shelf api health               # Basic health check
+shelf api ready                # Readiness check (includes DefraDB)
+shelf api status               # Detailed status
+shelf api books list           # List all books
+shelf api books get <id>       # Get book details
+shelf api agent-logs <book_id> # List agent logs for a book
+
+# Job management
+shelf api jobs list            # List all jobs
+shelf api jobs list --status running --type ocr-pages
+shelf api jobs get <id>        # Get job details
+shelf api jobs create --type ocr-pages
+shelf api jobs update <id> --status completed
+```
+
+**Debug config:** Agent logs are only saved when `defaults.debug_agents` is `true` in job config.
+
 ### Environment
 
 ```bash
@@ -114,19 +186,43 @@ go build -o shelf ./cmd/shelf
 go test ./...
 ```
 
-### Reference
+### Reference Projects
 
-- Pattern reference: `/Users/johnzampolin/go/src/github.com/sourcenetwork/defra-mongo-connector`
-- DefraDB docs: https://docs.source.network/
+**defra-mongo-connector** - `/Users/johnzampolin/go/src/github.com/sourcenetwork/defra-mongo-connector`
+Use this for patterns on:
+- CLI structure (Cobra commands, flags)
+- Docker container management (`internal/dockerutil/`)
+- Config with viper + hot-reload (`internal/connector/config.go`)
+- Integration testing patterns
+
+**DefraDB source** - `/Users/johnzampolin/go/src/github.com/sourcenetwork/defradb`
+Local copy of DefraDB for understanding the database internals, client API, and query patterns.
+
+**DefraDB docs** - https://docs.source.network/
 </go_implementation>
 
 <python_implementation>
 ## Python Implementation (Legacy Reference)
 
-The Python code in `main` is the reference implementation. Use it to understand:
-- Stage logic and prompts
+The Python code in `main` branch is the reference implementation.
+
+### Local Paths
+
+```bash
+# Python code (main branch worktree)
+/Users/johnzampolin/go/src/github.com/jackzampolin/shelf
+
+# Book data (scans, OCR output, etc.)
+~/Documents/shelf/
+```
+
+### What to Reference
+
+Use the Python code to understand:
+- Stage logic and prompts (`pipeline/*/`)
 - Data flow between stages
-- LLM call patterns
+- LLM call patterns (`infra/llm/`)
+- Config schema (`infra/config/schemas.py`)
 
 ### Key Files
 
@@ -144,18 +240,6 @@ infra/
 ├── ocr/                 # OCR provider base
 ├── pipeline/            # Stage base classes
 └── config/              # Configuration
-```
-
-### Environment
-
-```bash
-# Python setup
-uv venv && source .venv/bin/activate
-uv pip install -e .
-uv run python shelf.py --help
-
-# Tests
-uv run python -m pytest tests/
 ```
 </python_implementation>
 
@@ -199,8 +283,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 **Python-specific (in main):**
 - 001-007 original Python ADRs
 
-**Go-specific (being added):**
-- TBD as Go implementation progresses
+**Go-specific:**
+- **004 (DefraDB Integration)** - Docker-managed DefraDB as data layer
+- **005 (Scheduler Architecture)** - Job distribution with provider rate limits
+- **006 (Worker Architecture)** - Concurrent workers with result channels
+- **007 (Services Context)** - Dependency injection via context, unified endpoint pattern
 </architecture_decisions>
 
 <remember>
@@ -221,13 +308,20 @@ git branch --show-current
 - All state in DefraDB, not files
 - Jobs for mutations
 - Provider workers for rate limits
+- **NO NonNull fields** - DefraDB doesn't support `!` in GraphQL schemas (e.g., use `key: String` not `key: String!`)
 
-**4. REFERENCE PYTHON**
+**4. ENDPOINT PATTERN (Go)**
+- Each endpoint defines both HTTP route AND CLI command
+- Services come from context (`svcctx.JobManagerFrom(ctx)`)
+- Add new endpoints to `internal/server/endpoints/`
+- Register in `endpoints.All()` helper
+
+**5. REFERENCE PYTHON**
 - Stage logic lives in `pipeline/*/`
 - Prompts in `*/prompt.py`
 - Use as reference, don't modify
 
-**5. TESTING**
+**6. TESTING**
 - Go: `go test ./...`
 - Python: `uv run python -m pytest tests/`
 </remember>

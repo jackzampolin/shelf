@@ -1,0 +1,35 @@
+type Metric {
+    # Attribution (for filtering/aggregation)
+    job_id: String @index
+    book_id: String @index
+    stage: String @index
+    item_key: String  # e.g., "page_0001", "toc_entry_5"
+
+    # Provider info
+    provider: String @index
+    model: String
+
+    # Output reference (version-specific)
+    output_doc_id: String  # Stable doc reference
+    output_cid: String     # Exact version (CID)
+    output_type: String    # Collection name (e.g., "Page", "OcrResult")
+
+    # Cost and tokens
+    cost_usd: Float
+    prompt_tokens: Int
+    completion_tokens: Int
+    reasoning_tokens: Int
+    total_tokens: Int
+
+    # Timing
+    queue_seconds: Float
+    execution_seconds: Float
+    total_seconds: Float
+
+    # Status
+    success: Boolean
+    error_type: String
+
+    # Metadata
+    created_at: DateTime
+}

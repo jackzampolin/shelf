@@ -1,0 +1,5 @@
+{{range $i, $out := .OCROutputs}}<{{$out.TagName}}>{{if eq $i 0}} [PRIMARY - correct errors in this output]{{else}} [REFERENCE]{{end}}
+{{$out.Text}}
+</{{$out.TagName}}>
+
+{{end}}

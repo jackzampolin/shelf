@@ -1,0 +1,25 @@
+Find the Table of Contents in book: {{if .BookTitle}}"{{.BookTitle}}"{{else}}{{.ScanID}}{{end}}
+
+Total pages: {{.TotalPages}}
+
+Use grep report to identify candidates, then verify with vision + OCR.
+Document structure patterns (hierarchy, numbering, visual layout) not content.
+Build structure_summary for downstream extraction.
+{{if .PreviousAttempt}}
+<previous_attempt>
+This is ATTEMPT #{{.PreviousAttempt.AttemptNumber}}. Previous attempt did not find ToC.
+
+Previous Strategy: {{.PreviousAttempt.Strategy}}
+Pages Checked: {{.PreviousAttempt.PagesChecked}}
+Previous Reasoning: {{.PreviousAttempt.Reasoning}}
+{{if .PreviousAttempt.StructureNotes}}
+Previous Observations:
+{{range $page, $note := .PreviousAttempt.StructureNotes}}  Page {{$page}}: {{$note}}
+{{end}}{{end}}
+Consider:
+- Did previous attempt search the right pages?
+- Were there false negatives in grep report?
+- Should you try different page ranges?
+- Could ToC have unusual formatting/naming?
+</previous_attempt>
+{{end}}

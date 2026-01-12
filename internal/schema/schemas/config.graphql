@@ -1,0 +1,5 @@
+type Config {
+    name: String @index(unique: true)
+    value: JSON
+    description: String
+}

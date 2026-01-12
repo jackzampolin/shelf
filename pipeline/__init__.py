@@ -1,3 +1,0 @@
-"""
-Book digitization pipeline stages.
-"""

@@ -1,0 +1,38 @@
+type ToC {
+    # One-to-one: ToC belongs to Book (other side has @primary)
+    book: Book
+
+    # Creation timestamp (ensures unique DocID per creation attempt)
+    created_at: DateTime
+
+    # Finder results
+    toc_found: Boolean
+    start_page: Int
+    end_page: Int
+    structure_summary: JSON
+
+    # Processing state
+    finder_started: Boolean
+    finder_complete: Boolean
+    finder_failed: Boolean
+    finder_retries: Int
+
+    extract_started: Boolean
+    extract_complete: Boolean
+    extract_failed: Boolean
+    extract_retries: Int
+
+    link_started: Boolean
+    link_complete: Boolean
+    link_failed: Boolean
+    link_retries: Int
+
+    finalize_started: Boolean
+    finalize_complete: Boolean
+    finalize_failed: Boolean
+    finalize_retries: Int
+
+    # Relationships
+    # One-to-many: ToC has many TocEntries
+    entries: [TocEntry]
+}

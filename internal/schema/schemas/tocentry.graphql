@@ -1,0 +1,23 @@
+type TocEntry {
+    # Many-to-one: TocEntry belongs to ToC
+    toc: ToC
+
+    # Unique key for content-based DocID uniqueness (toc_id:sort_order)
+    unique_key: String
+
+    # Core fields
+    entry_number: String
+    title: String
+    level: Int
+    level_name: String
+
+    # Page references (optional link to actual page)
+    printed_page_number: String
+    actual_page: Page
+
+    # Source tracking
+    source: String
+
+    # Ordering
+    sort_order: Int
+}
