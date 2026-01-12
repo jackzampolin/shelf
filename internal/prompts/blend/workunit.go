@@ -17,9 +17,8 @@ type OCROutput struct {
 
 // Input contains the data needed for a blend work unit.
 type Input struct {
-	// OCROutputs from different providers. First provider is treated as PRIMARY.
+	// OCROutputs from different providers to blend together.
 	OCROutputs []OCROutput
-	PageImage  []byte // Optional: page image for vision-based correction
 
 	// SystemPromptOverride allows using a book-level system prompt override.
 	// If empty, uses the embedded default.
@@ -57,11 +56,6 @@ func CreateWorkUnit(input Input) *jobs.WorkUnit {
 		},
 	}
 
-	// Add page image if provided (for vision-based correction)
-	if len(input.PageImage) > 0 {
-		unit.ChatRequest.Messages[1].Images = [][]byte{input.PageImage}
-	}
-
 	return unit
 }
 
@@ -78,35 +72,12 @@ func ParseResult(parsedJSON any) (*Result, error) {
 	return &result, nil
 }
 
-// ApplyCorrections applies corrections to the base text.
-func ApplyCorrections(baseText string, corrections []Correction) string {
-	result := baseText
-	for _, c := range corrections {
-		if c.Original != "" {
-			result = replaceFirst(result, c.Original, c.Replacement)
-		}
-	}
-	return result
-}
-
 func buildResponseFormat() *providers.ResponseFormat {
-	jsonSchema, _ := json.Marshal(CorrectionsSchema["json_schema"])
+	jsonSchema, _ := json.Marshal(BlendSchema["json_schema"])
 	return &providers.ResponseFormat{
 		Type:       "json_schema",
 		JSONSchema: jsonSchema,
 	}
-}
-
-func replaceFirst(s, old, new string) string {
-	if old == "" {
-		return s
-	}
-	for i := 0; i <= len(s)-len(old); i++ {
-		if s[i:i+len(old)] == old {
-			return s[:i] + new + s[i+len(old):]
-		}
-	}
-	return s
 }
 
 // buildUserPromptData converts OCROutputs to UserPromptData for template rendering.

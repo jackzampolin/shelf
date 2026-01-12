@@ -322,11 +322,7 @@ func (j *Job) HandleBlendComplete(ctx context.Context, info WorkUnitInfo, result
 		return fmt.Errorf("blend result missing for page %d", info.PageNum)
 	}
 
-	if len(j.Book.OcrProviders) == 0 {
-		return fmt.Errorf("no OCR providers configured for page %d", info.PageNum)
-	}
-	primaryProvider := j.Book.OcrProviders[0]
-	_, err := common.SaveBlendResult(ctx, state, primaryProvider, result.ChatResult.ParsedJSON)
+	_, err := common.SaveBlendResult(ctx, state, result.ChatResult.ParsedJSON)
 	if err != nil {
 		return fmt.Errorf("failed to save blend result: %w", err)
 	}
