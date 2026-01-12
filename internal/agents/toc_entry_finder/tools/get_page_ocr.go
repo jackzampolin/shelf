@@ -28,8 +28,8 @@ func getPageOcrTool() providers.Tool {
 }
 
 func (t *TocEntryFinderTools) getPageOcr(ctx context.Context, pageNum int) (string, error) {
-	if pageNum < 1 || pageNum > t.totalPages {
-		return jsonError(fmt.Sprintf("Invalid page number: %d (book has %d pages)", pageNum, t.totalPages)), nil
+	if pageNum < 1 || pageNum > t.book.TotalPages {
+		return jsonError(fmt.Sprintf("Invalid page number: %d (book has %d pages)", pageNum, t.book.TotalPages)), nil
 	}
 
 	text, err := t.getPageBlendedText(ctx, pageNum)
@@ -38,7 +38,7 @@ func (t *TocEntryFinderTools) getPageOcr(ctx context.Context, pageNum int) (stri
 	}
 
 	// Estimate if this is in back matter
-	backMatterStart := int(float64(t.totalPages) * 0.8)
+	backMatterStart := int(float64(t.book.TotalPages) * 0.8)
 	inBackMatter := pageNum >= backMatterStart
 
 	result := map[string]any{

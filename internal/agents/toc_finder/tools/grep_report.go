@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/jackzampolin/shelf/internal/providers"
-	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // GrepReport contains categorized keyword search results.
@@ -47,8 +46,8 @@ func (t *ToCFinderTools) getFrontmatterGrepReport(ctx context.Context) (string, 
 
 	// Generate grep report by searching pages
 	maxPages := 50
-	if t.totalPages < maxPages {
-		maxPages = t.totalPages
+	if t.book.TotalPages < maxPages {
+		maxPages = t.book.TotalPages
 	}
 
 	report := &GrepReport{
@@ -56,19 +55,6 @@ func (t *ToCFinderTools) getFrontmatterGrepReport(ctx context.Context) (string, 
 		TotalPagesSearched: maxPages,
 		CategorizedPages:   make(map[string][]int),
 		PageDetails:        make(map[int]CategoryHits),
-	}
-
-	// Preload all pages in one batch query if pageReader is available
-	if t.pageReader != nil {
-		if err := t.pageReader.PreloadPages(ctx, 1, maxPages); err != nil {
-			// Log but continue - fallback to per-page queries will work
-			if logger := svcctx.LoggerFrom(ctx); logger != nil {
-				logger.Warn("PreloadPages failed, falling back to per-page queries",
-					"book_id", t.bookID,
-					"max_pages", maxPages,
-					"error", err)
-			}
-		}
 	}
 
 	// Query blended text for each page, tracking failures

@@ -6,21 +6,15 @@ import (
 	"fmt"
 
 	gap_investigator "github.com/jackzampolin/shelf/internal/agents/gap_investigator"
-	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/home"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // GapInvestigatorTools implements agent.Tools for the gap investigator agent.
 type GapInvestigatorTools struct {
-	bookID         string
-	totalPages     int
-	defraClient    *defra.Client
-	homeDir        *home.Dir
-	gap            *gap_investigator.GapInfo
-	linkedEntries  []*gap_investigator.LinkedEntry
-	bodyStart      int
-	bodyEnd        int
+	book          *common.BookState
+	gap           *gap_investigator.GapInfo
+	linkedEntries []*gap_investigator.LinkedEntry
 
 	// State
 	currentPageNum   *int
@@ -37,27 +31,17 @@ type PageObservation struct {
 
 // Config configures the gap investigator tools.
 type Config struct {
-	BookID        string
-	TotalPages    int
-	DefraClient   *defra.Client
-	HomeDir       *home.Dir
+	Book          *common.BookState
 	Gap           *gap_investigator.GapInfo
 	LinkedEntries []*gap_investigator.LinkedEntry
-	BodyStart     int
-	BodyEnd       int
 }
 
 // New creates a new gap investigator tools instance.
 func New(cfg Config) *GapInvestigatorTools {
 	return &GapInvestigatorTools{
-		bookID:           cfg.BookID,
-		totalPages:       cfg.TotalPages,
-		defraClient:      cfg.DefraClient,
-		homeDir:          cfg.HomeDir,
+		book:             cfg.Book,
 		gap:              cfg.Gap,
 		linkedEntries:    cfg.LinkedEntries,
-		bodyStart:        cfg.BodyStart,
-		bodyEnd:          cfg.BodyEnd,
 		pageObservations: make([]PageObservation, 0),
 	}
 }
@@ -112,36 +96,16 @@ func (t *GapInvestigatorTools) GetResult() any {
 	return t.pendingResult
 }
 
-// getPageBlendedText retrieves blended OCR text from DefraDB.
+// getPageBlendedText retrieves blended OCR text from BookState.
 func (t *GapInvestigatorTools) getPageBlendedText(ctx context.Context, pageNum int) (string, error) {
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
-			blend_markdown
-		}
-	}`, t.bookID, pageNum)
-
-	resp, err := t.defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return "", err
+	page := t.book.GetPage(pageNum)
+	if page == nil {
+		return "", fmt.Errorf("page %d not in state", pageNum)
 	}
 
-	if errMsg := resp.Error(); errMsg != "" {
-		return "", fmt.Errorf("query error: %s", errMsg)
-	}
-
-	pages, ok := resp.Data["Page"].([]any)
-	if !ok || len(pages) == 0 {
-		return "", fmt.Errorf("page not found")
-	}
-
-	page, ok := pages[0].(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("invalid page format")
-	}
-
-	text, ok := page["blend_markdown"].(string)
-	if !ok || text == "" {
-		return "", fmt.Errorf("no blended text")
+	text := page.GetBlendedText()
+	if text == "" {
+		return "", fmt.Errorf("no blended text for page %d", pageNum)
 	}
 
 	return text, nil

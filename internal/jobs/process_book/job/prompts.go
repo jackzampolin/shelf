@@ -1,6 +1,9 @@
 package job
 
 import (
+	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
+	gap_investigator "github.com/jackzampolin/shelf/internal/agents/gap_investigator"
+	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 	"github.com/jackzampolin/shelf/internal/prompts/blend"
@@ -31,6 +34,11 @@ var promptKeys = []string{
 	// ToC entry finder agent (link_toc)
 	toc_entry_finder.PromptKey,
 	toc_entry_finder.UserPromptKey,
+	// Finalize ToC agents (pattern analysis, chapter discovery, gap validation)
+	pattern_analyzer.PromptKey,
+	pattern_analyzer.UserPromptKey,
+	chapter_finder.PromptKey,
+	gap_investigator.PromptKey,
 }
 
 // PromptKeys returns the prompt keys needed by this job type.

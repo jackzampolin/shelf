@@ -6,17 +6,13 @@ import (
 	"fmt"
 
 	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
-	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/home"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // ChapterFinderTools implements agent.Tools for the chapter finder agent.
 type ChapterFinderTools struct {
-	bookID         string
-	totalPages     int
-	defraClient    *defra.Client
-	homeDir        *home.Dir
+	book           *common.BookState
 	entry          *chapter_finder.EntryToFind
 	excludedRanges []chapter_finder.ExcludedRange
 
@@ -35,10 +31,7 @@ type PageObservation struct {
 
 // Config configures the chapter finder tools.
 type Config struct {
-	BookID         string
-	TotalPages     int
-	DefraClient    *defra.Client
-	HomeDir        *home.Dir
+	Book           *common.BookState
 	Entry          *chapter_finder.EntryToFind
 	ExcludedRanges []chapter_finder.ExcludedRange
 }
@@ -46,10 +39,7 @@ type Config struct {
 // New creates a new chapter finder tools instance.
 func New(cfg Config) *ChapterFinderTools {
 	return &ChapterFinderTools{
-		bookID:           cfg.BookID,
-		totalPages:       cfg.TotalPages,
-		defraClient:      cfg.DefraClient,
-		homeDir:          cfg.HomeDir,
+		book:             cfg.Book,
 		entry:            cfg.Entry,
 		excludedRanges:   cfg.ExcludedRanges,
 		pageObservations: make([]PageObservation, 0),
@@ -80,7 +70,7 @@ func (t *ChapterFinderTools) ExecuteTool(ctx context.Context, name string, args 
 			i := int(ep)
 			endPage = &i
 		}
-		return t.getHeadingPages(ctx, startPage, endPage)
+		return t.getHeadingPages(startPage, endPage)
 	case "grep_text":
 		query, ok := args["query"].(string)
 		if !ok {
@@ -122,36 +112,16 @@ func (t *ChapterFinderTools) GetResult() any {
 	return t.pendingResult
 }
 
-// getPageBlendedText retrieves blended OCR text from DefraDB.
+// getPageBlendedText retrieves blended OCR text from BookState.
 func (t *ChapterFinderTools) getPageBlendedText(ctx context.Context, pageNum int) (string, error) {
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
-			blend_markdown
-		}
-	}`, t.bookID, pageNum)
-
-	resp, err := t.defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return "", err
+	page := t.book.GetPage(pageNum)
+	if page == nil {
+		return "", fmt.Errorf("page %d not in state", pageNum)
 	}
 
-	if errMsg := resp.Error(); errMsg != "" {
-		return "", fmt.Errorf("query error: %s", errMsg)
-	}
-
-	pages, ok := resp.Data["Page"].([]any)
-	if !ok || len(pages) == 0 {
-		return "", fmt.Errorf("page not found")
-	}
-
-	page, ok := pages[0].(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("invalid page format")
-	}
-
-	text, ok := page["blend_markdown"].(string)
-	if !ok || text == "" {
-		return "", fmt.Errorf("no blended text")
+	text := page.GetBlendedText()
+	if text == "" {
+		return "", fmt.Errorf("no blended text for page %d", pageNum)
 	}
 
 	return text, nil

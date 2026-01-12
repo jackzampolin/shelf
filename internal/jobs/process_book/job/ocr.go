@@ -39,7 +39,7 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 	// If all OCR done, trigger blend
 	var units []jobs.WorkUnit
 	if allDone {
-		blendUnit := j.CreateBlendWorkUnit(info.PageNum, state)
+		blendUnit := j.CreateBlendWorkUnit(ctx, info.PageNum, state)
 		if blendUnit != nil {
 			units = append(units, *blendUnit)
 		}

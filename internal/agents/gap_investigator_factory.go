@@ -7,22 +7,16 @@ import (
 	"github.com/jackzampolin/shelf/internal/agent"
 	gap_investigator "github.com/jackzampolin/shelf/internal/agents/gap_investigator"
 	"github.com/jackzampolin/shelf/internal/agents/gap_investigator/tools"
-	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/home"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // GapInvestigatorConfig configures gap investigator agent creation.
 type GapInvestigatorConfig struct {
-	BookID        string
-	TotalPages    int
-	DefraClient   *defra.Client
-	HomeDir       *home.Dir
+	Book          *common.BookState
 	SystemPrompt  string
 	Gap           *gap_investigator.GapInfo
 	LinkedEntries []*gap_investigator.LinkedEntry
-	BodyStart     int
-	BodyEnd       int
 	Debug         bool
 	JobID         string
 }
@@ -32,17 +26,12 @@ type GapInvestigatorConfig struct {
 // Context is required for observability logging.
 func NewGapInvestigatorAgent(ctx context.Context, cfg GapInvestigatorConfig) *agent.Agent {
 	gapTools := tools.New(tools.Config{
-		BookID:        cfg.BookID,
-		TotalPages:    cfg.TotalPages,
-		DefraClient:   cfg.DefraClient,
-		HomeDir:       cfg.HomeDir,
+		Book:          cfg.Book,
 		Gap:           cfg.Gap,
 		LinkedEntries: cfg.LinkedEntries,
-		BodyStart:     cfg.BodyStart,
-		BodyEnd:       cfg.BodyEnd,
 	})
 
-	userPrompt := gap_investigator.BuildUserPrompt(cfg.Gap, cfg.BodyStart, cfg.BodyEnd, cfg.TotalPages)
+	userPrompt := gap_investigator.BuildUserPrompt(cfg.Gap, cfg.Book.BodyStart, cfg.Book.BodyEnd, cfg.Book.TotalPages)
 
 	// Build agent ID from gap info for tracing
 	agentID := fmt.Sprintf("gap-%d-%d", cfg.Gap.StartPage, cfg.Gap.EndPage)
@@ -56,7 +45,7 @@ func NewGapInvestigatorAgent(ctx context.Context, cfg GapInvestigatorConfig) *ag
 		},
 		MaxIterations: 20, // Gap investigation may need more exploration
 		AgentType:     "gap_investigator",
-		BookID:        cfg.BookID,
+		BookID:        cfg.Book.BookID,
 		JobID:         cfg.JobID,
 		Debug:         cfg.Debug,
 	})

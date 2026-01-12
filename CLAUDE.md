@@ -150,14 +150,19 @@ func (e *ListJobsEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 ### CLI Commands
 
+**Prefer `shelf api` over raw curl** - The CLI commands are easier to use and handle auth/formatting:
+
 ```bash
 # Server management
 shelf serve                    # Start server (with DefraDB)
 
-# API commands (talk to running server)
+# API commands (talk to running server) - USE THESE INSTEAD OF CURL
 shelf api health               # Basic health check
 shelf api ready                # Readiness check (includes DefraDB)
 shelf api status               # Detailed status
+shelf api books list           # List all books
+shelf api books get <id>       # Get book details
+shelf api agent-logs <book_id> # List agent logs for a book
 
 # Job management
 shelf api jobs list            # List all jobs
@@ -166,6 +171,8 @@ shelf api jobs get <id>        # Get job details
 shelf api jobs create --type ocr-pages
 shelf api jobs update <id> --status completed
 ```
+
+**Debug config:** Agent logs are only saved when `defaults.debug_agents` is `true` in job config.
 
 ### Environment
 

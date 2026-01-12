@@ -18,11 +18,11 @@ type HealthResponse struct {
 	Defra  string `json:"defra,omitempty"`
 }
 
-// HealthEndpoint handles GET /health.
+// HealthEndpoint handles GET /api/health.
 type HealthEndpoint struct{}
 
 func (e *HealthEndpoint) Route() (string, string, http.HandlerFunc) {
-	return "GET", "/health", e.handler
+	return "GET", "/api/health", e.handler
 }
 
 func (e *HealthEndpoint) RequiresInit() bool { return false }
@@ -34,7 +34,7 @@ func (e *HealthEndpoint) RequiresInit() bool { return false }
 //	@Tags			health
 //	@Produce		json
 //	@Success		200	{object}	HealthResponse
-//	@Router			/health [get]
+//	@Router			/api/health [get]
 func (e *HealthEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, HealthResponse{Status: "ok"})
 }
@@ -47,7 +47,7 @@ func (e *HealthEndpoint) Command(getServerURL func() string) *cobra.Command {
 			ctx := cmd.Context()
 			client := api.NewClient(getServerURL())
 			var resp HealthResponse
-			if err := client.Get(ctx, "/health", &resp); err != nil {
+			if err := client.Get(ctx, "/api/health", &resp); err != nil {
 				return err
 			}
 			return api.Output(resp)
@@ -55,11 +55,11 @@ func (e *HealthEndpoint) Command(getServerURL func() string) *cobra.Command {
 	}
 }
 
-// ReadyEndpoint handles GET /ready.
+// ReadyEndpoint handles GET /api/ready.
 type ReadyEndpoint struct{}
 
 func (e *ReadyEndpoint) Route() (string, string, http.HandlerFunc) {
-	return "GET", "/ready", e.handler
+	return "GET", "/api/ready", e.handler
 }
 
 func (e *ReadyEndpoint) RequiresInit() bool { return false }
@@ -72,7 +72,7 @@ func (e *ReadyEndpoint) RequiresInit() bool { return false }
 //	@Produce		json
 //	@Success		200	{object}	HealthResponse
 //	@Failure		503	{object}	HealthResponse
-//	@Router			/ready [get]
+//	@Router			/api/ready [get]
 func (e *ReadyEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	resp := HealthResponse{Status: "ok", Defra: "ok"}
 
@@ -102,7 +102,7 @@ func (e *ReadyEndpoint) Command(getServerURL func() string) *cobra.Command {
 			ctx := cmd.Context()
 			client := api.NewClient(getServerURL())
 			var resp HealthResponse
-			if err := client.Get(ctx, "/ready", &resp); err != nil {
+			if err := client.Get(ctx, "/api/ready", &resp); err != nil {
 				return err
 			}
 			return api.Output(resp)
@@ -130,14 +130,14 @@ type DefraStatus struct {
 	URL       string `json:"url"`
 }
 
-// StatusEndpoint handles GET /status.
+// StatusEndpoint handles GET /api/status.
 type StatusEndpoint struct {
 	// DefraManager is set by server since it's not in Services
 	DefraManager *defra.DockerManager
 }
 
 func (e *StatusEndpoint) Route() (string, string, http.HandlerFunc) {
-	return "GET", "/status", e.handler
+	return "GET", "/api/status", e.handler
 }
 
 func (e *StatusEndpoint) RequiresInit() bool { return false }
@@ -149,7 +149,7 @@ func (e *StatusEndpoint) RequiresInit() bool { return false }
 //	@Tags			health
 //	@Produce		json
 //	@Success		200	{object}	StatusResponse
-//	@Router			/status [get]
+//	@Router			/api/status [get]
 func (e *StatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	resp := StatusResponse{
 		Server: "running",
@@ -198,7 +198,7 @@ func (e *StatusEndpoint) Command(getServerURL func() string) *cobra.Command {
 			ctx := cmd.Context()
 			client := api.NewClient(getServerURL())
 			var resp StatusResponse
-			if err := client.Get(ctx, "/status", &resp); err != nil {
+			if err := client.Get(ctx, "/api/status", &resp); err != nil {
 				return err
 			}
 			return api.Output(resp)

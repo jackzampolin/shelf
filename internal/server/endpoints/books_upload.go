@@ -33,9 +33,10 @@ func (e *UploadIngestEndpoint) RequiresInit() bool { return true }
 //	@Tags			books
 //	@Accept			mpfd
 //	@Produce		json
-//	@Param			files	formData	file	true	"PDF files to ingest"
-//	@Param			title	formData	string	false	"Book title (derived from filename if not provided)"
-//	@Param			author	formData	string	false	"Book author"
+//	@Param			files		formData	file	true	"PDF files to ingest"
+//	@Param			title		formData	string	false	"Book title (derived from filename if not provided)"
+//	@Param			author		formData	string	false	"Book author"
+//	@Param			auto_process	formData	bool	false	"Automatically start processing after ingest"
 //	@Success		202		{object}	IngestResponse
 //	@Failure		400		{object}	ErrorResponse
 //	@Failure		500		{object}	ErrorResponse
@@ -68,6 +69,7 @@ func (e *UploadIngestEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	// Get optional form fields
 	title := r.FormValue("title")
 	author := r.FormValue("author")
+	autoProcess := r.FormValue("auto_process") == "true"
 
 	// Get services from context
 	client := svcctx.DefraClientFrom(r.Context())
@@ -140,21 +142,44 @@ func (e *UploadIngestEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	})
 	job.SetDependencies(client, homeDir)
 
-	// Submit to scheduler (async)
-	if err := scheduler.Submit(r.Context(), job); err != nil {
+	// Run ingest synchronously (it's fast - just copies PDFs and creates Book record)
+	if _, err := job.Start(r.Context()); err != nil {
 		os.RemoveAll(tempDir)
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("ingest failed: %v", err))
 		return
 	}
 
-	// Return job ID for status polling
+	bookID := job.BookID()
 	status, _ := job.Status(r.Context())
-	writeJSON(w, http.StatusAccepted, IngestResponse{
+
+	// Build response
+	resp := IngestResponse{
 		JobID:  job.ID(),
+		BookID: bookID,
 		Title:  status["title"],
 		Author: author,
-		Status: "queued",
-	})
+		Status: "completed",
+	}
+
+	// Auto-start process-book job if requested
+	if autoProcess && bookID != "" {
+		if err := scheduler.SubmitByType(r.Context(), "process-book", bookID); err != nil {
+			if logger != nil {
+				logger.Error("failed to submit process-book job", "error", err, "book_id", bookID)
+			}
+			// Don't fail the request - ingest succeeded, just note the process didn't start
+		} else {
+			resp.Status = "processing"
+			if logger != nil {
+				logger.Info("auto-started process-book job", "book_id", bookID)
+			}
+		}
+	}
+
+	// Clean up temp directory (originals are already copied)
+	os.RemoveAll(tempDir)
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (e *UploadIngestEndpoint) Command(_ func() string) *cobra.Command {

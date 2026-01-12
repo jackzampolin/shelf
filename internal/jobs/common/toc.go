@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/google/uuid"
 
+	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
@@ -25,17 +25,11 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	// Get ToC page range
 	tocStartPage, tocEndPage := book.GetTocPageRange()
 
-	// Load ToC pages
-	tocPages, err := LoadTocPages(ctx, book.BookID, tocStartPage, tocEndPage)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to load ToC pages", "error", err)
-		}
-		return nil, ""
-	}
+	// Load ToC pages from BookState
+	tocPages := LoadTocPagesFromState(book, tocStartPage, tocEndPage)
 	if len(tocPages) == 0 {
 		if logger != nil {
-			logger.Warn("no ToC pages found",
+			logger.Warn("no ToC pages found in state",
 				"start_page", tocStartPage,
 				"end_page", tocEndPage)
 		}
@@ -56,10 +50,11 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	unit.ID = unitID
 	unit.Provider = book.TocProvider
 	unit.JobID = jc.ID()
+	unit.Priority = jobs.PriorityForStage("toc_extract")
 
 	unit.Metrics = &jobs.WorkUnitMetrics{
 		BookID:    book.BookID,
-		Stage:     jc.Type(),
+		Stage:     "toc",
 		ItemKey:   "toc_extract",
 		PromptKey: extract_toc.SystemPromptKey,
 		PromptCID: book.GetPromptCID(extract_toc.SystemPromptKey),
@@ -68,78 +63,31 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	return unit, unitID
 }
 
-// LoadTocPages loads ToC page content for extraction from DefraDB.
-func LoadTocPages(ctx context.Context, bookID string, startPage, endPage int) ([]extract_toc.ToCPage, error) {
-	logger := svcctx.LoggerFrom(ctx)
-
+// LoadTocPagesFromState loads ToC page content from BookState.
+func LoadTocPagesFromState(book *BookState, startPage, endPage int) []extract_toc.ToCPage {
 	if startPage == 0 || endPage == 0 {
-		return nil, fmt.Errorf("ToC page range not set")
-	}
-
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return nil, fmt.Errorf("defra client not in context")
-	}
-
-	// Build page filter - use _in for range or _eq for single page
-	var pageFilter string
-	if startPage == endPage {
-		pageFilter = fmt.Sprintf("page_num: {_eq: %d}", startPage)
-	} else {
-		var pages []string
-		for p := startPage; p <= endPage; p++ {
-			pages = append(pages, fmt.Sprintf("%d", p))
-		}
-		pageFilter = fmt.Sprintf("page_num: {_in: [%s]}", strings.Join(pages, ", "))
-	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {
-			book_id: {_eq: "%s"},
-			%s
-		}, order: {page_num: ASC}) {
-			page_num
-			blend_markdown
-		}
-	}`, bookID, pageFilter)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	rawPages, ok := resp.Data["Page"].([]any)
-	if !ok {
-		return nil, fmt.Errorf("no pages found in response")
-	}
-
-	if logger != nil {
-		logger.Debug("LoadTocPages query result", "raw_pages_count", len(rawPages))
+		return nil
 	}
 
 	var tocPages []extract_toc.ToCPage
-	for _, p := range rawPages {
-		page, ok := p.(map[string]any)
-		if !ok {
+	for pageNum := startPage; pageNum <= endPage; pageNum++ {
+		state := book.GetPage(pageNum)
+		if state == nil {
 			continue
 		}
 
-		var tp extract_toc.ToCPage
-		if pn, ok := page["page_num"].(float64); ok {
-			tp.PageNum = int(pn)
-		}
-		if bm, ok := page["blend_markdown"].(string); ok {
-			tp.OCRText = bm
+		blendMarkdown := state.GetBlendedText()
+		if blendMarkdown == "" {
+			continue
 		}
 
-		if tp.OCRText != "" {
-			tocPages = append(tocPages, tp)
-		} else if logger != nil {
-			logger.Debug("page has no blend_markdown", "page_num", tp.PageNum)
-		}
+		tocPages = append(tocPages, extract_toc.ToCPage{
+			PageNum: pageNum,
+			OCRText: blendMarkdown,
+		})
 	}
 
-	return tocPages, nil
+	return tocPages
 }
 
 // LoadTocStructureSummary loads the structure summary from the ToC finder.
@@ -303,6 +251,113 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 	return nil
 }
 
+// LinkedTocEntry represents a ToC entry with its page link.
+// Used by finalize_toc and common_structure jobs.
+type LinkedTocEntry struct {
+	DocID             string
+	Title             string
+	EntryNumber       string
+	Level             int
+	LevelName         string
+	SortOrder         int
+	ActualPage        *int   // May be nil if not linked
+	ActualPageDocID   string // Page document ID if linked
+	PrintedPageNumber string
+	Source            string // "extracted" or "discovered"
+}
+
+// LoadLinkedEntries loads all TocEntry records with their page links from DefraDB.
+// Used by both finalize_toc and common_structure jobs.
+func LoadLinkedEntries(ctx context.Context, tocDocID string) ([]*LinkedTocEntry, error) {
+	if tocDocID == "" {
+		return nil, fmt.Errorf("ToC document ID is required")
+	}
+
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil, fmt.Errorf("defra client not in context")
+	}
+
+	query := fmt.Sprintf(`{
+		TocEntry(filter: {toc_id: {_eq: "%s"}}, order: {sort_order: ASC}) {
+			_docID
+			entry_number
+			title
+			level
+			level_name
+			printed_page_number
+			sort_order
+			source
+			actual_page {
+				_docID
+				page_num
+			}
+		}
+	}`, tocDocID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	rawEntries, ok := resp.Data["TocEntry"].([]any)
+	if !ok {
+		return nil, nil // No entries
+	}
+
+	var entries []*LinkedTocEntry
+	for _, e := range rawEntries {
+		entry, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		le := &LinkedTocEntry{}
+
+		if docID, ok := entry["_docID"].(string); ok {
+			le.DocID = docID
+		}
+		if entryNum, ok := entry["entry_number"].(string); ok {
+			le.EntryNumber = entryNum
+		}
+		if title, ok := entry["title"].(string); ok {
+			le.Title = title
+		}
+		if level, ok := entry["level"].(float64); ok {
+			le.Level = int(level)
+		}
+		if levelName, ok := entry["level_name"].(string); ok {
+			le.LevelName = levelName
+		}
+		if printedPage, ok := entry["printed_page_number"].(string); ok {
+			le.PrintedPageNumber = printedPage
+		}
+		if sortOrder, ok := entry["sort_order"].(float64); ok {
+			le.SortOrder = int(sortOrder)
+		}
+		if source, ok := entry["source"].(string); ok {
+			le.Source = source
+		}
+
+		// Extract actual_page link
+		if actualPage, ok := entry["actual_page"].(map[string]any); ok {
+			if pageDocID, ok := actualPage["_docID"].(string); ok {
+				le.ActualPageDocID = pageDocID
+			}
+			if pageNum, ok := actualPage["page_num"].(float64); ok {
+				pn := int(pageNum)
+				le.ActualPage = &pn
+			}
+		}
+
+		if le.DocID != "" {
+			entries = append(entries, le)
+		}
+	}
+
+	return entries, nil
+}
+
 // DeleteExistingTocEntries deletes any existing TocEntry records for a ToC.
 func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 	logger := svcctx.LoggerFrom(ctx)
@@ -377,6 +432,39 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 		if err != nil {
 			return fmt.Errorf("failed to delete TocEntry %s: %w", docID, err)
 		}
+	}
+
+	return nil
+}
+
+// SaveTocEntryResult updates a TocEntry with the found page link.
+// Used by link_toc operations in both process_book and standalone link_toc jobs.
+func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string, result *toc_entry_finder.Result) error {
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+
+	update := map[string]any{}
+
+	if result.ScanPage != nil {
+		// Get page doc ID from BookState
+		state := book.GetPage(*result.ScanPage)
+		if state != nil {
+			pageDocID := state.GetPageDocID()
+			if pageDocID != "" {
+				update["actual_page_id"] = pageDocID
+			}
+		}
+	}
+
+	if len(update) > 0 {
+		sink.Send(defra.WriteOp{
+			Collection: "TocEntry",
+			DocID:      entryDocID,
+			Document:   update,
+			Op:         defra.OpUpdate,
+		})
 	}
 
 	return nil

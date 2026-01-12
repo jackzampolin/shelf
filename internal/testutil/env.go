@@ -73,13 +73,13 @@ func (c ServerConfig) URL() string {
 	return fmt.Sprintf("http://%s:%s", c.Host, c.Port)
 }
 
-// WaitForServer polls the /status endpoint until DefraDB is healthy.
+// WaitForServer polls the /api/status endpoint until DefraDB is healthy.
 func WaitForServer(url string, timeout time.Duration) error {
 	client := &http.Client{Timeout: 2 * time.Second}
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(url + "/status")
+		resp, err := client.Get(url + "/api/status")
 		if err == nil {
 			var status struct {
 				Defra struct {
@@ -161,10 +161,10 @@ type StatusResponse struct {
 	} `json:"defra"`
 }
 
-// GetStatus fetches the /status endpoint and returns the parsed response.
+// GetStatus fetches the /api/status endpoint and returns the parsed response.
 func GetStatus(url string) (*StatusResponse, error) {
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(url + "/status")
+	resp, err := client.Get(url + "/api/status")
 	if err != nil {
 		return nil, err
 	}

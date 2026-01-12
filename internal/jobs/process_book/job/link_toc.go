@@ -7,9 +7,10 @@ import (
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/agents"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
+	common_structure "github.com/jackzampolin/shelf/internal/jobs/common_structure/job"
+	finalize_toc_job "github.com/jackzampolin/shelf/internal/jobs/finalize_toc/job"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -44,16 +45,6 @@ func (j *Job) CreateLinkTocWorkUnits(ctx context.Context) []jobs.WorkUnit {
 
 // CreateEntryFinderWorkUnit creates an entry finder agent work unit.
 func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_finder.TocEntry) *jobs.WorkUnit {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		if logger := svcctx.LoggerFrom(ctx); logger != nil {
-			logger.Warn("defra client not in context for entry finder",
-				"book_id", j.Book.BookID,
-				"entry_doc_id", entry.DocID)
-		}
-		return nil
-	}
-
 	// Estimate book structure for back matter detection
 	bookStructure := &toc_entry_finder.BookStructure{
 		TotalPages:      j.Book.TotalPages,
@@ -63,11 +54,7 @@ func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 
 	// Create agent
 	ag := agents.NewTocEntryFinderAgent(ctx, agents.TocEntryFinderConfig{
-		BookID:        j.Book.BookID,
-		TotalPages:    j.Book.TotalPages,
-		DefraClient:   defraClient,
-		HomeDir:       j.Book.HomeDir,
-		PageReader:    j.Book, // Cached page data access
+		Book:          j.Book,
 		SystemPrompt:  j.GetPrompt(toc_entry_finder.PromptKey),
 		Entry:         entry,
 		BookStructure: bookStructure,
@@ -136,8 +123,8 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 		agentResult := ag.Result()
 		if agentResult != nil && agentResult.Success {
 			if entryResult, ok := agentResult.ToolResult.(*toc_entry_finder.Result); ok {
-				// Update TocEntry with actual_page
-				if err := j.SaveEntryResult(ctx, info.EntryDocID, entryResult); err != nil {
+				// Update TocEntry with actual_page using common utility
+				if err := common.SaveTocEntryResult(ctx, j.Book, info.EntryDocID, entryResult); err != nil {
 					return nil, fmt.Errorf("failed to save entry result: %w", err)
 				}
 			}
@@ -150,78 +137,12 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 	return nil, nil
 }
 
-// SaveEntryResult updates a TocEntry with the found page.
-func (j *Job) SaveEntryResult(ctx context.Context, entryDocID string, result *toc_entry_finder.Result) error {
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	update := map[string]any{}
-
-	if result.ScanPage != nil {
-		// Need to get the Page document ID for this scan page
-		pageDocID, err := j.getPageDocID(ctx, *result.ScanPage)
-		if err != nil {
-			return fmt.Errorf("failed to get page doc ID: %w", err)
-		}
-		if pageDocID != "" {
-			update["actual_page_id"] = pageDocID
-		}
-	}
-
-	if len(update) > 0 {
-		sink.Send(defra.WriteOp{
-			Collection: "TocEntry",
-			DocID:      entryDocID,
-			Document:   update,
-			Op:         defra.OpUpdate,
-		})
-	}
-
-	return nil
-}
-
-// getPageDocID returns the Page document ID for a given page number.
-func (j *Job) getPageDocID(ctx context.Context, pageNum int) (string, error) {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return "", fmt.Errorf("defra client not in context")
-	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
-			_docID
-		}
-	}`, j.Book.BookID, pageNum)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return "", err
-	}
-
-	if pages, ok := resp.Data["Page"].([]any); ok && len(pages) > 0 {
-		if page, ok := pages[0].(map[string]any); ok {
-			if docID, ok := page["_docID"].(string); ok {
-				return docID, nil
-			}
-		}
-	}
-
-	if logger := svcctx.LoggerFrom(ctx); logger != nil {
-		logger.Debug("page not found in database",
-			"book_id", j.Book.BookID,
-			"page_num", pageNum)
-	}
-	return "", nil
-}
-
 // convertLinkTocAgentUnits converts agent work units to job work units.
 func (j *Job) convertLinkTocAgentUnits(agentUnits []agent.WorkUnit, entryDocID string) []jobs.WorkUnit {
 	jobUnits := agents.ConvertToJobUnits(agentUnits, agents.ConvertConfig{
 		JobID:     j.RecordID,
 		Provider:  j.Book.TocProvider,
-		Stage:     j.Type(),
+		Stage:     "toc-link",
 		ItemKey:   fmt.Sprintf("link_entry_%s", entryDocID),
 		PromptKey: toc_entry_finder.PromptKey,
 		PromptCID: j.GetPromptCID(toc_entry_finder.PromptKey),
@@ -244,46 +165,88 @@ func (j *Job) PersistTocLinkState(ctx context.Context) error {
 	return common.PersistTocLinkState(ctx, j.TocDocID, &j.Book.TocLink)
 }
 
-// SubmitFinalizeTocJob submits a finalize-toc job for the book.
-// This is called when link_toc completes to trigger the finalize phase.
-func (j *Job) SubmitFinalizeTocJob(ctx context.Context) {
+// StartFinalizeTocInline creates and starts the finalize-toc sub-job inline.
+// Returns work units to process. This replaces SubmitFinalizeTocJob.
+func (j *Job) StartFinalizeTocInline(ctx context.Context) []jobs.WorkUnit {
 	logger := svcctx.LoggerFrom(ctx)
-	scheduler := svcctx.SchedulerFrom(ctx)
 
-	if scheduler == nil {
-		if logger != nil {
-			logger.Warn("scheduler not in context, cannot submit finalize-toc job")
-		}
-		return
-	}
-
-	// Mark finalize as started to prevent duplicate submissions
+	// Mark finalize as started to prevent duplicate starts
 	if err := j.Book.TocFinalize.Start(); err != nil {
 		if logger != nil {
 			logger.Debug("finalize already started", "error", err)
 		}
-		return
+		return nil
 	}
 	common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
 
-	// Use the scheduler to submit a finalize-toc job by type
-	err := scheduler.SubmitByType(ctx, "finalize-toc", j.Book.BookID)
+	// Load linked entries for the finalize sub-job
+	entries, err := common.LoadLinkedEntries(ctx, j.TocDocID)
 	if err != nil {
 		if logger != nil {
-			logger.Error("failed to submit finalize-toc job",
+			logger.Error("failed to load linked entries for finalize",
 				"book_id", j.Book.BookID,
 				"error", err)
 		}
-		// Reset state on failure
-		j.Book.TocFinalize.Reset()
+		j.Book.TocFinalize.Fail(MaxBookOpRetries)
 		common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
-		return
+		return nil
 	}
 
-	if logger != nil {
-		logger.Info("submitted finalize-toc job",
-			"book_id", j.Book.BookID)
+	// Create the finalize sub-job using our already-loaded book result
+	loadResult := &common.LoadBookResult{
+		Book:     j.Book,
+		TocDocID: j.TocDocID,
 	}
+	j.FinalizeJob = finalize_toc_job.NewFromLoadResult(loadResult, entries)
+	j.FinalizeJob.SetRecordID(j.RecordID) // Use parent job's record ID
+
+	if logger != nil {
+		linkedCount := 0
+		for _, e := range entries {
+			if e.ActualPage != nil {
+				linkedCount++
+			}
+		}
+		logger.Info("starting finalize-toc inline",
+			"book_id", j.Book.BookID,
+			"entries_count", len(entries),
+			"linked_count", linkedCount)
+	}
+
+	// Start the finalize sub-job to get initial work units
+	units, err := j.FinalizeJob.Start(ctx)
+	if err != nil {
+		if logger != nil {
+			logger.Error("failed to start finalize sub-job",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+		j.Book.TocFinalize.Fail(MaxBookOpRetries)
+		common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
+		return nil
+	}
+
+	// If finalize completed immediately (no work to do)
+	if j.FinalizeJob.Done() {
+		j.Book.TocFinalize.Complete()
+		common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
+		if logger != nil {
+			logger.Info("finalize-toc completed immediately (no work needed)",
+				"book_id", j.Book.BookID)
+		}
+		// Continue to structure if ready
+		return j.MaybeStartStructureInline(ctx)
+	}
+
+	// Register finalize work units in our tracker
+	for _, unit := range units {
+		j.RegisterWorkUnit(unit.ID, WorkUnitInfo{
+			UnitType:      WorkUnitTypeFinalizePattern,
+			FinalizePhase: FinalizePhasePattern,
+		})
+	}
+
+	return units
 }
 
 // createLinkTocRetryUnit creates a retry work unit for a failed link_toc operation.
@@ -320,4 +283,202 @@ func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo) *jo
 	}
 
 	return unit
+}
+
+// HandleFinalizeComplete routes finalize work unit completion to the sub-job.
+func (j *Job) HandleFinalizeComplete(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo) ([]jobs.WorkUnit, error) {
+	if j.FinalizeJob == nil {
+		return nil, fmt.Errorf("finalize sub-job not initialized")
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Delegate to the finalize sub-job's OnComplete
+	units, err := j.FinalizeJob.OnComplete(ctx, result)
+	if err != nil {
+		if logger != nil {
+			logger.Error("finalize sub-job OnComplete failed",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+		return nil, err
+	}
+
+	// Check if finalize is done
+	if j.FinalizeJob.Done() {
+		j.Book.TocFinalize.Complete()
+		common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
+		if logger != nil {
+			logger.Info("finalize-toc completed",
+				"book_id", j.Book.BookID)
+		}
+		// Continue to structure if ready
+		structureUnits := j.MaybeStartStructureInline(ctx)
+		units = append(units, structureUnits...)
+	}
+
+	// Register new work units from finalize sub-job
+	for _, unit := range units {
+		// Determine unit type based on sub-job phase
+		unitType := WorkUnitTypeFinalizePattern
+		phase := FinalizePhasePattern
+		if j.FinalizeJob != nil {
+			// Get current phase from the finalize job status
+			status, _ := j.FinalizeJob.Status(ctx)
+			if p, ok := status["phase"]; ok {
+				switch p {
+				case "discover":
+					unitType = WorkUnitTypeFinalizeDiscover
+					phase = FinalizePhaseDiscover
+				case "validate":
+					unitType = WorkUnitTypeFinalizeGap
+					phase = FinalizePhaseValidate
+				}
+			}
+		}
+		j.RegisterWorkUnit(unit.ID, WorkUnitInfo{
+			UnitType:      unitType,
+			FinalizePhase: phase,
+		})
+	}
+
+	return units, nil
+}
+
+// MaybeStartStructureInline starts the common-structure sub-job if ready.
+// Returns work units to process.
+func (j *Job) MaybeStartStructureInline(ctx context.Context) []jobs.WorkUnit {
+	// Only start structure if finalize is complete and structure not yet started
+	if !j.Book.TocFinalize.IsComplete() || !j.Book.Structure.CanStart() {
+		return nil
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+	if logger != nil {
+		logger.Info("starting common-structure inline",
+			"book_id", j.Book.BookID)
+	}
+
+	// Mark structure as started
+	if err := j.Book.Structure.Start(); err != nil {
+		if logger != nil {
+			logger.Debug("structure already started", "error", err)
+		}
+		return nil
+	}
+	common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+
+	// Load linked entries (finalized after finalize_toc)
+	linkedEntries, err := common.LoadLinkedEntries(ctx, j.TocDocID)
+	if err != nil {
+		if logger != nil {
+			logger.Error("failed to load linked entries for structure",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+		j.Book.Structure.Fail(MaxBookOpRetries)
+		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+		return nil
+	}
+
+	// Create the structure sub-job using our already-loaded book
+	loadResult := &common.LoadBookResult{
+		Book:     j.Book,
+		TocDocID: j.TocDocID,
+	}
+	j.StructureJob = common_structure.NewFromLoadResult(loadResult, linkedEntries)
+	j.StructureJob.SetRecordID(j.RecordID) // Use parent job's record ID
+
+	// Start the structure sub-job to get initial work units
+	units, err := j.StructureJob.Start(ctx)
+	if err != nil {
+		if logger != nil {
+			logger.Error("failed to start structure sub-job",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+		j.Book.Structure.Fail(MaxBookOpRetries)
+		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+		return nil
+	}
+
+	// If structure completed immediately (no work to do)
+	if j.StructureJob.Done() {
+		j.Book.Structure.Complete()
+		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+		if logger != nil {
+			logger.Info("common-structure completed immediately (no work needed)",
+				"book_id", j.Book.BookID)
+		}
+		return nil
+	}
+
+	// Register structure work units in our tracker
+	for _, unit := range units {
+		j.RegisterWorkUnit(unit.ID, WorkUnitInfo{
+			UnitType:       WorkUnitTypeStructureClassify,
+			StructurePhase: StructurePhaseClassify,
+		})
+	}
+
+	if logger != nil {
+		logger.Info("common-structure started",
+			"book_id", j.Book.BookID,
+			"work_units", len(units))
+	}
+
+	return units
+}
+
+// HandleStructureComplete routes structure work unit completion to the sub-job.
+func (j *Job) HandleStructureComplete(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo) ([]jobs.WorkUnit, error) {
+	if j.StructureJob == nil {
+		return nil, fmt.Errorf("structure sub-job not initialized")
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Delegate to the structure sub-job's OnComplete
+	units, err := j.StructureJob.OnComplete(ctx, result)
+	if err != nil {
+		if logger != nil {
+			logger.Error("structure sub-job OnComplete failed",
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+		return nil, err
+	}
+
+	// Check if structure is done
+	if j.StructureJob.Done() {
+		j.Book.Structure.Complete()
+		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+		if logger != nil {
+			logger.Info("common-structure completed",
+				"book_id", j.Book.BookID)
+		}
+	}
+
+	// Register new work units from structure sub-job
+	for _, unit := range units {
+		// Determine unit type based on sub-job phase
+		unitType := WorkUnitTypeStructureClassify
+		phase := StructurePhaseClassify
+		if j.StructureJob != nil {
+			status, _ := j.StructureJob.Status(ctx)
+			if p, ok := status["phase"]; ok {
+				switch p {
+				case "polish":
+					unitType = WorkUnitTypeStructurePolish
+					phase = StructurePhasePolish
+				}
+			}
+		}
+		j.RegisterWorkUnit(unit.ID, WorkUnitInfo{
+			UnitType:       unitType,
+			StructurePhase: phase,
+		})
+	}
+
+	return units, nil
 }

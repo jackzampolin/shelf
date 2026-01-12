@@ -71,6 +71,7 @@ func (m *Manager) Delete(ctx context.Context, jobID string) error {
 type ListFilter struct {
 	Status  Status // Filter by status (empty = all)
 	JobType string // Filter by job type (empty = all)
+	BookID  string // Filter by book_id in metadata (empty = all)
 	Limit   int    // Max results (0 = default 100)
 }
 
@@ -81,6 +82,9 @@ func (m *Manager) createJob(ctx context.Context, record *Record) (string, error)
 		"job_type":   record.JobType,
 		"status":     string(record.Status),
 		"created_at": record.CreatedAt.Format(time.RFC3339),
+	}
+	if record.BookID != "" {
+		input["book_id"] = record.BookID
 	}
 	if record.Metadata != nil {
 		metaJSON, err := json.Marshal(record.Metadata)
@@ -98,6 +102,7 @@ func (m *Manager) getJob(ctx context.Context, jobID string) (*Record, error) {
 		Job(docID: %q) {
 			_docID
 			job_type
+			book_id
 			status
 			created_at
 			started_at
@@ -129,6 +134,9 @@ func (m *Manager) listJobs(ctx context.Context, filter ListFilter) ([]*Record, e
 	if filter.JobType != "" {
 		filterParts = append(filterParts, fmt.Sprintf(`job_type: {_eq: %q}`, filter.JobType))
 	}
+	if filter.BookID != "" {
+		filterParts = append(filterParts, fmt.Sprintf(`book_id: {_eq: %q}`, filter.BookID))
+	}
 
 	filterStr := ""
 	if len(filterParts) > 0 {
@@ -144,6 +152,7 @@ func (m *Manager) listJobs(ctx context.Context, filter ListFilter) ([]*Record, e
 		Job(%s, limit: %d) {
 			_docID
 			job_type
+			book_id
 			status
 			created_at
 			started_at
@@ -244,6 +253,9 @@ func parseJobRecord(data map[string]any) (*Record, error) {
 	}
 	if jt, ok := data["job_type"].(string); ok {
 		record.JobType = jt
+	}
+	if bid, ok := data["book_id"].(string); ok {
+		record.BookID = bid
 	}
 	if s, ok := data["status"].(string); ok {
 		record.Status = Status(s)

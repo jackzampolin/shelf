@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { testClient, BACKEND_URL } from './setup'
 
 describe('Health Endpoints', () => {
-  describe('GET /health', () => {
+  describe('GET /api/health', () => {
     it('should return ok status', async () => {
-      const { data, error } = await testClient.GET('/health')
+      const { data, error } = await testClient.GET('/api/health')
 
       expect(error).toBeUndefined()
       expect(data).toBeDefined()
@@ -12,9 +12,9 @@ describe('Health Endpoints', () => {
     })
   })
 
-  describe('GET /ready', () => {
+  describe('GET /api/ready', () => {
     it('should return ok status with defra healthy', async () => {
-      const { data, error } = await testClient.GET('/ready')
+      const { data, error } = await testClient.GET('/api/ready')
 
       expect(error).toBeUndefined()
       expect(data).toBeDefined()
@@ -23,9 +23,9 @@ describe('Health Endpoints', () => {
     })
   })
 
-  describe('GET /status', () => {
+  describe('GET /api/status', () => {
     it('should return detailed server status', async () => {
-      const { data, error } = await testClient.GET('/status')
+      const { data, error } = await testClient.GET('/api/status')
 
       expect(error).toBeUndefined()
       expect(data).toBeDefined()
@@ -37,7 +37,7 @@ describe('Health Endpoints', () => {
     })
 
     it('should list available providers', async () => {
-      const { data } = await testClient.GET('/status')
+      const { data } = await testClient.GET('/api/status')
 
       // Providers should be arrays (may be empty if not configured)
       expect(Array.isArray(data?.providers?.ocr)).toBe(true)

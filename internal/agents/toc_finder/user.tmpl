@@ -1,4 +1,4 @@
-Find the Table of Contents in book: {{.ScanID}}
+Find the Table of Contents in book: {{if .BookTitle}}"{{.BookTitle}}"{{else}}{{.ScanID}}{{end}}
 
 Total pages: {{.TotalPages}}
 

@@ -54,10 +54,11 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 
 	book := NewBookState(bookID)
 
-	// 1. Query book record for page_count
+	// 1. Query book record for page_count and title
 	bookQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			page_count
+			title
 		}
 	}`, bookID)
 
@@ -70,6 +71,9 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 		if bookData, ok := books[0].(map[string]any); ok {
 			if pc, ok := bookData["page_count"].(float64); ok {
 				book.TotalPages = int(pc)
+			}
+			if title, ok := bookData["title"].(string); ok {
+				book.BookTitle = title
 			}
 		}
 	}

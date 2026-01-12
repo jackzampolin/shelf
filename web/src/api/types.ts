@@ -242,6 +242,8 @@ export interface paths {
                         title?: string;
                         /** @description Book author */
                         author?: string;
+                        /** @description Automatically start processing after ingest */
+                        auto_process?: boolean;
                     };
                 };
             };
@@ -303,7 +305,14 @@ export interface paths {
          */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Filter by stage (toc-pattern, toc-discover, toc-validate, structure-classify, structure-polish) */
+                    stage?: string;
+                    /** @description Filter by agent type */
+                    agent_type?: string;
+                    /** @description Filter by job ID */
+                    job_id?: string;
+                };
                 header?: never;
                 path: {
                     /** @description Book ID */
@@ -744,6 +753,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/{id}/chapters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get book chapters
+         * @description Get chapter structure with page content
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Include page text content */
+                    include_text?: boolean;
+                    /** @description Include paragraphs */
+                    include_paragraphs?: boolean;
+                };
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ChaptersResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{id}/cost": {
         parameters: {
             query?: never;
@@ -777,6 +860,75 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["internal_server_endpoints.MetricsCostResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{id}/metrics/detailed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get detailed book metrics with percentiles
+         * @description Get detailed metrics for a specific book including latency percentiles and token breakdowns per stage
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.MetricsDetailedResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -1026,6 +1178,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health check
+         * @description Basic health check endpoint
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -1044,6 +1235,8 @@ export interface paths {
                     status?: string;
                     /** @description Filter by job type */
                     job_type?: string;
+                    /** @description Filter by book ID */
+                    book_id?: string;
                 };
                 header?: never;
                 path?: never;
@@ -1885,6 +2078,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/metrics/detailed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get detailed metrics with percentiles
+         * @description Get detailed metrics including latency percentiles (p50, p95, p99) and token breakdowns per stage
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Filter by book ID */
+                    book_id?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.MetricsDetailedResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/summary": {
         parameters: {
             query?: never;
@@ -2049,6 +2302,54 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readiness check
+         * @description Readiness check including DefraDB status
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
                     };
                 };
             };
@@ -2287,94 +2588,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Health check
-         * @description Basic health check endpoint
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/ready": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Readiness check
-         * @description Readiness check including DefraDB status
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
-                    };
-                };
-                /** @description Service Unavailable */
-                503: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/status": {
+    "/api/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -2438,6 +2652,7 @@ export interface components {
         };
         "github_com_jackzampolin_shelf_internal_jobs.Record": {
             _docID?: string;
+            book_id?: string;
             completed_at?: string;
             created_at?: string;
             error?: string;
@@ -2482,6 +2697,32 @@ export interface components {
             /** @description Timing */
             timestamp?: string;
             tool_calls?: number[];
+        };
+        "github_com_jackzampolin_shelf_internal_metrics.DetailedStats": {
+            avg_completion_tokens?: number;
+            avg_cost_usd?: number;
+            /** @description Average tokens per call */
+            avg_prompt_tokens?: number;
+            avg_reasoning_tokens?: number;
+            avg_total_tokens?: number;
+            /** @description Basic counts */
+            count?: number;
+            error_count?: number;
+            latency_avg?: number;
+            latency_max?: number;
+            latency_min?: number;
+            /** @description Latency percentiles (seconds) */
+            latency_p50?: number;
+            latency_p95?: number;
+            latency_p99?: number;
+            success_count?: number;
+            total_completion_tokens?: number;
+            /** @description Cost */
+            total_cost_usd?: number;
+            /** @description Token stats */
+            total_prompt_tokens?: number;
+            total_reasoning_tokens?: number;
+            total_tokens?: number;
         };
         "github_com_jackzampolin_shelf_internal_metrics.Metric": {
             _docID?: string;
@@ -2532,6 +2773,7 @@ export interface components {
             error?: string;
             id?: string;
             iterations?: number;
+            job_id?: string;
             /** @description Detailed data */
             messages?: number[];
             result?: number[];
@@ -2555,6 +2797,7 @@ export interface components {
             error?: string;
             id?: string;
             iterations?: number;
+            job_id?: string;
             started_at?: string;
             success?: boolean;
         };
@@ -2592,6 +2835,47 @@ export interface components {
             book_id?: string;
             prompts?: components["schemas"]["internal_server_endpoints.BookPromptResponse"][];
         };
+        "internal_server_endpoints.ChapterPage": {
+            blended_text?: string;
+            label?: string;
+            page_num?: number;
+        };
+        "internal_server_endpoints.ChapterParagraph": {
+            id?: string;
+            polished_text?: string;
+            raw_text?: string;
+            sort_order?: number;
+            start_page?: number;
+            word_count?: number;
+        };
+        "internal_server_endpoints.ChapterWithText": {
+            classification_reasoning?: string;
+            edits_applied_json?: string;
+            end_page?: number;
+            entry_id?: string;
+            entry_number?: string;
+            id?: string;
+            level?: number;
+            level_name?: string;
+            matter_type?: string;
+            page_count?: number;
+            pages?: components["schemas"]["internal_server_endpoints.ChapterPage"][];
+            paragraphs?: components["schemas"]["internal_server_endpoints.ChapterParagraph"][];
+            polish_complete?: boolean;
+            polish_failed?: boolean;
+            polished_text?: string;
+            sort_order?: number;
+            start_page?: number;
+            title?: string;
+            word_count?: number;
+        };
+        "internal_server_endpoints.ChaptersResponse": {
+            book_id?: string;
+            book_title?: string;
+            chapters?: components["schemas"]["internal_server_endpoints.ChapterWithText"][];
+            has_chapters?: boolean;
+            total_pages?: number;
+        };
         "internal_server_endpoints.CreateJobRequest": {
             job_type?: string;
             metadata?: {
@@ -2618,6 +2902,8 @@ export interface components {
             };
             /** @description Stage progress with costs */
             stages?: components["schemas"]["internal_server_endpoints.StageProgress"];
+            /** @description Structure status (common-structure job) */
+            structure?: components["schemas"]["internal_server_endpoints.StructureStatus"];
             /** @description ToC status */
             toc?: components["schemas"]["internal_server_endpoints.ToCStatus"];
             total_pages?: number;
@@ -2627,6 +2913,7 @@ export interface components {
         };
         "internal_server_endpoints.GetJobResponse": {
             _docID?: string;
+            book_id?: string;
             completed_at?: string;
             created_at?: string;
             error?: string;
@@ -2667,7 +2954,9 @@ export interface components {
         };
         "internal_server_endpoints.IngestResponse": {
             author?: string;
+            book_id?: string;
             job_id?: string;
+            process_job_id?: string;
             status?: string;
             title?: string;
         };
@@ -2722,6 +3011,12 @@ export interface components {
                 [key: string]: number;
             };
             total_cost_usd?: number;
+        };
+        "internal_server_endpoints.MetricsDetailedResponse": {
+            book_id?: string;
+            stages?: {
+                [key: string]: components["schemas"]["github_com_jackzampolin_shelf_internal_metrics.DetailedStats"];
+            };
         };
         "internal_server_endpoints.MetricsSummaryResponse": {
             avg_cost_usd?: number;
@@ -2832,6 +3127,14 @@ export interface components {
             providers?: components["schemas"]["internal_server_endpoints.ProvidersStatus"];
             server?: string;
         };
+        "internal_server_endpoints.StructureStatus": {
+            chapter_count?: number;
+            complete?: boolean;
+            cost_usd?: number;
+            failed?: boolean;
+            retries?: number;
+            started?: boolean;
+        };
         "internal_server_endpoints.ToCEntry": {
             actual_page_num?: number;
             entry_number?: string;
@@ -2840,12 +3143,15 @@ export interface components {
             level_name?: string;
             printed_page_number?: string;
             sort_order?: number;
+            /** @description "extracted" or "discovered" */
+            source?: string;
             title?: string;
         };
         "internal_server_endpoints.ToCStatus": {
             cost_usd?: number;
             end_page?: number;
             entries?: components["schemas"]["internal_server_endpoints.ToCEntry"][];
+            entries_discovered?: number;
             entries_linked?: number;
             /** @description Entries (when extracted) */
             entry_count?: number;
@@ -2853,6 +3159,11 @@ export interface components {
             extract_failed?: boolean;
             /** @description Extract stage */
             extract_started?: boolean;
+            finalize_complete?: boolean;
+            finalize_failed?: boolean;
+            finalize_retries?: number;
+            /** @description Finalize stage */
+            finalize_started?: boolean;
             finder_complete?: boolean;
             finder_failed?: boolean;
             /** @description Finder stage */

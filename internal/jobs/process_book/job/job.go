@@ -253,6 +253,22 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 				newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
 			}
 		}
+
+	case WorkUnitTypeFinalizePattern, WorkUnitTypeFinalizeDiscover, WorkUnitTypeFinalizeGap:
+		units, err := j.HandleFinalizeComplete(ctx, result, info)
+		if err != nil {
+			handlerErr = err
+		} else {
+			newUnits = append(newUnits, units...)
+		}
+
+	case WorkUnitTypeStructureClassify, WorkUnitTypeStructurePolish:
+		units, err := j.HandleStructureComplete(ctx, result, info)
+		if err != nil {
+			handlerErr = err
+		} else {
+			newUnits = append(newUnits, units...)
+		}
 	}
 
 	// Handle handler errors with retry for page-level operations
@@ -307,7 +323,7 @@ func (j *Job) createRetryUnit(ctx context.Context, info WorkUnitInfo, logger *sl
 	case "ocr":
 		unit = j.CreateOcrWorkUnit(ctx, info.PageNum, info.Provider)
 	case "blend":
-		unit = j.CreateBlendWorkUnit(info.PageNum, state)
+		unit = j.CreateBlendWorkUnit(ctx, info.PageNum, state)
 	case "label":
 		unit = j.CreateLabelWorkUnit(ctx, info.PageNum, state)
 	}

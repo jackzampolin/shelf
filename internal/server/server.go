@@ -15,7 +15,9 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/ingest"
+	"github.com/jackzampolin/shelf/internal/jobcfg"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common_structure"
 	"github.com/jackzampolin/shelf/internal/jobs/finalize_toc"
 	"github.com/jackzampolin/shelf/internal/jobs/label_book"
 	"github.com/jackzampolin/shelf/internal/jobs/link_toc"
@@ -35,6 +37,9 @@ import (
 	"github.com/jackzampolin/shelf/internal/server/endpoints"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 
+	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
+	gap_investigator "github.com/jackzampolin/shelf/internal/agents/gap_investigator"
+	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 )
@@ -43,33 +48,18 @@ import (
 // It manages the DefraDB container lifecycle - starting it on server start
 // and stopping it on server shutdown.
 type Server struct {
-	httpServer       *http.Server
-	defraManager     *defra.DockerManager
-	defraClient      *defra.Client
-	defraSink        *defra.Sink
-	jobManager       *jobs.Manager
-	scheduler        *jobs.Scheduler
-	registry    *providers.Registry
+	httpServer     *http.Server
+	defraManager   *defra.DockerManager
+	defraClient    *defra.Client
+	defraSink      *defra.Sink
+	jobManager     *jobs.Manager
+	scheduler      *jobs.Scheduler
+	registry       *providers.Registry
 	configMgr      *config.Manager
 	configStore    config.Store
 	promptResolver *prompts.Resolver
 	logger         *slog.Logger
 	home           *home.Dir
-
-	// processBookCfg is saved for job factory registration
-	processBookCfg process_book.Config
-	// ocrBookCfg is saved for job factory registration
-	ocrBookCfg ocr_book.Config
-	// labelBookCfg is saved for job factory registration
-	labelBookCfg label_book.Config
-	// metadataBookCfg is saved for job factory registration
-	metadataBookCfg metadata_book.Config
-	// tocBookCfg is saved for job factory registration
-	tocBookCfg toc_book.Config
-	// linkTocCfg is saved for job factory registration
-	linkTocCfg link_toc.Config
-	// finalizeTocCfg is saved for job factory registration
-	finalizeTocCfg finalize_toc.Config
 
 	// services holds all core services for context enrichment
 	services *svcctx.Services
@@ -82,6 +72,7 @@ type Server struct {
 }
 
 // Config holds server configuration.
+// Note: Job configs are no longer passed here - they are read from DefraDB at runtime.
 type Config struct {
 	// Host is the address to bind to (default: 127.0.0.1)
 	Host string
@@ -97,27 +88,10 @@ type Config struct {
 	Logger *slog.Logger
 	// Home is the shelf home directory
 	Home *home.Dir
-	// PipelineConfig configures the page processing pipeline
-	PipelineConfig PipelineConfig
-}
-
-// PipelineConfig configures the page processing pipeline stages.
-type PipelineConfig struct {
-	// OcrProviders are the OCR providers to use (e.g., ["mistral", "paddle"])
-	OcrProviders []string
-	// BlendProvider is the LLM provider for blending OCR outputs
-	BlendProvider string
-	// LabelProvider is the LLM provider for labeling page structure
-	LabelProvider string
-	// MetadataProvider is the LLM provider for metadata extraction
-	MetadataProvider string
-	// TocProvider is the LLM provider for ToC operations
-	TocProvider string
-	// DebugAgents enables debug logging for agent executions
-	DebugAgents bool
 }
 
 // New creates a new Server with the given configuration.
+// Job configs are NOT passed here - they are read from DefraDB at runtime.
 func New(cfg Config) (*Server, error) {
 	if cfg.Host == "" {
 		cfg.Host = "127.0.0.1"
@@ -154,76 +128,19 @@ func New(cfg Config) (*Server, error) {
 		})
 	}
 
-	// Save process book config for job factory registration
-	processBookCfg := process_book.Config{
-		OcrProviders:     cfg.PipelineConfig.OcrProviders,
-		BlendProvider:    cfg.PipelineConfig.BlendProvider,
-		LabelProvider:    cfg.PipelineConfig.LabelProvider,
-		MetadataProvider: cfg.PipelineConfig.MetadataProvider,
-		TocProvider:      cfg.PipelineConfig.TocProvider,
-		DebugAgents:      cfg.PipelineConfig.DebugAgents,
-	}
-
-	// Save OCR book config for job factory registration (subset of process pages)
-	ocrBookCfg := ocr_book.Config{
-		OcrProviders:  cfg.PipelineConfig.OcrProviders,
-		BlendProvider: cfg.PipelineConfig.BlendProvider,
-	}
-
-	// Save label book config for job factory registration
-	labelBookCfg := label_book.Config{
-		LabelProvider: cfg.PipelineConfig.LabelProvider,
-	}
-
-	// Save metadata book config for job factory registration
-	metadataBookCfg := metadata_book.Config{
-		MetadataProvider: cfg.PipelineConfig.MetadataProvider,
-	}
-
-	// Save toc book config for job factory registration
-	tocBookCfg := toc_book.Config{
-		TocProvider: cfg.PipelineConfig.TocProvider,
-		DebugAgents: cfg.PipelineConfig.DebugAgents,
-	}
-
-	// Save link toc config for job factory registration
-	linkTocCfg := link_toc.Config{
-		TocProvider: cfg.PipelineConfig.TocProvider,
-		DebugAgents: cfg.PipelineConfig.DebugAgents,
-	}
-
-	// Save finalize toc config for job factory registration
-	finalizeTocCfg := finalize_toc.Config{
-		TocProvider: cfg.PipelineConfig.TocProvider,
-		DebugAgents: cfg.PipelineConfig.DebugAgents,
-	}
-
 	s := &Server{
-		defraManager:     defraManager,
-		registry:         registry,
-		processBookCfg:   processBookCfg,
-		ocrBookCfg:       ocrBookCfg,
-		labelBookCfg:     labelBookCfg,
-		metadataBookCfg:  metadataBookCfg,
-		tocBookCfg:       tocBookCfg,
-		linkTocCfg:       linkTocCfg,
-		finalizeTocCfg:   finalizeTocCfg,
-		configMgr:       cfg.ConfigManager,
-		logger:          cfg.Logger,
-		home:            cfg.Home,
+		defraManager: defraManager,
+		registry:     registry,
+		configMgr:    cfg.ConfigManager,
+		logger:       cfg.Logger,
+		home:         cfg.Home,
 	}
 
 	// Create endpoint registry and register all endpoints
+	// Job configs are read from DefraDB at request time, not passed here
 	s.endpointRegistry = api.NewRegistry()
 	for _, ep := range endpoints.All(endpoints.Config{
-		DefraManager:        defraManager,
-		ProcessBookConfig:   processBookCfg,
-		OcrBookConfig:       ocrBookCfg,
-		LabelBookConfig:     labelBookCfg,
-		MetadataBookConfig:  metadataBookCfg,
-		TocBookConfig:       tocBookCfg,
-		LinkTocConfig:       linkTocCfg,
-		FinalizeTocConfig:   finalizeTocCfg,
+		DefraManager: defraManager,
 	}) {
 		s.endpointRegistry.Register(ep)
 	}
@@ -302,6 +219,9 @@ func (s *Server) Start(ctx context.Context) error {
 	extract_toc.RegisterPrompts(s.promptResolver)
 	toc_finder.RegisterPrompts(s.promptResolver)
 	toc_entry_finder.RegisterPrompts(s.promptResolver)
+	pattern_analyzer.RegisterPrompts(s.promptResolver)
+	chapter_finder.RegisterPrompts(s.promptResolver)
+	gap_investigator.RegisterPrompts(s.promptResolver)
 
 	// Sync prompts to database (creates new, updates modified)
 	s.logger.Info("syncing prompts to database")
@@ -340,13 +260,15 @@ func (s *Server) Start(ctx context.Context) error {
 	s.scheduler.RegisterCPUHandler(ingest.TaskExtractPage, ingest.ExtractPageHandler())
 
 	// Register job factories for resumption
-	s.scheduler.RegisterFactory(process_book.JobType, process_book.JobFactory(s.processBookCfg))
-	s.scheduler.RegisterFactory(ocr_book.JobType, ocr_book.JobFactory(s.ocrBookCfg))
-	s.scheduler.RegisterFactory(label_book.JobType, label_book.JobFactory(s.labelBookCfg))
-	s.scheduler.RegisterFactory(metadata_book.JobType, metadata_book.JobFactory(s.metadataBookCfg))
-	s.scheduler.RegisterFactory(toc_book.JobType, toc_book.JobFactory(s.tocBookCfg))
-	s.scheduler.RegisterFactory(link_toc.JobType, link_toc.JobFactory(s.linkTocCfg))
-	s.scheduler.RegisterFactory(finalize_toc.JobType, finalize_toc.JobFactory(s.finalizeTocCfg))
+	// These factories read config from DefraDB, so resumed jobs use current settings
+	s.scheduler.RegisterFactory(process_book.JobType, jobcfg.ProcessBookJobFactory(s.configStore))
+	s.scheduler.RegisterFactory(ocr_book.JobType, jobcfg.OcrBookJobFactory(s.configStore))
+	s.scheduler.RegisterFactory(label_book.JobType, jobcfg.LabelBookJobFactory(s.configStore))
+	s.scheduler.RegisterFactory(metadata_book.JobType, jobcfg.MetadataBookJobFactory(s.configStore))
+	s.scheduler.RegisterFactory(toc_book.JobType, jobcfg.TocBookJobFactory(s.configStore))
+	s.scheduler.RegisterFactory(link_toc.JobType, jobcfg.LinkTocJobFactory(s.configStore))
+	s.scheduler.RegisterFactory(finalize_toc.JobType, jobcfg.FinalizeTocJobFactory(s.configStore))
+	s.scheduler.RegisterFactory(common_structure.JobType, jobcfg.CommonStructureJobFactory(s.configStore))
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)

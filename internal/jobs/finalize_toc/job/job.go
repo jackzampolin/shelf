@@ -3,7 +3,9 @@ package job
 import (
 	"context"
 	"fmt"
+	"sort"
 
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/svcctx"
@@ -290,18 +292,90 @@ func (j *Job) checkValidateCompletion(ctx context.Context) ([]jobs.WorkUnit, err
 }
 
 func (j *Job) completeJob(ctx context.Context) ([]jobs.WorkUnit, error) {
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Re-sort all TocEntries by actual_page for proper ordering
+	// This ensures discovered chapters interleave correctly with original ToC entries
+	if err := j.resortEntriesByPage(ctx); err != nil {
+		if logger != nil {
+			logger.Warn("failed to re-sort entries by page", "error", err)
+		}
+		// Non-fatal - continue with completion
+	}
+
 	j.Book.TocFinalize.Complete()
 	j.PersistTocFinalizeState(ctx)
 	j.IsDone = true
 
-	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+	if logger != nil {
 		logger.Info("finalize toc job complete",
 			"book_id", j.Book.BookID,
 			"entries_found", j.EntriesFound,
 			"gaps_fixed", j.GapsFixes)
 	}
 
+	// Note: common-structure is started by the parent job (process-book)
+	// via MaybeStartStructureInline() after this job completes.
+	// Jobs should not submit other jobs.
+
 	return nil, nil
+}
+
+// resortEntriesByPage re-assigns sort_order for all TocEntries based on actual_page.
+// This ensures proper ordering after discovery adds new entries.
+func (j *Job) resortEntriesByPage(ctx context.Context) error {
+	// Load all entries with their pages
+	entries, err := common.LoadLinkedEntries(ctx, j.TocDocID)
+	if err != nil {
+		return fmt.Errorf("failed to load entries: %w", err)
+	}
+
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// Sort by actual_page (entries without pages go to the end)
+	sort.Slice(entries, func(i, k int) bool {
+		// Entries with pages come before entries without
+		if entries[i].ActualPage == nil && entries[k].ActualPage == nil {
+			return entries[i].SortOrder < entries[k].SortOrder // Preserve original order
+		}
+		if entries[i].ActualPage == nil {
+			return false // i goes after k
+		}
+		if entries[k].ActualPage == nil {
+			return true // i goes before k
+		}
+		return *entries[i].ActualPage < *entries[k].ActualPage
+	})
+
+	// Update sort_order for each entry
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+
+	for i, entry := range entries {
+		newSortOrder := (i + 1) * 100 // 100, 200, 300, ...
+		if entry.SortOrder != newSortOrder {
+			sink.Send(defra.WriteOp{
+				Collection: "TocEntry",
+				DocID:      entry.DocID,
+				Document: map[string]any{
+					"sort_order": newSortOrder,
+				},
+				Op: defra.OpUpdate,
+			})
+		}
+	}
+
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Info("re-sorted ToC entries by page",
+			"toc_doc_id", j.TocDocID,
+			"entry_count", len(entries))
+	}
+
+	return nil
 }
 
 func (j *Job) Status(ctx context.Context) (map[string]string, error) {

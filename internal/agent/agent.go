@@ -80,11 +80,8 @@ func New(ctx context.Context, cfg Config) *Agent {
 	messages := make([]providers.Message, len(cfg.InitialMessages))
 	copy(messages, cfg.InitialMessages)
 
-	// Create logger if debug enabled
-	var logger *observability.Logger
-	if cfg.Debug {
-		logger = observability.NewLogger(ctx, id, cfg.AgentType, cfg.BookID, cfg.JobID)
-	}
+	// Always create logger for observability - enables frontend progress tracking
+	logger := observability.NewLogger(ctx, id, cfg.AgentType, cfg.BookID, cfg.JobID)
 
 	return &Agent{
 		id:            id,

@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/svcctx"
@@ -23,6 +24,15 @@ func (j *Job) CreatePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit, error)
 		if logger := svcctx.LoggerFrom(ctx); logger != nil {
 			logger.Info("failed to load candidate headings", "error", err)
 		}
+	}
+
+	// Log candidate count for debugging
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Info("pattern analysis candidates loaded",
+			"candidate_count", len(candidates),
+			"body_start", j.Book.BodyStart,
+			"body_end", j.Book.BodyEnd,
+			"linked_entries", len(j.LinkedEntries))
 	}
 
 	// Build prompts
@@ -63,7 +73,7 @@ func (j *Job) CreatePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit, error)
 		JobID:       j.RecordID,
 		ChatRequest: request,
 		Metrics: &jobs.WorkUnitMetrics{
-			Stage:     j.Type(),
+			Stage:     "toc-pattern",
 			ItemKey:   "pattern_analysis",
 			PromptKey: pattern_analyzer.PromptKey,
 			PromptCID: j.GetPromptCID(pattern_analyzer.PromptKey),
@@ -139,6 +149,59 @@ func (j *Job) ProcessPatternResult(ctx context.Context, result jobs.WorkResult) 
 			"entries_to_find", len(j.EntriesToFind))
 	}
 
+	// Persist pattern results to Book
+	if err := j.PersistPatternResults(ctx); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist pattern results", "error", err)
+		}
+	}
+
+	return nil
+}
+
+// PatternAnalysisData is the structure persisted to Book.pattern_analysis_json.
+type PatternAnalysisData struct {
+	Patterns      []DiscoveredPattern `json:"patterns"`
+	Excluded      []ExcludedRange     `json:"excluded_ranges"`
+	EntriesToFind []*EntryToFind      `json:"entries_to_find"`
+	Reasoning     string              `json:"reasoning"`
+}
+
+// PersistPatternResults persists pattern analysis results to the Book record.
+func (j *Job) PersistPatternResults(ctx context.Context) error {
+	if j.PatternResult == nil {
+		return nil
+	}
+
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+
+	// Build the pattern analysis data structure
+	data := PatternAnalysisData{
+		Patterns:      j.PatternResult.Patterns,
+		Excluded:      j.PatternResult.Excluded,
+		EntriesToFind: j.EntriesToFind,
+		Reasoning:     j.PatternResult.Reasoning,
+	}
+
+	// Serialize to JSON
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal pattern analysis: %w", err)
+	}
+
+	// Update Book with pattern analysis
+	sink.Send(defra.WriteOp{
+		Collection: "Book",
+		DocID:      j.Book.BookID,
+		Document: map[string]any{
+			"pattern_analysis_json": string(jsonBytes),
+		},
+		Op: defra.OpUpdate,
+	})
+
 	return nil
 }
 
@@ -157,17 +220,10 @@ func (j *Job) generateEntriesToFind() {
 		}
 	}
 
-	// Build excluded ranges lookup
-	isExcluded := func(page int) bool {
-		for _, ex := range j.PatternResult.Excluded {
-			if page >= ex.StartPage && page <= ex.EndPage {
-				return true
-			}
-		}
-		return false
-	}
-
 	// Generate entries from patterns
+	// Note: excluded ranges are passed to the chapter finder agent to constrain search,
+	// NOT used here to filter entries. The estimated page might be wrong, so we should
+	// still search for all chapters in the pattern range.
 	for _, pattern := range j.PatternResult.Patterns {
 		// Generate sequence from RangeStart to RangeEnd
 		identifiers := generateSequence(pattern.RangeStart, pattern.RangeEnd)
@@ -182,9 +238,6 @@ func (j *Job) generateEntriesToFind() {
 
 			// Estimate page location based on sequence position
 			expectedPage := j.estimatePageLocation(pattern, identifier, i, len(identifiers))
-			if isExcluded(expectedPage) {
-				continue
-			}
 
 			// Calculate search range
 			searchStart := expectedPage - 20
@@ -347,73 +400,25 @@ func intToRoman(num int) string {
 	return result.String()
 }
 
-// loadCandidateHeadings loads heading candidates from DefraDB.
+// loadCandidateHeadings loads heading candidates from the in-memory BookState.
+// Headings are extracted during the blend phase and cached in PageState.
 func (j *Job) loadCandidateHeadings(ctx context.Context) ([]*CandidateHeading, error) {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return nil, fmt.Errorf("defra client not in context")
-	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_gte: %d, _lte: %d}}) {
-			page_num
-			headings
-		}
-	}`, j.Book.BookID, j.Book.BodyStart, j.Book.BodyEnd)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	rawPages, ok := resp.Data["Page"].([]any)
-	if !ok {
-		return nil, nil
-	}
-
 	var candidates []*CandidateHeading
-	for _, p := range rawPages {
-		page, ok := p.(map[string]any)
-		if !ok {
+
+	// Iterate through pages in the body range
+	for pageNum := j.Book.BodyStart; pageNum <= j.Book.BodyEnd; pageNum++ {
+		pageState := j.Book.GetPage(pageNum)
+		if pageState == nil {
 			continue
 		}
 
-		pageNum := 0
-		if pn, ok := page["page_num"].(float64); ok {
-			pageNum = int(pn)
-		}
-
-		// headings is a JSON field - may come as []any or as a JSON string
-		var headings []any
-		switch h := page["headings"].(type) {
-		case []any:
-			headings = h
-		case string:
-			// Parse JSON string
-			if err := json.Unmarshal([]byte(h), &headings); err != nil {
-				continue
-			}
-		default:
-			continue
-		}
-
+		headings := pageState.GetHeadings()
 		for _, h := range headings {
-			heading, ok := h.(map[string]any)
-			if !ok {
-				continue
-			}
-
-			text, _ := heading["text"].(string)
-			level := 0
-			if lv, ok := heading["level"].(float64); ok {
-				level = int(lv)
-			}
-
-			if text != "" {
+			if h.Text != "" {
 				candidates = append(candidates, &CandidateHeading{
 					PageNum: pageNum,
-					Text:    text,
-					Level:   level,
+					Text:    h.Text,
+					Level:   h.Level,
 				})
 			}
 		}

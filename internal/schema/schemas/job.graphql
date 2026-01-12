@@ -1,6 +1,7 @@
 type Job {
     job_type: String
     status: String
+    book_id: String
     created_at: DateTime
     started_at: DateTime
     completed_at: DateTime

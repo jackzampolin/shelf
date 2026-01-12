@@ -190,7 +190,7 @@ func TestServer_CleansUpOrphanedContainer(t *testing.T) {
 	}
 
 	// Verify server is healthy
-	resp, err := http.Get(cfg.URL() + "/ready")
+	resp, err := http.Get(cfg.URL() + "/api/ready")
 	if err != nil {
 		serverCancel()
 		t.Fatalf("ready check failed: %v", err)

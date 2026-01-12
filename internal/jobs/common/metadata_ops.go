@@ -22,16 +22,8 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 	book := jc.GetBook()
 	logger := svcctx.LoggerFrom(ctx)
 
-	// Load first N pages of blended text
-	pages, err := LoadPagesForMetadata(ctx, book.BookID, MetadataPageCount)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to load pages for metadata extraction",
-				"book_id", book.BookID,
-				"error", err)
-		}
-		return nil, ""
-	}
+	// Load first N pages of blended text from BookState
+	pages := LoadPagesForMetadataFromState(book, MetadataPageCount)
 	if len(pages) == 0 {
 		if logger != nil {
 			logger.Debug("no pages available for metadata extraction",
@@ -59,10 +51,11 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 	unit.ID = unitID
 	unit.Provider = book.MetadataProvider
 	unit.JobID = jc.ID()
+	unit.Priority = jobs.PriorityForStage("metadata")
 
 	unit.Metrics = &jobs.WorkUnitMetrics{
 		BookID:    book.BookID,
-		Stage:     jc.Type(),
+		Stage:     "metadata",
 		ItemKey:   "metadata",
 		PromptKey: metadata.SystemPromptKey,
 		PromptCID: book.GetPromptCID(metadata.SystemPromptKey),
@@ -71,51 +64,29 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 	return unit, unitID
 }
 
-// LoadPagesForMetadata loads page data for metadata extraction from DefraDB.
-func LoadPagesForMetadata(ctx context.Context, bookID string, maxPages int) ([]metadata.Page, error) {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return nil, fmt.Errorf("defra client not in context")
-	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}}, order: {page_num: ASC}) {
-			page_num
-			blend_markdown
-		}
-	}`, bookID)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	rawPages, ok := resp.Data["Page"].([]any)
-	if !ok {
-		return nil, nil
-	}
-
+// LoadPagesForMetadataFromState loads page data for metadata extraction from BookState.
+func LoadPagesForMetadataFromState(book *BookState, maxPages int) []metadata.Page {
 	var pages []metadata.Page
-	for i, p := range rawPages {
-		if i >= maxPages {
-			break
-		}
-		page, ok := p.(map[string]any)
-		if !ok {
+
+	// Iterate through pages in order
+	for pageNum := 1; pageNum <= book.TotalPages && len(pages) < maxPages; pageNum++ {
+		state := book.GetPage(pageNum)
+		if state == nil {
 			continue
 		}
 
-		var mp metadata.Page
-		if pn, ok := page["page_num"].(float64); ok {
-			mp.PageNum = int(pn)
+		blendMarkdown := state.GetBlendedText()
+		if blendMarkdown == "" {
+			continue
 		}
-		if bm, ok := page["blend_markdown"].(string); ok {
-			mp.BlendMarkdown = bm
-		}
-		pages = append(pages, mp)
+
+		pages = append(pages, metadata.Page{
+			PageNum:       pageNum,
+			BlendMarkdown: blendMarkdown,
+		})
 	}
 
-	return pages, nil
+	return pages
 }
 
 // SaveMetadataResult saves the metadata result to the Book record in DefraDB.

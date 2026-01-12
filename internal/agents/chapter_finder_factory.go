@@ -7,17 +7,13 @@ import (
 	"github.com/jackzampolin/shelf/internal/agent"
 	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
 	"github.com/jackzampolin/shelf/internal/agents/chapter_finder/tools"
-	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/home"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // ChapterFinderConfig configures chapter finder agent creation.
 type ChapterFinderConfig struct {
-	BookID         string
-	TotalPages     int
-	DefraClient    *defra.Client
-	HomeDir        *home.Dir
+	Book           *common.BookState
 	SystemPrompt   string
 	Entry          *chapter_finder.EntryToFind
 	ExcludedRanges []chapter_finder.ExcludedRange
@@ -30,15 +26,12 @@ type ChapterFinderConfig struct {
 // Context is required for observability logging.
 func NewChapterFinderAgent(ctx context.Context, cfg ChapterFinderConfig) *agent.Agent {
 	finderTools := tools.New(tools.Config{
-		BookID:         cfg.BookID,
-		TotalPages:     cfg.TotalPages,
-		DefraClient:    cfg.DefraClient,
-		HomeDir:        cfg.HomeDir,
+		Book:           cfg.Book,
 		Entry:          cfg.Entry,
 		ExcludedRanges: cfg.ExcludedRanges,
 	})
 
-	userPrompt := chapter_finder.BuildUserPrompt(cfg.Entry, cfg.TotalPages, cfg.ExcludedRanges)
+	userPrompt := chapter_finder.BuildUserPrompt(cfg.Entry, cfg.Book.TotalPages, cfg.ExcludedRanges)
 
 	// Build agent ID from entry info for tracing
 	agentID := fmt.Sprintf("chapter-%s-%s", cfg.Entry.LevelName, cfg.Entry.Identifier)
@@ -52,7 +45,7 @@ func NewChapterFinderAgent(ctx context.Context, cfg ChapterFinderConfig) *agent.
 		},
 		MaxIterations: 15, // Chapter finding should be quick
 		AgentType:     "chapter_finder",
-		BookID:        cfg.BookID,
+		BookID:        cfg.Book.BookID,
 		JobID:         cfg.JobID,
 		Debug:         cfg.Debug,
 	})

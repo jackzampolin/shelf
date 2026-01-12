@@ -48,6 +48,9 @@ type PoolStatus struct {
 	InFlight   int    `json:"in_flight"`
 	QueueDepth int    `json:"queue_depth"`
 
+	// Priority breakdown (nil for CPU pools)
+	QueueByPriority *PriorityQueueStats `json:"queue_by_priority,omitempty"`
+
 	// Only for provider pools (nil for CPU)
 	RateLimiter *providers.RateLimiterStatus `json:"rate_limiter,omitempty"`
 }

@@ -13,7 +13,7 @@ function Dashboard() {
     error: healthError,
   } = useQuery({
     queryKey: ['health'],
-    queryFn: async () => unwrap(await client.GET('/health')),
+    queryFn: async () => unwrap(await client.GET('/api/health')),
     refetchInterval: 30000,
   })
 
@@ -23,7 +23,7 @@ function Dashboard() {
     error: statusError,
   } = useQuery({
     queryKey: ['status'],
-    queryFn: async () => unwrap(await client.GET('/status')),
+    queryFn: async () => unwrap(await client.GET('/api/status')),
     refetchInterval: 30000,
   })
 

@@ -9,8 +9,8 @@ import (
 )
 
 // CreateBlendWorkUnit creates a blend LLM work unit.
-func (j *Job) CreateBlendWorkUnit(pageNum int, state *PageState) *jobs.WorkUnit {
-	unit, unitID := common.CreateBlendWorkUnit(j, pageNum, state)
+func (j *Job) CreateBlendWorkUnit(ctx context.Context, pageNum int, state *PageState) *jobs.WorkUnit {
+	unit, unitID := common.CreateBlendWorkUnit(ctx, j, pageNum, state)
 	if unit != nil {
 		j.RegisterWorkUnit(unitID, WorkUnitInfo{
 			PageNum:  pageNum,

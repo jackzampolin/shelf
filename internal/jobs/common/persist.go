@@ -119,3 +119,18 @@ func PersistTocFinalizeState(ctx context.Context, tocDocID string, op *Operation
 		Op: defra.OpUpdate,
 	})
 }
+
+// PersistStructureState persists structure operation state to DefraDB.
+func PersistStructureState(ctx context.Context, bookID string, op *OperationState) error {
+	return SendToSink(ctx, defra.WriteOp{
+		Collection: "Book",
+		DocID:      bookID,
+		Document: map[string]any{
+			"structure_started":  op.IsStarted(),
+			"structure_complete": op.IsComplete(),
+			"structure_failed":   op.IsFailed(),
+			"structure_retries":  op.GetRetries(),
+		},
+		Op: defra.OpUpdate,
+	})
+}

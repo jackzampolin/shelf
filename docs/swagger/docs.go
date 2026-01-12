@@ -191,6 +191,12 @@ const docTemplate = `{
                         "description": "Book author",
                         "name": "author",
                         "in": "formData"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Automatically start processing after ingest",
+                        "name": "auto_process",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -238,6 +244,24 @@ const docTemplate = `{
                         "name": "book_id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by stage (toc-pattern, toc-discover, toc-validate, structure-classify, structure-polish)",
+                        "name": "stage",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by agent type",
+                        "name": "agent_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by job ID",
+                        "name": "job_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -541,6 +565,65 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/books/{id}/chapters": {
+            "get": {
+                "description": "Get chapter structure with page content",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "books"
+                ],
+                "summary": "Get book chapters",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include page text content",
+                        "name": "include_text",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include paragraphs",
+                        "name": "include_paragraphs",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ChaptersResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/books/{id}/cost": {
             "get": {
                 "description": "Get total cost for processing a specific book",
@@ -571,6 +654,54 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_server_endpoints.MetricsCostResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{id}/metrics/detailed": {
+            "get": {
+                "description": "Get detailed metrics for a specific book including latency percentiles and token breakdowns per stage",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "books",
+                    "metrics"
+                ],
+                "summary": "Get detailed book metrics with percentiles",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.MetricsDetailedResponse"
                         }
                     },
                     "400": {
@@ -781,6 +912,26 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/health": {
+            "get": {
+                "description": "Basic health check endpoint",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/jobs": {
             "get": {
                 "description": "List all jobs with optional filtering",
@@ -802,6 +953,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by job type",
                         "name": "job_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by book ID",
+                        "name": "book_id",
                         "in": "query"
                     }
                 ],
@@ -1506,6 +1663,46 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/metrics/detailed": {
+            "get": {
+                "description": "Get detailed metrics including latency percentiles (p50, p95, p99) and token breakdowns per stage",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Get detailed metrics with percentiles",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by book ID",
+                        "name": "book_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.MetricsDetailedResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/metrics/summary": {
             "get": {
                 "description": "Get aggregated metrics summary with counts, costs, and timing",
@@ -1632,6 +1829,32 @@ const docTemplate = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/ready": {
+            "get": {
+                "description": "Readiness check including DefraDB status",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Readiness check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
                         }
                     }
                 }
@@ -1802,53 +2025,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/health": {
-            "get": {
-                "description": "Basic health check endpoint",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "health"
-                ],
-                "summary": "Health check",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/ready": {
-            "get": {
-                "description": "Readiness check including DefraDB status",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "health"
-                ],
-                "summary": "Readiness check",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/status": {
+        "/api/status": {
             "get": {
                 "description": "Get detailed server status including providers and DefraDB",
                 "produces": [
@@ -1915,6 +2092,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "_docID": {
+                    "type": "string"
+                },
+                "book_id": {
                     "type": "string"
                 },
                 "completed_at": {
@@ -2037,6 +2217,73 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                }
+            }
+        },
+        "github_com_jackzampolin_shelf_internal_metrics.DetailedStats": {
+            "type": "object",
+            "properties": {
+                "avg_completion_tokens": {
+                    "type": "number"
+                },
+                "avg_cost_usd": {
+                    "type": "number"
+                },
+                "avg_prompt_tokens": {
+                    "description": "Average tokens per call",
+                    "type": "number"
+                },
+                "avg_reasoning_tokens": {
+                    "type": "number"
+                },
+                "avg_total_tokens": {
+                    "type": "number"
+                },
+                "count": {
+                    "description": "Basic counts",
+                    "type": "integer"
+                },
+                "error_count": {
+                    "type": "integer"
+                },
+                "latency_avg": {
+                    "type": "number"
+                },
+                "latency_max": {
+                    "type": "number"
+                },
+                "latency_min": {
+                    "type": "number"
+                },
+                "latency_p50": {
+                    "description": "Latency percentiles (seconds)",
+                    "type": "number"
+                },
+                "latency_p95": {
+                    "type": "number"
+                },
+                "latency_p99": {
+                    "type": "number"
+                },
+                "success_count": {
+                    "type": "integer"
+                },
+                "total_completion_tokens": {
+                    "type": "integer"
+                },
+                "total_cost_usd": {
+                    "description": "Cost",
+                    "type": "number"
+                },
+                "total_prompt_tokens": {
+                    "description": "Token stats",
+                    "type": "integer"
+                },
+                "total_reasoning_tokens": {
+                    "type": "integer"
+                },
+                "total_tokens": {
+                    "type": "integer"
                 }
             }
         },
@@ -2165,6 +2412,9 @@ const docTemplate = `{
                 "iterations": {
                     "type": "integer"
                 },
+                "job_id": {
+                    "type": "string"
+                },
                 "messages": {
                     "description": "Detailed data",
                     "type": "array",
@@ -2238,6 +2488,9 @@ const docTemplate = `{
                 },
                 "iterations": {
                     "type": "integer"
+                },
+                "job_id": {
+                    "type": "string"
                 },
                 "started_at": {
                     "type": "string"
@@ -2359,6 +2612,134 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_server_endpoints.ChapterPage": {
+            "type": "object",
+            "properties": {
+                "blended_text": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "page_num": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_server_endpoints.ChapterParagraph": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "polished_text": {
+                    "type": "string"
+                },
+                "raw_text": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "start_page": {
+                    "type": "integer"
+                },
+                "word_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_server_endpoints.ChapterWithText": {
+            "type": "object",
+            "properties": {
+                "classification_reasoning": {
+                    "type": "string"
+                },
+                "edits_applied_json": {
+                    "type": "string"
+                },
+                "end_page": {
+                    "type": "integer"
+                },
+                "entry_id": {
+                    "type": "string"
+                },
+                "entry_number": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "level": {
+                    "type": "integer"
+                },
+                "level_name": {
+                    "type": "string"
+                },
+                "matter_type": {
+                    "type": "string"
+                },
+                "page_count": {
+                    "type": "integer"
+                },
+                "pages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.ChapterPage"
+                    }
+                },
+                "paragraphs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.ChapterParagraph"
+                    }
+                },
+                "polish_complete": {
+                    "type": "boolean"
+                },
+                "polish_failed": {
+                    "type": "boolean"
+                },
+                "polished_text": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "start_page": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "word_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_server_endpoints.ChaptersResponse": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "string"
+                },
+                "book_title": {
+                    "type": "string"
+                },
+                "chapters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.ChapterWithText"
+                    }
+                },
+                "has_chapters": {
+                    "type": "boolean"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_server_endpoints.CreateJobRequest": {
             "type": "object",
             "properties": {
@@ -2429,6 +2810,14 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "structure": {
+                    "description": "Structure status (common-structure job)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_server_endpoints.StructureStatus"
+                        }
+                    ]
+                },
                 "toc": {
                     "description": "ToC status",
                     "allOf": [
@@ -2454,6 +2843,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "_docID": {
+                    "type": "string"
+                },
+                "book_id": {
                     "type": "string"
                 },
                 "completed_at": {
@@ -2562,7 +2954,13 @@ const docTemplate = `{
                 "author": {
                     "type": "string"
                 },
+                "book_id": {
+                    "type": "string"
+                },
                 "job_id": {
+                    "type": "string"
+                },
+                "process_job_id": {
                     "type": "string"
                 },
                 "status": {
@@ -2726,6 +3124,20 @@ const docTemplate = `{
                 },
                 "total_cost_usd": {
                     "type": "number"
+                }
+            }
+        },
+        "internal_server_endpoints.MetricsDetailedResponse": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "string"
+                },
+                "stages": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_metrics.DetailedStats"
+                    }
                 }
             }
         },
@@ -3039,6 +3451,29 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_server_endpoints.StructureStatus": {
+            "type": "object",
+            "properties": {
+                "chapter_count": {
+                    "type": "integer"
+                },
+                "complete": {
+                    "type": "boolean"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "failed": {
+                    "type": "boolean"
+                },
+                "retries": {
+                    "type": "integer"
+                },
+                "started": {
+                    "type": "boolean"
+                }
+            }
+        },
         "internal_server_endpoints.ToCEntry": {
             "type": "object",
             "properties": {
@@ -3063,6 +3498,10 @@ const docTemplate = `{
                 "sort_order": {
                     "type": "integer"
                 },
+                "source": {
+                    "description": "\"extracted\" or \"discovered\"",
+                    "type": "string"
+                },
                 "title": {
                     "type": "string"
                 }
@@ -3083,6 +3522,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/internal_server_endpoints.ToCEntry"
                     }
                 },
+                "entries_discovered": {
+                    "type": "integer"
+                },
                 "entries_linked": {
                     "type": "integer"
                 },
@@ -3098,6 +3540,19 @@ const docTemplate = `{
                 },
                 "extract_started": {
                     "description": "Extract stage",
+                    "type": "boolean"
+                },
+                "finalize_complete": {
+                    "type": "boolean"
+                },
+                "finalize_failed": {
+                    "type": "boolean"
+                },
+                "finalize_retries": {
+                    "type": "integer"
+                },
+                "finalize_started": {
+                    "description": "Finalize stage",
                     "type": "boolean"
                 },
                 "finder_complete": {

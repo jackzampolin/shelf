@@ -38,14 +38,6 @@ func (j *Job) CreateDiscoverWorkUnits(ctx context.Context) ([]jobs.WorkUnit, err
 
 // CreateChapterFinderWorkUnit creates a chapter finder agent work unit.
 func (j *Job) CreateChapterFinderWorkUnit(ctx context.Context, entry *EntryToFind) *jobs.WorkUnit {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		if logger := svcctx.LoggerFrom(ctx); logger != nil {
-			logger.Error("defra client not in context", "entry_key", entry.Key)
-		}
-		return nil
-	}
-
 	// Convert excluded ranges for the agent
 	var excludedRanges []chapter_finder.ExcludedRange
 	if j.PatternResult != nil {
@@ -70,10 +62,7 @@ func (j *Job) CreateChapterFinderWorkUnit(ctx context.Context, entry *EntryToFin
 
 	// Create agent
 	ag := agents.NewChapterFinderAgent(ctx, agents.ChapterFinderConfig{
-		BookID:         j.Book.BookID,
-		TotalPages:     j.Book.TotalPages,
-		DefraClient:    defraClient,
-		HomeDir:        j.Book.HomeDir,
+		Book:           j.Book,
 		SystemPrompt:   j.GetPrompt(chapter_finder.PromptKey),
 		Entry:          agentEntry,
 		ExcludedRanges: excludedRanges,
@@ -172,11 +161,8 @@ func (j *Job) SaveDiscoveredEntry(ctx context.Context, entryKey string, result *
 		return fmt.Errorf("entry not found: %s", entryKey)
 	}
 
-	// Get page document ID
-	pageDocID, err := j.getPageDocID(ctx, *result.ScanPage)
-	if err != nil {
-		return fmt.Errorf("failed to get page doc ID: %w", err)
-	}
+	// Get page document ID from BookState
+	pageDocID := j.getPageDocID(*result.ScanPage)
 
 	// Calculate sort order (insert between existing entries)
 	sortOrder := j.calculateSortOrder(*result.ScanPage)
@@ -210,7 +196,7 @@ func (j *Job) SaveDiscoveredEntry(ctx context.Context, entryKey string, result *
 	}
 
 	// Upsert: create if not exists, update if exists
-	_, err = defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData)
+	_, err := defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData)
 	if err != nil {
 		return fmt.Errorf("failed to upsert discovered entry: %w", err)
 	}
@@ -219,70 +205,21 @@ func (j *Job) SaveDiscoveredEntry(ctx context.Context, entryKey string, result *
 }
 
 // calculateSortOrder determines sort order for a new entry based on page.
+// Uses scan page * 1000 to ensure discovered entries sort correctly by page position.
+// This avoids issues with interpolation when entries are discovered in parallel/out of order.
 func (j *Job) calculateSortOrder(page int) int {
-	// Find entries before and after this page
-	var beforeOrder, afterOrder int
-	beforeFound, afterFound := false, false
-
-	for _, entry := range j.LinkedEntries {
-		if entry.ActualPage == nil {
-			continue
-		}
-		if *entry.ActualPage < page {
-			if !beforeFound || entry.SortOrder > beforeOrder {
-				beforeOrder = entry.SortOrder
-				beforeFound = true
-			}
-		} else if *entry.ActualPage > page {
-			if !afterFound || entry.SortOrder < afterOrder {
-				afterOrder = entry.SortOrder
-				afterFound = true
-			}
-		}
-	}
-
-	if beforeFound && afterFound {
-		// Insert between
-		return (beforeOrder + afterOrder) / 2
-	} else if beforeFound {
-		// After the last entry
-		return beforeOrder + 100
-	} else if afterFound {
-		// Before the first entry
-		return afterOrder - 100
-	}
-
-	// Default
-	return page * 100
+	// Simple approach: use scan page as sort order
+	// Multiply by 1000 to leave room for manual reordering if needed
+	return page * 1000
 }
 
-// getPageDocID returns the Page document ID for a given page number.
-func (j *Job) getPageDocID(ctx context.Context, pageNum int) (string, error) {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return "", fmt.Errorf("defra client not in context")
+// getPageDocID returns the Page document ID for a given page number from BookState.
+func (j *Job) getPageDocID(pageNum int) string {
+	state := j.Book.GetPage(pageNum)
+	if state == nil {
+		return ""
 	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
-			_docID
-		}
-	}`, j.Book.BookID, pageNum)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return "", err
-	}
-
-	if pages, ok := resp.Data["Page"].([]any); ok && len(pages) > 0 {
-		if page, ok := pages[0].(map[string]any); ok {
-			if docID, ok := page["_docID"].(string); ok {
-				return docID, nil
-			}
-		}
-	}
-
-	return "", nil
+	return state.GetPageDocID()
 }
 
 // convertDiscoverAgentUnits converts agent work units to job work units.
@@ -290,7 +227,7 @@ func (j *Job) convertDiscoverAgentUnits(agentUnits []agent.WorkUnit, entryKey st
 	jobUnits := agents.ConvertToJobUnits(agentUnits, agents.ConvertConfig{
 		JobID:     j.RecordID,
 		Provider:  j.Book.TocProvider,
-		Stage:     j.Type(),
+		Stage:     "toc-discover",
 		ItemKey:   fmt.Sprintf("discover_%s", entryKey),
 		PromptKey: chapter_finder.PromptKey,
 		PromptCID: j.GetPromptCID(chapter_finder.PromptKey),

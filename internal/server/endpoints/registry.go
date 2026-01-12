@@ -3,26 +3,13 @@ package endpoints
 import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/jobs/finalize_toc"
-	"github.com/jackzampolin/shelf/internal/jobs/label_book"
-	"github.com/jackzampolin/shelf/internal/jobs/link_toc"
-	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
-	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
-	"github.com/jackzampolin/shelf/internal/jobs/process_book"
-	"github.com/jackzampolin/shelf/internal/jobs/toc_book"
 )
 
 // Config holds dependencies needed by some endpoints.
+// Job configs are no longer stored here - they are read from DefraDB at request time.
 type Config struct {
-	DefraManager        *defra.DockerManager
-	ProcessBookConfig   process_book.Config
-	OcrBookConfig       ocr_book.Config
-	LabelBookConfig     label_book.Config
-	MetadataBookConfig  metadata_book.Config
-	TocBookConfig       toc_book.Config
-	LinkTocConfig       link_toc.Config
-	FinalizeTocConfig   finalize_toc.Config
-	SwaggerSpecPath     string
+	DefraManager    *defra.DockerManager
+	SwaggerSpecPath string
 }
 
 // All returns all endpoint instances.
@@ -45,7 +32,8 @@ func All(cfg Config) []api.Endpoint {
 		&UploadIngestEndpoint{},
 		&ListBooksEndpoint{},
 		&GetBookEndpoint{},
-		&RerunTocEndpoint{ProcessBookConfig: cfg.ProcessBookConfig},
+		&GetBookChaptersEndpoint{},
+		&RerunTocEndpoint{},
 
 		// Page endpoints
 		&PageImageEndpoint{},
@@ -53,15 +41,7 @@ func All(cfg Config) []api.Endpoint {
 		&GetPageEndpoint{},
 
 		// Job start/status endpoints
-		&StartJobEndpoint{
-			ProcessBookConfig:   cfg.ProcessBookConfig,
-			OcrBookConfig:       cfg.OcrBookConfig,
-			LabelBookConfig:     cfg.LabelBookConfig,
-			MetadataBookConfig:  cfg.MetadataBookConfig,
-			TocBookConfig:       cfg.TocBookConfig,
-			LinkTocConfig:       cfg.LinkTocConfig,
-			FinalizeTocConfig:   cfg.FinalizeTocConfig,
-		},
+		&StartJobEndpoint{},
 		&JobStatusEndpoint{},
 		&DetailedJobStatusEndpoint{},
 
@@ -73,7 +53,9 @@ func All(cfg Config) []api.Endpoint {
 		&ListMetricsEndpoint{},
 		&MetricsCostEndpoint{},
 		&MetricsSummaryEndpoint{},
+		&MetricsDetailedEndpoint{},
 		&BookCostEndpoint{},
+		&BookMetricsDetailedEndpoint{},
 
 		// Settings endpoints
 		&ListSettingsEndpoint{},

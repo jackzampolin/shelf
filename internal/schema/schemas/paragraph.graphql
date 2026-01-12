@@ -1,0 +1,16 @@
+type Paragraph {
+    # Many-to-one: Paragraph belongs to Chapter
+    chapter: Chapter
+
+    # Position
+    sort_order: Int
+    start_page: Int
+
+    # Content
+    raw_text: String
+    polished_text: String
+    word_count: Int
+
+    # Edit tracking
+    edits_applied: JSON
+}

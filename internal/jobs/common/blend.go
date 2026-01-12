@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -53,7 +54,8 @@ func ExtractHeadings(markdown string) []HeadingItem {
 // CreateBlendWorkUnit creates a blend LLM work unit.
 // Returns nil if no OCR outputs are available.
 // The caller is responsible for registering the work unit with their tracker.
-func CreateBlendWorkUnit(jc JobContext, pageNum int, state *PageState) (*jobs.WorkUnit, string) {
+// If ctx contains a home directory (via svcctx.HomeFrom), loads the page image for vision.
+func CreateBlendWorkUnit(ctx context.Context, jc JobContext, pageNum int, state *PageState) (*jobs.WorkUnit, string) {
 	book := jc.GetBook()
 
 	var outputs []blend.OCROutput
@@ -73,20 +75,32 @@ func CreateBlendWorkUnit(jc JobContext, pageNum int, state *PageState) (*jobs.Wo
 	// Filter out garbage OCR (hallucinated repeated characters)
 	outputs = FilterOcrQuality(outputs, 1.75)
 
+	// Load page image for vision-based correction
+	var pageImage []byte
+	if homeDir := svcctx.HomeFrom(ctx); homeDir != nil {
+		imagePath := homeDir.SourceImagePath(book.BookID, pageNum)
+		if data, err := os.ReadFile(imagePath); err == nil {
+			pageImage = data
+		}
+		// Ignore read errors - blend will work without image, just less accurate
+	}
+
 	unitID := uuid.New().String()
 
 	unit := blend.CreateWorkUnit(blend.Input{
 		OCROutputs:           outputs,
+		PageImage:            pageImage,
 		SystemPromptOverride: book.GetPrompt(blend.SystemPromptKey),
 		UserPromptOverride:   book.GetPrompt(blend.UserPromptKey),
 	})
 	unit.ID = unitID
 	unit.Provider = book.BlendProvider
 	unit.JobID = jc.ID()
+	unit.Priority = jobs.PriorityForStage("blend")
 
 	unit.Metrics = &jobs.WorkUnitMetrics{
 		BookID:    book.BookID,
-		Stage:     jc.Type(),
+		Stage:     "blend",
 		ItemKey:   fmt.Sprintf("page_%04d_blend", pageNum),
 		PromptKey: blend.SystemPromptKey,
 		PromptCID: book.GetPromptCID(blend.SystemPromptKey),
@@ -134,7 +148,6 @@ func SaveBlendResult(ctx context.Context, state *PageState, primaryProvider stri
 	update := map[string]any{
 		"blend_markdown":    blendedText,
 		"blend_corrections": string(correctionsJSON),
-		"blend_confidence":  blendResult.Confidence,
 		"blend_complete":    true,
 	}
 	if headingsJSON != "" {
