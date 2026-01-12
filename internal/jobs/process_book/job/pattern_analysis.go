@@ -20,8 +20,11 @@ const (
 )
 
 // CreatePatternAnalysisWorkUnits creates the initial pattern analysis work units.
-// Returns 2 work units (page numbers and chapters) that run in parallel.
-// The boundaries unit is created after the first two complete.
+// This is a 3-phase sequential process:
+//   Phase 1: Returns 2 parallel work units (page_numbers and chapters)
+//   Phase 2: After both complete, maybeCreateBoundariesWorkUnit creates the boundaries unit
+//   Phase 3: handleBodyBoundariesComplete aggregates all results and persists to DefraDB
+// Only returns the Phase 1 units. Phases 2-3 are triggered via completion handlers.
 func (j *Job) CreatePatternAnalysisWorkUnits(ctx context.Context) []jobs.WorkUnit {
 	var units []jobs.WorkUnit
 
@@ -149,6 +152,11 @@ func (j *Job) handleBodyBoundariesComplete(ctx context.Context, result jobs.Work
 
 	// Mark pattern analysis as complete
 	j.Book.PatternAnalysis.Complete()
+
+	// Persist completion state to DefraDB
+	if err := j.PersistPatternAnalysisState(ctx); err != nil {
+		return nil, fmt.Errorf("failed to persist pattern analysis state: %w", err)
+	}
 
 	return nil, nil
 }

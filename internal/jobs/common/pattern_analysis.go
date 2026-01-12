@@ -15,8 +15,11 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
-// ExtractPageLines extracts the first and last non-empty lines from markdown.
-// Returns up to 2 first lines and 2 last lines, skipping markdown headings.
+// ExtractPageLines extracts non-empty lines from markdown for pattern analysis.
+// Returns the first 2 and last 2 non-empty, non-heading lines (or fewer if page has less content).
+// Markdown headings are excluded because they represent structural markers, not running headers
+// or page numbers (which appear in plain text at page margins).
+// Returns (firstLines []string, lastLines []string) where each slice contains 0-2 lines.
 func ExtractPageLines(markdown string) (firstLines, lastLines []string) {
 	lines := strings.Split(markdown, "\n")
 	var nonEmpty []string
@@ -94,7 +97,15 @@ func CreatePageNumberPatternWorkUnit(ctx context.Context, jc JobContext) (*jobs.
 	}
 
 	// Build JSON schema
-	jsonSchema, _ := json.Marshal(page_pattern_analyzer.PageNumberPatternSchema()["json_schema"])
+	jsonSchema, err := json.Marshal(page_pattern_analyzer.PageNumberPatternSchema()["json_schema"])
+	if err != nil {
+		// This is a programming error - the schema structure is malformed
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Error("BUG: failed to marshal page number pattern schema", "error", err)
+		}
+		return nil, ""
+	}
 
 	unit := &jobs.WorkUnit{
 		ID:   unitID,
@@ -174,7 +185,15 @@ func CreateChapterPatternsWorkUnit(ctx context.Context, jc JobContext) (*jobs.Wo
 	}
 
 	// Build JSON schema
-	jsonSchema, _ := json.Marshal(page_pattern_analyzer.ChapterPatternsSchema()["json_schema"])
+	jsonSchema, err := json.Marshal(page_pattern_analyzer.ChapterPatternsSchema()["json_schema"])
+	if err != nil {
+		// This is a programming error - the schema structure is malformed
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Error("BUG: failed to marshal chapter patterns schema", "error", err)
+		}
+		return nil, ""
+	}
 
 	unit := &jobs.WorkUnit{
 		ID:   unitID,
@@ -236,7 +255,15 @@ func CreateBodyBoundariesWorkUnit(
 	}
 
 	// Build JSON schema
-	jsonSchema, _ := json.Marshal(page_pattern_analyzer.BodyBoundariesSchema()["json_schema"])
+	jsonSchema, err := json.Marshal(page_pattern_analyzer.BodyBoundariesSchema()["json_schema"])
+	if err != nil {
+		// This is a programming error - the schema structure is malformed
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Error("BUG: failed to marshal body boundaries schema", "error", err)
+		}
+		return nil, ""
+	}
 
 	unit := &jobs.WorkUnit{
 		ID:   unitID,
