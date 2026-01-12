@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 
@@ -75,21 +74,10 @@ func CreateBlendWorkUnit(ctx context.Context, jc JobContext, pageNum int, state 
 	// Filter out garbage OCR (hallucinated repeated characters)
 	outputs = FilterOcrQuality(outputs, 1.75)
 
-	// Load page image for vision-based correction
-	var pageImage []byte
-	if homeDir := svcctx.HomeFrom(ctx); homeDir != nil {
-		imagePath := homeDir.SourceImagePath(book.BookID, pageNum)
-		if data, err := os.ReadFile(imagePath); err == nil {
-			pageImage = data
-		}
-		// Ignore read errors - blend will work without image, just less accurate
-	}
-
 	unitID := uuid.New().String()
 
 	unit := blend.CreateWorkUnit(blend.Input{
 		OCROutputs:           outputs,
-		PageImage:            pageImage,
 		SystemPromptOverride: book.GetPrompt(blend.SystemPromptKey),
 		UserPromptOverride:   book.GetPrompt(blend.UserPromptKey),
 	})
@@ -109,9 +97,9 @@ func CreateBlendWorkUnit(ctx context.Context, jc JobContext, pageNum int, state 
 	return unit, unitID
 }
 
-// SaveBlendResult parses the blend result, applies corrections, persists to DefraDB,
+// SaveBlendResult parses the blend result, persists to DefraDB,
 // and returns the blended text. Also updates the page state (thread-safe).
-func SaveBlendResult(ctx context.Context, state *PageState, primaryProvider string, parsedJSON any) (string, error) {
+func SaveBlendResult(ctx context.Context, state *PageState, parsedJSON any) (string, error) {
 	blendResult, err := blend.ParseResult(parsedJSON)
 	if err != nil {
 		return "", err
@@ -122,16 +110,7 @@ func SaveBlendResult(ctx context.Context, state *PageState, primaryProvider stri
 		return "", fmt.Errorf("defra sink not in context")
 	}
 
-	baseText, ok := state.GetOcrResult(primaryProvider)
-	if !ok {
-		return "", fmt.Errorf("primary provider %q OCR result not found for page %s", primaryProvider, state.GetPageDocID())
-	}
-	blendedText := blend.ApplyCorrections(baseText, blendResult.Corrections)
-
-	correctionsJSON, err := json.Marshal(blendResult.Corrections)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal corrections: %w", err)
-	}
+	blendedText := blendResult.BlendedText
 
 	// Extract headings from blended markdown (mechanical extraction, no LLM)
 	headings := ExtractHeadings(blendedText)
@@ -146,9 +125,8 @@ func SaveBlendResult(ctx context.Context, state *PageState, primaryProvider stri
 
 	// Build update document
 	update := map[string]any{
-		"blend_markdown":    blendedText,
-		"blend_corrections": string(correctionsJSON),
-		"blend_complete":    true,
+		"blend_markdown": blendedText,
+		"blend_complete": true,
 	}
 	if headingsJSON != "" {
 		update["headings"] = headingsJSON

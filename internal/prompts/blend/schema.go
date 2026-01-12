@@ -1,47 +1,26 @@
 package blend
 
-// CorrectionsSchema is the JSON schema for blend corrections output.
-var CorrectionsSchema = map[string]any{
+// BlendSchema is the JSON schema for blend output.
+var BlendSchema = map[string]any{
 	"type": "json_schema",
 	"json_schema": map[string]any{
-		"name":   "ocr_corrections",
+		"name":   "ocr_blend",
 		"strict": true,
 		"schema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"corrections": map[string]any{
-					"type": "array",
-					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"original": map[string]any{
-								"type":        "string",
-								"description": "Exact text to find in primary OCR output",
-							},
-							"replacement": map[string]any{
-								"type":        "string",
-								"description": "Corrected text",
-							},
-						},
-						"required":             []string{"original", "replacement"},
-						"additionalProperties": false,
-					},
-					"description": "List of corrections to apply. Empty array if no corrections needed.",
+				"blended_text": map[string]any{
+					"type":        "string",
+					"description": "The final blended markdown text combining all OCR outputs",
 				},
 			},
-			"required":             []string{"corrections"},
+			"required":             []string{"blended_text"},
 			"additionalProperties": false,
 		},
 	},
 }
 
-// Correction represents a single OCR correction.
-type Correction struct {
-	Original    string `json:"original"`
-	Replacement string `json:"replacement"`
-}
-
 // Result represents the parsed result from blend LLM call.
 type Result struct {
-	Corrections []Correction `json:"corrections"`
+	BlendedText string `json:"blended_text"`
 }

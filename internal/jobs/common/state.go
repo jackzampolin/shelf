@@ -6,12 +6,16 @@ import (
 	"log/slog"
 	"sync"
 
+	page_pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/page_pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/home"
 )
 
 // HomeDir is an alias for home.Dir for external use.
 type HomeDir = home.Dir
+
+// PagePatternResult is an alias for the pattern analysis result.
+type PagePatternResult = page_pattern_analyzer.Result
 
 // PageState tracks the processing state of a single page.
 // All fields are unexported and protected by an internal mutex for thread-safe access.
@@ -424,12 +428,13 @@ type BookState struct {
 	PromptCIDs map[string]string // prompt_key -> CID for traceability
 
 	// Book-level operation state (mutable - use accessor methods)
-	Metadata    OperationState
-	TocFinder   OperationState
-	TocExtract  OperationState
-	TocLink     OperationState
-	TocFinalize OperationState
-	Structure   OperationState
+	Metadata        OperationState
+	TocFinder       OperationState
+	TocExtract      OperationState
+	PatternAnalysis OperationState
+	TocLink         OperationState
+	TocFinalize     OperationState
+	Structure       OperationState
 
 	// ToC finder results (mutable - use accessor methods)
 	TocFound     bool
@@ -438,6 +443,17 @@ type BookState struct {
 
 	// ToC entries loaded from DB (immutable after LoadBook when ToC extraction is complete)
 	TocEntries []*toc_entry_finder.TocEntry
+
+	// Pattern analysis results (set after pattern analysis completes)
+	PatternAnalysisResult *PagePatternResult
+
+	// Pattern analysis intermediate results (mutable - use accessor methods)
+	// These are populated during the 3-phase pattern analysis process:
+	//   Phase 1: PageNumberPattern and ChapterPatterns are set independently
+	//   Phase 2: Both are used to create the boundaries work unit
+	//   Phase 3: All three are aggregated into PatternAnalysisResult
+	PageNumberPattern *page_pattern_analyzer.PageNumberPattern
+	ChapterPatterns   []page_pattern_analyzer.ChapterPattern
 
 	// Body page range (set during finalize phase)
 	BodyStart int
@@ -503,6 +519,17 @@ func (b *BookState) AllPagesComplete() bool {
 	allDone := true
 	b.ForEachPage(func(pageNum int, state *PageState) {
 		if !state.IsLabelDone() {
+			allDone = false
+		}
+	})
+	return allDone && b.CountPages() >= b.TotalPages
+}
+
+// AllPagesBlendComplete returns true if all pages have completed blend.
+func (b *BookState) AllPagesBlendComplete() bool {
+	allDone := true
+	b.ForEachPage(func(pageNum int, state *PageState) {
+		if !state.IsBlendDone() {
 			allDone = false
 		}
 	})
@@ -668,4 +695,32 @@ func (b *BookState) GetUnlinkedTocEntries() []*toc_entry_finder.TocEntry {
 	defer b.mu.RUnlock()
 	// TocEntries are already filtered to unlinked during load
 	return b.TocEntries
+}
+
+// SetPageNumberPattern sets the page number pattern (thread-safe).
+func (b *BookState) SetPageNumberPattern(pattern *page_pattern_analyzer.PageNumberPattern) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.PageNumberPattern = pattern
+}
+
+// GetPageNumberPattern gets the page number pattern (thread-safe).
+func (b *BookState) GetPageNumberPattern() *page_pattern_analyzer.PageNumberPattern {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.PageNumberPattern
+}
+
+// SetChapterPatterns sets the chapter patterns (thread-safe).
+func (b *BookState) SetChapterPatterns(patterns []page_pattern_analyzer.ChapterPattern) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.ChapterPatterns = patterns
+}
+
+// GetChapterPatterns gets the chapter patterns (thread-safe).
+func (b *BookState) GetChapterPatterns() []page_pattern_analyzer.ChapterPattern {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.ChapterPatterns
 }

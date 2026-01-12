@@ -3,6 +3,7 @@ package common
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/google/uuid"
 
@@ -11,6 +12,90 @@ import (
 	"github.com/jackzampolin/shelf/internal/prompts/label"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
+
+// BuildPatternContext builds pattern context for a page from pattern analysis results.
+// Returns nil if pattern analysis is not complete or not available.
+func BuildPatternContext(book *BookState, pageNum int) *label.PatternContext {
+	if book.PatternAnalysisResult == nil {
+		return nil
+	}
+
+	result := book.PatternAnalysisResult
+	ctx := &label.PatternContext{}
+
+	// Build page number context
+	if result.PageNumberPattern != nil {
+		pattern := result.PageNumberPattern
+		ctx.PageNumberLocation = pattern.Location
+		ctx.PageNumberPosition = pattern.Position
+		ctx.PageNumberFormat = pattern.Format
+
+		// Calculate expected page number if this page is in the numbered range
+		if pageNum >= pattern.StartPage && (pattern.EndPage == nil || pageNum <= *pattern.EndPage) {
+			// Check if page is in a gap range
+			inGap := false
+			for _, gap := range pattern.GapRanges {
+				if pageNum >= gap.StartPage && pageNum <= gap.EndPage {
+					ctx.InPageNumberGap = true
+					ctx.PageNumberGapReason = gap.Reason
+					inGap = true
+					break
+				}
+			}
+
+			if !inGap {
+				// Calculate expected page number based on offset from start
+				offset := pageNum - pattern.StartPage
+				expectedNum := pattern.StartValue + offset
+				expectedStr := strconv.Itoa(expectedNum)
+				ctx.ExpectedPageNumber = &expectedStr
+			}
+		}
+	}
+
+	// Build running header context from chapter patterns
+	if len(result.ChapterPatterns) > 0 {
+		for _, chPattern := range result.ChapterPatterns {
+			if pageNum >= chPattern.StartPage && pageNum <= chPattern.EndPage {
+				ctx.InRunningHeaderCluster = true
+				ctx.ExpectedRunningHeader = &chPattern.RunningHeader
+
+				// Check if this page is near a chapter boundary (within 2 pages)
+				if pageNum <= chPattern.StartPage+2 || pageNum >= chPattern.EndPage-2 {
+					ctx.NearChapterBoundary = true
+					if chPattern.ChapterNumber != nil {
+						numStr := strconv.Itoa(*chPattern.ChapterNumber)
+						ctx.ExpectedChapterNumber = &numStr
+					}
+					ctx.ExpectedChapterTitle = &chPattern.ChapterTitle
+				}
+				break
+			}
+		}
+	}
+
+	// Build content type hints from body boundaries
+	if result.BodyBoundaries != nil {
+		boundaries := result.BodyBoundaries
+		ctx.BodyStartPage = boundaries.BodyStartPage
+		if boundaries.BodyEndPage != nil {
+			ctx.BodyEndPage = *boundaries.BodyEndPage
+		}
+
+		if pageNum < boundaries.BodyStartPage {
+			ctx.ContentTypeHint = "front_matter"
+			ctx.IsInBodyRange = false
+		} else if boundaries.BodyEndPage != nil && pageNum > *boundaries.BodyEndPage {
+			ctx.ContentTypeHint = "back_matter"
+			ctx.IsInBodyRange = false
+		} else {
+			ctx.ContentTypeHint = "body"
+			ctx.IsInBodyRange = true
+		}
+	}
+
+	return ctx
+}
 
 // CreateLabelWorkUnit creates a label extraction LLM work unit.
 // Returns nil if no blended text is available.
@@ -31,8 +116,13 @@ func CreateLabelWorkUnit(ctx context.Context, jc JobContext, pageNum int, state 
 
 	unitID := uuid.New().String()
 
+	// Build pattern context if pattern analysis is complete
+	patternContext := BuildPatternContext(book, pageNum)
+
 	unit := label.CreateWorkUnit(label.Input{
 		BlendedText:          blendedText,
+		PageNum:              pageNum,
+		PatternContext:       patternContext,
 		SystemPromptOverride: book.GetPrompt(label.SystemPromptKey),
 		UserPromptOverride:   book.GetPrompt(label.UserPromptKey),
 	})
@@ -65,7 +155,11 @@ func SaveLabelResult(ctx context.Context, state *PageState, parsedJSON any) erro
 	}
 
 	update := map[string]any{
-		"label_complete": true,
+		"label_complete":   true,
+		"content_type":     labelResult.ContentType,
+		"is_chapter_start": labelResult.IsChapterStart,
+		"is_blank_page":    labelResult.IsBlankPage,
+		"has_footnotes":    labelResult.HasFootnotes,
 	}
 
 	if labelResult.PageNumber != nil {
@@ -73,6 +167,22 @@ func SaveLabelResult(ctx context.Context, state *PageState, parsedJSON any) erro
 	}
 	if labelResult.RunningHeader != nil {
 		update["running_header"] = *labelResult.RunningHeader
+	}
+	if labelResult.ChapterNumber != nil {
+		update["chapter_number"] = *labelResult.ChapterNumber
+	}
+	if labelResult.ChapterTitle != nil {
+		update["chapter_title"] = *labelResult.ChapterTitle
+	}
+
+	// Set deprecated fields based on content_type for backwards compatibility
+	switch labelResult.ContentType {
+	case "toc":
+		update["is_toc_page"] = true
+	case "front_matter", "title_page", "copyright":
+		update["is_front_matter"] = true
+	case "back_matter":
+		update["is_back_matter"] = true
 	}
 
 	// Fire-and-forget write - sink batches and logs errors internally

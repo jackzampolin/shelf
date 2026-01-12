@@ -1,0 +1,16 @@
+Analyze the last lines from these {{.TotalPages}} pages to detect the page numbering pattern.
+
+Last lines from each page:
+{{range .Pages}}
+Page {{.PageNum}}:
+{{range .LastLines}}- {{.}}
+{{end}}
+{{end}}
+
+Detect:
+1. Where page numbers appear (top/bottom, left/center/right)
+2. The numbering format (numeric, Roman numerals)
+3. Which pages have this pattern and which don't
+4. Any gaps or irregularities in the sequence
+
+Return the detected pattern with your reasoning.

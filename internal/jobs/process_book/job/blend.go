@@ -33,20 +33,11 @@ func (j *Job) HandleBlendComplete(ctx context.Context, info WorkUnitInfo, result
 	}
 
 	// Use common handler for persistence and state update
-	if len(j.Book.OcrProviders) == 0 {
-		return nil, fmt.Errorf("no OCR providers configured for page %d", info.PageNum)
-	}
-	primaryProvider := j.Book.OcrProviders[0]
-	_, err := common.SaveBlendResult(ctx, state, primaryProvider, result.ChatResult.ParsedJSON)
+	_, err := common.SaveBlendResult(ctx, state, result.ChatResult.ParsedJSON)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save blend result: %w", err)
 	}
 
-	var units []jobs.WorkUnit
-	labelUnit := j.CreateLabelWorkUnit(ctx, info.PageNum, state)
-	if labelUnit != nil {
-		units = append(units, *labelUnit)
-	}
-
-	return units, nil
+	// No longer create label units here - label stage now runs after pattern analysis completes
+	return nil, nil
 }

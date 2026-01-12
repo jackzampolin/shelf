@@ -1,3 +1,26 @@
-Extract the page number and running header from this page:
+Extract page labels from this page (scan page {{.PageNum}}):
 
+{{if .PatternContext}}
+## Pattern Analysis Guidance
+
+{{if .PatternContext.ExpectedPageNumber}}**Expected Page Number:** {{.PatternContext.ExpectedPageNumber}}
+- Location: {{.PatternContext.PageNumberLocation}} of page
+- Position: {{.PatternContext.PageNumberPosition}}
+- Format: {{.PatternContext.PageNumberFormat}}
+{{else if .PatternContext.InPageNumberGap}}**Page Numbering:** No page number expected ({{.PatternContext.PageNumberGapReason}})
+{{else}}**Page Numbering:** Pattern not detected - search carefully
+{{end}}
+
+{{if .PatternContext.ExpectedRunningHeader}}**Expected Running Header:** "{{.PatternContext.ExpectedRunningHeader}}"
+{{else}}**Running Header:** {{if .PatternContext.InRunningHeaderCluster}}Detected in cluster, but text unknown{{else}}No pattern detected{{end}}
+{{end}}
+
+**Content Classification Hint:** {{.PatternContext.ContentTypeHint}}{{if .PatternContext.IsInBodyRange}} (body pages: {{.PatternContext.BodyStartPage}}-{{if .PatternContext.BodyEndPage}}{{.PatternContext.BodyEndPage}}{{else}}end{{end}}){{end}}
+
+{{if .PatternContext.NearChapterBoundary}}**Chapter Detection:** Near chapter boundary{{if .PatternContext.ExpectedChapterNumber}} (expected: Ch. {{.PatternContext.ExpectedChapterNumber}}{{if .PatternContext.ExpectedChapterTitle}}: {{.PatternContext.ExpectedChapterTitle}}{{end}}){{end}}
+{{end}}
+
+---
+
+{{end}}
 {{.BlendedText}}

@@ -33,8 +33,9 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 		}
 	}
 
-	// If blend done but label not done, create label unit (thread-safe accessors)
-	if state.IsBlendDone() && !state.IsLabelDone() {
+	// If blend done AND pattern analysis done but label not done, create label unit (thread-safe accessors)
+	// Label now runs after pattern analysis to use pattern context for guidance
+	if state.IsBlendDone() && j.Book.PatternAnalysis.IsComplete() && !state.IsLabelDone() {
 		unit := j.CreateLabelWorkUnit(ctx, pageNum, state)
 		if unit != nil {
 			units = append(units, *unit)
@@ -117,10 +118,41 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Start ToC linking if extraction is done AND all pages are labeled
+	// Start pattern analysis after ALL pages have blend complete
+	// Pattern analysis needs blended text from ALL pages for cross-page analysis
+	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
+	if j.AllPagesBlendComplete() && j.Book.PatternAnalysis.CanStart() {
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Info("all pages blend complete, starting pattern analysis",
+				"book_id", j.Book.BookID,
+				"total_pages", j.Book.TotalPages)
+		}
+		if err := j.Book.PatternAnalysis.Start(); err == nil {
+			patternUnits := j.CreatePatternAnalysisWorkUnits(ctx)
+			if len(patternUnits) > 0 {
+				if err := j.PersistPatternAnalysisState(ctx); err != nil {
+					j.Book.PatternAnalysis.Reset() // Rollback on failure
+				} else {
+					units = append(units, patternUnits...)
+					if logger != nil {
+						logger.Info("created pattern analysis work units",
+							"count", len(patternUnits))
+					}
+				}
+			} else {
+				j.Book.PatternAnalysis.Reset() // No work unit created, allow retry
+				if logger != nil {
+					logger.Warn("failed to create pattern analysis work units")
+				}
+			}
+		}
+	}
+
+	// Start ToC linking if extraction is done AND pattern analysis is done AND all pages are labeled
 	// ToC linker needs page labels to find chapter start pages
 	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
-	if j.Book.TocExtract.IsDone() && j.AllPagesComplete() && j.Book.TocLink.CanStart() {
+	if j.Book.TocExtract.IsDone() && j.Book.PatternAnalysis.IsComplete() && j.AllPagesComplete() && j.Book.TocLink.CanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("starting ToC link operation",
@@ -190,6 +222,11 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 		return
 	}
 
+	// Pattern analysis must be complete or permanently failed
+	if !j.Book.PatternAnalysis.IsDone() {
+		return
+	}
+
 	// If ToC was extracted, linking must also be done
 	if j.Book.TocExtract.IsDone() && !j.Book.TocLink.IsDone() {
 		return
@@ -229,4 +266,9 @@ func (j *Job) PersistTocFinderState(ctx context.Context) error {
 // PersistTocExtractState persists ToC extract state to DefraDB.
 func (j *Job) PersistTocExtractState(ctx context.Context) error {
 	return common.PersistTocExtractState(ctx, j.TocDocID, &j.Book.TocExtract)
+}
+
+// PersistPatternAnalysisState persists pattern analysis state to DefraDB.
+func (j *Job) PersistPatternAnalysisState(ctx context.Context) error {
+	return common.PersistPatternAnalysisState(ctx, j.Book.BookID, &j.Book.PatternAnalysis)
 }

@@ -1,0 +1,35 @@
+Use the detected patterns to determine where the main body text starts and ends.
+
+Total pages: {{.TotalPages}}
+
+Page Number Pattern:
+{{if .PageNumberPattern}}
+- Location: {{.PageNumberPattern.Location}} / {{.PageNumberPattern.Position}}
+- Format: {{.PageNumberPattern.Format}}
+- Range: pages {{.PageNumberPattern.StartPage}}{{if .PageNumberPattern.EndPage}} to {{.PageNumberPattern.EndPage}}{{else}} to end{{end}}
+- Start value: {{.PageNumberPattern.StartValue}}
+- Has gaps: {{.PageNumberPattern.HasGaps}}
+{{if .PageNumberPattern.GapRanges}}
+- Gap ranges:
+{{range .PageNumberPattern.GapRanges}}  - Pages {{.StartPage}}-{{.EndPage}}: {{.Reason}}
+{{end}}{{end}}
+- Confidence: {{.PageNumberPattern.Confidence}}
+{{else}}
+No page number pattern detected
+{{end}}
+
+Chapter Patterns:
+{{if .ChapterPatterns}}
+{{range .ChapterPatterns}}- Cluster {{.ClusterID}}: "{{.RunningHeader}}" (pages {{.StartPage}}-{{.EndPage}})
+  Chapter: {{if .ChapterNumber}}{{.ChapterNumber}}. {{end}}{{.ChapterTitle}}
+{{end}}
+{{else}}
+No chapter patterns detected
+{{end}}
+
+Determine:
+1. Where does the main body text start? (body_start_page)
+2. Where does the main body text end, if detectable? (body_end_page, or null if continues to end)
+3. Confidence level based on pattern clarity
+
+Return the body boundaries with reasoning.

@@ -59,14 +59,15 @@ const MaxPageOpRetries = 3
 
 // WorkUnitType constants for type-safe work unit handling.
 const (
-	WorkUnitTypeExtract    = "extract"
-	WorkUnitTypeOCR        = "ocr"
-	WorkUnitTypeBlend      = "blend"
-	WorkUnitTypeLabel      = "label"
-	WorkUnitTypeMetadata   = "metadata"
-	WorkUnitTypeTocFinder  = "toc_finder"
-	WorkUnitTypeTocExtract = "toc_extract"
-	WorkUnitTypeLinkToc    = "link_toc"
+	WorkUnitTypeExtract         = "extract"
+	WorkUnitTypeOCR             = "ocr"
+	WorkUnitTypeBlend           = "blend"
+	WorkUnitTypeLabel           = "label"
+	WorkUnitTypeMetadata        = "metadata"
+	WorkUnitTypeTocFinder       = "toc_finder"
+	WorkUnitTypeTocExtract      = "toc_extract"
+	WorkUnitTypePatternAnalysis = "pattern_analysis"
+	WorkUnitTypeLinkToc         = "link_toc"
 
 	// Finalize ToC work unit types
 	WorkUnitTypeFinalizePattern  = "finalize_pattern"
@@ -105,6 +106,9 @@ type WorkUnitInfo struct {
 	Provider   string // for OCR units
 	RetryCount int    // number of times this work unit has been retried
 	EntryDocID string // for link_toc units - which ToC entry this belongs to
+
+	// Pattern analysis fields
+	PatternAnalysisSubtype string // page_numbers, chapters, boundaries
 
 	// Finalize ToC fields
 	FinalizePhase string // pattern, discover, validate
@@ -176,6 +180,11 @@ func (j *Job) ConsecutiveFrontMatterComplete() bool {
 // AllPagesComplete returns true if all pages have completed the page-level pipeline.
 func (j *Job) AllPagesComplete() bool {
 	return j.Book.AllPagesComplete()
+}
+
+// AllPagesBlendComplete returns true if all pages have completed blend.
+func (j *Job) AllPagesBlendComplete() bool {
+	return j.Book.AllPagesBlendComplete()
 }
 
 // FindPDFForPage returns the PDF path and page number within that PDF for a given output page number.

@@ -1,0 +1,18 @@
+Analyze the first lines from these {{.TotalPages}} pages to detect chapter patterns through running header clustering.
+
+First lines from each page:
+{{range .Pages}}
+Page {{.PageNum}}:
+{{range .FirstLines}}- {{.}}
+{{end}}
+{{end}}
+
+Detect:
+1. Repeated patterns in first lines that indicate running headers
+2. Where these patterns change (chapter boundaries)
+3. Chapter numbers and titles from the patterns
+4. The page range for each chapter cluster
+
+If no clear running header pattern exists, return an empty array with reasoning.
+
+Return detected chapter patterns sorted by start_page.

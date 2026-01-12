@@ -10,6 +10,11 @@ import (
 // Input contains the data needed for a label work unit.
 type Input struct {
 	BlendedText string
+	PageNum     int
+
+	// PatternContext provides guidance from pattern analysis to help label extraction.
+	// Optional - if nil, label extraction proceeds without pattern hints.
+	PatternContext *PatternContext
 
 	// SystemPromptOverride allows using a book-level system prompt override.
 	// If empty, uses the embedded default.
@@ -29,7 +34,11 @@ func CreateWorkUnit(input Input) *jobs.WorkUnit {
 	}
 
 	// Render user prompt with optional override
-	data := UserPromptData{BlendedText: input.BlendedText}
+	data := UserPromptData{
+		BlendedText:    input.BlendedText,
+		PageNum:        input.PageNum,
+		PatternContext: input.PatternContext,
+	}
 	userPrompt := UserPromptWithOverride(data, input.UserPromptOverride)
 
 	return &jobs.WorkUnit{
