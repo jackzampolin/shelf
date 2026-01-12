@@ -84,6 +84,21 @@ func PersistTocExtractState(ctx context.Context, tocDocID string, op *OperationS
 	})
 }
 
+// PersistPatternAnalysisState persists pattern analysis operation state to DefraDB.
+func PersistPatternAnalysisState(ctx context.Context, bookID string, op *OperationState) error {
+	return SendToSink(ctx, defra.WriteOp{
+		Collection: "Book",
+		DocID:      bookID,
+		Document: map[string]any{
+			"pattern_analysis_started":  op.IsStarted(),
+			"pattern_analysis_complete": op.IsComplete(),
+			"pattern_analysis_failed":   op.IsFailed(),
+			"pattern_analysis_retries":  op.GetRetries(),
+		},
+		Op: defra.OpUpdate,
+	})
+}
+
 // PersistTocLinkState persists ToC link operation state to DefraDB.
 func PersistTocLinkState(ctx context.Context, tocDocID string, op *OperationState) error {
 	if tocDocID == "" {

@@ -6,12 +6,16 @@ import (
 	"log/slog"
 	"sync"
 
+	page_pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/page_pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/home"
 )
 
 // HomeDir is an alias for home.Dir for external use.
 type HomeDir = home.Dir
+
+// PagePatternResult is an alias for the pattern analysis result.
+type PagePatternResult = page_pattern_analyzer.Result
 
 // PageState tracks the processing state of a single page.
 // All fields are unexported and protected by an internal mutex for thread-safe access.
@@ -424,12 +428,13 @@ type BookState struct {
 	PromptCIDs map[string]string // prompt_key -> CID for traceability
 
 	// Book-level operation state (mutable - use accessor methods)
-	Metadata    OperationState
-	TocFinder   OperationState
-	TocExtract  OperationState
-	TocLink     OperationState
-	TocFinalize OperationState
-	Structure   OperationState
+	Metadata        OperationState
+	TocFinder       OperationState
+	TocExtract      OperationState
+	PatternAnalysis OperationState
+	TocLink         OperationState
+	TocFinalize     OperationState
+	Structure       OperationState
 
 	// ToC finder results (mutable - use accessor methods)
 	TocFound     bool
@@ -438,6 +443,9 @@ type BookState struct {
 
 	// ToC entries loaded from DB (immutable after LoadBook when ToC extraction is complete)
 	TocEntries []*toc_entry_finder.TocEntry
+
+	// Pattern analysis results (set after pattern analysis completes)
+	PatternAnalysisResult *PagePatternResult
 
 	// Body page range (set during finalize phase)
 	BodyStart int
@@ -503,6 +511,17 @@ func (b *BookState) AllPagesComplete() bool {
 	allDone := true
 	b.ForEachPage(func(pageNum int, state *PageState) {
 		if !state.IsLabelDone() {
+			allDone = false
+		}
+	})
+	return allDone && b.CountPages() >= b.TotalPages
+}
+
+// AllPagesBlendComplete returns true if all pages have completed blend.
+func (b *BookState) AllPagesBlendComplete() bool {
+	allDone := true
+	b.ForEachPage(func(pageNum int, state *PageState) {
+		if !state.IsBlendDone() {
 			allDone = false
 		}
 	})

@@ -136,6 +136,9 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		case "toc_extract":
 			j.Book.TocExtract.Fail(MaxBookOpRetries)
 			j.PersistTocExtractState(ctx)
+		case WorkUnitTypePatternAnalysis:
+			j.Book.PatternAnalysis.Fail(MaxBookOpRetries)
+			j.PersistPatternAnalysisState(ctx)
 		case WorkUnitTypeLinkToc:
 			// Link ToC entry failures - retry individual entry
 			if info.RetryCount < MaxPageOpRetries {
@@ -235,8 +238,20 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		if err := j.HandleTocExtractComplete(ctx, result); err != nil {
 			handlerErr = err
 		} else {
-			// ToC extraction complete - check if we should start link_toc
+			// ToC extraction complete - check if we should start pattern analysis
 			newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
+		}
+
+	case WorkUnitTypePatternAnalysis:
+		units, err := j.HandlePatternAnalysisComplete(ctx, info, result)
+		if err != nil {
+			handlerErr = err
+		} else {
+			newUnits = append(newUnits, units...)
+			// Check if pattern analysis complete - if so, trigger dependent operations
+			if j.Book.PatternAnalysis.IsComplete() {
+				newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
+			}
 		}
 
 	case WorkUnitTypeLinkToc:

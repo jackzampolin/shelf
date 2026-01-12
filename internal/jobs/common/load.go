@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
@@ -321,13 +322,18 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 		return "", fmt.Errorf("defra client not in context")
 	}
 
-	// Check book metadata status
+	// Check book metadata and pattern analysis status
 	bookQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			metadata_started
 			metadata_complete
 			metadata_failed
 			metadata_retries
+			pattern_analysis_started
+			pattern_analysis_complete
+			pattern_analysis_failed
+			pattern_analysis_retries
+			page_pattern_analysis_json
 		}
 	}`, book.BookID)
 
@@ -338,6 +344,7 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 
 	if books, ok := bookResp.Data["Book"].([]any); ok && len(books) > 0 {
 		if bookData, ok := books[0].(map[string]any); ok {
+			// Metadata state
 			var started, complete, failed bool
 			var retries int
 			if ms, ok := bookData["metadata_started"].(bool); ok {
@@ -353,6 +360,31 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				retries = int(mr)
 			}
 			book.Metadata = boolsToOpState(started, complete, failed, retries)
+
+			// Pattern analysis state
+			var paStarted, paComplete, paFailed bool
+			var paRetries int
+			if ps, ok := bookData["pattern_analysis_started"].(bool); ok {
+				paStarted = ps
+			}
+			if pc, ok := bookData["pattern_analysis_complete"].(bool); ok {
+				paComplete = pc
+			}
+			if pf, ok := bookData["pattern_analysis_failed"].(bool); ok {
+				paFailed = pf
+			}
+			if pr, ok := bookData["pattern_analysis_retries"].(float64); ok {
+				paRetries = int(pr)
+			}
+			book.PatternAnalysis = boolsToOpState(paStarted, paComplete, paFailed, paRetries)
+
+			// Pattern analysis result JSON
+			if paJSON, ok := bookData["page_pattern_analysis_json"].(string); ok && paJSON != "" {
+				var result PagePatternResult
+				if err := json.Unmarshal([]byte(paJSON), &result); err == nil {
+					book.PatternAnalysisResult = &result
+				}
+			}
 		}
 	}
 

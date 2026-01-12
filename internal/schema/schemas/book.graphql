@@ -36,6 +36,17 @@ type Book {
     total_paragraphs: Int
     total_words: Int
 
+    # Page pattern analysis state (early pipeline - after blend, before label)
+    pattern_analysis_started: Boolean
+    pattern_analysis_complete: Boolean
+    pattern_analysis_failed: Boolean
+    pattern_analysis_retries: Int
+
+    # Page pattern analysis result (JSON)
+    # Contains: page_number_pattern, body_boundaries, chapter_patterns, reasoning
+    # Detects page numbering patterns, body boundaries, and chapter clusters
+    page_pattern_analysis_json: String
+
     # Pattern analysis from finalize_toc (JSON)
     # Contains: discovered_patterns, excluded_ranges, entries_to_find, reasoning
     pattern_analysis_json: String

@@ -38,11 +38,6 @@ func (j *Job) HandleBlendComplete(ctx context.Context, info WorkUnitInfo, result
 		return nil, fmt.Errorf("failed to save blend result: %w", err)
 	}
 
-	var units []jobs.WorkUnit
-	labelUnit := j.CreateLabelWorkUnit(ctx, info.PageNum, state)
-	if labelUnit != nil {
-		units = append(units, *labelUnit)
-	}
-
-	return units, nil
+	// No longer create label units here - label stage now runs after pattern analysis completes
+	return nil, nil
 }

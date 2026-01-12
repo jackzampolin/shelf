@@ -2,6 +2,7 @@ package job
 
 import (
 	"github.com/jackzampolin/shelf/internal/agent"
+	page_pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/page_pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
@@ -59,14 +60,15 @@ const MaxPageOpRetries = 3
 
 // WorkUnitType constants for type-safe work unit handling.
 const (
-	WorkUnitTypeExtract    = "extract"
-	WorkUnitTypeOCR        = "ocr"
-	WorkUnitTypeBlend      = "blend"
-	WorkUnitTypeLabel      = "label"
-	WorkUnitTypeMetadata   = "metadata"
-	WorkUnitTypeTocFinder  = "toc_finder"
-	WorkUnitTypeTocExtract = "toc_extract"
-	WorkUnitTypeLinkToc    = "link_toc"
+	WorkUnitTypeExtract         = "extract"
+	WorkUnitTypeOCR             = "ocr"
+	WorkUnitTypeBlend           = "blend"
+	WorkUnitTypeLabel           = "label"
+	WorkUnitTypeMetadata        = "metadata"
+	WorkUnitTypeTocFinder       = "toc_finder"
+	WorkUnitTypeTocExtract      = "toc_extract"
+	WorkUnitTypePatternAnalysis = "pattern_analysis"
+	WorkUnitTypeLinkToc         = "link_toc"
 
 	// Finalize ToC work unit types
 	WorkUnitTypeFinalizePattern  = "finalize_pattern"
@@ -106,6 +108,9 @@ type WorkUnitInfo struct {
 	RetryCount int    // number of times this work unit has been retried
 	EntryDocID string // for link_toc units - which ToC entry this belongs to
 
+	// Pattern analysis fields
+	PatternAnalysisSubtype string // page_numbers, chapters, boundaries
+
 	// Finalize ToC fields
 	FinalizePhase string // pattern, discover, validate
 	FinalizeKey   string // entry key or gap key
@@ -128,6 +133,10 @@ type Job struct {
 	// ToC agent (stateful during execution)
 	TocAgent *agent.Agent
 	TocDocID string
+
+	// Pattern analysis intermediate results (used to create boundaries work unit)
+	PageNumberPattern *page_pattern_analyzer.PageNumberPattern
+	ChapterPatterns   []page_pattern_analyzer.ChapterPattern
 
 	// Link ToC entry agents (one per ToC entry)
 	LinkTocEntries     []*toc_entry_finder.TocEntry
@@ -176,6 +185,11 @@ func (j *Job) ConsecutiveFrontMatterComplete() bool {
 // AllPagesComplete returns true if all pages have completed the page-level pipeline.
 func (j *Job) AllPagesComplete() bool {
 	return j.Book.AllPagesComplete()
+}
+
+// AllPagesBlendComplete returns true if all pages have completed blend.
+func (j *Job) AllPagesBlendComplete() bool {
+	return j.Book.AllPagesBlendComplete()
 }
 
 // FindPDFForPage returns the PDF path and page number within that PDF for a given output page number.

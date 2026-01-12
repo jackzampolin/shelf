@@ -21,9 +21,37 @@ func SystemPrompt() string {
 	return systemPrompt
 }
 
+// PatternContext provides guidance from pattern analysis to help label extraction.
+type PatternContext struct {
+	// Page number expectations
+	ExpectedPageNumber   *string // e.g., "45" or "xiv", null if in gap range
+	PageNumberLocation   string  // "top" or "bottom"
+	PageNumberPosition   string  // "left", "center", "right"
+	PageNumberFormat     string  // "numeric", "roman_lower", "roman_upper"
+	InPageNumberGap      bool    // True if this page is in a gap range (no page number expected)
+	PageNumberGapReason  string  // e.g., "front_matter", "toc", "chapter_start"
+
+	// Running header expectations
+	ExpectedRunningHeader *string // Expected running header text from chapter patterns, null if none
+	InRunningHeaderCluster bool   // True if this page is in a detected chapter cluster
+
+	// Content classification hints
+	ContentTypeHint   string // "body", "front_matter", "back_matter" from body boundaries
+	IsInBodyRange     bool   // True if page is within detected body boundaries
+	BodyStartPage     int    // First page of body (0 if not detected)
+	BodyEndPage       int    // Last page of body (0 if not detected or continues to end)
+
+	// Chapter detection hints
+	NearChapterBoundary  bool    // True if within 2 pages of a detected chapter boundary
+	ExpectedChapterNumber *string // Expected chapter number if detected, null otherwise
+	ExpectedChapterTitle  *string // Expected chapter title if detected, null otherwise
+}
+
 // UserPromptData contains the data needed to render the user prompt template.
 type UserPromptData struct {
-	BlendedText string
+	BlendedText    string
+	PageNum        int
+	PatternContext *PatternContext // Optional - provides guidance from pattern analysis
 }
 
 // UserPrompt builds the user prompt for label extraction.
