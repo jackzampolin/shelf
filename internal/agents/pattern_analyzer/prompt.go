@@ -65,11 +65,29 @@ type CandidateHeading struct {
 	Level   int
 }
 
+// DetectedChapter represents a chapter detected from page pattern analysis.
+// This is GROUND TRUTH from actual page content (running header clusters).
+type DetectedChapter struct {
+	PageNum       int    // Page where chapter starts
+	RunningHeader string // Running header text
+	ChapterTitle  string // Chapter title if detected
+	ChapterNumber *int   // Chapter number if numeric
+	Confidence    string // "high", "medium", "low"
+}
+
+// ChapterStartPage represents a page marked as chapter start during labeling.
+type ChapterStartPage struct {
+	PageNum       int
+	RunningHeader string // From label stage
+}
+
 // UserPromptData contains data for rendering the user prompt.
 type UserPromptData struct {
 	LinkedEntries       []LinkedEntry
 	Candidates          []CandidateHeading
 	CandidatesTruncated []CandidateHeading // Overflow candidates not shown
+	DetectedChapters    []DetectedChapter  // Chapters from page pattern analysis (ground truth)
+	ChapterStartPages   []ChapterStartPage // Pages with is_chapter_start=true
 	BodyStart           int
 	BodyEnd             int
 	TotalPages          int

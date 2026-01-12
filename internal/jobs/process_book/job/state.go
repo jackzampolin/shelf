@@ -48,14 +48,15 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 // MaybeStartBookOperations checks if we should trigger metadata/ToC operations.
 // Must be called with j.mu held.
 func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
-	labeledCount := j.CountLabeledPages()
+	blendedCount := j.CountBlendedPages()
 
 	var units []jobs.WorkUnit
 
-	// Start metadata extraction after threshold pages are labeled
+	// Start metadata extraction after threshold pages are blended
+	// Metadata only needs blended text (not labels), so it can start early
 	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
 	// if work unit creation has side effects (like creating agent logs)
-	if labeledCount >= LabelThresholdForBookOps && j.Book.Metadata.CanStart() {
+	if blendedCount >= BlendThresholdForMetadata && j.Book.Metadata.CanStart() {
 		if err := j.Book.Metadata.Start(); err == nil {
 			unit := j.CreateMetadataWorkUnit(ctx)
 			if unit != nil {

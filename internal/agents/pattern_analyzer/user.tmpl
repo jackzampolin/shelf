@@ -3,6 +3,23 @@
   p{{if .ActualPage}}{{.ActualPage}}{{else}}?{{end}}: {{if .LevelName}}[{{.LevelName}}] {{end}}{{if .EntryNumber}}{{.EntryNumber}}. {{end}}{{.Title}}
 {{end}}
 
+{{if gt (len .DetectedChapters) 0}}
+## Detected Chapters (GROUND TRUTH from page analysis)
+These chapter boundaries were detected from running header patterns across pages.
+Cross-reference with ToC entries above - missing matches indicate potential ToC gaps.
+{{range .DetectedChapters}}
+  p{{.PageNum}}: {{if .ChapterNumber}}Ch.{{.ChapterNumber}} {{end}}"{{.RunningHeader}}"{{if .ChapterTitle}} - {{.ChapterTitle}}{{end}} ({{.Confidence}})
+{{end}}
+{{end}}
+
+{{if gt (len .ChapterStartPages) 0}}
+## Chapter Start Pages (from labels)
+Pages marked as chapter beginnings during page labeling:
+{{range .ChapterStartPages}}
+  p{{.PageNum}}{{if .RunningHeader}}: "{{.RunningHeader}}"{{end}}
+{{end}}
+{{end}}
+
 ## Candidate Headings (detected but NOT in ToC)
 Body range: pages {{.BodyStart}}-{{.BodyEnd}}
 {{range .Candidates}}
@@ -13,8 +30,10 @@ Body range: pages {{.BodyStart}}-{{.BodyEnd}}
 {{end}}
 
 ## Task
-Analyze the ToC structure and candidate headings to identify:
+Analyze the ToC structure and identify:
 1. Sequential patterns (chapters, parts, sections) that exist but are NOT in ToC
+   - Cross-reference ToC entries with Detected Chapters (ground truth) and Chapter Start Pages
+   - If a detected chapter has no matching ToC entry, it may be missing from ToC
 2. Page ranges to exclude (back matter: notes, bibliography, index)
 
 Output JSON with discovered_patterns and excluded_page_ranges.

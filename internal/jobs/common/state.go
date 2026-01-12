@@ -514,6 +514,17 @@ func (b *BookState) CountLabeledPages() int {
 	return count
 }
 
+// CountBlendedPages returns the number of pages that have completed blend.
+func (b *BookState) CountBlendedPages() int {
+	count := 0
+	b.ForEachPage(func(pageNum int, state *PageState) {
+		if state.IsBlendDone() {
+			count++
+		}
+	})
+	return count
+}
+
 // AllPagesComplete returns true if all pages have completed the page-level pipeline.
 func (b *BookState) AllPagesComplete() bool {
 	allDone := true
