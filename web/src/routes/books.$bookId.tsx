@@ -8,6 +8,7 @@ import {
   CollapsibleSection,
   TocSection,
   StructureSection,
+  PatternAnalysisSection,
   AgentLogModal,
   MetadataModal,
   JobHistorySection,
@@ -57,9 +58,9 @@ function BookDetailPage() {
   })
 
   const jobTypes = [
-    { id: 'process-book', label: 'Full Pipeline', description: 'OCR → Blend → Label → Metadata → ToC → Link', force: false },
-    { id: 'ocr-book', label: 'OCR + Blend Only', description: 'OCR and blend all pages (no labeling)', force: false },
-    { id: 'label-book', label: 'Label Only', description: 'Label pages that have blend complete', force: false },
+    { id: 'process-book', label: 'Full Pipeline', description: 'OCR → Blend → Pattern Analysis → Label → ToC → Structure', force: false },
+    { id: 'ocr-book', label: 'OCR + Blend Only', description: 'OCR and blend all pages (no pattern analysis or labeling)', force: false },
+    { id: 'label-book', label: 'Label Only', description: 'Label pages (requires pattern analysis complete)', force: false },
     { id: 'metadata-book', label: 'Metadata Only', description: 'Extract book metadata (title, author, etc.)', force: false },
     { id: 'toc-book', label: 'ToC Only', description: 'Find and extract table of contents', force: false },
     { id: 'link-toc', label: 'Link ToC Only', description: 'Link ToC entries to actual pages', force: false },
@@ -323,6 +324,14 @@ function BookDetailPage() {
                 />
               </div>
             </CollapsibleSection>
+
+            {/* Pattern Analysis Section */}
+            <PatternAnalysisSection
+              patternAnalysisJSON={book?.page_pattern_analysis_json}
+              complete={detailedStatus.stages?.pattern_analysis?.complete}
+              cost={detailedStatus.stages?.pattern_analysis?.cost_usd}
+              metrics={detailedMetrics?.stages?.['pattern_analysis']}
+            />
 
             {/* Label Section */}
             <CollapsibleSection
