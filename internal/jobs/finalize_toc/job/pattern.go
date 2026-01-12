@@ -13,6 +13,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/svcctx"
+	"github.com/jackzampolin/shelf/internal/types"
 )
 
 // CreatePatternWorkUnit creates a work unit for pattern analysis.
@@ -20,29 +21,54 @@ func (j *Job) CreatePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit, error)
 	// Load candidate headings from Page.headings
 	candidates, err := j.loadCandidateHeadings(ctx)
 	if err != nil {
-		// Non-fatal - proceed without candidates
+		// Non-fatal but noteworthy - proceed with degraded operation
 		if logger := svcctx.LoggerFrom(ctx); logger != nil {
-			logger.Info("failed to load candidate headings", "error", err)
+			logger.Warn("proceeding without candidate headings due to load failure",
+				"error", err,
+				"book_id", j.Book.BookID,
+				"impact", "pattern analysis will have fewer heading hints")
 		}
 	}
 
-	// Log candidate count for debugging
+	// Load chapter start pages from labels (pages with is_chapter_start=true)
+	chapterStartPages, err := j.loadChapterStartPages(ctx)
+	if err != nil {
+		// Non-fatal but noteworthy - proceed with degraded operation
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("proceeding without chapter start pages due to load failure",
+				"error", err,
+				"book_id", j.Book.BookID,
+				"impact", "pattern analysis will lack chapter boundary hints from labels")
+		}
+	}
+
+	// Safely get detected chapters count (PagePatternCtx may be nil)
+	detectedChaptersCount := 0
+	if j.PagePatternCtx != nil {
+		detectedChaptersCount = len(j.PagePatternCtx.ChapterPatterns)
+	}
+
+	// Log context for debugging
 	if logger := svcctx.LoggerFrom(ctx); logger != nil {
-		logger.Info("pattern analysis candidates loaded",
+		logger.Info("pattern analysis context loaded",
 			"candidate_count", len(candidates),
+			"detected_chapters", detectedChaptersCount,
+			"chapter_start_pages", len(chapterStartPages),
 			"body_start", j.Book.BodyStart,
 			"body_end", j.Book.BodyEnd,
 			"linked_entries", len(j.LinkedEntries))
 	}
 
-	// Build prompts
+	// Build prompts with enhanced context
 	systemPrompt := j.GetPrompt(pattern_analyzer.PromptKey)
 	userPrompt := pattern_analyzer.BuildUserPrompt(pattern_analyzer.UserPromptData{
-		LinkedEntries: j.convertEntriesForPattern(),
-		Candidates:    j.convertCandidatesForPattern(candidates),
-		BodyStart:     j.Book.BodyStart,
-		BodyEnd:       j.Book.BodyEnd,
-		TotalPages:    j.Book.TotalPages,
+		LinkedEntries:     j.convertEntriesForPattern(),
+		Candidates:        j.convertCandidatesForPattern(candidates),
+		DetectedChapters:  j.convertDetectedChapters(),
+		ChapterStartPages: chapterStartPages,
+		BodyStart:         j.Book.BodyStart,
+		BodyEnd:           j.Book.BodyEnd,
+		TotalPages:        j.Book.TotalPages,
 	})
 
 	// Create chat request with structured output
@@ -454,4 +480,62 @@ func (j *Job) convertCandidatesForPattern(candidates []*CandidateHeading) []patt
 		})
 	}
 	return result
+}
+
+// convertDetectedChapters returns PagePatternCtx.ChapterPatterns directly.
+// Since both finalize_toc and pattern_analyzer now use types.DetectedChapter,
+// no conversion is needed - just return the slice.
+func (j *Job) convertDetectedChapters() []types.DetectedChapter {
+	if j.PagePatternCtx == nil {
+		return nil
+	}
+	return j.PagePatternCtx.ChapterPatterns
+}
+
+// loadChapterStartPages queries pages with is_chapter_start=true from DefraDB.
+func (j *Job) loadChapterStartPages(ctx context.Context) ([]types.ChapterStartPage, error) {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil, fmt.Errorf("defra client not in context")
+	}
+
+	// Query pages with is_chapter_start=true for this book
+	query := fmt.Sprintf(`{
+		Page(filter: {book_id: {_eq: "%s"}, is_chapter_start: {_eq: true}}, order: {page_num: ASC}) {
+			page_num
+			running_header
+		}
+	}`, j.Book.BookDocID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query chapter start pages: %w", err)
+	}
+
+	rawPages, ok := resp.Data["Page"].([]any)
+	if !ok {
+		return nil, nil
+	}
+
+	var result []types.ChapterStartPage
+	for _, p := range rawPages {
+		page, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		csp := types.ChapterStartPage{}
+		if pageNum, ok := page["page_num"].(float64); ok {
+			csp.PageNum = int(pageNum)
+		}
+		if rh, ok := page["running_header"].(string); ok {
+			csp.RunningHeader = rh
+		}
+
+		if csp.PageNum > 0 {
+			result = append(result, csp)
+		}
+	}
+
+	return result, nil
 }

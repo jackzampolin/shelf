@@ -6,6 +6,7 @@ import (
 	"text/template"
 
 	"github.com/jackzampolin/shelf/internal/prompts"
+	"github.com/jackzampolin/shelf/internal/types"
 )
 
 //go:embed system.tmpl
@@ -69,7 +70,9 @@ type CandidateHeading struct {
 type UserPromptData struct {
 	LinkedEntries       []LinkedEntry
 	Candidates          []CandidateHeading
-	CandidatesTruncated []CandidateHeading // Overflow candidates not shown
+	CandidatesTruncated []CandidateHeading        // Overflow candidates not shown
+	DetectedChapters    []types.DetectedChapter   // Chapters from page pattern analysis (ground truth)
+	ChapterStartPages   []types.ChapterStartPage  // Pages with is_chapter_start=true
 	BodyStart           int
 	BodyEnd             int
 	TotalPages          int

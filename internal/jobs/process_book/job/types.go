@@ -9,8 +9,9 @@ import (
 	finalize_toc "github.com/jackzampolin/shelf/internal/jobs/finalize_toc/job"
 )
 
-// LabelThresholdForBookOps is the number of labeled pages before triggering book-level operations.
-const LabelThresholdForBookOps = 20
+// BlendThresholdForMetadata is the number of blended pages before triggering metadata extraction.
+// Metadata only needs blended text (not labels), so it can start early while OCR is still running.
+const BlendThresholdForMetadata = 20
 
 // BookStatus represents the top-level status of a book.
 type BookStatus string
@@ -168,6 +169,11 @@ func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 // CountLabeledPages returns the number of pages that have completed labeling.
 func (j *Job) CountLabeledPages() int {
 	return j.Book.CountLabeledPages()
+}
+
+// CountBlendedPages returns the number of pages that have completed blend.
+func (j *Job) CountBlendedPages() int {
+	return j.Book.CountBlendedPages()
 }
 
 // ConsecutiveFrontMatterComplete returns true if pages 1 through ConsecutiveFrontMatterRequired

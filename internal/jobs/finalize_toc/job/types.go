@@ -1,9 +1,12 @@
 package job
 
 import (
+	"fmt"
+
 	"github.com/jackzampolin/shelf/internal/agent"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
+	"github.com/jackzampolin/shelf/internal/types"
 )
 
 // MaxRetries is the maximum number of retries for finalize ToC operations.
@@ -46,6 +49,9 @@ type Job struct {
 	// Pattern analysis results
 	PatternResult *PatternResult
 
+	// Page pattern context (loaded from page pattern analysis and labels)
+	PagePatternCtx *PagePatternContext
+
 	// Discover phase state
 	EntriesToFind    []*EntryToFind
 	DiscoverAgents   map[string]*agent.Agent // entryKey -> agent
@@ -64,39 +70,83 @@ type Job struct {
 
 // NewFromLoadResult creates a Job from a common.LoadBookResult.
 func NewFromLoadResult(result *common.LoadBookResult, linkedEntries []*LinkedTocEntry) *Job {
-	// Compute body range from linked entries (min/max of actual_page)
-	// This is the page range where ToC entries are linked
-	var minPage, maxPage int
-	for _, entry := range linkedEntries {
-		if entry.ActualPage != nil {
-			page := *entry.ActualPage
-			if minPage == 0 || page < minPage {
-				minPage = page
-			}
-			if page > maxPage {
-				maxPage = page
+	// Build PagePatternContext from page pattern analysis if available
+	pagePatternCtx := buildPagePatternContext(result.Book)
+
+	// Set body range: prefer page pattern analysis, fall back to ToC entries, then full book
+	if pagePatternCtx.HasBoundaries {
+		// Use accurate body boundaries from page pattern analysis
+		result.Book.BodyStart = pagePatternCtx.BodyStartPage
+		result.Book.BodyEnd = pagePatternCtx.BodyEndPage
+	} else {
+		// Compute body range from linked entries (min/max of actual_page)
+		var minPage, maxPage int
+		for _, entry := range linkedEntries {
+			if entry.ActualPage != nil {
+				page := *entry.ActualPage
+				if minPage == 0 || page < minPage {
+					minPage = page
+				}
+				if page > maxPage {
+					maxPage = page
+				}
 			}
 		}
-	}
-	// Set body range on BookState for pattern analysis
-	if minPage > 0 && maxPage > 0 {
-		result.Book.BodyStart = minPage
-		result.Book.BodyEnd = maxPage
-	} else {
-		// Fallback to full book range if no entries have linked pages yet
-		// This ensures pattern analysis can still search the entire book
-		result.Book.BodyStart = 1
-		result.Book.BodyEnd = result.Book.TotalPages
+		if minPage > 0 && maxPage > 0 {
+			result.Book.BodyStart = minPage
+			result.Book.BodyEnd = maxPage
+		} else {
+			// Fallback to full book range
+			result.Book.BodyStart = 1
+			result.Book.BodyEnd = result.Book.TotalPages
+		}
 	}
 
 	return &Job{
 		TrackedBaseJob: common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
 		TocDocID:       result.TocDocID,
 		CurrentPhase:   PhasePattern,
+		PagePatternCtx: &pagePatternCtx,
 		LinkedEntries:  linkedEntries,
 		DiscoverAgents: make(map[string]*agent.Agent),
 		GapAgents:      make(map[string]*agent.Agent),
 	}
+}
+
+// buildPagePatternContext extracts pattern context from page pattern analysis results.
+func buildPagePatternContext(book *common.BookState) PagePatternContext {
+	ctx := PagePatternContext{}
+
+	// Extract body boundaries and chapter patterns from page pattern analysis
+	if book.PatternAnalysisResult != nil {
+		par := book.PatternAnalysisResult
+
+		// Body boundaries
+		if par.BodyBoundaries != nil {
+			ctx.BodyStartPage = par.BodyBoundaries.BodyStartPage
+			if par.BodyBoundaries.BodyEndPage != nil {
+				ctx.BodyEndPage = *par.BodyBoundaries.BodyEndPage
+			} else {
+				ctx.BodyEndPage = book.TotalPages
+			}
+			ctx.HasBoundaries = true
+		}
+
+		// Chapter patterns from running header clusters
+		for _, cp := range par.ChapterPatterns {
+			detected := types.DetectedChapter{
+				PageNum:       cp.StartPage,
+				RunningHeader: cp.RunningHeader,
+				ChapterTitle:  cp.ChapterTitle,
+				ChapterNumber: cp.ChapterNumber,
+				Source:        types.SourcePatternAnalysis,
+				Confidence:    types.ParseConfidenceLevel(cp.Confidence),
+			}
+			ctx.ChapterPatterns = append(ctx.ChapterPatterns, detected)
+		}
+	}
+
+	return ctx
 }
 
 // Type returns the job type identifier.
@@ -178,4 +228,32 @@ type CandidateHeading struct {
 	PageNum int
 	Text    string
 	Level   int
+}
+
+// PagePatternContext holds page pattern analysis data for enhanced ToC finalization.
+type PagePatternContext struct {
+	// Body boundaries from page pattern analysis
+	BodyStartPage int
+	BodyEndPage   int
+	HasBoundaries bool
+
+	// Detected chapters from running header clusters
+	// Uses types.DetectedChapter for consistency across packages
+	ChapterPatterns []types.DetectedChapter
+
+	// Pages marked as chapter starts from labeling
+	ChapterStartPages []int
+}
+
+// Validate checks that the PagePatternContext has valid values.
+func (ctx *PagePatternContext) Validate() error {
+	if ctx.HasBoundaries {
+		if ctx.BodyStartPage <= 0 || ctx.BodyEndPage <= 0 {
+			return fmt.Errorf("page boundaries must be positive when HasBoundaries is true")
+		}
+		if ctx.BodyStartPage > ctx.BodyEndPage {
+			return fmt.Errorf("BodyStartPage (%d) cannot exceed BodyEndPage (%d)", ctx.BodyStartPage, ctx.BodyEndPage)
+		}
+	}
+	return nil
 }
