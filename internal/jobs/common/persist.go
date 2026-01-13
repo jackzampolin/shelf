@@ -166,3 +166,103 @@ func PersistStructurePhase(ctx context.Context, book *BookState) error {
 		Op: defra.OpUpdate,
 	})
 }
+
+// --- Agent State Persistence ---
+
+// PersistAgentState creates or updates an agent state record in DefraDB.
+// Returns the document ID (existing or newly created).
+func PersistAgentState(ctx context.Context, bookID string, state *AgentState) (string, error) {
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return "", fmt.Errorf("defra sink not in context")
+	}
+
+	doc := map[string]any{
+		"agent_id":            state.AgentID,
+		"agent_type":          state.AgentType,
+		"entry_doc_id":        state.EntryDocID,
+		"iteration":           state.Iteration,
+		"complete":            state.Complete,
+		"messages_json":       state.MessagesJSON,
+		"pending_tool_calls":  state.PendingToolCalls,
+		"tool_results":        state.ToolResults,
+		"result_json":         state.ResultJSON,
+		"book_id":             bookID,
+	}
+
+	if state.DocID != "" {
+		// Update existing
+		sink.Send(defra.WriteOp{
+			Collection: "AgentState",
+			DocID:      state.DocID,
+			Document:   doc,
+			Op:         defra.OpUpdate,
+		})
+		return state.DocID, nil
+	}
+
+	// Create new - need sync to get DocID back
+	result, err := sink.SendSync(ctx, defra.WriteOp{
+		Collection: "AgentState",
+		Document:   doc,
+		Op:         defra.OpCreate,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to create agent state: %w", err)
+	}
+	return result.DocID, nil
+}
+
+// DeleteAgentState removes an agent state record from DefraDB.
+func DeleteAgentState(ctx context.Context, docID string) error {
+	if docID == "" {
+		return nil
+	}
+	return SendToSink(ctx, defra.WriteOp{
+		Collection: "AgentState",
+		DocID:      docID,
+		Op:         defra.OpDelete,
+	})
+}
+
+// DeleteAgentStatesForBook removes all agent state records for a book.
+// This is used when resetting operations or cleaning up completed jobs.
+func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
+
+	// Query all agent states for this book
+	query := fmt.Sprintf(`{
+		AgentState(filter: {book_id: {_eq: "%s"}}) {
+			_docID
+		}
+	}`, bookID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return fmt.Errorf("failed to query agent states: %w", err)
+	}
+
+	states, ok := resp.Data["AgentState"].([]any)
+	if !ok || len(states) == 0 {
+		return nil
+	}
+
+	// Delete each one
+	for _, s := range states {
+		state, ok := s.(map[string]any)
+		if !ok {
+			continue
+		}
+		docID, _ := state["_docID"].(string)
+		if docID != "" {
+			if err := DeleteAgentState(ctx, docID); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}

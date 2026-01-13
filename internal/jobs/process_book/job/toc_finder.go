@@ -14,6 +14,9 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
+// AgentTypeTocFinder is the agent type identifier for ToC finder agents.
+const AgentTypeTocFinder = "toc_finder"
+
 // CreateTocFinderWorkUnit creates a ToC finder agent work unit.
 // Must be called with j.Mu held.
 func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
@@ -25,6 +28,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	if defraClient == nil {
 		return nil
 	}
+	logger := svcctx.LoggerFrom(ctx)
 
 	// Create or get ToC record
 	// Note: The Book->ToC relationship has @primary on Book side,
@@ -87,7 +91,6 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 			})
 			if err != nil {
 				// Log but continue - ToC was created, just not linked yet
-				logger := svcctx.LoggerFrom(ctx)
 				if logger != nil {
 					logger.Warn("failed to link ToC to Book", "error", err, "toc_doc_id", j.TocDocID)
 				}
@@ -95,13 +98,51 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 		}
 	}
 
-	// Create agent via factory (passing context for observability logging)
-	j.TocAgent = agents.NewTocFinderAgent(ctx, agents.TocFinderConfig{
-		Book:         j.Book,
-		SystemPrompt: j.GetPrompt(toc_finder.PromptKey),
-		Debug:        j.Book.DebugAgents,
-		JobID:        j.RecordID,
-	})
+	// Check for saved agent state (job resume case)
+	savedState := j.Book.GetAgentState(AgentTypeTocFinder, "")
+	if savedState != nil && !savedState.Complete {
+		// Resume existing agent
+		if logger != nil {
+			logger.Info("resuming ToC finder agent from saved state",
+				"agent_id", savedState.AgentID,
+				"iteration", savedState.Iteration)
+		}
+
+		// Create agent with fresh tools but restore conversation state
+		j.TocAgent = agents.NewTocFinderAgent(ctx, agents.TocFinderConfig{
+			Book:         j.Book,
+			SystemPrompt: j.GetPrompt(toc_finder.PromptKey),
+			Debug:        j.Book.DebugAgents,
+			JobID:        j.RecordID,
+		})
+
+		// Restore state from saved
+		if err := j.TocAgent.RestoreState(&agent.StateExport{
+			AgentID:          savedState.AgentID,
+			Iteration:        savedState.Iteration,
+			Complete:         savedState.Complete,
+			MessagesJSON:     savedState.MessagesJSON,
+			PendingToolCalls: savedState.PendingToolCalls,
+			ToolResults:      savedState.ToolResults,
+			ResultJSON:       savedState.ResultJSON,
+		}); err != nil {
+			if logger != nil {
+				logger.Warn("failed to restore ToC finder agent state, starting fresh", "error", err)
+			}
+			// Fall through to create fresh agent
+			j.TocAgent = nil
+		}
+	}
+
+	// Create fresh agent if not restored
+	if j.TocAgent == nil {
+		j.TocAgent = agents.NewTocFinderAgent(ctx, agents.TocFinderConfig{
+			Book:         j.Book,
+			SystemPrompt: j.GetPrompt(toc_finder.PromptKey),
+			Debug:        j.Book.DebugAgents,
+			JobID:        j.RecordID,
+		})
+	}
 
 	// Get first work unit using helper
 	agentUnits := agents.ExecuteToolLoop(ctx, j.TocAgent)
@@ -124,9 +165,16 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		return nil, fmt.Errorf("toc agent not initialized")
 	}
 
+	logger := svcctx.LoggerFrom(ctx)
+
 	// Handle LLM result
 	if result.ChatResult != nil {
 		j.TocAgent.HandleLLMResult(result.ChatResult)
+
+		// Save agent state for resume capability
+		if err := j.saveTocFinderAgentState(ctx); err != nil && logger != nil {
+			logger.Warn("failed to save ToC finder agent state", "error", err)
+		}
 
 		// Execute tool loop using helper
 		agentUnits := agents.ExecuteToolLoop(ctx, j.TocAgent)
@@ -140,11 +188,13 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 	if j.TocAgent.IsDone() {
 		// Save agent log if debug enabled
 		if err := j.TocAgent.SaveLog(ctx); err != nil {
-			logger := svcctx.LoggerFrom(ctx)
 			if logger != nil {
 				logger.Warn("failed to save agent log", "error", err)
 			}
 		}
+
+		// Clean up agent state from BookState and DB
+		j.cleanupTocFinderAgentState(ctx)
 
 		j.Book.TocFinder.Complete()
 		agentResult := j.TocAgent.Result()
@@ -176,6 +226,58 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 
 	// Agent not done but no LLM work units - shouldn't happen
 	return nil, nil
+}
+
+// saveTocFinderAgentState saves the ToC finder agent state for resume capability.
+func (j *Job) saveTocFinderAgentState(ctx context.Context) error {
+	if j.TocAgent == nil {
+		return nil
+	}
+
+	// Export agent state
+	exported, err := j.TocAgent.ExportState()
+	if err != nil {
+		return err
+	}
+
+	// Get existing state to preserve DocID
+	existing := j.Book.GetAgentState(AgentTypeTocFinder, "")
+	var docID string
+	if existing != nil {
+		docID = existing.DocID
+	}
+
+	// Create AgentState for BookState
+	state := &common.AgentState{
+		AgentID:          exported.AgentID,
+		AgentType:        AgentTypeTocFinder,
+		Iteration:        exported.Iteration,
+		Complete:         exported.Complete,
+		MessagesJSON:     exported.MessagesJSON,
+		PendingToolCalls: exported.PendingToolCalls,
+		ToolResults:      exported.ToolResults,
+		ResultJSON:       exported.ResultJSON,
+		DocID:            docID,
+	}
+
+	// Persist to DB and update BookState
+	newDocID, err := common.PersistAgentState(ctx, j.Book.BookID, state)
+	if err != nil {
+		return err
+	}
+	state.DocID = newDocID
+	j.Book.SetAgentState(state)
+
+	return nil
+}
+
+// cleanupTocFinderAgentState removes ToC finder agent state after completion.
+func (j *Job) cleanupTocFinderAgentState(ctx context.Context) {
+	existing := j.Book.GetAgentState(AgentTypeTocFinder, "")
+	if existing != nil && existing.DocID != "" {
+		_ = common.DeleteAgentState(ctx, existing.DocID)
+	}
+	j.Book.RemoveAgentState(AgentTypeTocFinder, "")
 }
 
 // convertTocAgentUnits converts agent work units to job work units.

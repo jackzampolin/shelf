@@ -152,6 +152,16 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 		}
 	}
 
+	// 8. Load agent states (for job resume)
+	if err := LoadAgentStates(ctx, book); err != nil {
+		// Non-fatal - just log and continue
+		if logger != nil {
+			logger.Warn("failed to load agent states", "book_id", bookID, "error", err)
+		}
+	} else if logger != nil && len(book.AgentStates) > 0 {
+		logger.Debug("LoadBook: loaded agent states", "book_id", bookID, "count", len(book.AgentStates))
+	}
+
 	if logger != nil {
 		logger.Info("LoadBook: complete",
 			"book_id", bookID,
@@ -663,4 +673,95 @@ func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.T
 	}
 
 	return entries, nil
+}
+
+// LoadAgentStates loads all agent state records for a book from DefraDB.
+// This is used for job resume - restoring agent state after a crash.
+func LoadAgentStates(ctx context.Context, book *BookState) error {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	query := fmt.Sprintf(`{
+		AgentState(filter: {book_id: {_eq: "%s"}}) {
+			_docID
+			agent_id
+			agent_type
+			entry_doc_id
+			iteration
+			complete
+			messages_json
+			pending_tool_calls
+			tool_results
+			result_json
+		}
+	}`, book.BookID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return fmt.Errorf("failed to query agent states: %w", err)
+	}
+
+	states, ok := resp.Data["AgentState"].([]any)
+	if !ok || len(states) == 0 {
+		if logger != nil {
+			logger.Debug("LoadAgentStates: no agent states found", "book_id", book.BookID)
+		}
+		return nil
+	}
+
+	for _, s := range states {
+		data, ok := s.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		state := &AgentState{}
+
+		if docID, ok := data["_docID"].(string); ok {
+			state.DocID = docID
+		}
+		if agentID, ok := data["agent_id"].(string); ok {
+			state.AgentID = agentID
+		}
+		if agentType, ok := data["agent_type"].(string); ok {
+			state.AgentType = agentType
+		}
+		if entryDocID, ok := data["entry_doc_id"].(string); ok {
+			state.EntryDocID = entryDocID
+		}
+		if iteration, ok := data["iteration"].(float64); ok {
+			state.Iteration = int(iteration)
+		}
+		if complete, ok := data["complete"].(bool); ok {
+			state.Complete = complete
+		}
+		if messagesJSON, ok := data["messages_json"].(string); ok {
+			state.MessagesJSON = messagesJSON
+		}
+		if pendingToolCalls, ok := data["pending_tool_calls"].(string); ok {
+			state.PendingToolCalls = pendingToolCalls
+		}
+		if toolResults, ok := data["tool_results"].(string); ok {
+			state.ToolResults = toolResults
+		}
+		if resultJSON, ok := data["result_json"].(string); ok {
+			state.ResultJSON = resultJSON
+		}
+
+		if state.AgentType != "" {
+			book.SetAgentState(state)
+		}
+	}
+
+	if logger != nil {
+		logger.Debug("LoadAgentStates: loaded states",
+			"book_id", book.BookID,
+			"count", len(book.AgentStates))
+	}
+
+	return nil
 }

@@ -21,7 +21,8 @@ type Config struct {
 	LabelProvider    string
 	MetadataProvider string
 	TocProvider      string
-	DebugAgents      bool // Enable debug logging for agent executions
+	DebugAgents      bool   // Enable debug logging for agent executions
+	ResetFrom        string // If set, reset this operation and all downstream dependencies before starting
 }
 
 // Validate checks that the config has all required fields.
@@ -40,6 +41,9 @@ func (c Config) Validate() error {
 	}
 	if c.TocProvider == "" {
 		return fmt.Errorf("toc provider is required")
+	}
+	if c.ResetFrom != "" && !common.IsValidResetOperation(c.ResetFrom) {
+		return fmt.Errorf("invalid reset operation: %s (valid: %v)", c.ResetFrom, common.ValidResetOperations)
 	}
 	return nil
 }
@@ -184,6 +188,19 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 	}
 
 	logger := svcctx.LoggerFrom(ctx)
+
+	// If reset requested, reset the operation and all downstream dependencies
+	if cfg.ResetFrom != "" {
+		if logger != nil {
+			logger.Info("resetting operation with cascade",
+				"book_id", bookID,
+				"reset_from", cfg.ResetFrom)
+		}
+		if err := common.ResetFrom(ctx, result.Book, result.TocDocID, common.ResetOperation(cfg.ResetFrom)); err != nil {
+			return nil, fmt.Errorf("failed to reset from %s: %w", cfg.ResetFrom, err)
+		}
+	}
+
 	if logger != nil {
 		logger.Info("creating page processing job",
 			"book_id", bookID,

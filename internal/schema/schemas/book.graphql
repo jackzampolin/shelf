@@ -65,4 +65,6 @@ type Book {
     toc: ToC @primary
     # One-to-many: Book has many Chapters
     chapters: [Chapter]
+    # One-to-many: Book has many AgentStates (for job resume)
+    agent_states: [AgentState]
 }

@@ -31,9 +31,10 @@ var registry = []Schema{
 	{Name: "Chapter", Order: 8},             // depends on Book, TocEntry
 	{Name: "Paragraph", Order: 9},           // depends on Chapter
 	{Name: "AgentRun", Order: 10},           // standalone, for debugging agent executions
-	{Name: "LLMCall", Order: 11},            // standalone, tracks all LLM API calls
-	{Name: "Prompt", Order: 12},             // embedded prompt sync for UI/traceability
-	{Name: "BookPromptOverride", Order: 13}, // per-book prompt customizations
+	{Name: "AgentState", Order: 11},         // active agent state for resume, depends on Book
+	{Name: "LLMCall", Order: 12},            // standalone, tracks all LLM API calls
+	{Name: "Prompt", Order: 13},             // embedded prompt sync for UI/traceability
+	{Name: "BookPromptOverride", Order: 14}, // per-book prompt customizations
 }
 
 // All returns all schemas in dependency order.

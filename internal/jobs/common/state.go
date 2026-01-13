@@ -444,6 +444,21 @@ type BookState struct {
 	StructureChaptersPolished  int
 	StructurePolishFailed      int
 
+	// Structure sub-job state (mutable - use accessor methods)
+	StructureChapters        []*ChapterState
+	StructureClassifications map[string]string // entry_id -> matter_type
+	StructureClassifyPending bool
+
+	// Finalize ToC sub-job state (mutable - use accessor methods)
+	FinalizePhase           string
+	FinalizePatternResult   *FinalizePatternResult
+	EntriesToFind           []*EntryToFind
+	FinalizeEntriesComplete int
+	FinalizeEntriesFound    int
+	FinalizeGaps            []*FinalizeGap
+	FinalizeGapsComplete    int
+	FinalizeGapsFixes       int
+
 	// ToC finder results (mutable - use accessor methods)
 	TocFound     bool
 	TocStartPage int
@@ -466,16 +481,22 @@ type BookState struct {
 	// Body page range (set during finalize phase)
 	BodyStart int
 	BodyEnd   int
+
+	// Agent states for job resume (mutable - use accessor methods)
+	// Key format: "agent_type" for single agents, "agent_type:entry_doc_id" for per-entry agents
+	AgentStates map[string]*AgentState
 }
 
 // NewBookState creates a new BookState with initialized maps.
 func NewBookState(bookID string) *BookState {
 	return &BookState{
-		BookID:     bookID,
-		BookDocID:  bookID, // Same as BookID - both are the DefraDB document ID
-		Pages:      make(map[int]*PageState),
-		Prompts:    make(map[string]string),
-		PromptCIDs: make(map[string]string),
+		BookID:                   bookID,
+		BookDocID:                bookID, // Same as BookID - both are the DefraDB document ID
+		Pages:                    make(map[int]*PageState),
+		Prompts:                  make(map[string]string),
+		PromptCIDs:               make(map[string]string),
+		AgentStates:              make(map[string]*AgentState),
+		StructureClassifications: make(map[string]string),
 	}
 }
 
@@ -788,4 +809,379 @@ func (b *BookState) IncrementStructurePolishFailed() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.StructurePolishFailed++
+}
+
+// --- Agent State Management ---
+
+// AgentState tracks the state of an in-flight or completed agent for job resume.
+// This allows agents to be restored from their conversation history after a crash.
+type AgentState struct {
+	// Identity
+	AgentID   string // UUID for this agent instance
+	AgentType string // "toc_finder", "toc_entry_finder", "chapter_finder", "gap_investigator"
+
+	// Context - for multi-instance agents (like LinkToc entry agents)
+	EntryDocID string // Which ToC entry this agent is for (if applicable)
+
+	// Execution state
+	Iteration int  // Current iteration number
+	Complete  bool // Is agent done?
+
+	// Conversation history (for resume) - JSON serialized
+	MessagesJSON string // Serialized []providers.Message
+
+	// In-flight tool call state (for resume mid-tool-execution) - JSON serialized
+	PendingToolCalls string // Serialized []providers.ToolCall
+	ToolResults      string // Serialized map[string]string (tool_call_id -> result)
+
+	// Result (when complete) - JSON serialized
+	ResultJSON string // Serialized agent.Result
+
+	// Database identity
+	DocID string // DefraDB document ID for this agent state
+}
+
+// AgentStateKey generates the map key for an agent state.
+// Single agents use just their type, per-entry agents include entry doc ID.
+func AgentStateKey(agentType string, entryDocID string) string {
+	if entryDocID == "" {
+		return agentType
+	}
+	return agentType + ":" + entryDocID
+}
+
+// GetAgentState returns the agent state for a given type and optional entry (thread-safe).
+func (b *BookState) GetAgentState(agentType string, entryDocID string) *AgentState {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	key := AgentStateKey(agentType, entryDocID)
+	return b.AgentStates[key]
+}
+
+// SetAgentState stores agent state (thread-safe).
+func (b *BookState) SetAgentState(state *AgentState) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	key := AgentStateKey(state.AgentType, state.EntryDocID)
+	b.AgentStates[key] = state
+}
+
+// RemoveAgentState removes agent state (thread-safe).
+func (b *BookState) RemoveAgentState(agentType string, entryDocID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	key := AgentStateKey(agentType, entryDocID)
+	delete(b.AgentStates, key)
+}
+
+// GetAllAgentStates returns all agent states (thread-safe, returns a copy of keys).
+func (b *BookState) GetAllAgentStates() []*AgentState {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	states := make([]*AgentState, 0, len(b.AgentStates))
+	for _, state := range b.AgentStates {
+		states = append(states, state)
+	}
+	return states
+}
+
+// ClearAgentStates removes all agent states for a given type (thread-safe).
+// Use this when resetting an operation to clear associated agent state.
+func (b *BookState) ClearAgentStates(agentType string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for key := range b.AgentStates {
+		// Match exact type or type: prefix for per-entry agents
+		if key == agentType || (len(key) > len(agentType) && key[:len(agentType)+1] == agentType+":") {
+			delete(b.AgentStates, key)
+		}
+	}
+}
+
+// --- Finalize ToC State Types ---
+
+// FinalizePatternResult holds the results of ToC pattern analysis.
+type FinalizePatternResult struct {
+	Patterns  []DiscoveredPattern `json:"patterns"`
+	Excluded  []ExcludedRange     `json:"excluded_ranges"`
+	Reasoning string              `json:"reasoning"`
+}
+
+// DiscoveredPattern represents a chapter sequence to discover.
+type DiscoveredPattern struct {
+	PatternType   string `json:"pattern_type"`   // "sequential" or "named"
+	LevelName     string `json:"level_name"`     // "chapter", "part", "section"
+	HeadingFormat string `json:"heading_format"` // "Chapter {n}", "{n}", "CHAPTER {n}"
+	RangeStart    string `json:"range_start"`    // "1", "I", "A"
+	RangeEnd      string `json:"range_end"`      // "38", "X", "F"
+	Level         int    `json:"level"`          // Structural depth: 1=part, 2=chapter, 3=section
+	Reasoning     string `json:"reasoning"`
+}
+
+// ExcludedRange represents a page range to skip during discovery.
+type ExcludedRange struct {
+	StartPage int    `json:"start_page"`
+	EndPage   int    `json:"end_page"`
+	Reason    string `json:"reason"` // "back_matter", "front_matter", "bibliography", etc.
+}
+
+// EntryToFind represents a missing chapter/section to discover.
+type EntryToFind struct {
+	Key              string `json:"key"`                // Unique key like "chapter_14"
+	LevelName        string `json:"level_name"`         // "chapter", "part"
+	Identifier       string `json:"identifier"`         // "14", "III", "A"
+	HeadingFormat    string `json:"heading_format"`     // "Chapter {n}"
+	Level            int    `json:"level"`
+	ExpectedNearPage int    `json:"expected_near_page"` // Estimated page based on sequence
+	SearchRangeStart int    `json:"search_range_start"`
+	SearchRangeEnd   int    `json:"search_range_end"`
+}
+
+// FinalizeGap represents a gap in page coverage between entries.
+type FinalizeGap struct {
+	Key            string `json:"key"`              // Unique key like "gap_100_150"
+	StartPage      int    `json:"start_page"`
+	EndPage        int    `json:"end_page"`
+	Size           int    `json:"size"`
+	PrevEntryTitle string `json:"prev_entry_title"`
+	PrevEntryPage  int    `json:"prev_entry_page"`
+	NextEntryTitle string `json:"next_entry_title"`
+	NextEntryPage  int    `json:"next_entry_page"`
+}
+
+// --- Finalize State Accessors ---
+
+// FinalizeState holds finalize ToC sub-job state within BookState.
+type FinalizeState struct {
+	Phase           string                 `json:"phase"`            // pattern, discover, validate
+	PatternResult   *FinalizePatternResult `json:"pattern_result"`
+	EntriesToFind   []*EntryToFind         `json:"entries_to_find"`
+	EntriesComplete int                    `json:"entries_complete"`
+	EntriesFound    int                    `json:"entries_found"`
+	Gaps            []*FinalizeGap         `json:"gaps"`
+	GapsComplete    int                    `json:"gaps_complete"`
+	GapsFixes       int                    `json:"gaps_fixes"`
+}
+
+// GetFinalizePhase returns the current finalize phase (thread-safe).
+func (b *BookState) GetFinalizePhase() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.FinalizePhase
+}
+
+// SetFinalizePhase sets the current finalize phase (thread-safe).
+func (b *BookState) SetFinalizePhase(phase string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.FinalizePhase = phase
+}
+
+// GetFinalizePatternResult returns the finalize pattern result (thread-safe).
+func (b *BookState) GetFinalizePatternResult() *FinalizePatternResult {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.FinalizePatternResult
+}
+
+// SetFinalizePatternResult sets the finalize pattern result (thread-safe).
+func (b *BookState) SetFinalizePatternResult(result *FinalizePatternResult) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.FinalizePatternResult = result
+}
+
+// GetEntriesToFind returns entries to find in discover phase (thread-safe).
+func (b *BookState) GetEntriesToFind() []*EntryToFind {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.EntriesToFind
+}
+
+// SetEntriesToFind sets entries to find in discover phase (thread-safe).
+func (b *BookState) SetEntriesToFind(entries []*EntryToFind) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.EntriesToFind = entries
+}
+
+// GetFinalizeGaps returns gaps to investigate (thread-safe).
+func (b *BookState) GetFinalizeGaps() []*FinalizeGap {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.FinalizeGaps
+}
+
+// SetFinalizeGaps sets gaps to investigate (thread-safe).
+func (b *BookState) SetFinalizeGaps(gaps []*FinalizeGap) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.FinalizeGaps = gaps
+}
+
+// GetFinalizeProgress returns finalize progress counters (thread-safe).
+func (b *BookState) GetFinalizeProgress() (entriesComplete, entriesFound, gapsComplete, gapsFixes int) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.FinalizeEntriesComplete, b.FinalizeEntriesFound, b.FinalizeGapsComplete, b.FinalizeGapsFixes
+}
+
+// SetFinalizeProgress sets finalize progress counters (thread-safe).
+func (b *BookState) SetFinalizeProgress(entriesComplete, entriesFound, gapsComplete, gapsFixes int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.FinalizeEntriesComplete = entriesComplete
+	b.FinalizeEntriesFound = entriesFound
+	b.FinalizeGapsComplete = gapsComplete
+	b.FinalizeGapsFixes = gapsFixes
+}
+
+// IncrementFinalizeEntriesComplete increments entries complete (thread-safe).
+func (b *BookState) IncrementFinalizeEntriesComplete() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.FinalizeEntriesComplete++
+}
+
+// IncrementFinalizeEntriesFound increments entries found (thread-safe).
+func (b *BookState) IncrementFinalizeEntriesFound() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.FinalizeEntriesFound++
+}
+
+// IncrementFinalizeGapsComplete increments gaps complete (thread-safe).
+func (b *BookState) IncrementFinalizeGapsComplete() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.FinalizeGapsComplete++
+}
+
+// IncrementFinalizeGapsFixes increments gaps fixed (thread-safe).
+func (b *BookState) IncrementFinalizeGapsFixes() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.FinalizeGapsFixes++
+}
+
+// --- Structure State Types ---
+
+// ChapterState tracks chapter during structure processing.
+type ChapterState struct {
+	// Identity
+	EntryID string `json:"entry_id"` // Unique within book (e.g., "ch_001")
+	DocID   string `json:"doc_id"`   // DefraDB doc ID (after create)
+
+	// From ToC
+	Title       string `json:"title"`
+	Level       int    `json:"level"`
+	LevelName   string `json:"level_name"`
+	EntryNumber string `json:"entry_number"`
+	SortOrder   int    `json:"sort_order"`
+	Source      string `json:"source"`       // "toc", "heading", "reconciled"
+	TocEntryID  string `json:"toc_entry_id"` // Link back to original TocEntry
+
+	// Page boundaries
+	StartPage int `json:"start_page"`
+	EndPage   int `json:"end_page"`
+
+	// Hierarchy
+	ParentID string `json:"parent_id"` // entry_id of parent chapter
+
+	// Matter classification (set in classify phase)
+	MatterType        string `json:"matter_type"`        // "front_matter", "body", "back_matter"
+	ClassifyReasoning string `json:"classify_reasoning"` // Why this classification was chosen
+
+	// Text content (set in extract phase)
+	MechanicalText string `json:"mechanical_text,omitempty"`
+	PageBreaks     []int  `json:"page_breaks,omitempty"`
+
+	// Polished text (set in polish phase)
+	PolishedText string `json:"polished_text,omitempty"`
+	WordCount    int    `json:"word_count"`
+
+	// Processing state
+	ExtractDone bool `json:"extract_done"`
+	PolishDone  bool `json:"polish_done"`
+}
+
+// StructureState holds structure sub-job state within BookState (for serialization).
+type StructureState struct {
+	Phase              string                    `json:"phase"` // build, extract, classify, polish, finalize
+	Chapters           []*ChapterState           `json:"chapters"`
+	ChaptersToExtract  int                       `json:"chapters_to_extract"`
+	ChaptersExtracted  int                       `json:"chapters_extracted"`
+	ExtractsFailed     int                       `json:"extracts_failed"`
+	ClassifyPending    bool                      `json:"classify_pending"`
+	Classifications    map[string]string         `json:"classifications"`     // entry_id -> matter_type
+	ClassifyReasonings map[string]string         `json:"classify_reasonings"` // entry_id -> reasoning
+	ChaptersToPolish   int                       `json:"chapters_to_polish"`
+	ChaptersPolished   int                       `json:"chapters_polished"`
+	PolishFailed       int                       `json:"polish_failed"`
+}
+
+// GetStructureChapters returns the structure chapters (thread-safe).
+func (b *BookState) GetStructureChapters() []*ChapterState {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.StructureChapters
+}
+
+// SetStructureChapters sets the structure chapters (thread-safe).
+func (b *BookState) SetStructureChapters(chapters []*ChapterState) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.StructureChapters = chapters
+}
+
+// GetStructureClassifications returns the matter classifications (thread-safe).
+func (b *BookState) GetStructureClassifications() map[string]string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.StructureClassifications
+}
+
+// SetStructureClassifications sets the matter classifications (thread-safe).
+func (b *BookState) SetStructureClassifications(classifications map[string]string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.StructureClassifications = classifications
+}
+
+// GetStructureClassifyPending returns whether classification is pending (thread-safe).
+func (b *BookState) GetStructureClassifyPending() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.StructureClassifyPending
+}
+
+// SetStructureClassifyPending sets whether classification is pending (thread-safe).
+func (b *BookState) SetStructureClassifyPending(pending bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.StructureClassifyPending = pending
+}
+
+// GetChapterByEntryID returns a chapter by its entry ID (thread-safe).
+func (b *BookState) GetChapterByEntryID(entryID string) *ChapterState {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for _, ch := range b.StructureChapters {
+		if ch.EntryID == entryID {
+			return ch
+		}
+	}
+	return nil
+}
+
+// UpdateChapter updates a chapter in the list (thread-safe).
+func (b *BookState) UpdateChapter(chapter *ChapterState) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i, ch := range b.StructureChapters {
+		if ch.EntryID == chapter.EntryID {
+			b.StructureChapters[i] = chapter
+			return
+		}
+	}
 }

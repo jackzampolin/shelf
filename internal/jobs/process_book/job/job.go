@@ -39,14 +39,21 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	// Set book status to processing
 	j.PersistBookStatus(ctx, BookStatusProcessing)
 
-	// Crash recovery: if operations were started but not done, reset to retry
+	// Crash recovery: if operations were started but not done, check if we can resume
+	// via saved agent state. If no saved state, fail/retry the operation.
 	if j.Book.Metadata.IsStarted() {
 		j.Book.Metadata.Fail(MaxBookOpRetries)
 		j.PersistMetadataState(ctx)
 	}
+	// ToC finder: check for saved agent state before failing
 	if j.Book.TocFinder.IsStarted() && j.TocAgent == nil {
-		j.Book.TocFinder.Fail(MaxBookOpRetries)
-		j.PersistTocFinderState(ctx)
+		savedState := j.Book.GetAgentState(AgentTypeTocFinder, "")
+		if savedState == nil || savedState.Complete {
+			// No saved state or agent already completed - fail/retry
+			j.Book.TocFinder.Fail(MaxBookOpRetries)
+			j.PersistTocFinderState(ctx)
+		}
+		// Otherwise, saved state exists - CreateTocFinderWorkUnit will restore it
 	}
 	if j.Book.TocExtract.IsStarted() && j.TocAgent == nil {
 		j.Book.TocExtract.Fail(MaxBookOpRetries)

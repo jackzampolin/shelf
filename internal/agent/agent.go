@@ -370,3 +370,128 @@ const (
 	WorkUnitTypeLLM  WorkUnitType = "llm"
 	WorkUnitTypeTool WorkUnitType = "tool"
 )
+
+// --- State Export/Import for Job Resume ---
+
+// StateExport contains serializable agent state for persistence.
+// This is used to save agent state to DefraDB so jobs can resume after crashes.
+type StateExport struct {
+	AgentID          string
+	Iteration        int
+	Complete         bool
+	MessagesJSON     string
+	PendingToolCalls string // JSON serialized
+	ToolResults      string // JSON serialized
+	ResultJSON       string
+}
+
+// ExportState exports the agent's current state for persistence.
+// Use this to save agent state to DefraDB after each LLM completion.
+func (a *Agent) ExportState() (*StateExport, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Serialize messages
+	messagesJSON, err := json.Marshal(a.messages)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize messages: %w", err)
+	}
+
+	// Serialize pending tool calls
+	var pendingToolCallsJSON []byte
+	if len(a.pendingToolCalls) > 0 {
+		pendingToolCallsJSON, err = json.Marshal(a.pendingToolCalls)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize pending tool calls: %w", err)
+		}
+	}
+
+	// Serialize tool results
+	var toolResultsJSON []byte
+	if len(a.toolResults) > 0 {
+		toolResultsJSON, err = json.Marshal(a.toolResults)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize tool results: %w", err)
+		}
+	}
+
+	// Serialize result (if complete)
+	var resultJSON []byte
+	if a.result != nil {
+		resultJSON, err = json.Marshal(a.result)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize result: %w", err)
+		}
+	}
+
+	return &StateExport{
+		AgentID:          a.id,
+		Iteration:        a.iteration,
+		Complete:         a.complete,
+		MessagesJSON:     string(messagesJSON),
+		PendingToolCalls: string(pendingToolCallsJSON),
+		ToolResults:      string(toolResultsJSON),
+		ResultJSON:       string(resultJSON),
+	}, nil
+}
+
+// RestoreState restores agent state from a previous export.
+// Use this to resume an agent after a job restart.
+// The Tools must be set separately (they can't be serialized).
+func (a *Agent) RestoreState(state *StateExport) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Restore iteration and completion state
+	a.iteration = state.Iteration
+	a.complete = state.Complete
+
+	// Restore messages
+	if state.MessagesJSON != "" {
+		var messages []providers.Message
+		if err := json.Unmarshal([]byte(state.MessagesJSON), &messages); err != nil {
+			return fmt.Errorf("failed to deserialize messages: %w", err)
+		}
+		a.messages = messages
+	}
+
+	// Restore pending tool calls
+	if state.PendingToolCalls != "" {
+		var pendingToolCalls []providers.ToolCall
+		if err := json.Unmarshal([]byte(state.PendingToolCalls), &pendingToolCalls); err != nil {
+			return fmt.Errorf("failed to deserialize pending tool calls: %w", err)
+		}
+		a.pendingToolCalls = pendingToolCalls
+	}
+
+	// Restore tool results
+	if state.ToolResults != "" {
+		var toolResults map[string]string
+		if err := json.Unmarshal([]byte(state.ToolResults), &toolResults); err != nil {
+			return fmt.Errorf("failed to deserialize tool results: %w", err)
+		}
+		a.toolResults = toolResults
+	}
+
+	// Restore result
+	if state.ResultJSON != "" {
+		var result Result
+		if err := json.Unmarshal([]byte(state.ResultJSON), &result); err != nil {
+			return fmt.Errorf("failed to deserialize result: %w", err)
+		}
+		a.result = &result
+	}
+
+	return nil
+}
+
+// GetMessages returns the current message history.
+// This is used for debugging and state inspection.
+func (a *Agent) GetMessages() []providers.Message {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	// Return a copy to avoid data races
+	msgs := make([]providers.Message, len(a.messages))
+	copy(msgs, a.messages)
+	return msgs
+}
