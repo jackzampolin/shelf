@@ -280,7 +280,8 @@ func (j *Job) convertLinkTocAgentUnits(agentUnits []agent.WorkUnit, entryDocID s
 
 // PersistTocLinkState persists ToC link state to DefraDB.
 func (j *Job) PersistTocLinkState(ctx context.Context) error {
-	return common.PersistTocLinkState(ctx, j.TocDocID, &j.Book.TocLink)
+	tocLinkState := j.Book.GetTocLinkState()
+	return common.PersistTocLinkState(ctx, j.TocDocID, &tocLinkState)
 }
 
 // StartFinalizeTocInline creates and starts the finalize phase inline.
@@ -352,7 +353,7 @@ func (j *Job) HandleFinalizeComplete(ctx context.Context, result jobs.WorkResult
 // Returns work units to process.
 func (j *Job) MaybeStartStructureInline(ctx context.Context) []jobs.WorkUnit {
 	// Only start structure if finalize is complete and structure not yet started
-	if !j.Book.TocFinalize.IsComplete() || !j.Book.Structure.CanStart() {
+	if !j.Book.TocFinalizeIsComplete() || !j.Book.StructureCanStart() {
 		return nil
 	}
 

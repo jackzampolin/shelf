@@ -197,7 +197,7 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		// Clean up agent state from BookState and DB
 		j.cleanupTocFinderAgentState(ctx)
 
-		j.Book.TocFinder.Complete()
+		j.Book.TocFinderComplete()
 		agentResult := j.TocAgent.Result()
 
 		if agentResult != nil && agentResult.Success {

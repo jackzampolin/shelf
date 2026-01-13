@@ -41,7 +41,7 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 	// Label now runs after pattern analysis to use pattern context for guidance
 	// Only if label is enabled
 	// If pattern analysis is disabled, skip waiting for it
-	patternDone := !j.Book.EnablePatternAnalysis || j.Book.PatternAnalysis.IsComplete()
+	patternDone := !j.Book.EnablePatternAnalysis || j.Book.PatternAnalysisIsComplete()
 	if j.Book.EnableLabel && state.IsBlendDone() && patternDone && !state.IsLabelDone() {
 		unit := j.CreateLabelWorkUnit(ctx, pageNum, state)
 		if unit != nil {
@@ -64,17 +64,17 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	// Metadata only needs blended text (not labels), so it can start early
 	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
 	// if work unit creation has side effects (like creating agent logs)
-	if j.Book.EnableMetadata && blendedCount >= BlendThresholdForMetadata && j.Book.Metadata.CanStart() {
-		if err := j.Book.Metadata.Start(); err == nil {
+	if j.Book.EnableMetadata && blendedCount >= BlendThresholdForMetadata && j.Book.MetadataCanStart() {
+		if err := j.Book.MetadataStart(); err == nil {
 			unit := j.CreateMetadataWorkUnit(ctx)
 			if unit != nil {
 				if err := j.PersistMetadataState(ctx); err != nil {
-					j.Book.Metadata.Reset() // Rollback on failure
+					j.Book.MetadataReset() // Rollback on failure
 				} else {
 					units = append(units, *unit)
 				}
 			} else {
-				j.Book.Metadata.Reset() // No work unit created, allow retry
+				j.Book.MetadataReset() // No work unit created, allow retry
 			}
 		}
 	}
@@ -82,24 +82,24 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	// Start ToC finder after first 30 pages have blend complete.
 	// ToC finder only needs blended text (not labels), so no need to wait for labeling.
 	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
-	if j.Book.EnableTocFinder && j.ConsecutiveFrontMatterComplete() && j.Book.TocFinder.CanStart() {
-		if err := j.Book.TocFinder.Start(); err == nil {
+	if j.Book.EnableTocFinder && j.ConsecutiveFrontMatterComplete() && j.Book.TocFinderCanStart() {
+		if err := j.Book.TocFinderStart(); err == nil {
 			unit := j.CreateTocFinderWorkUnit(ctx)
 			if unit != nil {
 				if err := j.PersistTocFinderState(ctx); err != nil {
-					j.Book.TocFinder.Reset() // Rollback on failure
+					j.Book.TocFinderReset() // Rollback on failure
 				} else {
 					units = append(units, *unit)
 				}
 			} else {
-				j.Book.TocFinder.Reset() // No work unit created, allow retry
+				j.Book.TocFinderReset() // No work unit created, allow retry
 			}
 		}
 	}
 
 	// Start ToC extraction if finder is done and found a ToC
 	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
-	if j.Book.EnableTocExtract && j.Book.TocFinder.IsDone() && j.Book.GetTocFound() && j.Book.TocExtract.CanStart() {
+	if j.Book.EnableTocExtract && j.Book.TocFinderIsDone() && j.Book.GetTocFound() && j.Book.TocExtractCanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		tocStart, tocEnd := j.Book.GetTocPageRange()
 		if logger != nil {
@@ -108,16 +108,16 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 				"toc_end_page", tocEnd,
 				"toc_doc_id", j.TocDocID)
 		}
-		if err := j.Book.TocExtract.Start(); err == nil {
+		if err := j.Book.TocExtractStart(); err == nil {
 			unit := j.CreateTocExtractWorkUnit(ctx)
 			if unit != nil {
 				if err := j.PersistTocExtractState(ctx); err != nil {
-					j.Book.TocExtract.Reset() // Rollback on failure
+					j.Book.TocExtractReset() // Rollback on failure
 				} else {
 					units = append(units, *unit)
 				}
 			} else {
-				j.Book.TocExtract.Reset() // No work unit created, allow retry
+				j.Book.TocExtractReset() // No work unit created, allow retry
 				if logger != nil {
 					logger.Warn("failed to create ToC extract work unit",
 						"toc_start_page", tocStart,
@@ -130,18 +130,18 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	// Start pattern analysis after ALL pages have blend complete
 	// Pattern analysis needs blended text from ALL pages for cross-page analysis
 	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
-	if j.Book.EnablePatternAnalysis && j.AllPagesBlendComplete() && j.Book.PatternAnalysis.CanStart() {
+	if j.Book.EnablePatternAnalysis && j.AllPagesBlendComplete() && j.Book.PatternAnalysisCanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("all pages blend complete, starting pattern analysis",
 				"book_id", j.Book.BookID,
 				"total_pages", j.Book.TotalPages)
 		}
-		if err := j.Book.PatternAnalysis.Start(); err == nil {
+		if err := j.Book.PatternAnalysisStart(); err == nil {
 			patternUnits := j.CreatePatternAnalysisWorkUnits(ctx)
 			if len(patternUnits) > 0 {
 				if err := j.PersistPatternAnalysisState(ctx); err != nil {
-					j.Book.PatternAnalysis.Reset() // Rollback on failure
+					j.Book.PatternAnalysisReset() // Rollback on failure
 				} else {
 					units = append(units, patternUnits...)
 					if logger != nil {
@@ -150,7 +150,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 					}
 				}
 			} else {
-				j.Book.PatternAnalysis.Reset() // No work unit created, allow retry
+				j.Book.PatternAnalysisReset() // No work unit created, allow retry
 				if logger != nil {
 					logger.Warn("failed to create pattern analysis work units")
 				}
@@ -161,20 +161,20 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	// Start ToC linking if extraction is done AND pattern analysis is done (or disabled) AND all pages are labeled (or label disabled)
 	// ToC linker needs page labels to find chapter start pages
 	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
-	patternReady := !j.Book.EnablePatternAnalysis || j.Book.PatternAnalysis.IsComplete()
+	patternReady := !j.Book.EnablePatternAnalysis || j.Book.PatternAnalysisIsComplete()
 	labelReady := !j.Book.EnableLabel || j.AllPagesComplete()
-	if j.Book.EnableTocLink && j.Book.TocExtract.IsDone() && patternReady && labelReady && j.Book.TocLink.CanStart() {
+	if j.Book.EnableTocLink && j.Book.TocExtractIsDone() && patternReady && labelReady && j.Book.TocLinkCanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("starting ToC link operation",
 				"book_id", j.Book.BookID,
 				"toc_doc_id", j.TocDocID)
 		}
-		if err := j.Book.TocLink.Start(); err == nil {
+		if err := j.Book.TocLinkStart(); err == nil {
 			linkUnits := j.CreateLinkTocWorkUnits(ctx)
 			if len(linkUnits) > 0 {
 				if err := j.PersistTocLinkState(ctx); err != nil {
-					j.Book.TocLink.Reset() // Rollback on failure
+					j.Book.TocLinkReset() // Rollback on failure
 				} else {
 					units = append(units, linkUnits...)
 					if logger != nil {
@@ -185,7 +185,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 				}
 			} else {
 				// No entries to link - mark as complete
-				j.Book.TocLink.Complete()
+				j.Book.TocLinkComplete()
 				j.PersistTocLinkState(ctx)
 				if logger != nil {
 					logger.Info("no ToC entries to link - marking complete")
@@ -195,7 +195,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	}
 
 	// Start finalize-toc inline if linking is done and finalize not yet started
-	if j.Book.EnableTocFinalize && j.Book.TocLink.IsComplete() && j.Book.TocFinalize.CanStart() {
+	if j.Book.EnableTocFinalize && j.Book.TocLinkIsComplete() && j.Book.TocFinalizeCanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("link_toc complete, starting finalize-toc inline",
@@ -208,7 +208,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 
 	// Start structure if finalize is complete and structure not yet started
 	// This handles both: (1) finalize just completed, (2) crash recovery reset structure
-	if j.Book.EnableStructure && j.Book.TocFinalize.IsComplete() && j.Book.Structure.CanStart() {
+	if j.Book.EnableStructure && j.Book.TocFinalizeIsComplete() && j.Book.StructureCanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("finalize complete, starting structure inline",
@@ -255,12 +255,12 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 	}
 
 	// Metadata must be complete or permanently failed (if enabled)
-	if j.Book.EnableMetadata && !j.Book.Metadata.IsDone() {
+	if j.Book.EnableMetadata && !j.Book.MetadataIsDone() {
 		return
 	}
 
 	// ToC finder must be complete or permanently failed (if enabled)
-	if j.Book.EnableTocFinder && !j.Book.TocFinder.IsDone() {
+	if j.Book.EnableTocFinder && !j.Book.TocFinderIsDone() {
 		return
 	}
 
@@ -275,13 +275,13 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 			if logger != nil {
 				logger.Debug("ToC extract enabled but finder disabled - extraction skipped")
 			}
-		} else if j.Book.GetTocFound() && !j.Book.TocExtract.IsDone() {
+		} else if j.Book.GetTocFound() && !j.Book.TocExtractIsDone() {
 			return
 		}
 	}
 
 	// Pattern analysis must be complete or permanently failed (if enabled)
-	if j.Book.EnablePatternAnalysis && !j.Book.PatternAnalysis.IsDone() {
+	if j.Book.EnablePatternAnalysis && !j.Book.PatternAnalysisIsDone() {
 		return
 	}
 
@@ -293,7 +293,7 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 			if logger != nil {
 				logger.Debug("ToC link enabled but extract disabled - linking skipped")
 			}
-		} else if j.Book.TocExtract.IsDone() && !j.Book.TocLink.IsDone() {
+		} else if j.Book.TocExtractIsDone() && !j.Book.TocLinkIsDone() {
 			return
 		}
 	}
@@ -305,7 +305,7 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 			if logger != nil {
 				logger.Debug("ToC finalize enabled but link disabled - finalize skipped")
 			}
-		} else if j.Book.TocLink.IsComplete() && !j.Book.TocFinalize.IsDone() {
+		} else if j.Book.TocLinkIsComplete() && !j.Book.TocFinalizeIsDone() {
 			return
 		}
 	}
@@ -317,7 +317,7 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 			if logger != nil {
 				logger.Debug("Structure enabled but finalize disabled - structure skipped")
 			}
-		} else if j.Book.TocFinalize.IsComplete() && !j.Book.Structure.IsDone() {
+		} else if j.Book.TocFinalizeIsComplete() && !j.Book.StructureIsDone() {
 			return
 		}
 	}

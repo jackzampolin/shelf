@@ -31,18 +31,19 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 	logger := svcctx.LoggerFrom(ctx)
 
 	// Mark structure as started
-	if err := j.Book.Structure.Start(); err != nil {
+	if err := j.Book.StructureStart(); err != nil {
 		if logger != nil {
 			logger.Debug("structure already started", "error", err)
 		}
 		return nil
 	}
 	// Use sync write at operation start to ensure state is persisted before continuing
-	if err := common.PersistStructureStateSync(ctx, j.Book.BookID, &j.Book.Structure); err != nil {
+	structState := j.Book.GetStructureState()
+	if err := common.PersistStructureStateSync(ctx, j.Book.BookID, &structState); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist structure start", "error", err)
 		}
-		j.Book.Structure.Reset()
+		j.Book.StructureReset()
 		return nil
 	}
 
@@ -54,8 +55,9 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 				"book_id", j.Book.BookID,
 				"error", err)
 		}
-		j.Book.Structure.Fail(MaxBookOpRetries)
-		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+		j.Book.StructureFail(MaxBookOpRetries)
+		structState := j.Book.GetStructureState()
+		common.PersistStructureState(ctx, j.Book.BookID, &structState)
 		return nil
 	}
 
@@ -76,8 +78,9 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 		if logger != nil {
 			logger.Error("failed to build skeleton", "error", err)
 		}
-		j.Book.Structure.Fail(MaxBookOpRetries)
-		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+		j.Book.StructureFail(MaxBookOpRetries)
+		structState := j.Book.GetStructureState()
+		common.PersistStructureState(ctx, j.Book.BookID, &structState)
 		return nil
 	}
 
@@ -882,15 +885,16 @@ func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, erro
 		return nil, fmt.Errorf("finalization failed: %w", err)
 	}
 
-	j.Book.Structure.Complete()
+	j.Book.StructureComplete()
 	// Use sync write for completion to ensure state is persisted before returning
-	if err := common.PersistStructureStateSync(ctx, j.Book.BookID, &j.Book.Structure); err != nil {
+	structState := j.Book.GetStructureState()
+	if err := common.PersistStructureStateSync(ctx, j.Book.BookID, &structState); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist structure completion", "error", err)
 		}
 		// Roll back in-memory state to match database - completion wasn't persisted
-		j.Book.Structure.Reset()
-		j.Book.Structure.Start()
+		j.Book.StructureReset()
+		j.Book.StructureStart()
 		j.Book.SetStructurePhase(StructPhaseFinalize) // Keep phase to indicate we were in finalize
 		return nil, fmt.Errorf("structure completed but failed to persist: %w", err)
 	}

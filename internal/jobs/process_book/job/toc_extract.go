@@ -56,7 +56,7 @@ func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResu
 	j.Book.SetTocEntries(entries)
 
 	// Only mark complete on success (allows retries on failure)
-	j.Book.TocExtract.Complete()
+	j.Book.TocExtractComplete()
 	return nil
 }
 

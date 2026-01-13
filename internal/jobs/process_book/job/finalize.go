@@ -44,18 +44,19 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 	logger := svcctx.LoggerFrom(ctx)
 
 	// Mark finalize as started
-	if err := j.Book.TocFinalize.Start(); err != nil {
+	if err := j.Book.TocFinalizeStart(); err != nil {
 		if logger != nil {
 			logger.Debug("finalize already started", "error", err)
 		}
 		return nil
 	}
 	// Use sync write at operation start to ensure state is persisted before continuing
-	if err := common.PersistTocFinalizeStateSync(ctx, j.TocDocID, &j.Book.TocFinalize); err != nil {
+	tocFinalizeState := j.Book.GetTocFinalizeState()
+	if err := common.PersistTocFinalizeStateSync(ctx, j.TocDocID, &tocFinalizeState); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist finalize start", "error", err)
 		}
-		j.Book.TocFinalize.Reset()
+		j.Book.TocFinalizeReset()
 		return nil
 	}
 
@@ -67,8 +68,9 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 				"book_id", j.Book.BookID,
 				"error", err)
 		}
-		j.Book.TocFinalize.Fail(MaxBookOpRetries)
-		common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
+		j.Book.TocFinalizeFail(MaxBookOpRetries)
+		tocFinalizeState := j.Book.GetTocFinalizeState()
+		common.PersistTocFinalizeState(ctx, j.TocDocID, &tocFinalizeState)
 		return nil
 	}
 
@@ -77,8 +79,7 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	// Set body range: prefer page pattern analysis, fall back to ToC entries, then full book
 	if j.FinalizePagePatternCtx.HasBoundaries {
-		j.Book.BodyStart = j.FinalizePagePatternCtx.BodyStartPage
-		j.Book.BodyEnd = j.FinalizePagePatternCtx.BodyEndPage
+		j.Book.SetBodyRange(j.FinalizePagePatternCtx.BodyStartPage, j.FinalizePagePatternCtx.BodyEndPage)
 	} else {
 		var minPage, maxPage int
 		for _, entry := range entries {
@@ -93,11 +94,9 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 			}
 		}
 		if minPage > 0 && maxPage > 0 {
-			j.Book.BodyStart = minPage
-			j.Book.BodyEnd = maxPage
+			j.Book.SetBodyRange(minPage, maxPage)
 		} else {
-			j.Book.BodyStart = 1
-			j.Book.BodyEnd = j.Book.TotalPages
+			j.Book.SetBodyRange(1, j.Book.TotalPages)
 		}
 	}
 
@@ -165,8 +164,8 @@ func (j *Job) CreateFinalizePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit
 			"candidate_count", len(candidates),
 			"detected_chapters", detectedCount,
 			"chapter_start_pages", len(chapterStartPages),
-			"body_start", j.Book.BodyStart,
-			"body_end", j.Book.BodyEnd,
+			"body_start", j.Book.GetBodyStart(),
+			"body_end", j.Book.GetBodyEnd(),
 			"linked_entries", len(entries))
 	}
 
@@ -177,8 +176,8 @@ func (j *Job) CreateFinalizePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit
 		Candidates:        j.convertCandidatesForPattern(candidates),
 		DetectedChapters:  j.convertDetectedChapters(),
 		ChapterStartPages: chapterStartPages,
-		BodyStart:         j.Book.BodyStart,
-		BodyEnd:           j.Book.BodyEnd,
+		BodyStart:         j.Book.GetBodyStart(),
+		BodyEnd:           j.Book.GetBodyEnd(),
 		TotalPages:        j.Book.TotalPages,
 	})
 
@@ -370,12 +369,12 @@ func (j *Job) generateEntriesToFind(ctx context.Context) {
 			expectedPage := j.estimatePageLocation(entries, pattern, identifier, i, len(identifiers))
 
 			searchStart := expectedPage - 20
-			if searchStart < j.Book.BodyStart {
-				searchStart = j.Book.BodyStart
+			if searchStart < j.Book.GetBodyStart() {
+				searchStart = j.Book.GetBodyStart()
 			}
 			searchEnd := expectedPage + 20
-			if searchEnd > j.Book.BodyEnd {
-				searchEnd = j.Book.BodyEnd
+			if searchEnd > j.Book.GetBodyEnd() {
+				searchEnd = j.Book.GetBodyEnd()
 			}
 
 			j.Book.AppendEntryToFind(&common.EntryToFind{
@@ -680,12 +679,12 @@ func (j *Job) findFinalizeGaps(ctx context.Context) error {
 	// Check gap from body start to first entry
 	if len(sortedEntries) > 0 {
 		first := sortedEntries[0]
-		if *first.ActualPage-j.Book.BodyStart > MinGapSize {
+		if *first.ActualPage-j.Book.GetBodyStart() > MinGapSize {
 			j.Book.AppendFinalizeGap(&common.FinalizeGap{
-				Key:            fmt.Sprintf("gap_%d_%d", j.Book.BodyStart, *first.ActualPage-1),
-				StartPage:      j.Book.BodyStart,
+				Key:            fmt.Sprintf("gap_%d_%d", j.Book.GetBodyStart(), *first.ActualPage-1),
+				StartPage:      j.Book.GetBodyStart(),
 				EndPage:        *first.ActualPage - 1,
-				Size:           *first.ActualPage - j.Book.BodyStart,
+				Size:           *first.ActualPage - j.Book.GetBodyStart(),
 				NextEntryTitle: first.Title,
 				NextEntryPage:  *first.ActualPage,
 			})
@@ -719,12 +718,12 @@ func (j *Job) findFinalizeGaps(ctx context.Context) error {
 	// Check gap from last entry to body end
 	if len(sortedEntries) > 0 {
 		last := sortedEntries[len(sortedEntries)-1]
-		if j.Book.BodyEnd-*last.ActualPage > MinGapSize && !j.isPageExcluded(*last.ActualPage+1) {
+		if j.Book.GetBodyEnd()-*last.ActualPage > MinGapSize && !j.isPageExcluded(*last.ActualPage+1) {
 			j.Book.AppendFinalizeGap(&common.FinalizeGap{
-				Key:            fmt.Sprintf("gap_%d_%d", *last.ActualPage+1, j.Book.BodyEnd),
+				Key:            fmt.Sprintf("gap_%d_%d", *last.ActualPage+1, j.Book.GetBodyEnd()),
 				StartPage:      *last.ActualPage + 1,
-				EndPage:        j.Book.BodyEnd,
-				Size:           j.Book.BodyEnd - *last.ActualPage,
+				EndPage:        j.Book.GetBodyEnd(),
+				Size:           j.Book.GetBodyEnd() - *last.ActualPage,
 				PrevEntryTitle: last.Title,
 				PrevEntryPage:  *last.ActualPage,
 			})
@@ -977,15 +976,16 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	j.Book.TocFinalize.Complete()
+	j.Book.TocFinalizeComplete()
 	// Use sync write for completion to ensure state is persisted before continuing to structure
-	if err := common.PersistTocFinalizeStateSync(ctx, j.TocDocID, &j.Book.TocFinalize); err != nil {
+	tocFinalizeState := j.Book.GetTocFinalizeState()
+	if err := common.PersistTocFinalizeStateSync(ctx, j.TocDocID, &tocFinalizeState); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist finalize completion", "error", err)
 		}
 		// Roll back in-memory state to match database
-		j.Book.TocFinalize.Reset()
-		j.Book.TocFinalize.Start()
+		j.Book.TocFinalizeReset()
+		j.Book.TocFinalizeStart()
 		j.Book.SetFinalizePhase(FinalizePhaseValidate) // Set back to validate phase
 		// Don't continue to structure - return nil to let job retry later
 		return nil
@@ -1040,7 +1040,7 @@ func buildPagePatternContext(book *common.BookState) *PagePatternContext {
 func (j *Job) loadCandidateHeadings() []*candidateHeading {
 	var candidates []*candidateHeading
 
-	for pageNum := j.Book.BodyStart; pageNum <= j.Book.BodyEnd; pageNum++ {
+	for pageNum := j.Book.GetBodyStart(); pageNum <= j.Book.GetBodyEnd(); pageNum++ {
 		pageState := j.Book.GetPage(pageNum)
 		if pageState == nil {
 			continue
@@ -1174,11 +1174,11 @@ func (j *Job) estimatePageLocation(entries []*common.LinkedTocEntry, pattern com
 		return afterPage - 10
 	}
 
-	bodyRange := j.Book.BodyEnd - j.Book.BodyStart
+	bodyRange := j.Book.GetBodyEnd() - j.Book.GetBodyStart()
 	if total > 0 {
-		return j.Book.BodyStart + (bodyRange * index / total)
+		return j.Book.GetBodyStart() + (bodyRange * index / total)
 	}
-	return j.Book.BodyStart + bodyRange/2
+	return j.Book.GetBodyStart() + bodyRange/2
 }
 
 func compareIdentifiers(a, b string) int {
