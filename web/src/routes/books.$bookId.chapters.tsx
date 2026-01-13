@@ -25,6 +25,9 @@ interface Chapter {
   sort_order: number
   word_count?: number
   page_count: number
+  polish_complete?: boolean
+  polish_failed?: boolean
+  polished_text?: string
   pages?: ChapterPage[]
 }
 
@@ -60,12 +63,26 @@ function ChaptersPage() {
     },
   })
 
-  const loadChapterText = async (chapterId: string) => {
-    if (chapterTexts[chapterId]) {
-      setExpandedChapter(expandedChapter === chapterId ? null : chapterId)
+  const loadChapterText = async (chapterId: string, hasPolishedText: boolean) => {
+    // Toggle if already expanded
+    if (expandedChapter === chapterId) {
+      setExpandedChapter(null)
       return
     }
 
+    // If chapter has polished text, just expand - no fetch needed
+    if (hasPolishedText) {
+      setExpandedChapter(chapterId)
+      return
+    }
+
+    // If we already have page data cached, just expand
+    if (chapterTexts[chapterId]) {
+      setExpandedChapter(chapterId)
+      return
+    }
+
+    // Fetch page data as fallback
     setLoadingText(chapterId)
     try {
       const res = await fetch(`/api/books/${bookId}/chapters?include_text=true`)
@@ -183,7 +200,7 @@ function ChaptersPage() {
                   className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-gray-50"
                   onClick={(e) => {
                     e.preventDefault()
-                    loadChapterText(chapter.id)
+                    loadChapterText(chapter.id, !!chapter.polished_text)
                   }}
                 >
                   <div className="flex items-center space-x-4 flex-1 min-w-0">
@@ -246,37 +263,75 @@ function ChaptersPage() {
 
                 {expandedChapter === chapter.id && (
                   <DisclosurePanel static className="px-6 pb-4">
-                    <div className="border-l-2 border-gray-200 pl-4 ml-4 space-y-4">
-                      {chapterTexts[chapter.id]?.length > 0 ? (
-                        chapterTexts[chapter.id].map((page) => (
-                          <div key={page.page_num} className="bg-gray-50 rounded p-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center space-x-2">
-                                <span className="font-medium text-sm text-gray-700">
-                                  Page {page.page_num}
-                                </span>
-                                {page.label && (
-                                  <span className="text-xs text-gray-400">
-                                    ({page.label})
-                                  </span>
-                                )}
-                              </div>
-                              <Link
-                                to="/books/$bookId/pages/$pageNum"
-                                params={{ bookId, pageNum: String(page.page_num) }}
-                                className="text-blue-600 hover:text-blue-800 text-xs"
-                              >
-                                View page
-                              </Link>
+                    <div className="border-l-2 border-gray-200 pl-4 ml-4">
+                      {/* Show polished text if available */}
+                      {chapter.polished_text ? (
+                        <div className="bg-gray-50 rounded p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm font-medium text-gray-700">
+                                Polished Text
+                              </span>
+                              {chapter.polish_complete && (
+                                <span className="text-xs text-green-600">● Complete</span>
+                              )}
                             </div>
-                            <pre className="whitespace-pre-wrap font-mono text-xs text-gray-600 leading-relaxed max-h-96 overflow-y-auto">
-                              {page.blended_text || 'No text available'}
-                            </pre>
+                            <Link
+                              to="/books/$bookId/pages/$pageNum"
+                              params={{ bookId, pageNum: String(chapter.start_page) }}
+                              className="text-blue-600 hover:text-blue-800 text-xs"
+                            >
+                              View pages {chapter.start_page}–{chapter.end_page}
+                            </Link>
                           </div>
-                        ))
+                          <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed max-h-[32rem] overflow-y-auto">
+                            {chapter.polished_text.split('\n\n').map((para, idx) => (
+                              <p key={idx} className="mb-3">{para}</p>
+                            ))}
+                          </div>
+                        </div>
+                      ) : chapterTexts[chapter.id]?.length > 0 ? (
+                        /* Fall back to page-by-page view if no polished text */
+                        <div className="space-y-4">
+                          <div className="text-xs text-amber-600 mb-2">
+                            No polished text available - showing raw page content
+                          </div>
+                          {chapterTexts[chapter.id].map((page) => (
+                            <div key={page.page_num} className="bg-gray-50 rounded p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-medium text-sm text-gray-700">
+                                    Page {page.page_num}
+                                  </span>
+                                  {page.label && (
+                                    <span className="text-xs text-gray-400">
+                                      ({page.label})
+                                    </span>
+                                  )}
+                                </div>
+                                <Link
+                                  to="/books/$bookId/pages/$pageNum"
+                                  params={{ bookId, pageNum: String(page.page_num) }}
+                                  className="text-blue-600 hover:text-blue-800 text-xs"
+                                >
+                                  View page
+                                </Link>
+                              </div>
+                              <pre className="whitespace-pre-wrap font-mono text-xs text-gray-600 leading-relaxed max-h-96 overflow-y-auto">
+                                {page.blended_text || 'No text available'}
+                              </pre>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
                         <div className="text-sm text-gray-400 py-4">
-                          No page content available for this chapter.
+                          {chapter.polish_failed ? (
+                            <span className="text-red-500">Polish failed for this chapter.</span>
+                          ) : !chapter.polish_complete ? (
+                            <span>Chapter text not yet polished. Processing may still be in progress.</span>
+                          ) : (
+                            <span>No content available for this chapter.</span>
+                          )}
                         </div>
                       )}
                     </div>
