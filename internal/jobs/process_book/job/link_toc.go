@@ -304,20 +304,7 @@ func (j *Job) HandleFinalizeComplete(ctx context.Context, result jobs.WorkResult
 		return nil, err
 	}
 
-	// Check if finalize is done
-	if j.FinalizeJob.Done() {
-		j.Book.TocFinalize.Complete()
-		common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
-		if logger != nil {
-			logger.Info("finalize-toc completed",
-				"book_id", j.Book.BookID)
-		}
-		// Continue to structure if ready
-		structureUnits := j.MaybeStartStructureInline(ctx)
-		units = append(units, structureUnits...)
-	}
-
-	// Register new work units from finalize sub-job
+	// Register new work units from finalize sub-job (before appending structure units)
 	for _, unit := range units {
 		// Determine unit type based on sub-job phase
 		unitType := WorkUnitTypeFinalizePattern
@@ -340,6 +327,19 @@ func (j *Job) HandleFinalizeComplete(ctx context.Context, result jobs.WorkResult
 			UnitType:      unitType,
 			FinalizePhase: phase,
 		})
+	}
+
+	// Check if finalize is done
+	if j.FinalizeJob.Done() {
+		j.Book.TocFinalize.Complete()
+		common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
+		if logger != nil {
+			logger.Info("finalize-toc completed",
+				"book_id", j.Book.BookID)
+		}
+		// Continue to structure if ready (structure units are registered in MaybeStartStructureInline)
+		structureUnits := j.MaybeStartStructureInline(ctx)
+		units = append(units, structureUnits...)
 	}
 
 	return units, nil
