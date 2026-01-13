@@ -38,6 +38,9 @@ func (j *Job) HandleBlendComplete(ctx context.Context, info WorkUnitInfo, result
 		return nil, fmt.Errorf("failed to save blend result: %w", err)
 	}
 
-	// No longer create label units here - label stage now runs after pattern analysis completes
-	return nil, nil
+	// Check if any book operations should start now
+	// - Metadata starts after BlendThresholdForMetadata pages blended (20)
+	// - ToC finder starts after ConsecutiveFrontMatterRequired pages blended (30)
+	// - Pattern analysis starts after ALL pages blended
+	return j.MaybeStartBookOperations(ctx), nil
 }

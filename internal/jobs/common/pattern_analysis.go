@@ -15,6 +15,61 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
+// blendedPage holds page number and blend_markdown loaded from DB.
+type blendedPage struct {
+	PageNum       int
+	BlendMarkdown string
+}
+
+// loadBlendedPagesFromDB loads blend_markdown for all blended pages from DefraDB.
+// Use this when in-memory cache is empty (e.g., after job reload).
+func loadBlendedPagesFromDB(ctx context.Context, bookID string) ([]blendedPage, error) {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil, fmt.Errorf("defra client not in context")
+	}
+
+	query := fmt.Sprintf(`{
+		Page(filter: {book_id: {_eq: "%s"}, blend_complete: {_eq: true}}, order: {page_num: ASC}) {
+			page_num
+			blend_markdown
+		}
+	}`, bookID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	pagesData, ok := resp.Data["Page"].([]any)
+	if !ok {
+		return nil, nil
+	}
+
+	var pages []blendedPage
+	for _, p := range pagesData {
+		page, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		pageNum := 0
+		if pn, ok := page["page_num"].(float64); ok {
+			pageNum = int(pn)
+		}
+		blendMarkdown, _ := page["blend_markdown"].(string)
+
+		if pageNum > 0 && blendMarkdown != "" {
+			pages = append(pages, blendedPage{
+				PageNum:       pageNum,
+				BlendMarkdown: blendMarkdown,
+			})
+		}
+	}
+
+	return pages, nil
+}
+
 // ExtractPageLines extracts non-empty lines from markdown for pattern analysis.
 // Returns the first 2 and last 2 non-empty, non-heading lines (or fewer if page has less content).
 // Markdown headings are excluded because they represent structural markers, not running headers
@@ -54,22 +109,23 @@ func ExtractPageLines(markdown string) (firstLines, lastLines []string) {
 func CreatePageNumberPatternWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit, string) {
 	book := jc.GetBook()
 
+	// Load blend_markdown from DB for all blended pages
+	// (in-memory cache may be empty after job reload)
+	blendedPages, err := loadBlendedPagesFromDB(ctx, book.BookID)
+	if err != nil {
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Warn("failed to load blended pages from DB", "error", err)
+		}
+		return nil, ""
+	}
+
 	// Collect page line data from all pages
 	var pages []page_pattern_analyzer.PageLineData
-	for pageNum := 1; pageNum <= book.TotalPages; pageNum++ {
-		state := book.GetPage(pageNum)
-		if state == nil || !state.IsBlendDone() {
-			continue
-		}
-
-		blendedText := state.GetBlendedText()
-		if blendedText == "" {
-			continue
-		}
-
-		_, lastLines := ExtractPageLines(blendedText)
+	for _, bp := range blendedPages {
+		_, lastLines := ExtractPageLines(bp.BlendMarkdown)
 		pages = append(pages, page_pattern_analyzer.PageLineData{
-			PageNum:   pageNum,
+			PageNum:   bp.PageNum,
 			LastLines: lastLines,
 		})
 	}
@@ -142,22 +198,23 @@ func CreatePageNumberPatternWorkUnit(ctx context.Context, jc JobContext) (*jobs.
 func CreateChapterPatternsWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit, string) {
 	book := jc.GetBook()
 
+	// Load blend_markdown from DB for all blended pages
+	// (in-memory cache may be empty after job reload)
+	blendedPages, err := loadBlendedPagesFromDB(ctx, book.BookID)
+	if err != nil {
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Warn("failed to load blended pages from DB", "error", err)
+		}
+		return nil, ""
+	}
+
 	// Collect page line data from all pages
 	var pages []page_pattern_analyzer.PageLineData
-	for pageNum := 1; pageNum <= book.TotalPages; pageNum++ {
-		state := book.GetPage(pageNum)
-		if state == nil || !state.IsBlendDone() {
-			continue
-		}
-
-		blendedText := state.GetBlendedText()
-		if blendedText == "" {
-			continue
-		}
-
-		firstLines, _ := ExtractPageLines(blendedText)
+	for _, bp := range blendedPages {
+		firstLines, _ := ExtractPageLines(bp.BlendMarkdown)
 		pages = append(pages, page_pattern_analyzer.PageLineData{
-			PageNum:    pageNum,
+			PageNum:    bp.PageNum,
 			FirstLines: firstLines,
 		})
 	}

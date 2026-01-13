@@ -22,8 +22,15 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 	book := jc.GetBook()
 	logger := svcctx.LoggerFrom(ctx)
 
-	// Load first N pages of blended text from BookState
+	// Load first N pages of blended text from BookState (in-memory)
 	pages := LoadPagesForMetadataFromState(book, MetadataPageCount)
+
+	// Fall back to DB if in-memory state doesn't have blend markdown cached
+	// (happens after job reload from DB)
+	if len(pages) == 0 {
+		pages = LoadPagesForMetadataFromDB(ctx, book.BookID, MetadataPageCount)
+	}
+
 	if len(pages) == 0 {
 		if logger != nil {
 			logger.Debug("no pages available for metadata extraction",
@@ -64,7 +71,8 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 	return unit, unitID
 }
 
-// LoadPagesForMetadataFromState loads page data for metadata extraction from BookState.
+// LoadPagesForMetadataFromState loads page data for metadata extraction.
+// First tries in-memory state, then falls back to querying DefraDB.
 func LoadPagesForMetadataFromState(book *BookState, maxPages int) []metadata.Page {
 	var pages []metadata.Page
 
@@ -84,6 +92,55 @@ func LoadPagesForMetadataFromState(book *BookState, maxPages int) []metadata.Pag
 			PageNum:       pageNum,
 			BlendMarkdown: blendMarkdown,
 		})
+	}
+
+	return pages
+}
+
+// LoadPagesForMetadataFromDB loads page data for metadata extraction directly from DefraDB.
+// Use this when blend markdown isn't cached in memory (e.g., after job reload).
+func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int) []metadata.Page {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil
+	}
+
+	query := fmt.Sprintf(`{
+		Page(filter: {book_id: {_eq: "%s"}, blend_complete: {_eq: true}}, order: {page_num: ASC}, limit: %d) {
+			page_num
+			blend_markdown
+		}
+	}`, bookID, maxPages)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return nil
+	}
+
+	pagesData, ok := resp.Data["Page"].([]any)
+	if !ok {
+		return nil
+	}
+
+	var pages []metadata.Page
+	for _, p := range pagesData {
+		page, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		pageNum := 0
+		if pn, ok := page["page_num"].(float64); ok {
+			pageNum = int(pn)
+		}
+		blendMarkdown, _ := page["blend_markdown"].(string)
+
+		if pageNum > 0 && blendMarkdown != "" {
+			pages = append(pages, metadata.Page{
+				PageNum:       pageNum,
+				BlendMarkdown: blendMarkdown,
+			})
+		}
 	}
 
 	return pages

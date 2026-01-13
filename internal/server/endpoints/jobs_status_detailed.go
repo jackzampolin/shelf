@@ -146,6 +146,13 @@ type StructureStatus struct {
 	Retries      int     `json:"retries"`
 	CostUSD      float64 `json:"cost_usd"`
 	ChapterCount int     `json:"chapter_count,omitempty"`
+
+	// Phase tracking (build -> extract -> classify -> polish -> finalize)
+	Phase             string `json:"phase,omitempty"`
+	ChaptersTotal     int    `json:"chapters_total,omitempty"`
+	ChaptersExtracted int    `json:"chapters_extracted,omitempty"`
+	ChaptersPolished  int    `json:"chapters_polished,omitempty"`
+	PolishFailed      int    `json:"polish_failed,omitempty"`
 }
 
 // ToCEntry represents a single ToC entry.
@@ -296,6 +303,11 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			structure_failed
 			pattern_analysis_json
 			structure_retries
+			structure_phase
+			structure_chapters_total
+			structure_chapters_extracted
+			structure_chapters_polished
+			structure_polish_failed
 		}
 	}`, bookID)
 
@@ -367,6 +379,22 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			}
 			if v, ok := book["structure_retries"].(float64); ok {
 				resp.Structure.Retries = int(v)
+			}
+			// Structure phase tracking
+			if v, ok := book["structure_phase"].(string); ok {
+				resp.Structure.Phase = v
+			}
+			if v, ok := book["structure_chapters_total"].(float64); ok {
+				resp.Structure.ChaptersTotal = int(v)
+			}
+			if v, ok := book["structure_chapters_extracted"].(float64); ok {
+				resp.Structure.ChaptersExtracted = int(v)
+			}
+			if v, ok := book["structure_chapters_polished"].(float64); ok {
+				resp.Structure.ChaptersPolished = int(v)
+			}
+			if v, ok := book["structure_polish_failed"].(float64); ok {
+				resp.Structure.PolishFailed = int(v)
 			}
 
 			// Parse pattern_analysis_json for finalize_toc sub-phase tracking

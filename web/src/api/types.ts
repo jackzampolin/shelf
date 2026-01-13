@@ -3066,9 +3066,19 @@ export interface components {
         };
         "internal_server_endpoints.PageSummary": {
             blend_complete?: boolean;
+            chapter_number?: string;
+            chapter_title?: string;
+            content_type?: string;
+            has_footnotes?: boolean;
+            is_blank_page?: boolean;
+            is_chapter_start?: boolean;
+            is_toc_page?: boolean;
             label_complete?: boolean;
             ocr_complete?: boolean;
             page_num?: number;
+            /** @description Label fields */
+            page_number_label?: string;
+            running_header?: string;
         };
         "internal_server_endpoints.PatternAnalysisResult": {
             excluded_ranges?: components["schemas"]["internal_server_endpoints.ExcludedRange"][];

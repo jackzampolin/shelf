@@ -22,7 +22,7 @@ export const Route = createFileRoute('/books/$bookId')({
 function BookDetailLayout() {
   const routerState = useRouterState()
   const pathname = routerState.location.pathname
-  const isChildRoute = pathname.includes('/pages') || pathname.includes('/prompts') || pathname.includes('/chapters')
+  const isChildRoute = pathname.includes('/pages') || pathname.includes('/pages-table') || pathname.includes('/prompts') || pathname.includes('/chapters')
 
   if (isChildRoute) {
     return <Outlet />
@@ -172,6 +172,13 @@ function BookDetailPage() {
             className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
           >
             View Pages
+          </Link>
+          <Link
+            to="/books/$bookId/pages-table"
+            params={{ bookId }}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+          >
+            Pages Table
           </Link>
           <Link
             to="/books/$bookId/chapters"

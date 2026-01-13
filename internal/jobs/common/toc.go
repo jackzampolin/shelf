@@ -25,11 +25,18 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	// Get ToC page range
 	tocStartPage, tocEndPage := book.GetTocPageRange()
 
-	// Load ToC pages from BookState
+	// Load ToC pages from BookState (in-memory)
 	tocPages := LoadTocPagesFromState(book, tocStartPage, tocEndPage)
+
+	// Fall back to DB if in-memory state doesn't have blend_markdown cached
+	// (happens after job reload)
+	if len(tocPages) == 0 {
+		tocPages = LoadTocPagesFromDB(ctx, book.BookID, tocStartPage, tocEndPage)
+	}
+
 	if len(tocPages) == 0 {
 		if logger != nil {
-			logger.Warn("no ToC pages found in state",
+			logger.Warn("no ToC pages found in state or DB",
 				"start_page", tocStartPage,
 				"end_page", tocEndPage)
 		}
@@ -77,6 +84,67 @@ func LoadTocPagesFromState(book *BookState, startPage, endPage int) []extract_to
 		}
 
 		blendMarkdown := state.GetBlendedText()
+		if blendMarkdown == "" {
+			continue
+		}
+
+		tocPages = append(tocPages, extract_toc.ToCPage{
+			PageNum: pageNum,
+			OCRText: blendMarkdown,
+		})
+	}
+
+	return tocPages
+}
+
+// LoadTocPagesFromDB loads ToC page content directly from DefraDB.
+// Use this when in-memory cache doesn't have blend_markdown (e.g., after job reload).
+func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage int) []extract_toc.ToCPage {
+	if startPage == 0 || endPage == 0 {
+		return nil
+	}
+
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil
+	}
+
+	// Note: DefraDB doesn't support range queries well, so we fetch all pages and filter
+	query := fmt.Sprintf(`{
+		Page(filter: {book_id: {_eq: "%s"}, blend_complete: {_eq: true}}, order: {page_num: ASC}) {
+			page_num
+			blend_markdown
+		}
+	}`, bookID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return nil
+	}
+
+	pagesData, ok := resp.Data["Page"].([]any)
+	if !ok {
+		return nil
+	}
+
+	var tocPages []extract_toc.ToCPage
+	for _, p := range pagesData {
+		page, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		pageNum := 0
+		if pn, ok := page["page_num"].(float64); ok {
+			pageNum = int(pn)
+		}
+
+		// Filter to ToC page range
+		if pageNum < startPage || pageNum > endPage {
+			continue
+		}
+
+		blendMarkdown, _ := page["blend_markdown"].(string)
 		if blendMarkdown == "" {
 			continue
 		}

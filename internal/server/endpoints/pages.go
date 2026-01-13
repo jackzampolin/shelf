@@ -90,12 +90,23 @@ type ListPagesResponse struct {
 	TotalPages int           `json:"total_pages"`
 }
 
-// PageSummary is a brief summary of a page.
+// PageSummary is a brief summary of a page including label data.
 type PageSummary struct {
 	PageNum       int  `json:"page_num"`
 	OcrComplete   bool `json:"ocr_complete"`
 	BlendComplete bool `json:"blend_complete"`
 	LabelComplete bool `json:"label_complete"`
+
+	// Label fields
+	PageNumberLabel string `json:"page_number_label,omitempty"`
+	RunningHeader   string `json:"running_header,omitempty"`
+	ContentType     string `json:"content_type,omitempty"`
+	IsChapterStart  bool   `json:"is_chapter_start"`
+	ChapterNumber   string `json:"chapter_number,omitempty"`
+	ChapterTitle    string `json:"chapter_title,omitempty"`
+	IsBlankPage     bool   `json:"is_blank_page"`
+	HasFootnotes    bool   `json:"has_footnotes"`
+	IsTocPage       bool   `json:"is_toc_page"`
 }
 
 // ListPagesEndpoint handles GET /api/books/{book_id}/pages.
@@ -134,13 +145,22 @@ func (e *ListPagesEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Query pages for this book
+	// Query pages for this book with label fields
 	query := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}}, order: {page_num: ASC}) {
 			page_num
 			ocr_complete
 			blend_complete
 			label_complete
+			page_number_label
+			running_header
+			content_type
+			is_chapter_start
+			chapter_number
+			chapter_title
+			is_blank_page
+			has_footnotes
+			is_toc_page
 		}
 	}`, bookID)
 
@@ -171,6 +191,34 @@ func (e *ListPagesEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 				}
 				if lc, ok := m["label_complete"].(bool); ok {
 					page.LabelComplete = lc
+				}
+				// Label fields
+				if pnl, ok := m["page_number_label"].(string); ok {
+					page.PageNumberLabel = pnl
+				}
+				if rh, ok := m["running_header"].(string); ok {
+					page.RunningHeader = rh
+				}
+				if ct, ok := m["content_type"].(string); ok {
+					page.ContentType = ct
+				}
+				if ics, ok := m["is_chapter_start"].(bool); ok {
+					page.IsChapterStart = ics
+				}
+				if cn, ok := m["chapter_number"].(string); ok {
+					page.ChapterNumber = cn
+				}
+				if ct, ok := m["chapter_title"].(string); ok {
+					page.ChapterTitle = ct
+				}
+				if ibp, ok := m["is_blank_page"].(bool); ok {
+					page.IsBlankPage = ibp
+				}
+				if hf, ok := m["has_footnotes"].(bool); ok {
+					page.HasFootnotes = hf
+				}
+				if itp, ok := m["is_toc_page"].(bool); ok {
+					page.IsTocPage = itp
 				}
 				pages = append(pages, page)
 			}

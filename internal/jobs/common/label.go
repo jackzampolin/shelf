@@ -13,6 +13,39 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
+// loadBlendedTextFromDB loads blend_markdown for a single page from DefraDB.
+// Use this when in-memory cache is empty (e.g., after job reload).
+func loadBlendedTextFromDB(ctx context.Context, bookID string, pageNum int) string {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return ""
+	}
+
+	query := fmt.Sprintf(`{
+		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
+			blend_markdown
+		}
+	}`, bookID, pageNum)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return ""
+	}
+
+	pages, ok := resp.Data["Page"].([]any)
+	if !ok || len(pages) == 0 {
+		return ""
+	}
+
+	page, ok := pages[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	blendMarkdown, _ := page["blend_markdown"].(string)
+	return blendMarkdown
+}
+
 // BuildPatternContext builds pattern context for a page from pattern analysis results.
 // Returns nil if pattern analysis is not complete or not available.
 func BuildPatternContext(book *BookState, pageNum int) *label.PatternContext {
@@ -106,9 +139,16 @@ func CreateLabelWorkUnit(ctx context.Context, jc JobContext, pageNum int, state 
 
 	// Get blended text from BookState (written through from blend stage)
 	blendedText := state.GetBlendedText()
+
+	// Fall back to DB if in-memory state doesn't have blend_markdown cached
+	// (happens after job reload)
+	if blendedText == "" {
+		blendedText = loadBlendedTextFromDB(ctx, book.BookID, pageNum)
+	}
+
 	if blendedText == "" {
 		if logger != nil {
-			logger.Debug("cannot create label work unit: no blended text in state",
+			logger.Debug("cannot create label work unit: no blended text in state or DB",
 				"page_num", pageNum)
 		}
 		return nil, ""

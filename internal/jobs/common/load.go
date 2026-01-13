@@ -322,7 +322,7 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 		return "", fmt.Errorf("defra client not in context")
 	}
 
-	// Check book metadata and pattern analysis status
+	// Check book metadata, pattern analysis, and structure status
 	bookQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			metadata_started
@@ -334,6 +334,15 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 			pattern_analysis_failed
 			pattern_analysis_retries
 			page_pattern_analysis_json
+			structure_started
+			structure_complete
+			structure_failed
+			structure_retries
+			structure_phase
+			structure_chapters_total
+			structure_chapters_extracted
+			structure_chapters_polished
+			structure_polish_failed
 		}
 	}`, book.BookID)
 
@@ -384,6 +393,40 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				if err := json.Unmarshal([]byte(paJSON), &result); err == nil {
 					book.PatternAnalysisResult = &result
 				}
+			}
+
+			// Structure operation state
+			var sStarted, sComplete, sFailed bool
+			var sRetries int
+			if ss, ok := bookData["structure_started"].(bool); ok {
+				sStarted = ss
+			}
+			if sc, ok := bookData["structure_complete"].(bool); ok {
+				sComplete = sc
+			}
+			if sf, ok := bookData["structure_failed"].(bool); ok {
+				sFailed = sf
+			}
+			if sr, ok := bookData["structure_retries"].(float64); ok {
+				sRetries = int(sr)
+			}
+			book.Structure = boolsToOpState(sStarted, sComplete, sFailed, sRetries)
+
+			// Structure phase tracking
+			if sp, ok := bookData["structure_phase"].(string); ok {
+				book.StructurePhase = sp
+			}
+			if sct, ok := bookData["structure_chapters_total"].(float64); ok {
+				book.StructureChaptersTotal = int(sct)
+			}
+			if sce, ok := bookData["structure_chapters_extracted"].(float64); ok {
+				book.StructureChaptersExtracted = int(sce)
+			}
+			if scp, ok := bookData["structure_chapters_polished"].(float64); ok {
+				book.StructureChaptersPolished = int(scp)
+			}
+			if spf, ok := bookData["structure_polish_failed"].(float64); ok {
+				book.StructurePolishFailed = int(spf)
 			}
 		}
 	}

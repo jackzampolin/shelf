@@ -56,6 +56,19 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		j.Book.TocLink.Fail(MaxBookOpRetries)
 		j.PersistTocLinkState(ctx)
 	}
+	// Pattern analysis uses work units (no agent or sub-job), so always reset if started
+	if j.Book.PatternAnalysis.IsStarted() {
+		j.Book.PatternAnalysis.Fail(MaxBookOpRetries)
+		j.PersistPatternAnalysisState(ctx)
+	}
+	if j.Book.TocFinalize.IsStarted() && j.FinalizeJob == nil {
+		j.Book.TocFinalize.Fail(MaxBookOpRetries)
+		common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
+	}
+	if j.Book.Structure.IsStarted() && j.StructureJob == nil {
+		j.Book.Structure.Fail(MaxBookOpRetries)
+		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+	}
 
 	// Create any missing page records in DB
 	if err := checkCancelled(ctx); err != nil {
@@ -248,8 +261,17 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			handlerErr = err
 		} else {
 			newUnits = append(newUnits, units...)
-			// Check if pattern analysis complete - if so, trigger dependent operations
+			// Check if pattern analysis complete - if so, trigger label work units for all pages
 			if j.Book.PatternAnalysis.IsComplete() {
+				// Generate label work units for all blended pages
+				for pageNum := 1; pageNum <= j.Book.TotalPages; pageNum++ {
+					state := j.Book.GetPage(pageNum)
+					if state != nil && state.IsBlendDone() && !state.IsLabelDone() {
+						labelUnits := j.GeneratePageWorkUnits(ctx, pageNum, state)
+						newUnits = append(newUnits, labelUnits...)
+					}
+				}
+				// Also check for book-level operations
 				newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
 			}
 		}

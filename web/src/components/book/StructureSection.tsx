@@ -86,11 +86,33 @@ export function StructureSection({ structure, bookId, metrics }: StructureSectio
 
   const hasDetails = chapters && chapters.chapters && chapters.chapters.length > 0
 
-  // Determine phase status based on LLM calls and metrics
-  const buildStatus: StatusType = structure.started ? (classifyCalls.length > 0 || structure.complete ? 'complete' : 'in_progress') : 'pending'
-  const extractStatus: StatusType = classifyCalls.length > 0 || structure.complete ? 'complete' : (buildStatus === 'complete' ? 'in_progress' : 'pending')
-  const classifyStatus: StatusType = classifyCalls.length > 0 ? 'complete' : (extractStatus === 'complete' ? 'in_progress' : 'pending')
-  const polishStatus: StatusType = structure.complete ? 'complete' : (polishCalls.length > 0 ? 'in_progress' : (classifyStatus === 'complete' ? 'pending' : 'pending'))
+  // Determine phase status from actual phase data
+  // Phases: build -> extract -> classify -> polish -> finalize
+  const phase = structure.phase || ''
+  const phaseOrder = ['build', 'extract', 'classify', 'polish', 'finalize']
+  const currentPhaseIdx = phaseOrder.indexOf(phase)
+
+  const getPhaseStatus = (targetPhase: string): StatusType => {
+    if (structure.failed) return 'failed'
+    if (structure.complete) return 'complete'
+    const targetIdx = phaseOrder.indexOf(targetPhase)
+    if (currentPhaseIdx < 0) return structure.started ? 'in_progress' : 'pending'
+    if (currentPhaseIdx > targetIdx) return 'complete'
+    if (currentPhaseIdx === targetIdx) return 'in_progress'
+    return 'pending'
+  }
+
+  const buildStatus = getPhaseStatus('build')
+  const extractStatus = getPhaseStatus('extract')
+  const classifyStatus = getPhaseStatus('classify')
+  const polishStatus = getPhaseStatus('polish')
+  const finalizeStatus = getPhaseStatus('finalize')
+
+  // Progress details
+  const chaptersTotal = structure.chapters_total || 0
+  const chaptersExtracted = structure.chapters_extracted || 0
+  const chaptersPolished = structure.chapters_polished || 0
+  const polishFailed = structure.polish_failed || 0
 
   return (
     <div className="border-t pt-4">
@@ -131,9 +153,17 @@ export function StructureSection({ structure, bookId, metrics }: StructureSectio
       {pipelineExpanded && (
         <div className="bg-gray-50 rounded-lg p-4 mb-3">
           <div className="flex items-center space-x-2 flex-wrap gap-y-2">
-            <PipelineStage label="Build" status={buildStatus} detail={structure.chapter_count ? `${structure.chapter_count} ch` : undefined} />
+            <PipelineStage
+              label="Build"
+              status={buildStatus}
+              detail={chaptersTotal > 0 ? `${chaptersTotal} ch` : undefined}
+            />
             <Arrow />
-            <PipelineStage label="Extract" status={extractStatus} />
+            <PipelineStage
+              label="Extract"
+              status={extractStatus}
+              detail={chaptersTotal > 0 ? `${chaptersExtracted}/${chaptersTotal}` : undefined}
+            />
             <Arrow />
             <PipelineStage
               label="Classify"
@@ -145,11 +175,21 @@ export function StructureSection({ structure, bookId, metrics }: StructureSectio
             <PipelineStage
               label="Polish"
               status={polishStatus}
-              detail={polishStats.total > 0 ? `${polishStats.complete}/${polishStats.total}` : undefined}
+              detail={chaptersTotal > 0 ? `${chaptersPolished}/${chaptersTotal}${polishFailed > 0 ? ` (${polishFailed} failed)` : ''}` : undefined}
               callCount={polishCalls.length}
               metrics={metrics?.['structure-polish']}
             />
+            <Arrow />
+            <PipelineStage
+              label="Finalize"
+              status={finalizeStatus}
+            />
           </div>
+          {phase && (
+            <div className="mt-2 text-xs text-gray-500">
+              Current phase: <span className="font-medium">{phase}</span>
+            </div>
+          )}
         </div>
       )}
 

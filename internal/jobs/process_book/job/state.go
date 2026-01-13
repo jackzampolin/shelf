@@ -196,6 +196,18 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		units = append(units, finalizeUnits...)
 	}
 
+	// Start structure if finalize is complete and structure not yet started
+	// This handles both: (1) finalize just completed, (2) crash recovery reset structure
+	if j.Book.TocFinalize.IsComplete() && j.Book.Structure.CanStart() {
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Info("finalize complete, starting structure inline",
+				"book_id", j.Book.BookID)
+		}
+		structureUnits := j.MaybeStartStructureInline(ctx)
+		units = append(units, structureUnits...)
+	}
+
 	return units
 }
 

@@ -149,3 +149,20 @@ func PersistStructureState(ctx context.Context, bookID string, op *OperationStat
 		Op: defra.OpUpdate,
 	})
 }
+
+// PersistStructurePhase persists structure phase tracking data from BookState to DefraDB.
+func PersistStructurePhase(ctx context.Context, book *BookState) error {
+	total, extracted, polished, failed := book.GetStructureProgress()
+	return SendToSink(ctx, defra.WriteOp{
+		Collection: "Book",
+		DocID:      book.BookID,
+		Document: map[string]any{
+			"structure_phase":              book.GetStructurePhase(),
+			"structure_chapters_total":     total,
+			"structure_chapters_extracted": extracted,
+			"structure_chapters_polished":  polished,
+			"structure_polish_failed":      failed,
+		},
+		Op: defra.OpUpdate,
+	})
+}

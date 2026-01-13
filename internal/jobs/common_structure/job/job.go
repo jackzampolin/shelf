@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -30,9 +31,15 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 	// Phase 1: Build skeleton (synchronous)
 	j.CurrentPhase = PhaseBuild
+	j.Book.SetStructurePhase(PhaseBuild)
+	j.persistPhase(ctx)
 	if err := j.BuildSkeleton(ctx); err != nil {
 		return nil, fmt.Errorf("failed to build skeleton: %w", err)
 	}
+
+	// Update chapter count in BookState
+	j.Book.SetStructureProgress(len(j.Chapters), 0, 0, 0)
+	j.persistPhase(ctx)
 
 	if logger != nil {
 		logger.Info("common structure job starting",
@@ -43,9 +50,14 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 	// Phase 2: Extract text (synchronous - lightweight text processing)
 	j.CurrentPhase = PhaseExtract
+	j.Book.SetStructurePhase(PhaseExtract)
+	j.persistPhase(ctx)
 	if err := j.ExtractAllChapters(ctx); err != nil {
 		return nil, fmt.Errorf("failed to extract chapters: %w", err)
 	}
+
+	// Update extracted count in BookState
+	j.Book.SetStructureProgress(len(j.Chapters), j.ChaptersExtracted, 0, 0)
 
 	// Persist extract results
 	if err := j.PersistExtractResults(ctx); err != nil {
@@ -53,6 +65,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			logger.Warn("failed to persist extract results", "error", err)
 		}
 	}
+	j.persistPhase(ctx)
 
 	// Transition to Classify phase (LLM work units start here)
 	return j.transitionToClassify(ctx)
@@ -178,6 +191,8 @@ func (j *Job) handlePolishComplete(ctx context.Context, result jobs.WorkResult, 
 // transitionToClassify starts the classify phase.
 func (j *Job) transitionToClassify(ctx context.Context) ([]jobs.WorkUnit, error) {
 	j.CurrentPhase = PhaseClassify
+	j.Book.SetStructurePhase(PhaseClassify)
+	j.persistPhase(ctx)
 
 	logger := svcctx.LoggerFrom(ctx)
 	if logger != nil {
@@ -200,6 +215,8 @@ func (j *Job) transitionToClassify(ctx context.Context) ([]jobs.WorkUnit, error)
 // transitionToPolish starts the polish phase.
 func (j *Job) transitionToPolish(ctx context.Context) ([]jobs.WorkUnit, error) {
 	j.CurrentPhase = PhasePolish
+	j.Book.SetStructurePhase(PhasePolish)
+	j.persistPhase(ctx)
 
 	logger := svcctx.LoggerFrom(ctx)
 	if logger != nil {
@@ -214,6 +231,8 @@ func (j *Job) transitionToPolish(ctx context.Context) ([]jobs.WorkUnit, error) {
 // transitionToFinalize completes the job.
 func (j *Job) transitionToFinalize(ctx context.Context) ([]jobs.WorkUnit, error) {
 	j.CurrentPhase = PhaseFinalize
+	j.Book.SetStructurePhase(PhaseFinalize)
+	j.persistPhase(ctx)
 
 	logger := svcctx.LoggerFrom(ctx)
 	if logger != nil {
@@ -242,6 +261,15 @@ func (j *Job) transitionToFinalize(ctx context.Context) ([]jobs.WorkUnit, error)
 	}
 
 	return nil, nil
+}
+
+// persistPhase persists the current structure phase to DefraDB.
+func (j *Job) persistPhase(ctx context.Context) {
+	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("failed to persist structure phase", "error", err)
+		}
+	}
 }
 
 // Done returns true when the job has no more work.

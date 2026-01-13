@@ -95,6 +95,12 @@ export interface StructureStatus {
   retries?: number
   cost_usd?: number
   chapter_count?: number
+  // Phase tracking (build -> extract -> classify -> polish -> finalize)
+  phase?: string
+  chapters_total?: number
+  chapters_extracted?: number
+  chapters_polished?: number
+  polish_failed?: number
 }
 
 export interface AgentLogSummary {

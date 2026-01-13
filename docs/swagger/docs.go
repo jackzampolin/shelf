@@ -3279,6 +3279,27 @@ const docTemplate = `{
                 "blend_complete": {
                     "type": "boolean"
                 },
+                "chapter_number": {
+                    "type": "string"
+                },
+                "chapter_title": {
+                    "type": "string"
+                },
+                "content_type": {
+                    "type": "string"
+                },
+                "has_footnotes": {
+                    "type": "boolean"
+                },
+                "is_blank_page": {
+                    "type": "boolean"
+                },
+                "is_chapter_start": {
+                    "type": "boolean"
+                },
+                "is_toc_page": {
+                    "type": "boolean"
+                },
                 "label_complete": {
                     "type": "boolean"
                 },
@@ -3287,6 +3308,13 @@ const docTemplate = `{
                 },
                 "page_num": {
                     "type": "integer"
+                },
+                "page_number_label": {
+                    "description": "Label fields",
+                    "type": "string"
+                },
+                "running_header": {
+                    "type": "string"
                 }
             }
         },

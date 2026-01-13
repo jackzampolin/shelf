@@ -436,6 +436,14 @@ type BookState struct {
 	TocFinalize     OperationState
 	Structure       OperationState
 
+	// Structure phase tracking (mutable - use accessor methods)
+	// Phases: build -> extract -> classify -> polish -> finalize
+	StructurePhase             string
+	StructureChaptersTotal     int
+	StructureChaptersExtracted int
+	StructureChaptersPolished  int
+	StructurePolishFailed      int
+
 	// ToC finder results (mutable - use accessor methods)
 	TocFound     bool
 	TocStartPage int
@@ -464,6 +472,7 @@ type BookState struct {
 func NewBookState(bookID string) *BookState {
 	return &BookState{
 		BookID:     bookID,
+		BookDocID:  bookID, // Same as BookID - both are the DefraDB document ID
 		Pages:      make(map[int]*PageState),
 		Prompts:    make(map[string]string),
 		PromptCIDs: make(map[string]string),
@@ -734,4 +743,49 @@ func (b *BookState) GetChapterPatterns() []page_pattern_analyzer.ChapterPattern 
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.ChapterPatterns
+}
+
+// SetStructurePhase sets the current structure processing phase (thread-safe).
+func (b *BookState) SetStructurePhase(phase string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.StructurePhase = phase
+}
+
+// GetStructurePhase gets the current structure processing phase (thread-safe).
+func (b *BookState) GetStructurePhase() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.StructurePhase
+}
+
+// SetStructureProgress sets the structure progress counters (thread-safe).
+func (b *BookState) SetStructureProgress(total, extracted, polished, failed int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.StructureChaptersTotal = total
+	b.StructureChaptersExtracted = extracted
+	b.StructureChaptersPolished = polished
+	b.StructurePolishFailed = failed
+}
+
+// GetStructureProgress gets the structure progress counters (thread-safe).
+func (b *BookState) GetStructureProgress() (total, extracted, polished, failed int) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.StructureChaptersTotal, b.StructureChaptersExtracted, b.StructureChaptersPolished, b.StructurePolishFailed
+}
+
+// IncrementStructurePolished increments the polished counter (thread-safe).
+func (b *BookState) IncrementStructurePolished() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.StructureChaptersPolished++
+}
+
+// IncrementStructurePolishFailed increments the polish failed counter (thread-safe).
+func (b *BookState) IncrementStructurePolishFailed() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.StructurePolishFailed++
 }

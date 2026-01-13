@@ -117,8 +117,10 @@ func (j *Job) ProcessPolishResult(ctx context.Context, result jobs.WorkResult, i
 	if !result.Success || result.ChatResult == nil {
 		// Mark as failed but continue
 		j.PolishFailed++
+		j.Book.IncrementStructurePolishFailed()
 		chapter.PolishedText = chapter.MechanicalText // Fallback to mechanical
 		chapter.PolishDone = true
+		j.persistPhase(ctx) // Update progress
 		return result.Error
 	}
 
@@ -133,6 +135,8 @@ func (j *Job) ProcessPolishResult(ctx context.Context, result jobs.WorkResult, i
 		chapter.PolishedText = chapter.MechanicalText
 		chapter.PolishDone = true
 		j.ChaptersPolished++
+		j.Book.IncrementStructurePolished()
+		j.persistPhase(ctx) // Update progress
 		return nil
 	}
 
@@ -146,6 +150,8 @@ func (j *Job) ProcessPolishResult(ctx context.Context, result jobs.WorkResult, i
 		chapter.PolishedText = chapter.MechanicalText
 		chapter.PolishDone = true
 		j.ChaptersPolished++
+		j.Book.IncrementStructurePolished()
+		j.persistPhase(ctx) // Update progress
 		return nil
 	}
 
@@ -173,6 +179,8 @@ func (j *Job) ProcessPolishResult(ctx context.Context, result jobs.WorkResult, i
 	}
 
 	j.ChaptersPolished++
+	j.Book.IncrementStructurePolished()
+	j.persistPhase(ctx) // Update progress
 	return nil
 }
 

@@ -31,6 +31,13 @@ type Book {
     structure_failed: Boolean
     structure_retries: Int
 
+    # Structure phase tracking (build -> extract -> classify -> polish -> finalize)
+    structure_phase: String
+    structure_chapters_total: Int
+    structure_chapters_extracted: Int
+    structure_chapters_polished: Int
+    structure_polish_failed: Int
+
     # Structure stats
     total_chapters: Int
     total_paragraphs: Int
