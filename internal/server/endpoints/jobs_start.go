@@ -19,6 +19,7 @@ type StartJobRequest struct {
 	JobType   string `json:"job_type,omitempty"`   // Optional: defaults to "process-book"
 	Force     bool   `json:"force,omitempty"`      // Optional: force restart even if already complete
 	ResetFrom string `json:"reset_from,omitempty"` // Optional: reset this operation and downstream deps before starting
+	Variant   string `json:"variant,omitempty"`    // Optional: pipeline variant (standard, photo-book, text-only, ocr-only)
 }
 
 // StartJobResponse is the response for starting a job.
@@ -104,6 +105,10 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	// Apply reset_from from request
 	cfg.ResetFrom = req.ResetFrom
+	// Apply variant if specified (overrides the default standard variant)
+	if req.Variant != "" {
+		cfg.ApplyVariant(process_book.PipelineVariant(req.Variant))
+	}
 	job, err = process_book.NewJob(r.Context(), cfg, bookID)
 
 	if err != nil {
@@ -127,6 +132,7 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 func (e *StartJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 	var resetFrom string
+	var variant string
 	cmd := &cobra.Command{
 		Use:   "start <book_id>",
 		Short: "Start job processing for a book",
@@ -135,6 +141,12 @@ func (e *StartJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 The job processes all pages through OCR, blend, and label stages,
 then triggers book-level operations (metadata extraction, ToC finding,
 pattern analysis, ToC linking, finalize, and structure building).
+
+Pipeline variants:
+  standard   - Full pipeline (default)
+  photo-book - OCR + blend + label + metadata only (no ToC/structure)
+  text-only  - OCR + blend + metadata only (no labels or ToC)
+  ocr-only   - OCR only (no LLM processing)
 
 Use --reset-from to re-run a specific operation and all downstream dependencies.
 Valid reset operations: metadata, toc_finder, toc_extract, pattern_analysis,
@@ -152,6 +164,7 @@ Use 'shelf api jobs get <job-id>' to check progress.`,
 			if err := client.Post(ctx, "/api/jobs/start/"+bookID, StartJobRequest{
 				JobType:   process_book.JobType,
 				ResetFrom: resetFrom,
+				Variant:   variant,
 			}, &resp); err != nil {
 				return err
 			}
@@ -160,5 +173,6 @@ Use 'shelf api jobs get <job-id>' to check progress.`,
 		},
 	}
 	cmd.Flags().StringVar(&resetFrom, "reset-from", "", "Reset this operation and downstream deps before starting")
+	cmd.Flags().StringVar(&variant, "variant", "", "Pipeline variant (standard, photo-book, text-only, ocr-only)")
 	return cmd
 }

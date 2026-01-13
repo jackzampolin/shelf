@@ -423,6 +423,19 @@ type BookState struct {
 	TocProvider      string
 	DebugAgents      bool // Enable debug logging for agent executions
 
+	// Pipeline stage toggles (immutable after LoadBook)
+	// Used by variants to enable/disable stages
+	EnableOCR             bool
+	EnableBlend           bool
+	EnableLabel           bool
+	EnableMetadata        bool
+	EnableTocFinder       bool
+	EnableTocExtract      bool
+	EnablePatternAnalysis bool
+	EnableTocLink         bool
+	EnableTocFinalize     bool
+	EnableStructure       bool
+
 	// Resolved prompts (immutable after LoadBook)
 	Prompts    map[string]string // prompt_key -> resolved text
 	PromptCIDs map[string]string // prompt_key -> CID for traceability

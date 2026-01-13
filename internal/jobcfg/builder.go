@@ -28,6 +28,7 @@ func NewBuilder(store config.Store) *Builder {
 }
 
 // ProcessBookConfig builds a process_book.Config from the store.
+// The returned config has standard variant applied by default (all stages enabled).
 func (b *Builder) ProcessBookConfig(ctx context.Context) (process_book.Config, error) {
 	ocrProviders, err := b.getStringSlice(ctx, "defaults.ocr_providers")
 	if err != nil {
@@ -44,14 +45,19 @@ func (b *Builder) ProcessBookConfig(ctx context.Context) (process_book.Config, e
 		return process_book.Config{}, fmt.Errorf("failed to get debug_agents: %w", err)
 	}
 
-	return process_book.Config{
+	cfg := process_book.Config{
 		OcrProviders:     ocrProviders,
 		BlendProvider:    llmProvider,
 		LabelProvider:    llmProvider,
 		MetadataProvider: llmProvider,
 		TocProvider:      llmProvider,
 		DebugAgents:      debugAgents,
-	}, nil
+	}
+
+	// Apply standard variant by default (enables all stages)
+	cfg.ApplyVariant(process_book.VariantStandard)
+
+	return cfg, nil
 }
 
 // Helper methods to get typed values from the store

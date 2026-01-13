@@ -23,6 +23,18 @@ type LoadBookConfig struct {
 	TocProvider      string
 	DebugAgents      bool
 
+	// Pipeline stage toggles (all default to false - should be set by variant)
+	EnableOCR             bool
+	EnableBlend           bool
+	EnableLabel           bool
+	EnableMetadata        bool
+	EnableTocFinder       bool
+	EnableTocExtract      bool
+	EnablePatternAnalysis bool
+	EnableTocLink         bool
+	EnableTocFinalize     bool
+	EnableStructure       bool
+
 	// Optional prompt resolution
 	// If PromptKeys is non-empty, prompts will be resolved and stored in BookState
 	// Uses GetEmbeddedDefault for fallbacks when resolver doesn't have the prompt
@@ -91,6 +103,18 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	book.MetadataProvider = cfg.MetadataProvider
 	book.TocProvider = cfg.TocProvider
 	book.DebugAgents = cfg.DebugAgents
+
+	// Pipeline stage toggles
+	book.EnableOCR = cfg.EnableOCR
+	book.EnableBlend = cfg.EnableBlend
+	book.EnableLabel = cfg.EnableLabel
+	book.EnableMetadata = cfg.EnableMetadata
+	book.EnableTocFinder = cfg.EnableTocFinder
+	book.EnableTocExtract = cfg.EnableTocExtract
+	book.EnablePatternAnalysis = cfg.EnablePatternAnalysis
+	book.EnableTocLink = cfg.EnableTocLink
+	book.EnableTocFinalize = cfg.EnableTocFinalize
+	book.EnableStructure = cfg.EnableStructure
 
 	// 3. Load PDFs from disk
 	pdfs, err := LoadPDFsFromOriginals(cfg.HomeDir, bookID)

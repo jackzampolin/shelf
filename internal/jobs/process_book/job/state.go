@@ -10,23 +10,27 @@ import (
 
 // GeneratePageWorkUnits creates work units for a page based on its current state.
 // Must be called with j.Mu held.
+// Respects pipeline stage toggles (EnableOCR, EnableBlend, EnableLabel).
 func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *PageState) []jobs.WorkUnit {
 	var units []jobs.WorkUnit
 
-	// Check if OCR is needed
+	// Check if OCR is needed (only if enabled)
 	allOcrDone := true
-	for _, provider := range j.Book.OcrProviders {
-		if !state.OcrComplete(provider) {
-			allOcrDone = false
-			unit := j.CreateOcrWorkUnit(ctx, pageNum, provider)
-			if unit != nil {
-				units = append(units, *unit)
+	if j.Book.EnableOCR {
+		for _, provider := range j.Book.OcrProviders {
+			if !state.OcrComplete(provider) {
+				allOcrDone = false
+				unit := j.CreateOcrWorkUnit(ctx, pageNum, provider)
+				if unit != nil {
+					units = append(units, *unit)
+				}
 			}
 		}
 	}
 
 	// If all OCR done but blend not done, create blend unit (thread-safe accessor)
-	if allOcrDone && !state.IsBlendDone() {
+	// Only if blend is enabled
+	if j.Book.EnableBlend && allOcrDone && !state.IsBlendDone() {
 		unit := j.CreateBlendWorkUnit(ctx, pageNum, state)
 		if unit != nil {
 			units = append(units, *unit)
@@ -35,7 +39,10 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 
 	// If blend done AND pattern analysis done but label not done, create label unit (thread-safe accessors)
 	// Label now runs after pattern analysis to use pattern context for guidance
-	if state.IsBlendDone() && j.Book.PatternAnalysis.IsComplete() && !state.IsLabelDone() {
+	// Only if label is enabled
+	// If pattern analysis is disabled, skip waiting for it
+	patternDone := !j.Book.EnablePatternAnalysis || j.Book.PatternAnalysis.IsComplete()
+	if j.Book.EnableLabel && state.IsBlendDone() && patternDone && !state.IsLabelDone() {
 		unit := j.CreateLabelWorkUnit(ctx, pageNum, state)
 		if unit != nil {
 			units = append(units, *unit)
@@ -47,6 +54,7 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 
 // MaybeStartBookOperations checks if we should trigger metadata/ToC operations.
 // Must be called with j.mu held.
+// Respects pipeline stage toggles for each operation.
 func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	blendedCount := j.CountBlendedPages()
 
@@ -56,7 +64,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	// Metadata only needs blended text (not labels), so it can start early
 	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
 	// if work unit creation has side effects (like creating agent logs)
-	if blendedCount >= BlendThresholdForMetadata && j.Book.Metadata.CanStart() {
+	if j.Book.EnableMetadata && blendedCount >= BlendThresholdForMetadata && j.Book.Metadata.CanStart() {
 		if err := j.Book.Metadata.Start(); err == nil {
 			unit := j.CreateMetadataWorkUnit(ctx)
 			if unit != nil {
@@ -74,7 +82,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	// Start ToC finder after first 30 pages have blend complete.
 	// ToC finder only needs blended text (not labels), so no need to wait for labeling.
 	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
-	if j.ConsecutiveFrontMatterComplete() && j.Book.TocFinder.CanStart() {
+	if j.Book.EnableTocFinder && j.ConsecutiveFrontMatterComplete() && j.Book.TocFinder.CanStart() {
 		if err := j.Book.TocFinder.Start(); err == nil {
 			unit := j.CreateTocFinderWorkUnit(ctx)
 			if unit != nil {
@@ -91,7 +99,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 
 	// Start ToC extraction if finder is done and found a ToC
 	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
-	if j.Book.TocFinder.IsDone() && j.Book.GetTocFound() && j.Book.TocExtract.CanStart() {
+	if j.Book.EnableTocExtract && j.Book.TocFinder.IsDone() && j.Book.GetTocFound() && j.Book.TocExtract.CanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		tocStart, tocEnd := j.Book.GetTocPageRange()
 		if logger != nil {
@@ -122,7 +130,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	// Start pattern analysis after ALL pages have blend complete
 	// Pattern analysis needs blended text from ALL pages for cross-page analysis
 	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
-	if j.AllPagesBlendComplete() && j.Book.PatternAnalysis.CanStart() {
+	if j.Book.EnablePatternAnalysis && j.AllPagesBlendComplete() && j.Book.PatternAnalysis.CanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("all pages blend complete, starting pattern analysis",
@@ -150,10 +158,12 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Start ToC linking if extraction is done AND pattern analysis is done AND all pages are labeled
+	// Start ToC linking if extraction is done AND pattern analysis is done (or disabled) AND all pages are labeled (or label disabled)
 	// ToC linker needs page labels to find chapter start pages
 	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
-	if j.Book.TocExtract.IsDone() && j.Book.PatternAnalysis.IsComplete() && j.AllPagesComplete() && j.Book.TocLink.CanStart() {
+	patternReady := !j.Book.EnablePatternAnalysis || j.Book.PatternAnalysis.IsComplete()
+	labelReady := !j.Book.EnableLabel || j.AllPagesComplete()
+	if j.Book.EnableTocLink && j.Book.TocExtract.IsDone() && patternReady && labelReady && j.Book.TocLink.CanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("starting ToC link operation",
@@ -185,7 +195,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	}
 
 	// Start finalize-toc inline if linking is done and finalize not yet started
-	if j.Book.TocLink.IsComplete() && j.Book.TocFinalize.CanStart() {
+	if j.Book.EnableTocFinalize && j.Book.TocLink.IsComplete() && j.Book.TocFinalize.CanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("link_toc complete, starting finalize-toc inline",
@@ -198,7 +208,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 
 	// Start structure if finalize is complete and structure not yet started
 	// This handles both: (1) finalize just completed, (2) crash recovery reset structure
-	if j.Book.TocFinalize.IsComplete() && j.Book.Structure.CanStart() {
+	if j.Book.EnableStructure && j.Book.TocFinalize.IsComplete() && j.Book.Structure.CanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("finalize complete, starting structure inline",
@@ -212,46 +222,70 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 }
 
 // CheckCompletion checks if the entire job is complete.
-// A job is complete when all pages are labeled AND book-level operations
+// A job is complete when all enabled pages stages are done AND enabled book-level operations
 // are either complete or permanently failed.
+// Disabled stages are skipped in the completion check.
 func (j *Job) CheckCompletion(ctx context.Context) {
-	// All pages must be labeled
-	if !j.AllPagesComplete() {
+	// All pages must complete enabled page-level stages
+	// For label-enabled: all pages must be labeled
+	// For blend-only: all pages must be blended
+	// For OCR-only: all pages must have OCR
+	if j.Book.EnableLabel {
+		if !j.AllPagesComplete() {
+			return
+		}
+	} else if j.Book.EnableBlend {
+		if !j.AllPagesBlendComplete() {
+			return
+		}
+	} else if j.Book.EnableOCR {
+		// For OCR-only, all pages need OCR complete
+		ocrComplete := true
+		j.Book.ForEachPage(func(pageNum int, state *PageState) {
+			for _, provider := range j.Book.OcrProviders {
+				if !state.OcrComplete(provider) {
+					ocrComplete = false
+					return
+				}
+			}
+		})
+		if !ocrComplete {
+			return
+		}
+	}
+
+	// Metadata must be complete or permanently failed (if enabled)
+	if j.Book.EnableMetadata && !j.Book.Metadata.IsDone() {
 		return
 	}
 
-	// Metadata must be complete or permanently failed
-	if !j.Book.Metadata.IsDone() {
+	// ToC finder must be complete or permanently failed (if enabled)
+	if j.Book.EnableTocFinder && !j.Book.TocFinder.IsDone() {
 		return
 	}
 
-	// ToC finder must be complete or permanently failed
-	if !j.Book.TocFinder.IsDone() {
+	// If ToC was found and extraction is enabled, extraction must also be done
+	if j.Book.EnableTocExtract && j.Book.GetTocFound() && !j.Book.TocExtract.IsDone() {
 		return
 	}
 
-	// If ToC was found, extraction must also be done
-	if j.Book.GetTocFound() && !j.Book.TocExtract.IsDone() {
+	// Pattern analysis must be complete or permanently failed (if enabled)
+	if j.Book.EnablePatternAnalysis && !j.Book.PatternAnalysis.IsDone() {
 		return
 	}
 
-	// Pattern analysis must be complete or permanently failed
-	if !j.Book.PatternAnalysis.IsDone() {
+	// If ToC was extracted and linking is enabled, linking must also be done
+	if j.Book.EnableTocLink && j.Book.TocExtract.IsDone() && !j.Book.TocLink.IsDone() {
 		return
 	}
 
-	// If ToC was extracted, linking must also be done
-	if j.Book.TocExtract.IsDone() && !j.Book.TocLink.IsDone() {
+	// If ToC was linked and finalize is enabled, finalize must also be done
+	if j.Book.EnableTocFinalize && j.Book.TocLink.IsComplete() && !j.Book.TocFinalize.IsDone() {
 		return
 	}
 
-	// If ToC was linked, finalize must also be done
-	if j.Book.TocLink.IsComplete() && !j.Book.TocFinalize.IsDone() {
-		return
-	}
-
-	// If finalize is complete, structure must also be done
-	if j.Book.TocFinalize.IsComplete() && !j.Book.Structure.IsDone() {
+	// If finalize is complete and structure is enabled, structure must also be done
+	if j.Book.EnableStructure && j.Book.TocFinalize.IsComplete() && !j.Book.Structure.IsDone() {
 		return
 	}
 
