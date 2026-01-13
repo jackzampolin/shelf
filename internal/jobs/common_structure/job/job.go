@@ -29,7 +29,13 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		return nil, nil
 	}
 
-	// Phase 1: Build skeleton (synchronous)
+	// Recovery: Check persisted phase to resume from correct point
+	persistedPhase := j.Book.GetStructurePhase()
+	if persistedPhase != "" && persistedPhase != PhaseBuild {
+		return j.resumeFromPhase(ctx, persistedPhase, logger)
+	}
+
+	// Fresh start: Phase 1: Build skeleton (synchronous)
 	j.CurrentPhase = PhaseBuild
 	j.Book.SetStructurePhase(PhaseBuild)
 	j.persistPhase(ctx)
@@ -69,6 +75,71 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 	// Transition to Classify phase (LLM work units start here)
 	return j.transitionToClassify(ctx)
+}
+
+// resumeFromPhase handles restart recovery by resuming from the persisted phase.
+func (j *Job) resumeFromPhase(ctx context.Context, phase string, logger interface {
+	Info(string, ...any)
+	Warn(string, ...any)
+}) ([]jobs.WorkUnit, error) {
+	if logger != nil {
+		logger.Info("resuming structure job from persisted phase",
+			"book_id", j.Book.BookID,
+			"phase", phase)
+	}
+
+	// Load existing chapters from DB
+	if err := j.loadExistingChapters(ctx); err != nil {
+		return nil, fmt.Errorf("failed to load existing chapters: %w", err)
+	}
+
+	if logger != nil {
+		logger.Info("loaded existing chapters for recovery",
+			"book_id", j.Book.BookID,
+			"chapters", len(j.Chapters))
+	}
+
+	j.CurrentPhase = phase
+
+	switch phase {
+	case PhaseExtract:
+		// Re-run extract and continue
+		if err := j.ExtractAllChapters(ctx); err != nil {
+			return nil, fmt.Errorf("failed to extract chapters: %w", err)
+		}
+		j.Book.SetStructureProgress(len(j.Chapters), j.ChaptersExtracted, 0, 0)
+		if err := j.PersistExtractResults(ctx); err != nil {
+			if logger != nil {
+				logger.Warn("failed to persist extract results", "error", err)
+			}
+		}
+		j.persistPhase(ctx)
+		return j.transitionToClassify(ctx)
+
+	case PhaseClassify:
+		// Skip directly to polish - classify result may have been lost but we can proceed
+		if logger != nil {
+			logger.Info("classify phase interrupted, skipping to polish",
+				"book_id", j.Book.BookID)
+		}
+		return j.transitionToPolish(ctx)
+
+	case PhasePolish:
+		// Resume polish - create work units for unfinished chapters
+		return j.CreatePolishWorkUnits(ctx)
+
+	case PhaseFinalize:
+		// Re-run finalize
+		return j.transitionToFinalize(ctx)
+
+	default:
+		// Unknown phase, start fresh from classify
+		if logger != nil {
+			logger.Warn("unknown persisted phase, starting from classify",
+				"phase", phase)
+		}
+		return j.transitionToClassify(ctx)
+	}
 }
 
 // OnComplete is called when a work unit finishes.

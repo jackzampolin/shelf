@@ -171,3 +171,110 @@ func (j *Job) GetChapterByEntryID(entryID string) *ChapterState {
 	}
 	return nil
 }
+
+// loadExistingChapters loads chapters from DB for recovery scenarios.
+func (j *Job) loadExistingChapters(ctx context.Context) error {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
+
+	query := fmt.Sprintf(`{
+		Chapter(filter: {book: {_docID: {_eq: %q}}}, order: {sort_order: ASC}) {
+			_docID
+			entry_id
+			title
+			level
+			level_name
+			entry_number
+			sort_order
+			start_page
+			end_page
+			matter_type
+			classification_reasoning
+			parent_id
+			source
+			mechanical_text
+			polished_text
+			word_count
+			polish_complete
+		}
+	}`, j.Book.BookID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return err
+	}
+
+	chapters, ok := resp.Data["Chapter"].([]any)
+	if !ok {
+		return nil // No chapters yet
+	}
+
+	j.Chapters = make([]*ChapterState, 0, len(chapters))
+	for _, c := range chapters {
+		cm, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		chapter := &ChapterState{
+			DocID:             getString(cm, "_docID"),
+			EntryID:           getString(cm, "entry_id"),
+			Title:             getString(cm, "title"),
+			Level:             getInt(cm, "level"),
+			LevelName:         getString(cm, "level_name"),
+			EntryNumber:       getString(cm, "entry_number"),
+			SortOrder:         getInt(cm, "sort_order"),
+			StartPage:         getInt(cm, "start_page"),
+			EndPage:           getInt(cm, "end_page"),
+			MatterType:        getString(cm, "matter_type"),
+			ClassifyReasoning: getString(cm, "classification_reasoning"),
+			ParentID:          getString(cm, "parent_id"),
+			Source:            getString(cm, "source"),
+			MechanicalText:    getString(cm, "mechanical_text"),
+			PolishedText:      getString(cm, "polished_text"),
+			WordCount:         getInt(cm, "word_count"),
+			PolishDone:        getBool(cm, "polish_complete"),
+			ExtractDone:       getString(cm, "mechanical_text") != "",
+		}
+
+		j.Chapters = append(j.Chapters, chapter)
+	}
+
+	// Update progress counters
+	j.ChaptersExtracted = 0
+	j.ChaptersPolished = 0
+	for _, ch := range j.Chapters {
+		if ch.ExtractDone {
+			j.ChaptersExtracted++
+		}
+		if ch.PolishDone {
+			j.ChaptersPolished++
+		}
+	}
+
+	return nil
+}
+
+// Helper functions for type conversion
+func getString(m map[string]any, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func getInt(m map[string]any, key string) int {
+	if v, ok := m[key].(float64); ok {
+		return int(v)
+	}
+	return 0
+}
+
+func getBool(m map[string]any, key string) bool {
+	if v, ok := m[key].(bool); ok {
+		return v
+	}
+	return false
+}
