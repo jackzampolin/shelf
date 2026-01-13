@@ -150,18 +150,16 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	}
 
 	// 6. Load ToC entries if extraction is complete (for link_toc phase)
+	// This is FATAL if extraction is complete - link_toc phase requires entries
 	if tocDocID != "" && book.TocExtract.IsComplete() {
 		entries, err := LoadTocEntries(ctx, tocDocID)
 		if err != nil {
-			// Non-fatal - just log and continue
-			if logger != nil {
-				logger.Warn("failed to load ToC entries", "book_id", bookID, "error", err)
-			}
-		} else {
-			book.TocEntries = entries
-			if logger != nil {
-				logger.Debug("LoadBook: loaded ToC entries", "book_id", bookID, "count", len(entries))
-			}
+			// Fatal when extraction is complete - link_toc will fail without entries
+			return nil, fmt.Errorf("failed to load ToC entries for completed extraction: %w", err)
+		}
+		book.TocEntries = entries
+		if logger != nil {
+			logger.Debug("LoadBook: loaded ToC entries", "book_id", bookID, "count", len(entries))
 		}
 	}
 

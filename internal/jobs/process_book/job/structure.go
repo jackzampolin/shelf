@@ -84,7 +84,14 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 	// Update progress
 	chapters := j.Book.GetStructureChapters()
 	j.Book.SetStructureProgress(len(chapters), 0, 0, 0)
-	common.PersistStructurePhase(ctx, j.Book)
+	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
+		if logger != nil {
+			logger.Error("failed to persist structure phase, crash recovery may resume from wrong state",
+				"phase", StructPhaseBuild,
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+	}
 
 	// Phase 2: Extract text (synchronous)
 	j.Book.SetStructurePhase(StructPhaseExtract)
@@ -92,7 +99,14 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 
 	// Update progress
 	j.Book.SetStructureProgress(len(chapters), chaptersExtracted, 0, 0)
-	common.PersistStructurePhase(ctx, j.Book)
+	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
+		if logger != nil {
+			logger.Error("failed to persist structure phase, crash recovery may resume from wrong state",
+				"phase", StructPhaseExtract,
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+	}
 
 	// Persist extract results
 	if err := j.persistExtractResults(ctx); err != nil {
@@ -359,9 +373,16 @@ func (j *Job) persistExtractResults(ctx context.Context) error {
 // transitionToStructureClassify starts the classify phase.
 func (j *Job) transitionToStructureClassify(ctx context.Context) []jobs.WorkUnit {
 	j.Book.SetStructurePhase(StructPhaseClassify)
-	common.PersistStructurePhase(ctx, j.Book)
-
 	logger := svcctx.LoggerFrom(ctx)
+	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
+		if logger != nil {
+			logger.Error("failed to persist structure phase, crash recovery may resume from wrong state",
+				"phase", StructPhaseClassify,
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+	}
+
 	if logger != nil {
 		logger.Info("transitioning to classify phase",
 			"book_id", j.Book.BookID)
@@ -563,9 +584,16 @@ func (j *Job) persistClassifyResults(ctx context.Context) error {
 // transitionToStructurePolish starts the polish phase.
 func (j *Job) transitionToStructurePolish(ctx context.Context) []jobs.WorkUnit {
 	j.Book.SetStructurePhase(StructPhasePolish)
-	common.PersistStructurePhase(ctx, j.Book)
-
 	logger := svcctx.LoggerFrom(ctx)
+	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
+		if logger != nil {
+			logger.Error("failed to persist structure phase, crash recovery may resume from wrong state",
+				"phase", StructPhasePolish,
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+	}
+
 	chapters := j.Book.GetStructureChapters()
 	if logger != nil {
 		logger.Info("transitioning to polish phase",
@@ -691,13 +719,14 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 		chapter.PolishedText = chapter.MechanicalText // Fallback to mechanical text
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
-			logger.Warn("chapter polish failed, using mechanical text",
+			logger.Error("chapter polish failed, degraded quality - using mechanical text",
 				"chapter_id", chapter.EntryID,
 				"title", chapter.Title,
 				"book_id", j.Book.BookID,
 				"error", result.Error)
 		}
-		return nil
+		// Return error to surface the degradation to callers
+		return fmt.Errorf("polish failed for chapter %s, using mechanical text fallback: %v", chapter.EntryID, result.Error)
 	}
 
 	if result.ChatResult == nil {
@@ -707,12 +736,12 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 		chapter.PolishedText = chapter.MechanicalText
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
-			logger.Warn("chapter polish failed (no chat result), using mechanical text",
+			logger.Error("chapter polish failed (no chat result), degraded quality - using mechanical text",
 				"chapter_id", chapter.EntryID,
 				"title", chapter.Title,
 				"book_id", j.Book.BookID)
 		}
-		return fmt.Errorf("no chat result")
+		return fmt.Errorf("polish failed for chapter %s, no chat result - using mechanical text fallback", chapter.EntryID)
 	}
 
 	var content []byte
@@ -727,12 +756,12 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 		chapter.PolishedText = chapter.MechanicalText
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
-			logger.Warn("chapter polish failed (empty response), using mechanical text",
+			logger.Error("chapter polish failed (empty response), degraded quality - using mechanical text",
 				"chapter_id", chapter.EntryID,
 				"title", chapter.Title,
 				"book_id", j.Book.BookID)
 		}
-		return fmt.Errorf("empty response")
+		return fmt.Errorf("polish failed for chapter %s, empty response - using mechanical text fallback", chapter.EntryID)
 	}
 
 	var polishResult common.PolishResult
@@ -743,13 +772,13 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 		chapter.PolishedText = chapter.MechanicalText
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
-			logger.Warn("chapter polish failed (parse error), using mechanical text",
+			logger.Error("chapter polish failed (parse error), degraded quality - using mechanical text",
 				"chapter_id", chapter.EntryID,
 				"title", chapter.Title,
 				"book_id", j.Book.BookID,
 				"error", err)
 		}
-		return fmt.Errorf("failed to parse polish result: %w", err)
+		return fmt.Errorf("polish failed for chapter %s, parse error - using mechanical text fallback: %w", chapter.EntryID, err)
 	}
 
 	// Apply edits
@@ -809,7 +838,14 @@ func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, erro
 	logger := svcctx.LoggerFrom(ctx)
 
 	j.Book.SetStructurePhase(StructPhaseFinalize)
-	common.PersistStructurePhase(ctx, j.Book)
+	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
+		if logger != nil {
+			logger.Error("failed to persist structure phase, crash recovery may resume from wrong state",
+				"phase", StructPhaseFinalize,
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
+	}
 
 	// Finalize - create paragraphs, update book status
 	if err := j.finalizeStructure(ctx); err != nil {

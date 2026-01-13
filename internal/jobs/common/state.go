@@ -1189,6 +1189,29 @@ type ChapterState struct {
 	PolishFailed bool `json:"polish_failed"` // True if polish failed and fell back to mechanical text
 }
 
+// NewChapterState creates a new ChapterState with validation.
+// Returns an error if required fields are missing or invalid.
+func NewChapterState(entryID, uniqueKey, title string, startPage int) (*ChapterState, error) {
+	if entryID == "" {
+		return nil, fmt.Errorf("entry_id is required")
+	}
+	if uniqueKey == "" {
+		return nil, fmt.Errorf("unique_key is required")
+	}
+	if title == "" {
+		return nil, fmt.Errorf("title is required")
+	}
+	if startPage < 1 {
+		return nil, fmt.Errorf("start_page must be >= 1, got %d", startPage)
+	}
+	return &ChapterState{
+		EntryID:   entryID,
+		UniqueKey: uniqueKey,
+		Title:     title,
+		StartPage: startPage,
+	}, nil
+}
+
 // StructureState holds structure sub-job state within BookState (for serialization).
 type StructureState struct {
 	Phase              string                    `json:"phase"` // build, extract, classify, polish, finalize
