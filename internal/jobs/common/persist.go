@@ -316,6 +316,66 @@ func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 	return nil
 }
 
+// DeleteAgentStatesForType removes agent state records for a specific agent type and book.
+// This is used when resetting a specific operation (e.g., toc_finder) without affecting
+// other agent states for the same book.
+func DeleteAgentStatesForType(ctx context.Context, bookID, agentType string) error {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("DeleteAgentStatesForType: defra client not in context")
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Query agent states for this book and type
+	query := fmt.Sprintf(`{
+		AgentState(filter: {book_id: {_eq: "%s"}, agent_type: {_eq: "%s"}}) {
+			_docID
+		}
+	}`, bookID, agentType)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return fmt.Errorf("DeleteAgentStatesForType: failed to query agent states: %w", err)
+	}
+
+	states, ok := resp.Data["AgentState"].([]any)
+	if !ok || len(states) == 0 {
+		return nil
+	}
+
+	var deletedCount, skippedCount int
+	for i, s := range states {
+		state, ok := s.(map[string]any)
+		if !ok {
+			skippedCount++
+			if logger != nil {
+				logger.Warn("DeleteAgentStatesForType: unexpected data type",
+					"book_id", bookID, "agent_type", agentType, "index", i)
+			}
+			continue
+		}
+
+		docID, ok := state["_docID"].(string)
+		if !ok || docID == "" {
+			skippedCount++
+			continue
+		}
+
+		if err := DeleteAgentState(ctx, docID); err != nil {
+			return fmt.Errorf("DeleteAgentStatesForType: failed to delete %s: %w", docID, err)
+		}
+		deletedCount++
+	}
+
+	if logger != nil && deletedCount > 0 {
+		logger.Debug("deleted agent states for type",
+			"book_id", bookID, "agent_type", agentType, "count", deletedCount)
+	}
+
+	return nil
+}
+
 // --- Synchronous Persist Functions ---
 // Use these for critical state transitions to ensure writes complete before proceeding.
 

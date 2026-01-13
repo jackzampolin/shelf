@@ -134,8 +134,11 @@ func ResetFrom(ctx context.Context, book *BookState, tocDocID string, op ResetOp
 func resetMetadata(ctx context.Context, book *BookState) error {
 	book.MetadataReset()
 
-	// Clear agent state for metadata (if any)
+	// Clear agent state for metadata (if any) - both memory and DB
 	book.ClearAgentStates("metadata")
+	if err := DeleteAgentStatesForType(ctx, book.BookID, "metadata"); err != nil {
+		return fmt.Errorf("failed to delete metadata agent states: %w", err)
+	}
 
 	metadataState := book.GetMetadataState()
 	return PersistMetadataState(ctx, book.BookID, &metadataState)
@@ -147,8 +150,11 @@ func resetTocFinder(ctx context.Context, book *BookState, tocDocID string) error
 	book.SetTocFound(false)
 	book.SetTocPageRange(0, 0)
 
-	// Clear agent state
+	// Clear agent state - both memory and DB
 	book.ClearAgentStates("toc_finder")
+	if err := DeleteAgentStatesForType(ctx, book.BookID, "toc_finder"); err != nil {
+		return fmt.Errorf("failed to delete toc_finder agent states: %w", err)
+	}
 
 	if tocDocID == "" {
 		return nil
@@ -176,8 +182,11 @@ func resetTocExtract(ctx context.Context, book *BookState, tocDocID string) erro
 	book.TocExtractReset()
 	book.SetTocEntries(nil)
 
-	// Clear agent state
+	// Clear agent state - both memory and DB
 	book.ClearAgentStates("toc_extract")
+	if err := DeleteAgentStatesForType(ctx, book.BookID, "toc_extract"); err != nil {
+		return fmt.Errorf("failed to delete toc_extract agent states: %w", err)
+	}
 
 	if tocDocID == "" {
 		return nil
@@ -209,8 +218,11 @@ func resetPatternAnalysis(ctx context.Context, book *BookState) error {
 	book.SetPageNumberPattern(nil)
 	book.SetChapterPatterns(nil)
 
-	// Clear agent state (if any)
+	// Clear agent state - both memory and DB
 	book.ClearAgentStates("pattern_analysis")
+	if err := DeleteAgentStatesForType(ctx, book.BookID, "pattern_analysis"); err != nil {
+		return fmt.Errorf("failed to delete pattern_analysis agent states: %w", err)
+	}
 
 	// Clear pattern analysis JSON from book (sync to ensure it completes)
 	return SendToSinkSync(ctx, defra.WriteOp{
@@ -231,9 +243,15 @@ func resetPatternAnalysis(ctx context.Context, book *BookState) error {
 func resetTocLink(ctx context.Context, book *BookState, tocDocID string) error {
 	book.TocLinkReset()
 
-	// Clear agent state for all link agents
+	// Clear agent state for all link agents - both memory and DB
 	book.ClearAgentStates(AgentTypeTocEntryFinder)
 	book.ClearAgentStates(AgentTypeChapterFinder)
+	if err := DeleteAgentStatesForType(ctx, book.BookID, AgentTypeTocEntryFinder); err != nil {
+		return fmt.Errorf("failed to delete %s agent states: %w", AgentTypeTocEntryFinder, err)
+	}
+	if err := DeleteAgentStatesForType(ctx, book.BookID, AgentTypeChapterFinder); err != nil {
+		return fmt.Errorf("failed to delete %s agent states: %w", AgentTypeChapterFinder, err)
+	}
 
 	// Clear cached LinkedEntries since links are being cleared
 	book.SetLinkedEntries(nil)
@@ -272,9 +290,15 @@ func resetTocFinalize(ctx context.Context, book *BookState, tocDocID string) err
 	book.SetFinalizeGaps(nil)
 	book.SetFinalizeProgress(0, 0, 0, 0)
 
-	// Clear agent states for finalize agents
+	// Clear agent states for finalize agents - both memory and DB
 	book.ClearAgentStates(AgentTypeGapInvestigator)
 	book.ClearAgentStates("discover_entry") // Not in common constants - used by discover phase
+	if err := DeleteAgentStatesForType(ctx, book.BookID, AgentTypeGapInvestigator); err != nil {
+		return fmt.Errorf("failed to delete %s agent states: %w", AgentTypeGapInvestigator, err)
+	}
+	if err := DeleteAgentStatesForType(ctx, book.BookID, "discover_entry"); err != nil {
+		return fmt.Errorf("failed to delete discover_entry agent states: %w", err)
+	}
 
 	if tocDocID == "" {
 		return nil
@@ -305,9 +329,15 @@ func resetStructure(ctx context.Context, book *BookState) error {
 	book.SetStructureClassifications(nil)
 	book.SetStructureClassifyPending(false)
 
-	// Clear agent state (if any)
+	// Clear agent state - both memory and DB
 	book.ClearAgentStates("structure")
 	book.ClearAgentStates("polish_chapter")
+	if err := DeleteAgentStatesForType(ctx, book.BookID, "structure"); err != nil {
+		return fmt.Errorf("failed to delete structure agent states: %w", err)
+	}
+	if err := DeleteAgentStatesForType(ctx, book.BookID, "polish_chapter"); err != nil {
+		return fmt.Errorf("failed to delete polish_chapter agent states: %w", err)
+	}
 
 	// Delete all chapters for this book
 	if err := deleteChapters(ctx, book.BookID); err != nil {
