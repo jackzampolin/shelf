@@ -10,14 +10,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/jobcfg"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/jobs/common_structure"
-	"github.com/jackzampolin/shelf/internal/jobs/finalize_toc"
-	"github.com/jackzampolin/shelf/internal/jobs/label_book"
-	"github.com/jackzampolin/shelf/internal/jobs/link_toc"
-	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
-	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
-	"github.com/jackzampolin/shelf/internal/jobs/toc_book"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -95,83 +88,23 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	builder := jobcfg.NewBuilder(configStore)
 
-	// Create job based on job type - configs are read from DefraDB
+	// Create job - only process_book is supported
 	var job jobs.Job
 	var err error
 
-	switch jobType {
-	case process_book.JobType:
-		cfg, cfgErr := builder.ProcessBookConfig(r.Context())
-		if cfgErr != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
-			return
-		}
-		// Apply reset_from from request
-		cfg.ResetFrom = req.ResetFrom
-		job, err = process_book.NewJob(r.Context(), cfg, bookID)
-
-	case ocr_book.JobType:
-		cfg, cfgErr := builder.OcrBookConfig(r.Context())
-		if cfgErr != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
-			return
-		}
-		job, err = ocr_book.NewJob(r.Context(), cfg, bookID)
-
-	case label_book.JobType:
-		cfg, cfgErr := builder.LabelBookConfig(r.Context())
-		if cfgErr != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
-			return
-		}
-		job, err = label_book.NewJob(r.Context(), cfg, bookID)
-
-	case metadata_book.JobType:
-		cfg, cfgErr := builder.MetadataBookConfig(r.Context())
-		if cfgErr != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
-			return
-		}
-		job, err = metadata_book.NewJob(r.Context(), cfg, bookID)
-
-	case toc_book.JobType:
-		cfg, cfgErr := builder.TocBookConfig(r.Context())
-		if cfgErr != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
-			return
-		}
-		job, err = toc_book.NewJob(r.Context(), cfg, bookID)
-
-	case link_toc.JobType:
-		cfg, cfgErr := builder.LinkTocConfig(r.Context())
-		if cfgErr != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
-			return
-		}
-		// Apply force flag from request
-		cfg.Force = req.Force
-		job, err = link_toc.NewJob(r.Context(), cfg, bookID)
-
-	case finalize_toc.JobType:
-		cfg, cfgErr := builder.FinalizeTocConfig(r.Context())
-		if cfgErr != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
-			return
-		}
-		job, err = finalize_toc.NewJob(r.Context(), cfg, bookID)
-
-	case common_structure.JobType:
-		cfg, cfgErr := builder.CommonStructureConfig(r.Context())
-		if cfgErr != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
-			return
-		}
-		job, err = common_structure.NewJob(r.Context(), cfg, bookID)
-
-	default:
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown job type: %s", jobType))
+	if jobType != process_book.JobType {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown job type: %s (only 'process-book' is supported)", jobType))
 		return
 	}
+
+	cfg, cfgErr := builder.ProcessBookConfig(r.Context())
+	if cfgErr != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load config: %v", cfgErr))
+		return
+	}
+	// Apply reset_from from request
+	cfg.ResetFrom = req.ResetFrom
+	job, err = process_book.NewJob(r.Context(), cfg, bookID)
 
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create job: %v", err))
@@ -193,17 +126,15 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (e *StartJobEndpoint) Command(getServerURL func() string) *cobra.Command {
-	var jobType string
-	var force bool
 	var resetFrom string
 	cmd := &cobra.Command{
 		Use:   "start <book_id>",
 		Short: "Start job processing for a book",
-		Long: `Start a processing job for a book.
+		Long: `Start the process-book job for a book.
 
-The default job type is 'process-book' which processes all pages through
-OCR, blend, and label stages, then triggers book-level operations
-(metadata extraction, ToC finding).
+The job processes all pages through OCR, blend, and label stages,
+then triggers book-level operations (metadata extraction, ToC finding,
+pattern analysis, ToC linking, finalize, and structure building).
 
 Use --reset-from to re-run a specific operation and all downstream dependencies.
 Valid reset operations: metadata, toc_finder, toc_extract, pattern_analysis,
@@ -219,8 +150,7 @@ Use 'shelf api jobs get <job-id>' to check progress.`,
 			client := api.NewClient(getServerURL())
 			var resp StartJobResponse
 			if err := client.Post(ctx, "/api/jobs/start/"+bookID, StartJobRequest{
-				JobType:   jobType,
-				Force:     force,
+				JobType:   process_book.JobType,
 				ResetFrom: resetFrom,
 			}, &resp); err != nil {
 				return err
@@ -229,8 +159,6 @@ Use 'shelf api jobs get <job-id>' to check progress.`,
 			return api.Output(resp)
 		},
 	}
-	cmd.Flags().StringVar(&jobType, "job-type", process_book.JobType, "Job type to run")
-	cmd.Flags().BoolVar(&force, "force", false, "Force restart even if already complete (for link-toc)")
-	cmd.Flags().StringVar(&resetFrom, "reset-from", "", "Reset this operation and downstream deps before starting (process-book only)")
+	cmd.Flags().StringVar(&resetFrom, "reset-from", "", "Reset this operation and downstream deps before starting")
 	return cmd
 }

@@ -17,14 +17,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobcfg"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/jobs/common_structure"
-	"github.com/jackzampolin/shelf/internal/jobs/finalize_toc"
-	"github.com/jackzampolin/shelf/internal/jobs/label_book"
-	"github.com/jackzampolin/shelf/internal/jobs/link_toc"
-	"github.com/jackzampolin/shelf/internal/jobs/metadata_book"
-	"github.com/jackzampolin/shelf/internal/jobs/ocr_book"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
-	"github.com/jackzampolin/shelf/internal/jobs/toc_book"
 	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/prompts"
@@ -264,13 +257,6 @@ func (s *Server) Start(ctx context.Context) error {
 	// Register job factories for resumption
 	// These factories read config from DefraDB, so resumed jobs use current settings
 	s.scheduler.RegisterFactory(process_book.JobType, jobcfg.ProcessBookJobFactory(s.configStore))
-	s.scheduler.RegisterFactory(ocr_book.JobType, jobcfg.OcrBookJobFactory(s.configStore))
-	s.scheduler.RegisterFactory(label_book.JobType, jobcfg.LabelBookJobFactory(s.configStore))
-	s.scheduler.RegisterFactory(metadata_book.JobType, jobcfg.MetadataBookJobFactory(s.configStore))
-	s.scheduler.RegisterFactory(toc_book.JobType, jobcfg.TocBookJobFactory(s.configStore))
-	s.scheduler.RegisterFactory(link_toc.JobType, jobcfg.LinkTocJobFactory(s.configStore))
-	s.scheduler.RegisterFactory(finalize_toc.JobType, jobcfg.FinalizeTocJobFactory(s.configStore))
-	s.scheduler.RegisterFactory(common_structure.JobType, jobcfg.CommonStructureJobFactory(s.configStore))
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)

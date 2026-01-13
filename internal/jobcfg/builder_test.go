@@ -321,20 +321,3 @@ func TestBuilder_ProcessBookConfig(t *testing.T) {
 	})
 }
 
-func TestBuilder_LinkTocConfig(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("force_flag_defaults_to_false", func(t *testing.T) {
-		store := newMockStore()
-
-		b := NewBuilder(store)
-		cfg, err := b.LinkTocConfig(ctx)
-		if err != nil {
-			t.Fatalf("LinkTocConfig() error = %v", err)
-		}
-
-		if cfg.Force != false {
-			t.Errorf("Force = %v, want false (caller should set if needed)", cfg.Force)
-		}
-	})
-}
