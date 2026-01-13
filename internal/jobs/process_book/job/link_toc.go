@@ -43,6 +43,8 @@ func (j *Job) CreateLinkTocWorkUnits(ctx context.Context) []jobs.WorkUnit {
 
 // CreateEntryFinderWorkUnit creates an entry finder agent work unit.
 func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_finder.TocEntry) *jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
 	// Estimate book structure for back matter detection
 	bookStructure := &toc_entry_finder.BookStructure{
 		TotalPages:      j.Book.TotalPages,
@@ -50,15 +52,60 @@ func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 		BackMatterTypes: "footnotes, bibliography, index",
 	}
 
-	// Create agent
-	ag := agents.NewTocEntryFinderAgent(ctx, agents.TocEntryFinderConfig{
-		Book:          j.Book,
-		SystemPrompt:  j.GetPrompt(toc_entry_finder.PromptKey),
-		Entry:         entry,
-		BookStructure: bookStructure,
-		Debug:         j.Book.DebugAgents,
-		JobID:         j.RecordID,
-	})
+	var ag *agent.Agent
+
+	// Check for saved agent state (job resume case)
+	savedState := j.Book.GetAgentState(common.AgentTypeTocEntryFinder, entry.DocID)
+	if savedState != nil && !savedState.Complete {
+		// Resume existing agent
+		if logger != nil {
+			logger.Info("resuming ToC entry finder agent from saved state",
+				"agent_id", savedState.AgentID,
+				"entry_doc_id", entry.DocID,
+				"iteration", savedState.Iteration)
+		}
+
+		// Create agent with fresh tools but restore conversation state
+		ag = agents.NewTocEntryFinderAgent(ctx, agents.TocEntryFinderConfig{
+			Book:          j.Book,
+			SystemPrompt:  j.GetPrompt(toc_entry_finder.PromptKey),
+			Entry:         entry,
+			BookStructure: bookStructure,
+			Debug:         j.Book.DebugAgents,
+			JobID:         j.RecordID,
+		})
+
+		// Restore state from saved
+		if err := ag.RestoreState(&agent.StateExport{
+			AgentID:          savedState.AgentID,
+			Iteration:        savedState.Iteration,
+			Complete:         savedState.Complete,
+			MessagesJSON:     savedState.MessagesJSON,
+			PendingToolCalls: savedState.PendingToolCalls,
+			ToolResults:      savedState.ToolResults,
+			ResultJSON:       savedState.ResultJSON,
+		}); err != nil {
+			if logger != nil {
+				logger.Warn("failed to restore ToC entry finder agent state, starting fresh",
+					"entry_doc_id", entry.DocID,
+					"error", err)
+			}
+			// Fall through to create fresh agent
+			ag = nil
+		}
+	}
+
+	// Create fresh agent if not restored
+	if ag == nil {
+		ag = agents.NewTocEntryFinderAgent(ctx, agents.TocEntryFinderConfig{
+			Book:          j.Book,
+			SystemPrompt:  j.GetPrompt(toc_entry_finder.PromptKey),
+			Entry:         entry,
+			BookStructure: bookStructure,
+			Debug:         j.Book.DebugAgents,
+			JobID:         j.RecordID,
+		})
+	}
 
 	// Store agent for later reference
 	j.LinkTocEntryAgents[entry.DocID] = ag
@@ -66,7 +113,7 @@ func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 	// Get first work unit
 	agentUnits := agents.ExecuteToolLoop(ctx, ag)
 	if len(agentUnits) == 0 {
-		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		if logger != nil {
 			logger.Debug("agent produced no work units",
 				"book_id", j.Book.BookID,
 				"entry_doc_id", entry.DocID)
@@ -77,7 +124,7 @@ func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 	// Convert and return first work unit
 	jobUnits := j.convertLinkTocAgentUnits(agentUnits, entry.DocID)
 	if len(jobUnits) == 0 {
-		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		if logger != nil {
 			logger.Debug("agent units converted to zero job units",
 				"book_id", j.Book.BookID,
 				"entry_doc_id", entry.DocID)
@@ -96,9 +143,16 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 		return nil, fmt.Errorf("agent not found for entry %s", info.EntryDocID)
 	}
 
+	logger := svcctx.LoggerFrom(ctx)
+
 	// Handle LLM result
 	if result.ChatResult != nil {
 		ag.HandleLLMResult(result.ChatResult)
+
+		// Save agent state for resume capability
+		if err := j.saveLinkTocAgentState(ctx, info.EntryDocID); err != nil && logger != nil {
+			logger.Warn("failed to save link ToC agent state", "entry_doc_id", info.EntryDocID, "error", err)
+		}
 
 		// Execute tool loop
 		agentUnits := agents.ExecuteToolLoop(ctx, ag)
@@ -112,11 +166,13 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 	if ag.IsDone() {
 		// Save agent log if debug enabled
 		if err := ag.SaveLog(ctx); err != nil {
-			logger := svcctx.LoggerFrom(ctx)
 			if logger != nil {
 				logger.Warn("failed to save agent log", "error", err)
 			}
 		}
+
+		// Clean up agent state from BookState and DB
+		j.cleanupLinkTocAgentState(ctx, info.EntryDocID)
 
 		agentResult := ag.Result()
 		if agentResult != nil && agentResult.Success {
@@ -133,6 +189,70 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 	}
 
 	return nil, nil
+}
+
+// saveLinkTocAgentState saves a link ToC entry agent state for resume capability.
+func (j *Job) saveLinkTocAgentState(ctx context.Context, entryDocID string) error {
+	ag, ok := j.LinkTocEntryAgents[entryDocID]
+	if !ok || ag == nil {
+		return nil
+	}
+
+	// Export agent state
+	exported, err := ag.ExportState()
+	if err != nil {
+		return err
+	}
+
+	// Get existing state to preserve DocID
+	existing := j.Book.GetAgentState(common.AgentTypeTocEntryFinder, entryDocID)
+	var docID string
+	if existing != nil {
+		docID = existing.DocID
+	}
+
+	// Create AgentState for BookState
+	state := &common.AgentState{
+		AgentID:          exported.AgentID,
+		AgentType:        common.AgentTypeTocEntryFinder,
+		EntryDocID:       entryDocID,
+		Iteration:        exported.Iteration,
+		Complete:         exported.Complete,
+		MessagesJSON:     exported.MessagesJSON,
+		PendingToolCalls: exported.PendingToolCalls,
+		ToolResults:      exported.ToolResults,
+		ResultJSON:       exported.ResultJSON,
+		DocID:            docID,
+	}
+
+	// Persist to DB and update BookState
+	newDocID, err := common.PersistAgentState(ctx, j.Book.BookID, state)
+	if err != nil {
+		return err
+	}
+	state.DocID = newDocID
+	j.Book.SetAgentState(state)
+
+	return nil
+}
+
+// cleanupLinkTocAgentState removes link ToC entry agent state after completion.
+func (j *Job) cleanupLinkTocAgentState(ctx context.Context, entryDocID string) {
+	logger := svcctx.LoggerFrom(ctx)
+	existing := j.Book.GetAgentState(common.AgentTypeTocEntryFinder, entryDocID)
+	if existing != nil && existing.DocID != "" {
+		if err := common.DeleteAgentState(ctx, existing.DocID); err != nil {
+			if logger != nil {
+				logger.Error("failed to delete agent state from DB, orphaned record remains",
+					"doc_id", existing.DocID,
+					"agent_type", common.AgentTypeTocEntryFinder,
+					"entry_doc_id", entryDocID,
+					"book_id", j.Book.BookID,
+					"error", err)
+			}
+		}
+	}
+	j.Book.RemoveAgentState(common.AgentTypeTocEntryFinder, entryDocID)
 }
 
 // convertLinkTocAgentUnits converts agent work units to job work units.

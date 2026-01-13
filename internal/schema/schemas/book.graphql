@@ -58,6 +58,12 @@ type Book {
     # Contains: discovered_patterns, excluded_ranges, entries_to_find, reasoning
     pattern_analysis_json: String
 
+    # Finalize progress tracking (for restart resilience)
+    finalize_entries_complete: Int
+    finalize_entries_found: Int
+    finalize_gaps_complete: Int
+    finalize_gaps_fixes: Int
+
     # Relationships
     # One-to-many: Book has many Pages
     pages: [Page]

@@ -101,8 +101,13 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Set phase and persist
-	j.Book.FinalizePhase = FinalizePhasePattern
+	// Set phase and persist for crash recovery
+	j.Book.SetFinalizePhase(FinalizePhasePattern)
+	if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhasePattern); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist finalize phase", "phase", FinalizePhasePattern, "error", err)
+		}
+	}
 
 	if logger != nil {
 		linkedCount := 0
@@ -389,9 +394,16 @@ func (j *Job) generateEntriesToFind(ctx context.Context) {
 
 // transitionToFinalizeDiscover moves to the discover phase.
 func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit {
-	j.Book.FinalizePhase = FinalizePhaseDiscover
-
 	logger := svcctx.LoggerFrom(ctx)
+
+	// Set phase and persist for crash recovery
+	j.Book.SetFinalizePhase(FinalizePhaseDiscover)
+	if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDiscover); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseDiscover, "error", err)
+		}
+	}
+
 	if logger != nil {
 		logger.Info("transitioning to discover phase",
 			"book_id", j.Book.BookID,
@@ -421,6 +433,8 @@ func (j *Job) createFinalizeDiscoverWorkUnits(ctx context.Context) []jobs.WorkUn
 
 // createChapterFinderWorkUnit creates a chapter finder agent work unit.
 func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.EntryToFind) *jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
 	var excludedRanges []chapter_finder.ExcludedRange
 	if j.Book.FinalizePatternResult != nil {
 		for _, ex := range j.Book.FinalizePatternResult.Excluded {
@@ -441,14 +455,57 @@ func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.Ent
 		SearchRangeEnd:   entry.SearchRangeEnd,
 	}
 
-	ag := agents.NewChapterFinderAgent(ctx, agents.ChapterFinderConfig{
-		Book:           j.Book,
-		SystemPrompt:   j.GetPrompt(chapter_finder.PromptKey),
-		Entry:          agentEntry,
-		ExcludedRanges: excludedRanges,
-		Debug:          j.Book.DebugAgents,
-		JobID:          j.RecordID,
-	})
+	var ag *agent.Agent
+
+	// Check for saved agent state (job resume case)
+	savedState := j.Book.GetAgentState(common.AgentTypeChapterFinder, entry.Key)
+	if savedState != nil && !savedState.Complete {
+		// Resume existing agent
+		if logger != nil {
+			logger.Info("resuming chapter finder agent from saved state",
+				"agent_id", savedState.AgentID,
+				"entry_key", entry.Key,
+				"iteration", savedState.Iteration)
+		}
+
+		ag = agents.NewChapterFinderAgent(ctx, agents.ChapterFinderConfig{
+			Book:           j.Book,
+			SystemPrompt:   j.GetPrompt(chapter_finder.PromptKey),
+			Entry:          agentEntry,
+			ExcludedRanges: excludedRanges,
+			Debug:          j.Book.DebugAgents,
+			JobID:          j.RecordID,
+		})
+
+		if err := ag.RestoreState(&agent.StateExport{
+			AgentID:          savedState.AgentID,
+			Iteration:        savedState.Iteration,
+			Complete:         savedState.Complete,
+			MessagesJSON:     savedState.MessagesJSON,
+			PendingToolCalls: savedState.PendingToolCalls,
+			ToolResults:      savedState.ToolResults,
+			ResultJSON:       savedState.ResultJSON,
+		}); err != nil {
+			if logger != nil {
+				logger.Warn("failed to restore chapter finder agent state, starting fresh",
+					"entry_key", entry.Key,
+					"error", err)
+			}
+			ag = nil
+		}
+	}
+
+	// Create fresh agent if not restored
+	if ag == nil {
+		ag = agents.NewChapterFinderAgent(ctx, agents.ChapterFinderConfig{
+			Book:           j.Book,
+			SystemPrompt:   j.GetPrompt(chapter_finder.PromptKey),
+			Entry:          agentEntry,
+			ExcludedRanges: excludedRanges,
+			Debug:          j.Book.DebugAgents,
+			JobID:          j.RecordID,
+		})
+	}
 
 	j.FinalizeDiscoverAgents[entry.Key] = ag
 
@@ -501,6 +558,11 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 	if result.ChatResult != nil {
 		ag.HandleLLMResult(result.ChatResult)
 
+		// Save agent state for resume capability
+		if err := j.saveFinalizeDiscoverAgentState(ctx, info.FinalizeKey); err != nil && logger != nil {
+			logger.Warn("failed to save discover agent state", "entry_key", info.FinalizeKey, "error", err)
+		}
+
 		agentUnits := agents.ExecuteToolLoop(ctx, ag)
 		if len(agentUnits) > 0 {
 			return j.convertDiscoverAgentUnits(agentUnits, info.FinalizeKey), nil
@@ -514,6 +576,9 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 				logger.Warn("failed to save agent log", "error", err)
 			}
 		}
+
+		// Clean up agent state
+		j.cleanupFinalizeDiscoverAgentState(ctx, info.FinalizeKey)
 
 		agentResult := ag.Result()
 		if agentResult != nil && agentResult.Success {
@@ -547,16 +612,23 @@ func (j *Job) checkFinalizeDiscoverCompletion(ctx context.Context) []jobs.WorkUn
 
 // transitionToFinalizeValidate moves to the validate phase.
 func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit {
-	j.Book.FinalizePhase = FinalizePhaseValidate
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Set phase and persist for crash recovery
+	j.Book.SetFinalizePhase(FinalizePhaseValidate)
+	if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseValidate); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseValidate, "error", err)
+		}
+	}
 
 	// Find gaps in page coverage
 	if err := j.findFinalizeGaps(ctx); err != nil {
-		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		if logger != nil {
 			logger.Warn("failed to find gaps", "error", err)
 		}
 	}
 
-	logger := svcctx.LoggerFrom(ctx)
 	if logger != nil {
 		logger.Info("transitioning to validate phase",
 			"book_id", j.Book.BookID,
@@ -678,6 +750,8 @@ func (j *Job) createFinalizeGapWorkUnits(ctx context.Context) []jobs.WorkUnit {
 
 // createGapInvestigatorWorkUnit creates a gap investigator agent work unit.
 func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.FinalizeGap) *jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
 	agentGap := &gap_investigator.GapInfo{
 		StartPage:      gap.StartPage,
 		EndPage:        gap.EndPage,
@@ -703,14 +777,57 @@ func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.Fin
 		}
 	}
 
-	ag := agents.NewGapInvestigatorAgent(ctx, agents.GapInvestigatorConfig{
-		Book:          j.Book,
-		SystemPrompt:  j.GetPrompt(gap_investigator.PromptKey),
-		Gap:           agentGap,
-		LinkedEntries: linkedEntries,
-		Debug:         j.Book.DebugAgents,
-		JobID:         j.RecordID,
-	})
+	var ag *agent.Agent
+
+	// Check for saved agent state (job resume case)
+	savedState := j.Book.GetAgentState(common.AgentTypeGapInvestigator, gap.Key)
+	if savedState != nil && !savedState.Complete {
+		// Resume existing agent
+		if logger != nil {
+			logger.Info("resuming gap investigator agent from saved state",
+				"agent_id", savedState.AgentID,
+				"gap_key", gap.Key,
+				"iteration", savedState.Iteration)
+		}
+
+		ag = agents.NewGapInvestigatorAgent(ctx, agents.GapInvestigatorConfig{
+			Book:          j.Book,
+			SystemPrompt:  j.GetPrompt(gap_investigator.PromptKey),
+			Gap:           agentGap,
+			LinkedEntries: linkedEntries,
+			Debug:         j.Book.DebugAgents,
+			JobID:         j.RecordID,
+		})
+
+		if err := ag.RestoreState(&agent.StateExport{
+			AgentID:          savedState.AgentID,
+			Iteration:        savedState.Iteration,
+			Complete:         savedState.Complete,
+			MessagesJSON:     savedState.MessagesJSON,
+			PendingToolCalls: savedState.PendingToolCalls,
+			ToolResults:      savedState.ToolResults,
+			ResultJSON:       savedState.ResultJSON,
+		}); err != nil {
+			if logger != nil {
+				logger.Warn("failed to restore gap investigator agent state, starting fresh",
+					"gap_key", gap.Key,
+					"error", err)
+			}
+			ag = nil
+		}
+	}
+
+	// Create fresh agent if not restored
+	if ag == nil {
+		ag = agents.NewGapInvestigatorAgent(ctx, agents.GapInvestigatorConfig{
+			Book:          j.Book,
+			SystemPrompt:  j.GetPrompt(gap_investigator.PromptKey),
+			Gap:           agentGap,
+			LinkedEntries: linkedEntries,
+			Debug:         j.Book.DebugAgents,
+			JobID:         j.RecordID,
+		})
+	}
 
 	j.FinalizeGapAgents[gap.Key] = ag
 
@@ -763,6 +880,11 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 	if result.ChatResult != nil {
 		ag.HandleLLMResult(result.ChatResult)
 
+		// Save agent state for resume capability
+		if err := j.saveFinalizeGapAgentState(ctx, info.FinalizeKey); err != nil && logger != nil {
+			logger.Warn("failed to save gap agent state", "gap_key", info.FinalizeKey, "error", err)
+		}
+
 		agentUnits := agents.ExecuteToolLoop(ctx, ag)
 		if len(agentUnits) > 0 {
 			return j.convertGapAgentUnits(agentUnits, info.FinalizeKey), nil
@@ -776,6 +898,9 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 				logger.Warn("failed to save agent log", "error", err)
 			}
 		}
+
+		// Clean up agent state
+		j.cleanupFinalizeGapAgentState(ctx, info.FinalizeKey)
 
 		agentResult := ag.Result()
 		if agentResult != nil && agentResult.Success {
@@ -818,13 +943,26 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	j.Book.FinalizePhase = FinalizePhaseDone
+	// Persist finalize phase before marking complete
+	j.Book.SetFinalizePhase(FinalizePhaseDone)
+	if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDone); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist finalize phase", "error", err)
+		}
+	}
+
 	j.Book.TocFinalize.Complete()
 	// Use sync write for completion to ensure state is persisted before continuing to structure
 	if err := common.PersistTocFinalizeStateSync(ctx, j.TocDocID, &j.Book.TocFinalize); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist finalize completion", "error", err)
 		}
+		// Roll back in-memory state to match database
+		j.Book.TocFinalize.Reset()
+		j.Book.TocFinalize.Start()
+		j.Book.SetFinalizePhase(FinalizePhaseValidate) // Set back to validate phase
+		// Don't continue to structure - return nil to let job retry later
+		return nil
 	}
 
 	if logger != nil {
@@ -1128,7 +1266,8 @@ func (j *Job) persistFinalizePatternResults(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal pattern analysis: %w", err)
 	}
 
-	sink.Send(defra.WriteOp{
+	// Use sync write for pattern results - this data is critical for restart
+	_, err = sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      j.Book.BookID,
 		Document: map[string]any{
@@ -1136,6 +1275,9 @@ func (j *Job) persistFinalizePatternResults(ctx context.Context) error {
 		},
 		Op: defra.OpUpdate,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to persist pattern results: %w", err)
+	}
 
 	return nil
 }
@@ -1259,7 +1401,8 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 
 		pageDocID := j.getPageDocID(result.ScanPage)
 		if pageDocID != "" {
-			sink.Send(defra.WriteOp{
+			// Use sync write for entry corrections - this is the result of LLM work
+			_, err := sink.SendSync(ctx, defra.WriteOp{
 				Collection: "TocEntry",
 				DocID:      result.EntryDocID,
 				Document: map[string]any{
@@ -1267,6 +1410,9 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 				},
 				Op: defra.OpUpdate,
 			})
+			if err != nil {
+				return fmt.Errorf("failed to correct entry %s: %w", result.EntryDocID, err)
+			}
 		}
 
 	case "flag_for_review":
@@ -1312,10 +1458,12 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
+	var errs []error
 	for i, entry := range entries {
 		newSortOrder := (i + 1) * 100
 		if entry.SortOrder != newSortOrder {
-			sink.Send(defra.WriteOp{
+			// Use sync write to ensure sort order is persisted correctly
+			_, err := sink.SendSync(ctx, defra.WriteOp{
 				Collection: "TocEntry",
 				DocID:      entry.DocID,
 				Document: map[string]any{
@@ -1323,15 +1471,22 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 				},
 				Op: defra.OpUpdate,
 			})
+			if err != nil {
+				errs = append(errs, fmt.Errorf("entry %s: %w", entry.DocID, err))
+			}
 		}
 	}
 
 	if logger := svcctx.LoggerFrom(ctx); logger != nil {
 		logger.Info("re-sorted ToC entries by page",
 			"toc_doc_id", j.TocDocID,
-			"entry_count", len(entries))
+			"entry_count", len(entries),
+			"errors", len(errs))
 	}
 
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to resort %d entries: %v", len(errs), errs[0])
+	}
 	return nil
 }
 
@@ -1433,4 +1588,126 @@ func (j *Job) retryFinalizeGapUnit(ctx context.Context, info WorkUnitInfo) ([]jo
 	}
 
 	return nil, nil
+}
+
+// --- Finalize Agent State Persistence ---
+
+// saveFinalizeDiscoverAgentState saves a chapter finder agent state for resume capability.
+func (j *Job) saveFinalizeDiscoverAgentState(ctx context.Context, entryKey string) error {
+	ag, ok := j.FinalizeDiscoverAgents[entryKey]
+	if !ok || ag == nil {
+		return nil
+	}
+
+	exported, err := ag.ExportState()
+	if err != nil {
+		return err
+	}
+
+	existing := j.Book.GetAgentState(common.AgentTypeChapterFinder, entryKey)
+	var docID string
+	if existing != nil {
+		docID = existing.DocID
+	}
+
+	state := &common.AgentState{
+		AgentID:          exported.AgentID,
+		AgentType:        common.AgentTypeChapterFinder,
+		EntryDocID:       entryKey,
+		Iteration:        exported.Iteration,
+		Complete:         exported.Complete,
+		MessagesJSON:     exported.MessagesJSON,
+		PendingToolCalls: exported.PendingToolCalls,
+		ToolResults:      exported.ToolResults,
+		ResultJSON:       exported.ResultJSON,
+		DocID:            docID,
+	}
+
+	newDocID, err := common.PersistAgentState(ctx, j.Book.BookID, state)
+	if err != nil {
+		return err
+	}
+	state.DocID = newDocID
+	j.Book.SetAgentState(state)
+
+	return nil
+}
+
+// cleanupFinalizeDiscoverAgentState removes chapter finder agent state after completion.
+func (j *Job) cleanupFinalizeDiscoverAgentState(ctx context.Context, entryKey string) {
+	logger := svcctx.LoggerFrom(ctx)
+	existing := j.Book.GetAgentState(common.AgentTypeChapterFinder, entryKey)
+	if existing != nil && existing.DocID != "" {
+		if err := common.DeleteAgentState(ctx, existing.DocID); err != nil {
+			if logger != nil {
+				logger.Error("failed to delete agent state from DB, orphaned record remains",
+					"doc_id", existing.DocID,
+					"agent_type", common.AgentTypeChapterFinder,
+					"entry_key", entryKey,
+					"book_id", j.Book.BookID,
+					"error", err)
+			}
+		}
+	}
+	j.Book.RemoveAgentState(common.AgentTypeChapterFinder, entryKey)
+}
+
+// saveFinalizeGapAgentState saves a gap investigator agent state for resume capability.
+func (j *Job) saveFinalizeGapAgentState(ctx context.Context, gapKey string) error {
+	ag, ok := j.FinalizeGapAgents[gapKey]
+	if !ok || ag == nil {
+		return nil
+	}
+
+	exported, err := ag.ExportState()
+	if err != nil {
+		return err
+	}
+
+	existing := j.Book.GetAgentState(common.AgentTypeGapInvestigator, gapKey)
+	var docID string
+	if existing != nil {
+		docID = existing.DocID
+	}
+
+	state := &common.AgentState{
+		AgentID:          exported.AgentID,
+		AgentType:        common.AgentTypeGapInvestigator,
+		EntryDocID:       gapKey,
+		Iteration:        exported.Iteration,
+		Complete:         exported.Complete,
+		MessagesJSON:     exported.MessagesJSON,
+		PendingToolCalls: exported.PendingToolCalls,
+		ToolResults:      exported.ToolResults,
+		ResultJSON:       exported.ResultJSON,
+		DocID:            docID,
+	}
+
+	newDocID, err := common.PersistAgentState(ctx, j.Book.BookID, state)
+	if err != nil {
+		return err
+	}
+	state.DocID = newDocID
+	j.Book.SetAgentState(state)
+
+	return nil
+}
+
+// cleanupFinalizeGapAgentState removes gap investigator agent state after completion.
+func (j *Job) cleanupFinalizeGapAgentState(ctx context.Context, gapKey string) {
+	logger := svcctx.LoggerFrom(ctx)
+	existing := j.Book.GetAgentState(common.AgentTypeGapInvestigator, gapKey)
+	if existing != nil && existing.DocID != "" {
+		if err := common.DeleteAgentState(ctx, existing.DocID); err != nil {
+			if logger != nil {
+				logger.Error("failed to delete agent state from DB, orphaned record remains",
+					"doc_id", existing.DocID,
+					"agent_type", common.AgentTypeGapInvestigator,
+					"gap_key", gapKey,
+					"book_id", j.Book.BookID,
+					"error", err)
+			}
+		}
+	}
+	j.Book.RemoveAgentState(common.AgentTypeGapInvestigator, gapKey)
 }

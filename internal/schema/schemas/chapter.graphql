@@ -1,9 +1,13 @@
 type Chapter {
     # Many-to-one: Chapter belongs to Book
     book: Book
+    # Direct book_id for efficient filtering (denormalized for query performance)
+    book_id: String @index
 
     # Optional link to source ToC entry
     toc_entry: TocEntry
+    # Direct toc_entry_id for efficient filtering
+    toc_entry_id: String
 
     # Unique key for upsert support (preserves DocID/CID history on re-run)
     # Format: "{book_id}:{toc_entry_id}" or "{book_id}:orphan:{sort_order}"

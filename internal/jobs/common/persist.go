@@ -203,13 +203,16 @@ func PersistAgentState(ctx context.Context, bookID string, state *AgentState) (s
 	}
 
 	if state.DocID != "" {
-		// Update existing
-		sink.Send(defra.WriteOp{
+		// Update existing - use sync since agent state is critical for crash recovery
+		_, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "AgentState",
 			DocID:      state.DocID,
 			Document:   doc,
 			Op:         defra.OpUpdate,
 		})
+		if err != nil {
+			return "", fmt.Errorf("failed to update agent state: %w", err)
+		}
 		return state.DocID, nil
 	}
 
@@ -372,6 +375,52 @@ func PersistStructurePhaseSync(ctx context.Context, book *BookState) error {
 			"structure_chapters_extracted": extracted,
 			"structure_chapters_polished":  polished,
 			"structure_polish_failed":      failed,
+		},
+		Op: defra.OpUpdate,
+	})
+}
+
+// PersistFinalizePhase persists finalize phase tracking to ToC.
+func PersistFinalizePhase(ctx context.Context, tocDocID string, phase string) error {
+	if tocDocID == "" {
+		return nil
+	}
+	return SendToSink(ctx, defra.WriteOp{
+		Collection: "ToC",
+		DocID:      tocDocID,
+		Document: map[string]any{
+			"finalize_phase": phase,
+		},
+		Op: defra.OpUpdate,
+	})
+}
+
+// PersistFinalizePhaseSync persists finalize phase tracking to ToC and waits for confirmation.
+func PersistFinalizePhaseSync(ctx context.Context, tocDocID string, phase string) error {
+	if tocDocID == "" {
+		return nil
+	}
+	return SendToSinkSync(ctx, defra.WriteOp{
+		Collection: "ToC",
+		DocID:      tocDocID,
+		Document: map[string]any{
+			"finalize_phase": phase,
+		},
+		Op: defra.OpUpdate,
+	})
+}
+
+// PersistFinalizeProgress persists finalize progress counters to Book.
+func PersistFinalizeProgress(ctx context.Context, book *BookState) error {
+	entriesComplete, entriesFound, gapsComplete, gapsFixes := book.GetFinalizeProgress()
+	return SendToSink(ctx, defra.WriteOp{
+		Collection: "Book",
+		DocID:      book.BookID,
+		Document: map[string]any{
+			"finalize_entries_complete": entriesComplete,
+			"finalize_entries_found":    entriesFound,
+			"finalize_gaps_complete":    gapsComplete,
+			"finalize_gaps_fixes":       gapsFixes,
 		},
 		Op: defra.OpUpdate,
 	})

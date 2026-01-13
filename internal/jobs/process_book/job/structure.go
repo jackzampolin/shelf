@@ -343,7 +343,7 @@ func (j *Job) extractChapterPages(startPage, endPage int) []common.PageText {
 	return pageTexts
 }
 
-// persistExtractResults saves extract results to DefraDB.
+// persistExtractResults saves extract results to DefraDB using synchronous writes.
 func (j *Job) persistExtractResults(ctx context.Context) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
@@ -351,22 +351,31 @@ func (j *Job) persistExtractResults(ctx context.Context) error {
 	}
 
 	chapters := j.Book.GetStructureChapters()
+	var errs []error
+
 	for _, chapter := range chapters {
 		if chapter.DocID == "" || !chapter.ExtractDone {
 			continue
 		}
 
-		sink.Send(defra.WriteOp{
+		_, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "Chapter",
 			DocID:      chapter.DocID,
 			Document: map[string]any{
-				"mechanical_text": chapter.MechanicalText,
-				"word_count":      chapter.WordCount,
+				"mechanical_text":  chapter.MechanicalText,
+				"word_count":       chapter.WordCount,
+				"extract_complete": true,
 			},
 			Op: defra.OpUpdate,
 		})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("chapter %s: %w", chapter.EntryID, err))
+		}
 	}
 
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to persist %d extract results: %v", len(errs), errs[0])
+	}
 	return nil
 }
 
@@ -550,7 +559,7 @@ func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.Wo
 	return nil
 }
 
-// persistClassifyResults persists classification results to DefraDB.
+// persistClassifyResults persists classification results to DefraDB using synchronous writes.
 func (j *Job) persistClassifyResults(ctx context.Context) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
@@ -558,6 +567,8 @@ func (j *Job) persistClassifyResults(ctx context.Context) error {
 	}
 
 	chapters := j.Book.GetStructureChapters()
+	var errs []error
+
 	for _, chapter := range chapters {
 		if chapter.DocID == "" {
 			continue
@@ -570,14 +581,20 @@ func (j *Job) persistClassifyResults(ctx context.Context) error {
 			doc["classification_reasoning"] = chapter.ClassifyReasoning
 		}
 
-		sink.Send(defra.WriteOp{
+		_, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "Chapter",
 			DocID:      chapter.DocID,
 			Document:   doc,
 			Op:         defra.OpUpdate,
 		})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("chapter %s: %w", chapter.EntryID, err))
+		}
 	}
 
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to persist %d classify results: %v", len(errs), errs[0])
+	}
 	return nil
 }
 
@@ -802,7 +819,7 @@ func (j *Job) allStructurePolishDone() bool {
 	return true
 }
 
-// persistPolishResults saves polish results to DefraDB.
+// persistPolishResults saves polish results to DefraDB using synchronous writes.
 func (j *Job) persistPolishResults(ctx context.Context) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
@@ -810,6 +827,8 @@ func (j *Job) persistPolishResults(ctx context.Context) error {
 	}
 
 	chapters := j.Book.GetStructureChapters()
+	var errs []error
+
 	for _, chapter := range chapters {
 		if chapter.DocID == "" || !chapter.PolishDone {
 			continue
@@ -822,14 +841,20 @@ func (j *Job) persistPolishResults(ctx context.Context) error {
 			"polish_failed":   chapter.PolishFailed,
 		}
 
-		sink.Send(defra.WriteOp{
+		_, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "Chapter",
 			DocID:      chapter.DocID,
 			Document:   doc,
 			Op:         defra.OpUpdate,
 		})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("chapter %s: %w", chapter.EntryID, err))
+		}
 	}
 
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to persist %d polish results: %v", len(errs), errs[0])
+	}
 	return nil
 }
 
@@ -838,13 +863,15 @@ func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, erro
 	logger := svcctx.LoggerFrom(ctx)
 
 	j.Book.SetStructurePhase(StructPhaseFinalize)
-	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
+	// Use sync write for phase transition to ensure crash recovery works correctly
+	if err := common.PersistStructurePhaseSync(ctx, j.Book); err != nil {
 		if logger != nil {
-			logger.Error("failed to persist structure phase, crash recovery may resume from wrong state",
+			logger.Error("failed to persist structure phase",
 				"phase", StructPhaseFinalize,
 				"book_id", j.Book.BookID,
 				"error", err)
 		}
+		// Continue with finalization despite phase persist failure - the data is more important
 	}
 
 	// Finalize - create paragraphs, update book status
@@ -861,6 +888,11 @@ func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, erro
 		if logger != nil {
 			logger.Error("failed to persist structure completion", "error", err)
 		}
+		// Roll back in-memory state to match database - completion wasn't persisted
+		j.Book.Structure.Reset()
+		j.Book.Structure.Start()
+		j.Book.SetStructurePhase(StructPhaseFinalize) // Keep phase to indicate we were in finalize
+		return nil, fmt.Errorf("structure completed but failed to persist: %w", err)
 	}
 
 	chapters := j.Book.GetStructureChapters()
@@ -876,15 +908,20 @@ func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, erro
 	return nil, nil
 }
 
-// finalizeStructure persists final structure data.
+// finalizeStructure persists final structure data using synchronous writes.
 func (j *Job) finalizeStructure(ctx context.Context) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	// Mark book structure as complete
-	sink.Send(defra.WriteOp{
+	// Persist all polish results synchronously before marking complete
+	if err := j.persistPolishResults(ctx); err != nil {
+		return fmt.Errorf("failed to persist polish results: %w", err)
+	}
+
+	// Mark book structure as complete using sync write
+	_, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      j.Book.BookID,
 		Document: map[string]any{
@@ -892,6 +929,9 @@ func (j *Job) finalizeStructure(ctx context.Context) error {
 		},
 		Op: defra.OpUpdate,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to mark structure complete: %w", err)
+	}
 
 	return nil
 }

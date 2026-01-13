@@ -184,6 +184,24 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 		logger.Debug("LoadBook: loaded agent states", "book_id", bookID, "count", len(book.AgentStates))
 	}
 
+	// 9. Load finalize state if finalize is in progress (for crash recovery)
+	if book.TocFinalize.IsStarted() && !book.TocFinalize.IsDone() {
+		if err := LoadFinalizeState(ctx, book, tocDocID); err != nil {
+			if logger != nil {
+				logger.Warn("failed to load finalize state", "book_id", bookID, "error", err)
+			}
+		}
+	}
+
+	// 10. Load structure chapters if structure is in progress (for crash recovery)
+	if book.Structure.IsStarted() && !book.Structure.IsDone() {
+		if err := LoadStructureChapters(ctx, book); err != nil {
+			if logger != nil {
+				logger.Warn("failed to load structure chapters", "book_id", bookID, "error", err)
+			}
+		}
+	}
+
 	if logger != nil {
 		logger.Info("LoadBook: complete",
 			"book_id", bookID,
@@ -783,6 +801,257 @@ func LoadAgentStates(ctx context.Context, book *BookState) error {
 		logger.Debug("LoadAgentStates: loaded states",
 			"book_id", book.BookID,
 			"count", len(book.AgentStates))
+	}
+
+	return nil
+}
+
+// LoadFinalizeState loads finalize phase state from DefraDB.
+// This includes the finalize phase from ToC and pattern analysis results from Book.
+func LoadFinalizeState(ctx context.Context, book *BookState, tocDocID string) error {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Load finalize phase from ToC
+	if tocDocID != "" {
+		tocQuery := fmt.Sprintf(`{
+			ToC(filter: {_docID: {_eq: "%s"}}) {
+				finalize_phase
+			}
+		}`, tocDocID)
+
+		tocResp, err := defraClient.Execute(ctx, tocQuery, nil)
+		if err != nil {
+			return fmt.Errorf("failed to query ToC for finalize phase: %w", err)
+		}
+
+		if tocs, ok := tocResp.Data["ToC"].([]any); ok && len(tocs) > 0 {
+			if tocData, ok := tocs[0].(map[string]any); ok {
+				if phase, ok := tocData["finalize_phase"].(string); ok && phase != "" {
+					book.SetFinalizePhase(phase)
+				}
+			}
+		}
+	}
+
+	// Load pattern analysis results and progress from Book
+	bookQuery := fmt.Sprintf(`{
+		Book(filter: {_docID: {_eq: "%s"}}) {
+			pattern_analysis_json
+			finalize_entries_complete
+			finalize_entries_found
+			finalize_gaps_complete
+			finalize_gaps_fixes
+		}
+	}`, book.BookID)
+
+	bookResp, err := defraClient.Execute(ctx, bookQuery, nil)
+	if err != nil {
+		return fmt.Errorf("failed to query Book for finalize state: %w", err)
+	}
+
+	if books, ok := bookResp.Data["Book"].([]any); ok && len(books) > 0 {
+		if bookData, ok := books[0].(map[string]any); ok {
+			// Load pattern analysis JSON
+			if paJSON, ok := bookData["pattern_analysis_json"].(string); ok && paJSON != "" {
+				var data struct {
+					Patterns      []DiscoveredPattern `json:"patterns"`
+					Excluded      []ExcludedRange     `json:"excluded_ranges"`
+					EntriesToFind []*EntryToFind      `json:"entries_to_find"`
+					Reasoning     string              `json:"reasoning"`
+				}
+				if err := json.Unmarshal([]byte(paJSON), &data); err == nil {
+					book.SetFinalizePatternResult(&FinalizePatternResult{
+						Patterns:  data.Patterns,
+						Excluded:  data.Excluded,
+						Reasoning: data.Reasoning,
+					})
+					book.SetEntriesToFind(data.EntriesToFind)
+				} else if logger != nil {
+					logger.Warn("failed to unmarshal pattern_analysis_json", "error", err)
+				}
+			}
+
+			// Load progress counters
+			var entriesComplete, entriesFound, gapsComplete, gapsFixes int
+			if ec, ok := bookData["finalize_entries_complete"].(float64); ok {
+				entriesComplete = int(ec)
+			}
+			if ef, ok := bookData["finalize_entries_found"].(float64); ok {
+				entriesFound = int(ef)
+			}
+			if gc, ok := bookData["finalize_gaps_complete"].(float64); ok {
+				gapsComplete = int(gc)
+			}
+			if gf, ok := bookData["finalize_gaps_fixes"].(float64); ok {
+				gapsFixes = int(gf)
+			}
+			book.SetFinalizeProgress(entriesComplete, entriesFound, gapsComplete, gapsFixes)
+		}
+	}
+
+	if logger != nil {
+		logger.Debug("LoadFinalizeState: loaded finalize state",
+			"book_id", book.BookID,
+			"phase", book.GetFinalizePhase(),
+			"has_pattern_result", book.GetFinalizePatternResult() != nil)
+	}
+
+	return nil
+}
+
+// LoadStructureChapters loads all Chapter records for a book from DefraDB.
+// This populates book.StructureChapters for crash recovery during structure phase.
+func LoadStructureChapters(ctx context.Context, book *BookState) error {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	query := fmt.Sprintf(`{
+		Chapter(filter: {book_id: {_eq: "%s"}}, order: {sort_order: ASC}) {
+			_docID
+			unique_key
+			entry_id
+			sort_order
+			title
+			level
+			level_name
+			entry_number
+			start_page
+			end_page
+			parent_id
+			source
+			toc_entry_id
+			matter_type
+			classification_reasoning
+			mechanical_text
+			polished_text
+			word_count
+			extract_complete
+			polish_complete
+			polish_failed
+			polish_retries
+		}
+	}`, book.BookID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return fmt.Errorf("failed to query chapters: %w", err)
+	}
+
+	rawChapters, ok := resp.Data["Chapter"].([]any)
+	if !ok || len(rawChapters) == 0 {
+		if logger != nil {
+			logger.Debug("LoadStructureChapters: no chapters found", "book_id", book.BookID)
+		}
+		return nil
+	}
+
+	var chapters []*ChapterState
+	for _, c := range rawChapters {
+		data, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		chapter := &ChapterState{}
+
+		if docID, ok := data["_docID"].(string); ok {
+			chapter.DocID = docID
+		}
+		if uniqueKey, ok := data["unique_key"].(string); ok {
+			chapter.UniqueKey = uniqueKey
+		}
+		if entryID, ok := data["entry_id"].(string); ok {
+			chapter.EntryID = entryID
+		}
+		if sortOrder, ok := data["sort_order"].(float64); ok {
+			chapter.SortOrder = int(sortOrder)
+		}
+		if title, ok := data["title"].(string); ok {
+			chapter.Title = title
+		}
+		if level, ok := data["level"].(float64); ok {
+			chapter.Level = int(level)
+		}
+		if levelName, ok := data["level_name"].(string); ok {
+			chapter.LevelName = levelName
+		}
+		if entryNumber, ok := data["entry_number"].(string); ok {
+			chapter.EntryNumber = entryNumber
+		}
+		if startPage, ok := data["start_page"].(float64); ok {
+			chapter.StartPage = int(startPage)
+		}
+		if endPage, ok := data["end_page"].(float64); ok {
+			chapter.EndPage = int(endPage)
+		}
+		if parentID, ok := data["parent_id"].(string); ok {
+			chapter.ParentID = parentID
+		}
+		if source, ok := data["source"].(string); ok {
+			chapter.Source = source
+		}
+		if tocEntryID, ok := data["toc_entry_id"].(string); ok {
+			chapter.TocEntryID = tocEntryID
+		}
+		if matterType, ok := data["matter_type"].(string); ok {
+			chapter.MatterType = matterType
+		}
+		if reasoning, ok := data["classification_reasoning"].(string); ok {
+			chapter.ClassifyReasoning = reasoning
+		}
+		if mechText, ok := data["mechanical_text"].(string); ok {
+			chapter.MechanicalText = mechText
+		}
+		if polText, ok := data["polished_text"].(string); ok {
+			chapter.PolishedText = polText
+		}
+		if wordCount, ok := data["word_count"].(float64); ok {
+			chapter.WordCount = int(wordCount)
+		}
+		if extractDone, ok := data["extract_complete"].(bool); ok {
+			chapter.ExtractDone = extractDone
+		}
+		if polishDone, ok := data["polish_complete"].(bool); ok {
+			chapter.PolishDone = polishDone
+		}
+		if polishFailed, ok := data["polish_failed"].(bool); ok {
+			chapter.PolishFailed = polishFailed
+		}
+
+		if chapter.DocID != "" {
+			chapters = append(chapters, chapter)
+		}
+	}
+
+	book.SetStructureChapters(chapters)
+
+	// Also rebuild the classifications map from chapters
+	classifications := make(map[string]string)
+	reasonings := make(map[string]string)
+	for _, ch := range chapters {
+		if ch.MatterType != "" {
+			classifications[ch.EntryID] = ch.MatterType
+		}
+		if ch.ClassifyReasoning != "" {
+			reasonings[ch.EntryID] = ch.ClassifyReasoning
+		}
+	}
+	book.SetStructureClassifications(classifications)
+	book.SetStructureClassifyReasonings(reasonings)
+
+	if logger != nil {
+		logger.Debug("LoadStructureChapters: loaded chapters",
+			"book_id", book.BookID,
+			"count", len(chapters))
 	}
 
 	return nil
