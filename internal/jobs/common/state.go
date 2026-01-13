@@ -441,70 +441,70 @@ type BookState struct {
 	Prompts    map[string]string // prompt_key -> resolved text
 	PromptCIDs map[string]string // prompt_key -> CID for traceability
 
-	// Book-level operation state (mutable - use accessor methods)
-	Metadata        OperationState
-	TocFinder       OperationState
-	TocExtract      OperationState
-	PatternAnalysis OperationState
-	TocLink         OperationState
-	TocFinalize     OperationState
-	Structure       OperationState
+	// Book-level operation state (mutable - unexported, use accessor methods)
+	metadata        OperationState
+	tocFinder       OperationState
+	tocExtract      OperationState
+	patternAnalysis OperationState
+	tocLink         OperationState
+	tocFinalize     OperationState
+	structure       OperationState
 
-	// Structure phase tracking (mutable - use accessor methods)
+	// Structure phase tracking (mutable - unexported, use accessor methods)
 	// Phases: build -> extract -> classify -> polish -> finalize
-	StructurePhase             string
-	StructureChaptersTotal     int
-	StructureChaptersExtracted int
-	StructureChaptersPolished  int
-	StructurePolishFailed      int
+	structurePhase             string
+	structureChaptersTotal     int
+	structureChaptersExtracted int
+	structureChaptersPolished  int
+	structurePolishFailed      int
 
-	// Structure sub-job state (mutable - use accessor methods)
-	StructureChapters           []*ChapterState
-	StructureClassifications    map[string]string // entry_id -> matter_type
-	StructureClassifyReasonings map[string]string // entry_id -> reasoning
-	StructureClassifyPending    bool
+	// Structure sub-job state (mutable - unexported, use accessor methods)
+	structureChapters           []*ChapterState
+	structureClassifications    map[string]string // entry_id -> matter_type
+	structureClassifyReasonings map[string]string // entry_id -> reasoning
+	structureClassifyPending    bool
 
-	// Finalize ToC sub-job state (mutable - use accessor methods)
-	FinalizePhase           string
-	FinalizePatternResult   *FinalizePatternResult
-	FinalizePagePatternCtx  *PagePatternContext // Body boundaries and chapter patterns for finalize
-	EntriesToFind           []*EntryToFind
-	FinalizeEntriesComplete int
-	FinalizeEntriesFound    int
-	FinalizeGaps            []*FinalizeGap
-	FinalizeGapsComplete    int
-	FinalizeGapsFixes       int
+	// Finalize ToC sub-job state (mutable - unexported, use accessor methods)
+	finalizePhase           string
+	finalizePatternResult   *FinalizePatternResult
+	finalizePagePatternCtx  *PagePatternContext // Body boundaries and chapter patterns for finalize
+	entriesToFind           []*EntryToFind
+	finalizeEntriesComplete int
+	finalizeEntriesFound    int
+	finalizeGaps            []*FinalizeGap
+	finalizeGapsComplete    int
+	finalizeGapsFixes       int
 
-	// ToC finder results (mutable - use accessor methods)
-	TocFound     bool
-	TocStartPage int
-	TocEndPage   int
+	// ToC finder results (mutable - unexported, use accessor methods)
+	tocFound     bool
+	tocStartPage int
+	tocEndPage   int
 
-	// ToC entries loaded from DB (immutable after LoadBook when ToC extraction is complete)
-	TocEntries []*toc_entry_finder.TocEntry
+	// ToC entries loaded from DB (unexported, use accessor methods)
+	tocEntries []*toc_entry_finder.TocEntry
 
-	// Linked ToC entries with page associations (cached, loaded once when needed)
+	// Linked ToC entries with page associations (unexported, use accessor methods)
 	// Used by finalize_toc and common_structure phases
-	LinkedEntries []*LinkedTocEntry
+	linkedEntries []*LinkedTocEntry
 
-	// Pattern analysis results (set after pattern analysis completes)
-	PatternAnalysisResult *PagePatternResult
+	// Pattern analysis results (unexported, use accessor methods)
+	patternAnalysisResult *PagePatternResult
 
-	// Pattern analysis intermediate results (mutable - use accessor methods)
+	// Pattern analysis intermediate results (mutable - unexported, use accessor methods)
 	// These are populated during the 3-phase pattern analysis process:
 	//   Phase 1: PageNumberPattern and ChapterPatterns are set independently
 	//   Phase 2: Both are used to create the boundaries work unit
 	//   Phase 3: All three are aggregated into PatternAnalysisResult
-	PageNumberPattern *page_pattern_analyzer.PageNumberPattern
-	ChapterPatterns   []page_pattern_analyzer.ChapterPattern
+	pageNumberPattern *page_pattern_analyzer.PageNumberPattern
+	chapterPatterns   []page_pattern_analyzer.ChapterPattern
 
 	// Body page range (set during finalize phase)
-	BodyStart int
-	BodyEnd   int
+	bodyStart int
+	bodyEnd   int
 
-	// Agent states for job resume (mutable - use accessor methods)
+	// Agent states for job resume (mutable - unexported, use accessor methods)
 	// Key format: "agent_type" for single agents, "agent_type:entry_doc_id" for per-entry agents
-	AgentStates map[string]*AgentState
+	agentStates map[string]*AgentState
 }
 
 // NewBookState creates a new BookState with initialized maps.
@@ -515,9 +515,9 @@ func NewBookState(bookID string) *BookState {
 		Pages:                       make(map[int]*PageState),
 		Prompts:                     make(map[string]string),
 		PromptCIDs:                  make(map[string]string),
-		AgentStates:                 make(map[string]*AgentState),
-		StructureClassifications:    make(map[string]string),
-		StructureClassifyReasonings: make(map[string]string),
+		agentStates:                 make(map[string]*AgentState),
+		structureClassifications:    make(map[string]string),
+		structureClassifyReasonings: make(map[string]string),
 	}
 }
 
@@ -683,14 +683,14 @@ func (b *BookState) GetProviderProgress() map[string]ProviderProgress {
 func (b *BookState) GetTocFound() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocFound
+	return b.tocFound
 }
 
 // SetTocFound sets whether a ToC was found (thread-safe).
 func (b *BookState) SetTocFound(found bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.TocFound = found
+	b.tocFound = found
 }
 
 // GetTocPageRange returns the ToC page range (thread-safe).
@@ -698,24 +698,24 @@ func (b *BookState) SetTocFound(found bool) {
 func (b *BookState) GetTocPageRange() (int, int) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocStartPage, b.TocEndPage
+	return b.tocStartPage, b.tocEndPage
 }
 
 // SetTocPageRange sets the ToC page range (thread-safe).
 func (b *BookState) SetTocPageRange(startPage, endPage int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.TocStartPage = startPage
-	b.TocEndPage = endPage
+	b.tocStartPage = startPage
+	b.tocEndPage = endPage
 }
 
 // SetTocResult sets all ToC finder results atomically (thread-safe).
 func (b *BookState) SetTocResult(found bool, startPage, endPage int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.TocFound = found
-	b.TocStartPage = startPage
-	b.TocEndPage = endPage
+	b.tocFound = found
+	b.tocStartPage = startPage
+	b.tocEndPage = endPage
 }
 
 // --- Thread-safe accessors for Prompts ---
@@ -741,11 +741,11 @@ func (b *BookState) GetPromptCID(key string) string {
 func (b *BookState) GetTocEntries() []*toc_entry_finder.TocEntry {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	if b.TocEntries == nil {
+	if b.tocEntries == nil {
 		return nil
 	}
-	result := make([]*toc_entry_finder.TocEntry, len(b.TocEntries))
-	copy(result, b.TocEntries)
+	result := make([]*toc_entry_finder.TocEntry, len(b.tocEntries))
+	copy(result, b.tocEntries)
 	return result
 }
 
@@ -753,7 +753,7 @@ func (b *BookState) GetTocEntries() []*toc_entry_finder.TocEntry {
 func (b *BookState) SetTocEntries(entries []*toc_entry_finder.TocEntry) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.TocEntries = entries
+	b.tocEntries = entries
 }
 
 // GetUnlinkedTocEntries returns only entries without actual_page linked.
@@ -763,11 +763,11 @@ func (b *BookState) GetUnlinkedTocEntries() []*toc_entry_finder.TocEntry {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	// TocEntries are already filtered to unlinked during load
-	if b.TocEntries == nil {
+	if b.tocEntries == nil {
 		return nil
 	}
-	result := make([]*toc_entry_finder.TocEntry, len(b.TocEntries))
-	copy(result, b.TocEntries)
+	result := make([]*toc_entry_finder.TocEntry, len(b.tocEntries))
+	copy(result, b.tocEntries)
 	return result
 }
 
@@ -778,11 +778,11 @@ func (b *BookState) GetUnlinkedTocEntries() []*toc_entry_finder.TocEntry {
 func (b *BookState) GetLinkedEntries() []*LinkedTocEntry {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	if b.LinkedEntries == nil {
+	if b.linkedEntries == nil {
 		return nil
 	}
-	result := make([]*LinkedTocEntry, len(b.LinkedEntries))
-	copy(result, b.LinkedEntries)
+	result := make([]*LinkedTocEntry, len(b.linkedEntries))
+	copy(result, b.linkedEntries)
 	return result
 }
 
@@ -790,35 +790,35 @@ func (b *BookState) GetLinkedEntries() []*LinkedTocEntry {
 func (b *BookState) SetLinkedEntries(entries []*LinkedTocEntry) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.LinkedEntries = entries
+	b.linkedEntries = entries
 }
 
 // HasLinkedEntries returns true if linked entries are cached (thread-safe).
 func (b *BookState) HasLinkedEntries() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.LinkedEntries != nil
+	return b.linkedEntries != nil
 }
 
 // SetPageNumberPattern sets the page number pattern (thread-safe).
 func (b *BookState) SetPageNumberPattern(pattern *page_pattern_analyzer.PageNumberPattern) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.PageNumberPattern = pattern
+	b.pageNumberPattern = pattern
 }
 
 // GetPageNumberPattern gets the page number pattern (thread-safe).
 func (b *BookState) GetPageNumberPattern() *page_pattern_analyzer.PageNumberPattern {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.PageNumberPattern
+	return b.pageNumberPattern
 }
 
 // SetChapterPatterns sets the chapter patterns (thread-safe).
 func (b *BookState) SetChapterPatterns(patterns []page_pattern_analyzer.ChapterPattern) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.ChapterPatterns = patterns
+	b.chapterPatterns = patterns
 }
 
 // GetChapterPatterns gets the chapter patterns (thread-safe).
@@ -826,11 +826,11 @@ func (b *BookState) SetChapterPatterns(patterns []page_pattern_analyzer.ChapterP
 func (b *BookState) GetChapterPatterns() []page_pattern_analyzer.ChapterPattern {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	if b.ChapterPatterns == nil {
+	if b.chapterPatterns == nil {
 		return nil
 	}
-	result := make([]page_pattern_analyzer.ChapterPattern, len(b.ChapterPatterns))
-	copy(result, b.ChapterPatterns)
+	result := make([]page_pattern_analyzer.ChapterPattern, len(b.chapterPatterns))
+	copy(result, b.chapterPatterns)
 	return result
 }
 
@@ -838,45 +838,45 @@ func (b *BookState) GetChapterPatterns() []page_pattern_analyzer.ChapterPattern 
 func (b *BookState) SetStructurePhase(phase string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.StructurePhase = phase
+	b.structurePhase = phase
 }
 
 // GetStructurePhase gets the current structure processing phase (thread-safe).
 func (b *BookState) GetStructurePhase() string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.StructurePhase
+	return b.structurePhase
 }
 
 // SetStructureProgress sets the structure progress counters (thread-safe).
 func (b *BookState) SetStructureProgress(total, extracted, polished, failed int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.StructureChaptersTotal = total
-	b.StructureChaptersExtracted = extracted
-	b.StructureChaptersPolished = polished
-	b.StructurePolishFailed = failed
+	b.structureChaptersTotal = total
+	b.structureChaptersExtracted = extracted
+	b.structureChaptersPolished = polished
+	b.structurePolishFailed = failed
 }
 
 // GetStructureProgress gets the structure progress counters (thread-safe).
 func (b *BookState) GetStructureProgress() (total, extracted, polished, failed int) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.StructureChaptersTotal, b.StructureChaptersExtracted, b.StructureChaptersPolished, b.StructurePolishFailed
+	return b.structureChaptersTotal, b.structureChaptersExtracted, b.structureChaptersPolished, b.structurePolishFailed
 }
 
 // IncrementStructurePolished increments the polished counter (thread-safe).
 func (b *BookState) IncrementStructurePolished() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.StructureChaptersPolished++
+	b.structureChaptersPolished++
 }
 
 // IncrementStructurePolishFailed increments the polish failed counter (thread-safe).
 func (b *BookState) IncrementStructurePolishFailed() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.StructurePolishFailed++
+	b.structurePolishFailed++
 }
 
 // --- Agent State Management ---
@@ -961,7 +961,7 @@ func (b *BookState) GetAgentState(agentType string, entryDocID string) *AgentSta
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	key := AgentStateKey(agentType, entryDocID)
-	return b.AgentStates[key]
+	return b.agentStates[key]
 }
 
 // SetAgentState stores agent state (thread-safe).
@@ -969,7 +969,7 @@ func (b *BookState) SetAgentState(state *AgentState) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	key := AgentStateKey(state.AgentType, state.EntryDocID)
-	b.AgentStates[key] = state
+	b.agentStates[key] = state
 }
 
 // RemoveAgentState removes agent state (thread-safe).
@@ -977,15 +977,15 @@ func (b *BookState) RemoveAgentState(agentType string, entryDocID string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	key := AgentStateKey(agentType, entryDocID)
-	delete(b.AgentStates, key)
+	delete(b.agentStates, key)
 }
 
 // GetAllAgentStates returns all agent states (thread-safe, returns a copy of keys).
 func (b *BookState) GetAllAgentStates() []*AgentState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	states := make([]*AgentState, 0, len(b.AgentStates))
-	for _, state := range b.AgentStates {
+	states := make([]*AgentState, 0, len(b.agentStates))
+	for _, state := range b.agentStates {
 		states = append(states, state)
 	}
 	return states
@@ -996,10 +996,10 @@ func (b *BookState) GetAllAgentStates() []*AgentState {
 func (b *BookState) ClearAgentStates(agentType string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for key := range b.AgentStates {
+	for key := range b.agentStates {
 		// Match exact type or type:suffix for per-entry agents
 		if key == agentType || strings.HasPrefix(key, agentType+":") {
-			delete(b.AgentStates, key)
+			delete(b.agentStates, key)
 		}
 	}
 }
@@ -1073,28 +1073,28 @@ type FinalizeState struct {
 func (b *BookState) GetFinalizePhase() string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.FinalizePhase
+	return b.finalizePhase
 }
 
 // SetFinalizePhase sets the current finalize phase (thread-safe).
 func (b *BookState) SetFinalizePhase(phase string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.FinalizePhase = phase
+	b.finalizePhase = phase
 }
 
 // GetFinalizePatternResult returns the finalize pattern result (thread-safe).
 func (b *BookState) GetFinalizePatternResult() *FinalizePatternResult {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.FinalizePatternResult
+	return b.finalizePatternResult
 }
 
 // SetFinalizePatternResult sets the finalize pattern result (thread-safe).
 func (b *BookState) SetFinalizePatternResult(result *FinalizePatternResult) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.FinalizePatternResult = result
+	b.finalizePatternResult = result
 }
 
 // GetEntriesToFind returns entries to find in discover phase (thread-safe).
@@ -1102,11 +1102,11 @@ func (b *BookState) SetFinalizePatternResult(result *FinalizePatternResult) {
 func (b *BookState) GetEntriesToFind() []*EntryToFind {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	if b.EntriesToFind == nil {
+	if b.entriesToFind == nil {
 		return nil
 	}
-	result := make([]*EntryToFind, len(b.EntriesToFind))
-	copy(result, b.EntriesToFind)
+	result := make([]*EntryToFind, len(b.entriesToFind))
+	copy(result, b.entriesToFind)
 	return result
 }
 
@@ -1114,21 +1114,21 @@ func (b *BookState) GetEntriesToFind() []*EntryToFind {
 func (b *BookState) SetEntriesToFind(entries []*EntryToFind) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.EntriesToFind = entries
+	b.entriesToFind = entries
 }
 
 // AppendEntryToFind adds an entry to find (thread-safe).
 func (b *BookState) AppendEntryToFind(entry *EntryToFind) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.EntriesToFind = append(b.EntriesToFind, entry)
+	b.entriesToFind = append(b.entriesToFind, entry)
 }
 
 // GetEntriesToFindCount returns the number of entries to find (thread-safe).
 func (b *BookState) GetEntriesToFindCount() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return len(b.EntriesToFind)
+	return len(b.entriesToFind)
 }
 
 // GetFinalizeGaps returns gaps to investigate (thread-safe).
@@ -1136,11 +1136,11 @@ func (b *BookState) GetEntriesToFindCount() int {
 func (b *BookState) GetFinalizeGaps() []*FinalizeGap {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	if b.FinalizeGaps == nil {
+	if b.finalizeGaps == nil {
 		return nil
 	}
-	result := make([]*FinalizeGap, len(b.FinalizeGaps))
-	copy(result, b.FinalizeGaps)
+	result := make([]*FinalizeGap, len(b.finalizeGaps))
+	copy(result, b.finalizeGaps)
 	return result
 }
 
@@ -1148,66 +1148,66 @@ func (b *BookState) GetFinalizeGaps() []*FinalizeGap {
 func (b *BookState) SetFinalizeGaps(gaps []*FinalizeGap) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.FinalizeGaps = gaps
+	b.finalizeGaps = gaps
 }
 
 // AppendFinalizeGap adds a gap to investigate (thread-safe).
 func (b *BookState) AppendFinalizeGap(gap *FinalizeGap) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.FinalizeGaps = append(b.FinalizeGaps, gap)
+	b.finalizeGaps = append(b.finalizeGaps, gap)
 }
 
 // GetFinalizeGapsCount returns the number of gaps to investigate (thread-safe).
 func (b *BookState) GetFinalizeGapsCount() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return len(b.FinalizeGaps)
+	return len(b.finalizeGaps)
 }
 
 // GetFinalizeProgress returns finalize progress counters (thread-safe).
 func (b *BookState) GetFinalizeProgress() (entriesComplete, entriesFound, gapsComplete, gapsFixes int) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.FinalizeEntriesComplete, b.FinalizeEntriesFound, b.FinalizeGapsComplete, b.FinalizeGapsFixes
+	return b.finalizeEntriesComplete, b.finalizeEntriesFound, b.finalizeGapsComplete, b.finalizeGapsFixes
 }
 
 // SetFinalizeProgress sets finalize progress counters (thread-safe).
 func (b *BookState) SetFinalizeProgress(entriesComplete, entriesFound, gapsComplete, gapsFixes int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.FinalizeEntriesComplete = entriesComplete
-	b.FinalizeEntriesFound = entriesFound
-	b.FinalizeGapsComplete = gapsComplete
-	b.FinalizeGapsFixes = gapsFixes
+	b.finalizeEntriesComplete = entriesComplete
+	b.finalizeEntriesFound = entriesFound
+	b.finalizeGapsComplete = gapsComplete
+	b.finalizeGapsFixes = gapsFixes
 }
 
 // IncrementFinalizeEntriesComplete increments entries complete (thread-safe).
 func (b *BookState) IncrementFinalizeEntriesComplete() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.FinalizeEntriesComplete++
+	b.finalizeEntriesComplete++
 }
 
 // IncrementFinalizeEntriesFound increments entries found (thread-safe).
 func (b *BookState) IncrementFinalizeEntriesFound() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.FinalizeEntriesFound++
+	b.finalizeEntriesFound++
 }
 
 // IncrementFinalizeGapsComplete increments gaps complete (thread-safe).
 func (b *BookState) IncrementFinalizeGapsComplete() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.FinalizeGapsComplete++
+	b.finalizeGapsComplete++
 }
 
 // IncrementFinalizeGapsFixes increments gaps fixed (thread-safe).
 func (b *BookState) IncrementFinalizeGapsFixes() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.FinalizeGapsFixes++
+	b.finalizeGapsFixes++
 }
 
 // --- Structure State Types ---
@@ -1296,11 +1296,11 @@ type StructureState struct {
 func (b *BookState) GetStructureChapters() []*ChapterState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	if b.StructureChapters == nil {
+	if b.structureChapters == nil {
 		return nil
 	}
-	result := make([]*ChapterState, len(b.StructureChapters))
-	copy(result, b.StructureChapters)
+	result := make([]*ChapterState, len(b.structureChapters))
+	copy(result, b.structureChapters)
 	return result
 }
 
@@ -1308,7 +1308,7 @@ func (b *BookState) GetStructureChapters() []*ChapterState {
 func (b *BookState) SetStructureChapters(chapters []*ChapterState) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.StructureChapters = chapters
+	b.structureChapters = chapters
 }
 
 // GetStructureClassifications returns the matter classifications (thread-safe).
@@ -1316,11 +1316,11 @@ func (b *BookState) SetStructureChapters(chapters []*ChapterState) {
 func (b *BookState) GetStructureClassifications() map[string]string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	if b.StructureClassifications == nil {
+	if b.structureClassifications == nil {
 		return nil
 	}
-	result := make(map[string]string, len(b.StructureClassifications))
-	for k, v := range b.StructureClassifications {
+	result := make(map[string]string, len(b.structureClassifications))
+	for k, v := range b.structureClassifications {
 		result[k] = v
 	}
 	return result
@@ -1330,28 +1330,28 @@ func (b *BookState) GetStructureClassifications() map[string]string {
 func (b *BookState) SetStructureClassifications(classifications map[string]string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.StructureClassifications = classifications
+	b.structureClassifications = classifications
 }
 
 // GetStructureClassifyPending returns whether classification is pending (thread-safe).
 func (b *BookState) GetStructureClassifyPending() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.StructureClassifyPending
+	return b.structureClassifyPending
 }
 
 // SetStructureClassifyPending sets whether classification is pending (thread-safe).
 func (b *BookState) SetStructureClassifyPending(pending bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.StructureClassifyPending = pending
+	b.structureClassifyPending = pending
 }
 
 // GetChapterByEntryID returns a chapter by its entry ID (thread-safe).
 func (b *BookState) GetChapterByEntryID(entryID string) *ChapterState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	for _, ch := range b.StructureChapters {
+	for _, ch := range b.structureChapters {
 		if ch.EntryID == entryID {
 			return ch
 		}
@@ -1363,9 +1363,9 @@ func (b *BookState) GetChapterByEntryID(entryID string) *ChapterState {
 func (b *BookState) UpdateChapter(chapter *ChapterState) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for i, ch := range b.StructureChapters {
+	for i, ch := range b.structureChapters {
 		if ch.EntryID == chapter.EntryID {
-			b.StructureChapters[i] = chapter
+			b.structureChapters[i] = chapter
 			return
 		}
 	}
@@ -1396,14 +1396,14 @@ type DetectedChapter struct {
 func (b *BookState) GetFinalizePagePatternCtx() *PagePatternContext {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.FinalizePagePatternCtx
+	return b.finalizePagePatternCtx
 }
 
 // SetFinalizePagePatternCtx sets the page pattern context for finalize phase (thread-safe).
 func (b *BookState) SetFinalizePagePatternCtx(ctx *PagePatternContext) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.FinalizePagePatternCtx = ctx
+	b.finalizePagePatternCtx = ctx
 }
 
 // --- Structure Classification Reasonings ---
@@ -1412,14 +1412,14 @@ func (b *BookState) SetFinalizePagePatternCtx(ctx *PagePatternContext) {
 func (b *BookState) GetStructureClassifyReasonings() map[string]string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.StructureClassifyReasonings
+	return b.structureClassifyReasonings
 }
 
 // SetStructureClassifyReasonings sets the classification reasonings map (thread-safe).
 func (b *BookState) SetStructureClassifyReasonings(reasonings map[string]string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.StructureClassifyReasonings = reasonings
+	b.structureClassifyReasonings = reasonings
 }
 
 // --- Body Page Range Accessors ---
@@ -1428,29 +1428,29 @@ func (b *BookState) SetStructureClassifyReasonings(reasonings map[string]string)
 func (b *BookState) GetBodyRange() (start, end int) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.BodyStart, b.BodyEnd
+	return b.bodyStart, b.bodyEnd
 }
 
 // SetBodyRange sets the body page range (thread-safe).
 func (b *BookState) SetBodyRange(start, end int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.BodyStart = start
-	b.BodyEnd = end
+	b.bodyStart = start
+	b.bodyEnd = end
 }
 
 // GetBodyStart returns the body start page (thread-safe).
 func (b *BookState) GetBodyStart() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.BodyStart
+	return b.bodyStart
 }
 
 // GetBodyEnd returns the body end page (thread-safe).
 func (b *BookState) GetBodyEnd() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.BodyEnd
+	return b.bodyEnd
 }
 
 // --- Pattern Analysis Result Accessors ---
@@ -1459,14 +1459,14 @@ func (b *BookState) GetBodyEnd() int {
 func (b *BookState) GetPatternAnalysisResult() *PagePatternResult {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.PatternAnalysisResult
+	return b.patternAnalysisResult
 }
 
 // SetPatternAnalysisResult sets the pattern analysis result (thread-safe).
 func (b *BookState) SetPatternAnalysisResult(result *PagePatternResult) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.PatternAnalysisResult = result
+	b.patternAnalysisResult = result
 }
 
 // --- Operation State Accessors ---
@@ -1477,439 +1477,439 @@ func (b *BookState) SetPatternAnalysisResult(result *PagePatternResult) {
 func (b *BookState) MetadataStart() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.Metadata.Start()
+	return b.metadata.Start()
 }
 
 // MetadataComplete marks metadata as complete (thread-safe).
 func (b *BookState) MetadataComplete() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.Metadata.Complete()
+	b.metadata.Complete()
 }
 
 // MetadataFail records a metadata failure (thread-safe).
 func (b *BookState) MetadataFail(maxRetries int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.Metadata.Fail(maxRetries)
+	return b.metadata.Fail(maxRetries)
 }
 
 // MetadataReset resets metadata state (thread-safe).
 func (b *BookState) MetadataReset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.Metadata.Reset()
+	b.metadata.Reset()
 }
 
 // MetadataIsStarted returns true if metadata is started (thread-safe).
 func (b *BookState) MetadataIsStarted() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.Metadata.IsStarted()
+	return b.metadata.IsStarted()
 }
 
 // MetadataIsDone returns true if metadata is done (thread-safe).
 func (b *BookState) MetadataIsDone() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.Metadata.IsDone()
+	return b.metadata.IsDone()
 }
 
 // MetadataCanStart returns true if metadata can start (thread-safe).
 func (b *BookState) MetadataCanStart() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.Metadata.CanStart()
+	return b.metadata.CanStart()
 }
 
 // MetadataIsComplete returns true if metadata completed successfully (thread-safe).
 func (b *BookState) MetadataIsComplete() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.Metadata.IsComplete()
+	return b.metadata.IsComplete()
 }
 
 // GetMetadataState returns a copy of the metadata operation state (thread-safe).
 func (b *BookState) GetMetadataState() OperationState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.Metadata
+	return b.metadata
 }
 
 // TocFinderStart starts the ToC finder operation (thread-safe).
 func (b *BookState) TocFinderStart() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.TocFinder.Start()
+	return b.tocFinder.Start()
 }
 
 // TocFinderComplete marks ToC finder as complete (thread-safe).
 func (b *BookState) TocFinderComplete() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.TocFinder.Complete()
+	b.tocFinder.Complete()
 }
 
 // TocFinderFail records a ToC finder failure (thread-safe).
 func (b *BookState) TocFinderFail(maxRetries int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.TocFinder.Fail(maxRetries)
+	return b.tocFinder.Fail(maxRetries)
 }
 
 // TocFinderReset resets ToC finder state (thread-safe).
 func (b *BookState) TocFinderReset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.TocFinder.Reset()
+	b.tocFinder.Reset()
 }
 
 // TocFinderIsStarted returns true if ToC finder is started (thread-safe).
 func (b *BookState) TocFinderIsStarted() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocFinder.IsStarted()
+	return b.tocFinder.IsStarted()
 }
 
 // TocFinderIsDone returns true if ToC finder is done (thread-safe).
 func (b *BookState) TocFinderIsDone() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocFinder.IsDone()
+	return b.tocFinder.IsDone()
 }
 
 // TocFinderCanStart returns true if ToC finder can start (thread-safe).
 func (b *BookState) TocFinderCanStart() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocFinder.CanStart()
+	return b.tocFinder.CanStart()
 }
 
 // TocFinderIsComplete returns true if ToC finder completed successfully (thread-safe).
 func (b *BookState) TocFinderIsComplete() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocFinder.IsComplete()
+	return b.tocFinder.IsComplete()
 }
 
 // GetTocFinderState returns a copy of the ToC finder operation state (thread-safe).
 func (b *BookState) GetTocFinderState() OperationState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocFinder
+	return b.tocFinder
 }
 
 // TocExtractStart starts the ToC extract operation (thread-safe).
 func (b *BookState) TocExtractStart() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.TocExtract.Start()
+	return b.tocExtract.Start()
 }
 
 // TocExtractComplete marks ToC extract as complete (thread-safe).
 func (b *BookState) TocExtractComplete() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.TocExtract.Complete()
+	b.tocExtract.Complete()
 }
 
 // TocExtractFail records a ToC extract failure (thread-safe).
 func (b *BookState) TocExtractFail(maxRetries int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.TocExtract.Fail(maxRetries)
+	return b.tocExtract.Fail(maxRetries)
 }
 
 // TocExtractReset resets ToC extract state (thread-safe).
 func (b *BookState) TocExtractReset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.TocExtract.Reset()
+	b.tocExtract.Reset()
 }
 
 // TocExtractIsStarted returns true if ToC extract is started (thread-safe).
 func (b *BookState) TocExtractIsStarted() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocExtract.IsStarted()
+	return b.tocExtract.IsStarted()
 }
 
 // TocExtractIsDone returns true if ToC extract is done (thread-safe).
 func (b *BookState) TocExtractIsDone() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocExtract.IsDone()
+	return b.tocExtract.IsDone()
 }
 
 // TocExtractCanStart returns true if ToC extract can start (thread-safe).
 func (b *BookState) TocExtractCanStart() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocExtract.CanStart()
+	return b.tocExtract.CanStart()
 }
 
 // TocExtractIsComplete returns true if ToC extract completed successfully (thread-safe).
 func (b *BookState) TocExtractIsComplete() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocExtract.IsComplete()
+	return b.tocExtract.IsComplete()
 }
 
 // GetTocExtractState returns a copy of the ToC extract operation state (thread-safe).
 func (b *BookState) GetTocExtractState() OperationState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocExtract
+	return b.tocExtract
 }
 
 // PatternAnalysisStart starts the pattern analysis operation (thread-safe).
 func (b *BookState) PatternAnalysisStart() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.PatternAnalysis.Start()
+	return b.patternAnalysis.Start()
 }
 
 // PatternAnalysisComplete marks pattern analysis as complete (thread-safe).
 func (b *BookState) PatternAnalysisComplete() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.PatternAnalysis.Complete()
+	b.patternAnalysis.Complete()
 }
 
 // PatternAnalysisFail records a pattern analysis failure (thread-safe).
 func (b *BookState) PatternAnalysisFail(maxRetries int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.PatternAnalysis.Fail(maxRetries)
+	return b.patternAnalysis.Fail(maxRetries)
 }
 
 // PatternAnalysisReset resets pattern analysis state (thread-safe).
 func (b *BookState) PatternAnalysisReset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.PatternAnalysis.Reset()
+	b.patternAnalysis.Reset()
 }
 
 // PatternAnalysisIsStarted returns true if pattern analysis is started (thread-safe).
 func (b *BookState) PatternAnalysisIsStarted() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.PatternAnalysis.IsStarted()
+	return b.patternAnalysis.IsStarted()
 }
 
 // PatternAnalysisIsDone returns true if pattern analysis is done (thread-safe).
 func (b *BookState) PatternAnalysisIsDone() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.PatternAnalysis.IsDone()
+	return b.patternAnalysis.IsDone()
 }
 
 // PatternAnalysisCanStart returns true if pattern analysis can start (thread-safe).
 func (b *BookState) PatternAnalysisCanStart() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.PatternAnalysis.CanStart()
+	return b.patternAnalysis.CanStart()
 }
 
 // PatternAnalysisIsComplete returns true if pattern analysis completed successfully (thread-safe).
 func (b *BookState) PatternAnalysisIsComplete() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.PatternAnalysis.IsComplete()
+	return b.patternAnalysis.IsComplete()
 }
 
 // GetPatternAnalysisState returns a copy of the pattern analysis operation state (thread-safe).
 func (b *BookState) GetPatternAnalysisState() OperationState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.PatternAnalysis
+	return b.patternAnalysis
 }
 
 // TocLinkStart starts the ToC link operation (thread-safe).
 func (b *BookState) TocLinkStart() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.TocLink.Start()
+	return b.tocLink.Start()
 }
 
 // TocLinkComplete marks ToC link as complete (thread-safe).
 func (b *BookState) TocLinkComplete() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.TocLink.Complete()
+	b.tocLink.Complete()
 }
 
 // TocLinkFail records a ToC link failure (thread-safe).
 func (b *BookState) TocLinkFail(maxRetries int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.TocLink.Fail(maxRetries)
+	return b.tocLink.Fail(maxRetries)
 }
 
 // TocLinkReset resets ToC link state (thread-safe).
 func (b *BookState) TocLinkReset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.TocLink.Reset()
+	b.tocLink.Reset()
 }
 
 // TocLinkIsStarted returns true if ToC link is started (thread-safe).
 func (b *BookState) TocLinkIsStarted() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocLink.IsStarted()
+	return b.tocLink.IsStarted()
 }
 
 // TocLinkIsDone returns true if ToC link is done (thread-safe).
 func (b *BookState) TocLinkIsDone() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocLink.IsDone()
+	return b.tocLink.IsDone()
 }
 
 // TocLinkCanStart returns true if ToC link can start (thread-safe).
 func (b *BookState) TocLinkCanStart() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocLink.CanStart()
+	return b.tocLink.CanStart()
 }
 
 // TocLinkIsComplete returns true if ToC link completed successfully (thread-safe).
 func (b *BookState) TocLinkIsComplete() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocLink.IsComplete()
+	return b.tocLink.IsComplete()
 }
 
 // GetTocLinkState returns a copy of the ToC link operation state (thread-safe).
 func (b *BookState) GetTocLinkState() OperationState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocLink
+	return b.tocLink
 }
 
 // TocFinalizeStart starts the ToC finalize operation (thread-safe).
 func (b *BookState) TocFinalizeStart() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.TocFinalize.Start()
+	return b.tocFinalize.Start()
 }
 
 // TocFinalizeComplete marks ToC finalize as complete (thread-safe).
 func (b *BookState) TocFinalizeComplete() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.TocFinalize.Complete()
+	b.tocFinalize.Complete()
 }
 
 // TocFinalizeFail records a ToC finalize failure (thread-safe).
 func (b *BookState) TocFinalizeFail(maxRetries int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.TocFinalize.Fail(maxRetries)
+	return b.tocFinalize.Fail(maxRetries)
 }
 
 // TocFinalizeReset resets ToC finalize state (thread-safe).
 func (b *BookState) TocFinalizeReset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.TocFinalize.Reset()
+	b.tocFinalize.Reset()
 }
 
 // TocFinalizeIsStarted returns true if ToC finalize is started (thread-safe).
 func (b *BookState) TocFinalizeIsStarted() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocFinalize.IsStarted()
+	return b.tocFinalize.IsStarted()
 }
 
 // TocFinalizeIsDone returns true if ToC finalize is done (thread-safe).
 func (b *BookState) TocFinalizeIsDone() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocFinalize.IsDone()
+	return b.tocFinalize.IsDone()
 }
 
 // TocFinalizeCanStart returns true if ToC finalize can start (thread-safe).
 func (b *BookState) TocFinalizeCanStart() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocFinalize.CanStart()
+	return b.tocFinalize.CanStart()
 }
 
 // TocFinalizeIsComplete returns true if ToC finalize completed successfully (thread-safe).
 func (b *BookState) TocFinalizeIsComplete() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocFinalize.IsComplete()
+	return b.tocFinalize.IsComplete()
 }
 
 // GetTocFinalizeState returns a copy of the ToC finalize operation state (thread-safe).
 func (b *BookState) GetTocFinalizeState() OperationState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocFinalize
+	return b.tocFinalize
 }
 
 // StructureStart starts the structure operation (thread-safe).
 func (b *BookState) StructureStart() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.Structure.Start()
+	return b.structure.Start()
 }
 
 // StructureComplete marks structure as complete (thread-safe).
 func (b *BookState) StructureComplete() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.Structure.Complete()
+	b.structure.Complete()
 }
 
 // StructureFail records a structure failure (thread-safe).
 func (b *BookState) StructureFail(maxRetries int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.Structure.Fail(maxRetries)
+	return b.structure.Fail(maxRetries)
 }
 
 // StructureReset resets structure state (thread-safe).
 func (b *BookState) StructureReset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.Structure.Reset()
+	b.structure.Reset()
 }
 
 // StructureIsStarted returns true if structure is started (thread-safe).
 func (b *BookState) StructureIsStarted() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.Structure.IsStarted()
+	return b.structure.IsStarted()
 }
 
 // StructureIsDone returns true if structure is done (thread-safe).
 func (b *BookState) StructureIsDone() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.Structure.IsDone()
+	return b.structure.IsDone()
 }
 
 // StructureCanStart returns true if structure can start (thread-safe).
 func (b *BookState) StructureCanStart() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.Structure.CanStart()
+	return b.structure.CanStart()
 }
 
 // StructureIsComplete returns true if structure completed successfully (thread-safe).
 func (b *BookState) StructureIsComplete() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.Structure.IsComplete()
+	return b.structure.IsComplete()
 }
 
 // GetStructureState returns a copy of the structure operation state (thread-safe).
 func (b *BookState) GetStructureState() OperationState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.Structure
+	return b.structure
 }

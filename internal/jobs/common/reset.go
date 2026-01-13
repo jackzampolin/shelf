@@ -132,17 +132,18 @@ func ResetFrom(ctx context.Context, book *BookState, tocDocID string, op ResetOp
 
 // resetMetadata resets metadata extraction state.
 func resetMetadata(ctx context.Context, book *BookState) error {
-	book.Metadata.Reset()
+	book.MetadataReset()
 
 	// Clear agent state for metadata (if any)
 	book.ClearAgentStates("metadata")
 
-	return PersistMetadataState(ctx, book.BookID, &book.Metadata)
+	metadataState := book.GetMetadataState()
+	return PersistMetadataState(ctx, book.BookID, &metadataState)
 }
 
 // resetTocFinder resets ToC finder state.
 func resetTocFinder(ctx context.Context, book *BookState, tocDocID string) error {
-	book.TocFinder.Reset()
+	book.TocFinderReset()
 	book.SetTocFound(false)
 	book.SetTocPageRange(0, 0)
 
@@ -172,7 +173,7 @@ func resetTocFinder(ctx context.Context, book *BookState, tocDocID string) error
 
 // resetTocExtract resets ToC extraction state.
 func resetTocExtract(ctx context.Context, book *BookState, tocDocID string) error {
-	book.TocExtract.Reset()
+	book.TocExtractReset()
 	book.SetTocEntries(nil)
 
 	// Clear agent state
@@ -203,8 +204,8 @@ func resetTocExtract(ctx context.Context, book *BookState, tocDocID string) erro
 
 // resetPatternAnalysis resets pattern analysis state.
 func resetPatternAnalysis(ctx context.Context, book *BookState) error {
-	book.PatternAnalysis.Reset()
-	book.PatternAnalysisResult = nil
+	book.PatternAnalysisReset()
+	book.SetPatternAnalysisResult(nil)
 	book.SetPageNumberPattern(nil)
 	book.SetChapterPatterns(nil)
 
@@ -228,7 +229,7 @@ func resetPatternAnalysis(ctx context.Context, book *BookState) error {
 
 // resetTocLink resets ToC linking state.
 func resetTocLink(ctx context.Context, book *BookState, tocDocID string) error {
-	book.TocLink.Reset()
+	book.TocLinkReset()
 
 	// Clear agent state for all link agents
 	book.ClearAgentStates(AgentTypeTocEntryFinder)
@@ -262,7 +263,7 @@ func resetTocLink(ctx context.Context, book *BookState, tocDocID string) error {
 
 // resetTocFinalize resets ToC finalization state.
 func resetTocFinalize(ctx context.Context, book *BookState, tocDocID string) error {
-	book.TocFinalize.Reset()
+	book.TocFinalizeReset()
 
 	// Clear in-memory finalize state
 	book.SetFinalizePhase("")
@@ -295,7 +296,7 @@ func resetTocFinalize(ctx context.Context, book *BookState, tocDocID string) err
 
 // resetStructure resets structure extraction state.
 func resetStructure(ctx context.Context, book *BookState) error {
-	book.Structure.Reset()
+	book.StructureReset()
 	book.SetStructurePhase("")
 	book.SetStructureProgress(0, 0, 0, 0)
 

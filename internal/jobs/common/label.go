@@ -49,11 +49,10 @@ func loadBlendedTextFromDB(ctx context.Context, bookID string, pageNum int) stri
 // BuildPatternContext builds pattern context for a page from pattern analysis results.
 // Returns nil if pattern analysis is not complete or not available.
 func BuildPatternContext(book *BookState, pageNum int) *label.PatternContext {
-	if book.PatternAnalysisResult == nil {
+	result := book.GetPatternAnalysisResult()
+	if result == nil {
 		return nil
 	}
-
-	result := book.PatternAnalysisResult
 	ctx := &label.PatternContext{}
 
 	// Build page number context

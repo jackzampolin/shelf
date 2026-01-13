@@ -600,7 +600,7 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 					}
 				}
 				if finderResult.ScanPage != nil && *finderResult.ScanPage > 0 {
-					j.Book.FinalizeEntriesFound++
+					j.Book.IncrementFinalizeEntriesFound()
 				}
 			}
 		}
@@ -1012,8 +1012,8 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 func buildPagePatternContext(book *common.BookState) *PagePatternContext {
 	ctx := &PagePatternContext{}
 
-	if book.PatternAnalysisResult != nil {
-		par := book.PatternAnalysisResult
+	par := book.GetPatternAnalysisResult()
+	if par != nil {
 
 		if par.BodyBoundaries != nil {
 			ctx.BodyStartPage = par.BodyBoundaries.BodyStartPage

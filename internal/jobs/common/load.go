@@ -151,13 +151,13 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 
 	// 6. Load ToC entries if extraction is complete (for link_toc phase)
 	// This is FATAL if extraction is complete - link_toc phase requires entries
-	if tocDocID != "" && book.TocExtract.IsComplete() {
+	if tocDocID != "" && book.TocExtractIsComplete() {
 		entries, err := LoadTocEntries(ctx, tocDocID)
 		if err != nil {
 			// Fatal when extraction is complete - link_toc will fail without entries
 			return nil, fmt.Errorf("failed to load ToC entries for completed extraction: %w", err)
 		}
-		book.TocEntries = entries
+		book.SetTocEntries(entries)
 		if logger != nil {
 			logger.Debug("LoadBook: loaded ToC entries", "book_id", bookID, "count", len(entries))
 		}
@@ -180,12 +180,12 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 		if logger != nil {
 			logger.Warn("failed to load agent states", "book_id", bookID, "error", err)
 		}
-	} else if logger != nil && len(book.AgentStates) > 0 {
-		logger.Debug("LoadBook: loaded agent states", "book_id", bookID, "count", len(book.AgentStates))
+	} else if logger != nil && len(book.GetAllAgentStates()) > 0 {
+		logger.Debug("LoadBook: loaded agent states", "book_id", bookID, "count", len(book.GetAllAgentStates()))
 	}
 
 	// 9. Load finalize state if finalize is in progress (for crash recovery)
-	if book.TocFinalize.IsStarted() && !book.TocFinalize.IsDone() {
+	if book.TocFinalizeIsStarted() && !book.TocFinalizeIsDone() {
 		if err := LoadFinalizeState(ctx, book, tocDocID); err != nil {
 			if logger != nil {
 				logger.Warn("failed to load finalize state", "book_id", bookID, "error", err)
@@ -194,7 +194,7 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	}
 
 	// 10. Load structure chapters if structure is in progress (for crash recovery)
-	if book.Structure.IsStarted() && !book.Structure.IsDone() {
+	if book.StructureIsStarted() && !book.StructureIsDone() {
 		if err := LoadStructureChapters(ctx, book); err != nil {
 			if logger != nil {
 				logger.Warn("failed to load structure chapters", "book_id", bookID, "error", err)
@@ -418,7 +418,7 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 			if mr, ok := bookData["metadata_retries"].(float64); ok {
 				retries = int(mr)
 			}
-			book.Metadata = boolsToOpState(started, complete, failed, retries)
+			book.metadata = boolsToOpState(started, complete, failed, retries)
 
 			// Pattern analysis state
 			var paStarted, paComplete, paFailed bool
@@ -435,13 +435,13 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 			if pr, ok := bookData["pattern_analysis_retries"].(float64); ok {
 				paRetries = int(pr)
 			}
-			book.PatternAnalysis = boolsToOpState(paStarted, paComplete, paFailed, paRetries)
+			book.patternAnalysis = boolsToOpState(paStarted, paComplete, paFailed, paRetries)
 
 			// Pattern analysis result JSON
 			if paJSON, ok := bookData["page_pattern_analysis_json"].(string); ok && paJSON != "" {
 				var result PagePatternResult
 				if err := json.Unmarshal([]byte(paJSON), &result); err == nil {
-					book.PatternAnalysisResult = &result
+					book.patternAnalysisResult = &result
 				}
 			}
 
@@ -460,23 +460,23 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 			if sr, ok := bookData["structure_retries"].(float64); ok {
 				sRetries = int(sr)
 			}
-			book.Structure = boolsToOpState(sStarted, sComplete, sFailed, sRetries)
+			book.structure = boolsToOpState(sStarted, sComplete, sFailed, sRetries)
 
 			// Structure phase tracking
 			if sp, ok := bookData["structure_phase"].(string); ok {
-				book.StructurePhase = sp
+				book.structurePhase = sp
 			}
 			if sct, ok := bookData["structure_chapters_total"].(float64); ok {
-				book.StructureChaptersTotal = int(sct)
+				book.structureChaptersTotal = int(sct)
 			}
 			if sce, ok := bookData["structure_chapters_extracted"].(float64); ok {
-				book.StructureChaptersExtracted = int(sce)
+				book.structureChaptersExtracted = int(sce)
 			}
 			if scp, ok := bookData["structure_chapters_polished"].(float64); ok {
-				book.StructureChaptersPolished = int(scp)
+				book.structureChaptersPolished = int(scp)
 			}
 			if spf, ok := bookData["structure_polish_failed"].(float64); ok {
-				book.StructurePolishFailed = int(spf)
+				book.structurePolishFailed = int(spf)
 			}
 		}
 	}
@@ -542,10 +542,10 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				if fr, ok := toc["finder_retries"].(float64); ok {
 					fRetries = int(fr)
 				}
-				book.TocFinder = boolsToOpState(fStarted, fComplete, fFailed, fRetries)
+				book.tocFinder = boolsToOpState(fStarted, fComplete, fFailed, fRetries)
 
 				if found, ok := toc["toc_found"].(bool); ok {
-					book.TocFound = found
+					book.tocFound = found
 				}
 
 				// Extract state
@@ -563,7 +563,7 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				if er, ok := toc["extract_retries"].(float64); ok {
 					eRetries = int(er)
 				}
-				book.TocExtract = boolsToOpState(eStarted, eComplete, eFailed, eRetries)
+				book.tocExtract = boolsToOpState(eStarted, eComplete, eFailed, eRetries)
 
 				// Link state
 				var lStarted, lComplete, lFailed bool
@@ -580,7 +580,7 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				if lr, ok := toc["link_retries"].(float64); ok {
 					lRetries = int(lr)
 				}
-				book.TocLink = boolsToOpState(lStarted, lComplete, lFailed, lRetries)
+				book.tocLink = boolsToOpState(lStarted, lComplete, lFailed, lRetries)
 
 				// Finalize state
 				var finStarted, finComplete, finFailed bool
@@ -597,14 +597,14 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				if fr, ok := toc["finalize_retries"].(float64); ok {
 					finRetries = int(fr)
 				}
-				book.TocFinalize = boolsToOpState(finStarted, finComplete, finFailed, finRetries)
+				book.tocFinalize = boolsToOpState(finStarted, finComplete, finFailed, finRetries)
 
 				// Page range
 				if sp, ok := toc["start_page"].(float64); ok {
-					book.TocStartPage = int(sp)
+					book.tocStartPage = int(sp)
 				}
 				if ep, ok := toc["end_page"].(float64); ok {
-					book.TocEndPage = int(ep)
+					book.tocEndPage = int(ep)
 				}
 			}
 		}
@@ -800,7 +800,7 @@ func LoadAgentStates(ctx context.Context, book *BookState) error {
 	if logger != nil {
 		logger.Debug("LoadAgentStates: loaded states",
 			"book_id", book.BookID,
-			"count", len(book.AgentStates))
+			"count", len(book.agentStates))
 	}
 
 	return nil
