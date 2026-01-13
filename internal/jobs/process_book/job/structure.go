@@ -26,24 +26,6 @@ const (
 	StructPhaseFinalize = "finalize"
 )
 
-// StructureState holds in-memory state for structure operations.
-type StructureState struct {
-	// Chapters built from ToC entries
-	Chapters []*common.ChapterState
-
-	// Classifications from LLM
-	Classifications    map[string]string // entry_id -> matter_type
-	ClassifyReasonings map[string]string // entry_id -> reasoning
-
-	// Progress tracking
-	ChaptersToExtract  int
-	ChaptersExtracted  int
-	ExtractsFailed     int
-	ChaptersToPolish   int
-	ChaptersPolished   int
-	PolishFailed       int
-}
-
 // StartStructurePhase initializes and starts the structure phase.
 func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 	logger := svcctx.LoggerFrom(ctx)
@@ -55,7 +37,14 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 		}
 		return nil
 	}
-	common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+	// Use sync write at operation start to ensure state is persisted before continuing
+	if err := common.PersistStructureStateSync(ctx, j.Book.BookID, &j.Book.Structure); err != nil {
+		if logger != nil {
+			logger.Error("failed to persist structure start", "error", err)
+		}
+		j.Book.Structure.Reset()
+		return nil
+	}
 
 	// Load linked entries (uses cache, refreshed after finalize_toc)
 	entries, err := common.RefreshLinkedEntries(ctx, j.Book, j.TocDocID)
@@ -70,12 +59,10 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 		return nil
 	}
 
-	// Initialize structure state
-	j.StructureState = &StructureState{
-		Chapters:           make([]*common.ChapterState, 0),
-		Classifications:    make(map[string]string),
-		ClassifyReasonings: make(map[string]string),
-	}
+	// Initialize structure state on BookState
+	j.Book.SetStructureChapters(make([]*common.ChapterState, 0))
+	j.Book.SetStructureClassifications(make(map[string]string))
+	j.Book.SetStructureClassifyReasonings(make(map[string]string))
 
 	if logger != nil {
 		logger.Info("starting structure phase",
@@ -94,21 +81,17 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 		return nil
 	}
 
-	// Update BookState
-	j.Book.SetStructureChapters(j.StructureState.Chapters)
-	j.Book.SetStructureProgress(len(j.StructureState.Chapters), 0, 0, 0)
+	// Update progress
+	chapters := j.Book.GetStructureChapters()
+	j.Book.SetStructureProgress(len(chapters), 0, 0, 0)
 	common.PersistStructurePhase(ctx, j.Book)
 
 	// Phase 2: Extract text (synchronous)
 	j.Book.SetStructurePhase(StructPhaseExtract)
-	if err := j.extractAllChapters(ctx); err != nil {
-		if logger != nil {
-			logger.Warn("extract phase had errors", "error", err)
-		}
-	}
+	chaptersExtracted := j.extractAllChapters(ctx)
 
-	// Update BookState
-	j.Book.SetStructureProgress(len(j.StructureState.Chapters), j.StructureState.ChaptersExtracted, 0, 0)
+	// Update progress
+	j.Book.SetStructureProgress(len(chapters), chaptersExtracted, 0, 0)
 	common.PersistStructurePhase(ctx, j.Book)
 
 	// Persist extract results
@@ -144,6 +127,7 @@ func (j *Job) buildChapterSkeleton(ctx context.Context, entries []*common.Linked
 	})
 
 	// Create chapters with boundaries
+	chapters := make([]*common.ChapterState, 0, len(linkedEntries))
 	for i, entry := range linkedEntries {
 		chapter := &common.ChapterState{
 			EntryID:     fmt.Sprintf("ch_%03d", i+1),
@@ -173,8 +157,11 @@ func (j *Job) buildChapterSkeleton(ctx context.Context, entries []*common.Linked
 			chapter.EndPage = chapter.StartPage
 		}
 
-		j.StructureState.Chapters = append(j.StructureState.Chapters, chapter)
+		chapters = append(chapters, chapter)
 	}
+
+	// Store chapters on BookState
+	j.Book.SetStructureChapters(chapters)
 
 	// Build hierarchy (set parent_id based on levels)
 	j.buildChapterHierarchy()
@@ -182,7 +169,7 @@ func (j *Job) buildChapterSkeleton(ctx context.Context, entries []*common.Linked
 	if logger != nil {
 		logger.Info("built chapter skeleton",
 			"book_id", j.Book.BookID,
-			"chapters", len(j.StructureState.Chapters))
+			"chapters", len(chapters))
 	}
 
 	// Persist skeleton to DefraDB
@@ -192,8 +179,9 @@ func (j *Job) buildChapterSkeleton(ctx context.Context, entries []*common.Linked
 // buildChapterHierarchy sets parent_id values based on chapter levels.
 func (j *Job) buildChapterHierarchy() {
 	recentByLevel := make(map[int]*common.ChapterState)
+	chapters := j.Book.GetStructureChapters()
 
-	for _, chapter := range j.StructureState.Chapters {
+	for _, chapter := range chapters {
 		if chapter.Level > 1 {
 			if parent, ok := recentByLevel[chapter.Level-1]; ok {
 				chapter.ParentID = parent.EntryID
@@ -206,8 +194,14 @@ func (j *Job) buildChapterHierarchy() {
 	}
 }
 
-// persistChapterSkeleton saves the chapter skeleton to DefraDB.
+// persistChapterSkeleton saves the chapter skeleton to DefraDB using upsert.
+// This preserves DocIDs/CIDs across re-runs, enabling change history tracking.
 func (j *Job) persistChapterSkeleton(ctx context.Context) error {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
+
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
 		return fmt.Errorf("defra sink not in context")
@@ -223,11 +217,18 @@ func (j *Job) persistChapterSkeleton(ctx context.Context) error {
 		Op: defra.OpUpdate,
 	})
 
-	// Create Chapter records
-	var chapterOps []defra.WriteOp
-	for _, chapter := range j.StructureState.Chapters {
+	chapters := j.Book.GetStructureChapters()
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Upsert each chapter to preserve DocIDs
+	for _, chapter := range chapters {
+		// Generate stable unique_key
+		uniqueKey := j.generateChapterUniqueKey(chapter)
+		chapter.UniqueKey = uniqueKey
+
 		doc := map[string]any{
 			"book_id":      j.Book.BookID,
+			"unique_key":   uniqueKey,
 			"entry_id":     chapter.EntryID,
 			"title":        chapter.Title,
 			"level":        chapter.Level,
@@ -245,37 +246,43 @@ func (j *Job) persistChapterSkeleton(ctx context.Context) error {
 			doc["toc_entry_id"] = chapter.TocEntryID
 		}
 
-		chapterOps = append(chapterOps, defra.WriteOp{
-			Collection: "Chapter",
-			Document:   doc,
-			Op:         defra.OpCreate,
-		})
-	}
+		// Filter by unique_key for upsert
+		filter := map[string]any{
+			"unique_key": map[string]any{"_eq": uniqueKey},
+		}
 
-	// Batch create chapters
-	results, err := sink.SendManySync(ctx, chapterOps)
-	if err != nil {
-		return fmt.Errorf("failed to create chapters: %w", err)
-	}
+		docID, err := defraClient.Upsert(ctx, "Chapter", filter, doc, doc)
+		if err != nil {
+			return fmt.Errorf("failed to upsert chapter %s: %w", chapter.EntryID, err)
+		}
+		chapter.DocID = docID
 
-	// Store DocIDs on chapter state
-	for i, result := range results {
-		if i < len(j.StructureState.Chapters) {
-			j.StructureState.Chapters[i].DocID = result.DocID
+		if logger != nil {
+			logger.Debug("upserted chapter", "entry_id", chapter.EntryID, "unique_key", uniqueKey, "doc_id", docID)
 		}
 	}
 
 	return nil
 }
 
-// extractAllChapters extracts text for all chapters.
-func (j *Job) extractAllChapters(ctx context.Context) error {
+// generateChapterUniqueKey creates a stable unique_key for upsert.
+// Format: "{book_id}:{toc_entry_id}" for ToC-linked chapters,
+// or "{book_id}:orphan:{sort_order}" for chapters without ToC entries.
+func (j *Job) generateChapterUniqueKey(chapter *common.ChapterState) string {
+	if chapter.TocEntryID != "" {
+		return fmt.Sprintf("%s:%s", j.Book.BookID, chapter.TocEntryID)
+	}
+	// Orphan chapters (not from ToC) use sort_order for stability
+	return fmt.Sprintf("%s:orphan:%d", j.Book.BookID, chapter.SortOrder)
+}
+
+// extractAllChapters extracts text for all chapters. Returns count of chapters extracted.
+func (j *Job) extractAllChapters(ctx context.Context) int {
 	logger := svcctx.LoggerFrom(ctx)
+	chapters := j.Book.GetStructureChapters()
+	chaptersExtracted := 0
 
-	j.StructureState.ChaptersToExtract = len(j.StructureState.Chapters)
-	j.StructureState.ChaptersExtracted = 0
-
-	for _, chapter := range j.StructureState.Chapters {
+	for _, chapter := range chapters {
 		// Extract text from pages in range
 		pageTexts := j.extractChapterPages(chapter.StartPage, chapter.EndPage)
 
@@ -284,16 +291,16 @@ func (j *Job) extractAllChapters(ctx context.Context) error {
 		chapter.WordCount = common.CountWords(chapter.MechanicalText)
 		chapter.ExtractDone = true
 
-		j.StructureState.ChaptersExtracted++
+		chaptersExtracted++
 	}
 
 	if logger != nil {
 		logger.Info("extracted chapter text",
 			"book_id", j.Book.BookID,
-			"chapters_extracted", j.StructureState.ChaptersExtracted)
+			"chapters_extracted", chaptersExtracted)
 	}
 
-	return nil
+	return chaptersExtracted
 }
 
 // extractChapterPages extracts text from a range of pages.
@@ -329,7 +336,8 @@ func (j *Job) persistExtractResults(ctx context.Context) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	for _, chapter := range j.StructureState.Chapters {
+	chapters := j.Book.GetStructureChapters()
+	for _, chapter := range chapters {
 		if chapter.DocID == "" || !chapter.ExtractDone {
 			continue
 		}
@@ -377,7 +385,8 @@ func (j *Job) createStructureClassifyWorkUnit(ctx context.Context) (*jobs.WorkUn
 		systemPrompt = common.ClassifySystemPrompt
 	}
 
-	userPrompt := common.BuildClassifyPrompt(j.StructureState.Chapters)
+	chapters := j.Book.GetStructureChapters()
+	userPrompt := common.BuildClassifyPrompt(chapters)
 
 	schemaBytes, err := json.Marshal(common.ClassifyJSONSchema())
 	if err != nil {
@@ -491,21 +500,21 @@ func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.Wo
 		return fmt.Errorf("failed to parse classification result: %w", err)
 	}
 
-	// Store classifications
-	j.StructureState.Classifications = classifyResult.Classifications
+	// Store classifications on BookState
+	j.Book.SetStructureClassifications(classifyResult.Classifications)
 	if classifyResult.Reasoning != nil {
-		j.StructureState.ClassifyReasonings = classifyResult.Reasoning
+		j.Book.SetStructureClassifyReasonings(classifyResult.Reasoning)
 	}
 
-	// Update BookState
-	j.Book.SetStructureClassifications(j.StructureState.Classifications)
-
 	// Apply to chapters
-	for _, chapter := range j.StructureState.Chapters {
-		if matterType, ok := j.StructureState.Classifications[chapter.EntryID]; ok {
+	chapters := j.Book.GetStructureChapters()
+	classifications := j.Book.GetStructureClassifications()
+	reasonings := j.Book.GetStructureClassifyReasonings()
+	for _, chapter := range chapters {
+		if matterType, ok := classifications[chapter.EntryID]; ok {
 			chapter.MatterType = matterType
 		}
-		if reasoning, ok := j.StructureState.ClassifyReasonings[chapter.EntryID]; ok {
+		if reasoning, ok := reasonings[chapter.EntryID]; ok {
 			chapter.ClassifyReasoning = reasoning
 		}
 	}
@@ -513,7 +522,7 @@ func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.Wo
 	if logger != nil {
 		logger.Info("applied matter classifications",
 			"book_id", j.Book.BookID,
-			"classifications", len(j.StructureState.Classifications))
+			"classifications", len(classifications))
 	}
 
 	j.Book.SetStructureClassifyPending(false)
@@ -527,7 +536,8 @@ func (j *Job) persistClassifyResults(ctx context.Context) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	for _, chapter := range j.StructureState.Chapters {
+	chapters := j.Book.GetStructureChapters()
+	for _, chapter := range chapters {
 		if chapter.DocID == "" {
 			continue
 		}
@@ -556,10 +566,11 @@ func (j *Job) transitionToStructurePolish(ctx context.Context) []jobs.WorkUnit {
 	common.PersistStructurePhase(ctx, j.Book)
 
 	logger := svcctx.LoggerFrom(ctx)
+	chapters := j.Book.GetStructureChapters()
 	if logger != nil {
 		logger.Info("transitioning to polish phase",
 			"book_id", j.Book.BookID,
-			"chapters", len(j.StructureState.Chapters))
+			"chapters", len(chapters))
 	}
 
 	return j.createStructurePolishWorkUnits(ctx)
@@ -568,8 +579,9 @@ func (j *Job) transitionToStructurePolish(ctx context.Context) []jobs.WorkUnit {
 // createStructurePolishWorkUnits creates work units for all chapters needing polish.
 func (j *Job) createStructurePolishWorkUnits(ctx context.Context) []jobs.WorkUnit {
 	var units []jobs.WorkUnit
+	chapters := j.Book.GetStructureChapters()
 
-	for _, chapter := range j.StructureState.Chapters {
+	for _, chapter := range chapters {
 		if chapter.PolishDone || chapter.MechanicalText == "" {
 			continue
 		}
@@ -580,7 +592,6 @@ func (j *Job) createStructurePolishWorkUnits(ctx context.Context) []jobs.WorkUni
 		}
 	}
 
-	j.StructureState.ChaptersToPolish = len(units)
 	return units
 }
 
@@ -668,19 +679,12 @@ func (j *Job) HandleStructurePolishComplete(ctx context.Context, result jobs.Wor
 // processStructurePolishResult parses and applies polish results.
 func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo) error {
 	// Find chapter
-	var chapter *common.ChapterState
-	for _, ch := range j.StructureState.Chapters {
-		if ch.EntryID == info.ChapterID {
-			chapter = ch
-			break
-		}
-	}
+	chapter := j.Book.GetChapterByEntryID(info.ChapterID)
 	if chapter == nil {
 		return fmt.Errorf("chapter not found: %s", info.ChapterID)
 	}
 
 	if !result.Success {
-		j.StructureState.PolishFailed++
 		j.Book.IncrementStructurePolishFailed()
 		chapter.PolishDone = true
 		chapter.PolishFailed = true
@@ -697,7 +701,6 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 	}
 
 	if result.ChatResult == nil {
-		j.StructureState.PolishFailed++
 		j.Book.IncrementStructurePolishFailed()
 		chapter.PolishDone = true
 		chapter.PolishFailed = true
@@ -718,7 +721,6 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 	} else if result.ChatResult.Content != "" {
 		content = []byte(result.ChatResult.Content)
 	} else {
-		j.StructureState.PolishFailed++
 		j.Book.IncrementStructurePolishFailed()
 		chapter.PolishDone = true
 		chapter.PolishFailed = true
@@ -735,7 +737,6 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 
 	var polishResult common.PolishResult
 	if err := json.Unmarshal(content, &polishResult); err != nil {
-		j.StructureState.PolishFailed++
 		j.Book.IncrementStructurePolishFailed()
 		chapter.PolishDone = true
 		chapter.PolishFailed = true
@@ -756,7 +757,6 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 	chapter.WordCount = common.CountWords(chapter.PolishedText)
 	chapter.PolishDone = true
 
-	j.StructureState.ChaptersPolished++
 	j.Book.IncrementStructurePolished()
 
 	return nil
@@ -764,7 +764,8 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 
 // allStructurePolishDone checks if all polish work is complete.
 func (j *Job) allStructurePolishDone() bool {
-	for _, chapter := range j.StructureState.Chapters {
+	chapters := j.Book.GetStructureChapters()
+	for _, chapter := range chapters {
 		if !chapter.PolishDone && chapter.MechanicalText != "" {
 			return false
 		}
@@ -779,7 +780,8 @@ func (j *Job) persistPolishResults(ctx context.Context) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	for _, chapter := range j.StructureState.Chapters {
+	chapters := j.Book.GetStructureChapters()
+	for _, chapter := range chapters {
 		if chapter.DocID == "" || !chapter.PolishDone {
 			continue
 		}
@@ -818,14 +820,21 @@ func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, erro
 	}
 
 	j.Book.Structure.Complete()
-	common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
+	// Use sync write for completion to ensure state is persisted before returning
+	if err := common.PersistStructureStateSync(ctx, j.Book.BookID, &j.Book.Structure); err != nil {
+		if logger != nil {
+			logger.Error("failed to persist structure completion", "error", err)
+		}
+	}
 
+	chapters := j.Book.GetStructureChapters()
+	_, _, polished, failed := j.Book.GetStructureProgress()
 	if logger != nil {
 		logger.Info("structure phase complete",
 			"book_id", j.Book.BookID,
-			"chapters", len(j.StructureState.Chapters),
-			"polished", j.StructureState.ChaptersPolished,
-			"failed", j.StructureState.PolishFailed)
+			"chapters", len(chapters),
+			"polished", polished,
+			"failed", failed)
 	}
 
 	return nil, nil

@@ -278,3 +278,68 @@ func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 
 	return nil
 }
+
+// --- Synchronous Persist Functions ---
+// Use these for critical state transitions to ensure writes complete before proceeding.
+
+// PersistBookStatusSync persists book status and waits for confirmation.
+func PersistBookStatusSync(ctx context.Context, bookID string, status string) error {
+	return SendToSinkSync(ctx, defra.WriteOp{
+		Collection: "Book",
+		DocID:      bookID,
+		Document: map[string]any{
+			"status": status,
+		},
+		Op: defra.OpUpdate,
+	})
+}
+
+// PersistStructureStateSync persists structure operation state and waits for confirmation.
+func PersistStructureStateSync(ctx context.Context, bookID string, op *OperationState) error {
+	return SendToSinkSync(ctx, defra.WriteOp{
+		Collection: "Book",
+		DocID:      bookID,
+		Document: map[string]any{
+			"structure_started":  op.IsStarted(),
+			"structure_complete": op.IsComplete(),
+			"structure_failed":   op.IsFailed(),
+			"structure_retries":  op.GetRetries(),
+		},
+		Op: defra.OpUpdate,
+	})
+}
+
+// PersistTocFinalizeStateSync persists ToC finalize operation state and waits for confirmation.
+func PersistTocFinalizeStateSync(ctx context.Context, tocDocID string, op *OperationState) error {
+	if tocDocID == "" {
+		return nil // No ToC record yet
+	}
+	return SendToSinkSync(ctx, defra.WriteOp{
+		Collection: "ToC",
+		DocID:      tocDocID,
+		Document: map[string]any{
+			"finalize_started":  op.IsStarted(),
+			"finalize_complete": op.IsComplete(),
+			"finalize_failed":   op.IsFailed(),
+			"finalize_retries":  op.GetRetries(),
+		},
+		Op: defra.OpUpdate,
+	})
+}
+
+// PersistStructurePhaseSync persists structure phase tracking data and waits for confirmation.
+func PersistStructurePhaseSync(ctx context.Context, book *BookState) error {
+	total, extracted, polished, failed := book.GetStructureProgress()
+	return SendToSinkSync(ctx, defra.WriteOp{
+		Collection: "Book",
+		DocID:      book.BookID,
+		Document: map[string]any{
+			"structure_phase":              book.GetStructurePhase(),
+			"structure_chapters_total":     total,
+			"structure_chapters_extracted": extracted,
+			"structure_chapters_polished":  polished,
+			"structure_polish_failed":      failed,
+		},
+		Op: defra.OpUpdate,
+	})
+}

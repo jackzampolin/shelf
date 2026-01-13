@@ -125,6 +125,9 @@ type PDFInfo = common.PDFInfo
 // then triggers book-level operations (metadata, ToC, finalize, structure).
 // Services (DefraClient, DefraSink) are accessed via svcctx from the context
 // passed to Start() and OnComplete().
+//
+// State consolidation: Most state is stored on BookState (via j.Book).
+// Only agent instances are stored directly on Job due to circular import constraints.
 type Job struct {
 	common.TrackedBaseJob[WorkUnitInfo]
 
@@ -137,20 +140,25 @@ type Job struct {
 	LinkTocEntryAgents map[string]*agent.Agent // keyed by entry DocID
 	LinkTocEntriesDone int                     // count of completed entries
 
-	// Finalize ToC state (inline phase handling)
-	FinalizeState *FinalizeState
+	// Finalize ToC agent maps (can't be on BookState due to circular imports)
+	// Data state (PatternResult, EntriesToFind, Gaps) is on BookState
+	FinalizeDiscoverAgents map[string]*agent.Agent // entryKey -> active agent
+	FinalizeGapAgents      map[string]*agent.Agent // gapKey -> active agent
 
-	// Structure state (inline phase handling)
-	StructureState *StructureState
+	// Finalize page pattern context (local to finalize phase execution)
+	// Uses types.DetectedChapter which can't be in common due to import constraints
+	FinalizePagePatternCtx *PagePatternContext
 }
 
 // NewFromLoadResult creates a Job from a common.LoadBookResult.
 // This is the primary constructor - LoadBook does all the loading.
 func NewFromLoadResult(result *common.LoadBookResult) *Job {
 	return &Job{
-		TrackedBaseJob:     common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
-		TocDocID:           result.TocDocID,
-		LinkTocEntryAgents: make(map[string]*agent.Agent),
+		TrackedBaseJob:         common.NewTrackedBaseJob[WorkUnitInfo](result.Book),
+		TocDocID:               result.TocDocID,
+		LinkTocEntryAgents:     make(map[string]*agent.Agent),
+		FinalizeDiscoverAgents: make(map[string]*agent.Agent),
+		FinalizeGapAgents:      make(map[string]*agent.Agent),
 	}
 }
 

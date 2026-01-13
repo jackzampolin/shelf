@@ -29,23 +29,8 @@ const MaxFinalizeRetries = 3
 // MinGapSize is the minimum number of pages to consider a gap significant.
 const MinGapSize = 15
 
-// FinalizeState holds in-memory state for finalize operations.
-// This is created when finalize starts and lives on the Job struct.
-type FinalizeState struct {
-	// Pattern analysis results
-	PatternResult *common.FinalizePatternResult
-
-	// Page pattern context (loaded from page pattern analysis and labels)
-	PagePatternCtx *PagePatternContext
-
-	// Discover phase agents
-	DiscoverAgents map[string]*agent.Agent // entryKey -> agent
-
-	// Validate phase agents
-	GapAgents map[string]*agent.Agent // gapKey -> agent
-}
-
 // PagePatternContext holds page pattern analysis data for enhanced ToC finalization.
+// This is local to finalize phase execution.
 type PagePatternContext struct {
 	BodyStartPage   int
 	BodyEndPage     int
@@ -65,7 +50,14 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		}
 		return nil
 	}
-	common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
+	// Use sync write at operation start to ensure state is persisted before continuing
+	if err := common.PersistTocFinalizeStateSync(ctx, j.TocDocID, &j.Book.TocFinalize); err != nil {
+		if logger != nil {
+			logger.Error("failed to persist finalize start", "error", err)
+		}
+		j.Book.TocFinalize.Reset()
+		return nil
+	}
 
 	// Load linked entries (uses cache if available)
 	entries, err := common.GetOrLoadLinkedEntries(ctx, j.Book, j.TocDocID)
@@ -80,19 +72,13 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		return nil
 	}
 
-	// Initialize finalize state
-	j.FinalizeState = &FinalizeState{
-		DiscoverAgents: make(map[string]*agent.Agent),
-		GapAgents:      make(map[string]*agent.Agent),
-	}
-
 	// Build page pattern context
-	j.FinalizeState.PagePatternCtx = buildPagePatternContext(j.Book)
+	j.FinalizePagePatternCtx = buildPagePatternContext(j.Book)
 
 	// Set body range: prefer page pattern analysis, fall back to ToC entries, then full book
-	if j.FinalizeState.PagePatternCtx.HasBoundaries {
-		j.Book.BodyStart = j.FinalizeState.PagePatternCtx.BodyStartPage
-		j.Book.BodyEnd = j.FinalizeState.PagePatternCtx.BodyEndPage
+	if j.FinalizePagePatternCtx.HasBoundaries {
+		j.Book.BodyStart = j.FinalizePagePatternCtx.BodyStartPage
+		j.Book.BodyEnd = j.FinalizePagePatternCtx.BodyEndPage
 	} else {
 		var minPage, maxPage int
 		for _, entry := range entries {
@@ -167,8 +153,8 @@ func (j *Job) CreateFinalizePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit
 
 	if logger := svcctx.LoggerFrom(ctx); logger != nil {
 		detectedCount := 0
-		if j.FinalizeState != nil && j.FinalizeState.PagePatternCtx != nil {
-			detectedCount = len(j.FinalizeState.PagePatternCtx.ChapterPatterns)
+		if j.FinalizePagePatternCtx != nil {
+			detectedCount = len(j.FinalizePagePatternCtx.ChapterPatterns)
 		}
 		logger.Info("pattern analysis context loaded",
 			"candidate_count", len(candidates),
@@ -322,11 +308,6 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 		})
 	}
 
-	// Also store in FinalizeState for runtime access
-	if j.FinalizeState != nil {
-		j.FinalizeState.PatternResult = j.Book.FinalizePatternResult
-	}
-
 	// Generate entries to find
 	j.generateEntriesToFind(ctx)
 
@@ -469,9 +450,7 @@ func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.Ent
 		JobID:          j.RecordID,
 	})
 
-	if j.FinalizeState != nil {
-		j.FinalizeState.DiscoverAgents[entry.Key] = ag
-	}
+	j.FinalizeDiscoverAgents[entry.Key] = ag
 
 	agentUnits := agents.ExecuteToolLoop(ctx, ag)
 	if len(agentUnits) == 0 {
@@ -490,11 +469,7 @@ func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.Ent
 func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo) ([]jobs.WorkUnit, error) {
 	logger := svcctx.LoggerFrom(ctx)
 
-	if j.FinalizeState == nil {
-		return nil, fmt.Errorf("finalize state not initialized")
-	}
-
-	ag, ok := j.FinalizeState.DiscoverAgents[info.FinalizeKey]
+	ag, ok := j.FinalizeDiscoverAgents[info.FinalizeKey]
 	if !ok {
 		j.RemoveWorkUnit(result.WorkUnitID)
 		j.Book.FinalizeEntriesComplete++
@@ -555,7 +530,7 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 		}
 
 		j.Book.FinalizeEntriesComplete++
-		delete(j.FinalizeState.DiscoverAgents, info.FinalizeKey)
+		delete(j.FinalizeDiscoverAgents, info.FinalizeKey)
 	}
 
 	j.RemoveWorkUnit(result.WorkUnitID)
@@ -737,9 +712,7 @@ func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.Fin
 		JobID:         j.RecordID,
 	})
 
-	if j.FinalizeState != nil {
-		j.FinalizeState.GapAgents[gap.Key] = ag
-	}
+	j.FinalizeGapAgents[gap.Key] = ag
 
 	agentUnits := agents.ExecuteToolLoop(ctx, ag)
 	if len(agentUnits) == 0 {
@@ -758,11 +731,7 @@ func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.Fin
 func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo) ([]jobs.WorkUnit, error) {
 	logger := svcctx.LoggerFrom(ctx)
 
-	if j.FinalizeState == nil {
-		return nil, fmt.Errorf("finalize state not initialized")
-	}
-
-	ag, ok := j.FinalizeState.GapAgents[info.FinalizeKey]
+	ag, ok := j.FinalizeGapAgents[info.FinalizeKey]
 	if !ok {
 		j.RemoveWorkUnit(result.WorkUnitID)
 		j.Book.FinalizeGapsComplete++
@@ -823,7 +792,7 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 		}
 
 		j.Book.FinalizeGapsComplete++
-		delete(j.FinalizeState.GapAgents, info.FinalizeKey)
+		delete(j.FinalizeGapAgents, info.FinalizeKey)
 	}
 
 	j.RemoveWorkUnit(result.WorkUnitID)
@@ -851,7 +820,12 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	j.Book.FinalizePhase = FinalizePhaseDone
 	j.Book.TocFinalize.Complete()
-	common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
+	// Use sync write for completion to ensure state is persisted before continuing to structure
+	if err := common.PersistTocFinalizeStateSync(ctx, j.TocDocID, &j.Book.TocFinalize); err != nil {
+		if logger != nil {
+			logger.Error("failed to persist finalize completion", "error", err)
+		}
+	}
 
 	if logger != nil {
 		logger.Info("finalize phase complete",
@@ -1002,10 +976,10 @@ func (j *Job) convertCandidatesForPattern(candidates []*candidateHeading) []patt
 }
 
 func (j *Job) convertDetectedChapters() []types.DetectedChapter {
-	if j.FinalizeState == nil || j.FinalizeState.PagePatternCtx == nil {
+	if j.FinalizePagePatternCtx == nil {
 		return nil
 	}
-	return j.FinalizeState.PagePatternCtx.ChapterPatterns
+	return j.FinalizePagePatternCtx.ChapterPatterns
 }
 
 func (j *Job) estimatePageLocation(entries []*common.LinkedTocEntry, pattern common.DiscoveredPattern, identifier string, index, total int) int {
@@ -1417,9 +1391,7 @@ func (j *Job) retryFinalizeDiscoverUnit(ctx context.Context, info WorkUnitInfo) 
 		return nil, nil
 	}
 
-	if j.FinalizeState != nil {
-		delete(j.FinalizeState.DiscoverAgents, info.FinalizeKey)
-	}
+	delete(j.FinalizeDiscoverAgents, info.FinalizeKey)
 
 	unit := j.createChapterFinderWorkUnit(ctx, entry)
 	if unit != nil {
@@ -1447,9 +1419,7 @@ func (j *Job) retryFinalizeGapUnit(ctx context.Context, info WorkUnitInfo) ([]jo
 		return nil, nil
 	}
 
-	if j.FinalizeState != nil {
-		delete(j.FinalizeState.GapAgents, info.FinalizeKey)
-	}
+	delete(j.FinalizeGapAgents, info.FinalizeKey)
 
 	unit := j.createGapInvestigatorWorkUnit(ctx, gap)
 	if unit != nil {

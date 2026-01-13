@@ -459,13 +459,15 @@ type BookState struct {
 	StructurePolishFailed      int
 
 	// Structure sub-job state (mutable - use accessor methods)
-	StructureChapters        []*ChapterState
-	StructureClassifications map[string]string // entry_id -> matter_type
-	StructureClassifyPending bool
+	StructureChapters           []*ChapterState
+	StructureClassifications    map[string]string // entry_id -> matter_type
+	StructureClassifyReasonings map[string]string // entry_id -> reasoning
+	StructureClassifyPending    bool
 
 	// Finalize ToC sub-job state (mutable - use accessor methods)
 	FinalizePhase           string
 	FinalizePatternResult   *FinalizePatternResult
+	FinalizePagePatternCtx  *PagePatternContext // Body boundaries and chapter patterns for finalize
 	EntriesToFind           []*EntryToFind
 	FinalizeEntriesComplete int
 	FinalizeEntriesFound    int
@@ -508,13 +510,14 @@ type BookState struct {
 // NewBookState creates a new BookState with initialized maps.
 func NewBookState(bookID string) *BookState {
 	return &BookState{
-		BookID:                   bookID,
-		BookDocID:                bookID, // Same as BookID - both are the DefraDB document ID
-		Pages:                    make(map[int]*PageState),
-		Prompts:                  make(map[string]string),
-		PromptCIDs:               make(map[string]string),
-		AgentStates:              make(map[string]*AgentState),
-		StructureClassifications: make(map[string]string),
+		BookID:                      bookID,
+		BookDocID:                   bookID, // Same as BookID - both are the DefraDB document ID
+		Pages:                       make(map[int]*PageState),
+		Prompts:                     make(map[string]string),
+		PromptCIDs:                  make(map[string]string),
+		AgentStates:                 make(map[string]*AgentState),
+		StructureClassifications:    make(map[string]string),
+		StructureClassifyReasonings: make(map[string]string),
 	}
 }
 
@@ -1110,8 +1113,9 @@ func (b *BookState) IncrementFinalizeGapsFixes() {
 // ChapterState tracks chapter during structure processing.
 type ChapterState struct {
 	// Identity
-	EntryID string `json:"entry_id"` // Unique within book (e.g., "ch_001")
-	DocID   string `json:"doc_id"`   // DefraDB doc ID (after create)
+	EntryID   string `json:"entry_id"`   // Unique within book (e.g., "ch_001")
+	UniqueKey string `json:"unique_key"` // For upsert: "{book_id}:{toc_entry_id}" or "{book_id}:orphan:{sort_order}"
+	DocID     string `json:"doc_id"`     // DefraDB doc ID (after create)
 
 	// From ToC
 	Title       string `json:"title"`
@@ -1226,4 +1230,55 @@ func (b *BookState) UpdateChapter(chapter *ChapterState) {
 			return
 		}
 	}
+}
+
+// --- Page Pattern Context ---
+
+// PagePatternContext holds page pattern analysis data for enhanced ToC finalization.
+// This is populated from PagePatternResult during finalize phase.
+type PagePatternContext struct {
+	BodyStartPage   int
+	BodyEndPage     int
+	HasBoundaries   bool
+	ChapterPatterns []DetectedChapter
+}
+
+// DetectedChapter represents a chapter detected by pattern analysis.
+type DetectedChapter struct {
+	PageNum       int
+	RunningHeader string
+	ChapterTitle  string
+	ChapterNumber string
+	Source        string // "pattern_analysis", "label", etc.
+	Confidence    string // "high", "medium", "low"
+}
+
+// GetFinalizePagePatternCtx returns the page pattern context for finalize phase (thread-safe).
+func (b *BookState) GetFinalizePagePatternCtx() *PagePatternContext {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.FinalizePagePatternCtx
+}
+
+// SetFinalizePagePatternCtx sets the page pattern context for finalize phase (thread-safe).
+func (b *BookState) SetFinalizePagePatternCtx(ctx *PagePatternContext) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.FinalizePagePatternCtx = ctx
+}
+
+// --- Structure Classification Reasonings ---
+
+// GetStructureClassifyReasonings returns the classification reasonings map (thread-safe).
+func (b *BookState) GetStructureClassifyReasonings() map[string]string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.StructureClassifyReasonings
+}
+
+// SetStructureClassifyReasonings sets the classification reasonings map (thread-safe).
+func (b *BookState) SetStructureClassifyReasonings(reasonings map[string]string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.StructureClassifyReasonings = reasonings
 }

@@ -68,14 +68,9 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		j.Book.PatternAnalysis.Fail(MaxBookOpRetries)
 		j.PersistPatternAnalysisState(ctx)
 	}
-	if j.Book.TocFinalize.IsStarted() && j.FinalizeState == nil {
-		j.Book.TocFinalize.Fail(MaxBookOpRetries)
-		common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
-	}
-	if j.Book.Structure.IsStarted() && j.StructureState == nil {
-		j.Book.Structure.Fail(MaxBookOpRetries)
-		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
-	}
+	// Note: TocFinalize and Structure operations now persist agent state to DB,
+	// so agent state is restored when the job is loaded. No need to fail these
+	// operations on restart - they will resume from their persisted state.
 
 	// Create any missing page records in DB
 	if err := checkCancelled(ctx); err != nil {

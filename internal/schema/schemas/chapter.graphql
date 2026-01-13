@@ -5,6 +5,10 @@ type Chapter {
     # Optional link to source ToC entry
     toc_entry: TocEntry
 
+    # Unique key for upsert support (preserves DocID/CID history on re-run)
+    # Format: "{book_id}:{toc_entry_id}" or "{book_id}:orphan:{sort_order}"
+    unique_key: String @index
+
     # Identity
     entry_id: String
     sort_order: Int
