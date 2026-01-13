@@ -231,8 +231,8 @@ func resetTocLink(ctx context.Context, book *BookState, tocDocID string) error {
 	book.TocLink.Reset()
 
 	// Clear agent state for all link agents
-	book.ClearAgentStates("toc_entry_finder")
-	book.ClearAgentStates("chapter_finder")
+	book.ClearAgentStates(AgentTypeTocEntryFinder)
+	book.ClearAgentStates(AgentTypeChapterFinder)
 
 	// Clear cached LinkedEntries since links are being cleared
 	book.SetLinkedEntries(nil)
@@ -272,8 +272,8 @@ func resetTocFinalize(ctx context.Context, book *BookState, tocDocID string) err
 	book.SetFinalizeProgress(0, 0, 0, 0)
 
 	// Clear agent states for finalize agents
-	book.ClearAgentStates("gap_investigator")
-	book.ClearAgentStates("discover_entry")
+	book.ClearAgentStates(AgentTypeGapInvestigator)
+	book.ClearAgentStates("discover_entry") // Not in common constants - used by discover phase
 
 	if tocDocID == "" {
 		return nil

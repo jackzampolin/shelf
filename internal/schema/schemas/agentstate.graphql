@@ -24,6 +24,10 @@ type AgentState {
     created_at: DateTime
     updated_at: DateTime
 
+    # Book association - explicit field for queries (in addition to relationship)
+    # Go code writes book_id directly and queries filter on it
+    book_id: String @index
+
     # Relationship - AgentState belongs to a Book
     book: Book @primary
 }

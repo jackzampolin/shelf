@@ -15,7 +15,8 @@ import (
 )
 
 // AgentTypeTocFinder is the agent type identifier for ToC finder agents.
-const AgentTypeTocFinder = "toc_finder"
+// Uses the centralized constant from common.AgentTypeTocFinder.
+const AgentTypeTocFinder = common.AgentTypeTocFinder
 
 // CreateTocFinderWorkUnit creates a ToC finder agent work unit.
 // Must be called with j.Mu held.
@@ -273,9 +274,20 @@ func (j *Job) saveTocFinderAgentState(ctx context.Context) error {
 
 // cleanupTocFinderAgentState removes ToC finder agent state after completion.
 func (j *Job) cleanupTocFinderAgentState(ctx context.Context) {
+	logger := svcctx.LoggerFrom(ctx)
 	existing := j.Book.GetAgentState(AgentTypeTocFinder, "")
 	if existing != nil && existing.DocID != "" {
-		_ = common.DeleteAgentState(ctx, existing.DocID)
+		if err := common.DeleteAgentState(ctx, existing.DocID); err != nil {
+			// Log error but continue - orphaned record is not fatal
+			// It will be cleaned up on next reset or can be manually deleted
+			if logger != nil {
+				logger.Error("failed to delete agent state from DB, orphaned record remains",
+					"doc_id", existing.DocID,
+					"agent_type", AgentTypeTocFinder,
+					"book_id", j.Book.BookID,
+					"error", err)
+			}
+		}
 	}
 	j.Book.RemoveAgentState(AgentTypeTocFinder, "")
 }

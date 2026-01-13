@@ -885,6 +885,44 @@ type AgentState struct {
 	DocID string // DefraDB document ID for this agent state
 }
 
+// Valid agent types - used for validation
+const (
+	AgentTypeTocFinder      = "toc_finder"
+	AgentTypeTocEntryFinder = "toc_entry_finder"
+	AgentTypeChapterFinder  = "chapter_finder"
+	AgentTypeGapInvestigator = "gap_investigator"
+)
+
+// validAgentTypes is the set of valid agent type values.
+var validAgentTypes = map[string]bool{
+	AgentTypeTocFinder:       true,
+	AgentTypeTocEntryFinder:  true,
+	AgentTypeChapterFinder:   true,
+	AgentTypeGapInvestigator: true,
+}
+
+// IsValidAgentType returns true if the agent type is valid.
+func IsValidAgentType(agentType string) bool {
+	return validAgentTypes[agentType]
+}
+
+// NewAgentState creates a new AgentState with validation.
+// Returns an error if agentType is invalid or agentID is empty.
+func NewAgentState(agentType, agentID string) (*AgentState, error) {
+	if !IsValidAgentType(agentType) {
+		return nil, fmt.Errorf("invalid agent type: %q (valid: %v)", agentType, []string{
+			AgentTypeTocFinder, AgentTypeTocEntryFinder, AgentTypeChapterFinder, AgentTypeGapInvestigator,
+		})
+	}
+	if agentID == "" {
+		return nil, fmt.Errorf("agent_id is required")
+	}
+	return &AgentState{
+		AgentType: agentType,
+		AgentID:   agentID,
+	}, nil
+}
+
 // AgentStateKey generates the map key for an agent state.
 // Single agents use just their type, per-entry agents include entry doc ID.
 func AgentStateKey(agentType string, entryDocID string) string {

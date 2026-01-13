@@ -239,11 +239,14 @@ func DeleteAgentState(ctx context.Context, docID string) error {
 
 // DeleteAgentStatesForBook removes all agent state records for a book.
 // This is used when resetting operations or cleaning up completed jobs.
+// Returns an error if any deletion fails. Logs warnings for malformed records.
 func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
-		return fmt.Errorf("defra client not in context")
+		return fmt.Errorf("DeleteAgentStatesForBook: defra client not in context")
 	}
+
+	logger := svcctx.LoggerFrom(ctx)
 
 	// Query all agent states for this book
 	query := fmt.Sprintf(`{
@@ -254,7 +257,7 @@ func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
-		return fmt.Errorf("failed to query agent states: %w", err)
+		return fmt.Errorf("DeleteAgentStatesForBook: failed to query agent states: %w", err)
 	}
 
 	states, ok := resp.Data["AgentState"].([]any)
@@ -262,18 +265,48 @@ func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 		return nil
 	}
 
+	// Track skipped records for logging
+	var skippedCount int
+	var deletedCount int
+
 	// Delete each one
-	for _, s := range states {
+	for i, s := range states {
 		state, ok := s.(map[string]any)
 		if !ok {
+			skippedCount++
+			if logger != nil {
+				logger.Warn("DeleteAgentStatesForBook: unexpected data type in result",
+					"book_id", bookID,
+					"index", i,
+					"type", fmt.Sprintf("%T", s))
+			}
 			continue
 		}
-		docID, _ := state["_docID"].(string)
-		if docID != "" {
-			if err := DeleteAgentState(ctx, docID); err != nil {
-				return err
+
+		docID, ok := state["_docID"].(string)
+		if !ok || docID == "" {
+			skippedCount++
+			if logger != nil {
+				logger.Warn("DeleteAgentStatesForBook: missing or invalid _docID in agent state",
+					"book_id", bookID,
+					"index", i,
+					"state_data", state)
 			}
+			continue
 		}
+
+		if err := DeleteAgentState(ctx, docID); err != nil {
+			return fmt.Errorf("DeleteAgentStatesForBook: failed to delete agent state %s: %w", docID, err)
+		}
+		deletedCount++
+	}
+
+	// Log summary if there were issues
+	if skippedCount > 0 && logger != nil {
+		logger.Warn("DeleteAgentStatesForBook: some records were skipped",
+			"book_id", bookID,
+			"deleted", deletedCount,
+			"skipped", skippedCount)
 	}
 
 	return nil
