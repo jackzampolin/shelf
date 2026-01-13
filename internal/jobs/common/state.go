@@ -1117,6 +1117,20 @@ func (b *BookState) SetEntriesToFind(entries []*EntryToFind) {
 	b.EntriesToFind = entries
 }
 
+// AppendEntryToFind adds an entry to find (thread-safe).
+func (b *BookState) AppendEntryToFind(entry *EntryToFind) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.EntriesToFind = append(b.EntriesToFind, entry)
+}
+
+// GetEntriesToFindCount returns the number of entries to find (thread-safe).
+func (b *BookState) GetEntriesToFindCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.EntriesToFind)
+}
+
 // GetFinalizeGaps returns gaps to investigate (thread-safe).
 // Returns a copy of the slice to prevent external modification.
 func (b *BookState) GetFinalizeGaps() []*FinalizeGap {
@@ -1135,6 +1149,20 @@ func (b *BookState) SetFinalizeGaps(gaps []*FinalizeGap) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.FinalizeGaps = gaps
+}
+
+// AppendFinalizeGap adds a gap to investigate (thread-safe).
+func (b *BookState) AppendFinalizeGap(gap *FinalizeGap) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.FinalizeGaps = append(b.FinalizeGaps, gap)
+}
+
+// GetFinalizeGapsCount returns the number of gaps to investigate (thread-safe).
+func (b *BookState) GetFinalizeGapsCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.FinalizeGaps)
 }
 
 // GetFinalizeProgress returns finalize progress counters (thread-safe).

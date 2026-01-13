@@ -321,7 +321,7 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 		logger.Info("pattern analysis complete",
 			"patterns_found", len(j.Book.FinalizePatternResult.Patterns),
 			"excluded_ranges", len(j.Book.FinalizePatternResult.Excluded),
-			"entries_to_find", len(j.Book.EntriesToFind))
+			"entries_to_find", j.Book.GetEntriesToFindCount())
 	}
 
 	// Persist pattern results - return error to allow retry on failure
@@ -354,7 +354,7 @@ func (j *Job) generateEntriesToFind(ctx context.Context) {
 	}
 
 	// Clear previous entries
-	j.Book.EntriesToFind = nil
+	j.Book.SetEntriesToFind(nil)
 
 	// Generate entries from patterns
 	for _, pattern := range j.Book.FinalizePatternResult.Patterns {
@@ -378,7 +378,7 @@ func (j *Job) generateEntriesToFind(ctx context.Context) {
 				searchEnd = j.Book.BodyEnd
 			}
 
-			j.Book.EntriesToFind = append(j.Book.EntriesToFind, &common.EntryToFind{
+			j.Book.AppendEntryToFind(&common.EntryToFind{
 				Key:              key,
 				LevelName:        pattern.LevelName,
 				Identifier:       identifier,
@@ -407,10 +407,10 @@ func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit 
 	if logger != nil {
 		logger.Info("transitioning to discover phase",
 			"book_id", j.Book.BookID,
-			"entries_to_find", len(j.Book.EntriesToFind))
+			"entries_to_find", j.Book.GetEntriesToFindCount())
 	}
 
-	if len(j.Book.EntriesToFind) == 0 {
+	if j.Book.GetEntriesToFindCount() == 0 {
 		return j.transitionToFinalizeValidate(ctx)
 	}
 
@@ -421,7 +421,7 @@ func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit 
 func (j *Job) createFinalizeDiscoverWorkUnits(ctx context.Context) []jobs.WorkUnit {
 	var units []jobs.WorkUnit
 
-	for _, entry := range j.Book.EntriesToFind {
+	for _, entry := range j.Book.GetEntriesToFind() {
 		unit := j.createChapterFinderWorkUnit(ctx, entry)
 		if unit != nil {
 			units = append(units, *unit)
@@ -529,7 +529,7 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 	ag, ok := j.FinalizeDiscoverAgents[info.FinalizeKey]
 	if !ok {
 		j.RemoveWorkUnit(result.WorkUnitID)
-		j.Book.FinalizeEntriesComplete++
+		j.Book.IncrementFinalizeEntriesComplete()
 		// Persist progress immediately after incrementing to ensure crash recovery works
 		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
 			logger.Warn("failed to persist finalize progress", "error", err)
@@ -548,7 +548,7 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 			j.RemoveWorkUnit(result.WorkUnitID)
 			return j.retryFinalizeDiscoverUnit(ctx, info)
 		}
-		j.Book.FinalizeEntriesComplete++
+		j.Book.IncrementFinalizeEntriesComplete()
 		// Persist progress immediately after incrementing
 		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
 			logger.Warn("failed to persist finalize progress", "error", err)
@@ -602,7 +602,7 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 			}
 		}
 
-		j.Book.FinalizeEntriesComplete++
+		j.Book.IncrementFinalizeEntriesComplete()
 		// Persist progress immediately after incrementing counters
 		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
 			logger.Warn("failed to persist finalize progress", "error", err)
@@ -616,7 +616,8 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 
 // checkFinalizeDiscoverCompletion checks if discover phase is complete.
 func (j *Job) checkFinalizeDiscoverCompletion(ctx context.Context) []jobs.WorkUnit {
-	if j.Book.FinalizeEntriesComplete >= len(j.Book.EntriesToFind) {
+	entriesComplete, _, _, _ := j.Book.GetFinalizeProgress()
+	if entriesComplete >= j.Book.GetEntriesToFindCount() {
 		return j.transitionToFinalizeValidate(ctx)
 	}
 	return nil
@@ -644,10 +645,10 @@ func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit 
 	if logger != nil {
 		logger.Info("transitioning to validate phase",
 			"book_id", j.Book.BookID,
-			"gaps", len(j.Book.FinalizeGaps))
+			"gaps", j.Book.GetFinalizeGapsCount())
 	}
 
-	if len(j.Book.FinalizeGaps) == 0 {
+	if j.Book.GetFinalizeGapsCount() == 0 {
 		return j.completeFinalizePhase(ctx)
 	}
 
@@ -674,13 +675,13 @@ func (j *Job) findFinalizeGaps(ctx context.Context) error {
 	})
 
 	// Clear previous gaps
-	j.Book.FinalizeGaps = nil
+	j.Book.SetFinalizeGaps(nil)
 
 	// Check gap from body start to first entry
 	if len(sortedEntries) > 0 {
 		first := sortedEntries[0]
 		if *first.ActualPage-j.Book.BodyStart > MinGapSize {
-			j.Book.FinalizeGaps = append(j.Book.FinalizeGaps, &common.FinalizeGap{
+			j.Book.AppendFinalizeGap(&common.FinalizeGap{
 				Key:            fmt.Sprintf("gap_%d_%d", j.Book.BodyStart, *first.ActualPage-1),
 				StartPage:      j.Book.BodyStart,
 				EndPage:        *first.ActualPage - 1,
@@ -702,7 +703,7 @@ func (j *Job) findFinalizeGaps(ctx context.Context) error {
 				continue
 			}
 
-			j.Book.FinalizeGaps = append(j.Book.FinalizeGaps, &common.FinalizeGap{
+			j.Book.AppendFinalizeGap(&common.FinalizeGap{
 				Key:            fmt.Sprintf("gap_%d_%d", *curr.ActualPage+1, *next.ActualPage-1),
 				StartPage:      *curr.ActualPage + 1,
 				EndPage:        *next.ActualPage - 1,
@@ -719,7 +720,7 @@ func (j *Job) findFinalizeGaps(ctx context.Context) error {
 	if len(sortedEntries) > 0 {
 		last := sortedEntries[len(sortedEntries)-1]
 		if j.Book.BodyEnd-*last.ActualPage > MinGapSize && !j.isPageExcluded(*last.ActualPage+1) {
-			j.Book.FinalizeGaps = append(j.Book.FinalizeGaps, &common.FinalizeGap{
+			j.Book.AppendFinalizeGap(&common.FinalizeGap{
 				Key:            fmt.Sprintf("gap_%d_%d", *last.ActualPage+1, j.Book.BodyEnd),
 				StartPage:      *last.ActualPage + 1,
 				EndPage:        j.Book.BodyEnd,
@@ -750,7 +751,7 @@ func (j *Job) isPageExcluded(page int) bool {
 func (j *Job) createFinalizeGapWorkUnits(ctx context.Context) []jobs.WorkUnit {
 	var units []jobs.WorkUnit
 
-	for _, gap := range j.Book.FinalizeGaps {
+	for _, gap := range j.Book.GetFinalizeGaps() {
 		unit := j.createGapInvestigatorWorkUnit(ctx, gap)
 		if unit != nil {
 			units = append(units, *unit)
@@ -863,7 +864,7 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 	ag, ok := j.FinalizeGapAgents[info.FinalizeKey]
 	if !ok {
 		j.RemoveWorkUnit(result.WorkUnitID)
-		j.Book.FinalizeGapsComplete++
+		j.Book.IncrementFinalizeGapsComplete()
 		// Persist progress immediately after incrementing
 		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
 			logger.Warn("failed to persist finalize progress", "error", err)
@@ -882,7 +883,7 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 			j.RemoveWorkUnit(result.WorkUnitID)
 			return j.retryFinalizeGapUnit(ctx, info)
 		}
-		j.Book.FinalizeGapsComplete++
+		j.Book.IncrementFinalizeGapsComplete()
 		// Persist progress immediately after incrementing
 		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
 			logger.Warn("failed to persist finalize progress", "error", err)
@@ -931,12 +932,12 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 					}
 				}
 				if gapResult.FixType == "add_entry" || gapResult.FixType == "correct_entry" {
-					j.Book.FinalizeGapsFixes++
+					j.Book.IncrementFinalizeGapsFixes()
 				}
 			}
 		}
 
-		j.Book.FinalizeGapsComplete++
+		j.Book.IncrementFinalizeGapsComplete()
 		// Persist progress immediately after incrementing counters
 		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
 			logger.Warn("failed to persist finalize progress", "error", err)
@@ -950,7 +951,8 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 
 // checkFinalizeValidateCompletion checks if validate phase is complete.
 func (j *Job) checkFinalizeValidateCompletion(ctx context.Context) []jobs.WorkUnit {
-	if j.Book.FinalizeGapsComplete >= len(j.Book.FinalizeGaps) {
+	_, _, gapsComplete, _ := j.Book.GetFinalizeProgress()
+	if gapsComplete >= j.Book.GetFinalizeGapsCount() {
 		return j.completeFinalizePhase(ctx)
 	}
 	return nil
@@ -990,10 +992,11 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 	}
 
 	if logger != nil {
+		_, entriesFound, _, gapsFixes := j.Book.GetFinalizeProgress()
 		logger.Info("finalize phase complete",
 			"book_id", j.Book.BookID,
-			"entries_found", j.Book.FinalizeEntriesFound,
-			"gaps_fixed", j.Book.FinalizeGapsFixes)
+			"entries_found", entriesFound,
+			"gaps_fixed", gapsFixes)
 	}
 
 	// Continue to structure
@@ -1281,7 +1284,7 @@ func (j *Job) persistFinalizePatternResults(ctx context.Context) error {
 	}{
 		Patterns:      j.Book.FinalizePatternResult.Patterns,
 		Excluded:      j.Book.FinalizePatternResult.Excluded,
-		EntriesToFind: j.Book.EntriesToFind,
+		EntriesToFind: j.Book.GetEntriesToFind(),
 		Reasoning:     j.Book.FinalizePatternResult.Reasoning,
 	}
 
@@ -1317,7 +1320,7 @@ func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *
 	}
 
 	var entry *common.EntryToFind
-	for _, e := range j.Book.EntriesToFind {
+	for _, e := range j.Book.GetEntriesToFind() {
 		if e.Key == entryKey {
 			entry = e
 			break
@@ -1560,7 +1563,7 @@ func (j *Job) convertGapAgentUnits(agentUnits []agent.WorkUnit, gapKey string) [
 
 func (j *Job) retryFinalizeDiscoverUnit(ctx context.Context, info WorkUnitInfo) ([]jobs.WorkUnit, error) {
 	var entry *common.EntryToFind
-	for _, e := range j.Book.EntriesToFind {
+	for _, e := range j.Book.GetEntriesToFind() {
 		if e.Key == info.FinalizeKey {
 			entry = e
 			break
@@ -1588,7 +1591,7 @@ func (j *Job) retryFinalizeDiscoverUnit(ctx context.Context, info WorkUnitInfo) 
 
 func (j *Job) retryFinalizeGapUnit(ctx context.Context, info WorkUnitInfo) ([]jobs.WorkUnit, error) {
 	var gap *common.FinalizeGap
-	for _, g := range j.Book.FinalizeGaps {
+	for _, g := range j.Book.GetFinalizeGaps() {
 		if g.Key == info.FinalizeKey {
 			gap = g
 			break
