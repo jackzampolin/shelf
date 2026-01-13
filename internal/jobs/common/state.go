@@ -467,6 +467,10 @@ type BookState struct {
 	// ToC entries loaded from DB (immutable after LoadBook when ToC extraction is complete)
 	TocEntries []*toc_entry_finder.TocEntry
 
+	// Linked ToC entries with page associations (cached, loaded once when needed)
+	// Used by finalize_toc and common_structure phases
+	LinkedEntries []*LinkedTocEntry
+
 	// Pattern analysis results (set after pattern analysis completes)
 	PatternAnalysisResult *PagePatternResult
 
@@ -736,6 +740,29 @@ func (b *BookState) GetUnlinkedTocEntries() []*toc_entry_finder.TocEntry {
 	defer b.mu.RUnlock()
 	// TocEntries are already filtered to unlinked during load
 	return b.TocEntries
+}
+
+// --- Thread-safe accessors for LinkedEntries ---
+
+// GetLinkedEntries returns the linked ToC entries (thread-safe).
+func (b *BookState) GetLinkedEntries() []*LinkedTocEntry {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.LinkedEntries
+}
+
+// SetLinkedEntries sets the linked ToC entries (thread-safe).
+func (b *BookState) SetLinkedEntries(entries []*LinkedTocEntry) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.LinkedEntries = entries
+}
+
+// HasLinkedEntries returns true if linked entries are cached (thread-safe).
+func (b *BookState) HasLinkedEntries() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.LinkedEntries != nil
 }
 
 // SetPageNumberPattern sets the page number pattern (thread-safe).

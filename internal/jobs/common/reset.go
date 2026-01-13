@@ -239,6 +239,9 @@ func resetTocLink(ctx context.Context, book *BookState, tocDocID string) error {
 	book.ClearAgentStates("toc_entry_finder")
 	book.ClearAgentStates("chapter_finder")
 
+	// Clear cached LinkedEntries since links are being cleared
+	book.SetLinkedEntries(nil)
+
 	if tocDocID == "" {
 		return nil
 	}

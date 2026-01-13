@@ -68,11 +68,11 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		j.Book.PatternAnalysis.Fail(MaxBookOpRetries)
 		j.PersistPatternAnalysisState(ctx)
 	}
-	if j.Book.TocFinalize.IsStarted() && j.FinalizeJob == nil {
+	if j.Book.TocFinalize.IsStarted() && j.FinalizeState == nil {
 		j.Book.TocFinalize.Fail(MaxBookOpRetries)
 		common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
 	}
-	if j.Book.Structure.IsStarted() && j.StructureJob == nil {
+	if j.Book.Structure.IsStarted() && j.StructureState == nil {
 		j.Book.Structure.Fail(MaxBookOpRetries)
 		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
 	}

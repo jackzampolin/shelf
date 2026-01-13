@@ -5,8 +5,6 @@ import (
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
-	common_structure "github.com/jackzampolin/shelf/internal/jobs/common_structure/job"
-	finalize_toc "github.com/jackzampolin/shelf/internal/jobs/finalize_toc/job"
 )
 
 // BlendThresholdForMetadata is the number of blended pages before triggering metadata extraction.
@@ -139,11 +137,11 @@ type Job struct {
 	LinkTocEntryAgents map[string]*agent.Agent // keyed by entry DocID
 	LinkTocEntriesDone int                     // count of completed entries
 
-	// Finalize ToC sub-job (embedded, runs inline within process_book)
-	FinalizeJob *finalize_toc.Job
+	// Finalize ToC state (inline phase handling)
+	FinalizeState *FinalizeState
 
-	// Common structure sub-job (embedded, runs inline within process_book)
-	StructureJob *common_structure.Job
+	// Structure state (inline phase handling)
+	StructureState *StructureState
 }
 
 // NewFromLoadResult creates a Job from a common.LoadBookResult.

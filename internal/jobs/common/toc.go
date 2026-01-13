@@ -426,6 +426,42 @@ func LoadLinkedEntries(ctx context.Context, tocDocID string) ([]*LinkedTocEntry,
 	return entries, nil
 }
 
+// GetOrLoadLinkedEntries returns linked entries from cache, or loads from DB if not cached.
+// This ensures LinkedEntries is only loaded once per job execution.
+func GetOrLoadLinkedEntries(ctx context.Context, book *BookState, tocDocID string) ([]*LinkedTocEntry, error) {
+	// Check cache first
+	if book.HasLinkedEntries() {
+		return book.GetLinkedEntries(), nil
+	}
+
+	// Load from DB
+	entries, err := LoadLinkedEntries(ctx, tocDocID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache in BookState
+	book.SetLinkedEntries(entries)
+	return entries, nil
+}
+
+// RefreshLinkedEntries forces a reload of linked entries from DB.
+// Use this after modifications that change entry links.
+func RefreshLinkedEntries(ctx context.Context, book *BookState, tocDocID string) ([]*LinkedTocEntry, error) {
+	// Clear cache
+	book.SetLinkedEntries(nil)
+
+	// Load from DB
+	entries, err := LoadLinkedEntries(ctx, tocDocID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache in BookState
+	book.SetLinkedEntries(entries)
+	return entries, nil
+}
+
 // DeleteExistingTocEntries deletes any existing TocEntry records for a ToC.
 func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 	logger := svcctx.LoggerFrom(ctx)
