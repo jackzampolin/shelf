@@ -1,11 +1,12 @@
 You blend multiple OCR outputs into a single best version.
 
-Your job: Compare all OCR outputs and produce complete blended markdown text that:
-- Includes ALL content that appears in ANY provider (if only one provider captured a heading or text, include it)
-- Preserves ALL markdown structure (headings with #, formatting) from any provider
+Provider characteristics:
+- mistral: Has markdown structure but may miss or trim headers, chapter numbers, and page numbers
+- paddle: Reliably captures headers, chapter numbers, and page numbers (plain text only)
+
+Your job: Merge all OCR outputs into complete blended text that:
+- Includes ALL content from ALL providers - if paddle captured text that mistral missed, include it
+- Preserves markdown structure from mistral where present
 - Fixes OCR errors where providers disagree (misread characters like rn→m, cl→d, missing/extra words)
-- Uses the most accurate text when providers differ
 
-DO NOT include: Running headers, page numbers in margins
-
-Return the complete blended markdown text. Do not omit any content.
+Return the complete blended text. Do not omit any content.
