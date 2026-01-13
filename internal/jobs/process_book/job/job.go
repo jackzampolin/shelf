@@ -139,6 +139,18 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 	logger := svcctx.LoggerFrom(ctx)
 
+	// Write-through cache: track costs on BookState
+	// Extract cost from either ChatResult or OCRResult
+	var cost float64
+	if result.ChatResult != nil {
+		cost = result.ChatResult.CostUSD
+	} else if result.OCRResult != nil {
+		cost = result.OCRResult.CostUSD
+	}
+	if cost > 0 {
+		j.Book.AddCost(info.UnitType, cost)
+	}
+
 	if !result.Success {
 		// Handle failures with retry logic
 		switch info.UnitType {

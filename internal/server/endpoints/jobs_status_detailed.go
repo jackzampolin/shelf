@@ -263,6 +263,41 @@ func (e *DetailedJobStatusEndpoint) handler(w http.ResponseWriter, r *http.Reque
 					resp.ToC.FinalizeComplete = live.TocFinalized
 					resp.Structure.Started = live.StructureStarted
 					resp.Structure.Complete = live.StructureComplete
+
+					// Overlay costs from write-through cache if available
+					if live.CostsByStage != nil {
+						// OCR costs by provider
+						for stage, cost := range live.CostsByStage {
+							switch stage {
+							case "blend":
+								resp.Stages.Blend.CostUSD = cost
+							case "label":
+								resp.Stages.Label.CostUSD = cost
+							case "metadata":
+								resp.Metadata.CostUSD = cost
+							case "pattern_analysis":
+								resp.Stages.PatternAnalysis.CostUSD = cost
+							case "toc", "toc_finder", "toc_extract", "link_toc":
+								resp.ToC.CostUSD += cost
+							case "structure_classify", "structure_polish":
+								resp.Structure.CostUSD += cost
+							default:
+								// Check if this is an OCR provider
+								if _, exists := resp.OcrProgress[stage]; exists {
+									resp.Stages.OCR.CostByProvider[stage] = cost
+									if prog := resp.OcrProgress[stage]; prog.Complete > 0 {
+										prog.CostUSD = cost
+										resp.OcrProgress[stage] = prog
+									}
+								}
+							}
+						}
+						// Recalculate total OCR cost
+						resp.Stages.OCR.TotalCostUSD = 0
+						for _, cost := range resp.Stages.OCR.CostByProvider {
+							resp.Stages.OCR.TotalCostUSD += cost
+						}
+					}
 				}
 			}
 		}

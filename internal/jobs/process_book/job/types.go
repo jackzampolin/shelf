@@ -254,5 +254,12 @@ func (j *Job) LiveStatus() *jobs.LiveStatus {
 		TocFinalized:      tocFinalizeState.IsComplete(),
 		StructureStarted:  structureState.IsStarted(),
 		StructureComplete: structureState.IsComplete(),
+
+		// Cost tracking from write-through cache
+		TotalCostUSD: book.GetTotalCost(),
+		CostsByStage: book.GetCostsByStage(),
+
+		// Agent run tracking from write-through cache
+		AgentRunCount: book.GetAgentRunCount(),
 	}
 }

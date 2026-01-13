@@ -188,17 +188,24 @@ type LiveStatusProvider interface {
 
 // LiveStatus contains real-time status from a running job's in-memory state.
 type LiveStatus struct {
-	TotalPages       int
-	OcrComplete      int
-	BlendComplete    int
-	LabelComplete    int
-	MetadataComplete bool
-	TocFound         bool
-	TocExtracted     bool
-	TocLinked        bool
-	TocFinalized     bool
-	StructureStarted bool
+	TotalPages        int
+	OcrComplete       int
+	BlendComplete     int
+	LabelComplete     int
+	MetadataComplete  bool
+	TocFound          bool
+	TocExtracted      bool
+	TocLinked         bool
+	TocFinalized      bool
+	StructureStarted  bool
 	StructureComplete bool
+
+	// Cost tracking (from write-through cache)
+	TotalCostUSD float64
+	CostsByStage map[string]float64
+
+	// Agent run tracking (from write-through cache)
+	AgentRunCount int
 }
 
 // Record represents a job record stored in DefraDB.

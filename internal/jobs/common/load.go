@@ -1175,3 +1175,166 @@ func loadBookMetadataFromDB(ctx context.Context, bookID string) *BookMetadata {
 
 	return metadata
 }
+
+// loadBookCostsFromDB loads cost data from Metric records for a book.
+// Aggregates costs by stage and sets total on the BookState.
+// NOTE: Caller must hold the write lock on BookState.
+func loadBookCostsFromDB(ctx context.Context, book *BookState) {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		book.costsLoaded = true
+		return
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Query all metrics for this book
+	query := fmt.Sprintf(`{
+		Metric(filter: {book_id: {_eq: "%s"}}) {
+			stage
+			cost_usd
+		}
+	}`, book.BookID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		if logger != nil {
+			logger.Warn("loadBookCostsFromDB: query failed", "book_id", book.BookID, "error", err)
+		}
+		book.costsLoaded = true
+		return
+	}
+
+	metrics, ok := resp.Data["Metric"].([]any)
+	if !ok || len(metrics) == 0 {
+		book.costsLoaded = true
+		return
+	}
+
+	// Aggregate costs by stage
+	costsByStage := make(map[string]float64)
+	var totalCost float64
+
+	for _, m := range metrics {
+		metric, ok := m.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		var stage string
+		var costUSD float64
+
+		if s, ok := metric["stage"].(string); ok {
+			stage = s
+		}
+		if c, ok := metric["cost_usd"].(float64); ok {
+			costUSD = c
+		}
+
+		if stage != "" && costUSD > 0 {
+			costsByStage[stage] += costUSD
+			totalCost += costUSD
+		}
+	}
+
+	book.costsByStage = costsByStage
+	book.totalCost = totalCost
+	book.costsLoaded = true
+
+	if logger != nil {
+		logger.Debug("loadBookCostsFromDB: loaded costs",
+			"book_id", book.BookID,
+			"total_cost", totalCost,
+			"stages", len(costsByStage))
+	}
+}
+
+// loadAgentRunsFromDB loads agent run summaries from DefraDB for a book.
+// NOTE: Caller must hold the write lock on BookState.
+func loadAgentRunsFromDB(ctx context.Context, book *BookState) {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		book.agentRunsLoaded = true
+		return
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Query all agent runs for this book
+	query := fmt.Sprintf(`{
+		AgentRun(filter: {book_id: {_eq: "%s"}}) {
+			_docID
+			agent_type
+			job_id
+			started_at
+			completed_at
+			iterations
+			success
+			error
+		}
+	}`, book.BookID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		if logger != nil {
+			logger.Warn("loadAgentRunsFromDB: query failed", "book_id", book.BookID, "error", err)
+		}
+		book.agentRunsLoaded = true
+		return
+	}
+
+	runs, ok := resp.Data["AgentRun"].([]any)
+	if !ok || len(runs) == 0 {
+		book.agentRunsLoaded = true
+		return
+	}
+
+	// Parse agent runs into summaries
+	var summaries []AgentRunSummary
+	for _, r := range runs {
+		run, ok := r.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		summary := AgentRunSummary{}
+
+		if v, ok := run["_docID"].(string); ok {
+			summary.DocID = v
+		}
+		if v, ok := run["agent_type"].(string); ok {
+			summary.AgentType = v
+		}
+		if v, ok := run["job_id"].(string); ok {
+			summary.JobID = v
+		}
+		if v, ok := run["started_at"].(string); ok {
+			summary.StartedAt = v
+		}
+		if v, ok := run["completed_at"].(string); ok {
+			summary.CompletedAt = v
+		}
+		if v, ok := run["iterations"].(float64); ok {
+			summary.Iterations = int(v)
+		}
+		if v, ok := run["success"].(bool); ok {
+			summary.Success = v
+		}
+		if v, ok := run["error"].(string); ok {
+			summary.Error = v
+		}
+
+		if summary.DocID != "" {
+			summaries = append(summaries, summary)
+		}
+	}
+
+	book.agentRuns = summaries
+	book.agentRunsLoaded = true
+
+	if logger != nil {
+		logger.Debug("loadAgentRunsFromDB: loaded agent runs",
+			"book_id", book.BookID,
+			"count", len(summaries))
+	}
+}

@@ -524,6 +524,17 @@ type BookState struct {
 	// Agent states for job resume (mutable - unexported, use accessor methods)
 	// Key format: "agent_type" for single agents, "agent_type:entry_doc_id" for per-entry agents
 	agentStates map[string]*AgentState
+
+	// Cost tracking (mutable - unexported, use accessor methods)
+	// Write-through: updated when work units complete, lazy-loaded from DB on first access
+	costsByStage map[string]float64 // stage -> accumulated cost USD
+	totalCost    float64            // total accumulated cost USD
+	costsLoaded  bool               // true if costs have been loaded from DB
+
+	// Agent run logs (mutable - unexported, use accessor methods)
+	// Write-through: updated when agent runs complete, lazy-loaded from DB on first access
+	agentRuns       []AgentRunSummary // cached summaries of agent executions
+	agentRunsLoaded bool              // true if agent runs have been loaded from DB
 }
 
 // NewBookState creates a new BookState with initialized maps.
@@ -537,6 +548,7 @@ func NewBookState(bookID string) *BookState {
 		agentStates:                 make(map[string]*AgentState),
 		structureClassifications:    make(map[string]string),
 		structureClassifyReasonings: make(map[string]string),
+		costsByStage:                make(map[string]float64),
 	}
 }
 
@@ -1021,6 +1033,21 @@ func (b *BookState) ClearAgentStates(agentType string) {
 			delete(b.agentStates, key)
 		}
 	}
+}
+
+// --- Agent Run Summary (for caching executed agent logs) ---
+
+// AgentRunSummary is a lightweight summary of an agent execution.
+// Used for caching agent run history on BookState.
+type AgentRunSummary struct {
+	DocID       string // DefraDB document ID
+	AgentType   string // Agent type (toc_finder, chapter_finder, etc.)
+	JobID       string // Job that spawned this agent
+	StartedAt   string // ISO timestamp
+	CompletedAt string // ISO timestamp (empty if still running)
+	Iterations  int    // Number of agent iterations
+	Success     bool   // Whether the agent succeeded
+	Error       string // Error message if failed
 }
 
 // --- Finalize ToC State Types ---
@@ -1986,4 +2013,169 @@ func (b *BookState) GetStructureState() OperationState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.structure
+}
+
+// --- Cost Tracking Accessors ---
+// Write-through cache: costs are updated when work units complete.
+// Lazy load: costs can be loaded from DB on first access if not already cached.
+
+// AddCost adds a cost amount for a stage (thread-safe).
+// Called by OnComplete handlers when work units finish.
+func (b *BookState) AddCost(stage string, cost float64) {
+	if cost <= 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.costsByStage[stage] += cost
+	b.totalCost += cost
+}
+
+// GetTotalCost returns the total accumulated cost (thread-safe).
+func (b *BookState) GetTotalCost() float64 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.totalCost
+}
+
+// GetCostByStage returns the cost for a specific stage (thread-safe).
+func (b *BookState) GetCostByStage(stage string) float64 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.costsByStage[stage]
+}
+
+// GetCostsByStage returns a copy of all costs by stage (thread-safe).
+func (b *BookState) GetCostsByStage() map[string]float64 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	result := make(map[string]float64, len(b.costsByStage))
+	for k, v := range b.costsByStage {
+		result[k] = v
+	}
+	return result
+}
+
+// SetCosts sets costs from loaded data (thread-safe).
+// Used when loading costs from DB or restoring from checkpoint.
+func (b *BookState) SetCosts(costsByStage map[string]float64, totalCost float64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.costsByStage = make(map[string]float64, len(costsByStage))
+	for k, v := range costsByStage {
+		b.costsByStage[k] = v
+	}
+	b.totalCost = totalCost
+	b.costsLoaded = true
+}
+
+// CostsLoaded returns true if costs have been loaded from DB (thread-safe).
+func (b *BookState) CostsLoaded() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.costsLoaded
+}
+
+// GetTotalCostWithLazyLoad returns total cost, loading from DB if needed (thread-safe).
+// Requires context with DefraClient for DB queries.
+func (b *BookState) GetTotalCostWithLazyLoad(ctx context.Context) float64 {
+	b.mu.RLock()
+	if b.costsLoaded {
+		cost := b.totalCost
+		b.mu.RUnlock()
+		return cost
+	}
+	b.mu.RUnlock()
+
+	// Need to load from DB - upgrade to write lock
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if b.costsLoaded {
+		return b.totalCost
+	}
+
+	// Load costs from DefraDB
+	loadBookCostsFromDB(ctx, b)
+	return b.totalCost
+}
+
+// --- Agent Run Accessors ---
+// Write-through cache: agent runs are added when agents complete.
+// Lazy load: agent runs can be loaded from DB on first access if not already cached.
+
+// AddAgentRun adds an agent run summary to the cache (thread-safe).
+// Called when an agent completes execution.
+func (b *BookState) AddAgentRun(run AgentRunSummary) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.agentRuns = append(b.agentRuns, run)
+}
+
+// GetAgentRuns returns cached agent run summaries (thread-safe).
+// Returns a copy of the slice to prevent external modification.
+func (b *BookState) GetAgentRuns() []AgentRunSummary {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.agentRuns == nil {
+		return nil
+	}
+	result := make([]AgentRunSummary, len(b.agentRuns))
+	copy(result, b.agentRuns)
+	return result
+}
+
+// GetAgentRunCount returns the number of cached agent runs (thread-safe).
+func (b *BookState) GetAgentRunCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.agentRuns)
+}
+
+// AgentRunsLoaded returns true if agent runs have been loaded from DB (thread-safe).
+func (b *BookState) AgentRunsLoaded() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.agentRunsLoaded
+}
+
+// SetAgentRuns sets agent runs from loaded data (thread-safe).
+// Used when loading agent runs from DB.
+func (b *BookState) SetAgentRuns(runs []AgentRunSummary) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.agentRuns = make([]AgentRunSummary, len(runs))
+	copy(b.agentRuns, runs)
+	b.agentRunsLoaded = true
+}
+
+// GetAgentRunsWithLazyLoad returns agent runs, loading from DB if needed (thread-safe).
+// Requires context with DefraClient for DB queries.
+func (b *BookState) GetAgentRunsWithLazyLoad(ctx context.Context) []AgentRunSummary {
+	b.mu.RLock()
+	if b.agentRunsLoaded {
+		runs := make([]AgentRunSummary, len(b.agentRuns))
+		copy(runs, b.agentRuns)
+		b.mu.RUnlock()
+		return runs
+	}
+	b.mu.RUnlock()
+
+	// Need to load from DB - upgrade to write lock
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if b.agentRunsLoaded {
+		result := make([]AgentRunSummary, len(b.agentRuns))
+		copy(result, b.agentRuns)
+		return result
+	}
+
+	// Load agent runs from DefraDB
+	loadAgentRunsFromDB(ctx, b)
+	result := make([]AgentRunSummary, len(b.agentRuns))
+	copy(result, b.agentRuns)
+	return result
 }
