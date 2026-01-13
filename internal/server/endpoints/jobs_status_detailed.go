@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -242,6 +243,29 @@ func (e *DetailedJobStatusEndpoint) handler(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	// Overlay live status if a job is running (more up-to-date progress counts)
+	if scheduler := svcctx.SchedulerFrom(r.Context()); scheduler != nil {
+		if job := scheduler.GetJobByBookID(bookID); job != nil {
+			if provider, ok := job.(jobs.LiveStatusProvider); ok {
+				if live := provider.LiveStatus(); live != nil {
+					// Override page progress with live counts
+					resp.Stages.OCR.Complete = live.OcrComplete
+					resp.Stages.Blend.Complete = live.BlendComplete
+					resp.Stages.Label.Complete = live.LabelComplete
+
+					// Override operation states
+					resp.Metadata.Complete = live.MetadataComplete
+					resp.ToC.Found = live.TocFound
+					resp.ToC.ExtractComplete = live.TocExtracted
+					resp.ToC.LinkComplete = live.TocLinked
+					resp.ToC.FinalizeComplete = live.TocFinalized
+					resp.Structure.Started = live.StructureStarted
+					resp.Structure.Complete = live.StructureComplete
+				}
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, resp)

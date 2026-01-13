@@ -67,11 +67,18 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 
 	book := NewBookState(bookID)
 
-	// 1. Query book record for page_count and title
+	// 1. Query book record for page_count and metadata
 	bookQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			page_count
 			title
+			author
+			isbn
+			lccn
+			publisher
+			publication_year
+			language
+			description
 		}
 	}`, bookID)
 
@@ -85,9 +92,33 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 			if pc, ok := bookData["page_count"].(float64); ok {
 				book.TotalPages = int(pc)
 			}
-			if title, ok := bookData["title"].(string); ok {
-				book.BookTitle = title
+			// Load metadata into BookMetadata struct
+			metadata := &BookMetadata{}
+			if v, ok := bookData["title"].(string); ok {
+				metadata.Title = v
 			}
+			if v, ok := bookData["author"].(string); ok {
+				metadata.Author = v
+			}
+			if v, ok := bookData["isbn"].(string); ok {
+				metadata.ISBN = v
+			}
+			if v, ok := bookData["lccn"].(string); ok {
+				metadata.LCCN = v
+			}
+			if v, ok := bookData["publisher"].(string); ok {
+				metadata.Publisher = v
+			}
+			if v, ok := bookData["publication_year"].(float64); ok {
+				metadata.PublicationYear = int(v)
+			}
+			if v, ok := bookData["language"].(string); ok {
+				metadata.Language = v
+			}
+			if v, ok := bookData["description"].(string); ok {
+				metadata.Description = v
+			}
+			book.SetBookMetadata(metadata)
 		}
 	}
 
@@ -1077,4 +1108,70 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 	}
 
 	return nil
+}
+
+// loadBookMetadataFromDB loads book metadata from DefraDB.
+// Returns nil if metadata is not available or on error.
+func loadBookMetadataFromDB(ctx context.Context, bookID string) *BookMetadata {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil
+	}
+
+	query := fmt.Sprintf(`{
+		Book(filter: {_docID: {_eq: "%s"}}) {
+			title
+			author
+			isbn
+			lccn
+			publisher
+			publication_year
+			language
+			description
+		}
+	}`, bookID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return nil
+	}
+
+	books, ok := resp.Data["Book"].([]any)
+	if !ok || len(books) == 0 {
+		return nil
+	}
+
+	bookData, ok := books[0].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	metadata := &BookMetadata{}
+
+	if v, ok := bookData["title"].(string); ok {
+		metadata.Title = v
+	}
+	if v, ok := bookData["author"].(string); ok {
+		metadata.Author = v
+	}
+	if v, ok := bookData["isbn"].(string); ok {
+		metadata.ISBN = v
+	}
+	if v, ok := bookData["lccn"].(string); ok {
+		metadata.LCCN = v
+	}
+	if v, ok := bookData["publisher"].(string); ok {
+		metadata.Publisher = v
+	}
+	if v, ok := bookData["publication_year"].(float64); ok {
+		metadata.PublicationYear = int(v)
+	}
+	if v, ok := bookData["language"].(string); ok {
+		metadata.Language = v
+	}
+	if v, ok := bookData["description"].(string); ok {
+		metadata.Description = v
+	}
+
+	return metadata
 }

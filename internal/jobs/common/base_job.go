@@ -46,6 +46,15 @@ func (j *BaseJob) GetBook() *BookState {
 	return j.Book
 }
 
+// BookID returns the book ID being processed.
+// Implements jobs.BookIDProvider interface.
+func (j *BaseJob) BookID() string {
+	if j.Book == nil {
+		return ""
+	}
+	return j.Book.BookID
+}
+
 // SetRecordID sets the job record ID (thread-safe).
 func (j *BaseJob) SetRecordID(id string) {
 	j.Mu.Lock()

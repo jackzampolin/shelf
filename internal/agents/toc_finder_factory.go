@@ -26,7 +26,7 @@ func NewTocFinderAgent(ctx context.Context, cfg TocFinderConfig) *agent.Agent {
 		Book: cfg.Book,
 	})
 
-	userPrompt := toc_finder.BuildUserPrompt(cfg.Book.BookID, cfg.Book.BookTitle, cfg.Book.TotalPages, nil)
+	userPrompt := toc_finder.BuildUserPrompt(cfg.Book.BookID, cfg.Book.GetBookTitle(), cfg.Book.TotalPages, nil)
 
 	return agent.New(ctx, agent.Config{
 		Tools: tocTools,

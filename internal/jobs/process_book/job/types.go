@@ -204,3 +204,55 @@ func (j *Job) AllPagesBlendComplete() bool {
 func (j *Job) FindPDFForPage(pageNum int) (pdfPath string, pageInPDF int) {
 	return j.Book.PDFs.FindPDFForPage(pageNum)
 }
+
+// LiveStatus returns real-time processing status from in-memory state.
+// Implements jobs.LiveStatusProvider interface.
+func (j *Job) LiveStatus() *jobs.LiveStatus {
+	book := j.Book
+	if book == nil {
+		return nil
+	}
+
+	// Count page completion from in-memory state
+	var ocrComplete, blendComplete, labelComplete int
+	book.ForEachPage(func(pageNum int, state *common.PageState) {
+		// OCR is complete when all providers are done
+		allOcr := true
+		for _, provider := range book.OcrProviders {
+			if !state.OcrComplete(provider) {
+				allOcr = false
+				break
+			}
+		}
+		if allOcr {
+			ocrComplete++
+		}
+		if state.IsBlendDone() {
+			blendComplete++
+		}
+		if state.IsLabelDone() {
+			labelComplete++
+		}
+	})
+
+	// Get book-level operation states
+	metadataState := book.GetMetadataState()
+	tocExtractState := book.GetTocExtractState()
+	tocLinkState := book.GetTocLinkState()
+	tocFinalizeState := book.GetTocFinalizeState()
+	structureState := book.GetStructureState()
+
+	return &jobs.LiveStatus{
+		TotalPages:        book.TotalPages,
+		OcrComplete:       ocrComplete,
+		BlendComplete:     blendComplete,
+		LabelComplete:     labelComplete,
+		MetadataComplete:  metadataState.IsComplete(),
+		TocFound:          book.GetTocFound(),
+		TocExtracted:      tocExtractState.IsComplete(),
+		TocLinked:         tocLinkState.IsComplete(),
+		TocFinalized:      tocFinalizeState.IsComplete(),
+		StructureStarted:  structureState.IsStarted(),
+		StructureComplete: structureState.IsComplete(),
+	}
+}

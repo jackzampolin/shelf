@@ -172,6 +172,35 @@ const (
 	StatusCancelled Status = "cancelled"
 )
 
+// BookIDProvider is implemented by jobs that process a specific book.
+// Used by Scheduler.GetJobByBookID to find active jobs.
+type BookIDProvider interface {
+	BookID() string
+}
+
+// LiveStatusProvider is implemented by jobs that can provide real-time
+// status from in-memory state, avoiding database queries during execution.
+type LiveStatusProvider interface {
+	// LiveStatus returns current processing status from in-memory state.
+	// This is faster and more up-to-date than querying DefraDB.
+	LiveStatus() *LiveStatus
+}
+
+// LiveStatus contains real-time status from a running job's in-memory state.
+type LiveStatus struct {
+	TotalPages       int
+	OcrComplete      int
+	BlendComplete    int
+	LabelComplete    int
+	MetadataComplete bool
+	TocFound         bool
+	TocExtracted     bool
+	TocLinked        bool
+	TocFinalized     bool
+	StructureStarted bool
+	StructureComplete bool
+}
+
 // Record represents a job record stored in DefraDB.
 // This maps to the Job schema.
 type Record struct {

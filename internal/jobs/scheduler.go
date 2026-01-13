@@ -88,6 +88,22 @@ func (s *Scheduler) removeJob(jobID string) {
 	s.mu.Unlock()
 }
 
+// GetJobByBookID returns an active job processing the given book, if any.
+// Returns nil if no active job is found for this book.
+func (s *Scheduler) GetJobByBookID(bookID string) Job {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, job := range s.jobs {
+		if provider, ok := job.(BookIDProvider); ok {
+			if provider.BookID() == bookID {
+				return job
+			}
+		}
+	}
+	return nil
+}
+
 // Start begins the scheduler and all registered pools.
 // Blocks until context is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {
