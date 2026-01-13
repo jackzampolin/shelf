@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/react'
@@ -104,6 +104,12 @@ function ChaptersPage() {
     }
   }
 
+  // Sort chapters by sort_order for consistent display
+  const sortedChapters = useMemo(() => {
+    if (!chaptersData?.chapters) return []
+    return [...chaptersData.chapters].sort((a, b) => a.sort_order - b.sort_order)
+  }, [chaptersData?.chapters])
+
   if (isLoading) {
     return (
       <div className="text-center py-12">
@@ -192,7 +198,7 @@ function ChaptersPage() {
 
       {/* Chapters list */}
       <div className="bg-white rounded-lg shadow divide-y">
-        {chaptersData.chapters.map((chapter) => (
+        {sortedChapters.map((chapter) => (
           <Disclosure key={chapter.id}>
             {() => (
               <div>

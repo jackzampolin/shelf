@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '@/api/client'
@@ -85,6 +85,12 @@ export function StructureSection({ structure, bookId, metrics }: StructureSectio
   ) || { complete: 0, failed: 0, pending: 0, total: 0 }
 
   const hasDetails = chapters && chapters.chapters && chapters.chapters.length > 0
+
+  // Sort chapters by sort_order for consistent display
+  const sortedChapters = useMemo(() => {
+    if (!chapters?.chapters) return []
+    return [...chapters.chapters].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+  }, [chapters?.chapters])
 
   // Determine phase status from actual phase data
   // Phases: build -> extract -> classify -> polish -> finalize
@@ -230,7 +236,7 @@ export function StructureSection({ structure, bookId, metrics }: StructureSectio
             </button>
           </div>
 
-          {expanded && chapters?.chapters && (
+          {expanded && sortedChapters.length > 0 && (
             <div className="border rounded-lg overflow-hidden mt-2">
               <div className="grid grid-cols-12 gap-2 bg-gray-100 px-3 py-2 text-xs font-medium text-gray-600 border-b">
                 <div className="col-span-1">#</div>
@@ -240,7 +246,7 @@ export function StructureSection({ structure, bookId, metrics }: StructureSectio
                 <div className="col-span-2">Polish</div>
               </div>
               <div className="max-h-64 overflow-y-auto">
-                {chapters.chapters.map((ch, idx) => (
+                {sortedChapters.map((ch, idx) => (
                   <div
                     key={ch.entry_id || idx}
                     className="grid grid-cols-12 gap-2 px-3 py-2 text-sm border-b last:border-b-0 hover:bg-gray-50"
