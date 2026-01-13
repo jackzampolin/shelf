@@ -530,6 +530,10 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 	if !ok {
 		j.RemoveWorkUnit(result.WorkUnitID)
 		j.Book.FinalizeEntriesComplete++
+		// Persist progress immediately after incrementing to ensure crash recovery works
+		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
+			logger.Warn("failed to persist finalize progress", "error", err)
+		}
 		return j.checkFinalizeDiscoverCompletion(ctx), nil
 	}
 
@@ -545,6 +549,10 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 			return j.retryFinalizeDiscoverUnit(ctx, info)
 		}
 		j.Book.FinalizeEntriesComplete++
+		// Persist progress immediately after incrementing
+		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
+			logger.Warn("failed to persist finalize progress", "error", err)
+		}
 		j.RemoveWorkUnit(result.WorkUnitID)
 		if logger != nil {
 			logger.Warn("chapter finder permanently failed",
@@ -595,6 +603,10 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 		}
 
 		j.Book.FinalizeEntriesComplete++
+		// Persist progress immediately after incrementing counters
+		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
+			logger.Warn("failed to persist finalize progress", "error", err)
+		}
 		delete(j.FinalizeDiscoverAgents, info.FinalizeKey)
 	}
 
@@ -852,6 +864,10 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 	if !ok {
 		j.RemoveWorkUnit(result.WorkUnitID)
 		j.Book.FinalizeGapsComplete++
+		// Persist progress immediately after incrementing
+		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
+			logger.Warn("failed to persist finalize progress", "error", err)
+		}
 		return j.checkFinalizeValidateCompletion(ctx), nil
 	}
 
@@ -867,6 +883,10 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 			return j.retryFinalizeGapUnit(ctx, info)
 		}
 		j.Book.FinalizeGapsComplete++
+		// Persist progress immediately after incrementing
+		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
+			logger.Warn("failed to persist finalize progress", "error", err)
+		}
 		j.RemoveWorkUnit(result.WorkUnitID)
 		if logger != nil {
 			logger.Warn("gap investigator permanently failed",
@@ -917,6 +937,10 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 		}
 
 		j.Book.FinalizeGapsComplete++
+		// Persist progress immediately after incrementing counters
+		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
+			logger.Warn("failed to persist finalize progress", "error", err)
+		}
 		delete(j.FinalizeGapAgents, info.FinalizeKey)
 	}
 

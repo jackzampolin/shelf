@@ -107,7 +107,12 @@ func (e *StartJobEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	cfg.ResetFrom = req.ResetFrom
 	// Apply variant if specified (overrides the default standard variant)
 	if req.Variant != "" {
-		cfg.ApplyVariant(process_book.PipelineVariant(req.Variant))
+		variant := process_book.PipelineVariant(req.Variant)
+		if !variant.IsValid() {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid variant: %s (valid variants: standard, photo-book, text-only, ocr-only)", req.Variant))
+			return
+		}
+		cfg.ApplyVariant(variant)
 	}
 	job, err = process_book.NewJob(r.Context(), cfg, bookID)
 

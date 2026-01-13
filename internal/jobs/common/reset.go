@@ -153,8 +153,8 @@ func resetTocFinder(ctx context.Context, book *BookState, tocDocID string) error
 		return nil
 	}
 
-	// Reset ToC record
-	return SendToSink(ctx, defra.WriteOp{
+	// Reset ToC record - use sync to ensure reset completes before proceeding
+	return SendToSinkSync(ctx, defra.WriteOp{
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document: map[string]any{
@@ -187,8 +187,8 @@ func resetTocExtract(ctx context.Context, book *BookState, tocDocID string) erro
 		return err
 	}
 
-	// Reset ToC record
-	return SendToSink(ctx, defra.WriteOp{
+	// Reset ToC record - use sync to ensure reset completes before proceeding
+	return SendToSinkSync(ctx, defra.WriteOp{
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document: map[string]any{
@@ -246,8 +246,8 @@ func resetTocLink(ctx context.Context, book *BookState, tocDocID string) error {
 		return err
 	}
 
-	// Reset ToC record
-	return SendToSink(ctx, defra.WriteOp{
+	// Reset ToC record - use sync to ensure reset completes before proceeding
+	return SendToSinkSync(ctx, defra.WriteOp{
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document: map[string]any{
@@ -279,8 +279,8 @@ func resetTocFinalize(ctx context.Context, book *BookState, tocDocID string) err
 		return nil
 	}
 
-	// Reset ToC record
-	return SendToSink(ctx, defra.WriteOp{
+	// Reset ToC record - use sync to ensure reset completes before proceeding
+	return SendToSinkSync(ctx, defra.WriteOp{
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document: map[string]any{
@@ -313,8 +313,8 @@ func resetStructure(ctx context.Context, book *BookState) error {
 		return err
 	}
 
-	// Reset book record
-	return SendToSink(ctx, defra.WriteOp{
+	// Reset book record - use sync to ensure reset completes before proceeding
+	return SendToSinkSync(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      book.BookID,
 		Document: map[string]any{
@@ -370,7 +370,7 @@ func resetAllLabels(ctx context.Context, book *BookState) error {
 		return nil
 	}
 
-	var resetCount, skipCount int
+	var resetCount, skipCount, failCount int
 	for _, p := range pages {
 		page, ok := p.(map[string]any)
 		if !ok {
@@ -388,7 +388,8 @@ func resetAllLabels(ctx context.Context, book *BookState) error {
 			}
 			continue
 		}
-		sink.Send(defra.WriteOp{
+		// Use sync write to ensure reset completes
+		_, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "Page",
 			DocID:      docID,
 			Document: map[string]any{
@@ -398,15 +399,22 @@ func resetAllLabels(ctx context.Context, book *BookState) error {
 			},
 			Op: defra.OpUpdate,
 		})
+		if err != nil {
+			failCount++
+			if logger != nil {
+				logger.Error("failed to reset label for page", "doc_id", docID, "error", err)
+			}
+			continue
+		}
 		resetCount++
 	}
 
 	if logger != nil {
-		logger.Info("reset labels queued", "reset_count", resetCount, "skipped", skipCount, "book_id", book.BookID)
+		logger.Info("reset labels completed", "reset_count", resetCount, "skipped", skipCount, "failed", failCount, "book_id", book.BookID)
 	}
 
-	if skipCount > 0 {
-		return fmt.Errorf("skipped %d pages with invalid data during label reset", skipCount)
+	if skipCount > 0 || failCount > 0 {
+		return fmt.Errorf("label reset had issues: skipped=%d, failed=%d", skipCount, failCount)
 	}
 	return nil
 }
@@ -447,7 +455,7 @@ func resetAllBlends(ctx context.Context, book *BookState) error {
 		return nil
 	}
 
-	var resetCount, skipCount int
+	var resetCount, skipCount, failCount int
 	for _, p := range pages {
 		page, ok := p.(map[string]any)
 		if !ok {
@@ -465,7 +473,8 @@ func resetAllBlends(ctx context.Context, book *BookState) error {
 			}
 			continue
 		}
-		sink.Send(defra.WriteOp{
+		// Use sync write to ensure reset completes
+		_, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "Page",
 			DocID:      docID,
 			Document: map[string]any{
@@ -475,15 +484,22 @@ func resetAllBlends(ctx context.Context, book *BookState) error {
 			},
 			Op: defra.OpUpdate,
 		})
+		if err != nil {
+			failCount++
+			if logger != nil {
+				logger.Error("failed to reset blend for page", "doc_id", docID, "error", err)
+			}
+			continue
+		}
 		resetCount++
 	}
 
 	if logger != nil {
-		logger.Info("reset blends queued", "reset_count", resetCount, "skipped", skipCount, "book_id", book.BookID)
+		logger.Info("reset blends completed", "reset_count", resetCount, "skipped", skipCount, "failed", failCount, "book_id", book.BookID)
 	}
 
-	if skipCount > 0 {
-		return fmt.Errorf("skipped %d pages with invalid data during blend reset", skipCount)
+	if skipCount > 0 || failCount > 0 {
+		return fmt.Errorf("blend reset had issues: skipped=%d, failed=%d", skipCount, failCount)
 	}
 	return nil
 }
@@ -517,7 +533,7 @@ func deleteTocEntries(ctx context.Context, tocDocID string) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	var deleteCount, skipCount int
+	var deleteCount, skipCount, failCount int
 	for _, e := range entries {
 		entry, ok := e.(map[string]any)
 		if !ok {
@@ -535,20 +551,28 @@ func deleteTocEntries(ctx context.Context, tocDocID string) error {
 			}
 			continue
 		}
-		sink.Send(defra.WriteOp{
+		// Use sync write to ensure deletion completes
+		_, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "TocEntry",
 			DocID:      docID,
 			Op:         defra.OpDelete,
 		})
+		if err != nil {
+			failCount++
+			if logger != nil {
+				logger.Error("failed to delete ToC entry", "doc_id", docID, "error", err)
+			}
+			continue
+		}
 		deleteCount++
 	}
 
 	if logger != nil {
-		logger.Info("ToC entries deletion queued", "delete_count", deleteCount, "skipped", skipCount, "toc_id", tocDocID)
+		logger.Info("ToC entries deletion completed", "delete_count", deleteCount, "skipped", skipCount, "failed", failCount, "toc_id", tocDocID)
 	}
 
-	if skipCount > 0 {
-		return fmt.Errorf("skipped %d ToC entries with invalid data during deletion", skipCount)
+	if skipCount > 0 || failCount > 0 {
+		return fmt.Errorf("ToC entry deletion had issues: skipped=%d, failed=%d", skipCount, failCount)
 	}
 	return nil
 }
@@ -582,7 +606,7 @@ func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	var clearCount, skipCount int
+	var clearCount, skipCount, failCount int
 	for _, e := range entries {
 		entry, ok := e.(map[string]any)
 		if !ok {
@@ -600,7 +624,8 @@ func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
 			}
 			continue
 		}
-		sink.Send(defra.WriteOp{
+		// Use sync write to ensure link clearing completes
+		_, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "TocEntry",
 			DocID:      docID,
 			Document: map[string]any{
@@ -608,15 +633,22 @@ func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
 			},
 			Op: defra.OpUpdate,
 		})
+		if err != nil {
+			failCount++
+			if logger != nil {
+				logger.Error("failed to clear ToC entry link", "doc_id", docID, "error", err)
+			}
+			continue
+		}
 		clearCount++
 	}
 
 	if logger != nil {
-		logger.Info("ToC entry links clearing queued", "clear_count", clearCount, "skipped", skipCount, "toc_id", tocDocID)
+		logger.Info("ToC entry links clearing completed", "clear_count", clearCount, "skipped", skipCount, "failed", failCount, "toc_id", tocDocID)
 	}
 
-	if skipCount > 0 {
-		return fmt.Errorf("skipped %d ToC entries with invalid data during link clearing", skipCount)
+	if skipCount > 0 || failCount > 0 {
+		return fmt.Errorf("ToC entry link clearing had issues: skipped=%d, failed=%d", skipCount, failCount)
 	}
 	return nil
 }
@@ -650,7 +682,7 @@ func deleteChapters(ctx context.Context, bookID string) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	var deleteCount, skipCount int
+	var deleteCount, skipCount, failCount int
 	for _, c := range chapters {
 		chapter, ok := c.(map[string]any)
 		if !ok {
@@ -668,20 +700,28 @@ func deleteChapters(ctx context.Context, bookID string) error {
 			}
 			continue
 		}
-		sink.Send(defra.WriteOp{
+		// Use sync write to ensure deletion completes
+		_, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "Chapter",
 			DocID:      docID,
 			Op:         defra.OpDelete,
 		})
+		if err != nil {
+			failCount++
+			if logger != nil {
+				logger.Error("failed to delete chapter", "doc_id", docID, "error", err)
+			}
+			continue
+		}
 		deleteCount++
 	}
 
 	if logger != nil {
-		logger.Info("chapter deletion queued", "delete_count", deleteCount, "skipped", skipCount, "book_id", bookID)
+		logger.Info("chapter deletion completed", "delete_count", deleteCount, "skipped", skipCount, "failed", failCount, "book_id", bookID)
 	}
 
-	if skipCount > 0 {
-		return fmt.Errorf("skipped %d chapters with invalid data during deletion", skipCount)
+	if skipCount > 0 || failCount > 0 {
+		return fmt.Errorf("chapter deletion had issues: skipped=%d, failed=%d", skipCount, failCount)
 	}
 	return nil
 }

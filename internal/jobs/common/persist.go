@@ -229,11 +229,12 @@ func PersistAgentState(ctx context.Context, bookID string, state *AgentState) (s
 }
 
 // DeleteAgentState removes an agent state record from DefraDB.
+// Uses synchronous write to ensure deletion completes and prevent orphaned records.
 func DeleteAgentState(ctx context.Context, docID string) error {
 	if docID == "" {
 		return nil
 	}
-	return SendToSink(ctx, defra.WriteOp{
+	return SendToSinkSync(ctx, defra.WriteOp{
 		Collection: "AgentState",
 		DocID:      docID,
 		Op:         defra.OpDelete,

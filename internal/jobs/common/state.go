@@ -737,10 +737,16 @@ func (b *BookState) GetPromptCID(key string) string {
 // --- Thread-safe accessors for TocEntries ---
 
 // GetTocEntries returns the ToC entries (thread-safe).
+// Returns a copy of the slice to prevent external modification.
 func (b *BookState) GetTocEntries() []*toc_entry_finder.TocEntry {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.TocEntries
+	if b.TocEntries == nil {
+		return nil
+	}
+	result := make([]*toc_entry_finder.TocEntry, len(b.TocEntries))
+	copy(result, b.TocEntries)
+	return result
 }
 
 // SetTocEntries sets the ToC entries (thread-safe).
@@ -752,20 +758,32 @@ func (b *BookState) SetTocEntries(entries []*toc_entry_finder.TocEntry) {
 
 // GetUnlinkedTocEntries returns only entries without actual_page linked.
 // This filters the cached entries rather than re-querying DB.
+// Returns a copy of the slice to prevent external modification.
 func (b *BookState) GetUnlinkedTocEntries() []*toc_entry_finder.TocEntry {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	// TocEntries are already filtered to unlinked during load
-	return b.TocEntries
+	if b.TocEntries == nil {
+		return nil
+	}
+	result := make([]*toc_entry_finder.TocEntry, len(b.TocEntries))
+	copy(result, b.TocEntries)
+	return result
 }
 
 // --- Thread-safe accessors for LinkedEntries ---
 
 // GetLinkedEntries returns the linked ToC entries (thread-safe).
+// Returns a copy of the slice to prevent external modification.
 func (b *BookState) GetLinkedEntries() []*LinkedTocEntry {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.LinkedEntries
+	if b.LinkedEntries == nil {
+		return nil
+	}
+	result := make([]*LinkedTocEntry, len(b.LinkedEntries))
+	copy(result, b.LinkedEntries)
+	return result
 }
 
 // SetLinkedEntries sets the linked ToC entries (thread-safe).
@@ -804,10 +822,16 @@ func (b *BookState) SetChapterPatterns(patterns []page_pattern_analyzer.ChapterP
 }
 
 // GetChapterPatterns gets the chapter patterns (thread-safe).
+// Returns a copy of the slice to prevent external modification.
 func (b *BookState) GetChapterPatterns() []page_pattern_analyzer.ChapterPattern {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.ChapterPatterns
+	if b.ChapterPatterns == nil {
+		return nil
+	}
+	result := make([]page_pattern_analyzer.ChapterPattern, len(b.ChapterPatterns))
+	copy(result, b.ChapterPatterns)
+	return result
 }
 
 // SetStructurePhase sets the current structure processing phase (thread-safe).
@@ -1074,10 +1098,16 @@ func (b *BookState) SetFinalizePatternResult(result *FinalizePatternResult) {
 }
 
 // GetEntriesToFind returns entries to find in discover phase (thread-safe).
+// Returns a copy of the slice to prevent external modification.
 func (b *BookState) GetEntriesToFind() []*EntryToFind {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.EntriesToFind
+	if b.EntriesToFind == nil {
+		return nil
+	}
+	result := make([]*EntryToFind, len(b.EntriesToFind))
+	copy(result, b.EntriesToFind)
+	return result
 }
 
 // SetEntriesToFind sets entries to find in discover phase (thread-safe).
@@ -1088,10 +1118,16 @@ func (b *BookState) SetEntriesToFind(entries []*EntryToFind) {
 }
 
 // GetFinalizeGaps returns gaps to investigate (thread-safe).
+// Returns a copy of the slice to prevent external modification.
 func (b *BookState) GetFinalizeGaps() []*FinalizeGap {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.FinalizeGaps
+	if b.FinalizeGaps == nil {
+		return nil
+	}
+	result := make([]*FinalizeGap, len(b.FinalizeGaps))
+	copy(result, b.FinalizeGaps)
+	return result
 }
 
 // SetFinalizeGaps sets gaps to investigate (thread-safe).
@@ -1228,10 +1264,16 @@ type StructureState struct {
 }
 
 // GetStructureChapters returns the structure chapters (thread-safe).
+// Returns a copy of the slice to prevent external modification.
 func (b *BookState) GetStructureChapters() []*ChapterState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.StructureChapters
+	if b.StructureChapters == nil {
+		return nil
+	}
+	result := make([]*ChapterState, len(b.StructureChapters))
+	copy(result, b.StructureChapters)
+	return result
 }
 
 // SetStructureChapters sets the structure chapters (thread-safe).
@@ -1242,10 +1284,18 @@ func (b *BookState) SetStructureChapters(chapters []*ChapterState) {
 }
 
 // GetStructureClassifications returns the matter classifications (thread-safe).
+// Returns a copy of the map to prevent external modification.
 func (b *BookState) GetStructureClassifications() map[string]string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.StructureClassifications
+	if b.StructureClassifications == nil {
+		return nil
+	}
+	result := make(map[string]string, len(b.StructureClassifications))
+	for k, v := range b.StructureClassifications {
+		result[k] = v
+	}
+	return result
 }
 
 // SetStructureClassifications sets the matter classifications (thread-safe).

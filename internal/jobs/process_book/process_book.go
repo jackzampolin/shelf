@@ -53,6 +53,24 @@ const (
 	VariantOCROnly PipelineVariant = "ocr-only"
 )
 
+// ValidVariants lists all valid pipeline variants.
+var ValidVariants = []PipelineVariant{
+	VariantStandard,
+	VariantPhotoBook,
+	VariantTextOnly,
+	VariantOCROnly,
+}
+
+// IsValid returns true if the variant is a valid pipeline variant.
+func (v PipelineVariant) IsValid() bool {
+	for _, valid := range ValidVariants {
+		if v == valid {
+			return true
+		}
+	}
+	return false
+}
+
 // ApplyVariant applies predefined settings for a pipeline variant.
 // This sets the Enable* flags appropriately for the variant.
 func (c *Config) ApplyVariant(variant PipelineVariant) {

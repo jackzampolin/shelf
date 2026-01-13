@@ -1027,9 +1027,31 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 			chapter.PolishFailed = polishFailed
 		}
 
-		if chapter.DocID != "" {
-			chapters = append(chapters, chapter)
+		// Validate chapter before adding
+		if chapter.DocID == "" {
+			continue
 		}
+		// Validate page boundaries
+		if chapter.StartPage < 1 {
+			if logger != nil {
+				logger.Warn("LoadStructureChapters: skipping chapter with invalid start_page",
+					"doc_id", chapter.DocID,
+					"start_page", chapter.StartPage,
+					"title", chapter.Title)
+			}
+			continue
+		}
+		if chapter.EndPage > 0 && chapter.EndPage < chapter.StartPage {
+			if logger != nil {
+				logger.Warn("LoadStructureChapters: skipping chapter with end_page < start_page",
+					"doc_id", chapter.DocID,
+					"start_page", chapter.StartPage,
+					"end_page", chapter.EndPage,
+					"title", chapter.Title)
+			}
+			continue
+		}
+		chapters = append(chapters, chapter)
 	}
 
 	book.SetStructureChapters(chapters)
