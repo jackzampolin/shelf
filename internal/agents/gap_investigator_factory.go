@@ -31,7 +31,7 @@ func NewGapInvestigatorAgent(ctx context.Context, cfg GapInvestigatorConfig) *ag
 		LinkedEntries: cfg.LinkedEntries,
 	})
 
-	userPrompt := gap_investigator.BuildUserPrompt(cfg.Gap, cfg.Book.BodyStart, cfg.Book.BodyEnd, cfg.Book.TotalPages)
+	userPrompt := gap_investigator.BuildUserPrompt(cfg.Gap, cfg.Book.GetBodyStart(), cfg.Book.GetBodyEnd(), cfg.Book.TotalPages)
 
 	// Build agent ID from gap info for tracing
 	agentID := fmt.Sprintf("gap-%d-%d", cfg.Gap.StartPage, cfg.Gap.EndPage)

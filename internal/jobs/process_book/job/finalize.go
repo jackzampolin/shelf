@@ -285,14 +285,14 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 		return fmt.Errorf("failed to parse pattern response: %w", err)
 	}
 
-	// Store in BookState
-	j.Book.FinalizePatternResult = &common.FinalizePatternResult{
+	// Build result locally before storing in BookState
+	patternResult := &common.FinalizePatternResult{
 		Reasoning: response.Reasoning,
 	}
 
 	// Convert patterns
 	for _, p := range response.DiscoveredPatterns {
-		j.Book.FinalizePatternResult.Patterns = append(j.Book.FinalizePatternResult.Patterns, common.DiscoveredPattern{
+		patternResult.Patterns = append(patternResult.Patterns, common.DiscoveredPattern{
 			PatternType:   p.PatternType,
 			LevelName:     p.LevelName,
 			HeadingFormat: p.HeadingFormat,
@@ -305,21 +305,25 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 
 	// Convert excluded ranges
 	for _, e := range response.ExcludedRanges {
-		j.Book.FinalizePatternResult.Excluded = append(j.Book.FinalizePatternResult.Excluded, common.ExcludedRange{
+		patternResult.Excluded = append(patternResult.Excluded, common.ExcludedRange{
 			StartPage: e.StartPage,
 			EndPage:   e.EndPage,
 			Reason:    e.Reason,
 		})
 	}
 
+	// Store in BookState atomically
+	j.Book.SetFinalizePatternResult(patternResult)
+
 	// Generate entries to find
 	j.generateEntriesToFind(ctx)
 
 	logger := svcctx.LoggerFrom(ctx)
 	if logger != nil {
+		result := j.Book.GetFinalizePatternResult()
 		logger.Info("pattern analysis complete",
-			"patterns_found", len(j.Book.FinalizePatternResult.Patterns),
-			"excluded_ranges", len(j.Book.FinalizePatternResult.Excluded),
+			"patterns_found", len(result.Patterns),
+			"excluded_ranges", len(result.Excluded),
 			"entries_to_find", j.Book.GetEntriesToFindCount())
 	}
 
@@ -336,7 +340,7 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 
 // generateEntriesToFind creates EntryToFind records from discovered patterns.
 func (j *Job) generateEntriesToFind(ctx context.Context) {
-	if j.Book.FinalizePatternResult == nil {
+	if j.Book.GetFinalizePatternResult() == nil {
 		return
 	}
 
@@ -356,7 +360,7 @@ func (j *Job) generateEntriesToFind(ctx context.Context) {
 	j.Book.SetEntriesToFind(nil)
 
 	// Generate entries from patterns
-	for _, pattern := range j.Book.FinalizePatternResult.Patterns {
+	for _, pattern := range j.Book.GetFinalizePatternResult().Patterns {
 		identifiers := generateSequence(pattern.RangeStart, pattern.RangeEnd)
 
 		for i, identifier := range identifiers {
@@ -435,8 +439,8 @@ func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.Ent
 	logger := svcctx.LoggerFrom(ctx)
 
 	var excludedRanges []chapter_finder.ExcludedRange
-	if j.Book.FinalizePatternResult != nil {
-		for _, ex := range j.Book.FinalizePatternResult.Excluded {
+	if j.Book.GetFinalizePatternResult() != nil {
+		for _, ex := range j.Book.GetFinalizePatternResult().Excluded {
 			excludedRanges = append(excludedRanges, chapter_finder.ExcludedRange{
 				StartPage: ex.StartPage,
 				EndPage:   ex.EndPage,
@@ -735,10 +739,10 @@ func (j *Job) findFinalizeGaps(ctx context.Context) error {
 
 // isPageExcluded checks if a page is in an excluded range.
 func (j *Job) isPageExcluded(page int) bool {
-	if j.Book.FinalizePatternResult == nil {
+	if j.Book.GetFinalizePatternResult() == nil {
 		return false
 	}
-	for _, ex := range j.Book.FinalizePatternResult.Excluded {
+	for _, ex := range j.Book.GetFinalizePatternResult().Excluded {
 		if page >= ex.StartPage && page <= ex.EndPage {
 			return true
 		}
@@ -1267,7 +1271,7 @@ func intToRoman(num int) string {
 }
 
 func (j *Job) persistFinalizePatternResults(ctx context.Context) error {
-	if j.Book.FinalizePatternResult == nil {
+	if j.Book.GetFinalizePatternResult() == nil {
 		return nil
 	}
 
@@ -1282,10 +1286,10 @@ func (j *Job) persistFinalizePatternResults(ctx context.Context) error {
 		EntriesToFind []*common.EntryToFind      `json:"entries_to_find"`
 		Reasoning     string                     `json:"reasoning"`
 	}{
-		Patterns:      j.Book.FinalizePatternResult.Patterns,
-		Excluded:      j.Book.FinalizePatternResult.Excluded,
+		Patterns:      j.Book.GetFinalizePatternResult().Patterns,
+		Excluded:      j.Book.GetFinalizePatternResult().Excluded,
 		EntriesToFind: j.Book.GetEntriesToFind(),
-		Reasoning:     j.Book.FinalizePatternResult.Reasoning,
+		Reasoning:     j.Book.GetFinalizePatternResult().Reasoning,
 	}
 
 	jsonBytes, err := json.Marshal(data)
