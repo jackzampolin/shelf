@@ -215,7 +215,14 @@ func (j *Job) HandleFinalizeComplete(ctx context.Context, result jobs.WorkResult
 	case WorkUnitTypeFinalizeGap:
 		return j.HandleFinalizeGapComplete(ctx, result, info)
 	default:
-		// Unknown finalize work unit type - remove and continue
+		// Unknown finalize work unit type - log warning and remove
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Warn("unknown finalize work unit type",
+				"unit_type", info.UnitType,
+				"work_unit_id", result.WorkUnitID,
+				"book_id", j.Book.BookID)
+		}
 		j.RemoveWorkUnit(result.WorkUnitID)
 		return nil, nil
 	}
@@ -240,7 +247,14 @@ func (j *Job) HandleStructureComplete(ctx context.Context, result jobs.WorkResul
 	case WorkUnitTypeStructurePolish:
 		return j.HandleStructurePolishComplete(ctx, result, info)
 	default:
-		// Unknown structure work unit type - remove and continue
+		// Unknown structure work unit type - log warning and remove
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Warn("unknown structure work unit type",
+				"unit_type", info.UnitType,
+				"work_unit_id", result.WorkUnitID,
+				"book_id", j.Book.BookID)
+		}
 		j.RemoveWorkUnit(result.WorkUnitID)
 		return nil, nil
 	}

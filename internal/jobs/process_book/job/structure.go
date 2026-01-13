@@ -683,7 +683,16 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 		j.StructureState.PolishFailed++
 		j.Book.IncrementStructurePolishFailed()
 		chapter.PolishDone = true
+		chapter.PolishFailed = true
 		chapter.PolishedText = chapter.MechanicalText // Fallback to mechanical text
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Warn("chapter polish failed, using mechanical text",
+				"chapter_id", chapter.EntryID,
+				"title", chapter.Title,
+				"book_id", j.Book.BookID,
+				"error", result.Error)
+		}
 		return nil
 	}
 
@@ -691,7 +700,15 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 		j.StructureState.PolishFailed++
 		j.Book.IncrementStructurePolishFailed()
 		chapter.PolishDone = true
+		chapter.PolishFailed = true
 		chapter.PolishedText = chapter.MechanicalText
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Warn("chapter polish failed (no chat result), using mechanical text",
+				"chapter_id", chapter.EntryID,
+				"title", chapter.Title,
+				"book_id", j.Book.BookID)
+		}
 		return fmt.Errorf("no chat result")
 	}
 
@@ -704,7 +721,15 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 		j.StructureState.PolishFailed++
 		j.Book.IncrementStructurePolishFailed()
 		chapter.PolishDone = true
+		chapter.PolishFailed = true
 		chapter.PolishedText = chapter.MechanicalText
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Warn("chapter polish failed (empty response), using mechanical text",
+				"chapter_id", chapter.EntryID,
+				"title", chapter.Title,
+				"book_id", j.Book.BookID)
+		}
 		return fmt.Errorf("empty response")
 	}
 
@@ -713,7 +738,16 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 		j.StructureState.PolishFailed++
 		j.Book.IncrementStructurePolishFailed()
 		chapter.PolishDone = true
+		chapter.PolishFailed = true
 		chapter.PolishedText = chapter.MechanicalText
+		logger := svcctx.LoggerFrom(ctx)
+		if logger != nil {
+			logger.Warn("chapter polish failed (parse error), using mechanical text",
+				"chapter_id", chapter.EntryID,
+				"title", chapter.Title,
+				"book_id", j.Book.BookID,
+				"error", err)
+		}
 		return fmt.Errorf("failed to parse polish result: %w", err)
 	}
 
@@ -754,6 +788,7 @@ func (j *Job) persistPolishResults(ctx context.Context) error {
 			"polished_text":   chapter.PolishedText,
 			"word_count":      chapter.WordCount,
 			"polish_complete": true,
+			"polish_failed":   chapter.PolishFailed,
 		}
 
 		sink.Send(defra.WriteOp{

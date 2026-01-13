@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	page_pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/page_pattern_analyzer"
@@ -931,8 +932,8 @@ func (b *BookState) ClearAgentStates(agentType string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for key := range b.AgentStates {
-		// Match exact type or type: prefix for per-entry agents
-		if key == agentType || (len(key) > len(agentType) && key[:len(agentType)+1] == agentType+":") {
+		// Match exact type or type:suffix for per-entry agents
+		if key == agentType || strings.HasPrefix(key, agentType+":") {
 			delete(b.AgentStates, key)
 		}
 	}
@@ -1141,8 +1142,9 @@ type ChapterState struct {
 	WordCount    int    `json:"word_count"`
 
 	// Processing state
-	ExtractDone bool `json:"extract_done"`
-	PolishDone  bool `json:"polish_done"`
+	ExtractDone  bool `json:"extract_done"`
+	PolishDone   bool `json:"polish_done"`
+	PolishFailed bool `json:"polish_failed"` // True if polish failed and fell back to mechanical text
 }
 
 // StructureState holds structure sub-job state within BookState (for serialization).

@@ -264,9 +264,20 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 		return
 	}
 
-	// If ToC was found and extraction is enabled, extraction must also be done
-	if j.Book.EnableTocExtract && j.Book.GetTocFound() && !j.Book.TocExtract.IsDone() {
-		return
+	// ToC extraction depends on finder finding a ToC
+	// If extraction enabled but finder disabled/didn't find ToC, extraction is skipped
+	// Note: Config validation should enforce EnableTocFinder when EnableTocExtract is true
+	if j.Book.EnableTocExtract {
+		if !j.Book.EnableTocFinder {
+			// Finder disabled means no ToC can be found, so extraction is N/A
+			// Log this edge case for debugging
+			logger := svcctx.LoggerFrom(ctx)
+			if logger != nil {
+				logger.Debug("ToC extract enabled but finder disabled - extraction skipped")
+			}
+		} else if j.Book.GetTocFound() && !j.Book.TocExtract.IsDone() {
+			return
+		}
 	}
 
 	// Pattern analysis must be complete or permanently failed (if enabled)
@@ -274,19 +285,41 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 		return
 	}
 
-	// If ToC was extracted and linking is enabled, linking must also be done
-	if j.Book.EnableTocLink && j.Book.TocExtract.IsDone() && !j.Book.TocLink.IsDone() {
-		return
+	// ToC linking depends on extraction being complete
+	// If link enabled but extract disabled/not done, linking is skipped
+	if j.Book.EnableTocLink {
+		if !j.Book.EnableTocExtract {
+			logger := svcctx.LoggerFrom(ctx)
+			if logger != nil {
+				logger.Debug("ToC link enabled but extract disabled - linking skipped")
+			}
+		} else if j.Book.TocExtract.IsDone() && !j.Book.TocLink.IsDone() {
+			return
+		}
 	}
 
-	// If ToC was linked and finalize is enabled, finalize must also be done
-	if j.Book.EnableTocFinalize && j.Book.TocLink.IsComplete() && !j.Book.TocFinalize.IsDone() {
-		return
+	// ToC finalize depends on linking being complete
+	if j.Book.EnableTocFinalize {
+		if !j.Book.EnableTocLink {
+			logger := svcctx.LoggerFrom(ctx)
+			if logger != nil {
+				logger.Debug("ToC finalize enabled but link disabled - finalize skipped")
+			}
+		} else if j.Book.TocLink.IsComplete() && !j.Book.TocFinalize.IsDone() {
+			return
+		}
 	}
 
-	// If finalize is complete and structure is enabled, structure must also be done
-	if j.Book.EnableStructure && j.Book.TocFinalize.IsComplete() && !j.Book.Structure.IsDone() {
-		return
+	// Structure depends on finalize being complete
+	if j.Book.EnableStructure {
+		if !j.Book.EnableTocFinalize {
+			logger := svcctx.LoggerFrom(ctx)
+			if logger != nil {
+				logger.Debug("Structure enabled but finalize disabled - structure skipped")
+			}
+		} else if j.Book.TocFinalize.IsComplete() && !j.Book.Structure.IsDone() {
+			return
+		}
 	}
 
 	j.IsDone = true

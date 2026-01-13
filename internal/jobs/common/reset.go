@@ -211,24 +211,19 @@ func resetPatternAnalysis(ctx context.Context, book *BookState) error {
 	// Clear agent state (if any)
 	book.ClearAgentStates("pattern_analysis")
 
-	// Clear pattern analysis JSON from book
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink != nil {
-		sink.Send(defra.WriteOp{
-			Collection: "Book",
-			DocID:      book.BookID,
-			Document: map[string]any{
-				"pattern_analysis_started":  false,
-				"pattern_analysis_complete": false,
-				"pattern_analysis_failed":   false,
-				"pattern_analysis_retries":  0,
-				"page_pattern_analysis_json": nil,
-			},
-			Op: defra.OpUpdate,
-		})
-	}
-
-	return nil
+	// Clear pattern analysis JSON from book (sync to ensure it completes)
+	return SendToSinkSync(ctx, defra.WriteOp{
+		Collection: "Book",
+		DocID:      book.BookID,
+		Document: map[string]any{
+			"pattern_analysis_started":   false,
+			"pattern_analysis_complete":  false,
+			"pattern_analysis_failed":    false,
+			"pattern_analysis_retries":   0,
+			"page_pattern_analysis_json": nil,
+		},
+		Op: defra.OpUpdate,
+	})
 }
 
 // resetTocLink resets ToC linking state.
@@ -342,6 +337,7 @@ func resetStructure(ctx context.Context, book *BookState) error {
 
 // resetAllLabels resets label_complete for all pages.
 func resetAllLabels(ctx context.Context, book *BookState) error {
+	logger := svcctx.LoggerFrom(ctx)
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
 		return fmt.Errorf("defra sink not in context")
@@ -366,7 +362,7 @@ func resetAllLabels(ctx context.Context, book *BookState) error {
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to query pages for label reset: %w", err)
 	}
 
 	pages, ok := resp.Data["Page"].([]any)
@@ -374,31 +370,50 @@ func resetAllLabels(ctx context.Context, book *BookState) error {
 		return nil
 	}
 
+	var resetCount, skipCount int
 	for _, p := range pages {
 		page, ok := p.(map[string]any)
 		if !ok {
+			skipCount++
+			if logger != nil {
+				logger.Warn("unexpected page data type during label reset", "type", fmt.Sprintf("%T", p))
+			}
 			continue
 		}
-		docID, _ := page["_docID"].(string)
-		if docID != "" {
-			sink.Send(defra.WriteOp{
-				Collection: "Page",
-				DocID:      docID,
-				Document: map[string]any{
-					"label_complete":    false,
-					"page_number_label": nil,
-					"running_header":    nil,
-				},
-				Op: defra.OpUpdate,
-			})
+		docID, ok := page["_docID"].(string)
+		if !ok || docID == "" {
+			skipCount++
+			if logger != nil {
+				logger.Warn("missing or invalid _docID during label reset", "page_data", page)
+			}
+			continue
 		}
+		sink.Send(defra.WriteOp{
+			Collection: "Page",
+			DocID:      docID,
+			Document: map[string]any{
+				"label_complete":    false,
+				"page_number_label": nil,
+				"running_header":    nil,
+			},
+			Op: defra.OpUpdate,
+		})
+		resetCount++
 	}
 
+	if logger != nil {
+		logger.Info("reset labels queued", "reset_count", resetCount, "skipped", skipCount, "book_id", book.BookID)
+	}
+
+	if skipCount > 0 {
+		return fmt.Errorf("skipped %d pages with invalid data during label reset", skipCount)
+	}
 	return nil
 }
 
 // resetAllBlends resets blend_complete for all pages.
 func resetAllBlends(ctx context.Context, book *BookState) error {
+	logger := svcctx.LoggerFrom(ctx)
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
 		return fmt.Errorf("defra sink not in context")
@@ -424,7 +439,7 @@ func resetAllBlends(ctx context.Context, book *BookState) error {
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to query pages for blend reset: %w", err)
 	}
 
 	pages, ok := resp.Data["Page"].([]any)
@@ -432,31 +447,50 @@ func resetAllBlends(ctx context.Context, book *BookState) error {
 		return nil
 	}
 
+	var resetCount, skipCount int
 	for _, p := range pages {
 		page, ok := p.(map[string]any)
 		if !ok {
+			skipCount++
+			if logger != nil {
+				logger.Warn("unexpected page data type during blend reset", "type", fmt.Sprintf("%T", p))
+			}
 			continue
 		}
-		docID, _ := page["_docID"].(string)
-		if docID != "" {
-			sink.Send(defra.WriteOp{
-				Collection: "Page",
-				DocID:      docID,
-				Document: map[string]any{
-					"blend_complete": false,
-					"blend_markdown": nil,
-					"headings":       nil,
-				},
-				Op: defra.OpUpdate,
-			})
+		docID, ok := page["_docID"].(string)
+		if !ok || docID == "" {
+			skipCount++
+			if logger != nil {
+				logger.Warn("missing or invalid _docID during blend reset", "page_data", page)
+			}
+			continue
 		}
+		sink.Send(defra.WriteOp{
+			Collection: "Page",
+			DocID:      docID,
+			Document: map[string]any{
+				"blend_complete": false,
+				"blend_markdown": nil,
+				"headings":       nil,
+			},
+			Op: defra.OpUpdate,
+		})
+		resetCount++
 	}
 
+	if logger != nil {
+		logger.Info("reset blends queued", "reset_count", resetCount, "skipped", skipCount, "book_id", book.BookID)
+	}
+
+	if skipCount > 0 {
+		return fmt.Errorf("skipped %d pages with invalid data during blend reset", skipCount)
+	}
 	return nil
 }
 
 // deleteTocEntries deletes all ToC entries for a ToC.
 func deleteTocEntries(ctx context.Context, tocDocID string) error {
+	logger := svcctx.LoggerFrom(ctx)
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return fmt.Errorf("defra client not in context")
@@ -470,7 +504,7 @@ func deleteTocEntries(ctx context.Context, tocDocID string) error {
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to query ToC entries for deletion: %w", err)
 	}
 
 	entries, ok := resp.Data["TocEntry"].([]any)
@@ -483,26 +517,45 @@ func deleteTocEntries(ctx context.Context, tocDocID string) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
+	var deleteCount, skipCount int
 	for _, e := range entries {
 		entry, ok := e.(map[string]any)
 		if !ok {
+			skipCount++
+			if logger != nil {
+				logger.Warn("unexpected ToC entry data type during deletion", "type", fmt.Sprintf("%T", e))
+			}
 			continue
 		}
-		docID, _ := entry["_docID"].(string)
-		if docID != "" {
-			sink.Send(defra.WriteOp{
-				Collection: "TocEntry",
-				DocID:      docID,
-				Op:         defra.OpDelete,
-			})
+		docID, ok := entry["_docID"].(string)
+		if !ok || docID == "" {
+			skipCount++
+			if logger != nil {
+				logger.Warn("missing or invalid _docID during ToC entry deletion", "entry_data", entry)
+			}
+			continue
 		}
+		sink.Send(defra.WriteOp{
+			Collection: "TocEntry",
+			DocID:      docID,
+			Op:         defra.OpDelete,
+		})
+		deleteCount++
 	}
 
+	if logger != nil {
+		logger.Info("ToC entries deletion queued", "delete_count", deleteCount, "skipped", skipCount, "toc_id", tocDocID)
+	}
+
+	if skipCount > 0 {
+		return fmt.Errorf("skipped %d ToC entries with invalid data during deletion", skipCount)
+	}
 	return nil
 }
 
 // clearTocEntryLinks clears actual_page links from ToC entries.
 func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
+	logger := svcctx.LoggerFrom(ctx)
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return fmt.Errorf("defra client not in context")
@@ -516,7 +569,7 @@ func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to query ToC entries for link clearing: %w", err)
 	}
 
 	entries, ok := resp.Data["TocEntry"].([]any)
@@ -529,29 +582,48 @@ func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
+	var clearCount, skipCount int
 	for _, e := range entries {
 		entry, ok := e.(map[string]any)
 		if !ok {
+			skipCount++
+			if logger != nil {
+				logger.Warn("unexpected ToC entry data type during link clearing", "type", fmt.Sprintf("%T", e))
+			}
 			continue
 		}
-		docID, _ := entry["_docID"].(string)
-		if docID != "" {
-			sink.Send(defra.WriteOp{
-				Collection: "TocEntry",
-				DocID:      docID,
-				Document: map[string]any{
-					"actual_page_id": nil,
-				},
-				Op: defra.OpUpdate,
-			})
+		docID, ok := entry["_docID"].(string)
+		if !ok || docID == "" {
+			skipCount++
+			if logger != nil {
+				logger.Warn("missing or invalid _docID during ToC entry link clearing", "entry_data", entry)
+			}
+			continue
 		}
+		sink.Send(defra.WriteOp{
+			Collection: "TocEntry",
+			DocID:      docID,
+			Document: map[string]any{
+				"actual_page_id": nil,
+			},
+			Op: defra.OpUpdate,
+		})
+		clearCount++
 	}
 
+	if logger != nil {
+		logger.Info("ToC entry links clearing queued", "clear_count", clearCount, "skipped", skipCount, "toc_id", tocDocID)
+	}
+
+	if skipCount > 0 {
+		return fmt.Errorf("skipped %d ToC entries with invalid data during link clearing", skipCount)
+	}
 	return nil
 }
 
 // deleteChapters deletes all chapters for a book.
 func deleteChapters(ctx context.Context, bookID string) error {
+	logger := svcctx.LoggerFrom(ctx)
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return fmt.Errorf("defra client not in context")
@@ -565,7 +637,7 @@ func deleteChapters(ctx context.Context, bookID string) error {
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to query chapters for deletion: %w", err)
 	}
 
 	chapters, ok := resp.Data["Chapter"].([]any)
@@ -578,20 +650,38 @@ func deleteChapters(ctx context.Context, bookID string) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
+	var deleteCount, skipCount int
 	for _, c := range chapters {
 		chapter, ok := c.(map[string]any)
 		if !ok {
+			skipCount++
+			if logger != nil {
+				logger.Warn("unexpected chapter data type during deletion", "type", fmt.Sprintf("%T", c))
+			}
 			continue
 		}
-		docID, _ := chapter["_docID"].(string)
-		if docID != "" {
-			sink.Send(defra.WriteOp{
-				Collection: "Chapter",
-				DocID:      docID,
-				Op:         defra.OpDelete,
-			})
+		docID, ok := chapter["_docID"].(string)
+		if !ok || docID == "" {
+			skipCount++
+			if logger != nil {
+				logger.Warn("missing or invalid _docID during chapter deletion", "chapter_data", chapter)
+			}
+			continue
 		}
+		sink.Send(defra.WriteOp{
+			Collection: "Chapter",
+			DocID:      docID,
+			Op:         defra.OpDelete,
+		})
+		deleteCount++
 	}
 
+	if logger != nil {
+		logger.Info("chapter deletion queued", "delete_count", deleteCount, "skipped", skipCount, "book_id", bookID)
+	}
+
+	if skipCount > 0 {
+		return fmt.Errorf("skipped %d chapters with invalid data during deletion", skipCount)
+	}
 	return nil
 }

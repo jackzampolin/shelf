@@ -12,6 +12,7 @@ import (
 // Returns an error if sink is not in context.
 // This is a convenience helper that consolidates the common pattern of
 // extracting the sink, checking nil, and sending.
+// Note: This is fire-and-forget. Use SendToSinkSync for critical operations.
 func SendToSink(ctx context.Context, op defra.WriteOp) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
@@ -19,6 +20,17 @@ func SendToSink(ctx context.Context, op defra.WriteOp) error {
 	}
 	sink.Send(op)
 	return nil
+}
+
+// SendToSinkSync sends a write operation and waits for confirmation.
+// Use this for critical operations where you need to ensure the write succeeded.
+func SendToSinkSync(ctx context.Context, op defra.WriteOp) error {
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+	_, err := sink.SendSync(ctx, op)
+	return err
 }
 
 // PersistBookStatus persists book status to DefraDB.

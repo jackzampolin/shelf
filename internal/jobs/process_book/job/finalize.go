@@ -338,11 +338,12 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 			"entries_to_find", len(j.Book.EntriesToFind))
 	}
 
-	// Persist pattern results
+	// Persist pattern results - return error to allow retry on failure
 	if err := j.persistFinalizePatternResults(ctx); err != nil {
 		if logger != nil {
-			logger.Warn("failed to persist pattern results", "error", err)
+			logger.Error("failed to persist pattern results", "error", err)
 		}
+		return fmt.Errorf("failed to persist pattern results: %w", err)
 	}
 
 	return nil
