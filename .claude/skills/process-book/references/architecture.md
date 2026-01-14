@@ -26,8 +26,8 @@ Page N ─→ Extract ─→ OCR (multi-provider) ─→ Blend ──┘        
               ToC Extraction (if ToC found)
               Pattern Analysis (ALL pages blended)
               ToC Entry Linking (all pages labeled + pattern done)
-              Finalize ToC (inline sub-job)
-              Common Structure (inline sub-job)
+              Finalize ToC (inline - discover + gaps)
+              Common Structure (inline - extract + polish)
 ```
 
 ### Stage Dependencies
@@ -56,11 +56,13 @@ type Job struct {
     Book     *common.BookState  // In-memory state
     TocDocID string             // ToC record ID
 
-    // Stateful agents
-    TocAgent      *agent.Agent  // ToC finder agent
-    LinkTocAgents map[int]*agent.Agent  // Per-entry linker agents
+    // Agent-based stages (agents held for multi-turn loops)
+    TocAgent             *agent.Agent              // ToC finder
+    LinkTocEntryAgents   map[string]*agent.Agent   // Per-entry linkers
+    FinalizeDiscoverAgents map[string]*agent.Agent // Chapter finders
+    FinalizeGapAgents    map[string]*agent.Agent   // Gap investigators
 
-    // Embedded sub-jobs
+    // Inline sub-jobs (embedded, not separate packages)
     FinalizeJob  *finalize_toc_job.Job
     StructureJob *common_structure_job.Job
 
@@ -89,19 +91,17 @@ j.RemoveWorkUnit(result.WorkUnitID)
 
 ## State Management
 
-### Three-Tier Persistence
+### Async-First Persistence
 
-1. **In-Memory (BookState/PageState)** - Fast, immediate access
-2. **Async DefraDB (sink.Send)** - Batched, non-blocking writes
-3. **Sync DefraDB (sink.SendSync)** - Blocking, for critical operations
+State writes are async by default for performance. Sync is only used when we need the DocID back from a create.
 
 ```go
-// Write-through pattern
+// Async write (default - non-blocking)
 state.SetBlendResultWithHeadings(text, headings)  // 1. In-memory first
 sink.Send(defra.WriteOp{...})                     // 2. Async to DB
 
-// Critical creates use sync
-result, _ := sink.SendSync(ctx, defra.WriteOp{   // Blocking
+// Sync only for creates where we need the DocID
+result, _ := sink.SendSync(ctx, defra.WriteOp{
     Op: defra.OpCreate,
     Collection: "ToC",
     Document: {...},
@@ -109,24 +109,46 @@ result, _ := sink.SendSync(ctx, defra.WriteOp{   // Blocking
 j.TocDocID = result.DocID  // Need ID immediately
 ```
 
+### Agent State Persistence
+
+**Critical performance optimization:** Agent states are persisted only at creation, never during the loop.
+
+```go
+// At agent creation (async, fire-and-forget)
+common.PersistAgentStateAsync(ctx, j.Book.BookID, initialState)
+j.Book.SetAgentState(initialState)
+
+// During agent loop - NO PERSISTENCE
+// This allows multiple agents to run in parallel without blocking
+
+// At completion - delete by agent_id (async)
+common.DeleteAgentStateByAgentID(ctx, existing.AgentID)
+j.Book.RemoveAgentState(agentType, entryKey)
+```
+
+**Tradeoff:** On crash, agents restart from scratch rather than resuming mid-conversation. This is acceptable because:
+1. Most agent conversations are short (2-5 turns)
+2. The alternative (sync saves) serializes all agents, destroying parallelism
+
 ### BookState Key Fields
 
 ```go
 type BookState struct {
     BookID    string
     PageCount int
-    Pages     map[int]*PageState  // All page states
+    pages     map[int]*PageState  // Unexported for thread-safety
 
-    // Operation states
-    Metadata      *OperationState
-    TocFinder     *OperationState
-    TocExtract    *OperationState
-    PatternAnalysis *OperationState
-    LinkToc       *OperationState
+    // Operation states (thread-safe via methods)
+    Metadata        OperationState
+    TocFinder       OperationState
+    TocExtract      OperationState
+    PatternAnalysis OperationState
+    TocLink         OperationState
+    TocFinalize     OperationState
+    Structure       OperationState
 
-    // Results
-    TocEntries          []TocEntry
-    PatternAnalysisResult *PatternResult
+    // Cached results
+    patternAnalysisResult *PatternResult
 
     // Config
     DebugAgents bool
@@ -140,26 +162,25 @@ type PageState struct {
     PageNum       int
     DocID         string  // DefraDB doc ID
 
-    // Stage completion
-    ExtractDone   bool
-    OcrComplete   bool
-    BlendComplete bool
-    LabelComplete bool
+    // Stage completion (thread-safe accessors)
+    extractDone   bool
+    ocrResults    map[string]bool  // provider -> done
+    blendDone     bool
+    labelDone     bool
 
     // Results
-    OcrResults     map[string]string  // provider -> text
-    BlendMarkdown  string
-    Headings       []string
-    PageNumberLabel string
-    RunningHeader   string
-    IsTocPage       bool
+    blendMarkdown   string
+    headings        []string
+    pageNumberLabel string
+    runningHeader   string
+    isTocPage       bool
 }
 ```
 
 ### OperationState Pattern
 
 ```go
-state := &OperationState{}
+state := OperationState{}
 
 state.CanStart()   // true if OpNotStarted
 state.Start()      // NotStarted → InProgress
@@ -179,14 +200,14 @@ state.Reset()      // Back to NotStarted (for retry)
 │    ├─ RegisterWorkUnit(id, info)                            │
 │    └─ Return *jobs.WorkUnit                                 │
 ├─────────────────────────────────────────────────────────────┤
-│ 2. Worker executes (outside job)                            │
+│ 2. Worker executes (outside job, parallel with others)      │
 │    └─ Returns jobs.WorkResult                               │
 ├─────────────────────────────────────────────────────────────┤
 │ 3. OnComplete(result)                                       │
 │    ├─ GetWorkUnit(id) → info                                │
 │    ├─ Switch on info.UnitType                               │
 │    ├─ HandleXComplete() for specific logic                  │
-│    ├─ Persist state changes                                 │
+│    ├─ Persist state changes (async)                         │
 │    ├─ RemoveWorkUnit(id)                                    │
 │    └─ Return new work units (if any)                        │
 ├─────────────────────────────────────────────────────────────┤
@@ -221,7 +242,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 - Multiple pages processed simultaneously
 - Multiple OCR providers per page simultaneously
-- Multiple ToC entry linkers simultaneously
+- **Multiple ToC entry linkers simultaneously** (key optimization)
+- **Multiple chapter finders simultaneously** (key optimization)
 - Each work unit is independent
 
 ### Sequential Constraints
@@ -229,6 +251,21 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 - Blend waits for all OCR providers for that page
 - Label waits for blend AND pattern analysis
 - Book ops have strict ordering (see pipeline diagram)
+
+### No-Blocking Agent Loop
+
+The agent loop must not block other agents:
+
+```go
+// GOOD: Agent handles result, no blocking
+ag.HandleLLMResult(result.ChatResult)
+agentUnits := agents.ExecuteToolLoop(ctx, ag)  // Tool execution
+// Return next work unit immediately
+
+// BAD (old pattern): Blocked on DB write
+// if err := j.saveLinkTocAgentState(ctx, info.EntryDocID); err != nil { ... }
+// This serialized all agents!
+```
 
 ## Key Files
 
@@ -238,15 +275,18 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 | `internal/jobs/process_book/job/job.go` | Job struct, Start(), OnComplete() |
 | `internal/jobs/process_book/job/types.go` | WorkUnitInfo, constants |
 | `internal/jobs/process_book/job/state.go` | MaybeStartBookOperations(), triggers |
+| `internal/jobs/process_book/job/finalize.go` | Finalize-ToC inline (discover, gaps) |
+| `internal/jobs/process_book/job/structure.go` | Common-structure inline (extract, polish) |
+| `internal/jobs/process_book/job/link_toc.go` | ToC linking agents |
+| `internal/jobs/process_book/job/toc_finder.go` | ToC finder agent |
+| `internal/jobs/process_book/job/toc_extract.go` | ToC extraction |
+| `internal/jobs/process_book/job/pattern_analysis.go` | Pattern analysis |
+| `internal/jobs/process_book/job/metadata.go` | Metadata extraction |
 | `internal/jobs/process_book/job/blend.go` | Blend stage handler |
 | `internal/jobs/process_book/job/label.go` | Label stage handler |
 | `internal/jobs/process_book/job/ocr.go` | OCR stage handler |
 | `internal/jobs/process_book/job/extract.go` | Extract stage handler |
-| `internal/jobs/process_book/job/metadata.go` | Metadata extraction |
-| `internal/jobs/process_book/job/toc_finder.go` | ToC finder agent |
-| `internal/jobs/process_book/job/toc_extract.go` | ToC extraction |
-| `internal/jobs/process_book/job/link_toc.go` | ToC linking agents |
-| `internal/jobs/process_book/job/pattern_analysis.go` | Pattern analysis |
 | `internal/jobs/common/state.go` | BookState, PageState |
 | `internal/jobs/common/load.go` | LoadBook(), state loading |
-| `internal/jobs/common/persist.go` | Persistence helpers |
+| `internal/jobs/common/persist.go` | Persistence helpers (async-first) |
+| `internal/jobs/common/reset.go` | Reset helpers for crash recovery |

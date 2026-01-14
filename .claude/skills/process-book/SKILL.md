@@ -5,7 +5,7 @@ description: Guide for working with the process_book job in the shelf book digit
 
 # Working with process_book
 
-The `process_book` job orchestrates the book digitization pipeline using a work unit pattern. Specific stages may change, but the underlying patterns are stable.
+The `process_book` job orchestrates the book digitization pipeline using a work unit pattern. All stages are consolidated into this single job - there are no separate job packages.
 
 ## Quick Reference
 
@@ -25,13 +25,17 @@ internal/jobs/process_book/
     ├── job.go            # Job struct, Start(), OnComplete()
     ├── types.go          # WorkUnitInfo, constants
     ├── state.go          # MaybeStartBookOperations(), triggers
+    ├── finalize.go       # Finalize-ToC inline (discover, gap analysis)
+    ├── structure.go      # Common-structure inline (extract, polish)
+    ├── link_toc.go       # ToC linking agents
     └── [stage].go        # One file per stage
 
 internal/jobs/common/
 ├── state.go              # BookState, PageState, OperationState
 ├── load.go               # LoadBook()
-├── persist.go            # Persistence helpers
-└── [stage].go            # Shared stage logic
+├── persist.go            # Persistence helpers (async-first)
+├── reset.go              # Reset helpers for crash recovery
+└── [helpers].go          # Shared utilities
 ```
 
 ## Core Patterns
@@ -58,16 +62,19 @@ func (j *Job) OnComplete(ctx, result) {
 j.RemoveWorkUnit(result.WorkUnitID)
 ```
 
-### State Persistence
+### State Persistence (Async-First)
 
 ```go
-// Write-through (in-memory first, then async to DB)
-state.SetComplete(true)                // Immediate
-sink.Send(defra.WriteOp{...})          // Async
+// Async writes (default - non-blocking, fire-and-forget)
+state.SetComplete(true)                // In-memory first
+sink.Send(defra.WriteOp{...})          // Async to DB
 
-// Sync for critical operations (record creation, relationships)
+// Sync only for critical creates (need DocID back)
 result, _ := sink.SendSync(ctx, op)    // Blocking
+j.TocDocID = result.DocID
 ```
+
+**Important:** Agent state persistence is fully async. No intermediate saves during agent loops - crash recovery restarts agents from scratch.
 
 ### Cascading Triggers (state.go)
 
@@ -95,11 +102,10 @@ op.IsDone()     // Complete or permanently Failed
 
 | Category | Pattern | State | Example |
 |----------|---------|-------|---------|
-| Page-level | Per-page parallel | PageState | OCR, blend |
+| Page-level | Per-page parallel | PageState | OCR, blend, label |
 | Book-level | Threshold trigger | OperationState | Metadata |
-| Agent-based | Multi-turn loop | Agent struct | ToC finder |
-| Multi-phase | Parallel → sequential | Partitioned | Analysis |
-| Sub-job | Embedded job | Sub-job state | Finalize |
+| Agent-based | Multi-turn loop | Agent struct (no intermediate persist) | ToC finder, chapter finder |
+| Inline sub-job | Embedded in parent | Sub-job state | Finalize, Structure |
 
 See [stages.md](references/stages.md) for implementation patterns.
 
@@ -116,6 +122,7 @@ shelf api agent-logs list --job-id X # Agent logs (if debug enabled)
 ```graphql
 { Page(filter: {book_id: {_eq: "<id>"}}) { page_num blend_complete label_complete } }
 { Book(filter: {_docID: {_eq: "<id>"}}) { metadata_complete pattern_analysis_complete } }
+{ AgentState(filter: {book_id: {_eq: "<id>"}}) { agent_id agent_type complete } }
 ```
 
 See [debugging.md](references/debugging.md) for full query reference.
@@ -128,7 +135,7 @@ See [debugging.md](references/debugging.md) for full query reference.
 3. Create handler file with `CreateX` and `HandleXComplete`
 4. Add case to `OnComplete()` switch
 5. Add trigger in handler or `MaybeStartBookOperations()`
-6. Add persistence helper in common/persist.go
+6. Add persistence helper in common/persist.go (use async `SendToSink`)
 
 See [adding-stages.md](references/adding-stages.md) for full guide.
 
@@ -138,7 +145,8 @@ See [adding-stages.md](references/adding-stages.md) for full guide.
 3. Enable debug: `Config.DebugAgents = true`
 4. Check agent logs if agent-based
 
-### Trace work unit flow
-```go
-logger.Debug("work unit", "type", info.UnitType, "page", info.PageNum, "success", result.Success)
-```
+### Agent state and crash recovery
+- Agent states are persisted once at creation (async)
+- No intermediate saves during the agent loop (performance optimization)
+- On crash, agents restart from scratch (acceptable tradeoff)
+- Use `DeleteAgentStateByAgentID` for cleanup (not DocID-based)

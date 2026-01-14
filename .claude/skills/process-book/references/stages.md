@@ -150,12 +150,24 @@ For multi-turn LLM interactions with tool use.
 ### Structure
 
 ```go
-// 1. Create agent (once)
+// 1. Create agent and persist initial state (async)
 func (j *Job) StartAgentStage(ctx context.Context) *jobs.WorkUnit {
     j.MyAgent = agents.NewMyAgent(ctx, agents.Config{
         Debug: j.Book.DebugAgents,
         JobID: j.RecordID,
     })
+
+    // Persist initial state (async, fire-and-forget)
+    // This is the ONLY persist - no intermediate saves during the loop
+    exported, _ := j.MyAgent.ExportState()
+    initialState := &common.AgentState{
+        AgentID:   exported.AgentID,
+        AgentType: common.AgentTypeMyAgent,
+        BookID:    j.Book.BookID,
+        // ... other fields
+    }
+    common.PersistAgentStateAsync(ctx, j.Book.BookID, initialState)
+    j.Book.SetAgentState(initialState)
 
     return j.CreateAgentWorkUnit(ctx)
 }
@@ -176,7 +188,7 @@ func (j *Job) CreateAgentWorkUnit(ctx context.Context) *jobs.WorkUnit {
     return unit
 }
 
-// 3. Handle LLM response
+// 3. Handle LLM response (NO PERSISTENCE during loop)
 func (j *Job) HandleAgentComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
     // Feed result to agent
     j.MyAgent.HandleLLMResult(result)
@@ -188,26 +200,51 @@ func (j *Job) HandleAgentComplete(ctx context.Context, info WorkUnitInfo, result
             j.MyAgent.SaveLog(ctx)
         }
 
+        // Clean up agent state by agent_id (async)
+        exported, _ := j.MyAgent.ExportState()
+        common.DeleteAgentStateByAgentID(ctx, exported.AgentID)
+        j.Book.RemoveAgentState(common.AgentTypeMyAgent, "")
+
         // Extract result and proceed
         agentResult := j.MyAgent.Result()
         return j.HandleAgentResult(ctx, agentResult)
     }
 
     // Execute tool loop (if agent wants to call tools)
-    if action := agents.ExecuteToolLoop(j.MyAgent); action != nil {
+    if action := agents.ExecuteToolLoop(ctx, j.MyAgent); action != nil {
         // Tool executed, agent may have more work
     }
 
-    // Continue with next LLM call
+    // Continue with next LLM call - NO STATE PERSISTENCE HERE
     return []jobs.WorkUnit{*j.CreateAgentWorkUnit(ctx)}, nil
 }
 ```
 
+### Agent State Persistence Pattern
+
+**Critical performance optimization:** Agent states are persisted ONLY at creation, never during the loop.
+
+```go
+// At creation (async, fire-and-forget)
+common.PersistAgentStateAsync(ctx, bookID, initialState)
+
+// During loop - NO PERSISTENCE (allows parallel agents)
+
+// At completion - delete by agent_id (async)
+common.DeleteAgentStateByAgentID(ctx, agentID)
+```
+
+**Tradeoff:** On crash, agents restart from scratch rather than resuming mid-conversation. This is acceptable because:
+1. Most agent conversations are short (2-5 turns)
+2. The alternative (sync saves) serializes all agents, destroying parallelism
+
 ### Characteristics
-- Agent struct holds conversation state
+- Agent struct holds conversation state in memory
 - Multiple LLM round-trips per logical operation
 - Tool calls executed synchronously in `ExecuteToolLoop`
 - Logs saved to DefraDB when `DebugAgents=true`
+- **No intermediate state persistence** - performance critical
+- Multiple agents can run in parallel (key optimization)
 
 ---
 

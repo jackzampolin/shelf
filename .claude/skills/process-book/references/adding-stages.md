@@ -192,7 +192,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 }
 ```
 
-### Step 8: Add Persistence Helper
+### Step 8: Add Persistence Helper (Async-First)
 
 ```go
 // internal/jobs/common/persist.go
@@ -203,10 +203,10 @@ func SaveNewStageResult(ctx context.Context, state *PageState, result jobs.WorkR
     parsed := result.ChatResult.ParsedJSON
     value := parsed["new_field"].(string)
 
-    // Write-through to memory
+    // 1. Write-through to memory FIRST
     state.SetNewStageResult(value)
 
-    // Async to DB
+    // 2. Async to DB (fire-and-forget)
     sink.Send(defra.WriteOp{
         Op:         defra.OpUpdate,
         Collection: "Page",
@@ -220,6 +220,8 @@ func SaveNewStageResult(ctx context.Context, state *PageState, result jobs.WorkR
     return nil
 }
 ```
+
+**Async-first principle:** Use `sink.Send()` (non-blocking) by default. Only use `sink.SendSync()` when you need the DocID from a create operation.
 
 ### Step 9: Add Prompt Keys (if LLM-based)
 
@@ -335,23 +337,39 @@ case WorkUnitTypeNewStage:
 For stages requiring multi-turn LLM interaction:
 
 ```go
-// Create agent once
+// 1. Create agent and persist initial state ONCE (async)
 j.MyAgent = agents.NewMyAgent(ctx, cfg)
 
-// Work unit just carries LLM request
+// Persist at creation only - no intermediate saves
+exported, _ := j.MyAgent.ExportState()
+initialState := &common.AgentState{
+    AgentID:   exported.AgentID,
+    AgentType: common.AgentTypeMyAgent,
+    BookID:    j.Book.BookID,
+}
+common.PersistAgentStateAsync(ctx, j.Book.BookID, initialState)
+j.Book.SetAgentState(initialState)
+
+// 2. Work unit just carries LLM request
 unit := j.CreateAgentWorkUnit(ctx, j.MyAgent.GetNextRequest())
 
-// On completion, feed back to agent
+// 3. On completion, feed back to agent (NO STATE PERSISTENCE)
 j.MyAgent.HandleLLMResult(result)
 
 if j.MyAgent.IsDone() {
+    // Clean up agent state by agent_id (async)
+    common.DeleteAgentStateByAgentID(ctx, exported.AgentID)
+    j.Book.RemoveAgentState(common.AgentTypeMyAgent, "")
+
     // Extract final result
     return j.HandleAgentComplete(ctx)
 }
 
-// Not done, continue loop
+// Not done, continue loop - NO PERSISTENCE HERE
 return j.CreateAgentWorkUnit(ctx, j.MyAgent.GetNextRequest())
 ```
+
+**Important:** Never persist agent state during the loop. This allows multiple agents to run in parallel without blocking on DB writes. On crash, agents restart from scratch.
 
 ### Sub-Job Integration
 

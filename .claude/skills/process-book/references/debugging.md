@@ -184,7 +184,7 @@ State is stored in DefraDB and can be queried directly via GraphQL.
 }
 ```
 
-### Agent Runs
+### Agent Runs (Completed Logs)
 
 ```graphql
 {
@@ -197,6 +197,26 @@ State is stored in DefraDB and can be queried directly via GraphQL.
   }
 }
 ```
+
+### Agent State (In-Progress Agents)
+
+For agents currently running (not yet completed):
+
+```graphql
+{
+  AgentState(filter: {book_id: {_eq: "<book-id>"}}) {
+    _docID
+    agent_id
+    agent_type
+    entry_doc_id
+    entry_key
+    created_at
+    complete
+  }
+}
+```
+
+**Note:** Agent states are only persisted at creation (async). If an agent is mid-conversation and the server crashes, the state record exists but won't have conversation history. The agent restarts from scratch on resume.
 
 ### LLM Calls
 
@@ -319,7 +339,7 @@ shelf api jobs get <job-id>
 
 **Cause:** In-progress operations not reset.
 
-**Check:**
+**Check book-level operations:**
 ```graphql
 {
   Book(filter: {_docID: {_eq: "<id>"}}) {
@@ -330,6 +350,27 @@ shelf api jobs get <job-id>
 ```
 
 If `started=true` and `complete=false`, the operation was interrupted. Job's `Start()` should detect and reset these.
+
+**Check agent states:**
+```graphql
+{
+  AgentState(filter: {book_id: {_eq: "<id>"}}) {
+    agent_id
+    agent_type
+    complete
+  }
+}
+```
+
+Agent states with `complete=false` represent interrupted agents. On resume, these agents restart from scratch (no conversation history preserved).
+
+**Clean up stale agent states:**
+Agent states are deleted by `agent_id` on completion. Stale states from crashes can be manually deleted:
+```graphql
+mutation {
+  delete_AgentState(filter: {book_id: {_eq: "<id>"}})
+}
+```
 
 ### Missing Data on Page
 
