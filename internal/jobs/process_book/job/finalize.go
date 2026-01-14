@@ -1527,12 +1527,12 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	var errs []error
+	var updatedCount int
 	for i, entry := range entries {
 		newSortOrder := (i + 1) * 100
 		if entry.SortOrder != newSortOrder {
-			// Use sync write to ensure sort order is persisted correctly
-			_, err := sink.SendSync(ctx, defra.WriteOp{
+			// Use async write - sort order can be recalculated on crash recovery
+			sink.Send(defra.WriteOp{
 				Collection: "TocEntry",
 				DocID:      entry.DocID,
 				Document: map[string]any{
@@ -1540,9 +1540,7 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 				},
 				Op: defra.OpUpdate,
 			})
-			if err != nil {
-				errs = append(errs, fmt.Errorf("entry %s: %w", entry.DocID, err))
-			}
+			updatedCount++
 		}
 	}
 
@@ -1550,12 +1548,9 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 		logger.Info("re-sorted ToC entries by page",
 			"toc_doc_id", j.TocDocID,
 			"entry_count", len(entries),
-			"errors", len(errs))
+			"updated", updatedCount)
 	}
 
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to resort %d entries: %v", len(errs), errs[0])
-	}
 	return nil
 }
 
