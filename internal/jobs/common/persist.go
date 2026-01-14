@@ -203,16 +203,15 @@ func PersistAgentState(ctx context.Context, bookID string, state *AgentState) (s
 	}
 
 	if state.DocID != "" {
-		// Update existing - use sync since agent state is critical for crash recovery
-		_, err := sink.SendSync(ctx, defra.WriteOp{
+		// Update existing - use async to avoid blocking the agent loop.
+		// Crash recovery will restart agent from scratch if state wasn't persisted,
+		// which is acceptable since it's already the fallback behavior.
+		sink.Send(defra.WriteOp{
 			Collection: "AgentState",
 			DocID:      state.DocID,
 			Document:   doc,
 			Op:         defra.OpUpdate,
 		})
-		if err != nil {
-			return "", fmt.Errorf("failed to update agent state: %w", err)
-		}
 		return state.DocID, nil
 	}
 
