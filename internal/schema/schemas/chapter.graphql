@@ -51,4 +51,10 @@ type Chapter {
 
     # One-to-many: Chapter has many Paragraphs
     paragraphs: [Paragraph]
+
+    # Audio relationships (for TTS audiobook generation)
+    # One-to-many: Chapter has many AudioSegments
+    audio_segments: [AudioSegment]
+    # One-to-one: Chapter has one ChapterAudio
+    chapter_audio: ChapterAudio @primary
 }

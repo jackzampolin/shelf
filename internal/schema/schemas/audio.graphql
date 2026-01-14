@@ -46,6 +46,10 @@ type ChapterAudio {
     # Note: DefraDB auto-creates chapter_id field of type ID for this relationship
     chapter: Chapter
 
+    # Many-to-one: ChapterAudio belongs to BookAudio
+    # Note: DefraDB auto-creates book_audio_id field of type ID for this relationship
+    book_audio: BookAudio
+
     # Unique key for upsert support (preserves DocID/CID history on re-run)
     # Format: "{book_id}:{chapter_idx}"
     unique_key: String @index

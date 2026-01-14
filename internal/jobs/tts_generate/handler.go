@@ -24,14 +24,9 @@ func ConcatenateHandler(homeDir *home.Dir) jobs.CPUTaskHandler {
 			return nil, fmt.Errorf("book_id required for concatenate task")
 		}
 
-		chapterIdx, ok := data["chapter_idx"].(int)
-		if !ok {
-			// Try float64 (JSON unmarshaling produces float64)
-			if f, ok := data["chapter_idx"].(float64); ok {
-				chapterIdx = int(f)
-			} else {
-				return nil, fmt.Errorf("chapter_idx required for concatenate task")
-			}
+		chapterDocID, ok := data["chapter_doc_id"].(string)
+		if !ok || chapterDocID == "" {
+			return nil, fmt.Errorf("chapter_doc_id required for concatenate task")
 		}
 
 		format, _ := data["format"].(string)
@@ -39,7 +34,7 @@ func ConcatenateHandler(homeDir *home.Dir) jobs.CPUTaskHandler {
 			format = "mp3"
 		}
 
-		outputPath, err := ConcatenateChapterAudio(ctx, bookID, chapterIdx, homeDir, format)
+		outputPath, err := ConcatenateChapterAudio(ctx, bookID, chapterDocID, homeDir, format)
 		if err != nil {
 			return nil, fmt.Errorf("concatenation failed: %w", err)
 		}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -65,7 +66,7 @@ func NewDeepInfraTTSClient(cfg DeepInfraTTSConfig) *DeepInfraTTSClient {
 		cfg.CFG = 0.5
 	}
 	if cfg.Timeout == 0 {
-		cfg.Timeout = 120 * time.Second // TTS can be slow for long text
+		cfg.Timeout = 300 * time.Second // TTS can be slow for long text (5 minutes)
 	}
 	if cfg.RateLimit == 0 {
 		cfg.RateLimit = 5.0 // Conservative default
@@ -105,9 +106,9 @@ func (c *DeepInfraTTSClient) RequestsPerSecond() float64 {
 }
 
 // MaxConcurrency returns the max concurrent in-flight requests.
-// Returns 0 to use DefaultMaxConcurrency.
+// TTS requests can be slow, so limit concurrency to avoid overwhelming the API.
 func (c *DeepInfraTTSClient) MaxConcurrency() int {
-	return 0
+	return 10
 }
 
 // MaxRetries returns the maximum retry attempts.
@@ -183,15 +184,35 @@ func (c *DeepInfraTTSClient) Generate(ctx context.Context, req *TTSRequest) (*TT
 		}, err
 	}
 
-	// Decode audio from base64
-	audio, err := base64.StdEncoding.DecodeString(resp.Audio)
-	if err != nil {
+	// Decode audio - handle both base64 and data URL formats
+	var audio []byte
+	var decodeErr error
+
+	// Check if it's a data URL (e.g., "data:audio/mp3;base64,...")
+	if strings.HasPrefix(resp.Audio, "data:") {
+		// Extract base64 part after the comma
+		if idx := strings.Index(resp.Audio, ","); idx != -1 {
+			audio, decodeErr = base64.StdEncoding.DecodeString(resp.Audio[idx+1:])
+		} else {
+			decodeErr = fmt.Errorf("invalid data URL format")
+		}
+	} else {
+		// Try standard base64 decoding
+		audio, decodeErr = base64.StdEncoding.DecodeString(resp.Audio)
+	}
+
+	if decodeErr != nil {
+		// Log the first 100 chars to help debug
+		preview := resp.Audio
+		if len(preview) > 100 {
+			preview = preview[:100]
+		}
 		return &TTSResult{
 			Success:       false,
-			ErrorMessage:  fmt.Sprintf("failed to decode audio: %v", err),
+			ErrorMessage:  fmt.Sprintf("failed to decode audio (preview: %q): %v", preview, decodeErr),
 			CharCount:     len(req.Text),
 			ExecutionTime: time.Since(start),
-		}, fmt.Errorf("failed to decode audio: %w", err)
+		}, fmt.Errorf("failed to decode audio: %w", decodeErr)
 	}
 
 	// Calculate duration from word timestamps if available

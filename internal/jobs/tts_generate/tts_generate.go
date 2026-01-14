@@ -240,6 +240,7 @@ func loadExistingSegments(ctx context.Context, client *defra.Client, bookID stri
 	query := fmt.Sprintf(`{
 		AudioSegment(filter: {book_id: {_eq: "%s"}}) {
 			_docID
+			chapter_id
 			chapter_idx
 			paragraph_idx
 			duration_ms
@@ -265,11 +266,12 @@ func loadExistingSegments(ctx context.Context, client *defra.Client, bookID stri
 			continue
 		}
 
+		chapterDocID := getString(segData, "chapter_id")
 		chapterIdx := getInt(segData, "chapter_idx")
 		paragraphIdx := getInt(segData, "paragraph_idx")
 
 		// Mark this segment as complete in state
-		state.MarkSegmentComplete(chapterIdx, paragraphIdx, &SegmentResult{
+		state.MarkSegmentComplete(chapterDocID, chapterIdx, paragraphIdx, &SegmentResult{
 			DocID:         getString(segData, "_docID"),
 			DurationMS:    getInt(segData, "duration_ms"),
 			StartOffsetMS: getInt(segData, "start_offset_ms"),

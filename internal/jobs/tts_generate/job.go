@@ -35,18 +35,18 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	var units []jobs.WorkUnit
 
 	for _, ch := range j.State.Chapters {
-		// Ensure chapter directory exists
-		if err := j.State.HomeDir.EnsureChapterAudioDir(j.State.BookID, ch.ChapterIdx); err != nil {
+		// Ensure chapter directory exists (use DocID for stable paths)
+		if err := j.State.HomeDir.EnsureChapterAudioDir(j.State.BookID, ch.DocID); err != nil {
 			return nil, fmt.Errorf("failed to create chapter audio directory: %w", err)
 		}
 
 		for paragraphIdx, paragraph := range ch.Paragraphs {
 			// Skip already-completed segments
-			if j.State.IsSegmentComplete(ch.ChapterIdx, paragraphIdx) {
+			if j.State.IsSegmentComplete(ch.DocID, paragraphIdx) {
 				continue
 			}
 
-			unit := j.createTTSWorkUnit(ch.ChapterIdx, paragraphIdx, paragraph)
+			unit := j.createTTSWorkUnit(ch, paragraphIdx, paragraph)
 			units = append(units, unit)
 		}
 	}
@@ -82,24 +82,27 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		if info.RetryCount < 3 {
 			if logger != nil {
 				logger.Warn("TTS segment failed, retrying",
-					"chapter", info.ChapterIdx,
+					"chapter_doc_id", info.ChapterDocID,
+					"chapter_idx", info.ChapterIdx,
 					"paragraph", info.ParagraphIdx,
 					"attempt", info.RetryCount+1,
 					"error", result.Error)
 			}
 
-			// Find the paragraph text
+			// Find the chapter and paragraph text
+			var chapter *Chapter
 			var paragraph string
 			for _, ch := range j.State.Chapters {
-				if ch.ChapterIdx == info.ChapterIdx && info.ParagraphIdx < len(ch.Paragraphs) {
+				if ch.DocID == info.ChapterDocID && info.ParagraphIdx < len(ch.Paragraphs) {
+					chapter = ch
 					paragraph = ch.Paragraphs[info.ParagraphIdx]
 					break
 				}
 			}
 
-			if paragraph != "" {
+			if chapter != nil && paragraph != "" {
 				j.Tracker.Remove(result.WorkUnitID)
-				retryUnit := j.createTTSWorkUnit(info.ChapterIdx, info.ParagraphIdx, paragraph)
+				retryUnit := j.createTTSWorkUnit(chapter, info.ParagraphIdx, paragraph)
 				// Update retry count
 				retryInfo := info
 				retryInfo.RetryCount++
@@ -123,13 +126,13 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			return nil, fmt.Errorf("TTS result is nil")
 		}
 
-		// Save audio file to disk
+		// Save audio file to disk (use DocID for stable paths)
 		format := j.State.Format
 		if format == "" {
 			format = "mp3"
 		}
 		audioPath := j.State.HomeDir.SegmentAudioPath(
-			j.State.BookID, info.ChapterIdx, info.ParagraphIdx, format)
+			j.State.BookID, info.ChapterDocID, info.ParagraphIdx, format)
 
 		if err := os.WriteFile(audioPath, ttsResult.Audio, 0644); err != nil {
 			j.Tracker.Remove(result.WorkUnitID)
@@ -138,7 +141,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 		// Calculate start offset from previous segments
 		startOffset := 0
-		progress := j.State.ChapterProgress[info.ChapterIdx]
+		progress := j.State.ChapterProgress[info.ChapterDocID]
 		if progress != nil {
 			for i := 0; i < info.ParagraphIdx; i++ {
 				if seg, ok := progress.Segments[i]; ok {
@@ -159,14 +162,14 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		// Get paragraph text for DB record
 		var paragraph string
 		for _, ch := range j.State.Chapters {
-			if ch.ChapterIdx == info.ChapterIdx && info.ParagraphIdx < len(ch.Paragraphs) {
+			if ch.DocID == info.ChapterDocID && info.ParagraphIdx < len(ch.Paragraphs) {
 				paragraph = ch.Paragraphs[info.ParagraphIdx]
 				break
 			}
 		}
 
 		// Save to DefraDB
-		docID, err := j.saveAudioSegment(ctx, defraClient, sink, info.ChapterIdx, info.ParagraphIdx, segResult, paragraph)
+		docID, err := j.saveAudioSegment(ctx, defraClient, sink, info.ChapterDocID, info.ChapterIdx, info.ParagraphIdx, segResult, paragraph)
 		if err != nil {
 			if logger != nil {
 				logger.Error("failed to save audio segment", "error", err)
@@ -176,20 +179,21 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		}
 
 		// Update state
-		j.State.MarkSegmentComplete(info.ChapterIdx, info.ParagraphIdx, segResult)
+		j.State.MarkSegmentComplete(info.ChapterDocID, info.ChapterIdx, info.ParagraphIdx, segResult)
 
 		if logger != nil {
 			logger.Debug("TTS segment complete",
-				"chapter", info.ChapterIdx,
+				"chapter_doc_id", info.ChapterDocID,
+				"chapter_idx", info.ChapterIdx,
 				"paragraph", info.ParagraphIdx,
 				"duration_ms", ttsResult.DurationMS,
 				"cost", ttsResult.CostUSD)
 		}
 
 		// Check if chapter is now complete
-		if j.State.IsChapterComplete(info.ChapterIdx) {
+		if j.State.IsChapterComplete(info.ChapterDocID) {
 			// Queue concatenation work unit
-			concatUnit := j.createConcatenateWorkUnit(info.ChapterIdx)
+			concatUnit := j.createConcatenateWorkUnit(info.ChapterDocID, info.ChapterIdx)
 			newUnits = append(newUnits, concatUnit)
 		}
 
@@ -197,11 +201,12 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		// Chapter concatenation completed
 		if logger != nil {
 			logger.Info("chapter audio concatenated",
-				"chapter", info.ChapterIdx)
+				"chapter_doc_id", info.ChapterDocID,
+				"chapter_idx", info.ChapterIdx)
 		}
 
 		// Save ChapterAudio record
-		if err := j.saveChapterAudio(ctx, defraClient, sink, info.ChapterIdx); err != nil {
+		if err := j.saveChapterAudio(ctx, defraClient, sink, info.ChapterDocID, info.ChapterIdx); err != nil {
 			if logger != nil {
 				logger.Error("failed to save chapter audio record", "error", err)
 			}
@@ -210,12 +215,12 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		// Check if all chapters are done
 		allComplete := true
 		for _, ch := range j.State.Chapters {
-			if !j.State.IsChapterComplete(ch.ChapterIdx) {
+			if !j.State.IsChapterComplete(ch.DocID) {
 				allComplete = false
 				break
 			}
 			// Also check that concatenation is done
-			progress := j.State.ChapterProgress[ch.ChapterIdx]
+			progress := j.State.ChapterProgress[ch.DocID]
 			if progress == nil || progress.AudioFile == "" {
 				allComplete = false
 				break
@@ -251,7 +256,7 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 
 	chaptersComplete := 0
 	for _, ch := range j.State.Chapters {
-		if j.State.IsChapterComplete(ch.ChapterIdx) {
+		if j.State.IsChapterComplete(ch.DocID) {
 			chaptersComplete++
 		}
 	}
@@ -270,34 +275,35 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 }
 
 // createTTSWorkUnit creates a TTS work unit for a paragraph.
-func (j *Job) createTTSWorkUnit(chapterIdx, paragraphIdx int, text string) jobs.WorkUnit {
-	unitID := fmt.Sprintf("tts_%s_%d_%d", j.State.BookID, chapterIdx, paragraphIdx)
+func (j *Job) createTTSWorkUnit(chapter *Chapter, paragraphIdx int, text string) jobs.WorkUnit {
+	unitID := fmt.Sprintf("tts_%s_%s_%d", j.State.BookID, chapter.DocID, paragraphIdx)
 
 	unit := jobs.WorkUnit{
 		ID:       unitID,
 		Type:     jobs.WorkUnitTypeTTS,
 		Provider: j.State.TTSProvider,
 		JobID:    j.recordID,
-		Priority: 100 - chapterIdx, // Earlier chapters have higher priority
+		Priority: 100 - chapter.ChapterIdx, // Earlier chapters have higher priority
 
 		TTSRequest: &jobs.TTSWorkRequest{
 			Text:         text,
 			Voice:        j.State.Voice,
 			Format:       j.State.Format,
-			ChapterIdx:   chapterIdx,
+			ChapterIdx:   chapter.ChapterIdx,
 			ParagraphIdx: paragraphIdx,
 		},
 
 		Metrics: &jobs.WorkUnitMetrics{
 			BookID:  j.State.BookID,
 			Stage:   JobType,
-			ItemKey: fmt.Sprintf("chapter_%d_para_%d", chapterIdx, paragraphIdx),
+			ItemKey: fmt.Sprintf("%s_para_%d", chapter.DocID, paragraphIdx),
 		},
 	}
 
 	j.Tracker.Register(unitID, WorkUnitInfo{
 		UnitType:     WorkUnitTypeTTSSegment,
-		ChapterIdx:   chapterIdx,
+		ChapterDocID: chapter.DocID,
+		ChapterIdx:   chapter.ChapterIdx,
 		ParagraphIdx: paragraphIdx,
 	})
 
@@ -305,8 +311,8 @@ func (j *Job) createTTSWorkUnit(chapterIdx, paragraphIdx int, text string) jobs.
 }
 
 // createConcatenateWorkUnit creates a work unit for concatenating chapter audio.
-func (j *Job) createConcatenateWorkUnit(chapterIdx int) jobs.WorkUnit {
-	unitID := fmt.Sprintf("concat_%s_%d", j.State.BookID, chapterIdx)
+func (j *Job) createConcatenateWorkUnit(chapterDocID string, chapterIdx int) jobs.WorkUnit {
+	unitID := fmt.Sprintf("concat_%s_%s", j.State.BookID, chapterDocID)
 
 	unit := jobs.WorkUnit{
 		ID:       unitID,
@@ -317,21 +323,23 @@ func (j *Job) createConcatenateWorkUnit(chapterIdx int) jobs.WorkUnit {
 		CPURequest: &jobs.CPUWorkRequest{
 			Task: "concatenate_chapter",
 			Data: map[string]any{
-				"book_id":     j.State.BookID,
-				"chapter_idx": chapterIdx,
+				"book_id":        j.State.BookID,
+				"chapter_doc_id": chapterDocID,
+				"chapter_idx":    chapterIdx,
 			},
 		},
 
 		Metrics: &jobs.WorkUnitMetrics{
 			BookID:  j.State.BookID,
 			Stage:   JobType,
-			ItemKey: fmt.Sprintf("concat_chapter_%d", chapterIdx),
+			ItemKey: fmt.Sprintf("concat_%s", chapterDocID),
 		},
 	}
 
 	j.Tracker.Register(unitID, WorkUnitInfo{
-		UnitType:   WorkUnitTypeConcatenate,
-		ChapterIdx: chapterIdx,
+		UnitType:     WorkUnitTypeConcatenate,
+		ChapterDocID: chapterDocID,
+		ChapterIdx:   chapterIdx,
 	})
 
 	return unit
@@ -396,17 +404,8 @@ func (j *Job) ensureBookAudioRecord(ctx context.Context, client *defra.Client) e
 	return nil
 }
 
-func (j *Job) saveAudioSegment(ctx context.Context, client *defra.Client, sink *defra.Sink, chapterIdx, paragraphIdx int, result *SegmentResult, sourceText string) (string, error) {
-	// Find chapter DocID
-	var chapterDocID string
-	for _, ch := range j.State.Chapters {
-		if ch.ChapterIdx == chapterIdx {
-			chapterDocID = ch.DocID
-			break
-		}
-	}
-
-	uniqueKey := fmt.Sprintf("%s:%d:%d", j.State.BookID, chapterIdx, paragraphIdx)
+func (j *Job) saveAudioSegment(ctx context.Context, client *defra.Client, sink *defra.Sink, chapterDocID string, chapterIdx, paragraphIdx int, result *SegmentResult, sourceText string) (string, error) {
+	uniqueKey := fmt.Sprintf("%s:%s:%d", j.State.BookID, chapterDocID, paragraphIdx)
 	format := j.State.Format
 	if format == "" {
 		format = "mp3"
@@ -489,22 +488,13 @@ func (j *Job) saveAudioSegment(ctx context.Context, client *defra.Client, sink *
 	return "", nil
 }
 
-func (j *Job) saveChapterAudio(ctx context.Context, client *defra.Client, sink *defra.Sink, chapterIdx int) error {
-	progress := j.State.ChapterProgress[chapterIdx]
+func (j *Job) saveChapterAudio(ctx context.Context, client *defra.Client, sink *defra.Sink, chapterDocID string, chapterIdx int) error {
+	progress := j.State.ChapterProgress[chapterDocID]
 	if progress == nil {
-		return fmt.Errorf("no progress for chapter %d", chapterIdx)
+		return fmt.Errorf("no progress for chapter %s", chapterDocID)
 	}
 
-	// Find chapter info
-	var chapterDocID string
-	for _, ch := range j.State.Chapters {
-		if ch.ChapterIdx == chapterIdx {
-			chapterDocID = ch.DocID
-			break
-		}
-	}
-
-	uniqueKey := fmt.Sprintf("%s:%d", j.State.BookID, chapterIdx)
+	uniqueKey := fmt.Sprintf("%s:%s", j.State.BookID, chapterDocID)
 	format := j.State.Format
 	if format == "" {
 		format = "mp3"
@@ -628,13 +618,13 @@ func (j *Job) updateBookAudioComplete(ctx context.Context, client *defra.Client,
 
 // ConcatenateChapterAudio concatenates segment audio files into chapter audio.
 // This is called by the CPU worker pool when processing concatenation work units.
-func ConcatenateChapterAudio(ctx context.Context, bookID string, chapterIdx int, homeDir *home.Dir, format string) (string, error) {
+func ConcatenateChapterAudio(ctx context.Context, bookID, chapterDocID string, homeDir *home.Dir, format string) (string, error) {
 	if format == "" {
 		format = "mp3"
 	}
 
-	chapterDir := homeDir.ChapterAudioDir(bookID, chapterIdx)
-	outputPath := homeDir.ChapterAudioPath(bookID, chapterIdx, format)
+	chapterDir := homeDir.ChapterAudioDir(bookID, chapterDocID)
+	outputPath := homeDir.ChapterAudioPath(bookID, chapterDocID, format)
 
 	// Find all segment files in order
 	entries, err := os.ReadDir(chapterDir)

@@ -123,23 +123,26 @@ func (d *Dir) BookAudioDir(bookID string) string {
 }
 
 // ChapterAudioDir returns the directory for a chapter's audio segments.
-func (d *Dir) ChapterAudioDir(bookID string, chapterIdx int) string {
-	return filepath.Join(d.BookAudioDir(bookID), fmt.Sprintf("chapter_%04d", chapterIdx))
+// Uses chapter DocID for stable linking that survives reordering.
+func (d *Dir) ChapterAudioDir(bookID, chapterDocID string) string {
+	return filepath.Join(d.BookAudioDir(bookID), chapterDocID)
 }
 
 // SegmentAudioPath returns the path for a paragraph audio segment.
-func (d *Dir) SegmentAudioPath(bookID string, chapterIdx, paragraphIdx int, format string) string {
+// Uses chapter DocID for stable linking.
+func (d *Dir) SegmentAudioPath(bookID, chapterDocID string, paragraphIdx int, format string) string {
 	return filepath.Join(
-		d.ChapterAudioDir(bookID, chapterIdx),
+		d.ChapterAudioDir(bookID, chapterDocID),
 		fmt.Sprintf("segment_%04d.%s", paragraphIdx, format),
 	)
 }
 
 // ChapterAudioPath returns the path for a concatenated chapter audio file.
-func (d *Dir) ChapterAudioPath(bookID string, chapterIdx int, format string) string {
+// Uses chapter DocID for stable linking.
+func (d *Dir) ChapterAudioPath(bookID, chapterDocID, format string) string {
 	return filepath.Join(
 		d.BookAudioDir(bookID),
-		fmt.Sprintf("chapter_%04d.%s", chapterIdx, format),
+		fmt.Sprintf("%s.%s", chapterDocID, format),
 	)
 }
 
@@ -149,6 +152,7 @@ func (d *Dir) EnsureBookAudioDir(bookID string) error {
 }
 
 // EnsureChapterAudioDir creates the audio directory for a chapter.
-func (d *Dir) EnsureChapterAudioDir(bookID string, chapterIdx int) error {
-	return os.MkdirAll(d.ChapterAudioDir(bookID, chapterIdx), 0o755)
+// Uses chapter DocID for stable linking.
+func (d *Dir) EnsureChapterAudioDir(bookID, chapterDocID string) error {
+	return os.MkdirAll(d.ChapterAudioDir(bookID, chapterDocID), 0o755)
 }
