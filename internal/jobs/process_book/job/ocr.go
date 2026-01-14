@@ -30,6 +30,14 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 		return nil, fmt.Errorf("no state for page %d", info.PageNum)
 	}
 
+	// Save any extracted images from OCR metadata and update text with file paths
+	if result.OCRResult != nil && j.Book.HomeDir != nil {
+		updatedText := common.SaveExtractedImages(ctx, j.Book.HomeDir, j.Book.BookID, info.PageNum, result.OCRResult)
+		if updatedText != result.OCRResult.Text {
+			result.OCRResult.Text = updatedText
+		}
+	}
+
 	// Use common handler for persistence and state update
 	allDone, err := common.PersistOCRResult(ctx, state, j.Book.OcrProviders, info.Provider, result.OCRResult)
 	if err != nil {

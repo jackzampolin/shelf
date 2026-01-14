@@ -250,11 +250,12 @@ type RegistryConfig struct {
 
 // OCRProviderConfig matches config.OCRProviderCfg with resolved API key.
 type OCRProviderConfig struct {
-	Type      string  // "mistral-ocr", "deepinfra"
-	Model     string  // Model name (for deepinfra)
-	APIKey    string  // Resolved API key
-	RateLimit float64 // Requests per second
-	Enabled   bool
+	Type          string  // "mistral-ocr", "deepinfra"
+	Model         string  // Model name (for deepinfra)
+	APIKey        string  // Resolved API key
+	RateLimit     float64 // Requests per second
+	Enabled       bool
+	IncludeImages bool // Whether to include base64 image data (Mistral only)
 }
 
 // LLMProviderConfig matches config.LLMProviderCfg with resolved API key.
@@ -451,8 +452,9 @@ func createOCRProvider(cfg OCRProviderConfig) OCRProvider {
 	switch cfg.Type {
 	case "mistral-ocr":
 		return NewMistralOCRClient(MistralOCRConfig{
-			APIKey:    cfg.APIKey,
-			RateLimit: cfg.RateLimit, // Pass rate limit from config
+			APIKey:        cfg.APIKey,
+			RateLimit:     cfg.RateLimit, // Pass rate limit from config
+			IncludeImages: cfg.IncludeImages,
 		})
 	case "deepinfra":
 		return NewDeepInfraOCRClient(DeepInfraOCRConfig{

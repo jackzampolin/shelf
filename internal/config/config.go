@@ -140,11 +140,12 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 
 	for name, ocr := range c.OCRProviders {
 		cfg.OCRProviders[name] = providers.OCRProviderConfig{
-			Type:      ocr.Type,
-			Model:     ocr.Model,
-			APIKey:    ResolveEnvVars(ocr.APIKey),
-			RateLimit: ocr.RateLimit,
-			Enabled:   ocr.Enabled,
+			Type:          ocr.Type,
+			Model:         ocr.Model,
+			APIKey:        ResolveEnvVars(ocr.APIKey),
+			RateLimit:     ocr.RateLimit,
+			Enabled:       ocr.Enabled,
+			IncludeImages: ocr.IncludeImages,
 		}
 	}
 

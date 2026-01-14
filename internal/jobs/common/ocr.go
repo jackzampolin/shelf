@@ -2,12 +2,15 @@ package common
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/svcctx"
@@ -99,4 +102,117 @@ func PersistOCRResult(ctx context.Context, state *PageState, ocrProviders []stri
 	}
 
 	return allDone, nil
+}
+
+// SaveExtractedImages saves images from OCR metadata to disk and updates the text.
+// Returns the updated text with image references pointing to saved files.
+// If no images are present or saving fails, returns the original text unchanged.
+func SaveExtractedImages(ctx context.Context, homeDir *home.Dir, bookID string, pageNum int, result *providers.OCRResult) string {
+	if result == nil || result.Metadata == nil {
+		return result.Text
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Check for images in metadata (from Mistral OCR)
+	imagesRaw, ok := result.Metadata["images"]
+	if !ok {
+		return result.Text
+	}
+
+	images, ok := imagesRaw.([]map[string]any)
+	if !ok {
+		return result.Text
+	}
+
+	if len(images) == 0 {
+		return result.Text
+	}
+
+	// Ensure directory exists
+	if err := homeDir.EnsurePageExtractedImagesDir(bookID, pageNum); err != nil {
+		if logger != nil {
+			logger.Warn("failed to create extracted images directory",
+				"book_id", bookID,
+				"page_num", pageNum,
+				"error", err)
+		}
+		return result.Text
+	}
+
+	text := result.Text
+	savedCount := 0
+
+	for _, img := range images {
+		// Get image ID (e.g., "img-0.jpeg")
+		imageID, ok := img["id"].(string)
+		if !ok || imageID == "" {
+			continue
+		}
+
+		// Check if base64 data is present
+		hasBase64, _ := img["has_base64"].(bool)
+		if !hasBase64 {
+			continue
+		}
+
+		// Get the base64 data from the original response
+		// Note: The metadata stores "has_base64" flag, but actual data may be in raw response
+		// For now, we'll need to ensure Mistral provider stores the actual base64 data
+		base64Data, ok := img["image_base64"].(string)
+		if !ok || base64Data == "" {
+			continue
+		}
+
+		// Decode base64
+		imageData, err := base64.StdEncoding.DecodeString(base64Data)
+		if err != nil {
+			if logger != nil {
+				logger.Warn("failed to decode image base64",
+					"book_id", bookID,
+					"page_num", pageNum,
+					"image_id", imageID,
+					"error", err)
+			}
+			continue
+		}
+
+		// Save to disk
+		imagePath := homeDir.ExtractedImagePath(bookID, pageNum, imageID)
+		if err := os.WriteFile(imagePath, imageData, 0o644); err != nil {
+			if logger != nil {
+				logger.Warn("failed to save extracted image",
+					"book_id", bookID,
+					"page_num", pageNum,
+					"image_id", imageID,
+					"path", imagePath,
+					"error", err)
+			}
+			continue
+		}
+
+		// Update markdown to reference the saved file path
+		// Mistral markdown: ![img-0.jpeg](img-0.jpeg) -> ![img-0.jpeg](/path/to/img-0.jpeg)
+		oldRef := fmt.Sprintf("(%s)", imageID)
+		newRef := fmt.Sprintf("(%s)", imagePath)
+		text = strings.Replace(text, oldRef, newRef, 1)
+
+		savedCount++
+		if logger != nil {
+			logger.Debug("saved extracted image",
+				"book_id", bookID,
+				"page_num", pageNum,
+				"image_id", imageID,
+				"path", imagePath)
+		}
+	}
+
+	if savedCount > 0 && logger != nil {
+		logger.Info("saved extracted images from page",
+			"book_id", bookID,
+			"page_num", pageNum,
+			"count", savedCount)
+	}
+
+	return text
 }

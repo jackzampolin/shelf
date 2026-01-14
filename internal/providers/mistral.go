@@ -188,7 +188,7 @@ func (c *MistralOCRClient) ProcessImage(ctx context.Context, image []byte, pageN
 		"page_index": page.Index,
 	}
 
-	// Add image bounding boxes if present
+	// Add image bounding boxes and base64 data if present
 	if len(page.Images) > 0 {
 		images := make([]map[string]any, len(page.Images))
 		for i, img := range page.Images {
@@ -201,6 +201,7 @@ func (c *MistralOCRClient) ProcessImage(ctx context.Context, image []byte, pageN
 			}
 			if img.ImageBase64 != "" {
 				images[i]["has_base64"] = true
+				images[i]["image_base64"] = img.ImageBase64
 			}
 		}
 		metadata["images"] = images

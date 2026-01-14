@@ -285,11 +285,12 @@ func StoreToProviderRegistryConfig(ctx context.Context, store Store) (providers.
 	ocrProviders := extractProviders(all, "providers.ocr.")
 	for name, fields := range ocrProviders {
 		cfg.OCRProviders[name] = providers.OCRProviderConfig{
-			Type:      getString(fields, "type"),
-			Model:     getString(fields, "model"),
-			APIKey:    ResolveEnvVars(getString(fields, "api_key")),
-			RateLimit: getFloat(fields, "rate_limit"),
-			Enabled:   getBool(fields, "enabled"),
+			Type:          getString(fields, "type"),
+			Model:         getString(fields, "model"),
+			APIKey:        ResolveEnvVars(getString(fields, "api_key")),
+			RateLimit:     getFloat(fields, "rate_limit"),
+			Enabled:       getBool(fields, "enabled"),
+			IncludeImages: getBool(fields, "include_images"),
 		}
 	}
 

@@ -12,11 +12,12 @@ type Config struct {
 
 // OCRProviderCfg configures an OCR provider.
 type OCRProviderCfg struct {
-	Type      string  `mapstructure:"type" yaml:"type"`           // "mistral-ocr", "deepinfra"
-	Model     string  `mapstructure:"model" yaml:"model"`         // Model name (for deepinfra)
-	APIKey    string  `mapstructure:"api_key" yaml:"api_key"`     // API key (supports ${ENV_VAR} syntax)
-	RateLimit float64 `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
-	Enabled   bool    `mapstructure:"enabled" yaml:"enabled"`
+	Type          string  `mapstructure:"type" yaml:"type"`                     // "mistral-ocr", "deepinfra"
+	Model         string  `mapstructure:"model" yaml:"model"`                   // Model name (for deepinfra)
+	APIKey        string  `mapstructure:"api_key" yaml:"api_key"`               // API key (supports ${ENV_VAR} syntax)
+	RateLimit     float64 `mapstructure:"rate_limit" yaml:"rate_limit"`         // Requests per second
+	Enabled       bool    `mapstructure:"enabled" yaml:"enabled"`
+	IncludeImages bool    `mapstructure:"include_images" yaml:"include_images"` // Extract images (Mistral only)
 }
 
 // LLMProviderCfg configures an LLM provider.
@@ -65,10 +66,11 @@ func DefaultConfig() *Config {
 	return &Config{
 		OCRProviders: map[string]OCRProviderCfg{
 			"mistral": {
-				Type:      "mistral-ocr",
-				APIKey:    "${MISTRAL_API_KEY}",
-				RateLimit: 6.0, // 6 RPS
-				Enabled:   true,
+				Type:          "mistral-ocr",
+				APIKey:        "${MISTRAL_API_KEY}",
+				RateLimit:     6.0, // 6 RPS
+				Enabled:       true,
+				IncludeImages: true, // Extract images from pages
 			},
 			"paddle": {
 				Type:      "deepinfra",

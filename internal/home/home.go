@@ -97,6 +97,28 @@ func (d *Dir) EnsureSourceImagesDir(bookID string) error {
 	return os.MkdirAll(d.SourceImagesDir(bookID), 0o755)
 }
 
+// ExtractedImagesDir returns the directory for images extracted from pages.
+// These are images detected within page content (maps, illustrations, etc.).
+func (d *Dir) ExtractedImagesDir(bookID string) string {
+	return filepath.Join(d.path, "extracted_images", bookID)
+}
+
+// PageExtractedImagesDir returns the directory for images from a specific page.
+func (d *Dir) PageExtractedImagesDir(bookID string, pageNum int) string {
+	return filepath.Join(d.ExtractedImagesDir(bookID), fmt.Sprintf("page_%04d", pageNum))
+}
+
+// ExtractedImagePath returns the path for a specific extracted image.
+// imageID is the Mistral image ID (e.g., "img-0.jpeg").
+func (d *Dir) ExtractedImagePath(bookID string, pageNum int, imageID string) string {
+	return filepath.Join(d.PageExtractedImagesDir(bookID, pageNum), imageID)
+}
+
+// EnsurePageExtractedImagesDir creates the directory for a page's extracted images.
+func (d *Dir) EnsurePageExtractedImagesDir(bookID string, pageNum int) error {
+	return os.MkdirAll(d.PageExtractedImagesDir(bookID, pageNum), 0o755)
+}
+
 // OriginalsDir returns the directory for original PDF files of a book.
 func (d *Dir) OriginalsDir(bookID string) string {
 	return filepath.Join(d.SourceImagesDir(bookID), "originals")
