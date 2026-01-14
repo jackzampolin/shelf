@@ -522,3 +522,281 @@ func (m *mockTools) GetResult() any {
 	defer m.mu.Unlock()
 	return m.result
 }
+
+// TestAgent_ExportState_RestoreState_RoundTrip tests that agent state can be
+// serialized and restored correctly for job resume functionality.
+func TestAgent_ExportState_RestoreState_RoundTrip(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("basic_round_trip", func(t *testing.T) {
+		// Create an agent with initial messages
+		tools := &mockTools{
+			tools: []providers.Tool{
+				{Type: "function", Function: providers.ToolFunction{Name: "test_tool"}},
+			},
+		}
+		agent1 := New(ctx, Config{
+			ID:    "test-agent-1",
+			Tools: tools,
+			InitialMessages: []providers.Message{
+				{Role: "system", Content: "You are a helpful assistant."},
+				{Role: "user", Content: "Hello!"},
+			},
+			MaxIterations: 10,
+		})
+
+		// Simulate some conversation by adding messages manually
+		// (normally done by ProcessResponse, but we test state directly)
+		agent1.mu.Lock()
+		agent1.messages = append(agent1.messages, providers.Message{
+			Role:    "assistant",
+			Content: "Hello! How can I help?",
+		})
+		agent1.iteration = 3
+		agent1.mu.Unlock()
+
+		// Export state
+		exported, err := agent1.ExportState()
+		if err != nil {
+			t.Fatalf("ExportState() error = %v", err)
+		}
+
+		// Verify exported state
+		if exported.AgentID != "test-agent-1" {
+			t.Errorf("AgentID = %s, want test-agent-1", exported.AgentID)
+		}
+		if exported.Iteration != 3 {
+			t.Errorf("Iteration = %d, want 3", exported.Iteration)
+		}
+		if exported.Complete {
+			t.Error("Complete should be false")
+		}
+		if exported.MessagesJSON == "" {
+			t.Error("MessagesJSON should not be empty")
+		}
+
+		// Create a new agent and restore state
+		agent2 := New(ctx, Config{
+			ID:            "test-agent-2", // Different ID
+			Tools:         tools,
+			MaxIterations: 10,
+		})
+
+		if err := agent2.RestoreState(exported); err != nil {
+			t.Fatalf("RestoreState() error = %v", err)
+		}
+
+		// Verify restored state
+		agent2.mu.Lock()
+		if agent2.iteration != 3 {
+			t.Errorf("restored iteration = %d, want 3", agent2.iteration)
+		}
+		if len(agent2.messages) != 3 {
+			t.Errorf("restored messages count = %d, want 3", len(agent2.messages))
+		}
+		if agent2.messages[2].Content != "Hello! How can I help?" {
+			t.Errorf("restored message content = %s, want 'Hello! How can I help?'", agent2.messages[2].Content)
+		}
+		agent2.mu.Unlock()
+	})
+
+	t.Run("with_pending_tool_calls", func(t *testing.T) {
+		tools := &mockTools{
+			tools: []providers.Tool{
+				{Type: "function", Function: providers.ToolFunction{Name: "get_data"}},
+			},
+		}
+		agent1 := New(ctx, Config{
+			ID:            "tool-agent",
+			Tools:         tools,
+			MaxIterations: 10,
+		})
+
+		// Simulate pending tool calls
+		agent1.mu.Lock()
+		agent1.pendingToolCalls = []providers.ToolCall{
+			{ID: "call_123", Function: struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			}{Name: "get_data", Arguments: `{"key": "value"}`}},
+			{ID: "call_456", Function: struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			}{Name: "get_data", Arguments: `{"key": "value2"}`}},
+		}
+		agent1.toolResults = map[string]string{
+			"call_123": `{"result": "data1"}`,
+		}
+		agent1.mu.Unlock()
+
+		// Export
+		exported, err := agent1.ExportState()
+		if err != nil {
+			t.Fatalf("ExportState() error = %v", err)
+		}
+
+		if exported.PendingToolCalls == "" {
+			t.Error("PendingToolCalls should not be empty")
+		}
+		if exported.ToolResults == "" {
+			t.Error("ToolResults should not be empty")
+		}
+
+		// Restore to new agent
+		agent2 := New(ctx, Config{
+			ID:            "tool-agent-2",
+			Tools:         tools,
+			MaxIterations: 10,
+		})
+
+		if err := agent2.RestoreState(exported); err != nil {
+			t.Fatalf("RestoreState() error = %v", err)
+		}
+
+		// Verify
+		agent2.mu.Lock()
+		if len(agent2.pendingToolCalls) != 2 {
+			t.Errorf("restored pendingToolCalls count = %d, want 2", len(agent2.pendingToolCalls))
+		}
+		if agent2.pendingToolCalls[0].ID != "call_123" {
+			t.Errorf("restored tool call ID = %s, want call_123", agent2.pendingToolCalls[0].ID)
+		}
+		if agent2.toolResults["call_123"] != `{"result": "data1"}` {
+			t.Errorf("restored tool result = %s, want '{\"result\": \"data1\"}'", agent2.toolResults["call_123"])
+		}
+		agent2.mu.Unlock()
+	})
+
+	t.Run("with_completed_result", func(t *testing.T) {
+		tools := &mockTools{
+			tools: []providers.Tool{
+				{Type: "function", Function: providers.ToolFunction{Name: "complete"}},
+			},
+		}
+		agent1 := New(ctx, Config{
+			ID:            "completed-agent",
+			Tools:         tools,
+			MaxIterations: 10,
+		})
+
+		// Simulate completion
+		agent1.mu.Lock()
+		agent1.complete = true
+		agent1.result = &Result{
+			Success:    true,
+			Iterations: 5,
+			ToolResult: "final answer",
+		}
+		agent1.mu.Unlock()
+
+		// Export
+		exported, err := agent1.ExportState()
+		if err != nil {
+			t.Fatalf("ExportState() error = %v", err)
+		}
+
+		if !exported.Complete {
+			t.Error("Complete should be true")
+		}
+		if exported.ResultJSON == "" {
+			t.Error("ResultJSON should not be empty for completed agent")
+		}
+
+		// Restore
+		agent2 := New(ctx, Config{
+			ID:            "completed-agent-2",
+			Tools:         tools,
+			MaxIterations: 10,
+		})
+
+		if err := agent2.RestoreState(exported); err != nil {
+			t.Fatalf("RestoreState() error = %v", err)
+		}
+
+		agent2.mu.Lock()
+		if !agent2.complete {
+			t.Error("restored complete should be true")
+		}
+		if agent2.result == nil {
+			t.Error("restored result should not be nil")
+		} else if !agent2.result.Success {
+			t.Error("restored result.Success should be true")
+		}
+		agent2.mu.Unlock()
+	})
+
+	t.Run("empty_state", func(t *testing.T) {
+		tools := &mockTools{}
+		agent1 := New(ctx, Config{
+			ID:            "empty-agent",
+			Tools:         tools,
+			MaxIterations: 5,
+		})
+
+		exported, err := agent1.ExportState()
+		if err != nil {
+			t.Fatalf("ExportState() error = %v", err)
+		}
+
+		agent2 := New(ctx, Config{
+			ID:            "empty-agent-2",
+			Tools:         tools,
+			MaxIterations: 5,
+		})
+
+		if err := agent2.RestoreState(exported); err != nil {
+			t.Fatalf("RestoreState() error = %v", err)
+		}
+
+		// Should not error on empty state
+		agent2.mu.Lock()
+		if agent2.iteration != 0 {
+			t.Errorf("iteration = %d, want 0", agent2.iteration)
+		}
+		agent2.mu.Unlock()
+	})
+
+	t.Run("malformed_json_errors", func(t *testing.T) {
+		tools := &mockTools{}
+		agent := New(ctx, Config{
+			ID:            "test",
+			Tools:         tools,
+			MaxIterations: 5,
+		})
+
+		// Test with malformed messages JSON
+		err := agent.RestoreState(&StateExport{
+			MessagesJSON: "not valid json",
+		})
+		if err == nil {
+			t.Error("RestoreState should error on malformed MessagesJSON")
+		}
+
+		// Test with malformed tool calls JSON
+		err = agent.RestoreState(&StateExport{
+			MessagesJSON:     "[]",
+			PendingToolCalls: "not valid json",
+		})
+		if err == nil {
+			t.Error("RestoreState should error on malformed PendingToolCalls")
+		}
+
+		// Test with malformed tool results JSON
+		err = agent.RestoreState(&StateExport{
+			MessagesJSON: "[]",
+			ToolResults:  "not valid json",
+		})
+		if err == nil {
+			t.Error("RestoreState should error on malformed ToolResults")
+		}
+
+		// Test with malformed result JSON
+		err = agent.RestoreState(&StateExport{
+			MessagesJSON: "[]",
+			ResultJSON:   "not valid json",
+		})
+		if err == nil {
+			t.Error("RestoreState should error on malformed ResultJSON")
+		}
+	})
+}

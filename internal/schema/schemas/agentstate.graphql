@@ -1,0 +1,30 @@
+type AgentState {
+    # Identity
+    agent_id: String @index      # UUID for this agent instance
+    agent_type: String @index    # "toc_finder", "toc_entry_finder", "chapter_finder", "gap_investigator"
+
+    # Context - for multi-instance agents (like LinkToc entry agents)
+    entry_doc_id: String @index  # Which ToC entry this agent is for (if applicable)
+
+    # Execution state
+    iteration: Int               # Current iteration number
+    complete: Boolean            # Is agent done?
+
+    # Conversation history (for resume)
+    messages_json: String        # Serialized []providers.Message
+
+    # In-flight tool call state (for resume mid-tool-execution)
+    pending_tool_calls: String   # Serialized []providers.ToolCall
+    tool_results: String         # Serialized map[string]string (tool_call_id -> result)
+
+    # Result (when complete)
+    result_json: String          # Serialized agent.Result
+
+    # Timestamps
+    created_at: DateTime
+    updated_at: DateTime
+
+    # Relationship - AgentState belongs to a Book
+    # Note: DefraDB auto-creates book_id field of type ID for this relationship
+    book: Book @primary
+}

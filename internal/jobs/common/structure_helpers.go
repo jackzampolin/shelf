@@ -1,23 +1,16 @@
-package job
+package common
 
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
-// Prompt keys for common-structure job.
+// Structure prompt keys.
 const (
 	PromptKeyClassifySystem = "stages.common_structure.classify.system"
 	PromptKeyPolishSystem   = "stages.common_structure.polish.system"
 )
-
-// PromptKeys returns the list of prompt keys used by this job.
-func PromptKeys() []string {
-	return []string{
-		PromptKeyClassifySystem,
-		PromptKeyPolishSystem,
-	}
-}
 
 // ClassifySystemPrompt is the system prompt for matter classification.
 const ClassifySystemPrompt = `You are a book structure analyzer. Given a list of table of contents entries from a book, classify each entry into one of three categories:
@@ -69,6 +62,32 @@ Return JSON with this exact structure:
   ]
 }`
 
+// PageText holds text from a single page.
+type PageText struct {
+	ScanPage    int
+	PrintedPage *string
+	RawText     string
+	CleanedText string
+}
+
+// TextEdit represents an edit from LLM polish.
+type TextEdit struct {
+	OldText string `json:"old_text"`
+	NewText string `json:"new_text"`
+	Reason  string `json:"reason"`
+}
+
+// ClassifyResult represents the LLM classification response.
+type ClassifyResult struct {
+	Classifications map[string]string `json:"classifications"`
+	Reasoning       map[string]string `json:"reasoning"`
+}
+
+// PolishResult represents the LLM polish response.
+type PolishResult struct {
+	Edits []TextEdit `json:"edits"`
+}
+
 // BuildClassifyPrompt builds the user prompt for matter classification.
 func BuildClassifyPrompt(chapters []*ChapterState) string {
 	var lines []string
@@ -85,7 +104,8 @@ func BuildClassifyPrompt(chapters []*ChapterState) string {
 }
 
 // BuildPolishPrompt builds the user prompt for text polishing.
-func BuildPolishPrompt(sectionTitle string, text string) string {
+func BuildPolishPrompt(chapter *ChapterState) string {
+	text := chapter.MechanicalText
 	// Truncate if very long to avoid token limits
 	maxChars := 15000
 	if len(text) > maxChars {
@@ -100,7 +120,7 @@ Text to review:
 ---
 
 Analyze this text and return a JSON list of edits to fix any OCR or formatting issues.
-If the text looks clean, return {"edits": []}.`, sectionTitle, text)
+If the text looks clean, return {"edits": []}.`, chapter.Title, text)
 }
 
 // ClassifyJSONSchema returns the JSON schema for matter classification.
@@ -159,14 +179,134 @@ func PolishJSONSchema() map[string]any {
 	}
 }
 
-// GetEmbeddedDefault returns the embedded default prompt for a key.
-func GetEmbeddedDefault(key string) string {
-	switch key {
-	case PromptKeyClassifySystem:
-		return ClassifySystemPrompt
-	case PromptKeyPolishSystem:
-		return PolishSystemPrompt
-	default:
+// MergeChapterPages joins page texts into a single chapter text.
+func MergeChapterPages(pageTexts []PageText) string {
+	if len(pageTexts) == 0 {
 		return ""
 	}
+
+	var parts []string
+	for i, pageText := range pageTexts {
+		text := pageText.CleanedText
+		if text == "" {
+			text = pageText.RawText
+		}
+
+		if i == 0 {
+			parts = append(parts, text)
+			continue
+		}
+
+		prevText := ""
+		if len(parts) > 0 {
+			prevText = parts[len(parts)-1]
+		}
+
+		// Determine how to join
+		joinStr := determineJoin(prevText, text)
+
+		if joinStr == "" && len(parts) > 0 && strings.HasSuffix(parts[len(parts)-1], "-") {
+			// Dehyphenation
+			parts[len(parts)-1] = strings.TrimSuffix(parts[len(parts)-1], "-")
+		}
+
+		parts = append(parts, joinStr+text)
+	}
+
+	return strings.Join(parts, "")
+}
+
+// determineJoin determines the join string between two page texts.
+func determineJoin(prevText, nextText string) string {
+	if prevText == "" {
+		return ""
+	}
+
+	prevStripped := strings.TrimRightFunc(prevText, unicode.IsSpace)
+	if prevStripped == "" {
+		return ""
+	}
+
+	// Hyphenation: word split across pages
+	if strings.HasSuffix(prevStripped, "-") {
+		runes := []rune(prevStripped)
+		if len(runes) >= 2 && unicode.IsLower(runes[len(runes)-2]) {
+			return "" // Join without space, hyphen will be removed
+		}
+	}
+
+	// Check for sentence ending
+	lastChar := prevStripped[len(prevStripped)-1]
+	sentenceEnders := ".!?\"'"
+	if strings.ContainsRune(sentenceEnders, rune(lastChar)) {
+		return "\n\n" // Paragraph break
+	}
+
+	// Mid-sentence continuation
+	return " "
+}
+
+// CleanPageText removes running headers and page numbers from page text.
+func CleanPageText(text string) string {
+	lines := strings.Split(text, "\n")
+	if len(lines) == 0 {
+		return text
+	}
+
+	// Remove first few lines that look like headers (short lines at the start)
+	var cleanedLines []string
+	headerRemoved := false
+
+	for i, line := range lines {
+		// Only check first 3 lines for potential headers
+		if i < 3 && !headerRemoved {
+			stripped := strings.TrimSpace(line)
+			// Skip short lines that might be headers/page numbers
+			if len(stripped) < 50 && (strings.Contains(stripped, "/") || isPageNumberLine(stripped)) {
+				headerRemoved = true
+				continue
+			}
+		}
+		cleanedLines = append(cleanedLines, line)
+	}
+
+	return strings.TrimSpace(strings.Join(cleanedLines, "\n"))
+}
+
+// isPageNumberLine checks if a line looks like a page number.
+func isPageNumberLine(line string) bool {
+	stripped := strings.TrimSpace(line)
+	if stripped == "" {
+		return false
+	}
+
+	// Remove markdown formatting
+	plain := strings.ReplaceAll(stripped, "**", "")
+	plain = strings.ReplaceAll(plain, "*", "")
+	plain = strings.TrimSpace(plain)
+
+	// Check if it's just a number
+	for _, r := range plain {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return len(plain) > 0 && len(plain) < 5
+}
+
+// CountWords counts the number of words in text.
+func CountWords(text string) int {
+	return len(strings.Fields(text))
+}
+
+// ApplyEdits applies a list of text edits to the text.
+func ApplyEdits(text string, edits []TextEdit) string {
+	for _, edit := range edits {
+		if edit.OldText == "" {
+			continue
+		}
+		// Replace first occurrence only
+		text = strings.Replace(text, edit.OldText, edit.NewText, 1)
+	}
+	return text
 }

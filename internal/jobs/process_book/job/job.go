@@ -39,36 +39,38 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	// Set book status to processing
 	j.PersistBookStatus(ctx, BookStatusProcessing)
 
-	// Crash recovery: if operations were started but not done, reset to retry
-	if j.Book.Metadata.IsStarted() {
-		j.Book.Metadata.Fail(MaxBookOpRetries)
+	// Crash recovery: if operations were started but not done, check if we can resume
+	// via saved agent state. If no saved state, fail/retry the operation.
+	if j.Book.MetadataIsStarted() {
+		j.Book.MetadataFail(MaxBookOpRetries)
 		j.PersistMetadataState(ctx)
 	}
-	if j.Book.TocFinder.IsStarted() && j.TocAgent == nil {
-		j.Book.TocFinder.Fail(MaxBookOpRetries)
-		j.PersistTocFinderState(ctx)
+	// ToC finder: check for saved agent state before failing
+	if j.Book.TocFinderIsStarted() && j.TocAgent == nil {
+		savedState := j.Book.GetAgentState(AgentTypeTocFinder, "")
+		if savedState == nil || savedState.Complete {
+			// No saved state or agent already completed - fail/retry
+			j.Book.TocFinderFail(MaxBookOpRetries)
+			j.PersistTocFinderState(ctx)
+		}
+		// Otherwise, saved state exists - CreateTocFinderWorkUnit will restore it
 	}
-	if j.Book.TocExtract.IsStarted() && j.TocAgent == nil {
-		j.Book.TocExtract.Fail(MaxBookOpRetries)
+	if j.Book.TocExtractIsStarted() && j.TocAgent == nil {
+		j.Book.TocExtractFail(MaxBookOpRetries)
 		j.PersistTocExtractState(ctx)
 	}
-	if j.Book.TocLink.IsStarted() && len(j.LinkTocEntryAgents) == 0 {
-		j.Book.TocLink.Fail(MaxBookOpRetries)
+	if j.Book.TocLinkIsStarted() && len(j.LinkTocEntryAgents) == 0 {
+		j.Book.TocLinkFail(MaxBookOpRetries)
 		j.PersistTocLinkState(ctx)
 	}
 	// Pattern analysis uses work units (no agent or sub-job), so always reset if started
-	if j.Book.PatternAnalysis.IsStarted() {
-		j.Book.PatternAnalysis.Fail(MaxBookOpRetries)
+	if j.Book.PatternAnalysisIsStarted() {
+		j.Book.PatternAnalysisFail(MaxBookOpRetries)
 		j.PersistPatternAnalysisState(ctx)
 	}
-	if j.Book.TocFinalize.IsStarted() && j.FinalizeJob == nil {
-		j.Book.TocFinalize.Fail(MaxBookOpRetries)
-		common.PersistTocFinalizeState(ctx, j.TocDocID, &j.Book.TocFinalize)
-	}
-	if j.Book.Structure.IsStarted() && j.StructureJob == nil {
-		j.Book.Structure.Fail(MaxBookOpRetries)
-		common.PersistStructureState(ctx, j.Book.BookID, &j.Book.Structure)
-	}
+	// Note: TocFinalize and Structure operations now persist agent state to DB,
+	// so agent state is restored when the job is loaded. No need to fail these
+	// operations on restart - they will resume from their persisted state.
 
 	// Create any missing page records in DB
 	if err := checkCancelled(ctx); err != nil {
@@ -137,20 +139,32 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 	logger := svcctx.LoggerFrom(ctx)
 
+	// Write-through cache: track costs on BookState
+	// Extract cost from either ChatResult or OCRResult
+	var cost float64
+	if result.ChatResult != nil {
+		cost = result.ChatResult.CostUSD
+	} else if result.OCRResult != nil {
+		cost = result.OCRResult.CostUSD
+	}
+	if cost > 0 {
+		j.Book.AddCost(info.UnitType, cost)
+	}
+
 	if !result.Success {
 		// Handle failures with retry logic
 		switch info.UnitType {
 		case "metadata":
-			j.Book.Metadata.Fail(MaxBookOpRetries)
+			j.Book.MetadataFail(MaxBookOpRetries)
 			j.PersistMetadataState(ctx)
 		case "toc_finder":
-			j.Book.TocFinder.Fail(MaxBookOpRetries)
+			j.Book.TocFinderFail(MaxBookOpRetries)
 			j.PersistTocFinderState(ctx)
 		case "toc_extract":
-			j.Book.TocExtract.Fail(MaxBookOpRetries)
+			j.Book.TocExtractFail(MaxBookOpRetries)
 			j.PersistTocExtractState(ctx)
 		case WorkUnitTypePatternAnalysis:
-			j.Book.PatternAnalysis.Fail(MaxBookOpRetries)
+			j.Book.PatternAnalysisFail(MaxBookOpRetries)
 			j.PersistPatternAnalysisState(ctx)
 		case WorkUnitTypeLinkToc:
 			// Link ToC entry failures - retry individual entry
@@ -171,7 +185,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			}
 			// Check if all entries are done
 			if j.LinkTocEntriesDone >= len(j.LinkTocEntries) {
-				j.Book.TocLink.Complete()
+				j.Book.TocLinkComplete()
 				j.PersistTocLinkState(ctx)
 			}
 			j.RemoveWorkUnit(result.WorkUnitID)
@@ -262,7 +276,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		} else {
 			newUnits = append(newUnits, units...)
 			// Check if pattern analysis complete - if so, trigger label work units for all pages
-			if j.Book.PatternAnalysis.IsComplete() {
+			if j.Book.PatternAnalysisIsComplete() {
 				// Generate label work units for all blended pages
 				for pageNum := 1; pageNum <= j.Book.TotalPages; pageNum++ {
 					state := j.Book.GetPage(pageNum)
@@ -284,7 +298,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			newUnits = append(newUnits, units...)
 			// Check if all entries are done
 			if j.LinkTocEntriesDone >= len(j.LinkTocEntries) {
-				j.Book.TocLink.Complete()
+				j.Book.TocLinkComplete()
 				j.PersistTocLinkState(ctx)
 				// Trigger finalize if needed
 				newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
@@ -416,17 +430,17 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		"ocr_complete":        fmt.Sprintf("%d", ocrDone),
 		"blend_complete":      fmt.Sprintf("%d", blendDone),
 		"label_complete":      fmt.Sprintf("%d", labelDone),
-		"metadata_started":    fmt.Sprintf("%v", j.Book.Metadata.IsStarted()),
-		"metadata_complete":   fmt.Sprintf("%v", j.Book.Metadata.IsComplete()),
-		"toc_finder_started":  fmt.Sprintf("%v", j.Book.TocFinder.IsStarted()),
-		"toc_finder_done":     fmt.Sprintf("%v", j.Book.TocFinder.IsDone()),
+		"metadata_started":    fmt.Sprintf("%v", j.Book.MetadataIsStarted()),
+		"metadata_complete":   fmt.Sprintf("%v", j.Book.MetadataIsComplete()),
+		"toc_finder_started":  fmt.Sprintf("%v", j.Book.TocFinderIsStarted()),
+		"toc_finder_done":     fmt.Sprintf("%v", j.Book.TocFinderIsDone()),
 		"toc_found":           fmt.Sprintf("%v", j.Book.GetTocFound()),
 		"toc_start_page":      fmt.Sprintf("%d", tocStartPage),
 		"toc_end_page":        fmt.Sprintf("%d", tocEndPage),
-		"toc_extract_started": fmt.Sprintf("%v", j.Book.TocExtract.IsStarted()),
-		"toc_extract_done":    fmt.Sprintf("%v", j.Book.TocExtract.IsDone()),
-		"toc_link_started":    fmt.Sprintf("%v", j.Book.TocLink.IsStarted()),
-		"toc_link_done":       fmt.Sprintf("%v", j.Book.TocLink.IsDone()),
+		"toc_extract_started": fmt.Sprintf("%v", j.Book.TocExtractIsStarted()),
+		"toc_extract_done":    fmt.Sprintf("%v", j.Book.TocExtractIsDone()),
+		"toc_link_started":    fmt.Sprintf("%v", j.Book.TocLinkIsStarted()),
+		"toc_link_done":       fmt.Sprintf("%v", j.Book.TocLinkIsDone()),
 		"toc_link_entries":    fmt.Sprintf("%d", len(j.LinkTocEntries)),
 		"toc_link_complete":   fmt.Sprintf("%d", j.LinkTocEntriesDone),
 		"done":                fmt.Sprintf("%v", j.IsDone),

@@ -104,6 +104,11 @@ func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage i
 		return nil
 	}
 
+	// Validate bookID to prevent GraphQL injection
+	if err := defra.ValidateID(bookID); err != nil {
+		return nil
+	}
+
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return nil
@@ -162,6 +167,11 @@ func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage i
 func LoadTocStructureSummary(ctx context.Context, tocDocID string) (*extract_toc.StructureSummary, error) {
 	if tocDocID == "" {
 		return nil, nil
+	}
+
+	// Validate tocDocID to prevent GraphQL injection
+	if err := defra.ValidateID(tocDocID); err != nil {
+		return nil, fmt.Errorf("invalid ToC doc ID: %w", err)
 	}
 
 	defraClient := svcctx.DefraClientFrom(ctx)
@@ -341,6 +351,11 @@ func LoadLinkedEntries(ctx context.Context, tocDocID string) ([]*LinkedTocEntry,
 		return nil, fmt.Errorf("ToC document ID is required")
 	}
 
+	// Validate tocDocID to prevent GraphQL injection
+	if err := defra.ValidateID(tocDocID); err != nil {
+		return nil, fmt.Errorf("invalid ToC doc ID: %w", err)
+	}
+
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return nil, fmt.Errorf("defra client not in context")
@@ -426,6 +441,42 @@ func LoadLinkedEntries(ctx context.Context, tocDocID string) ([]*LinkedTocEntry,
 	return entries, nil
 }
 
+// GetOrLoadLinkedEntries returns linked entries from cache, or loads from DB if not cached.
+// This ensures LinkedEntries is only loaded once per job execution.
+func GetOrLoadLinkedEntries(ctx context.Context, book *BookState, tocDocID string) ([]*LinkedTocEntry, error) {
+	// Check cache first
+	if book.HasLinkedEntries() {
+		return book.GetLinkedEntries(), nil
+	}
+
+	// Load from DB
+	entries, err := LoadLinkedEntries(ctx, tocDocID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache in BookState
+	book.SetLinkedEntries(entries)
+	return entries, nil
+}
+
+// RefreshLinkedEntries forces a reload of linked entries from DB.
+// Use this after modifications that change entry links.
+func RefreshLinkedEntries(ctx context.Context, book *BookState, tocDocID string) ([]*LinkedTocEntry, error) {
+	// Clear cache
+	book.SetLinkedEntries(nil)
+
+	// Load from DB
+	entries, err := LoadLinkedEntries(ctx, tocDocID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache in BookState
+	book.SetLinkedEntries(entries)
+	return entries, nil
+}
+
 // DeleteExistingTocEntries deletes any existing TocEntry records for a ToC.
 func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 	logger := svcctx.LoggerFrom(ctx)
@@ -435,6 +486,11 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 			logger.Warn("DeleteExistingTocEntries: empty tocDocID")
 		}
 		return nil
+	}
+
+	// Validate tocDocID to prevent GraphQL injection
+	if err := defra.ValidateID(tocDocID); err != nil {
+		return fmt.Errorf("invalid ToC doc ID: %w", err)
 	}
 
 	defraClient := svcctx.DefraClientFrom(ctx)
@@ -508,6 +564,11 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 // SaveTocEntryResult updates a TocEntry with the found page link.
 // Used by link_toc operations in both process_book and standalone link_toc jobs.
 func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string, result *toc_entry_finder.Result) error {
+	// Validate entryDocID to prevent injection
+	if err := defra.ValidateID(entryDocID); err != nil {
+		return fmt.Errorf("invalid entry doc ID: %w", err)
+	}
+
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
 		return fmt.Errorf("defra sink not in context")

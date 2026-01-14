@@ -1,9 +1,15 @@
 type Chapter {
     # Many-to-one: Chapter belongs to Book
+    # Note: DefraDB auto-creates book_id field of type ID for this relationship
     book: Book
 
     # Optional link to source ToC entry
+    # Note: DefraDB auto-creates toc_entry_id field of type ID for this relationship
     toc_entry: TocEntry
+
+    # Unique key for upsert support (preserves DocID/CID history on re-run)
+    # Format: "{book_id}:{toc_entry_id}" or "{book_id}:orphan:{sort_order}"
+    unique_key: String @index
 
     # Identity
     entry_id: String

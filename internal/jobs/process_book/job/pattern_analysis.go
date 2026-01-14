@@ -148,10 +148,10 @@ func (j *Job) handleBodyBoundariesComplete(ctx context.Context, result jobs.Work
 	}
 
 	// Store in book state
-	j.Book.PatternAnalysisResult = aggregatedResult
+	j.Book.SetPatternAnalysisResult(aggregatedResult)
 
 	// Mark pattern analysis as complete
-	j.Book.PatternAnalysis.Complete()
+	j.Book.PatternAnalysisComplete()
 
 	// Persist completion state to DefraDB
 	if err := j.PersistPatternAnalysisState(ctx); err != nil {

@@ -27,8 +27,8 @@ func (t *GapInvestigatorTools) getGapContext(ctx context.Context) (string, error
 		"gap_start":   t.gap.StartPage,
 		"gap_end":     t.gap.EndPage,
 		"gap_size":    t.gap.Size,
-		"body_start":  t.book.BodyStart,
-		"body_end":    t.book.BodyEnd,
+		"body_start":  t.book.GetBodyStart(),
+		"body_end":    t.book.GetBodyEnd(),
 		"total_pages": t.book.TotalPages,
 	}
 

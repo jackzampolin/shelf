@@ -16,30 +16,144 @@ const JobType = "process-book"
 
 // Config configures the process pages job.
 type Config struct {
+	// Provider settings
 	OcrProviders     []string
 	BlendProvider    string
 	LabelProvider    string
 	MetadataProvider string
 	TocProvider      string
-	DebugAgents      bool // Enable debug logging for agent executions
+	DebugAgents      bool   // Enable debug logging for agent executions
+	ResetFrom        string // If set, reset this operation and all downstream dependencies before starting
+
+	// Pipeline stage toggles (all default to true for standard processing)
+	// When disabled, the stage is skipped entirely.
+	EnableOCR             bool // Run OCR on pages (required for text-based stages)
+	EnableBlend           bool // Run blend to merge OCR outputs
+	EnableLabel           bool // Run page labeling
+	EnableMetadata        bool // Extract book metadata
+	EnableTocFinder       bool // Find ToC pages
+	EnableTocExtract      bool // Extract ToC entries
+	EnablePatternAnalysis bool // Analyze page patterns
+	EnableTocLink         bool // Link ToC entries to pages
+	EnableTocFinalize     bool // Run finalize phase (pattern/discover/gap)
+	EnableStructure       bool // Build chapter structure
+}
+
+// PipelineVariant represents a predefined pipeline configuration.
+type PipelineVariant string
+
+const (
+	// VariantStandard is the full pipeline for standard books with ToC.
+	VariantStandard PipelineVariant = "standard"
+	// VariantPhotoBook is a minimal pipeline for photo books (no ToC, minimal text).
+	VariantPhotoBook PipelineVariant = "photo-book"
+	// VariantTextOnly processes text only (OCR + blend, no ToC or labels).
+	VariantTextOnly PipelineVariant = "text-only"
+	// VariantOCROnly runs only OCR without any LLM processing.
+	VariantOCROnly PipelineVariant = "ocr-only"
+)
+
+// ValidVariants lists all valid pipeline variants.
+var ValidVariants = []PipelineVariant{
+	VariantStandard,
+	VariantPhotoBook,
+	VariantTextOnly,
+	VariantOCROnly,
+}
+
+// IsValid returns true if the variant is a valid pipeline variant.
+func (v PipelineVariant) IsValid() bool {
+	for _, valid := range ValidVariants {
+		if v == valid {
+			return true
+		}
+	}
+	return false
+}
+
+// ApplyVariant applies predefined settings for a pipeline variant.
+// This sets the Enable* flags appropriately for the variant.
+func (c *Config) ApplyVariant(variant PipelineVariant) {
+	switch variant {
+	case VariantPhotoBook:
+		// Photo books: OCR + blend only, no ToC or structure
+		c.EnableOCR = true
+		c.EnableBlend = true
+		c.EnableLabel = true
+		c.EnableMetadata = true
+		c.EnableTocFinder = false
+		c.EnableTocExtract = false
+		c.EnablePatternAnalysis = false
+		c.EnableTocLink = false
+		c.EnableTocFinalize = false
+		c.EnableStructure = false
+
+	case VariantTextOnly:
+		// Text extraction only: OCR + blend
+		c.EnableOCR = true
+		c.EnableBlend = true
+		c.EnableLabel = false
+		c.EnableMetadata = true
+		c.EnableTocFinder = false
+		c.EnableTocExtract = false
+		c.EnablePatternAnalysis = false
+		c.EnableTocLink = false
+		c.EnableTocFinalize = false
+		c.EnableStructure = false
+
+	case VariantOCROnly:
+		// OCR only: no LLM processing at all
+		c.EnableOCR = true
+		c.EnableBlend = false
+		c.EnableLabel = false
+		c.EnableMetadata = false
+		c.EnableTocFinder = false
+		c.EnableTocExtract = false
+		c.EnablePatternAnalysis = false
+		c.EnableTocLink = false
+		c.EnableTocFinalize = false
+		c.EnableStructure = false
+
+	default: // VariantStandard
+		// Standard: full pipeline
+		c.EnableOCR = true
+		c.EnableBlend = true
+		c.EnableLabel = true
+		c.EnableMetadata = true
+		c.EnableTocFinder = true
+		c.EnableTocExtract = true
+		c.EnablePatternAnalysis = true
+		c.EnableTocLink = true
+		c.EnableTocFinalize = true
+		c.EnableStructure = true
+	}
 }
 
 // Validate checks that the config has all required fields.
 func (c Config) Validate() error {
-	if len(c.OcrProviders) == 0 {
-		return fmt.Errorf("at least one OCR provider is required")
+	// OCR providers required if OCR is enabled
+	if c.EnableOCR && len(c.OcrProviders) == 0 {
+		return fmt.Errorf("at least one OCR provider is required when OCR is enabled")
 	}
-	if c.BlendProvider == "" {
-		return fmt.Errorf("blend provider is required")
+	// Blend provider required if blend is enabled
+	if c.EnableBlend && c.BlendProvider == "" {
+		return fmt.Errorf("blend provider is required when blend is enabled")
 	}
-	if c.LabelProvider == "" {
-		return fmt.Errorf("label provider is required")
+	// Label provider required if label is enabled
+	if c.EnableLabel && c.LabelProvider == "" {
+		return fmt.Errorf("label provider is required when label is enabled")
 	}
-	if c.MetadataProvider == "" {
-		return fmt.Errorf("metadata provider is required")
+	// Metadata provider required if metadata is enabled
+	if c.EnableMetadata && c.MetadataProvider == "" {
+		return fmt.Errorf("metadata provider is required when metadata is enabled")
 	}
-	if c.TocProvider == "" {
-		return fmt.Errorf("toc provider is required")
+	// ToC provider required if any ToC stage is enabled
+	tocEnabled := c.EnableTocFinder || c.EnableTocExtract || c.EnableTocLink || c.EnableTocFinalize || c.EnableStructure
+	if tocEnabled && c.TocProvider == "" {
+		return fmt.Errorf("toc provider is required when ToC stages are enabled")
+	}
+	if c.ResetFrom != "" && !common.IsValidResetOperation(c.ResetFrom) {
+		return fmt.Errorf("invalid reset operation: %s (valid: %v)", c.ResetFrom, common.ValidResetOperations)
 	}
 	return nil
 }
@@ -178,12 +292,36 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 		TocProvider:      cfg.TocProvider,
 		DebugAgents:      cfg.DebugAgents,
 		PromptKeys:       pjob.PromptKeys(),
+		// Pipeline stage toggles
+		EnableOCR:             cfg.EnableOCR,
+		EnableBlend:           cfg.EnableBlend,
+		EnableLabel:           cfg.EnableLabel,
+		EnableMetadata:        cfg.EnableMetadata,
+		EnableTocFinder:       cfg.EnableTocFinder,
+		EnableTocExtract:      cfg.EnableTocExtract,
+		EnablePatternAnalysis: cfg.EnablePatternAnalysis,
+		EnableTocLink:         cfg.EnableTocLink,
+		EnableTocFinalize:     cfg.EnableTocFinalize,
+		EnableStructure:       cfg.EnableStructure,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to load book: %w", err)
 	}
 
 	logger := svcctx.LoggerFrom(ctx)
+
+	// If reset requested, reset the operation and all downstream dependencies
+	if cfg.ResetFrom != "" {
+		if logger != nil {
+			logger.Info("resetting operation with cascade",
+				"book_id", bookID,
+				"reset_from", cfg.ResetFrom)
+		}
+		if err := common.ResetFrom(ctx, result.Book, result.TocDocID, common.ResetOperation(cfg.ResetFrom)); err != nil {
+			return nil, fmt.Errorf("failed to reset from %s: %w", cfg.ResetFrom, err)
+		}
+	}
+
 	if logger != nil {
 		logger.Info("creating page processing job",
 			"book_id", bookID,

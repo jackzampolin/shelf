@@ -7,7 +7,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jackzampolin/shelf/internal/api"
+	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // JobStatusResponse is the response for job status.
@@ -65,6 +67,27 @@ func (e *JobStatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 	switch jobType {
 	case process_book.JobType:
+		// First try to get live status from a running job (more up-to-date)
+		if scheduler := svcctx.SchedulerFrom(r.Context()); scheduler != nil {
+			if job := scheduler.GetJobByBookID(bookID); job != nil {
+				if provider, ok := job.(jobs.LiveStatusProvider); ok {
+					if live := provider.LiveStatus(); live != nil {
+						resp.TotalPages = live.TotalPages
+						resp.OcrComplete = live.OcrComplete
+						resp.BlendComplete = live.BlendComplete
+						resp.LabelComplete = live.LabelComplete
+						resp.MetadataComplete = live.MetadataComplete
+						resp.TocFound = live.TocFound
+						resp.TocExtracted = live.TocExtracted
+						resp.IsComplete = live.LabelComplete >= live.TotalPages && live.MetadataComplete && live.TocExtracted
+						writeJSON(w, http.StatusOK, resp)
+						return
+					}
+				}
+			}
+		}
+
+		// Fall back to DB query if no active job or live status unavailable
 		status, err := process_book.GetStatus(r.Context(), bookID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get status: %v", err))

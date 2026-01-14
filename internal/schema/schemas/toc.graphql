@@ -32,6 +32,9 @@ type ToC {
     finalize_failed: Boolean
     finalize_retries: Int
 
+    # Finalize phase tracking (pattern -> discover -> validate -> done)
+    finalize_phase: String
+
     # Relationships
     # One-to-many: ToC has many TocEntries
     entries: [TocEntry]
