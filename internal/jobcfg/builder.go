@@ -13,6 +13,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
+	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
 )
 
 // Builder reads job configurations from the DefraDB config store.
@@ -193,5 +194,31 @@ func ProcessBookJobFactory(store config.Store) jobs.JobFactory {
 			return nil, fmt.Errorf("failed to build config: %w", err)
 		}
 		return process_book.NewJob(ctx, cfg, bookID)
+	})
+}
+
+// TTSConfig builds a tts_generate.Config from the store.
+func (b *Builder) TTSConfig(ctx context.Context) (tts_generate.Config, error) {
+	ttsProvider, err := b.getString(ctx, "defaults.tts_provider")
+	if err != nil {
+		return tts_generate.Config{}, fmt.Errorf("failed to get tts_provider: %w", err)
+	}
+
+	// Voice and format are optional - can be overridden per request
+	return tts_generate.Config{
+		TTSProvider: ttsProvider,
+		Format:      "mp3", // Default to mp3
+	}, nil
+}
+
+// TTSJobFactory returns a JobFactory that reads config from the store.
+func TTSJobFactory(store config.Store) jobs.JobFactory {
+	return common.MakeJobFactory(func(ctx context.Context, bookID string) (jobs.Job, error) {
+		builder := NewBuilder(store)
+		cfg, err := builder.TTSConfig(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build TTS config: %w", err)
+		}
+		return tts_generate.NewJob(ctx, cfg, bookID)
 	})
 }

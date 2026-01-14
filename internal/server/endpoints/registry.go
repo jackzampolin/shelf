@@ -39,6 +39,11 @@ func All(cfg Config) []api.Endpoint {
 		&ExportEpubEndpoint{},
 		&DownloadEpubEndpoint{},
 
+		// Audio endpoints
+		&GenerateAudioEndpoint{},
+		&GetAudioStatusEndpoint{},
+		&DownloadChapterAudioEndpoint{},
+
 		// Page endpoints
 		&PageImageEndpoint{},
 		&ListPagesEndpoint{},

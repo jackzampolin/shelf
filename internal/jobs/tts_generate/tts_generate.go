@@ -1,0 +1,322 @@
+package tts_generate
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/jobs/common"
+	"github.com/jackzampolin/shelf/internal/svcctx"
+)
+
+// JobType is the identifier for this job type.
+const JobType = "tts-generate"
+
+// Config configures the TTS generation job.
+type Config struct {
+	// TTS provider settings
+	TTSProvider string // TTS provider name (e.g., "chatterbox")
+	Voice       string // Voice ID (optional)
+	Format      string // Output format (mp3, wav, etc.)
+}
+
+// Validate checks that the config has all required fields.
+func (c Config) Validate() error {
+	if c.TTSProvider == "" {
+		return fmt.Errorf("TTS provider is required")
+	}
+	return nil
+}
+
+// NewJob creates a new TTS generation job for the given book.
+func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil, fmt.Errorf("defra client not in context")
+	}
+
+	homeDir := svcctx.HomeFrom(ctx)
+	if homeDir == nil {
+		return nil, fmt.Errorf("home directory not in context")
+	}
+
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Load book metadata
+	bookQuery := fmt.Sprintf(`{
+		Book(filter: {_docID: {_eq: "%s"}}) {
+			_docID
+			title
+			author
+			status
+		}
+	}`, bookID)
+
+	bookResp, err := defraClient.Execute(ctx, bookQuery, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query book: %w", err)
+	}
+
+	books, ok := bookResp.Data["Book"].([]any)
+	if !ok || len(books) == 0 {
+		return nil, fmt.Errorf("book not found: %s", bookID)
+	}
+
+	bookData, ok := books[0].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("invalid book data")
+	}
+
+	// Load chapters with polished text
+	chapters, err := loadChapters(ctx, defraClient, bookID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load chapters: %w", err)
+	}
+
+	if len(chapters) == 0 {
+		return nil, fmt.Errorf("no chapters with polished text found")
+	}
+
+	// Check for existing BookAudio record
+	existingAudio, err := loadBookAudio(ctx, defraClient, bookID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check existing audio: %w", err)
+	}
+
+	// Create job state
+	state := &AudioState{
+		BookID:      bookID,
+		Title:       getString(bookData, "title"),
+		Author:      getString(bookData, "author"),
+		Chapters:    chapters,
+		TTSProvider: cfg.TTSProvider,
+		Voice:       cfg.Voice,
+		Format:      cfg.Format,
+		HomeDir:     homeDir,
+	}
+
+	// If there's an existing BookAudio, load segment states
+	if existingAudio != nil {
+		state.BookAudioID = existingAudio.ID
+		if err := loadExistingSegments(ctx, defraClient, bookID, state); err != nil {
+			return nil, fmt.Errorf("failed to load existing segments: %w", err)
+		}
+	}
+
+	if logger != nil {
+		logger.Info("creating TTS generation job",
+			"book_id", bookID,
+			"chapters", len(chapters),
+			"provider", cfg.TTSProvider)
+	}
+
+	return NewJobFromState(state), nil
+}
+
+// loadChapters loads chapters with polished text for a book.
+func loadChapters(ctx context.Context, client *defra.Client, bookID string) ([]*Chapter, error) {
+	query := fmt.Sprintf(`{
+		Chapter(filter: {book_id: {_eq: "%s"}}) {
+			_docID
+			entry_id
+			title
+			level
+			level_name
+			entry_number
+			matter_type
+			polished_text
+			sort_order
+			polish_complete
+		}
+	}`, bookID)
+
+	resp, err := client.Execute(ctx, query, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	chapterList, ok := resp.Data["Chapter"].([]any)
+	if !ok {
+		return nil, nil
+	}
+
+	var chapters []*Chapter
+	for _, ch := range chapterList {
+		chData, ok := ch.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// Only include chapters with polished text
+		polishComplete, _ := chData["polish_complete"].(bool)
+		if !polishComplete {
+			continue
+		}
+
+		polishedText := getString(chData, "polished_text")
+		if polishedText == "" {
+			continue
+		}
+
+		chapter := &Chapter{
+			DocID:        getString(chData, "_docID"),
+			EntryID:      getString(chData, "entry_id"),
+			Title:        getString(chData, "title"),
+			Level:        getInt(chData, "level"),
+			LevelName:    getString(chData, "level_name"),
+			EntryNumber:  getString(chData, "entry_number"),
+			MatterType:   getString(chData, "matter_type"),
+			PolishedText: polishedText,
+			SortOrder:    getInt(chData, "sort_order"),
+		}
+		chapters = append(chapters, chapter)
+	}
+
+	// Sort by sort_order
+	sortChapters(chapters)
+
+	// Assign chapter indices after sorting
+	for i, ch := range chapters {
+		ch.ChapterIdx = i
+	}
+
+	return chapters, nil
+}
+
+// loadBookAudio loads existing BookAudio record if present.
+func loadBookAudio(ctx context.Context, client *defra.Client, bookID string) (*BookAudioRecord, error) {
+	query := fmt.Sprintf(`{
+		BookAudio(filter: {book_id: {_eq: "%s"}}) {
+			_docID
+			status
+			provider
+			model
+			voice
+			format
+			total_duration_ms
+			chapter_count
+			segment_count
+			total_char_count
+			total_cost_usd
+		}
+	}`, bookID)
+
+	resp, err := client.Execute(ctx, query, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	records, ok := resp.Data["BookAudio"].([]any)
+	if !ok || len(records) == 0 {
+		return nil, nil
+	}
+
+	data, ok := records[0].(map[string]any)
+	if !ok {
+		return nil, nil
+	}
+
+	return &BookAudioRecord{
+		ID:            getString(data, "_docID"),
+		Status:        getString(data, "status"),
+		Provider:      getString(data, "provider"),
+		Voice:         getString(data, "voice"),
+		Format:        getString(data, "format"),
+		TotalDuration: getInt(data, "total_duration_ms"),
+		ChapterCount:  getInt(data, "chapter_count"),
+		SegmentCount:  getInt(data, "segment_count"),
+		TotalChars:    getInt(data, "total_char_count"),
+		TotalCost:     getFloat(data, "total_cost_usd"),
+	}, nil
+}
+
+// loadExistingSegments loads already-generated segments for resume support.
+func loadExistingSegments(ctx context.Context, client *defra.Client, bookID string, state *AudioState) error {
+	query := fmt.Sprintf(`{
+		AudioSegment(filter: {book_id: {_eq: "%s"}}) {
+			_docID
+			chapter_idx
+			paragraph_idx
+			duration_ms
+			start_offset_ms
+			audio_file
+			cost_usd
+		}
+	}`, bookID)
+
+	resp, err := client.Execute(ctx, query, nil)
+	if err != nil {
+		return err
+	}
+
+	segments, ok := resp.Data["AudioSegment"].([]any)
+	if !ok {
+		return nil
+	}
+
+	for _, seg := range segments {
+		segData, ok := seg.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		chapterIdx := getInt(segData, "chapter_idx")
+		paragraphIdx := getInt(segData, "paragraph_idx")
+
+		// Mark this segment as complete in state
+		state.MarkSegmentComplete(chapterIdx, paragraphIdx, &SegmentResult{
+			DocID:         getString(segData, "_docID"),
+			DurationMS:    getInt(segData, "duration_ms"),
+			StartOffsetMS: getInt(segData, "start_offset_ms"),
+			AudioFile:     getString(segData, "audio_file"),
+			CostUSD:       getFloat(segData, "cost_usd"),
+		})
+	}
+
+	return nil
+}
+
+// JobFactory returns a factory function for recreating jobs from stored metadata.
+func JobFactory(cfg Config) jobs.JobFactory {
+	return common.MakeJobFactory(func(ctx context.Context, bookID string) (jobs.Job, error) {
+		return NewJob(ctx, cfg, bookID)
+	})
+}
+
+// Helper functions
+
+func getString(m map[string]any, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func getInt(m map[string]any, key string) int {
+	if v, ok := m[key].(float64); ok {
+		return int(v)
+	}
+	return 0
+}
+
+func getFloat(m map[string]any, key string) float64 {
+	if v, ok := m[key].(float64); ok {
+		return v
+	}
+	return 0
+}
+
+func sortChapters(chapters []*Chapter) {
+	for i := 0; i < len(chapters)-1; i++ {
+		for j := 0; j < len(chapters)-i-1; j++ {
+			if chapters[j].SortOrder > chapters[j+1].SortOrder {
+				chapters[j], chapters[j+1] = chapters[j+1], chapters[j]
+			}
+		}
+	}
+}

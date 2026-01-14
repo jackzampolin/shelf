@@ -111,3 +111,44 @@ func (d *Dir) EnsureOriginalsDir(bookID string) error {
 func (d *Dir) ExportsDir() string {
 	return filepath.Join(d.path, "exports")
 }
+
+// AudioDir returns the directory for generated audio files.
+func (d *Dir) AudioDir() string {
+	return filepath.Join(d.path, "audio")
+}
+
+// BookAudioDir returns the audio directory for a specific book.
+func (d *Dir) BookAudioDir(bookID string) string {
+	return filepath.Join(d.AudioDir(), bookID)
+}
+
+// ChapterAudioDir returns the directory for a chapter's audio segments.
+func (d *Dir) ChapterAudioDir(bookID string, chapterIdx int) string {
+	return filepath.Join(d.BookAudioDir(bookID), fmt.Sprintf("chapter_%04d", chapterIdx))
+}
+
+// SegmentAudioPath returns the path for a paragraph audio segment.
+func (d *Dir) SegmentAudioPath(bookID string, chapterIdx, paragraphIdx int, format string) string {
+	return filepath.Join(
+		d.ChapterAudioDir(bookID, chapterIdx),
+		fmt.Sprintf("segment_%04d.%s", paragraphIdx, format),
+	)
+}
+
+// ChapterAudioPath returns the path for a concatenated chapter audio file.
+func (d *Dir) ChapterAudioPath(bookID string, chapterIdx int, format string) string {
+	return filepath.Join(
+		d.BookAudioDir(bookID),
+		fmt.Sprintf("chapter_%04d.%s", chapterIdx, format),
+	)
+}
+
+// EnsureBookAudioDir creates the audio directory for a book.
+func (d *Dir) EnsureBookAudioDir(bookID string) error {
+	return os.MkdirAll(d.BookAudioDir(bookID), 0o755)
+}
+
+// EnsureChapterAudioDir creates the audio directory for a chapter.
+func (d *Dir) EnsureChapterAudioDir(bookID string, chapterIdx int) error {
+	return os.MkdirAll(d.ChapterAudioDir(bookID, chapterIdx), 0o755)
+}

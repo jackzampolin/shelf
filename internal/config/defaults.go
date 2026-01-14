@@ -144,6 +144,52 @@ func DefaultEntries() []Entry {
 		},
 
 		// ===================
+		// TTS Providers
+		// ===================
+
+		// TTS Providers - Chatterbox (via DeepInfra)
+		{
+			Key:         "providers.tts.chatterbox.type",
+			Value:       "deepinfra-tts",
+			Description: "TTS provider type for Chatterbox",
+		},
+		{
+			Key:         "providers.tts.chatterbox.model",
+			Value:       "ResembleAI/chatterbox-turbo",
+			Description: "Model name for Chatterbox TTS",
+		},
+		{
+			Key:         "providers.tts.chatterbox.api_key",
+			Value:       "${DEEPINFRA_API_KEY}",
+			Description: "DeepInfra API key (uses environment variable)",
+		},
+		{
+			Key:         "providers.tts.chatterbox.rate_limit",
+			Value:       5.0,
+			Description: "Rate limit in requests per second for Chatterbox",
+		},
+		{
+			Key:         "providers.tts.chatterbox.enabled",
+			Value:       true,
+			Description: "Whether Chatterbox TTS provider is enabled",
+		},
+		{
+			Key:         "providers.tts.chatterbox.format",
+			Value:       "mp3",
+			Description: "Default audio output format (mp3, wav, opus, flac)",
+		},
+		{
+			Key:         "providers.tts.chatterbox.temperature",
+			Value:       0.8,
+			Description: "Generation temperature (0-2)",
+		},
+		{
+			Key:         "providers.tts.chatterbox.exaggeration",
+			Value:       0.5,
+			Description: "Emotion exaggeration factor (0-1)",
+		},
+
+		// ===================
 		// Pipeline Defaults
 		// ===================
 		{
@@ -155,6 +201,11 @@ func DefaultEntries() []Entry {
 			Key:         "defaults.llm_provider",
 			Value:       "openrouter",
 			Description: "Default LLM provider used for all pipeline stages (blend, label, metadata, toc, structure)",
+		},
+		{
+			Key:         "defaults.tts_provider",
+			Value:       "chatterbox",
+			Description: "Default TTS provider for audiobook generation",
 		},
 		{
 			Key:         "defaults.debug_agents",

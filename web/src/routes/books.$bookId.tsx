@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { createFileRoute, Link, Outlet, useRouterState } from '@tanstack/react-router'
-import { OverviewTab, ReadTab, TocTab, ProcessingTab, useBookData } from '@/components/book/tabs'
+import { OverviewTab, ReadTab, TocTab, ProcessingTab, ListenTab, useBookData } from '@/components/book/tabs'
 
-type TabId = 'overview' | 'read' | 'toc' | 'processing'
+type TabId = 'overview' | 'read' | 'toc' | 'listen' | 'processing'
 
 interface BookSearchParams {
   tab?: TabId
@@ -37,6 +37,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'read', label: 'Read' },
   { id: 'toc', label: 'Contents' },
+  { id: 'listen', label: 'Listen' },
   { id: 'processing', label: 'Processing' },
 ]
 
@@ -168,6 +169,7 @@ function BookDetailPage() {
         {activeTab === 'overview' && <OverviewTab bookId={bookId} book={book} />}
         {activeTab === 'read' && <ReadTab bookId={bookId} book={book} />}
         {activeTab === 'toc' && <TocTab bookId={bookId} book={book} />}
+        {activeTab === 'listen' && <ListenTab bookId={bookId} book={book} />}
         {activeTab === 'processing' && <ProcessingTab bookId={bookId} book={book} />}
       </main>
     </div>
