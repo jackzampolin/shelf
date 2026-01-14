@@ -135,6 +135,7 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 	cfg := providers.RegistryConfig{
 		OCRProviders: make(map[string]providers.OCRProviderConfig),
 		LLMProviders: make(map[string]providers.LLMProviderConfig),
+		TTSProviders: make(map[string]providers.TTSProviderConfig),
 	}
 
 	for name, ocr := range c.OCRProviders {
@@ -154,6 +155,21 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 			APIKey:    ResolveEnvVars(llm.APIKey),
 			RateLimit: llm.RateLimit,
 			Enabled:   llm.Enabled,
+		}
+	}
+
+	for name, tts := range c.TTSProviders {
+		cfg.TTSProviders[name] = providers.TTSProviderConfig{
+			Type:         tts.Type,
+			Model:        tts.Model,
+			Voice:        tts.Voice,
+			Format:       tts.Format,
+			APIKey:       ResolveEnvVars(tts.APIKey),
+			RateLimit:    tts.RateLimit,
+			Temperature:  tts.Temperature,
+			Exaggeration: tts.Exaggeration,
+			CFG:          tts.CFG,
+			Enabled:      tts.Enabled,
 		}
 	}
 

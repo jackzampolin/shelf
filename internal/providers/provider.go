@@ -202,3 +202,51 @@ type OCRResult struct {
 	ErrorMessage string `json:"error_message,omitempty"`
 	RetryCount   int    `json:"retry_count"`
 }
+
+// TTSProvider handles text-to-speech audio generation.
+// Separate from LLM because it has different rate limiting, retry patterns,
+// and result handling (audio bytes vs text responses).
+type TTSProvider interface {
+	// Name returns the provider identifier (e.g., "deepinfra-tts").
+	Name() string
+
+	// Generate converts text to audio.
+	Generate(ctx context.Context, req *TTSRequest) (*TTSResult, error)
+
+	// HealthCheck verifies the provider is reachable and the API key is valid.
+	HealthCheck(ctx context.Context) error
+
+	// Rate limiting properties
+	RequestsPerSecond() float64
+	MaxConcurrency() int // Max concurrent in-flight requests (0 = use default)
+	MaxRetries() int
+	RetryDelayBase() time.Duration
+}
+
+// TTSRequest is a request to generate audio from text.
+type TTSRequest struct {
+	Text   string `json:"text"`   // Text to convert to speech
+	Voice  string `json:"voice"`  // Voice ID or name (provider-specific)
+	Format string `json:"format"` // Output format (mp3, wav, etc.)
+}
+
+// TTSResult is the response from a TTS provider.
+type TTSResult struct {
+	// Success/content
+	Success bool   `json:"success"`
+	Audio   []byte `json:"-"` // Raw audio bytes
+
+	// Audio metadata
+	DurationMS int    `json:"duration_ms"` // Duration in milliseconds
+	Format     string `json:"format"`      // Audio format (mp3, wav)
+	SampleRate int    `json:"sample_rate"` // Sample rate in Hz
+
+	// Cost and timing
+	CostUSD       float64       `json:"cost_usd"`
+	CharCount     int           `json:"char_count"`     // Characters processed
+	ExecutionTime time.Duration `json:"execution_time"`
+
+	// Error info
+	ErrorMessage string `json:"error_message,omitempty"`
+	RetryCount   int    `json:"retry_count"`
+}

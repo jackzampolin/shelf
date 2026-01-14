@@ -15,7 +15,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
-// ProviderWorkerPool manages a pool of workers for a single LLM or OCR provider.
+// ProviderWorkerPool manages a pool of workers for a single LLM, OCR, or TTS provider.
 // Uses the dispatcher pattern: a single dispatcher goroutine owns the rate limiter
 // and distributes work to N worker goroutines that execute without rate limit awareness.
 // Work units are processed by priority (high priority first).
@@ -26,6 +26,7 @@ type ProviderWorkerPool struct {
 	// Provider (one of these is set)
 	llmClient   providers.LLMClient
 	ocrProvider providers.OCRProvider
+	ttsProvider providers.TTSProvider
 
 	// Rate limiting (owned by dispatcher)
 	rateLimiter *providers.RateLimiter
@@ -60,6 +61,7 @@ type ProviderWorkerPoolConfig struct {
 	// Set ONE of these
 	LLMClient   providers.LLMClient
 	OCRProvider providers.OCRProvider
+	TTSProvider providers.TTSProvider
 
 	// Rate limiting (requests per second)
 	// If 0, uses provider defaults
@@ -75,11 +77,21 @@ type ProviderWorkerPoolConfig struct {
 
 // NewProviderWorkerPool creates a new provider worker pool.
 func NewProviderWorkerPool(cfg ProviderWorkerPoolConfig) (*ProviderWorkerPool, error) {
-	if cfg.LLMClient == nil && cfg.OCRProvider == nil {
-		return nil, fmt.Errorf("must provide either LLMClient or OCRProvider")
+	providerCount := 0
+	if cfg.LLMClient != nil {
+		providerCount++
 	}
-	if cfg.LLMClient != nil && cfg.OCRProvider != nil {
-		return nil, fmt.Errorf("cannot provide both LLMClient and OCRProvider")
+	if cfg.OCRProvider != nil {
+		providerCount++
+	}
+	if cfg.TTSProvider != nil {
+		providerCount++
+	}
+	if providerCount == 0 {
+		return nil, fmt.Errorf("must provide LLMClient, OCRProvider, or TTSProvider")
+	}
+	if providerCount > 1 {
+		return nil, fmt.Errorf("cannot provide multiple providers")
 	}
 
 	logger := cfg.Logger
@@ -111,7 +123,7 @@ func NewProviderWorkerPool(cfg ProviderWorkerPoolConfig) (*ProviderWorkerPool, e
 		if cfg.Name == "" {
 			p.name = cfg.LLMClient.Name()
 		}
-	} else {
+	} else if cfg.OCRProvider != nil {
 		p.poolType = PoolTypeOCR
 		p.ocrProvider = cfg.OCRProvider
 		if rps == 0 {
@@ -125,6 +137,21 @@ func NewProviderWorkerPool(cfg ProviderWorkerPoolConfig) (*ProviderWorkerPool, e
 		}
 		if cfg.Name == "" {
 			p.name = cfg.OCRProvider.Name()
+		}
+	} else {
+		p.poolType = PoolTypeTTS
+		p.ttsProvider = cfg.TTSProvider
+		if rps == 0 {
+			rps = cfg.TTSProvider.RequestsPerSecond()
+			if rps == 0 {
+				rps = 1.0
+			}
+		}
+		if workerCount == 0 {
+			workerCount = cfg.TTSProvider.MaxConcurrency()
+		}
+		if cfg.Name == "" {
+			p.name = cfg.TTSProvider.Name()
 		}
 	}
 
@@ -268,7 +295,8 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkRe
 
 	// Validate work unit type matches pool type
 	if (unit.Type == WorkUnitTypeLLM && p.poolType != PoolTypeLLM) ||
-		(unit.Type == WorkUnitTypeOCR && p.poolType != PoolTypeOCR) {
+		(unit.Type == WorkUnitTypeOCR && p.poolType != PoolTypeOCR) ||
+		(unit.Type == WorkUnitTypeTTS && p.poolType != PoolTypeTTS) {
 		result.Success = false
 		result.Error = fmt.Errorf("work unit type %s does not match pool type %s", unit.Type, p.poolType)
 		return result
@@ -358,6 +386,40 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkRe
 					result.Error = fmt.Errorf("OCR failed: %s", ocrResult.ErrorMessage)
 				}
 			}
+
+		case PoolTypeTTS:
+			if unit.TTSRequest == nil {
+				result.Success = false
+				result.Error = fmt.Errorf("TTS work unit missing TTSRequest")
+				return result
+			}
+
+			ttsReq := &providers.TTSRequest{
+				Text:   unit.TTSRequest.Text,
+				Voice:  unit.TTSRequest.Voice,
+				Format: unit.TTSRequest.Format,
+			}
+			ttsResult, err := p.ttsProvider.Generate(ctx, ttsReq)
+			result.TTSResult = ttsResult
+			if err != nil {
+				lastErr = err
+				if p.isRetriableError(err) && attempt < maxRetries {
+					p.logger.Debug("TTS request failed, retrying",
+						"unit_id", unit.ID,
+						"attempt", attempt+1,
+						"max_attempts", maxRetries+1,
+						"error", err)
+					p.sleepBeforeRetry(ctx, err, attempt)
+					continue
+				}
+				result.Success = false
+				result.Error = err
+			} else {
+				result.Success = ttsResult.Success
+				if !ttsResult.Success {
+					result.Error = fmt.Errorf("TTS failed: %s", ttsResult.ErrorMessage)
+				}
+			}
 		}
 
 		// If we got here without continuing, we're done
@@ -390,6 +452,10 @@ func (p *ProviderWorkerPool) getMaxRetries() int {
 	case PoolTypeOCR:
 		if p.ocrProvider != nil {
 			return p.ocrProvider.MaxRetries()
+		}
+	case PoolTypeTTS:
+		if p.ttsProvider != nil {
+			return p.ttsProvider.MaxRetries()
 		}
 	}
 	return 7
@@ -507,6 +573,17 @@ func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
 			m.TotalSeconds = result.OCRResult.ExecutionTime.Seconds()
 			if !result.OCRResult.Success {
 				m.ErrorType = "ocr_error"
+			}
+		}
+	case PoolTypeTTS:
+		if result.TTSResult != nil {
+			m.Provider = p.name
+			m.CostUSD = result.TTSResult.CostUSD
+			// Add timing data
+			m.ExecutionSeconds = result.TTSResult.ExecutionTime.Seconds()
+			m.TotalSeconds = result.TTSResult.ExecutionTime.Seconds()
+			if !result.TTSResult.Success {
+				m.ErrorType = "tts_error"
 			}
 		}
 	}
