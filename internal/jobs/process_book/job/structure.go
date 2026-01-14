@@ -346,7 +346,8 @@ func (j *Job) extractChapterPages(startPage, endPage int) []common.PageText {
 	return pageTexts
 }
 
-// persistExtractResults saves extract results to DefraDB using synchronous writes.
+// persistExtractResults saves extract results to DefraDB using async writes.
+// Extract results can be recalculated on crash recovery from page blend data.
 func (j *Job) persistExtractResults(ctx context.Context) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
@@ -354,14 +355,14 @@ func (j *Job) persistExtractResults(ctx context.Context) error {
 	}
 
 	chapters := j.Book.GetStructureChapters()
-	var errs []error
+	var count int
 
 	for _, chapter := range chapters {
 		if chapter.DocID == "" || !chapter.ExtractDone {
 			continue
 		}
 
-		_, err := sink.SendSync(ctx, defra.WriteOp{
+		sink.Send(defra.WriteOp{
 			Collection: "Chapter",
 			DocID:      chapter.DocID,
 			Document: map[string]any{
@@ -371,13 +372,11 @@ func (j *Job) persistExtractResults(ctx context.Context) error {
 			},
 			Op: defra.OpUpdate,
 		})
-		if err != nil {
-			errs = append(errs, fmt.Errorf("chapter %s: %w", chapter.EntryID, err))
-		}
+		count++
 	}
 
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to persist %d extract results: %v", len(errs), errs[0])
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Debug("queued extract results for persist", "count", count)
 	}
 	return nil
 }
@@ -562,7 +561,8 @@ func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.Wo
 	return nil
 }
 
-// persistClassifyResults persists classification results to DefraDB using synchronous writes.
+// persistClassifyResults persists classification results to DefraDB using async writes.
+// Classification results can be re-run on crash recovery.
 func (j *Job) persistClassifyResults(ctx context.Context) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
@@ -570,7 +570,7 @@ func (j *Job) persistClassifyResults(ctx context.Context) error {
 	}
 
 	chapters := j.Book.GetStructureChapters()
-	var errs []error
+	var count int
 
 	for _, chapter := range chapters {
 		if chapter.DocID == "" {
@@ -584,19 +584,17 @@ func (j *Job) persistClassifyResults(ctx context.Context) error {
 			doc["classification_reasoning"] = chapter.ClassifyReasoning
 		}
 
-		_, err := sink.SendSync(ctx, defra.WriteOp{
+		sink.Send(defra.WriteOp{
 			Collection: "Chapter",
 			DocID:      chapter.DocID,
 			Document:   doc,
 			Op:         defra.OpUpdate,
 		})
-		if err != nil {
-			errs = append(errs, fmt.Errorf("chapter %s: %w", chapter.EntryID, err))
-		}
+		count++
 	}
 
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to persist %d classify results: %v", len(errs), errs[0])
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Debug("queued classify results for persist", "count", count)
 	}
 	return nil
 }
@@ -822,7 +820,9 @@ func (j *Job) allStructurePolishDone() bool {
 	return true
 }
 
-// persistPolishResults saves polish results to DefraDB using synchronous writes.
+// persistPolishResults saves polish results to DefraDB using async writes.
+// Polish results are the final output and will be flushed before the completion marker
+// due to sink channel ordering (async writes queued before sync completion write).
 func (j *Job) persistPolishResults(ctx context.Context) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
@@ -830,7 +830,7 @@ func (j *Job) persistPolishResults(ctx context.Context) error {
 	}
 
 	chapters := j.Book.GetStructureChapters()
-	var errs []error
+	var count int
 
 	for _, chapter := range chapters {
 		if chapter.DocID == "" || !chapter.PolishDone {
@@ -844,19 +844,17 @@ func (j *Job) persistPolishResults(ctx context.Context) error {
 			"polish_failed":   chapter.PolishFailed,
 		}
 
-		_, err := sink.SendSync(ctx, defra.WriteOp{
+		sink.Send(defra.WriteOp{
 			Collection: "Chapter",
 			DocID:      chapter.DocID,
 			Document:   doc,
 			Op:         defra.OpUpdate,
 		})
-		if err != nil {
-			errs = append(errs, fmt.Errorf("chapter %s: %w", chapter.EntryID, err))
-		}
+		count++
 	}
 
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to persist %d polish results: %v", len(errs), errs[0])
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		logger.Debug("queued polish results for persist", "count", count)
 	}
 	return nil
 }
@@ -912,19 +910,18 @@ func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, erro
 	return nil, nil
 }
 
-// finalizeStructure persists final structure data using synchronous writes.
+// finalizeStructure marks structure as complete.
+// Polish results were already queued via async writes in persistPolishResults.
+// The sync write here ensures all queued writes are flushed before completion.
 func (j *Job) finalizeStructure(ctx context.Context) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	// Persist all polish results synchronously before marking complete
-	if err := j.persistPolishResults(ctx); err != nil {
-		return fmt.Errorf("failed to persist polish results: %w", err)
-	}
-
-	// Mark book structure as complete using sync write
+	// Mark book structure as complete using sync write.
+	// This ensures all previously queued async writes (polish results) are flushed first
+	// due to sink channel ordering.
 	_, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      j.Book.BookID,
