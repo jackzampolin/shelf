@@ -104,6 +104,11 @@ func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage i
 		return nil
 	}
 
+	// Validate bookID to prevent GraphQL injection
+	if err := defra.ValidateID(bookID); err != nil {
+		return nil
+	}
+
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return nil
@@ -162,6 +167,11 @@ func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage i
 func LoadTocStructureSummary(ctx context.Context, tocDocID string) (*extract_toc.StructureSummary, error) {
 	if tocDocID == "" {
 		return nil, nil
+	}
+
+	// Validate tocDocID to prevent GraphQL injection
+	if err := defra.ValidateID(tocDocID); err != nil {
+		return nil, fmt.Errorf("invalid ToC doc ID: %w", err)
 	}
 
 	defraClient := svcctx.DefraClientFrom(ctx)
@@ -341,6 +351,11 @@ func LoadLinkedEntries(ctx context.Context, tocDocID string) ([]*LinkedTocEntry,
 		return nil, fmt.Errorf("ToC document ID is required")
 	}
 
+	// Validate tocDocID to prevent GraphQL injection
+	if err := defra.ValidateID(tocDocID); err != nil {
+		return nil, fmt.Errorf("invalid ToC doc ID: %w", err)
+	}
+
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return nil, fmt.Errorf("defra client not in context")
@@ -473,6 +488,11 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 		return nil
 	}
 
+	// Validate tocDocID to prevent GraphQL injection
+	if err := defra.ValidateID(tocDocID); err != nil {
+		return fmt.Errorf("invalid ToC doc ID: %w", err)
+	}
+
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return fmt.Errorf("defra client not in context")
@@ -544,6 +564,11 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 // SaveTocEntryResult updates a TocEntry with the found page link.
 // Used by link_toc operations in both process_book and standalone link_toc jobs.
 func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string, result *toc_entry_finder.Result) error {
+	// Validate entryDocID to prevent injection
+	if err := defra.ValidateID(entryDocID); err != nil {
+		return fmt.Errorf("invalid entry doc ID: %w", err)
+	}
+
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
 		return fmt.Errorf("defra sink not in context")

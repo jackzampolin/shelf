@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jackzampolin/shelf/internal/api"
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -77,10 +78,30 @@ func (e *ListAgentLogsEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Validate bookID to prevent GraphQL injection
+	if err := defra.ValidateID(bookID); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid book_id: %v", err))
+		return
+	}
+
 	// Parse optional filters
 	stage := r.URL.Query().Get("stage")
 	agentType := r.URL.Query().Get("agent_type")
 	jobID := r.URL.Query().Get("job_id")
+
+	// Validate optional filter parameters
+	if jobID != "" {
+		if err := defra.ValidateID(jobID); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid job_id: %v", err))
+			return
+		}
+	}
+	if agentType != "" {
+		if err := defra.ValidateID(agentType); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid agent_type: %v", err))
+			return
+		}
+	}
 
 	defraClient := svcctx.DefraClientFrom(r.Context())
 	if defraClient == nil {
@@ -238,6 +259,12 @@ func (e *GetAgentLogEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	// Validate id to prevent GraphQL injection
+	if err := defra.ValidateID(id); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid id: %v", err))
 		return
 	}
 

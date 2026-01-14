@@ -24,10 +24,7 @@ type AgentState {
     created_at: DateTime
     updated_at: DateTime
 
-    # Book association - explicit field for queries (in addition to relationship)
-    # Go code writes book_id directly and queries filter on it
-    book_id: String @index
-
     # Relationship - AgentState belongs to a Book
+    # Note: DefraDB auto-creates book_id field of type ID for this relationship
     book: Book @primary
 }

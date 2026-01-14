@@ -245,6 +245,11 @@ func DeleteAgentState(ctx context.Context, docID string) error {
 // This is used when resetting operations or cleaning up completed jobs.
 // Returns an error if any deletion fails. Logs warnings for malformed records.
 func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
+	// Validate bookID to prevent GraphQL injection
+	if err := defra.ValidateID(bookID); err != nil {
+		return fmt.Errorf("DeleteAgentStatesForBook: invalid book ID: %w", err)
+	}
+
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return fmt.Errorf("DeleteAgentStatesForBook: defra client not in context")
@@ -320,6 +325,14 @@ func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 // This is used when resetting a specific operation (e.g., toc_finder) without affecting
 // other agent states for the same book.
 func DeleteAgentStatesForType(ctx context.Context, bookID, agentType string) error {
+	// Validate IDs to prevent GraphQL injection
+	if err := defra.ValidateID(bookID); err != nil {
+		return fmt.Errorf("DeleteAgentStatesForType: invalid book ID: %w", err)
+	}
+	if err := defra.ValidateID(agentType); err != nil {
+		return fmt.Errorf("DeleteAgentStatesForType: invalid agent type: %w", err)
+	}
+
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return fmt.Errorf("DeleteAgentStatesForType: defra client not in context")

@@ -60,6 +60,16 @@ func IsValidResetOperation(op string) bool {
 //   - labels          -> toc_link, toc_finalize, structure
 //   - blend           -> labels, pattern_analysis, (cascade from pattern_analysis)
 func ResetFrom(ctx context.Context, book *BookState, tocDocID string, op ResetOperation) error {
+	// Validate IDs to prevent GraphQL injection
+	if err := defra.ValidateID(book.BookID); err != nil {
+		return fmt.Errorf("invalid book ID: %w", err)
+	}
+	if tocDocID != "" {
+		if err := defra.ValidateID(tocDocID); err != nil {
+			return fmt.Errorf("invalid ToC doc ID: %w", err)
+		}
+	}
+
 	logger := svcctx.LoggerFrom(ctx)
 	if logger != nil {
 		logger.Info("resetting operation with cascade", "operation", op, "book_id", book.BookID)

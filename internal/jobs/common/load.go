@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
@@ -54,6 +55,11 @@ type LoadBookResult struct {
 // 4. Load operation states from DB
 // 5. Resolve prompts (if PromptKeys provided)
 func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBookResult, error) {
+	// Validate bookID to prevent GraphQL injection
+	if err := defra.ValidateID(bookID); err != nil {
+		return nil, fmt.Errorf("invalid book ID: %w", err)
+	}
+
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return nil, fmt.Errorf("defra client not in context")
@@ -662,6 +668,11 @@ func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.T
 		return nil, nil // No ToC, no entries
 	}
 
+	// Validate tocDocID to prevent GraphQL injection
+	if err := defra.ValidateID(tocDocID); err != nil {
+		return nil, fmt.Errorf("invalid ToC doc ID: %w", err)
+	}
+
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return nil, fmt.Errorf("defra client not in context")
@@ -849,6 +860,16 @@ func LoadFinalizeState(ctx context.Context, book *BookState, tocDocID string) er
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return fmt.Errorf("defra client not in context")
+	}
+
+	// Validate IDs to prevent GraphQL injection
+	if err := defra.ValidateID(book.BookID); err != nil {
+		return fmt.Errorf("invalid book ID: %w", err)
+	}
+	if tocDocID != "" {
+		if err := defra.ValidateID(tocDocID); err != nil {
+			return fmt.Errorf("invalid ToC doc ID: %w", err)
+		}
 	}
 
 	logger := svcctx.LoggerFrom(ctx)
@@ -1122,6 +1143,11 @@ func loadBookMetadataFromDB(ctx context.Context, bookID string) *BookMetadata {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		// No DefraDB client - expected in test contexts
+		return nil
+	}
+
+	// Validate bookID to prevent GraphQL injection
+	if err := defra.ValidateID(bookID); err != nil {
 		return nil
 	}
 
