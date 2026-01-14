@@ -207,9 +207,11 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 
 	// 8. Load agent states (for job resume)
 	if err := LoadAgentStates(ctx, book); err != nil {
-		// Non-fatal - just log and continue
+		// Log at ERROR because job resume will fall back to restarting agents,
+		// potentially incurring duplicate LLM API costs
 		if logger != nil {
-			logger.Warn("failed to load agent states", "book_id", bookID, "error", err)
+			logger.Error("failed to load agent states - job resume will restart agents from scratch",
+				"book_id", bookID, "error", err, "impact", "potential duplicate LLM API costs")
 		}
 	} else if logger != nil && len(book.GetAllAgentStates()) > 0 {
 		logger.Debug("LoadBook: loaded agent states", "book_id", bookID, "count", len(book.GetAllAgentStates()))
@@ -218,8 +220,10 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	// 9. Load finalize state if finalize is in progress (for crash recovery)
 	if book.TocFinalizeIsStarted() && !book.TocFinalizeIsDone() {
 		if err := LoadFinalizeState(ctx, book, tocDocID); err != nil {
+			// Log at ERROR because crash recovery will restart finalize from the beginning
 			if logger != nil {
-				logger.Warn("failed to load finalize state", "book_id", bookID, "error", err)
+				logger.Error("failed to load finalize state - crash recovery will restart finalize phase",
+					"book_id", bookID, "error", err)
 			}
 		}
 	}
@@ -227,8 +231,10 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	// 10. Load structure chapters if structure is in progress (for crash recovery)
 	if book.StructureIsStarted() && !book.StructureIsDone() {
 		if err := LoadStructureChapters(ctx, book); err != nil {
+			// Log at ERROR because crash recovery will restart structure from the beginning
 			if logger != nil {
-				logger.Warn("failed to load structure chapters", "book_id", bookID, "error", err)
+				logger.Error("failed to load structure chapters - crash recovery will restart structure phase",
+					"book_id", bookID, "error", err)
 			}
 		}
 	}
@@ -1182,7 +1188,7 @@ func loadBookMetadataFromDB(ctx context.Context, bookID string) *BookMetadata {
 func loadBookCostsFromDB(ctx context.Context, book *BookState) {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
-		book.costsLoaded = true
+		// No DefraDB client - costs cannot be loaded but this is expected in test contexts
 		return
 	}
 
@@ -1199,9 +1205,10 @@ func loadBookCostsFromDB(ctx context.Context, book *BookState) {
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
 		if logger != nil {
-			logger.Warn("loadBookCostsFromDB: query failed", "book_id", book.BookID, "error", err)
+			logger.Error("loadBookCostsFromDB: query failed - cost data will be unavailable",
+				"book_id", book.BookID, "error", err)
 		}
-		book.costsLoaded = true
+		// Don't set costsLoaded=true on error - allows retry on next access
 		return
 	}
 
@@ -1254,7 +1261,7 @@ func loadBookCostsFromDB(ctx context.Context, book *BookState) {
 func loadAgentRunsFromDB(ctx context.Context, book *BookState) {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
-		book.agentRunsLoaded = true
+		// No DefraDB client - agent runs cannot be loaded but this is expected in test contexts
 		return
 	}
 
@@ -1277,9 +1284,10 @@ func loadAgentRunsFromDB(ctx context.Context, book *BookState) {
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
 		if logger != nil {
-			logger.Warn("loadAgentRunsFromDB: query failed", "book_id", book.BookID, "error", err)
+			logger.Error("loadAgentRunsFromDB: query failed - agent run history will be unavailable",
+				"book_id", book.BookID, "error", err)
 		}
-		book.agentRunsLoaded = true
+		// Don't set agentRunsLoaded=true on error - allows retry on next access
 		return
 	}
 

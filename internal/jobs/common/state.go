@@ -166,10 +166,16 @@ func (p *PageState) SetPageDocID(docID string) {
 // --- Cache accessor methods ---
 
 // GetHeadings returns the cached headings (thread-safe).
+// Returns a copy of the slice to prevent external modification.
 func (p *PageState) GetHeadings() []HeadingItem {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.headings
+	if p.headings == nil {
+		return nil
+	}
+	result := make([]HeadingItem, len(p.headings))
+	copy(result, p.headings)
+	return result
 }
 
 // SetHeadings sets the cached headings (thread-safe).
@@ -272,8 +278,13 @@ func (p *PageState) PopulateFromDBResult(data map[string]any) {
 	if h, ok := data["headings"].(string); ok && h != "" {
 		var headings []HeadingItem
 		if err := json.Unmarshal([]byte(h), &headings); err != nil {
-			slog.Debug("failed to parse headings JSON in PopulateFromDBResult",
-				"error", err)
+			// Log at Error level - corrupt JSON indicates data corruption or schema issue
+			sample := h
+			if len(sample) > 200 {
+				sample = sample[:200] + "..."
+			}
+			slog.Error("failed to parse headings JSON in PopulateFromDBResult",
+				"error", err, "content_preview", sample)
 		} else {
 			p.headings = headings
 		}
@@ -1455,10 +1466,18 @@ func (b *BookState) SetFinalizePagePatternCtx(ctx *PagePatternContext) {
 // --- Structure Classification Reasonings ---
 
 // GetStructureClassifyReasonings returns the classification reasonings map (thread-safe).
+// Returns a copy of the map to prevent external modification.
 func (b *BookState) GetStructureClassifyReasonings() map[string]string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.structureClassifyReasonings
+	if b.structureClassifyReasonings == nil {
+		return nil
+	}
+	result := make(map[string]string, len(b.structureClassifyReasonings))
+	for k, v := range b.structureClassifyReasonings {
+		result[k] = v
+	}
+	return result
 }
 
 // SetStructureClassifyReasonings sets the classification reasonings map (thread-safe).
