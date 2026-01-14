@@ -181,12 +181,13 @@ func PersistStructurePhase(ctx context.Context, book *BookState) error {
 
 // --- Agent State Persistence ---
 
-// PersistAgentState creates or updates an agent state record in DefraDB.
-// Returns the document ID (existing or newly created).
-func PersistAgentState(ctx context.Context, bookID string, state *AgentState) (string, error) {
+// PersistAgentStateAsync creates an agent state record in DefraDB asynchronously.
+// This is fire-and-forget - no DocID is returned. Use agent_id for identification.
+// Only call this once at agent creation, not during the agent loop.
+func PersistAgentStateAsync(ctx context.Context, bookID string, state *AgentState) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return "", fmt.Errorf("defra sink not in context")
+		return fmt.Errorf("defra sink not in context")
 	}
 
 	doc := map[string]any{
@@ -202,32 +203,16 @@ func PersistAgentState(ctx context.Context, bookID string, state *AgentState) (s
 		"book_id":             bookID,
 	}
 
-	if state.DocID != "" {
-		// Update existing - use async to avoid blocking the agent loop.
-		// Crash recovery will restart agent from scratch if state wasn't persisted,
-		// which is acceptable since it's already the fallback behavior.
-		sink.Send(defra.WriteOp{
-			Collection: "AgentState",
-			DocID:      state.DocID,
-			Document:   doc,
-			Op:         defra.OpUpdate,
-		})
-		return state.DocID, nil
-	}
-
-	// Create new - need sync to get DocID back
-	result, err := sink.SendSync(ctx, defra.WriteOp{
+	// Fire-and-forget create - use agent_id for later identification
+	sink.Send(defra.WriteOp{
 		Collection: "AgentState",
 		Document:   doc,
 		Op:         defra.OpCreate,
 	})
-	if err != nil {
-		return "", fmt.Errorf("failed to create agent state: %w", err)
-	}
-	return result.DocID, nil
+	return nil
 }
 
-// DeleteAgentState removes an agent state record from DefraDB.
+// DeleteAgentState removes an agent state record from DefraDB by DocID.
 // Uses synchronous write to ensure deletion completes and prevent orphaned records.
 func DeleteAgentState(ctx context.Context, docID string) error {
 	if docID == "" {
@@ -238,6 +223,67 @@ func DeleteAgentState(ctx context.Context, docID string) error {
 		DocID:      docID,
 		Op:         defra.OpDelete,
 	})
+}
+
+// DeleteAgentStateByAgentID removes an agent state record by querying for agent_id.
+// This is used when we don't have the DocID (e.g., after async creates).
+// Uses async delete for performance - caller should not depend on completion.
+func DeleteAgentStateByAgentID(ctx context.Context, agentID string) error {
+	if agentID == "" {
+		return nil
+	}
+
+	// Validate agentID to prevent GraphQL injection
+	if err := defra.ValidateID(agentID); err != nil {
+		return fmt.Errorf("DeleteAgentStateByAgentID: invalid agent ID: %w", err)
+	}
+
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("DeleteAgentStateByAgentID: defra client not in context")
+	}
+
+	// Query for the DocID
+	query := fmt.Sprintf(`{
+		AgentState(filter: {agent_id: {_eq: "%s"}}) {
+			_docID
+		}
+	}`, agentID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return fmt.Errorf("DeleteAgentStateByAgentID: query failed: %w", err)
+	}
+
+	states, ok := resp.Data["AgentState"].([]any)
+	if !ok || len(states) == 0 {
+		return nil // Not found, nothing to delete
+	}
+
+	// Delete each match (should be at most one, but handle multiple defensively)
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("DeleteAgentStateByAgentID: defra sink not in context")
+	}
+
+	for _, s := range states {
+		state, ok := s.(map[string]any)
+		if !ok {
+			continue
+		}
+		docID, ok := state["_docID"].(string)
+		if !ok || docID == "" {
+			continue
+		}
+		// Async delete for performance
+		sink.Send(defra.WriteOp{
+			Collection: "AgentState",
+			DocID:      docID,
+			Op:         defra.OpDelete,
+		})
+	}
+
+	return nil
 }
 
 // DeleteAgentStatesForBook removes all agent state records for a book.

@@ -151,6 +151,22 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 			Debug:        j.Book.DebugAgents,
 			JobID:        j.RecordID,
 		})
+
+		// Persist initial agent state (async, fire-and-forget)
+		exported, _ := j.TocAgent.ExportState()
+		initialState := &common.AgentState{
+			AgentID:          exported.AgentID,
+			AgentType:        common.AgentTypeTocFinder,
+			EntryDocID:       "",
+			Iteration:        exported.Iteration,
+			Complete:         false,
+			MessagesJSON:     exported.MessagesJSON,
+			PendingToolCalls: exported.PendingToolCalls,
+			ToolResults:      exported.ToolResults,
+			ResultJSON:       "",
+		}
+		common.PersistAgentStateAsync(ctx, j.Book.BookID, initialState)
+		j.Book.SetAgentState(initialState)
 	}
 
 	// Get first work unit using helper
@@ -180,13 +196,8 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 	if result.ChatResult != nil {
 		j.TocAgent.HandleLLMResult(result.ChatResult)
 
-		// Save agent state for resume capability
-		if err := j.saveTocFinderAgentState(ctx); err != nil && logger != nil {
-			logger.Error("failed to save ToC finder agent state - crash recovery will restart agent from scratch",
-				"book_id", j.Book.BookID,
-				"impact", "potential duplicate LLM API costs on restart",
-				"error", err)
-		}
+		// Note: No intermediate state persistence - crash recovery restarts from scratch
+		// This eliminates the SendSync bottleneck that serialized agent execution
 
 		// Execute tool loop using helper
 		agentUnits := agents.ExecuteToolLoop(ctx, j.TocAgent)
@@ -240,60 +251,16 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 	return nil, nil
 }
 
-// saveTocFinderAgentState saves the ToC finder agent state for resume capability.
-func (j *Job) saveTocFinderAgentState(ctx context.Context) error {
-	if j.TocAgent == nil {
-		return nil
-	}
-
-	// Export agent state
-	exported, err := j.TocAgent.ExportState()
-	if err != nil {
-		return err
-	}
-
-	// Get existing state to preserve DocID
-	existing := j.Book.GetAgentState(AgentTypeTocFinder, "")
-	var docID string
-	if existing != nil {
-		docID = existing.DocID
-	}
-
-	// Create AgentState for BookState
-	state := &common.AgentState{
-		AgentID:          exported.AgentID,
-		AgentType:        AgentTypeTocFinder,
-		Iteration:        exported.Iteration,
-		Complete:         exported.Complete,
-		MessagesJSON:     exported.MessagesJSON,
-		PendingToolCalls: exported.PendingToolCalls,
-		ToolResults:      exported.ToolResults,
-		ResultJSON:       exported.ResultJSON,
-		DocID:            docID,
-	}
-
-	// Persist to DB and update BookState
-	newDocID, err := common.PersistAgentState(ctx, j.Book.BookID, state)
-	if err != nil {
-		return err
-	}
-	state.DocID = newDocID
-	j.Book.SetAgentState(state)
-
-	return nil
-}
-
 // cleanupTocFinderAgentState removes ToC finder agent state after completion.
 func (j *Job) cleanupTocFinderAgentState(ctx context.Context) {
 	logger := svcctx.LoggerFrom(ctx)
 	existing := j.Book.GetAgentState(AgentTypeTocFinder, "")
-	if existing != nil && existing.DocID != "" {
-		if err := common.DeleteAgentState(ctx, existing.DocID); err != nil {
-			// Log error but continue - orphaned record is not fatal
-			// It will be cleaned up on next reset or can be manually deleted
+	if existing != nil && existing.AgentID != "" {
+		// Delete by agent_id since we don't have DocID from async create
+		if err := common.DeleteAgentStateByAgentID(ctx, existing.AgentID); err != nil {
 			if logger != nil {
 				logger.Error("failed to delete agent state from DB, orphaned record remains",
-					"doc_id", existing.DocID,
+					"agent_id", existing.AgentID,
 					"agent_type", AgentTypeTocFinder,
 					"book_id", j.Book.BookID,
 					"error", err)

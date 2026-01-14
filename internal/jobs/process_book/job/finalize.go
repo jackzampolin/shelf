@@ -522,6 +522,22 @@ func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.Ent
 
 	j.FinalizeDiscoverAgents[entry.Key] = ag
 
+	// Persist initial agent state (async, fire-and-forget)
+	exported, _ := ag.ExportState()
+	initialState := &common.AgentState{
+		AgentID:          exported.AgentID,
+		AgentType:        common.AgentTypeChapterFinder,
+		EntryDocID:       entry.Key,
+		Iteration:        exported.Iteration,
+		Complete:         false,
+		MessagesJSON:     exported.MessagesJSON,
+		PendingToolCalls: exported.PendingToolCalls,
+		ToolResults:      exported.ToolResults,
+		ResultJSON:       "",
+	}
+	common.PersistAgentStateAsync(ctx, j.Book.BookID, initialState)
+	j.Book.SetAgentState(initialState)
+
 	agentUnits := agents.ExecuteToolLoop(ctx, ag)
 	if len(agentUnits) == 0 {
 		return nil
@@ -579,14 +595,8 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 	if result.ChatResult != nil {
 		ag.HandleLLMResult(result.ChatResult)
 
-		// Save agent state for resume capability
-		if err := j.saveFinalizeDiscoverAgentState(ctx, info.FinalizeKey); err != nil && logger != nil {
-			logger.Error("failed to save discover agent state - crash recovery will restart agent from scratch",
-				"book_id", j.Book.BookID,
-				"entry_key", info.FinalizeKey,
-				"impact", "potential duplicate LLM API costs on restart",
-				"error", err)
-		}
+		// Note: No intermediate state persistence - crash recovery restarts from scratch
+		// This eliminates the SendSync bottleneck that serialized agent execution
 
 		agentUnits := agents.ExecuteToolLoop(ctx, ag)
 		if len(agentUnits) > 0 {
@@ -861,6 +871,22 @@ func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.Fin
 
 	j.FinalizeGapAgents[gap.Key] = ag
 
+	// Persist initial agent state (async, fire-and-forget)
+	exported, _ := ag.ExportState()
+	initialState := &common.AgentState{
+		AgentID:          exported.AgentID,
+		AgentType:        common.AgentTypeGapInvestigator,
+		EntryDocID:       gap.Key,
+		Iteration:        exported.Iteration,
+		Complete:         false,
+		MessagesJSON:     exported.MessagesJSON,
+		PendingToolCalls: exported.PendingToolCalls,
+		ToolResults:      exported.ToolResults,
+		ResultJSON:       "",
+	}
+	common.PersistAgentStateAsync(ctx, j.Book.BookID, initialState)
+	j.Book.SetAgentState(initialState)
+
 	agentUnits := agents.ExecuteToolLoop(ctx, ag)
 	if len(agentUnits) == 0 {
 		return nil
@@ -918,14 +944,8 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 	if result.ChatResult != nil {
 		ag.HandleLLMResult(result.ChatResult)
 
-		// Save agent state for resume capability
-		if err := j.saveFinalizeGapAgentState(ctx, info.FinalizeKey); err != nil && logger != nil {
-			logger.Error("failed to save gap agent state - crash recovery will restart agent from scratch",
-				"book_id", j.Book.BookID,
-				"gap_key", info.FinalizeKey,
-				"impact", "potential duplicate LLM API costs on restart",
-				"error", err)
-		}
+		// Note: No intermediate state persistence - crash recovery restarts from scratch
+		// This eliminates the SendSync bottleneck that serialized agent execution
 
 		agentUnits := agents.ExecuteToolLoop(ctx, ag)
 		if len(agentUnits) > 0 {
@@ -1639,58 +1659,18 @@ func (j *Job) retryFinalizeGapUnit(ctx context.Context, info WorkUnitInfo) ([]jo
 	return nil, nil
 }
 
-// --- Finalize Agent State Persistence ---
-
-// saveFinalizeDiscoverAgentState saves a chapter finder agent state for resume capability.
-func (j *Job) saveFinalizeDiscoverAgentState(ctx context.Context, entryKey string) error {
-	ag, ok := j.FinalizeDiscoverAgents[entryKey]
-	if !ok || ag == nil {
-		return nil
-	}
-
-	exported, err := ag.ExportState()
-	if err != nil {
-		return err
-	}
-
-	existing := j.Book.GetAgentState(common.AgentTypeChapterFinder, entryKey)
-	var docID string
-	if existing != nil {
-		docID = existing.DocID
-	}
-
-	state := &common.AgentState{
-		AgentID:          exported.AgentID,
-		AgentType:        common.AgentTypeChapterFinder,
-		EntryDocID:       entryKey,
-		Iteration:        exported.Iteration,
-		Complete:         exported.Complete,
-		MessagesJSON:     exported.MessagesJSON,
-		PendingToolCalls: exported.PendingToolCalls,
-		ToolResults:      exported.ToolResults,
-		ResultJSON:       exported.ResultJSON,
-		DocID:            docID,
-	}
-
-	newDocID, err := common.PersistAgentState(ctx, j.Book.BookID, state)
-	if err != nil {
-		return err
-	}
-	state.DocID = newDocID
-	j.Book.SetAgentState(state)
-
-	return nil
-}
+// --- Finalize Agent State Cleanup ---
 
 // cleanupFinalizeDiscoverAgentState removes chapter finder agent state after completion.
 func (j *Job) cleanupFinalizeDiscoverAgentState(ctx context.Context, entryKey string) {
 	logger := svcctx.LoggerFrom(ctx)
 	existing := j.Book.GetAgentState(common.AgentTypeChapterFinder, entryKey)
-	if existing != nil && existing.DocID != "" {
-		if err := common.DeleteAgentState(ctx, existing.DocID); err != nil {
+	if existing != nil && existing.AgentID != "" {
+		// Delete by agent_id since we don't have DocID from async create
+		if err := common.DeleteAgentStateByAgentID(ctx, existing.AgentID); err != nil {
 			if logger != nil {
 				logger.Error("failed to delete agent state from DB, orphaned record remains",
-					"doc_id", existing.DocID,
+					"agent_id", existing.AgentID,
 					"agent_type", common.AgentTypeChapterFinder,
 					"entry_key", entryKey,
 					"book_id", j.Book.BookID,
@@ -1701,56 +1681,16 @@ func (j *Job) cleanupFinalizeDiscoverAgentState(ctx context.Context, entryKey st
 	j.Book.RemoveAgentState(common.AgentTypeChapterFinder, entryKey)
 }
 
-// saveFinalizeGapAgentState saves a gap investigator agent state for resume capability.
-func (j *Job) saveFinalizeGapAgentState(ctx context.Context, gapKey string) error {
-	ag, ok := j.FinalizeGapAgents[gapKey]
-	if !ok || ag == nil {
-		return nil
-	}
-
-	exported, err := ag.ExportState()
-	if err != nil {
-		return err
-	}
-
-	existing := j.Book.GetAgentState(common.AgentTypeGapInvestigator, gapKey)
-	var docID string
-	if existing != nil {
-		docID = existing.DocID
-	}
-
-	state := &common.AgentState{
-		AgentID:          exported.AgentID,
-		AgentType:        common.AgentTypeGapInvestigator,
-		EntryDocID:       gapKey,
-		Iteration:        exported.Iteration,
-		Complete:         exported.Complete,
-		MessagesJSON:     exported.MessagesJSON,
-		PendingToolCalls: exported.PendingToolCalls,
-		ToolResults:      exported.ToolResults,
-		ResultJSON:       exported.ResultJSON,
-		DocID:            docID,
-	}
-
-	newDocID, err := common.PersistAgentState(ctx, j.Book.BookID, state)
-	if err != nil {
-		return err
-	}
-	state.DocID = newDocID
-	j.Book.SetAgentState(state)
-
-	return nil
-}
-
 // cleanupFinalizeGapAgentState removes gap investigator agent state after completion.
 func (j *Job) cleanupFinalizeGapAgentState(ctx context.Context, gapKey string) {
 	logger := svcctx.LoggerFrom(ctx)
 	existing := j.Book.GetAgentState(common.AgentTypeGapInvestigator, gapKey)
-	if existing != nil && existing.DocID != "" {
-		if err := common.DeleteAgentState(ctx, existing.DocID); err != nil {
+	if existing != nil && existing.AgentID != "" {
+		// Delete by agent_id since we don't have DocID from async create
+		if err := common.DeleteAgentStateByAgentID(ctx, existing.AgentID); err != nil {
 			if logger != nil {
 				logger.Error("failed to delete agent state from DB, orphaned record remains",
-					"doc_id", existing.DocID,
+					"agent_id", existing.AgentID,
 					"agent_type", common.AgentTypeGapInvestigator,
 					"gap_key", gapKey,
 					"book_id", j.Book.BookID,
