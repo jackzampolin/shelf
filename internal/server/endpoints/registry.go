@@ -35,6 +35,10 @@ func All(cfg Config) []api.Endpoint {
 		&GetBookChaptersEndpoint{},
 		&RerunTocEndpoint{},
 
+		// Export endpoints
+		&ExportEpubEndpoint{},
+		&DownloadEpubEndpoint{},
+
 		// Page endpoints
 		&PageImageEndpoint{},
 		&ListPagesEndpoint{},

@@ -106,3 +106,8 @@ func (d *Dir) OriginalsDir(bookID string) string {
 func (d *Dir) EnsureOriginalsDir(bookID string) error {
 	return os.MkdirAll(d.OriginalsDir(bookID), 0o755)
 }
+
+// ExportsDir returns the directory for exported files (epub, etc.).
+func (d *Dir) ExportsDir() string {
+	return filepath.Join(d.path, "exports")
+}

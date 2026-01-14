@@ -136,6 +136,31 @@ func (c *Client) Delete(ctx context.Context, path string) error {
 	return c.handleResponse(resp, nil)
 }
 
+// GetRaw performs a GET request and returns the raw response body.
+func (c *Client) GetRaw(ctx context.Context, path string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("server error (%d): %s", resp.StatusCode, string(body))
+	}
+
+	return body, nil
+}
+
 func (c *Client) handleResponse(resp *http.Response, result any) error {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
