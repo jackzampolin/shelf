@@ -250,7 +250,17 @@ func (j *Job) HandleFinalizePatternComplete(ctx context.Context, result jobs.Wor
 			return []jobs.WorkUnit{*unit}, nil
 		}
 		if logger != nil {
-			logger.Info("pattern analysis permanently failed, skipping to discover")
+			logger.Warn("pattern analysis permanently failed, skipping to discover",
+				"book_id", j.Book.BookID,
+				"retry_count", info.RetryCount,
+				"error", result.Error)
+		}
+		// Mark pattern phase as skipped to prevent re-attempts on restart
+		j.Book.SetFinalizePhase(FinalizePhaseDiscover)
+		if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDiscover); err != nil {
+			if logger != nil {
+				logger.Error("failed to persist pattern phase skip", "error", err)
+			}
 		}
 		return j.transitionToFinalizeDiscover(ctx), nil
 	}
@@ -571,7 +581,11 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 
 		// Save agent state for resume capability
 		if err := j.saveFinalizeDiscoverAgentState(ctx, info.FinalizeKey); err != nil && logger != nil {
-			logger.Warn("failed to save discover agent state", "entry_key", info.FinalizeKey, "error", err)
+			logger.Error("failed to save discover agent state - crash recovery will restart agent from scratch",
+				"book_id", j.Book.BookID,
+				"entry_key", info.FinalizeKey,
+				"impact", "potential duplicate LLM API costs on restart",
+				"error", err)
 		}
 
 		agentUnits := agents.ExecuteToolLoop(ctx, ag)
@@ -906,7 +920,11 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 
 		// Save agent state for resume capability
 		if err := j.saveFinalizeGapAgentState(ctx, info.FinalizeKey); err != nil && logger != nil {
-			logger.Warn("failed to save gap agent state", "gap_key", info.FinalizeKey, "error", err)
+			logger.Error("failed to save gap agent state - crash recovery will restart agent from scratch",
+				"book_id", j.Book.BookID,
+				"gap_key", info.FinalizeKey,
+				"impact", "potential duplicate LLM API costs on restart",
+				"error", err)
 		}
 
 		agentUnits := agents.ExecuteToolLoop(ctx, ag)

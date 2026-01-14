@@ -1121,8 +1121,11 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 func loadBookMetadataFromDB(ctx context.Context, bookID string) *BookMetadata {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
+		// No DefraDB client - expected in test contexts
 		return nil
 	}
+
+	logger := svcctx.LoggerFrom(ctx)
 
 	query := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
@@ -1139,6 +1142,10 @@ func loadBookMetadataFromDB(ctx context.Context, bookID string) *BookMetadata {
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
+		if logger != nil {
+			logger.Error("loadBookMetadataFromDB: query failed - metadata will be unavailable",
+				"book_id", bookID, "error", err)
+		}
 		return nil
 	}
 

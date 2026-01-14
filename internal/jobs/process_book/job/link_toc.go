@@ -151,7 +151,11 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 
 		// Save agent state for resume capability
 		if err := j.saveLinkTocAgentState(ctx, info.EntryDocID); err != nil && logger != nil {
-			logger.Warn("failed to save link ToC agent state", "entry_doc_id", info.EntryDocID, "error", err)
+			logger.Error("failed to save link ToC agent state - crash recovery will restart agent from scratch",
+				"book_id", j.Book.BookID,
+				"entry_doc_id", info.EntryDocID,
+				"impact", "potential duplicate LLM API costs on restart",
+				"error", err)
 		}
 
 		// Execute tool loop

@@ -21,15 +21,23 @@ const AgentTypeTocFinder = common.AgentTypeTocFinder
 // CreateTocFinderWorkUnit creates a ToC finder agent work unit.
 // Must be called with j.Mu held.
 func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
+		if logger != nil {
+			logger.Error("CreateTocFinderWorkUnit: defra sink not in context - check service initialization",
+				"book_id", j.Book.BookID)
+		}
 		return nil
 	}
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
+		if logger != nil {
+			logger.Error("CreateTocFinderWorkUnit: defra client not in context - check service initialization",
+				"book_id", j.Book.BookID)
+		}
 		return nil
 	}
-	logger := svcctx.LoggerFrom(ctx)
 
 	// Create or get ToC record
 	// Note: The Book->ToC relationship has @primary on Book side,
@@ -174,7 +182,10 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 
 		// Save agent state for resume capability
 		if err := j.saveTocFinderAgentState(ctx); err != nil && logger != nil {
-			logger.Warn("failed to save ToC finder agent state", "error", err)
+			logger.Error("failed to save ToC finder agent state - crash recovery will restart agent from scratch",
+				"book_id", j.Book.BookID,
+				"impact", "potential duplicate LLM API costs on restart",
+				"error", err)
 		}
 
 		// Execute tool loop using helper

@@ -69,6 +69,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 			unit := j.CreateMetadataWorkUnit(ctx)
 			if unit != nil {
 				if err := j.PersistMetadataState(ctx); err != nil {
+					if logger := svcctx.LoggerFrom(ctx); logger != nil {
+						logger.Error("failed to persist metadata state, rolling back",
+							"book_id", j.Book.BookID, "error", err)
+					}
 					j.Book.MetadataReset() // Rollback on failure
 				} else {
 					units = append(units, *unit)
@@ -87,6 +91,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 			unit := j.CreateTocFinderWorkUnit(ctx)
 			if unit != nil {
 				if err := j.PersistTocFinderState(ctx); err != nil {
+					if logger := svcctx.LoggerFrom(ctx); logger != nil {
+						logger.Error("failed to persist toc finder state, rolling back",
+							"book_id", j.Book.BookID, "error", err)
+					}
 					j.Book.TocFinderReset() // Rollback on failure
 				} else {
 					units = append(units, *unit)
@@ -112,6 +120,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 			unit := j.CreateTocExtractWorkUnit(ctx)
 			if unit != nil {
 				if err := j.PersistTocExtractState(ctx); err != nil {
+					if logger != nil {
+						logger.Error("failed to persist toc extract state, rolling back",
+							"book_id", j.Book.BookID, "error", err)
+					}
 					j.Book.TocExtractReset() // Rollback on failure
 				} else {
 					units = append(units, *unit)
@@ -141,6 +153,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 			patternUnits := j.CreatePatternAnalysisWorkUnits(ctx)
 			if len(patternUnits) > 0 {
 				if err := j.PersistPatternAnalysisState(ctx); err != nil {
+					if logger != nil {
+						logger.Error("failed to persist pattern analysis state, rolling back",
+							"book_id", j.Book.BookID, "error", err)
+					}
 					j.Book.PatternAnalysisReset() // Rollback on failure
 				} else {
 					units = append(units, patternUnits...)
