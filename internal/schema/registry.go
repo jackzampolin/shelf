@@ -36,6 +36,7 @@ var registry = []Schema{
 	{Name: "Prompt", Order: 13},             // embedded prompt sync for UI/traceability
 	{Name: "BookPromptOverride", Order: 14}, // per-book prompt customizations
 	{Name: "Audio", Order: 15},              // TTS audiobook: AudioSegment, ChapterAudio, BookAudio
+	{Name: "Voice", Order: 16},              // TTS voices synced from providers
 }
 
 // All returns all schemas in dependency order.

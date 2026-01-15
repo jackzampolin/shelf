@@ -9,6 +9,20 @@ interface ConfigEntry {
   _docID?: string
 }
 
+interface Voice {
+  voice_id: string
+  name: string
+  description?: string
+  provider: string
+  is_default: boolean
+  created_at?: string
+  synced_at?: string
+}
+
+interface VoicesResponse {
+  voices: Voice[]
+}
+
 interface SettingsResponse {
   settings: Record<string, ConfigEntry>
 }
@@ -332,6 +346,214 @@ function ProviderCard({
   )
 }
 
+// Voices section component
+function VoicesSection() {
+  const queryClient = useQueryClient()
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newVoiceId, setNewVoiceId] = useState('')
+  const [newVoiceName, setNewVoiceName] = useState('')
+
+  const { data: voicesData, isLoading: voicesLoading } = useQuery({
+    queryKey: ['voices'],
+    queryFn: async (): Promise<VoicesResponse> => {
+      const res = await fetch('/api/voices')
+      if (!res.ok) throw new Error('Failed to load voices')
+      return res.json()
+    },
+  })
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/voices/sync', { method: 'POST' })
+      if (!res.ok) throw new Error('Failed to sync voices')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['voices'] })
+    },
+  })
+
+  const setDefaultMutation = useMutation({
+    mutationFn: async (voiceId: string) => {
+      const res = await fetch(`/api/voices/${voiceId}/default`, { method: 'PUT' })
+      if (!res.ok) throw new Error('Failed to set default voice')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['voices'] })
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (voiceId: string) => {
+      const res = await fetch(`/api/voices/${voiceId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete voice')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['voices'] })
+    },
+  })
+
+  const createMutation = useMutation({
+    mutationFn: async ({ voiceId, name }: { voiceId: string; name: string }) => {
+      const res = await fetch('/api/voices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voice_id: voiceId, name: name || voiceId }),
+      })
+      if (!res.ok) throw new Error('Failed to create voice')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['voices'] })
+      setShowAddForm(false)
+      setNewVoiceId('')
+      setNewVoiceName('')
+    },
+  })
+
+  const voices = voicesData?.voices || []
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-3">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+          TTS Voices
+        </h2>
+        <div className="flex space-x-2">
+          <button
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50"
+          >
+            {syncMutation.isPending ? 'Syncing...' : 'Sync from Provider'}
+          </button>
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="inline-flex items-center px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-800"
+          >
+            + Add Voice
+          </button>
+        </div>
+      </div>
+
+      {showAddForm && (
+        <div className="bg-blue-50 rounded-lg p-4 mb-3">
+          <div className="text-sm font-medium text-gray-700 mb-2">Add Custom Voice</div>
+          <div className="flex space-x-2">
+            <input
+              type="text"
+              placeholder="Voice ID (from DeepInfra)"
+              value={newVoiceId}
+              onChange={(e) => setNewVoiceId(e.target.value)}
+              className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded"
+            />
+            <input
+              type="text"
+              placeholder="Display Name (optional)"
+              value={newVoiceName}
+              onChange={(e) => setNewVoiceName(e.target.value)}
+              className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded"
+            />
+            <button
+              onClick={() => createMutation.mutate({ voiceId: newVoiceId, name: newVoiceName })}
+              disabled={!newVoiceId || createMutation.isPending}
+              className="px-3 py-1 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+            >
+              Add
+            </button>
+            <button
+              onClick={() => setShowAddForm(false)}
+              className="px-3 py-1 text-sm font-medium text-gray-600 bg-gray-100 rounded hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Create custom voices at{' '}
+            <a
+              href="https://deepinfra.com/ResembleAI/chatterbox/voice"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              DeepInfra Voice Cloning
+            </a>
+            , then add the voice ID here.
+          </p>
+        </div>
+      )}
+
+      {voicesLoading ? (
+        <div className="text-sm text-gray-500 py-4">Loading voices...</div>
+      ) : voices.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-6 text-center">
+          <div className="text-gray-500 mb-2">No voices configured</div>
+          <p className="text-sm text-gray-400">
+            Click "Sync from Provider" to fetch voices from DeepInfra, or add a custom voice ID.
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-lg border border-gray-200 divide-y">
+          {voices.map((voice) => (
+            <div
+              key={voice.voice_id}
+              className="flex items-center justify-between px-4 py-3 hover:bg-gray-50"
+            >
+              <div className="flex items-center space-x-3">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-medium text-gray-900">{voice.name}</span>
+                    {voice.is_default && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        Default
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {voice.voice_id}
+                    {voice.description && ` - ${voice.description}`}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                {!voice.is_default && (
+                  <button
+                    onClick={() => setDefaultMutation.mutate(voice.voice_id)}
+                    disabled={setDefaultMutation.isPending}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Set Default
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    if (confirm(`Delete voice "${voice.name}"?`)) {
+                      deleteMutation.mutate(voice.voice_id)
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                  className="text-xs text-red-600 hover:text-red-800"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {voices.length > 0 && (
+        <p className="text-xs text-gray-400 mt-2">
+          {voices.length} voice{voices.length !== 1 ? 's' : ''} configured.
+          Last synced: {voices[0]?.synced_at ? new Date(voices[0].synced_at).toLocaleString() : 'Never'}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function SettingsPage() {
   const queryClient = useQueryClient()
   const [editingKey, setEditingKey] = useState<string | null>(null)
@@ -490,6 +712,9 @@ function SettingsPage() {
           </div>
         </div>
       ))}
+
+      {/* TTS Voices Section */}
+      <VoicesSection />
     </div>
   )
 }

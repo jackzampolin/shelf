@@ -8,6 +8,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/svcctx"
+	"github.com/jackzampolin/shelf/internal/voices"
 )
 
 // TTSVoice represents a voice option for TTS.
@@ -19,13 +20,13 @@ type TTSVoice struct {
 
 // TTSConfigResponse contains available TTS configuration options.
 type TTSConfigResponse struct {
-	Provider       string     `json:"provider"`
-	Model          string     `json:"model"`
-	DefaultVoice   string     `json:"default_voice,omitempty"`
-	DefaultFormat  string     `json:"default_format"`
-	Voices         []TTSVoice `json:"voices"`
-	Formats        []string   `json:"formats"`
-	VoiceCloningURL string    `json:"voice_cloning_url,omitempty"`
+	Provider        string     `json:"provider"`
+	Model           string     `json:"model"`
+	DefaultVoice    string     `json:"default_voice,omitempty"`
+	DefaultFormat   string     `json:"default_format"`
+	Voices          []TTSVoice `json:"voices"`
+	Formats         []string   `json:"formats"`
+	VoiceCloningURL string     `json:"voice_cloning_url,omitempty"`
 }
 
 // GetTTSConfigEndpoint handles GET /api/tts/config.
@@ -49,38 +50,38 @@ func (e *GetTTSConfigEndpoint) RequiresInit() bool { return true }
 //	@Router			/api/tts/config [get]
 func (e *GetTTSConfigEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	client := svcctx.DefraClientFrom(ctx)
 	registry := svcctx.RegistryFrom(ctx)
-	if registry == nil {
-		writeError(w, http.StatusServiceUnavailable, "registry not initialized")
+
+	if client == nil || registry == nil {
+		writeError(w, http.StatusServiceUnavailable, "services not initialized")
 		return
 	}
 
-	// Get TTS provider from registry
+	// Get TTS provider from registry for model info
 	ttsProvider, err := registry.GetTTS(providers.DeepInfraTTSName)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "TTS provider not configured: "+err.Error())
 		return
 	}
 
-	// Cast to DeepInfraTTSClient to access ListVoices
 	deepInfraTTS, ok := ttsProvider.(*providers.DeepInfraTTSClient)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "unexpected TTS provider type")
 		return
 	}
 
-	// Fetch available voices from DeepInfra
-	var voices []TTSVoice
-	apiVoices, err := deepInfraTTS.ListVoices(ctx)
+	// Get voices from database (synced on startup)
+	var ttsVoices []TTSVoice
+	voiceList, err := voices.List(ctx, client)
 	if err != nil {
-		// Log error but don't fail - just return empty voices list
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
-			logger.Warn("failed to list TTS voices", "error", err)
+			logger.Warn("failed to list voices from DB", "error", err)
 		}
 	} else {
-		for _, v := range apiVoices {
-			voices = append(voices, TTSVoice{
+		for _, v := range voiceList {
+			ttsVoices = append(ttsVoices, TTSVoice{
 				VoiceID:     v.VoiceID,
 				Name:        v.Name,
 				Description: v.Description,
@@ -88,12 +89,21 @@ func (e *GetTTSConfigEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get default voice from database, fall back to provider config
+	defaultVoiceID := ""
+	defaultVoice, _ := voices.GetDefault(ctx, client)
+	if defaultVoice != nil {
+		defaultVoiceID = defaultVoice.VoiceID
+	} else if deepInfraTTS.Voice() != "" {
+		defaultVoiceID = deepInfraTTS.Voice()
+	}
+
 	resp := TTSConfigResponse{
 		Provider:        providers.DeepInfraTTSName,
 		Model:           deepInfraTTS.Model(),
-		DefaultVoice:    deepInfraTTS.Voice(),
+		DefaultVoice:    defaultVoiceID,
 		DefaultFormat:   deepInfraTTS.Format(),
-		Voices:          voices,
+		Voices:          ttsVoices,
 		Formats:         []string{"mp3", "wav", "opus", "flac"},
 		VoiceCloningURL: "https://deepinfra.com/ResembleAI/chatterbox/voice",
 	}

@@ -28,6 +28,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/prompts/metadata"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
+	"github.com/jackzampolin/shelf/internal/voices"
 	"github.com/jackzampolin/shelf/internal/server/endpoints"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 
@@ -224,6 +225,17 @@ func (s *Server) Start(ctx context.Context) error {
 	if err := s.promptResolver.SyncAll(ctx); err != nil {
 		_ = s.shutdown()
 		return fmt.Errorf("prompt seeding failed: %w", err)
+	}
+
+	// Sync TTS voices from providers
+	s.logger.Info("syncing TTS voices")
+	if err := voices.Sync(ctx, voices.SyncConfig{
+		Client:   s.defraClient,
+		Registry: s.registry,
+		Logger:   s.logger,
+	}); err != nil {
+		s.logger.Warn("voice sync failed", "error", err)
+		// Don't fail startup - voices are optional
 	}
 
 	// Create job manager

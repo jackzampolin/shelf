@@ -329,11 +329,24 @@ func createBookAudioRecord(ctx context.Context, client *defra.Client, state *Aud
 		return "", err
 	}
 
+	// Check for GraphQL errors
+	if errMsg := resp.Error(); errMsg != "" {
+		return "", fmt.Errorf("graphql error: %s", errMsg)
+	}
+
+	// Handle response - could be a single object or array
 	if created, ok := resp.Data["create_BookAudio"].(map[string]any); ok {
 		return getString(created, "_docID"), nil
 	}
 
-	return "", fmt.Errorf("no _docID in response")
+	// DefraDB mutations return arrays
+	if createdArr, ok := resp.Data["create_BookAudio"].([]any); ok && len(createdArr) > 0 {
+		if created, ok := createdArr[0].(map[string]any); ok {
+			return getString(created, "_docID"), nil
+		}
+	}
+
+	return "", fmt.Errorf("no _docID in response: %+v", resp.Data)
 }
 
 // JobFactory returns a factory function for recreating jobs from stored metadata.
