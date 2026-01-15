@@ -91,6 +91,9 @@ func init() {
 	booksCmd.AddCommand((&endpoints.GetAudioStatusEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.DownloadChapterAudioEndpoint{}).Command(getServerURL))
 
+	// TTS config at top level
+	apiCmd.AddCommand((&endpoints.GetTTSConfigEndpoint{}).Command(getServerURL))
+
 	// Settings as subcommand group
 	settingsCmd.AddCommand((&endpoints.ListSettingsEndpoint{}).Command(getServerURL))
 	settingsCmd.AddCommand((&endpoints.GetSettingEndpoint{}).Command(getServerURL))

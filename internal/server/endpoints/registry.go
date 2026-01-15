@@ -44,6 +44,9 @@ func All(cfg Config) []api.Endpoint {
 		&GetAudioStatusEndpoint{},
 		&DownloadChapterAudioEndpoint{},
 
+		// TTS configuration
+		&GetTTSConfigEndpoint{},
+
 		// Page endpoints
 		&PageImageEndpoint{},
 		&ListPagesEndpoint{},

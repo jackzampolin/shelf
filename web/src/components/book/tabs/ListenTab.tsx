@@ -38,6 +38,22 @@ interface GenerateResponse {
   provider: string
 }
 
+interface TTSVoice {
+  voice_id: string
+  name: string
+  description?: string
+}
+
+interface TTSConfig {
+  provider: string
+  model: string
+  default_voice?: string
+  default_format: string
+  voices: TTSVoice[]
+  formats: string[]
+  voice_cloning_url?: string
+}
+
 export function ListenTab({ bookId, book }: ListenTabProps) {
   const queryClient = useQueryClient()
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -45,6 +61,18 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [selectedVoice, setSelectedVoice] = useState<string>('')
+
+  // Fetch TTS config (voices, formats, etc.)
+  const { data: ttsConfig } = useQuery<TTSConfig>({
+    queryKey: ['tts-config'],
+    queryFn: async () => {
+      const res = await fetch('/api/tts/config')
+      if (!res.ok) throw new Error('Failed to fetch TTS config')
+      return res.json()
+    },
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  })
 
   // Fetch audio status
   const { data: audioStatus, isLoading, refetch } = useQuery<AudioStatus>({
@@ -65,9 +93,14 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
   // Generate audio mutation
   const generateMutation = useMutation({
     mutationFn: async () => {
+      const body: { voice?: string } = {}
+      if (selectedVoice) {
+        body.voice = selectedVoice
+      }
       const res = await fetch(`/api/books/${bookId}/generate/audio`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
         const error = await res.json()
@@ -177,6 +210,8 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
 
   // Not started state
   if (!audioStatus || audioStatus.status === 'not_started') {
+    const hasVoices = ttsConfig?.voices && ttsConfig.voices.length > 0
+
     return (
       <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
         <div className="text-6xl mb-4">🎧</div>
@@ -190,26 +225,72 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
             Book processing must complete before generating audio
           </div>
         ) : (
-          <button
-            onClick={() => generateMutation.mutate()}
-            disabled={generateMutation.isPending}
-            className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {generateMutation.isPending ? (
-              <>
-                <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full mr-2" />
-                Starting...
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Generate Audiobook
-              </>
+          <div className="space-y-4">
+            {/* Voice selection */}
+            {hasVoices && (
+              <div className="max-w-xs mx-auto">
+                <label htmlFor="voice-select" className="block text-sm font-medium text-gray-700 mb-1">
+                  Voice
+                </label>
+                <select
+                  id="voice-select"
+                  value={selectedVoice}
+                  onChange={(e) => setSelectedVoice(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Default voice</option>
+                  {ttsConfig.voices.map((voice) => (
+                    <option key={voice.voice_id} value={voice.voice_id}>
+                      {voice.name}{voice.description ? ` - ${voice.description}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
-          </button>
+
+            {/* No voices - show link to create */}
+            {!hasVoices && ttsConfig?.voice_cloning_url && (
+              <div className="text-sm text-gray-500 mb-2">
+                <a
+                  href={ttsConfig.voice_cloning_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 underline"
+                >
+                  Create a custom voice
+                </a>
+                {' '}to personalize your audiobook
+              </div>
+            )}
+
+            <button
+              onClick={() => generateMutation.mutate()}
+              disabled={generateMutation.isPending}
+              className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {generateMutation.isPending ? (
+                <>
+                  <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full mr-2" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Generate Audiobook
+                </>
+              )}
+            </button>
+
+            {/* Show provider info */}
+            {ttsConfig && (
+              <div className="text-xs text-gray-400 mt-2">
+                Using {ttsConfig.provider} ({ttsConfig.model})
+              </div>
+            )}
+          </div>
         )}
         {generateMutation.error && (
           <div className="mt-4 text-red-600 text-sm">

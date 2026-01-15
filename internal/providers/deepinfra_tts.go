@@ -347,5 +347,44 @@ func (c *DeepInfraTTSClient) Format() string {
 	return c.format
 }
 
+// Voice represents a TTS voice from DeepInfra.
+type Voice struct {
+	VoiceID     string `json:"voice_id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	CreatedAt   string `json:"created_at,omitempty"`
+}
+
+// ListVoices retrieves available voices from DeepInfra.
+func (c *DeepInfraTTSClient) ListVoices(ctx context.Context) ([]Voice, error) {
+	// Voices endpoint is at /v1/voices, not under /v1/openai
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.deepinfra.com/v1/voices", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to list voices (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Voices []Voice `json:"voices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Voices, nil
+}
+
 // Verify interface
 var _ TTSProvider = (*DeepInfraTTSClient)(nil)
