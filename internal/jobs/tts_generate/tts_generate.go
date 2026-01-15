@@ -3,6 +3,7 @@ package tts_generate
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
@@ -106,6 +107,14 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 		if err := loadExistingSegments(ctx, defraClient, bookID, state); err != nil {
 			return nil, fmt.Errorf("failed to load existing segments: %w", err)
 		}
+	} else {
+		// Create BookAudio record immediately so status endpoint can show "generating"
+		// This must happen before the job is submitted to avoid race with frontend polling
+		bookAudioID, err := createBookAudioRecord(ctx, defraClient, state)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create BookAudio record: %w", err)
+		}
+		state.BookAudioID = bookAudioID
 	}
 
 	if logger != nil {
@@ -281,6 +290,50 @@ func loadExistingSegments(ctx context.Context, client *defra.Client, bookID stri
 	}
 
 	return nil
+}
+
+// createBookAudioRecord creates a new BookAudio record with "generating" status.
+// This is called during NewJob() to ensure the status endpoint can show progress
+// immediately, avoiding race conditions with frontend polling.
+func createBookAudioRecord(ctx context.Context, client *defra.Client, state *AudioState) (string, error) {
+	format := state.Format
+	if format == "" {
+		format = "mp3"
+	}
+
+	mutation := fmt.Sprintf(`mutation {
+		create_BookAudio(input: {
+			book_id: "%s"
+			unique_key: "%s"
+			provider: "%s"
+			voice: "%s"
+			format: "%s"
+			status: "generating"
+			started_at: "%s"
+			chapter_count: %d
+		}) {
+			_docID
+		}
+	}`,
+		state.BookID,
+		state.BookID,
+		state.TTSProvider,
+		state.Voice,
+		format,
+		time.Now().UTC().Format(time.RFC3339),
+		len(state.Chapters),
+	)
+
+	resp, err := client.Execute(ctx, mutation, nil)
+	if err != nil {
+		return "", err
+	}
+
+	if created, ok := resp.Data["create_BookAudio"].(map[string]any); ok {
+		return getString(created, "_docID"), nil
+	}
+
+	return "", fmt.Errorf("no _docID in response")
 }
 
 // JobFactory returns a factory function for recreating jobs from stored metadata.

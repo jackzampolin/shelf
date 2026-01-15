@@ -348,60 +348,23 @@ func (j *Job) createConcatenateWorkUnit(chapterDocID string, chapterIdx int) job
 // Database operations
 
 func (j *Job) ensureBookAudioRecord(ctx context.Context, client *defra.Client) error {
-	if j.State.BookAudioID != "" {
-		// Update existing record
-		mutation := fmt.Sprintf(`mutation {
-			update_BookAudio(filter: {_docID: {_eq: "%s"}}, input: {
-				status: "generating"
-				started_at: "%s"
-			}) {
-				_docID
-			}
-		}`, j.State.BookAudioID, time.Now().UTC().Format(time.RFC3339))
-
-		_, err := client.Execute(ctx, mutation, nil)
-		return err
-	}
-
-	// Create new record
-	format := j.State.Format
-	if format == "" {
-		format = "mp3"
+	// BookAudioID is always set by NewJob() - either from existing record or newly created
+	// This just updates the started_at timestamp when the job actually starts running
+	if j.State.BookAudioID == "" {
+		return fmt.Errorf("BookAudioID not set - this should never happen")
 	}
 
 	mutation := fmt.Sprintf(`mutation {
-		create_BookAudio(input: {
-			book_id: "%s"
-			unique_key: "%s"
-			provider: "%s"
-			voice: "%s"
-			format: "%s"
+		update_BookAudio(filter: {_docID: {_eq: "%s"}}, input: {
 			status: "generating"
 			started_at: "%s"
-			chapter_count: %d
 		}) {
 			_docID
 		}
-	}`,
-		j.State.BookID,
-		j.State.BookID,
-		j.State.TTSProvider,
-		j.State.Voice,
-		format,
-		time.Now().UTC().Format(time.RFC3339),
-		len(j.State.Chapters),
-	)
+	}`, j.State.BookAudioID, time.Now().UTC().Format(time.RFC3339))
 
-	resp, err := client.Execute(ctx, mutation, nil)
-	if err != nil {
-		return err
-	}
-
-	if created, ok := resp.Data["create_BookAudio"].(map[string]any); ok {
-		j.State.BookAudioID = getString(created, "_docID")
-	}
-
-	return nil
+	_, err := client.Execute(ctx, mutation, nil)
+	return err
 }
 
 func (j *Job) saveAudioSegment(ctx context.Context, client *defra.Client, sink *defra.Sink, chapterDocID string, chapterIdx, paragraphIdx int, result *SegmentResult, sourceText string) (string, error) {
