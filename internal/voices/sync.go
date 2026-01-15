@@ -37,17 +37,23 @@ func Sync(ctx context.Context, cfg SyncConfig) error {
 		cfg.Logger = slog.Default()
 	}
 
-	// Get DeepInfra TTS provider
-	ttsProvider, err := cfg.Registry.GetTTS(providers.DeepInfraTTSName)
-	if err != nil {
-		cfg.Logger.Debug("TTS provider not configured, skipping voice sync", "error", err)
-		return nil // Not an error - TTS may not be configured
+	// Find any DeepInfra TTS provider (may be registered under different names like "chatterbox")
+	var deepInfraTTS *providers.DeepInfraTTSClient
+	var providerName string
+	for name, provider := range cfg.Registry.TTSProviders() {
+		if client, ok := provider.(*providers.DeepInfraTTSClient); ok {
+			deepInfraTTS = client
+			providerName = name
+			break
+		}
 	}
 
-	deepInfraTTS, ok := ttsProvider.(*providers.DeepInfraTTSClient)
-	if !ok {
-		return fmt.Errorf("unexpected TTS provider type: %T", ttsProvider)
+	if deepInfraTTS == nil {
+		cfg.Logger.Debug("no DeepInfra TTS provider configured, skipping voice sync")
+		return nil
 	}
+
+	cfg.Logger.Debug("found DeepInfra TTS provider", "name", providerName)
 
 	// Fetch voices from API
 	apiVoices, err := deepInfraTTS.ListVoices(ctx)

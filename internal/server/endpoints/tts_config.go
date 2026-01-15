@@ -58,16 +58,17 @@ func (e *GetTTSConfigEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get TTS provider from registry for model info
-	ttsProvider, err := registry.GetTTS(providers.DeepInfraTTSName)
-	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "TTS provider not configured: "+err.Error())
-		return
+	// Find DeepInfra TTS provider (may be registered under different names like "chatterbox")
+	var deepInfraTTS *providers.DeepInfraTTSClient
+	for _, provider := range registry.TTSProviders() {
+		if client, ok := provider.(*providers.DeepInfraTTSClient); ok {
+			deepInfraTTS = client
+			break
+		}
 	}
 
-	deepInfraTTS, ok := ttsProvider.(*providers.DeepInfraTTSClient)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "unexpected TTS provider type")
+	if deepInfraTTS == nil {
+		writeError(w, http.StatusServiceUnavailable, "TTS provider not configured")
 		return
 	}
 
