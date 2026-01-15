@@ -74,6 +74,12 @@ func CreateBlendWorkUnit(ctx context.Context, jc JobContext, pageNum int, state 
 	// Filter out garbage OCR (hallucinated repeated characters)
 	outputs = FilterOcrQuality(outputs, 1.75)
 
+	// If only one provider remains after filtering, no blending needed - use it directly
+	// Return special marker so caller can save it directly without LLM call
+	if len(outputs) == 1 {
+		return nil, "single:" + outputs[0].Text
+	}
+
 	unitID := uuid.New().String()
 
 	unit := blend.CreateWorkUnit(blend.Input{
@@ -96,6 +102,48 @@ func CreateBlendWorkUnit(ctx context.Context, jc JobContext, pageNum int, state 
 	}
 
 	return unit, unitID
+}
+
+// SaveBlendDirect saves OCR text directly as blend result (no LLM processing).
+// Used when only one provider's output remains after quality filtering.
+func SaveBlendDirect(ctx context.Context, state *PageState, text string) error {
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+
+	// Extract headings from the text (mechanical extraction, no LLM)
+	headings := ExtractHeadings(text)
+	var headingsJSON string
+	if len(headings) > 0 {
+		headingsBytes, err := json.Marshal(headings)
+		if err != nil {
+			return fmt.Errorf("failed to marshal headings: %w", err)
+		}
+		headingsJSON = string(headingsBytes)
+	}
+
+	// Build update document
+	update := map[string]any{
+		"blend_markdown": text,
+		"blend_complete": true,
+	}
+	if headingsJSON != "" {
+		update["headings"] = headingsJSON
+	}
+
+	// Fire-and-forget write
+	sink.Send(defra.WriteOp{
+		Collection: "Page",
+		DocID:      state.GetPageDocID(),
+		Document:   update,
+		Op:         defra.OpUpdate,
+	})
+
+	// Write-through: Update in-memory cache (thread-safe)
+	state.SetBlendResultWithHeadings(text, headings)
+
+	return nil
 }
 
 // SaveBlendResult parses the blend result, persists to DefraDB,
