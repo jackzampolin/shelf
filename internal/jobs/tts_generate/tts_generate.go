@@ -259,6 +259,7 @@ func loadExistingSegments(ctx context.Context, client *defra.Client, bookID stri
 	query := fmt.Sprintf(`{
 		AudioSegment(filter: {book_id: {_eq: "%s"}}) {
 			_docID
+			unique_key
 			chapter_id
 			chapter_idx
 			paragraph_idx
@@ -289,6 +290,17 @@ func loadExistingSegments(ctx context.Context, client *defra.Client, bookID stri
 		chapterIdx := getInt(segData, "chapter_idx")
 		paragraphIdx := getInt(segData, "paragraph_idx")
 
+		// If chapter_id is empty, extract from unique_key
+		// unique_key format: "{book_id}:{chapter_docid}:{paragraph_idx}"
+		if chapterDocID == "" {
+			if uniqueKey := getString(segData, "unique_key"); uniqueKey != "" {
+				parts := splitUniqueKey(uniqueKey)
+				if len(parts) >= 2 {
+					chapterDocID = parts[1]
+				}
+			}
+		}
+
 		// Mark this segment as complete in state
 		state.MarkSegmentComplete(chapterDocID, chapterIdx, paragraphIdx, &SegmentResult{
 			DocID:         getString(segData, "_docID"),
@@ -300,6 +312,22 @@ func loadExistingSegments(ctx context.Context, client *defra.Client, bookID stri
 	}
 
 	return nil
+}
+
+// splitUniqueKey splits a unique_key into its component parts.
+func splitUniqueKey(key string) []string {
+	var parts []string
+	start := 0
+	for i := 0; i < len(key); i++ {
+		if key[i] == ':' {
+			parts = append(parts, key[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(key) {
+		parts = append(parts, key[start:])
+	}
+	return parts
 }
 
 // createBookAudioRecord creates a new BookAudio record with "generating" status.
