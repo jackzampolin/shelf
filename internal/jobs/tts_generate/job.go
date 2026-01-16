@@ -140,7 +140,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		// Save audio file to disk (use DocID for stable paths)
 		format := j.State.Format
 		if format == "" {
-			format = "mp3"
+			format = "mp3_44100_128"
 		}
 		audioPath := j.State.HomeDir.SegmentAudioPath(
 			j.State.BookID, info.ChapterDocID, info.ParagraphIdx, format)
@@ -432,7 +432,7 @@ func (j *Job) saveAudioSegment(ctx context.Context, client *defra.Client, sink *
 	uniqueKey := fmt.Sprintf("%s:%s:%d", j.State.BookID, chapterDocID, paragraphIdx)
 	format := j.State.Format
 	if format == "" {
-		format = "mp3"
+		format = "mp3_44100_128"
 	}
 
 	// Truncate source text for storage (keep first 500 chars for debugging)
@@ -521,7 +521,7 @@ func (j *Job) saveChapterAudio(ctx context.Context, client *defra.Client, sink *
 	uniqueKey := fmt.Sprintf("%s:%s", j.State.BookID, chapterDocID)
 	format := j.State.Format
 	if format == "" {
-		format = "mp3"
+		format = "mp3_44100_128"
 	}
 
 	// Calculate totals
@@ -644,7 +644,7 @@ func (j *Job) updateBookAudioComplete(ctx context.Context, client *defra.Client,
 // This is called by the CPU worker pool when processing concatenation work units.
 func ConcatenateChapterAudio(ctx context.Context, bookID, chapterDocID string, homeDir *home.Dir, format string) (string, error) {
 	if format == "" {
-		format = "mp3"
+		format = "mp3_44100_128"
 	}
 
 	chapterDir := homeDir.ChapterAudioDir(bookID, chapterDocID)

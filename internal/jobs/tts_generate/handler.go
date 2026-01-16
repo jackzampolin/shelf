@@ -31,7 +31,7 @@ func ConcatenateHandler(homeDir *home.Dir) jobs.CPUTaskHandler {
 
 		format, _ := data["format"].(string)
 		if format == "" {
-			format = "mp3"
+			format = "mp3_44100_128"
 		}
 
 		outputPath, err := ConcatenateChapterAudio(ctx, bookID, chapterDocID, homeDir, format)
