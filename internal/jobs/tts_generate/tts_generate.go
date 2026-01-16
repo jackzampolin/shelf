@@ -101,9 +101,17 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 		HomeDir:     homeDir,
 	}
 
-	// If there's an existing BookAudio, load segment states
+	// If there's an existing BookAudio, load segment states and restore config
 	if existingAudio != nil {
 		state.BookAudioID = existingAudio.ID
+		// Restore voice and format from existing record if not provided in config
+		// This is critical for job resume - the voice must be persisted
+		if state.Voice == "" {
+			state.Voice = existingAudio.Voice
+		}
+		if state.Format == "" {
+			state.Format = existingAudio.Format
+		}
 		if err := loadExistingSegments(ctx, defraClient, bookID, state); err != nil {
 			return nil, fmt.Errorf("failed to load existing segments: %w", err)
 		}
