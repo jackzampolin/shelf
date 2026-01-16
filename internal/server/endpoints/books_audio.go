@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -406,35 +405,46 @@ func (e *DownloadChapterAudioEndpoint) handler(w http.ResponseWriter, r *http.Re
 	}
 
 	ctx := r.Context()
-	homeDir := svcctx.HomeFrom(ctx)
-	if homeDir == nil {
-		writeError(w, http.StatusServiceUnavailable, "home directory not configured")
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "defra client not initialized")
 		return
 	}
 
-	// Find audio file
-	audioDir := homeDir.BookAudioDir(bookID)
-	entries, err := os.ReadDir(audioDir)
+	// Query ChapterAudio by book_id and chapter_idx
+	query := fmt.Sprintf(`{
+		ChapterAudio(filter: {book_id: {_eq: "%s"}, chapter_idx: {_eq: %d}}) {
+			audio_file
+		}
+	}`, bookID, chapterIdx)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "no audio files found")
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query chapter audio: %v", err))
 		return
 	}
 
-	// Look for chapter file
-	chapterPrefix := fmt.Sprintf("chapter_%04d", chapterIdx)
-	var audioPath string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		if strings.HasPrefix(entry.Name(), chapterPrefix) {
-			audioPath = filepath.Join(audioDir, entry.Name())
-			break
-		}
+	records, ok := resp.Data["ChapterAudio"].([]any)
+	if !ok || len(records) == 0 {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("no audio record found for chapter %d", chapterIdx))
+		return
 	}
 
+	data, ok := records[0].(map[string]any)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "invalid chapter audio data")
+		return
+	}
+
+	audioPath := getString(data, "audio_file")
 	if audioPath == "" {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("audio file not found for chapter %d", chapterIdx))
+		return
+	}
+
+	// Verify file exists
+	if _, err := os.Stat(audioPath); os.IsNotExist(err) {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("audio file missing on disk: %s", audioPath))
 		return
 	}
 
