@@ -144,6 +144,52 @@ func DefaultEntries() []Entry {
 		},
 
 		// ===================
+		// TTS Providers
+		// ===================
+
+		// TTS Providers - ElevenLabs
+		{
+			Key:         "providers.tts.elevenlabs.type",
+			Value:       "elevenlabs",
+			Description: "TTS provider type for ElevenLabs",
+		},
+		{
+			Key:         "providers.tts.elevenlabs.model",
+			Value:       "eleven_turbo_v2_5",
+			Description: "Model name for ElevenLabs TTS (40k char limit, 50% cheaper)",
+		},
+		{
+			Key:         "providers.tts.elevenlabs.api_key",
+			Value:       "${ELEVENLABS_API_KEY}",
+			Description: "ElevenLabs API key (uses environment variable)",
+		},
+		{
+			Key:         "providers.tts.elevenlabs.rate_limit",
+			Value:       2.0,
+			Description: "Rate limit in requests per second for ElevenLabs",
+		},
+		{
+			Key:         "providers.tts.elevenlabs.enabled",
+			Value:       true,
+			Description: "Whether ElevenLabs TTS provider is enabled",
+		},
+		{
+			Key:         "providers.tts.elevenlabs.format",
+			Value:       "mp3_44100_128",
+			Description: "Default audio output format",
+		},
+		{
+			Key:         "providers.tts.elevenlabs.stability",
+			Value:       0.5,
+			Description: "Voice stability (0-1)",
+		},
+		{
+			Key:         "providers.tts.elevenlabs.similarity",
+			Value:       0.75,
+			Description: "Similarity boost (0-1)",
+		},
+
+		// ===================
 		// Pipeline Defaults
 		// ===================
 		{
@@ -155,6 +201,11 @@ func DefaultEntries() []Entry {
 			Key:         "defaults.llm_provider",
 			Value:       "openrouter",
 			Description: "Default LLM provider used for all pipeline stages (blend, label, metadata, toc, structure)",
+		},
+		{
+			Key:         "defaults.tts_provider",
+			Value:       "elevenlabs",
+			Description: "Default TTS provider for audiobook generation",
 		},
 		{
 			Key:         "defaults.debug_agents",

@@ -35,6 +35,25 @@ func All(cfg Config) []api.Endpoint {
 		&GetBookChaptersEndpoint{},
 		&RerunTocEndpoint{},
 
+		// Export endpoints
+		&ExportEpubEndpoint{},
+		&DownloadEpubEndpoint{},
+
+		// Audio endpoints
+		&GenerateAudioEndpoint{},
+		&GetAudioStatusEndpoint{},
+		&DownloadChapterAudioEndpoint{},
+
+		// TTS configuration
+		&GetTTSConfigEndpoint{},
+
+		// Voice endpoints
+		&ListVoicesEndpoint{},
+		&CreateVoiceEndpoint{},
+		&SyncVoicesEndpoint{},
+		&SetDefaultVoiceEndpoint{},
+		&DeleteVoiceEndpoint{},
+
 		// Page endpoints
 		&PageImageEndpoint{},
 		&ListPagesEndpoint{},
@@ -115,5 +134,17 @@ func LLMCallCommands() []api.Endpoint {
 		&ListLLMCallsEndpoint{},
 		&GetLLMCallEndpoint{},
 		&LLMCallCountsEndpoint{},
+	}
+}
+
+// VoiceCommands returns endpoints for voice management operations.
+// This groups voice-related commands under "voices" subcommand.
+func VoiceCommands() []api.Endpoint {
+	return []api.Endpoint{
+		&ListVoicesEndpoint{},
+		&CreateVoiceEndpoint{},
+		&SyncVoicesEndpoint{},
+		&SetDefaultVoiceEndpoint{},
+		&DeleteVoiceEndpoint{},
 	}
 }

@@ -54,7 +54,8 @@ type OperationState = common.OperationState
 const MaxBookOpRetries = 3
 
 // MaxPageOpRetries is the maximum number of retries for page-level operations.
-const MaxPageOpRetries = 3
+// Set higher (10) to handle transient failures on difficult pages (maps, images).
+const MaxPageOpRetries = 10
 
 // WorkUnitType constants for type-safe work unit handling.
 const (

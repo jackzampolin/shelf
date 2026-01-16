@@ -97,6 +97,28 @@ func (d *Dir) EnsureSourceImagesDir(bookID string) error {
 	return os.MkdirAll(d.SourceImagesDir(bookID), 0o755)
 }
 
+// ExtractedImagesDir returns the directory for images extracted from pages.
+// These are images detected within page content (maps, illustrations, etc.).
+func (d *Dir) ExtractedImagesDir(bookID string) string {
+	return filepath.Join(d.path, "extracted_images", bookID)
+}
+
+// PageExtractedImagesDir returns the directory for images from a specific page.
+func (d *Dir) PageExtractedImagesDir(bookID string, pageNum int) string {
+	return filepath.Join(d.ExtractedImagesDir(bookID), fmt.Sprintf("page_%04d", pageNum))
+}
+
+// ExtractedImagePath returns the path for a specific extracted image.
+// imageID is the Mistral image ID (e.g., "img-0.jpeg").
+func (d *Dir) ExtractedImagePath(bookID string, pageNum int, imageID string) string {
+	return filepath.Join(d.PageExtractedImagesDir(bookID, pageNum), imageID)
+}
+
+// EnsurePageExtractedImagesDir creates the directory for a page's extracted images.
+func (d *Dir) EnsurePageExtractedImagesDir(bookID string, pageNum int) error {
+	return os.MkdirAll(d.PageExtractedImagesDir(bookID, pageNum), 0o755)
+}
+
 // OriginalsDir returns the directory for original PDF files of a book.
 func (d *Dir) OriginalsDir(bookID string) string {
 	return filepath.Join(d.SourceImagesDir(bookID), "originals")
@@ -105,4 +127,75 @@ func (d *Dir) OriginalsDir(bookID string) string {
 // EnsureOriginalsDir creates the originals directory for a book's PDFs.
 func (d *Dir) EnsureOriginalsDir(bookID string) error {
 	return os.MkdirAll(d.OriginalsDir(bookID), 0o755)
+}
+
+// ExportsDir returns the directory for exported files (epub, etc.).
+func (d *Dir) ExportsDir() string {
+	return filepath.Join(d.path, "exports")
+}
+
+// AudioDir returns the directory for generated audio files.
+func (d *Dir) AudioDir() string {
+	return filepath.Join(d.path, "audio")
+}
+
+// BookAudioDir returns the audio directory for a specific book.
+func (d *Dir) BookAudioDir(bookID string) string {
+	return filepath.Join(d.AudioDir(), bookID)
+}
+
+// ChapterAudioDir returns the directory for a chapter's audio segments.
+// Uses chapter DocID for stable linking that survives reordering.
+func (d *Dir) ChapterAudioDir(bookID, chapterDocID string) string {
+	return filepath.Join(d.BookAudioDir(bookID), chapterDocID)
+}
+
+// SegmentAudioPath returns the path for a paragraph audio segment.
+// Uses chapter DocID for stable linking.
+func (d *Dir) SegmentAudioPath(bookID, chapterDocID string, paragraphIdx int, format string) string {
+	return filepath.Join(
+		d.ChapterAudioDir(bookID, chapterDocID),
+		fmt.Sprintf("segment_%04d.%s", paragraphIdx, formatToExtension(format)),
+	)
+}
+
+// ChapterAudioPath returns the path for a concatenated chapter audio file.
+// Uses chapter DocID for stable linking.
+func (d *Dir) ChapterAudioPath(bookID, chapterDocID, format string) string {
+	return filepath.Join(
+		d.BookAudioDir(bookID),
+		fmt.Sprintf("%s.%s", chapterDocID, formatToExtension(format)),
+	)
+}
+
+// formatToExtension extracts the file extension from an ElevenLabs format string.
+// e.g., "mp3_44100_128" -> "mp3", "wav_44100" -> "wav", "pcm_16000" -> "wav"
+func formatToExtension(format string) string {
+	if format == "" {
+		return "mp3"
+	}
+	// Extract container format (before first underscore)
+	for i, c := range format {
+		if c == '_' {
+			ext := format[:i]
+			// PCM/ulaw/alaw are raw formats, use wav extension
+			if ext == "pcm" || ext == "ulaw" || ext == "alaw" {
+				return "wav"
+			}
+			return ext
+		}
+	}
+	// No underscore, use as-is (legacy format like "mp3")
+	return format
+}
+
+// EnsureBookAudioDir creates the audio directory for a book.
+func (d *Dir) EnsureBookAudioDir(bookID string) error {
+	return os.MkdirAll(d.BookAudioDir(bookID), 0o755)
+}
+
+// EnsureChapterAudioDir creates the audio directory for a chapter.
+// Uses chapter DocID for stable linking.
+func (d *Dir) EnsureChapterAudioDir(bookID, chapterDocID string) error {
+	return os.MkdirAll(d.ChapterAudioDir(bookID, chapterDocID), 0o755)
 }

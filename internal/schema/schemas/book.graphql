@@ -73,4 +73,12 @@ type Book {
     chapters: [Chapter]
     # One-to-many: Book has many AgentStates (for job resume)
     agent_states: [AgentState]
+
+    # Audio relationships (for TTS audiobook generation)
+    # One-to-many: Book has many AudioSegments
+    audio_segments: [AudioSegment]
+    # One-to-many: Book has many ChapterAudios
+    chapter_audios: [ChapterAudio]
+    # One-to-one: Book has one BookAudio
+    book_audio: BookAudio @primary
 }

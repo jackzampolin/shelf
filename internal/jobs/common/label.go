@@ -172,6 +172,7 @@ func CreateLabelWorkUnit(ctx context.Context, jc JobContext, pageNum int, state 
 
 	unit.Metrics = &jobs.WorkUnitMetrics{
 		BookID:    book.BookID,
+		PageID:    state.GetPageDocID(),
 		Stage:     "label",
 		ItemKey:   fmt.Sprintf("page_%04d_label", pageNum),
 		PromptKey: label.SystemPromptKey,

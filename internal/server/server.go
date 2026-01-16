@@ -18,6 +18,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobcfg"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
+	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
 	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/prompts"
@@ -27,6 +28,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/prompts/metadata"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
+	"github.com/jackzampolin/shelf/internal/voices"
 	"github.com/jackzampolin/shelf/internal/server/endpoints"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 
@@ -225,6 +227,17 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("prompt seeding failed: %w", err)
 	}
 
+	// Sync TTS voices from providers
+	s.logger.Info("syncing TTS voices")
+	if err := voices.Sync(ctx, voices.SyncConfig{
+		Client:   s.defraClient,
+		Registry: s.registry,
+		Logger:   s.logger,
+	}); err != nil {
+		s.logger.Warn("voice sync failed", "error", err)
+		// Don't fail startup - voices are optional
+	}
+
 	// Create job manager
 	s.jobManager = jobs.NewManager(s.defraClient, s.logger)
 
@@ -253,10 +266,12 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Register CPU task handlers
 	s.scheduler.RegisterCPUHandler(ingest.TaskExtractPage, ingest.ExtractPageHandler())
+	s.scheduler.RegisterCPUHandler(tts_generate.TaskConcatenateChapter, tts_generate.ConcatenateHandler(s.home))
 
 	// Register job factories for resumption
 	// These factories read config from DefraDB, so resumed jobs use current settings
 	s.scheduler.RegisterFactory(process_book.JobType, jobcfg.ProcessBookJobFactory(s.configStore))
+	s.scheduler.RegisterFactory(tts_generate.JobType, jobcfg.TTSJobFactory(s.configStore))
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)

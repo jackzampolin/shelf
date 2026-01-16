@@ -45,6 +45,7 @@ func (cm *Manager) initViper(cfgFile string) error {
 	defaults := DefaultConfig()
 	viper.SetDefault("ocr_providers", defaults.OCRProviders)
 	viper.SetDefault("llm_providers", defaults.LLMProviders)
+	viper.SetDefault("tts_providers", defaults.TTSProviders)
 	viper.SetDefault("defaults", defaults.Defaults)
 	viper.SetDefault("defra", defaults.Defra)
 
@@ -135,15 +136,17 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 	cfg := providers.RegistryConfig{
 		OCRProviders: make(map[string]providers.OCRProviderConfig),
 		LLMProviders: make(map[string]providers.LLMProviderConfig),
+		TTSProviders: make(map[string]providers.TTSProviderConfig),
 	}
 
 	for name, ocr := range c.OCRProviders {
 		cfg.OCRProviders[name] = providers.OCRProviderConfig{
-			Type:      ocr.Type,
-			Model:     ocr.Model,
-			APIKey:    ResolveEnvVars(ocr.APIKey),
-			RateLimit: ocr.RateLimit,
-			Enabled:   ocr.Enabled,
+			Type:          ocr.Type,
+			Model:         ocr.Model,
+			APIKey:        ResolveEnvVars(ocr.APIKey),
+			RateLimit:     ocr.RateLimit,
+			Enabled:       ocr.Enabled,
+			IncludeImages: ocr.IncludeImages,
 		}
 	}
 
@@ -154,6 +157,22 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 			APIKey:    ResolveEnvVars(llm.APIKey),
 			RateLimit: llm.RateLimit,
 			Enabled:   llm.Enabled,
+		}
+	}
+
+	for name, tts := range c.TTSProviders {
+		cfg.TTSProviders[name] = providers.TTSProviderConfig{
+			Type:       tts.Type,
+			Model:      tts.Model,
+			Voice:      tts.Voice,
+			Format:     tts.Format,
+			APIKey:     ResolveEnvVars(tts.APIKey),
+			RateLimit:  tts.RateLimit,
+			Stability:  tts.Stability,
+			Similarity: tts.Similarity,
+			Style:      tts.Style,
+			Speed:      tts.Speed,
+			Enabled:    tts.Enabled,
 		}
 	}
 

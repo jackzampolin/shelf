@@ -1,0 +1,112 @@
+type AudioSegment {
+    # Many-to-one: AudioSegment belongs to Book
+    # Note: DefraDB auto-creates book_id field of type ID for this relationship
+    book: Book
+
+    # Many-to-one: AudioSegment belongs to Chapter
+    # Note: DefraDB auto-creates chapter_id field of type ID for this relationship
+    chapter: Chapter
+
+    # Unique key for upsert support (preserves DocID/CID history on re-run)
+    # Format: "{book_id}:{chapter_idx}:{paragraph_idx}"
+    unique_key: String @index
+
+    # Position identifiers
+    chapter_idx: Int
+    paragraph_idx: Int
+    text_ref: String
+
+    # Audio file reference
+    audio_file: String
+
+    # Audio metadata
+    duration_ms: Int
+    start_offset_ms: Int
+    format: String
+    sample_rate: Int
+
+    # Source text (for debugging/verification)
+    source_text: String
+    char_count: Int
+
+    # Cost tracking
+    cost_usd: Float
+
+    # Processing state
+    created_at: DateTime
+    generation_time_ms: Int
+}
+
+type ChapterAudio {
+    # Many-to-one: ChapterAudio belongs to Book
+    # Note: DefraDB auto-creates book_id field of type ID for this relationship
+    book: Book
+
+    # Many-to-one: ChapterAudio belongs to Chapter
+    # Note: DefraDB auto-creates chapter_id field of type ID for this relationship
+    chapter: Chapter
+
+    # Many-to-one: ChapterAudio belongs to BookAudio
+    # Note: DefraDB auto-creates book_audio_id field of type ID for this relationship
+    book_audio: BookAudio
+
+    # Unique key for upsert support (preserves DocID/CID history on re-run)
+    # Format: "{book_id}:{chapter_idx}"
+    unique_key: String @index
+
+    # Position identifier
+    chapter_idx: Int
+
+    # Audio file reference (concatenated chapter audio)
+    audio_file: String
+
+    # Audio metadata
+    duration_ms: Int
+    format: String
+    sample_rate: Int
+
+    # Segment tracking
+    segment_count: Int
+    total_char_count: Int
+
+    # Cost tracking (sum of all segments)
+    total_cost_usd: Float
+
+    # Processing state
+    created_at: DateTime
+    generation_time_ms: Int
+}
+
+type BookAudio {
+    # One-to-one: BookAudio belongs to Book
+    # Note: DefraDB auto-creates book_id field of type ID for this relationship
+    book: Book
+
+    # Unique key for upsert support (preserves DocID/CID history on re-run)
+    # Format: "{book_id}"
+    unique_key: String @index
+
+    # TTS configuration used
+    provider: String
+    model: String
+    voice: String
+    format: String
+
+    # Audio metadata
+    total_duration_ms: Int
+    chapter_count: Int
+    segment_count: Int
+    total_char_count: Int
+
+    # Cost tracking
+    total_cost_usd: Float
+
+    # Processing state
+    status: String
+    started_at: DateTime
+    completed_at: DateTime
+    error_message: String
+
+    # One-to-many: BookAudio has many ChapterAudio
+    chapter_audios: [ChapterAudio]
+}

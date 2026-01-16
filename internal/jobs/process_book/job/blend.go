@@ -3,14 +3,30 @@ package job
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateBlendWorkUnit creates a blend LLM work unit.
-func (j *Job) CreateBlendWorkUnit(ctx context.Context, pageNum int, state *PageState) *jobs.WorkUnit {
+// Returns nil if blend was handled directly (single provider after filtering).
+func (j *Job) CreateBlendWorkUnit(ctx context.Context, pageNum int, state *common.PageState) *jobs.WorkUnit {
 	unit, unitID := common.CreateBlendWorkUnit(ctx, j, pageNum, state)
+
+	// Handle single-provider case: no LLM blend needed, save directly
+	if unit == nil && strings.HasPrefix(unitID, "single:") {
+		text := strings.TrimPrefix(unitID, "single:")
+		if err := common.SaveBlendDirect(ctx, state, text); err != nil {
+			logger := svcctx.LoggerFrom(ctx)
+			if logger != nil {
+				logger.Error("failed to save direct blend", "page_num", pageNum, "error", err)
+			}
+		}
+		return nil
+	}
+
 	if unit != nil {
 		j.RegisterWorkUnit(unitID, WorkUnitInfo{
 			PageNum:  pageNum,

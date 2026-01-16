@@ -48,6 +48,11 @@ var llmcallsCmd = &cobra.Command{
 	Short: "LLM call history commands",
 }
 
+var voicesCmd = &cobra.Command{
+	Use:   "voices",
+	Short: "TTS voice management commands",
+}
+
 // getServerURL returns the server URL at runtime (after flag parsing).
 func getServerURL() string {
 	return serverURL
@@ -86,6 +91,14 @@ func init() {
 	// Add book cost to books group
 	booksCmd.AddCommand((&endpoints.BookCostEndpoint{}).Command(getServerURL))
 
+	// Audio commands
+	booksCmd.AddCommand((&endpoints.GenerateAudioEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.GetAudioStatusEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.DownloadChapterAudioEndpoint{}).Command(getServerURL))
+
+	// TTS config at top level
+	apiCmd.AddCommand((&endpoints.GetTTSConfigEndpoint{}).Command(getServerURL))
+
 	// Settings as subcommand group
 	settingsCmd.AddCommand((&endpoints.ListSettingsEndpoint{}).Command(getServerURL))
 	settingsCmd.AddCommand((&endpoints.GetSettingEndpoint{}).Command(getServerURL))
@@ -97,10 +110,18 @@ func init() {
 	llmcallsCmd.AddCommand((&endpoints.GetLLMCallEndpoint{}).Command(getServerURL))
 	llmcallsCmd.AddCommand((&endpoints.LLMCallCountsEndpoint{}).Command(getServerURL))
 
+	// Voices as subcommand group
+	voicesCmd.AddCommand((&endpoints.ListVoicesEndpoint{}).Command(getServerURL))
+	voicesCmd.AddCommand((&endpoints.CreateVoiceEndpoint{}).Command(getServerURL))
+	voicesCmd.AddCommand((&endpoints.SyncVoicesEndpoint{}).Command(getServerURL))
+	voicesCmd.AddCommand((&endpoints.SetDefaultVoiceEndpoint{}).Command(getServerURL))
+	voicesCmd.AddCommand((&endpoints.DeleteVoiceEndpoint{}).Command(getServerURL))
+
 	apiCmd.AddCommand(jobsCmd)
 	apiCmd.AddCommand(booksCmd)
 	apiCmd.AddCommand(metricsCmd)
 	apiCmd.AddCommand(settingsCmd)
 	apiCmd.AddCommand(llmcallsCmd)
+	apiCmd.AddCommand(voicesCmd)
 	rootCmd.AddCommand(apiCmd)
 }

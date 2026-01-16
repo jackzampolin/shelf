@@ -71,6 +71,8 @@ func (s *Scheduler) findPool(unit *WorkUnit) WorkerPool {
 			targetType := PoolTypeLLM
 			if unit.Type == WorkUnitTypeOCR {
 				targetType = PoolTypeOCR
+			} else if unit.Type == WorkUnitTypeTTS {
+				targetType = PoolTypeTTS
 			}
 			if p.Type() == targetType {
 				return p
@@ -83,6 +85,8 @@ func (s *Scheduler) findPool(unit *WorkUnit) WorkerPool {
 	targetType := PoolTypeLLM
 	if unit.Type == WorkUnitTypeOCR {
 		targetType = PoolTypeOCR
+	} else if unit.Type == WorkUnitTypeTTS {
+		targetType = PoolTypeTTS
 	}
 
 	for _, p := range s.pools {

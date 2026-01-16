@@ -12,6 +12,7 @@ type PoolType string
 const (
 	PoolTypeLLM PoolType = "llm"
 	PoolTypeOCR PoolType = "ocr"
+	PoolTypeTTS PoolType = "tts"
 	PoolTypeCPU PoolType = "cpu"
 )
 

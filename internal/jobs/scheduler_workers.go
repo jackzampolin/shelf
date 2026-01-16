@@ -91,9 +91,35 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 		s.RegisterPool(pool)
 	}
 
+	// Create pools from TTS providers
+	for name, provider := range registry.TTSProviders() {
+		if runHealthChecks {
+			if err := provider.HealthCheck(ctx); err != nil {
+				s.logger.Warn("TTS provider health check failed",
+					"name", name,
+					"error", err,
+				)
+			} else {
+				s.logger.Info("TTS provider health check passed", "name", name)
+			}
+		}
+
+		pool, err := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+			Name:        name,
+			TTSProvider: provider,
+			Logger:      s.logger,
+			Sink:        s.sink,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create TTS pool %s: %w", name, err)
+		}
+		s.RegisterPool(pool)
+	}
+
 	s.logger.Info("initialized pools from registry",
 		"llm_pools", len(registry.LLMClients()),
 		"ocr_pools", len(registry.OCRProviders()),
+		"tts_pools", len(registry.TTSProviders()),
 	)
 
 	return nil

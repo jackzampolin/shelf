@@ -1,0 +1,20 @@
+type Voice {
+    # External voice ID from the provider (e.g., ElevenLabs voice ID)
+    voice_id: String @index(unique: true)
+
+    # Display name
+    name: String
+
+    # Optional description
+    description: String
+
+    # Provider this voice belongs to (e.g., "elevenlabs")
+    provider: String @index
+
+    # Whether this is the default voice for TTS
+    is_default: Boolean
+
+    # Timestamps
+    created_at: DateTime
+    synced_at: DateTime
+}

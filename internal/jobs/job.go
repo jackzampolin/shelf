@@ -32,13 +32,14 @@ type WorkUnitType string
 const (
 	WorkUnitTypeLLM WorkUnitType = "llm"
 	WorkUnitTypeOCR WorkUnitType = "ocr"
+	WorkUnitTypeTTS WorkUnitType = "tts"
 	WorkUnitTypeCPU WorkUnitType = "cpu" // CPU-bound work (no rate limiting)
 )
 
 // WorkUnit is a single unit of work for a provider.
 type WorkUnit struct {
 	ID       string       // Unique identifier for this work unit
-	Type     WorkUnitType // "llm", "ocr", or "cpu"
+	Type     WorkUnitType // "llm", "ocr", "tts", or "cpu"
 	Provider string       // Specific provider name, or "" for any of this type
 	JobID    string       // Which job this belongs to
 	Priority int          // Higher = processed first
@@ -46,6 +47,7 @@ type WorkUnit struct {
 	// Request data (one of these will be set based on Type)
 	ChatRequest *providers.ChatRequest
 	OCRRequest  *OCRWorkRequest
+	TTSRequest  *TTSWorkRequest
 	CPURequest  *CPUWorkRequest
 
 	// Tools for LLM calls (optional - if set, ChatWithTools is used)
@@ -72,6 +74,19 @@ type OCRWorkRequest struct {
 	PageNum int
 }
 
+// TTSWorkRequest contains the data needed for a TTS work unit.
+type TTSWorkRequest struct {
+	Text         string // Text to convert to speech
+	Voice        string // Voice ID or name (provider-specific)
+	Format       string // Output format (mp3, wav, etc.)
+	ChapterIdx   int    // Chapter index for reference
+	ParagraphIdx int    // Paragraph index within chapter
+
+	// Request stitching for prosody continuity (ElevenLabs).
+	// Pass up to 3 previous request IDs from prior segments in this chapter.
+	PreviousRequestIDs []string
+}
+
 // CPUWorkRequest contains the data needed for a CPU-bound work unit.
 // The Task field identifies what kind of CPU work this is.
 type CPUWorkRequest struct {
@@ -88,6 +103,7 @@ type WorkResult struct {
 	// Result data (one of these will be set based on work unit type)
 	ChatResult *providers.ChatResult
 	OCRResult  *providers.OCRResult
+	TTSResult  *providers.TTSResult
 	CPUResult  *CPUWorkResult
 }
 
