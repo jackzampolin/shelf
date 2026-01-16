@@ -91,14 +91,15 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 
 	// Create job state
 	state := &AudioState{
-		BookID:      bookID,
-		Title:       getString(bookData, "title"),
-		Author:      getString(bookData, "author"),
-		Chapters:    chapters,
-		TTSProvider: cfg.TTSProvider,
-		Voice:       cfg.Voice,
-		Format:      cfg.Format,
-		HomeDir:     homeDir,
+		BookID:          bookID,
+		Title:           getString(bookData, "title"),
+		Author:          getString(bookData, "author"),
+		Chapters:        chapters,
+		TTSProvider:     cfg.TTSProvider,
+		Voice:           cfg.Voice,
+		Format:          cfg.Format,
+		HomeDir:         homeDir,
+		ChapterProgress: make(map[string]*ChapterProgress),
 	}
 
 	// If there's an existing BookAudio, load segment states and restore config
