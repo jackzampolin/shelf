@@ -155,7 +155,7 @@ func (d *Dir) ChapterAudioDir(bookID, chapterDocID string) string {
 func (d *Dir) SegmentAudioPath(bookID, chapterDocID string, paragraphIdx int, format string) string {
 	return filepath.Join(
 		d.ChapterAudioDir(bookID, chapterDocID),
-		fmt.Sprintf("segment_%04d.%s", paragraphIdx, format),
+		fmt.Sprintf("segment_%04d.%s", paragraphIdx, formatToExtension(format)),
 	)
 }
 
@@ -164,8 +164,29 @@ func (d *Dir) SegmentAudioPath(bookID, chapterDocID string, paragraphIdx int, fo
 func (d *Dir) ChapterAudioPath(bookID, chapterDocID, format string) string {
 	return filepath.Join(
 		d.BookAudioDir(bookID),
-		fmt.Sprintf("%s.%s", chapterDocID, format),
+		fmt.Sprintf("%s.%s", chapterDocID, formatToExtension(format)),
 	)
+}
+
+// formatToExtension extracts the file extension from an ElevenLabs format string.
+// e.g., "mp3_44100_128" -> "mp3", "wav_44100" -> "wav", "pcm_16000" -> "wav"
+func formatToExtension(format string) string {
+	if format == "" {
+		return "mp3"
+	}
+	// Extract container format (before first underscore)
+	for i, c := range format {
+		if c == '_' {
+			ext := format[:i]
+			// PCM/ulaw/alaw are raw formats, use wav extension
+			if ext == "pcm" || ext == "ulaw" || ext == "alaw" {
+				return "wav"
+			}
+			return ext
+		}
+	}
+	// No underscore, use as-is (legacy format like "mp3")
+	return format
 }
 
 // EnsureBookAudioDir creates the audio directory for a book.
