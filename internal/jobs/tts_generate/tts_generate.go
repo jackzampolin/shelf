@@ -110,7 +110,7 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 			state.Voice = existingAudio.Voice
 		}
 		if state.Format == "" {
-			state.Format = existingAudio.Format
+			state.Format = normalizeFormat(existingAudio.Format)
 		}
 		if err := loadExistingSegments(ctx, defraClient, bookID, state); err != nil {
 			return nil, fmt.Errorf("failed to load existing segments: %w", err)
@@ -400,4 +400,19 @@ func sortChapters(chapters []*Chapter) {
 			}
 		}
 	}
+}
+
+// normalizeFormat ensures the format is a valid ElevenLabs format string.
+// ElevenLabs requires full format specification (e.g., mp3_44100_128) not just container (mp3).
+func normalizeFormat(format string) string {
+	if format == "" || format == "mp3" {
+		return "mp3_44100_128"
+	}
+	if format == "wav" {
+		return "wav_44100"
+	}
+	if format == "pcm" {
+		return "pcm_44100"
+	}
+	return format
 }
