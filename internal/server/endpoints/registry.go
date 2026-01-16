@@ -38,6 +38,8 @@ func All(cfg Config) []api.Endpoint {
 		// Export endpoints
 		&ExportEpubEndpoint{},
 		&DownloadEpubEndpoint{},
+		&ExportStorytellerEndpoint{},
+		&DownloadStorytellerEndpoint{},
 
 		// Audio endpoints
 		&GenerateAudioEndpoint{},

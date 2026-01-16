@@ -96,6 +96,12 @@ func init() {
 	booksCmd.AddCommand((&endpoints.GetAudioStatusEndpoint{}).Command(getServerURL))
 	booksCmd.AddCommand((&endpoints.DownloadChapterAudioEndpoint{}).Command(getServerURL))
 
+	// Export commands
+	booksCmd.AddCommand((&endpoints.ExportEpubEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.DownloadEpubEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.ExportStorytellerEndpoint{}).Command(getServerURL))
+	booksCmd.AddCommand((&endpoints.DownloadStorytellerEndpoint{}).Command(getServerURL))
+
 	// TTS config at top level
 	apiCmd.AddCommand((&endpoints.GetTTSConfigEndpoint{}).Command(getServerURL))
 

@@ -46,6 +46,12 @@ func (b *Builder) generateChapterXHTML(ch Chapter) string {
 // markdownToXHTML converts markdown-formatted text to XHTML.
 // This is a simple converter that handles the common cases from polished text.
 func markdownToXHTML(md string, ch Chapter) string {
+	return markdownToXHTMLWithIDs(md, ch, false)
+}
+
+// markdownToXHTMLWithIDs converts markdown to XHTML with optional paragraph IDs for Media Overlays.
+// When withIDs is true, paragraphs get id="p0", id="p1", etc. for SMIL references.
+func markdownToXHTMLWithIDs(md string, ch Chapter, withIDs bool) string {
 	if md == "" {
 		return fmt.Sprintf("<h1>%s</h1>\n", escapeXML(ch.Title))
 	}
@@ -53,6 +59,7 @@ func markdownToXHTML(md string, ch Chapter) string {
 	lines := strings.Split(md, "\n")
 	var result strings.Builder
 	var inParagraph bool
+	paragraphIdx := 0
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -104,7 +111,12 @@ func markdownToXHTML(md string, ch Chapter) string {
 				result.WriteString("</p>\n")
 				inParagraph = false
 			}
-			result.WriteString("<blockquote><p>")
+			if withIDs {
+				result.WriteString(fmt.Sprintf("<blockquote><p id=\"p%d\">", paragraphIdx))
+				paragraphIdx++
+			} else {
+				result.WriteString("<blockquote><p>")
+			}
 			result.WriteString(processInlineFormatting(strings.TrimPrefix(trimmed, "> ")))
 			result.WriteString("</p></blockquote>\n")
 			continue
@@ -122,13 +134,23 @@ func markdownToXHTML(md string, ch Chapter) string {
 
 		// Regular paragraph text
 		if !inParagraph {
-			result.WriteString("<p>")
+			if withIDs {
+				result.WriteString(fmt.Sprintf("<p id=\"p%d\">", paragraphIdx))
+				paragraphIdx++
+			} else {
+				result.WriteString("<p>")
+			}
 			inParagraph = true
 		} else {
 			// Check if this looks like a new paragraph (starts with capital after sentence end)
 			// or continuation of current paragraph
 			if i > 0 && shouldStartNewParagraph(lines[i-1], trimmed) {
-				result.WriteString("</p>\n<p>")
+				if withIDs {
+					result.WriteString(fmt.Sprintf("</p>\n<p id=\"p%d\">", paragraphIdx))
+					paragraphIdx++
+				} else {
+					result.WriteString("</p>\n<p>")
+				}
 			} else {
 				result.WriteString(" ")
 			}
