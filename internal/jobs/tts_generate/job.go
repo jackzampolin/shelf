@@ -647,6 +647,9 @@ func ConcatenateChapterAudio(ctx context.Context, bookID, chapterDocID string, h
 		format = "mp3_44100_128"
 	}
 
+	// Extract container extension from format (e.g., "mp3" from "mp3_44100_128")
+	ext := formatToExtension(format)
+
 	chapterDir := homeDir.ChapterAudioDir(bookID, chapterDocID)
 	outputPath := homeDir.ChapterAudioPath(bookID, chapterDocID, format)
 
@@ -662,7 +665,7 @@ func ConcatenateChapterAudio(ctx context.Context, bookID, chapterDocID string, h
 			continue
 		}
 		name := entry.Name()
-		if filepath.Ext(name) == "."+format {
+		if filepath.Ext(name) == "."+ext {
 			segmentFiles = append(segmentFiles, filepath.Join(chapterDir, name))
 		}
 	}
@@ -690,4 +693,25 @@ func sortStrings(strs []string) {
 			}
 		}
 	}
+}
+
+// formatToExtension extracts the file extension from an ElevenLabs format string.
+// e.g., "mp3_44100_128" -> "mp3", "wav_44100" -> "wav", "pcm_16000" -> "wav"
+func formatToExtension(format string) string {
+	if format == "" {
+		return "mp3"
+	}
+	// Extract container format (before first underscore)
+	for i, c := range format {
+		if c == '_' {
+			ext := format[:i]
+			// PCM/ulaw/alaw are raw formats, use wav extension
+			if ext == "pcm" || ext == "ulaw" || ext == "alaw" {
+				return "wav"
+			}
+			return ext
+		}
+	}
+	// No underscore, use as-is (legacy format like "mp3")
+	return format
 }
