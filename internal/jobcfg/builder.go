@@ -205,9 +205,10 @@ func (b *Builder) TTSConfig(ctx context.Context) (tts_generate.Config, error) {
 	}
 
 	// Voice and format are optional - can be overridden per request
+	// Format must be full ElevenLabs format spec (e.g., mp3_44100_128)
 	return tts_generate.Config{
 		TTSProvider: ttsProvider,
-		Format:      "mp3", // Default to mp3
+		Format:      "mp3_44100_128",
 	}, nil
 }
 
