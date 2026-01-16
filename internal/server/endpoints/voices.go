@@ -368,6 +368,9 @@ func (e *CreateVoiceEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		req.Name = req.VoiceID // Default name to voice_id
 	}
 
+	// Use ElevenLabs as the TTS provider
+	providerName := providers.ElevenLabsTTSName
+
 	// Check if voice already exists
 	existing, _ := voices.GetByVoiceID(ctx, client, req.VoiceID)
 	if existing != nil {
@@ -380,7 +383,7 @@ func (e *CreateVoiceEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		"voice_id":    req.VoiceID,
 		"name":        req.Name,
 		"description": req.Description,
-		"provider":    providers.DeepInfraTTSName,
+		"provider":    providerName,
 		"is_default":  false,
 	}
 
@@ -394,7 +397,7 @@ func (e *CreateVoiceEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		VoiceID:     req.VoiceID,
 		Name:        req.Name,
 		Description: req.Description,
-		Provider:    providers.DeepInfraTTSName,
+		Provider:    providerName,
 		IsDefault:   false,
 	})
 	_ = docID // unused but returned for potential future use

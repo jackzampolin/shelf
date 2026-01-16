@@ -58,16 +58,23 @@ func (e *GetTTSConfigEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find DeepInfra TTS provider (may be registered under different names like "chatterbox")
-	var deepInfraTTS *providers.DeepInfraTTSClient
+	// Find the ElevenLabs TTS provider
+	var providerName, model, defaultVoice, format, voiceCloningURL string
+	var formats []string
+
 	for _, provider := range registry.TTSProviders() {
-		if client, ok := provider.(*providers.DeepInfraTTSClient); ok {
-			deepInfraTTS = client
+		if client, ok := provider.(*providers.ElevenLabsTTSClient); ok {
+			providerName = providers.ElevenLabsTTSName
+			model = client.Model()
+			defaultVoice = client.Voice()
+			format = client.Format()
+			formats = []string{"mp3_44100_128", "mp3_22050_32", "pcm_16000", "pcm_22050", "pcm_24000", "pcm_44100"}
+			voiceCloningURL = "https://elevenlabs.io/voice-lab"
 			break
 		}
 	}
 
-	if deepInfraTTS == nil {
+	if providerName == "" {
 		writeError(w, http.StatusServiceUnavailable, "TTS provider not configured")
 		return
 	}
@@ -92,21 +99,21 @@ func (e *GetTTSConfigEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 	// Get default voice from database, fall back to provider config
 	defaultVoiceID := ""
-	defaultVoice, _ := voices.GetDefault(ctx, client)
-	if defaultVoice != nil {
-		defaultVoiceID = defaultVoice.VoiceID
-	} else if deepInfraTTS.Voice() != "" {
-		defaultVoiceID = deepInfraTTS.Voice()
+	dbDefaultVoice, _ := voices.GetDefault(ctx, client)
+	if dbDefaultVoice != nil {
+		defaultVoiceID = dbDefaultVoice.VoiceID
+	} else if defaultVoice != "" {
+		defaultVoiceID = defaultVoice
 	}
 
 	resp := TTSConfigResponse{
-		Provider:        providers.DeepInfraTTSName,
-		Model:           deepInfraTTS.Model(),
+		Provider:        providerName,
+		Model:           model,
 		DefaultVoice:    defaultVoiceID,
-		DefaultFormat:   deepInfraTTS.Format(),
+		DefaultFormat:   format,
 		Voices:          ttsVoices,
-		Formats:         []string{"mp3", "wav", "opus", "flac"},
-		VoiceCloningURL: "https://deepinfra.com/ResembleAI/chatterbox/voice",
+		Formats:         formats,
+		VoiceCloningURL: voiceCloningURL,
 	}
 
 	writeJSON(w, http.StatusOK, resp)

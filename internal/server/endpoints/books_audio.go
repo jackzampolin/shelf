@@ -16,6 +16,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobcfg"
 	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
 	"github.com/jackzampolin/shelf/internal/svcctx"
+	"github.com/jackzampolin/shelf/internal/voices"
 )
 
 // GenerateAudioRequest is the request body for starting TTS generation.
@@ -132,6 +133,22 @@ func (e *GenerateAudioEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 		ttsCfg.Format = req.Format
 	}
 
+	// If no voice specified, get default voice from database
+	if ttsCfg.Voice == "" {
+		defraClient := svcctx.DefraClientFrom(ctx)
+		if defraClient != nil {
+			if defaultVoice, err := voices.GetDefault(ctx, defraClient); err == nil && defaultVoice != nil {
+				ttsCfg.Voice = defaultVoice.VoiceID
+			}
+		}
+	}
+
+	// Validate voice is set
+	if ttsCfg.Voice == "" {
+		writeError(w, http.StatusBadRequest, "no voice specified and no default voice configured. Use 'shelf api voices sync' then 'shelf api voices set-default <voice_id>'")
+		return
+	}
+
 	// Create job
 	job, err := tts_generate.NewJob(ctx, ttsCfg, bookID)
 	if err != nil {
@@ -170,8 +187,8 @@ func (e *GenerateAudioEndpoint) Command(getServerURL func() string) *cobra.Comma
 		Long: `Start TTS audiobook generation for a book.
 
 This generates audio from the book's polished chapter text using
-DeepInfra's Chatterbox TTS model. Audio is generated paragraph-by-paragraph
-and concatenated into chapter files.
+ElevenLabs TTS. Audio is generated paragraph-by-paragraph with request
+stitching for prosody continuity, then concatenated into chapter files.
 
 The command submits a job and returns immediately.
 Use 'shelf api books audio <book-id>' to check progress.`,

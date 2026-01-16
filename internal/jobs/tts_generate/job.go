@@ -14,6 +14,9 @@ import (
 )
 
 // Start initializes the job and returns initial work units.
+// For request stitching, we queue only the FIRST incomplete segment of each chapter.
+// Subsequent segments are queued in OnComplete with previous_request_ids for prosody continuity.
+// This maintains parallel processing across chapters while requiring sequential processing within chapters.
 func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -31,7 +34,9 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		return nil, fmt.Errorf("failed to create audio directory: %w", err)
 	}
 
-	// Generate work units for all chapters and paragraphs
+	// Queue only the FIRST incomplete segment of each chapter.
+	// This enables request stitching for prosody continuity within chapters
+	// while still processing chapters in parallel.
 	var units []jobs.WorkUnit
 
 	for _, ch := range j.State.Chapters {
@@ -40,14 +45,18 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			return nil, fmt.Errorf("failed to create chapter audio directory: %w", err)
 		}
 
+		// Find the first incomplete segment in this chapter
 		for paragraphIdx, paragraph := range ch.Paragraphs {
-			// Skip already-completed segments
 			if j.State.IsSegmentComplete(ch.DocID, paragraphIdx) {
 				continue
 			}
 
-			unit := j.createTTSWorkUnit(ch, paragraphIdx, paragraph)
+			// Build previous_request_ids from completed segments in this chapter
+			previousRequestIDs := j.getPreviousRequestIDs(ch.DocID)
+
+			unit := j.createTTSWorkUnit(ch, paragraphIdx, paragraph, previousRequestIDs)
 			units = append(units, unit)
+			break // Only queue the first incomplete segment per chapter
 		}
 	}
 
@@ -56,8 +65,9 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 			"book_id", j.State.BookID,
 			"chapters", len(j.State.Chapters),
 			"total_segments", j.State.TotalSegments,
-			"pending_segments", len(units),
-			"provider", j.State.TTSProvider)
+			"queued_segments", len(units),
+			"provider", j.State.TTSProvider,
+			"mode", "sequential_per_chapter")
 	}
 
 	return units, nil
@@ -102,7 +112,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 			if chapter != nil && paragraph != "" {
 				j.Tracker.Remove(result.WorkUnitID)
-				retryUnit := j.createTTSWorkUnit(chapter, info.ParagraphIdx, paragraph)
+				previousRequestIDs := j.getPreviousRequestIDs(info.ChapterDocID)
+				retryUnit := j.createTTSWorkUnit(chapter, info.ParagraphIdx, paragraph, previousRequestIDs)
 				// Update retry count
 				retryInfo := info
 				retryInfo.RetryCount++
@@ -150,20 +161,30 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			}
 		}
 
-		// Create segment result
+		// Create segment result with ElevenLabs request ID for stitching
 		segResult := &SegmentResult{
-			DurationMS:    ttsResult.DurationMS,
-			StartOffsetMS: startOffset,
-			AudioFile:     audioPath,
-			CostUSD:       ttsResult.CostUSD,
-			CharCount:     ttsResult.CharCount,
+			DurationMS:          ttsResult.DurationMS,
+			StartOffsetMS:       startOffset,
+			AudioFile:           audioPath,
+			CostUSD:             ttsResult.CostUSD,
+			CharCount:           ttsResult.CharCount,
+			ElevenLabsRequestID: ttsResult.RequestID, // For request stitching
+		}
+
+		// Store request ID in chapter progress for subsequent segments
+		if ttsResult.RequestID != "" && progress != nil {
+			progress.RequestIDSequence = append(progress.RequestIDSequence, ttsResult.RequestID)
 		}
 
 		// Get paragraph text for DB record
 		var paragraph string
+		var chapter *Chapter
 		for _, ch := range j.State.Chapters {
-			if ch.DocID == info.ChapterDocID && info.ParagraphIdx < len(ch.Paragraphs) {
-				paragraph = ch.Paragraphs[info.ParagraphIdx]
+			if ch.DocID == info.ChapterDocID {
+				chapter = ch
+				if info.ParagraphIdx < len(ch.Paragraphs) {
+					paragraph = ch.Paragraphs[info.ParagraphIdx]
+				}
 				break
 			}
 		}
@@ -187,14 +208,32 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 				"chapter_idx", info.ChapterIdx,
 				"paragraph", info.ParagraphIdx,
 				"duration_ms", ttsResult.DurationMS,
-				"cost", ttsResult.CostUSD)
+				"cost", ttsResult.CostUSD,
+				"request_id", ttsResult.RequestID)
 		}
 
-		// Check if chapter is now complete
+		// Queue next segment in this chapter (sequential processing for request stitching)
+		// OR queue concatenation if chapter is complete
 		if j.State.IsChapterComplete(info.ChapterDocID) {
-			// Queue concatenation work unit
+			// All segments done, queue concatenation
 			concatUnit := j.createConcatenateWorkUnit(info.ChapterDocID, info.ChapterIdx)
 			newUnits = append(newUnits, concatUnit)
+		} else if chapter != nil {
+			// Queue next segment with previous request IDs for prosody continuity
+			nextParagraphIdx := info.ParagraphIdx + 1
+			if nextParagraphIdx < len(chapter.Paragraphs) {
+				previousRequestIDs := j.getPreviousRequestIDs(info.ChapterDocID)
+				nextUnit := j.createTTSWorkUnit(chapter, nextParagraphIdx,
+					chapter.Paragraphs[nextParagraphIdx], previousRequestIDs)
+				newUnits = append(newUnits, nextUnit)
+
+				if logger != nil && len(previousRequestIDs) > 0 {
+					logger.Debug("queuing next segment with request stitching",
+						"chapter_doc_id", info.ChapterDocID,
+						"next_paragraph", nextParagraphIdx,
+						"previous_request_ids", len(previousRequestIDs))
+				}
+			}
 		}
 
 	case WorkUnitTypeConcatenate:
@@ -275,7 +314,8 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 }
 
 // createTTSWorkUnit creates a TTS work unit for a paragraph.
-func (j *Job) createTTSWorkUnit(chapter *Chapter, paragraphIdx int, text string) jobs.WorkUnit {
+// previousRequestIDs are ElevenLabs request IDs from prior segments for prosody stitching.
+func (j *Job) createTTSWorkUnit(chapter *Chapter, paragraphIdx int, text string, previousRequestIDs []string) jobs.WorkUnit {
 	unitID := fmt.Sprintf("tts_%s_%s_%d", j.State.BookID, chapter.DocID, paragraphIdx)
 
 	unit := jobs.WorkUnit{
@@ -286,11 +326,12 @@ func (j *Job) createTTSWorkUnit(chapter *Chapter, paragraphIdx int, text string)
 		Priority: 100 - chapter.ChapterIdx, // Earlier chapters have higher priority
 
 		TTSRequest: &jobs.TTSWorkRequest{
-			Text:         text,
-			Voice:        j.State.Voice,
-			Format:       j.State.Format,
-			ChapterIdx:   chapter.ChapterIdx,
-			ParagraphIdx: paragraphIdx,
+			Text:               text,
+			Voice:              j.State.Voice,
+			Format:             j.State.Format,
+			ChapterIdx:         chapter.ChapterIdx,
+			ParagraphIdx:       paragraphIdx,
+			PreviousRequestIDs: previousRequestIDs, // For ElevenLabs request stitching
 		},
 
 		Metrics: &jobs.WorkUnitMetrics{
@@ -308,6 +349,26 @@ func (j *Job) createTTSWorkUnit(chapter *Chapter, paragraphIdx int, text string)
 	})
 
 	return unit
+}
+
+// getPreviousRequestIDs returns up to 3 most recent request IDs for a chapter.
+// Used for ElevenLabs request stitching to maintain prosody continuity.
+func (j *Job) getPreviousRequestIDs(chapterDocID string) []string {
+	progress := j.State.ChapterProgress[chapterDocID]
+	if progress == nil || len(progress.RequestIDSequence) == 0 {
+		return nil
+	}
+
+	// ElevenLabs supports up to 3 previous request IDs
+	ids := progress.RequestIDSequence
+	if len(ids) > 3 {
+		ids = ids[len(ids)-3:]
+	}
+
+	// Return a copy to avoid mutation
+	result := make([]string, len(ids))
+	copy(result, ids)
+	return result
 }
 
 // createConcatenateWorkUnit creates a work unit for concatenating chapter audio.

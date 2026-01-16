@@ -267,18 +267,19 @@ type LLMProviderConfig struct {
 	Enabled   bool
 }
 
-// TTSProviderConfig matches config.TTSProviderCfg with resolved API key.
+// TTSProviderConfig matches config.TTSProviderCfg with resolved API key (ElevenLabs only).
 type TTSProviderConfig struct {
-	Type         string  // "deepinfra-tts"
-	Model        string  // Model name (e.g., "ResembleAI/chatterbox-turbo")
-	Voice        string  // Voice ID
-	Format       string  // Output format (mp3, wav, etc.)
-	APIKey       string  // Resolved API key
-	RateLimit    float64 // Requests per second
-	Temperature  float64 // Generation temperature
-	Exaggeration float64 // Emotion exaggeration factor
-	CFG          float64 // Classifier-free guidance
-	Enabled      bool
+	Type       string  // "elevenlabs"
+	Model      string  // Model name (e.g., "eleven_turbo_v2_5")
+	Voice      string  // Voice ID
+	Format     string  // Output format (mp3_44100_128, etc.)
+	APIKey     string  // Resolved API key
+	RateLimit  float64 // Requests per second
+	Stability  float64 // Voice stability (0-1)
+	Similarity float64 // Similarity boost (0-1)
+	Style      float64 // Style exaggeration (0-1)
+	Speed      float64 // Speaking speed (0.7-1.2)
+	Enabled    bool
 }
 
 // NewRegistryFromConfig creates a registry with providers based on configuration.
@@ -496,16 +497,17 @@ func needsOCRUpdate(provider OCRProvider, cfg OCRProviderConfig) bool {
 // createTTSProvider creates a TTS provider based on provider type.
 func createTTSProvider(cfg TTSProviderConfig) TTSProvider {
 	switch cfg.Type {
-	case "deepinfra-tts":
-		return NewDeepInfraTTSClient(DeepInfraTTSConfig{
-			APIKey:       cfg.APIKey,
-			Model:        cfg.Model,
-			Voice:        cfg.Voice,
-			Format:       cfg.Format,
-			RateLimit:    cfg.RateLimit,
-			Temperature:  cfg.Temperature,
-			Exaggeration: cfg.Exaggeration,
-			CFG:          cfg.CFG,
+	case "elevenlabs":
+		return NewElevenLabsTTSClient(ElevenLabsTTSConfig{
+			APIKey:     cfg.APIKey,
+			Model:      cfg.Model,
+			Voice:      cfg.Voice,
+			Format:     cfg.Format,
+			RateLimit:  cfg.RateLimit,
+			Stability:  cfg.Stability,
+			Similarity: cfg.Similarity,
+			Style:      cfg.Style,
+			Speed:      cfg.Speed,
 		})
 	default:
 		return nil
@@ -515,15 +517,16 @@ func createTTSProvider(cfg TTSProviderConfig) TTSProvider {
 // needsTTSUpdate checks if a TTS provider needs to be recreated.
 func needsTTSUpdate(provider TTSProvider, cfg TTSProviderConfig) bool {
 	switch p := provider.(type) {
-	case *DeepInfraTTSClient:
+	case *ElevenLabsTTSClient:
 		return p.apiKey != cfg.APIKey ||
 			p.model != cfg.Model ||
 			p.voice != cfg.Voice ||
 			p.format != cfg.Format ||
 			p.rateLimit != cfg.RateLimit ||
-			p.temperature != cfg.Temperature ||
-			p.exaggeration != cfg.Exaggeration ||
-			p.cfg != cfg.CFG
+			p.stability != cfg.Stability ||
+			p.similarity != cfg.Similarity ||
+			p.style != cfg.Style ||
+			p.speed != cfg.Speed
 	default:
 		return true
 	}

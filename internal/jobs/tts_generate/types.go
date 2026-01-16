@@ -54,6 +54,10 @@ type SegmentResult struct {
 	AudioFile     string
 	CostUSD       float64
 	CharCount     int
+
+	// ElevenLabs request ID for request stitching.
+	// Used to pass to subsequent segment requests for prosody continuity.
+	ElevenLabsRequestID string
 }
 
 // ChapterProgress tracks progress for a single chapter.
@@ -67,6 +71,11 @@ type ChapterProgress struct {
 	TotalCostUSD      float64
 	AudioFile         string // concatenated chapter audio
 	ChapterAudioID    string // DefraDB record ID
+
+	// RequestIDSequence holds ordered request IDs for request stitching.
+	// Each element corresponds to a completed segment's ElevenLabs request ID.
+	// Used to build previous_request_ids for the next segment.
+	RequestIDSequence []string
 }
 
 // AudioState holds the complete state for TTS generation.

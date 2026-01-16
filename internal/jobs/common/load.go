@@ -307,12 +307,14 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 	}
 
 	// Query pages with their related OCR results
+	// Include blend_markdown for pattern analysis on resume
 	query := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}}) {
 			_docID
 			page_num
 			extract_complete
 			blend_complete
+			blend_markdown
 			label_complete
 			ocr_results {
 				provider
@@ -380,6 +382,12 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 
 		if blendComplete, ok := page["blend_complete"].(bool); ok {
 			state.SetBlendDone(blendComplete)
+			// Also populate the blended text if available (for pattern analysis on resume)
+			if blendComplete {
+				if blendMarkdown, ok := page["blend_markdown"].(string); ok && blendMarkdown != "" {
+					state.SetBlendResult(blendMarkdown)
+				}
+			}
 		}
 		if labelComplete, ok := page["label_complete"].(bool); ok {
 			state.SetLabelDone(labelComplete)

@@ -37,45 +37,42 @@ func Sync(ctx context.Context, cfg SyncConfig) error {
 		cfg.Logger = slog.Default()
 	}
 
-	// Find any DeepInfra TTS provider (may be registered under different names like "chatterbox")
-	var deepInfraTTS *providers.DeepInfraTTSClient
+	// Find a TTS provider that can list voices
+	var apiVoices []providers.Voice
 	var providerName string
+	var err error
+
 	for name, provider := range cfg.Registry.TTSProviders() {
-		if client, ok := provider.(*providers.DeepInfraTTSClient); ok {
-			deepInfraTTS = client
-			providerName = name
+		if client, ok := provider.(*providers.ElevenLabsTTSClient); ok {
+			cfg.Logger.Debug("found ElevenLabs TTS provider", "name", name)
+			apiVoices, err = client.ListVoices(ctx)
+			if err != nil {
+				cfg.Logger.Warn("failed to fetch voices from ElevenLabs", "error", err)
+				continue
+			}
+			providerName = providers.ElevenLabsTTSName
 			break
 		}
 	}
 
-	if deepInfraTTS == nil {
-		cfg.Logger.Debug("no DeepInfra TTS provider configured, skipping voice sync")
-		return nil
-	}
-
-	cfg.Logger.Debug("found DeepInfra TTS provider", "name", providerName)
-
-	// Fetch voices from API
-	apiVoices, err := deepInfraTTS.ListVoices(ctx)
-	if err != nil {
-		cfg.Logger.Warn("failed to fetch voices from DeepInfra", "error", err)
-		return nil // Don't fail startup if voice fetch fails
-	}
-
 	if len(apiVoices) == 0 {
-		cfg.Logger.Info("no voices found from TTS provider")
+		if providerName == "" {
+			cfg.Logger.Debug("no TTS provider configured, skipping voice sync")
+		} else {
+			cfg.Logger.Info("no voices found from TTS provider", "provider", providerName)
+		}
 		return nil
 	}
 
-	cfg.Logger.Info("syncing voices from TTS provider", "count", len(apiVoices))
+	cfg.Logger.Info("syncing voices from TTS provider", "provider", providerName, "count", len(apiVoices))
 
 	// Sync each voice to database
 	now := time.Now().UTC().Format(time.RFC3339)
 	synced := 0
 	for _, v := range apiVoices {
-		// Filter: match by voice_id
+		// Filter: match by voice_id (DefraDB requires operator block format)
 		filter := map[string]any{
-			"voice_id": v.VoiceID,
+			"voice_id": map[string]any{"_eq": v.VoiceID},
 		}
 
 		// Create input: all fields for new record
@@ -83,7 +80,7 @@ func Sync(ctx context.Context, cfg SyncConfig) error {
 			"voice_id":    v.VoiceID,
 			"name":        v.Name,
 			"description": v.Description,
-			"provider":    providers.DeepInfraTTSName,
+			"provider":    providerName,
 			"is_default":  false,
 			"synced_at":   now,
 		}

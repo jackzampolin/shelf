@@ -81,6 +81,10 @@ type TTSWorkRequest struct {
 	Format       string // Output format (mp3, wav, etc.)
 	ChapterIdx   int    // Chapter index for reference
 	ParagraphIdx int    // Paragraph index within chapter
+
+	// Request stitching for prosody continuity (ElevenLabs).
+	// Pass up to 3 previous request IDs from prior segments in this chapter.
+	PreviousRequestIDs []string
 }
 
 // CPUWorkRequest contains the data needed for a CPU-bound work unit.

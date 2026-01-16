@@ -147,46 +147,46 @@ func DefaultEntries() []Entry {
 		// TTS Providers
 		// ===================
 
-		// TTS Providers - Chatterbox (via DeepInfra)
+		// TTS Providers - ElevenLabs
 		{
-			Key:         "providers.tts.chatterbox.type",
-			Value:       "deepinfra-tts",
-			Description: "TTS provider type for Chatterbox",
+			Key:         "providers.tts.elevenlabs.type",
+			Value:       "elevenlabs",
+			Description: "TTS provider type for ElevenLabs",
 		},
 		{
-			Key:         "providers.tts.chatterbox.model",
-			Value:       "ResembleAI/chatterbox-turbo",
-			Description: "Model name for Chatterbox TTS",
+			Key:         "providers.tts.elevenlabs.model",
+			Value:       "eleven_turbo_v2_5",
+			Description: "Model name for ElevenLabs TTS (40k char limit, 50% cheaper)",
 		},
 		{
-			Key:         "providers.tts.chatterbox.api_key",
-			Value:       "${DEEPINFRA_API_KEY}",
-			Description: "DeepInfra API key (uses environment variable)",
+			Key:         "providers.tts.elevenlabs.api_key",
+			Value:       "${ELEVENLABS_API_KEY}",
+			Description: "ElevenLabs API key (uses environment variable)",
 		},
 		{
-			Key:         "providers.tts.chatterbox.rate_limit",
-			Value:       5.0,
-			Description: "Rate limit in requests per second for Chatterbox",
+			Key:         "providers.tts.elevenlabs.rate_limit",
+			Value:       2.0,
+			Description: "Rate limit in requests per second for ElevenLabs",
 		},
 		{
-			Key:         "providers.tts.chatterbox.enabled",
+			Key:         "providers.tts.elevenlabs.enabled",
 			Value:       true,
-			Description: "Whether Chatterbox TTS provider is enabled",
+			Description: "Whether ElevenLabs TTS provider is enabled",
 		},
 		{
-			Key:         "providers.tts.chatterbox.format",
-			Value:       "mp3",
-			Description: "Default audio output format (mp3, wav, opus, flac)",
+			Key:         "providers.tts.elevenlabs.format",
+			Value:       "mp3_44100_128",
+			Description: "Default audio output format",
 		},
 		{
-			Key:         "providers.tts.chatterbox.temperature",
-			Value:       0.8,
-			Description: "Generation temperature (0-2)",
-		},
-		{
-			Key:         "providers.tts.chatterbox.exaggeration",
+			Key:         "providers.tts.elevenlabs.stability",
 			Value:       0.5,
-			Description: "Emotion exaggeration factor (0-1)",
+			Description: "Voice stability (0-1)",
+		},
+		{
+			Key:         "providers.tts.elevenlabs.similarity",
+			Value:       0.75,
+			Description: "Similarity boost (0-1)",
 		},
 
 		// ===================
@@ -204,7 +204,7 @@ func DefaultEntries() []Entry {
 		},
 		{
 			Key:         "defaults.tts_provider",
-			Value:       "chatterbox",
+			Value:       "elevenlabs",
 			Description: "Default TTS provider for audiobook generation",
 		},
 		{

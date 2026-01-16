@@ -29,18 +29,19 @@ type LLMProviderCfg struct {
 	Enabled   bool    `mapstructure:"enabled" yaml:"enabled"`
 }
 
-// TTSProviderCfg configures a TTS provider.
+// TTSProviderCfg configures a TTS provider (ElevenLabs only).
 type TTSProviderCfg struct {
-	Type         string  `mapstructure:"type" yaml:"type"`                   // "deepinfra-tts"
-	Model        string  `mapstructure:"model" yaml:"model"`                 // e.g., "ResembleAI/chatterbox-turbo"
-	Voice        string  `mapstructure:"voice" yaml:"voice"`                 // Voice ID
-	Format       string  `mapstructure:"format" yaml:"format"`               // Output format: mp3, wav, etc.
-	APIKey       string  `mapstructure:"api_key" yaml:"api_key"`             // API key (supports ${ENV_VAR} syntax)
-	RateLimit    float64 `mapstructure:"rate_limit" yaml:"rate_limit"`       // Requests per second
-	Temperature  float64 `mapstructure:"temperature" yaml:"temperature"`     // Generation temperature (0-2)
-	Exaggeration float64 `mapstructure:"exaggeration" yaml:"exaggeration"`   // Emotion exaggeration (0-1)
-	CFG          float64 `mapstructure:"cfg" yaml:"cfg"`                     // Classifier-free guidance (0-1)
-	Enabled      bool    `mapstructure:"enabled" yaml:"enabled"`
+	Type       string  `mapstructure:"type" yaml:"type"`             // "elevenlabs"
+	Model      string  `mapstructure:"model" yaml:"model"`           // e.g., "eleven_turbo_v2_5"
+	Voice      string  `mapstructure:"voice" yaml:"voice"`           // Voice ID
+	Format     string  `mapstructure:"format" yaml:"format"`         // Output format: mp3_44100_128, etc.
+	APIKey     string  `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
+	RateLimit  float64 `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
+	Stability  float64 `mapstructure:"stability" yaml:"stability"`   // Voice stability (0-1)
+	Similarity float64 `mapstructure:"similarity" yaml:"similarity"` // Similarity boost (0-1)
+	Style      float64 `mapstructure:"style" yaml:"style"`           // Style exaggeration (0-1)
+	Speed      float64 `mapstructure:"speed" yaml:"speed"`           // Speaking speed (0.7-1.2)
+	Enabled    bool    `mapstructure:"enabled" yaml:"enabled"`
 }
 
 // DefaultsCfg specifies default provider selections.
@@ -90,22 +91,23 @@ func DefaultConfig() *Config {
 			},
 		},
 		TTSProviders: map[string]TTSProviderCfg{
-			"chatterbox": {
-				Type:         "deepinfra-tts",
-				Model:        "ResembleAI/chatterbox-turbo",
-				Format:       "mp3",
-				APIKey:       "${DEEPINFRA_API_KEY}",
-				RateLimit:    5.0, // 5 RPS - conservative default
-				Temperature:  0.8,
-				Exaggeration: 0.5,
-				CFG:          0.5,
-				Enabled:      true,
+			"elevenlabs": {
+				Type:       "elevenlabs",
+				Model:      "eleven_turbo_v2_5", // 40k char limit, 50% cheaper than multilingual_v2
+				Format:     "mp3_44100_128",
+				APIKey:     "${ELEVENLABS_API_KEY}",
+				RateLimit:  2.0, // 2 RPS - ElevenLabs standard tier
+				Stability:  0.5,
+				Similarity: 0.75,
+				Style:      0.0,
+				Speed:      1.0,
+				Enabled:    true,
 			},
 		},
 		Defaults: DefaultsCfg{
 			OCRProviders: []string{"mistral", "paddle"},
 			LLMProvider:  "openrouter",
-			TTSProvider:  "chatterbox",
+			TTSProvider:  "elevenlabs",
 			MaxWorkers:   10,
 		},
 		Defra: DefraConfig{

@@ -207,7 +207,7 @@ type OCRResult struct {
 // Separate from LLM because it has different rate limiting, retry patterns,
 // and result handling (audio bytes vs text responses).
 type TTSProvider interface {
-	// Name returns the provider identifier (e.g., "deepinfra-tts").
+	// Name returns the provider identifier (e.g., "elevenlabs").
 	Name() string
 
 	// Generate converts text to audio.
@@ -223,11 +223,24 @@ type TTSProvider interface {
 	RetryDelayBase() time.Duration
 }
 
+// Voice represents a TTS voice from a provider.
+type Voice struct {
+	VoiceID     string `json:"voice_id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	CreatedAt   string `json:"created_at,omitempty"`
+}
+
 // TTSRequest is a request to generate audio from text.
 type TTSRequest struct {
 	Text   string `json:"text"`   // Text to convert to speech
 	Voice  string `json:"voice"`  // Voice ID or name (provider-specific)
 	Format string `json:"format"` // Output format (mp3, wav, etc.)
+
+	// Request stitching for prosody continuity (ElevenLabs).
+	// Pass up to 3 previous request IDs to condition generation on prior audio.
+	// Request IDs expire after 2 hours.
+	PreviousRequestIDs []string `json:"previous_request_ids,omitempty"`
 }
 
 // TTSResult is the response from a TTS provider.
@@ -249,4 +262,9 @@ type TTSResult struct {
 	// Error info
 	ErrorMessage string `json:"error_message,omitempty"`
 	RetryCount   int    `json:"retry_count"`
+
+	// Request stitching support (ElevenLabs).
+	// This ID can be passed to subsequent requests for prosody continuity.
+	// Expires after 2 hours.
+	RequestID string `json:"request_id,omitempty"`
 }

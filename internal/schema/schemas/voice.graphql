@@ -1,5 +1,5 @@
 type Voice {
-    # External voice ID from the provider (e.g., DeepInfra voice ID)
+    # External voice ID from the provider (e.g., ElevenLabs voice ID)
     voice_id: String @index(unique: true)
 
     # Display name
@@ -8,7 +8,7 @@ type Voice {
     # Optional description
     description: String
 
-    # Provider this voice belongs to (e.g., "deepinfra")
+    # Provider this voice belongs to (e.g., "elevenlabs")
     provider: String @index
 
     # Whether this is the default voice for TTS
