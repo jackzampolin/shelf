@@ -19,8 +19,7 @@ func TestIsValidResetOperation(t *testing.T) {
 		{"valid_toc_link", "toc_link", true},
 		{"valid_toc_finalize", "toc_finalize", true},
 		{"valid_structure", "structure", true},
-		{"valid_labels", "labels", true},
-		{"valid_blend", "blend", true},
+		{"valid_ocr", "ocr", true},
 		{"invalid_empty", "", false},
 		{"invalid_unknown", "unknown_operation", false},
 		{"invalid_case", "METADATA", false},
@@ -49,12 +48,11 @@ func TestResetFrom_CascadeDependencies(t *testing.T) {
 	// - metadata        -> (none)
 	// - toc_finder      -> toc_extract, toc_link, toc_finalize, structure
 	// - toc_extract     -> toc_link, toc_finalize, structure
-	// - pattern_analysis -> labels (all pages), toc_link, toc_finalize, structure
+	// - pattern_analysis -> toc_link, toc_finalize, structure
 	// - toc_link        -> toc_finalize, structure
 	// - toc_finalize    -> structure
 	// - structure       -> (none)
-	// - labels          -> toc_link, toc_finalize, structure
-	// - blend           -> labels, pattern_analysis, (cascade from pattern_analysis)
+	// - ocr             -> pattern_analysis, (cascade from pattern_analysis)
 
 	t.Run("unknown_operation_returns_error", func(t *testing.T) {
 		book := NewBookState("test-book")
@@ -137,8 +135,7 @@ func TestValidResetOperations(t *testing.T) {
 		ResetTocLink,
 		ResetTocFinalize,
 		ResetStructure,
-		ResetLabels,
-		ResetBlend,
+		ResetOcr,
 	}
 
 	if len(ValidResetOperations) != len(expected) {
@@ -172,8 +169,7 @@ func TestResetOperation_StringConstants(t *testing.T) {
 		{ResetTocLink, "toc_link"},
 		{ResetTocFinalize, "toc_finalize"},
 		{ResetStructure, "structure"},
-		{ResetLabels, "labels"},
-		{ResetBlend, "blend"},
+		{ResetOcr, "ocr"},
 	}
 
 	for _, tt := range tests {

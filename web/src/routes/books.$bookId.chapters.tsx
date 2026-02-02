@@ -9,8 +9,7 @@ export const Route = createFileRoute('/books/$bookId/chapters')({
 
 interface ChapterPage {
   page_num: number
-  blended_text?: string
-  label?: string
+  ocr_markdown?: string
 }
 
 interface Chapter {
@@ -309,11 +308,6 @@ function ChaptersPage() {
                                   <span className="font-medium text-sm text-gray-700">
                                     Page {page.page_num}
                                   </span>
-                                  {page.label && (
-                                    <span className="text-xs text-gray-400">
-                                      ({page.label})
-                                    </span>
-                                  )}
                                 </div>
                                 <Link
                                   to="/books/$bookId/pages/$pageNum"
@@ -324,7 +318,7 @@ function ChaptersPage() {
                                 </Link>
                               </div>
                               <pre className="whitespace-pre-wrap font-mono text-xs text-gray-600 leading-relaxed max-h-96 overflow-y-auto">
-                                {page.blended_text || 'No text available'}
+                                {page.ocr_markdown || 'No text available'}
                               </pre>
                             </div>
                           ))}

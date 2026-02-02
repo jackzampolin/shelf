@@ -54,7 +54,7 @@ func (t *ChapterFinderTools) grepText(ctx context.Context, query string) (string
 
 	// Search all pages
 	for pageNum := 1; pageNum <= t.book.TotalPages; pageNum++ {
-		text, err := t.getPageBlendedText(ctx, pageNum)
+		text, err := t.getPageOcrMarkdown(ctx, pageNum)
 		if err != nil {
 			continue // Skip pages without OCR
 		}

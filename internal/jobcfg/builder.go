@@ -48,8 +48,6 @@ func (b *Builder) ProcessBookConfig(ctx context.Context) (process_book.Config, e
 
 	cfg := process_book.Config{
 		OcrProviders:     ocrProviders,
-		BlendProvider:    llmProvider,
-		LabelProvider:    llmProvider,
 		MetadataProvider: llmProvider,
 		TocProvider:      llmProvider,
 		DebugAgents:      debugAgents,

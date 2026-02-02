@@ -18,8 +18,6 @@ const JobType = "process-book"
 type Config struct {
 	// Provider settings
 	OcrProviders     []string
-	BlendProvider    string
-	LabelProvider    string
 	MetadataProvider string
 	TocProvider      string
 	DebugAgents      bool   // Enable debug logging for agent executions
@@ -28,8 +26,6 @@ type Config struct {
 	// Pipeline stage toggles (all default to true for standard processing)
 	// When disabled, the stage is skipped entirely.
 	EnableOCR             bool // Run OCR on pages (required for text-based stages)
-	EnableBlend           bool // Run blend to merge OCR outputs
-	EnableLabel           bool // Run page labeling
 	EnableMetadata        bool // Extract book metadata
 	EnableTocFinder       bool // Find ToC pages
 	EnableTocExtract      bool // Extract ToC entries
@@ -47,7 +43,7 @@ const (
 	VariantStandard PipelineVariant = "standard"
 	// VariantPhotoBook is a minimal pipeline for photo books (no ToC, minimal text).
 	VariantPhotoBook PipelineVariant = "photo-book"
-	// VariantTextOnly processes text only (OCR + blend, no ToC or labels).
+	// VariantTextOnly processes text only (OCR + metadata, no ToC or structure).
 	VariantTextOnly PipelineVariant = "text-only"
 	// VariantOCROnly runs only OCR without any LLM processing.
 	VariantOCROnly PipelineVariant = "ocr-only"
@@ -76,10 +72,8 @@ func (v PipelineVariant) IsValid() bool {
 func (c *Config) ApplyVariant(variant PipelineVariant) {
 	switch variant {
 	case VariantPhotoBook:
-		// Photo books: OCR + blend only, no ToC or structure
+		// Photo books: OCR + metadata only, no ToC or structure
 		c.EnableOCR = true
-		c.EnableBlend = true
-		c.EnableLabel = true
 		c.EnableMetadata = true
 		c.EnableTocFinder = false
 		c.EnableTocExtract = false
@@ -89,10 +83,8 @@ func (c *Config) ApplyVariant(variant PipelineVariant) {
 		c.EnableStructure = false
 
 	case VariantTextOnly:
-		// Text extraction only: OCR + blend
+		// Text extraction only: OCR + metadata
 		c.EnableOCR = true
-		c.EnableBlend = true
-		c.EnableLabel = false
 		c.EnableMetadata = true
 		c.EnableTocFinder = false
 		c.EnableTocExtract = false
@@ -104,8 +96,6 @@ func (c *Config) ApplyVariant(variant PipelineVariant) {
 	case VariantOCROnly:
 		// OCR only: no LLM processing at all
 		c.EnableOCR = true
-		c.EnableBlend = false
-		c.EnableLabel = false
 		c.EnableMetadata = false
 		c.EnableTocFinder = false
 		c.EnableTocExtract = false
@@ -117,8 +107,6 @@ func (c *Config) ApplyVariant(variant PipelineVariant) {
 	default: // VariantStandard
 		// Standard: full pipeline
 		c.EnableOCR = true
-		c.EnableBlend = true
-		c.EnableLabel = true
 		c.EnableMetadata = true
 		c.EnableTocFinder = true
 		c.EnableTocExtract = true
@@ -134,14 +122,6 @@ func (c Config) Validate() error {
 	// OCR providers required if OCR is enabled
 	if c.EnableOCR && len(c.OcrProviders) == 0 {
 		return fmt.Errorf("at least one OCR provider is required when OCR is enabled")
-	}
-	// Blend provider required if blend is enabled
-	if c.EnableBlend && c.BlendProvider == "" {
-		return fmt.Errorf("blend provider is required when blend is enabled")
-	}
-	// Label provider required if label is enabled
-	if c.EnableLabel && c.LabelProvider == "" {
-		return fmt.Errorf("label provider is required when label is enabled")
 	}
 	// Metadata provider required if metadata is enabled
 	if c.EnableMetadata && c.MetadataProvider == "" {
@@ -162,8 +142,6 @@ func (c Config) Validate() error {
 type Status struct {
 	TotalPages       int  `json:"total_pages"`
 	OcrComplete      int  `json:"ocr_complete"`
-	BlendComplete    int  `json:"blend_complete"`
-	LabelComplete    int  `json:"label_complete"`
 	MetadataComplete bool `json:"metadata_complete"`
 	TocFound         bool `json:"toc_found"`
 	TocExtracted     bool `json:"toc_extracted"`
@@ -171,7 +149,7 @@ type Status struct {
 
 // IsComplete returns whether processing is complete for this book.
 func (st *Status) IsComplete() bool {
-	allPagesComplete := st.LabelComplete >= st.TotalPages
+	allPagesComplete := st.OcrComplete >= st.TotalPages
 	return allPagesComplete && st.MetadataComplete && st.TocExtracted
 }
 
@@ -217,8 +195,6 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 	pageQuery := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}}) {
 			ocr_complete
-			blend_complete
-			label_complete
 		}
 	}`, bookID)
 
@@ -235,12 +211,6 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 			}
 			if ocrComplete, ok := page["ocr_complete"].(bool); ok && ocrComplete {
 				status.OcrComplete++
-			}
-			if blendComplete, ok := page["blend_complete"].(bool); ok && blendComplete {
-				status.BlendComplete++
-			}
-			if labelComplete, ok := page["label_complete"].(bool); ok && labelComplete {
-				status.LabelComplete++
 			}
 		}
 	}
@@ -286,16 +256,12 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 	result, err := common.LoadBook(ctx, bookID, common.LoadBookConfig{
 		HomeDir:          homeDir,
 		OcrProviders:     cfg.OcrProviders,
-		BlendProvider:    cfg.BlendProvider,
-		LabelProvider:    cfg.LabelProvider,
 		MetadataProvider: cfg.MetadataProvider,
 		TocProvider:      cfg.TocProvider,
 		DebugAgents:      cfg.DebugAgents,
 		PromptKeys:       pjob.PromptKeys(),
 		// Pipeline stage toggles
 		EnableOCR:             cfg.EnableOCR,
-		EnableBlend:           cfg.EnableBlend,
-		EnableLabel:           cfg.EnableLabel,
 		EnableMetadata:        cfg.EnableMetadata,
 		EnableTocFinder:       cfg.EnableTocFinder,
 		EnableTocExtract:      cfg.EnableTocExtract,

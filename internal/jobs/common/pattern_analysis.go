@@ -15,26 +15,26 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
-// blendedPage holds page number and blend_markdown.
-type blendedPage struct {
-	PageNum       int
-	BlendMarkdown string
+// ocrPage holds page number and ocr_markdown.
+type ocrPage struct {
+	PageNum     int
+	OcrMarkdown string
 }
 
-// getBlendedPagesFromState gets blend_markdown for all blended pages from in-memory BookState.
+// getOcrPagesFromState gets ocr_markdown for all OCR-complete pages from in-memory BookState.
 // This is the preferred method since it avoids blocking DB queries.
-func getBlendedPagesFromState(book *BookState) []blendedPage {
-	var pages []blendedPage
+func getOcrPagesFromState(book *BookState) []ocrPage {
+	var pages []ocrPage
 	for pageNum := 1; pageNum <= book.TotalPages; pageNum++ {
 		state := book.GetPage(pageNum)
-		if state == nil || !state.IsBlendDone() {
+		if state == nil || !state.IsOcrMarkdownSet() {
 			continue
 		}
-		blendMarkdown := state.GetBlendedText()
-		if blendMarkdown != "" {
-			pages = append(pages, blendedPage{
-				PageNum:       pageNum,
-				BlendMarkdown: blendMarkdown,
+		ocrMarkdown := state.GetOcrMarkdown()
+		if ocrMarkdown != "" {
+			pages = append(pages, ocrPage{
+				PageNum:     pageNum,
+				OcrMarkdown: ocrMarkdown,
 			})
 		}
 	}
@@ -80,15 +80,15 @@ func ExtractPageLines(markdown string) (firstLines, lastLines []string) {
 func CreatePageNumberPatternWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit, string) {
 	book := jc.GetBook()
 
-	// Get blend_markdown from in-memory state (avoids blocking DB query)
-	blendedPages := getBlendedPagesFromState(book)
+	// Get ocr_markdown from in-memory state (avoids blocking DB query)
+	ocrPages := getOcrPagesFromState(book)
 
 	// Collect page line data from all pages
 	var pages []page_pattern_analyzer.PageLineData
-	for _, bp := range blendedPages {
-		_, lastLines := ExtractPageLines(bp.BlendMarkdown)
+	for _, op := range ocrPages {
+		_, lastLines := ExtractPageLines(op.OcrMarkdown)
 		pages = append(pages, page_pattern_analyzer.PageLineData{
-			PageNum:   bp.PageNum,
+			PageNum:   op.PageNum,
 			LastLines: lastLines,
 		})
 	}
@@ -161,15 +161,15 @@ func CreatePageNumberPatternWorkUnit(ctx context.Context, jc JobContext) (*jobs.
 func CreateChapterPatternsWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit, string) {
 	book := jc.GetBook()
 
-	// Get blend_markdown from in-memory state (avoids blocking DB query)
-	blendedPages := getBlendedPagesFromState(book)
+	// Get ocr_markdown from in-memory state (avoids blocking DB query)
+	ocrPages := getOcrPagesFromState(book)
 
 	// Collect page line data from all pages
 	var pages []page_pattern_analyzer.PageLineData
-	for _, bp := range blendedPages {
-		firstLines, _ := ExtractPageLines(bp.BlendMarkdown)
+	for _, op := range ocrPages {
+		firstLines, _ := ExtractPageLines(op.OcrMarkdown)
 		pages = append(pages, page_pattern_analyzer.PageLineData{
-			PageNum:    bp.PageNum,
+			PageNum:    op.PageNum,
 			FirstLines: firstLines,
 		})
 	}

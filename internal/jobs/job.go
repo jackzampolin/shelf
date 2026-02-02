@@ -204,11 +204,9 @@ type LiveStatusProvider interface {
 
 // LiveStatus contains real-time status from a running job's in-memory state.
 type LiveStatus struct {
-	TotalPages        int
-	OcrComplete       int
-	BlendComplete     int
-	LabelComplete     int
-	MetadataComplete  bool
+	TotalPages       int
+	OcrComplete      int
+	MetadataComplete bool
 	TocFound          bool
 	TocExtracted      bool
 	TocLinked         bool

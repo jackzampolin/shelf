@@ -55,20 +55,10 @@ type StageProgress struct {
 		CostByProvider map[string]float64 `json:"cost_by_provider"`
 		TotalCostUSD   float64            `json:"total_cost_usd"`
 	} `json:"ocr"`
-	Blend struct {
-		Complete int     `json:"complete"`
-		Total    int     `json:"total"`
-		CostUSD  float64 `json:"cost_usd"`
-	} `json:"blend"`
 	PatternAnalysis struct {
 		Complete bool    `json:"complete"`
 		CostUSD  float64 `json:"cost_usd"`
 	} `json:"pattern_analysis"`
-	Label struct {
-		Complete int     `json:"complete"`
-		Total    int     `json:"total"`
-		CostUSD  float64 `json:"cost_usd"`
-	} `json:"label"`
 }
 
 // MetadataStatus represents metadata extraction status.
@@ -252,8 +242,6 @@ func (e *DetailedJobStatusEndpoint) handler(w http.ResponseWriter, r *http.Reque
 				if live := provider.LiveStatus(); live != nil {
 					// Override page progress with live counts
 					resp.Stages.OCR.Complete = live.OcrComplete
-					resp.Stages.Blend.Complete = live.BlendComplete
-					resp.Stages.Label.Complete = live.LabelComplete
 
 					// Override operation states
 					resp.Metadata.Complete = live.MetadataComplete
@@ -266,13 +254,8 @@ func (e *DetailedJobStatusEndpoint) handler(w http.ResponseWriter, r *http.Reque
 
 					// Overlay costs from write-through cache if available
 					if live.CostsByStage != nil {
-						// OCR costs by provider
 						for stage, cost := range live.CostsByStage {
 							switch stage {
-							case "blend":
-								resp.Stages.Blend.CostUSD = cost
-							case "label":
-								resp.Stages.Label.CostUSD = cost
 							case "metadata":
 								resp.Metadata.CostUSD = cost
 							case "pattern_analysis":
@@ -312,7 +295,6 @@ func (e *DetailedJobStatusEndpoint) Command(getServerURL func() string) *cobra.C
 		Short: "Get detailed job status for a book",
 		Long: `Get comprehensive processing status including:
 - Per-provider OCR progress and costs
-- Blend and label progress with costs
 - Metadata extraction status and extracted data
 - ToC finder and extraction status with entries
 - Agent execution logs`,
@@ -512,15 +494,11 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 
 	// Set totals for stages
 	resp.Stages.OCR.Total = resp.TotalPages
-	resp.Stages.Blend.Total = resp.TotalPages
-	resp.Stages.Label.Total = resp.TotalPages
 
 	// Query pages for completion counts
 	pageQuery := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}}) {
 			ocr_complete
-			blend_complete
-			label_complete
 		}
 	}`, bookID)
 
@@ -537,12 +515,6 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			}
 			if ocrComplete, ok := page["ocr_complete"].(bool); ok && ocrComplete {
 				resp.Stages.OCR.Complete++
-			}
-			if blendComplete, ok := page["blend_complete"].(bool); ok && blendComplete {
-				resp.Stages.Blend.Complete++
-			}
-			if labelComplete, ok := page["label_complete"].(bool); ok && labelComplete {
-				resp.Stages.Label.Complete++
 			}
 		}
 	}
@@ -748,11 +720,8 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 	// Query costs from metrics
 	metricsQuery := svcctx.MetricsQueryFrom(ctx)
 	if metricsQuery != nil {
-		// Get all costs by operation type (parses item_key to get operation type)
-		// item_key format: page_XXXX_<type> where type is provider (mistral/paddle) for OCR
-		// or operation (blend/label) for LLM operations
 		if costByOp, err := metricsQuery.CostByOperationType(ctx, metrics.Filter{BookID: bookID}); err == nil {
-			// OCR costs - providers like "mistral", "paddle"
+			// OCR costs by provider
 			for provider := range resp.OcrProgress {
 				if cost, ok := costByOp[provider]; ok {
 					resp.Stages.OCR.CostByProvider[provider] = cost
@@ -764,19 +733,9 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 				}
 			}
 
-			// Blend cost
-			if cost, ok := costByOp["blend"]; ok {
-				resp.Stages.Blend.CostUSD = cost
-			}
-
 			// Pattern Analysis cost
 			if cost, ok := costByOp["pattern_analysis"]; ok {
 				resp.Stages.PatternAnalysis.CostUSD = cost
-			}
-
-			// Label cost
-			if cost, ok := costByOp["label"]; ok {
-				resp.Stages.Label.CostUSD = cost
 			}
 
 			// Metadata cost

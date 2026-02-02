@@ -12,7 +12,7 @@ func getPageOcrTool() providers.Tool {
 		Type: "function",
 		Function: providers.ToolFunction{
 			Name:        "get_page_ocr",
-			Description: "Get the blended OCR text for a specific page. Use to check if a page has a chapter heading or other structural element.",
+			Description: "Get the OCR markdown text for a specific page. Use to check if a page has a chapter heading or other structural element.",
 			Parameters: mustMarshal(map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -32,7 +32,7 @@ func (t *GapInvestigatorTools) getPageOcr(ctx context.Context, pageNum int) (str
 		return jsonError(fmt.Sprintf("Invalid page number: %d (book has %d pages)", pageNum, t.book.TotalPages)), nil
 	}
 
-	text, err := t.getPageBlendedText(ctx, pageNum)
+	text, err := t.getPageOcrMarkdown(ctx, pageNum)
 	if err != nil {
 		return jsonError(fmt.Sprintf("No OCR data for page %d: %v", pageNum, err)), nil
 	}

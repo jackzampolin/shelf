@@ -19,8 +19,7 @@ const (
 	ResetTocLink         ResetOperation = "toc_link"
 	ResetTocFinalize     ResetOperation = "toc_finalize"
 	ResetStructure       ResetOperation = "structure"
-	ResetLabels          ResetOperation = "labels"
-	ResetBlend           ResetOperation = "blend"
+	ResetOcr             ResetOperation = "ocr"
 )
 
 // ValidResetOperations lists all valid reset operations.
@@ -32,8 +31,7 @@ var ValidResetOperations = []ResetOperation{
 	ResetTocLink,
 	ResetTocFinalize,
 	ResetStructure,
-	ResetLabels,
-	ResetBlend,
+	ResetOcr,
 }
 
 // IsValidResetOperation checks if an operation name is valid.
@@ -50,15 +48,14 @@ func IsValidResetOperation(op string) bool {
 // This enables re-running specific stages of the pipeline.
 //
 // Cascade dependencies:
-//   - metadata        -> (none)
-//   - toc_finder      -> toc_extract, toc_link, toc_finalize, structure
-//   - toc_extract     -> toc_link, toc_finalize, structure
-//   - pattern_analysis -> labels (all pages), toc_link, toc_finalize, structure
-//   - toc_link        -> toc_finalize, structure
-//   - toc_finalize    -> structure
-//   - structure       -> (none)
-//   - labels          -> toc_link, toc_finalize, structure
-//   - blend           -> labels, pattern_analysis, (cascade from pattern_analysis)
+//   - metadata         -> (none)
+//   - toc_finder       -> toc_extract, toc_link, toc_finalize, structure
+//   - toc_extract      -> toc_link, toc_finalize, structure
+//   - pattern_analysis -> toc_link, toc_finalize, structure
+//   - toc_link         -> toc_finalize, structure
+//   - toc_finalize     -> structure
+//   - structure        -> (none)
+//   - ocr              -> pattern_analysis, (cascade from pattern_analysis)
 func ResetFrom(ctx context.Context, book *BookState, tocDocID string, op ResetOperation) error {
 	// Validate IDs to prevent GraphQL injection
 	if err := defra.ValidateID(book.BookID); err != nil {
@@ -95,10 +92,6 @@ func ResetFrom(ctx context.Context, book *BookState, tocDocID string, op ResetOp
 		if err := resetPatternAnalysis(ctx, book); err != nil {
 			return err
 		}
-		// Pattern analysis reset requires resetting all labels
-		if err := resetAllLabels(ctx, book); err != nil {
-			return err
-		}
 		return ResetFrom(ctx, book, tocDocID, ResetTocLink)
 
 	case ResetTocLink:
@@ -116,20 +109,11 @@ func ResetFrom(ctx context.Context, book *BookState, tocDocID string, op ResetOp
 	case ResetStructure:
 		return resetStructure(ctx, book)
 
-	case ResetLabels:
-		if err := resetAllLabels(ctx, book); err != nil {
+	case ResetOcr:
+		if err := resetAllOcr(ctx, book); err != nil {
 			return err
 		}
-		return ResetFrom(ctx, book, tocDocID, ResetTocLink)
-
-	case ResetBlend:
-		if err := resetAllBlends(ctx, book); err != nil {
-			return err
-		}
-		// Blend reset cascades through labels and pattern analysis
-		if err := resetAllLabels(ctx, book); err != nil {
-			return err
-		}
+		// OCR reset cascades through pattern analysis
 		if err := resetPatternAnalysis(ctx, book); err != nil {
 			return err
 		}
@@ -376,8 +360,8 @@ func resetStructure(ctx context.Context, book *BookState) error {
 	})
 }
 
-// resetAllLabels resets label_complete for all pages.
-func resetAllLabels(ctx context.Context, book *BookState) error {
+// resetAllOcr resets ocr_complete and ocr_markdown for all pages.
+func resetAllOcr(ctx context.Context, book *BookState) error {
 	logger := svcctx.LoggerFrom(ctx)
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
@@ -386,7 +370,7 @@ func resetAllLabels(ctx context.Context, book *BookState) error {
 
 	// Reset in-memory state
 	book.ForEachPage(func(pageNum int, state *PageState) {
-		state.SetLabelDone(false)
+		state.SetOcrMarkdown("")
 	})
 
 	// Reset in DB - query all pages and update
@@ -396,14 +380,14 @@ func resetAllLabels(ctx context.Context, book *BookState) error {
 	}
 
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, label_complete: {_eq: true}}) {
+		Page(filter: {book_id: {_eq: "%s"}, ocr_complete: {_eq: true}}) {
 			_docID
 		}
 	}`, book.BookID)
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
-		return fmt.Errorf("failed to query pages for label reset: %w", err)
+		return fmt.Errorf("failed to query pages for OCR reset: %w", err)
 	}
 
 	pages, ok := resp.Data["Page"].([]any)
@@ -417,7 +401,7 @@ func resetAllLabels(ctx context.Context, book *BookState) error {
 		if !ok {
 			skipCount++
 			if logger != nil {
-				logger.Warn("unexpected page data type during label reset", "type", fmt.Sprintf("%T", p))
+				logger.Warn("unexpected page data type during OCR reset", "type", fmt.Sprintf("%T", p))
 			}
 			continue
 		}
@@ -425,7 +409,7 @@ func resetAllLabels(ctx context.Context, book *BookState) error {
 		if !ok || docID == "" {
 			skipCount++
 			if logger != nil {
-				logger.Warn("missing or invalid _docID during label reset", "page_data", page)
+				logger.Warn("missing or invalid _docID during OCR reset", "page_data", page)
 			}
 			continue
 		}
@@ -434,16 +418,16 @@ func resetAllLabels(ctx context.Context, book *BookState) error {
 			Collection: "Page",
 			DocID:      docID,
 			Document: map[string]any{
-				"label_complete":    false,
-				"page_number_label": nil,
-				"running_header":    nil,
+				"ocr_complete": false,
+				"ocr_markdown": nil,
+				"headings":     nil,
 			},
 			Op: defra.OpUpdate,
 		})
 		if err != nil {
 			failCount++
 			if logger != nil {
-				logger.Error("failed to reset label for page", "doc_id", docID, "error", err)
+				logger.Error("failed to reset OCR for page", "doc_id", docID, "error", err)
 			}
 			continue
 		}
@@ -451,96 +435,11 @@ func resetAllLabels(ctx context.Context, book *BookState) error {
 	}
 
 	if logger != nil {
-		logger.Info("reset labels completed", "reset_count", resetCount, "skipped", skipCount, "failed", failCount, "book_id", book.BookID)
+		logger.Info("reset OCR completed", "reset_count", resetCount, "skipped", skipCount, "failed", failCount, "book_id", book.BookID)
 	}
 
 	if skipCount > 0 || failCount > 0 {
-		return fmt.Errorf("label reset had issues: skipped=%d, failed=%d", skipCount, failCount)
-	}
-	return nil
-}
-
-// resetAllBlends resets blend_complete for all pages.
-func resetAllBlends(ctx context.Context, book *BookState) error {
-	logger := svcctx.LoggerFrom(ctx)
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	// Reset in-memory state
-	book.ForEachPage(func(pageNum int, state *PageState) {
-		state.SetBlendDone(false)
-		state.SetBlendResult("")
-	})
-
-	// Reset in DB - query all pages and update
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return fmt.Errorf("defra client not in context")
-	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, blend_complete: {_eq: true}}) {
-			_docID
-		}
-	}`, book.BookID)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return fmt.Errorf("failed to query pages for blend reset: %w", err)
-	}
-
-	pages, ok := resp.Data["Page"].([]any)
-	if !ok || len(pages) == 0 {
-		return nil
-	}
-
-	var resetCount, skipCount, failCount int
-	for _, p := range pages {
-		page, ok := p.(map[string]any)
-		if !ok {
-			skipCount++
-			if logger != nil {
-				logger.Warn("unexpected page data type during blend reset", "type", fmt.Sprintf("%T", p))
-			}
-			continue
-		}
-		docID, ok := page["_docID"].(string)
-		if !ok || docID == "" {
-			skipCount++
-			if logger != nil {
-				logger.Warn("missing or invalid _docID during blend reset", "page_data", page)
-			}
-			continue
-		}
-		// Use sync write to ensure reset completes
-		_, err := sink.SendSync(ctx, defra.WriteOp{
-			Collection: "Page",
-			DocID:      docID,
-			Document: map[string]any{
-				"blend_complete": false,
-				"blend_markdown": nil,
-				"headings":       nil,
-			},
-			Op: defra.OpUpdate,
-		})
-		if err != nil {
-			failCount++
-			if logger != nil {
-				logger.Error("failed to reset blend for page", "doc_id", docID, "error", err)
-			}
-			continue
-		}
-		resetCount++
-	}
-
-	if logger != nil {
-		logger.Info("reset blends completed", "reset_count", resetCount, "skipped", skipCount, "failed", failCount, "book_id", book.BookID)
-	}
-
-	if skipCount > 0 || failCount > 0 {
-		return fmt.Errorf("blend reset had issues: skipped=%d, failed=%d", skipCount, failCount)
+		return fmt.Errorf("OCR reset had issues: skipped=%d, failed=%d", skipCount, failCount)
 	}
 	return nil
 }

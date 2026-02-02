@@ -28,7 +28,7 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	// Load ToC pages from BookState (in-memory)
 	tocPages := LoadTocPagesFromState(book, tocStartPage, tocEndPage)
 
-	// Fall back to DB if in-memory state doesn't have blend_markdown cached
+	// Fall back to DB if in-memory state doesn't have ocr_markdown cached
 	// (happens after job reload)
 	if len(tocPages) == 0 {
 		tocPages = LoadTocPagesFromDB(ctx, book.BookID, tocStartPage, tocEndPage)
@@ -83,14 +83,14 @@ func LoadTocPagesFromState(book *BookState, startPage, endPage int) []extract_to
 			continue
 		}
 
-		blendMarkdown := state.GetBlendedText()
-		if blendMarkdown == "" {
+		ocrMarkdown := state.GetOcrMarkdown()
+		if ocrMarkdown == "" {
 			continue
 		}
 
 		tocPages = append(tocPages, extract_toc.ToCPage{
 			PageNum: pageNum,
-			OCRText: blendMarkdown,
+			OCRText: ocrMarkdown,
 		})
 	}
 
@@ -98,7 +98,7 @@ func LoadTocPagesFromState(book *BookState, startPage, endPage int) []extract_to
 }
 
 // LoadTocPagesFromDB loads ToC page content directly from DefraDB.
-// Use this when in-memory cache doesn't have blend_markdown (e.g., after job reload).
+// Use this when in-memory cache doesn't have ocr_markdown (e.g., after job reload).
 func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage int) []extract_toc.ToCPage {
 	if startPage == 0 || endPage == 0 {
 		return nil
@@ -116,9 +116,9 @@ func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage i
 
 	// Note: DefraDB doesn't support range queries well, so we fetch all pages and filter
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, blend_complete: {_eq: true}}, order: {page_num: ASC}) {
+		Page(filter: {book_id: {_eq: "%s"}, ocr_complete: {_eq: true}}, order: {page_num: ASC}) {
 			page_num
-			blend_markdown
+			ocr_markdown
 		}
 	}`, bookID)
 
@@ -149,14 +149,14 @@ func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage i
 			continue
 		}
 
-		blendMarkdown, _ := page["blend_markdown"].(string)
-		if blendMarkdown == "" {
+		ocrMarkdown, _ := page["ocr_markdown"].(string)
+		if ocrMarkdown == "" {
 			continue
 		}
 
 		tocPages = append(tocPages, extract_toc.ToCPage{
 			PageNum: pageNum,
-			OCRText: blendMarkdown,
+			OCRText: ocrMarkdown,
 		})
 	}
 

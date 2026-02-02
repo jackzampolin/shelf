@@ -2,7 +2,7 @@ import { useState, ReactNode } from 'react'
 import { formatNumber } from '@/lib/format'
 import type { StageMetrics } from './types'
 
-type StageType = 'ocr' | 'blend' | 'llm'
+type StageType = 'ocr' | 'llm'
 
 interface CollapsibleSectionProps {
   title: string
@@ -39,7 +39,7 @@ export function CollapsibleSection({
       >
         <div className="flex items-center space-x-2">
           <span className={`transition-transform ${isOpen ? 'rotate-90' : ''}`}>
-            ▶
+            {'\u25B6'}
           </span>
           <span className="text-sm font-medium text-gray-700">{title}</span>
           <span className="text-sm text-gray-500">
@@ -77,22 +77,10 @@ export function CollapsibleSection({
                   </span>
                 </div>
                 {/* Token display varies by stage type */}
-                {stageType === 'blend' && (
-                  <span className="text-gray-600">
-                    Avg per page: <strong>{formatNumber(metrics.avg_prompt_tokens)}</strong> in
-                    <span className="text-gray-400 mx-1">→</span>
-                    <strong>{formatNumber(avgOutputTokens)}</strong> out
-                    {metrics.avg_reasoning_tokens > 0 && (
-                      <span className="text-purple-600 ml-1">
-                        (+{formatNumber(metrics.avg_reasoning_tokens)} reasoning)
-                      </span>
-                    )}
-                  </span>
-                )}
                 {stageType === 'llm' && (
                   <span className="text-gray-600">
                     Tokens: <strong>{formatNumber(metrics.avg_prompt_tokens)}</strong> in
-                    <span className="text-gray-400 mx-1">→</span>
+                    <span className="text-gray-400 mx-1">{'\u2192'}</span>
                     <strong>{formatNumber(avgOutputTokens)}</strong> out
                     {metrics.avg_reasoning_tokens > 0 && (
                       <span className="text-purple-600 ml-1">

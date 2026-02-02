@@ -7,12 +7,12 @@ export const Route = createFileRoute('/books/$bookId/pages/$pageNum')({
   component: PageViewerPage,
 })
 
-type TabType = 'blend' | 'ocr' | 'diff'
+type TabType = 'text' | 'ocr'
 
 function PageViewerPage() {
   const { bookId, pageNum } = Route.useParams()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<TabType>('blend')
+  const [activeTab, setActiveTab] = useState<TabType>('text')
   const [selectedOcrIndex, setSelectedOcrIndex] = useState(0)
   const [zoom, setZoom] = useState(100)
 
@@ -79,8 +79,8 @@ function PageViewerPage() {
   const currentOcr = ocrResults[selectedOcrIndex]
 
   const getDisplayText = () => {
-    if (activeTab === 'blend') {
-      return page?.blend_markdown || 'No blend output available'
+    if (activeTab === 'text') {
+      return page?.ocr_markdown || 'No OCR text available'
     } else if (activeTab === 'ocr' && currentOcr) {
       return currentOcr.text || 'No OCR text available'
     }
@@ -198,53 +198,17 @@ function PageViewerPage() {
 
         {/* Right panel - Text content */}
         <div className="w-1/2 flex flex-col overflow-hidden">
-          {/* Labels banner */}
-          {page?.labels && (
-            <div className="bg-gray-50 px-4 py-2 border-b flex items-center space-x-4 text-sm">
-              {page.labels.page_number_label && (
-                <span className="text-gray-600">
-                  Page: <span className="font-medium">{page.labels.page_number_label}</span>
-                </span>
-              )}
-              {page.labels.running_header && (
-                <span className="text-gray-600">
-                  Header: <span className="font-medium">{page.labels.running_header}</span>
-                </span>
-              )}
-              {page.labels.is_toc_page && (
-                <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded text-xs">
-                  ToC
-                </span>
-              )}
-              {page.labels.is_front_matter && (
-                <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs">
-                  Front Matter
-                </span>
-              )}
-              {page.labels.is_back_matter && (
-                <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs">
-                  Back Matter
-                </span>
-              )}
-            </div>
-          )}
-
           {/* Tab bar */}
           <div className="border-b px-4 py-2 flex items-center space-x-2">
             <button
-              onClick={() => setActiveTab('blend')}
+              onClick={() => setActiveTab('text')}
               className={`px-3 py-1 text-sm rounded ${
-                activeTab === 'blend'
+                activeTab === 'text'
                   ? 'bg-blue-100 text-blue-800'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              Blend
-              {page?.blend_confidence !== undefined && (
-                <span className="ml-1 text-xs opacity-75">
-                  ({(page.blend_confidence * 100).toFixed(0)}%)
-                </span>
-              )}
+              Text
             </button>
 
             {ocrResults.length > 0 && (
@@ -278,7 +242,7 @@ function PageViewerPage() {
               </>
             )}
 
-            {/* Status indicators */}
+            {/* Status indicator */}
             <div className="flex-1" />
             <div className="flex items-center space-x-2 text-xs">
               <span
@@ -289,24 +253,6 @@ function PageViewerPage() {
                 }`}
               >
                 OCR
-              </span>
-              <span
-                className={`px-2 py-0.5 rounded ${
-                  page?.status?.blend_complete
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-gray-100 text-gray-500'
-                }`}
-              >
-                Blend
-              </span>
-              <span
-                className={`px-2 py-0.5 rounded ${
-                  page?.status?.label_complete
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-gray-100 text-gray-500'
-                }`}
-              >
-                Labels
               </span>
             </div>
           </div>

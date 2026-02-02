@@ -22,10 +22,10 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 	book := jc.GetBook()
 	logger := svcctx.LoggerFrom(ctx)
 
-	// Load first N pages of blended text from BookState (in-memory)
+	// Load first N pages of OCR markdown from BookState (in-memory)
 	pages := LoadPagesForMetadataFromState(book, MetadataPageCount)
 
-	// Fall back to DB if in-memory state doesn't have blend markdown cached
+	// Fall back to DB if in-memory state doesn't have OCR markdown cached
 	// (happens after job reload from DB)
 	if len(pages) == 0 {
 		pages = LoadPagesForMetadataFromDB(ctx, book.BookID, MetadataPageCount)
@@ -83,14 +83,14 @@ func LoadPagesForMetadataFromState(book *BookState, maxPages int) []metadata.Pag
 			continue
 		}
 
-		blendMarkdown := state.GetBlendedText()
-		if blendMarkdown == "" {
+		ocrMarkdown := state.GetOcrMarkdown()
+		if ocrMarkdown == "" {
 			continue
 		}
 
 		pages = append(pages, metadata.Page{
 			PageNum:       pageNum,
-			BlendMarkdown: blendMarkdown,
+			OcrMarkdown: ocrMarkdown,
 		})
 	}
 
@@ -98,7 +98,7 @@ func LoadPagesForMetadataFromState(book *BookState, maxPages int) []metadata.Pag
 }
 
 // LoadPagesForMetadataFromDB loads page data for metadata extraction directly from DefraDB.
-// Use this when blend markdown isn't cached in memory (e.g., after job reload).
+// Use this when OCR markdown isn't cached in memory (e.g., after job reload).
 func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int) []metadata.Page {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
@@ -106,9 +106,9 @@ func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int
 	}
 
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, blend_complete: {_eq: true}}, order: {page_num: ASC}, limit: %d) {
+		Page(filter: {book_id: {_eq: "%s"}, ocr_complete: {_eq: true}}, order: {page_num: ASC}, limit: %d) {
 			page_num
-			blend_markdown
+			ocr_markdown
 		}
 	}`, bookID, maxPages)
 
@@ -133,12 +133,12 @@ func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int
 		if pn, ok := page["page_num"].(float64); ok {
 			pageNum = int(pn)
 		}
-		blendMarkdown, _ := page["blend_markdown"].(string)
+		ocrMarkdown, _ := page["ocr_markdown"].(string)
 
-		if pageNum > 0 && blendMarkdown != "" {
+		if pageNum > 0 && ocrMarkdown != "" {
 			pages = append(pages, metadata.Page{
 				PageNum:       pageNum,
-				BlendMarkdown: blendMarkdown,
+				OcrMarkdown: ocrMarkdown,
 			})
 		}
 	}

@@ -250,8 +250,7 @@ type RegistryConfig struct {
 
 // OCRProviderConfig matches config.OCRProviderCfg with resolved API key.
 type OCRProviderConfig struct {
-	Type          string  // "mistral-ocr", "deepinfra"
-	Model         string  // Model name (for deepinfra)
+	Type          string  // "mistral-ocr"
 	APIKey        string  // Resolved API key
 	RateLimit     float64 // Requests per second
 	Enabled       bool
@@ -454,14 +453,8 @@ func createOCRProvider(cfg OCRProviderConfig) OCRProvider {
 	case "mistral-ocr":
 		return NewMistralOCRClient(MistralOCRConfig{
 			APIKey:        cfg.APIKey,
-			RateLimit:     cfg.RateLimit, // Pass rate limit from config
+			RateLimit:     cfg.RateLimit,
 			IncludeImages: cfg.IncludeImages,
-		})
-	case "deepinfra":
-		return NewDeepInfraOCRClient(DeepInfraOCRConfig{
-			APIKey:    cfg.APIKey,
-			Model:     cfg.Model,
-			RateLimit: cfg.RateLimit, // Pass rate limit from config
 		})
 	default:
 		return nil
@@ -482,16 +475,10 @@ func needsLLMUpdate(client LLMClient, cfg LLMProviderConfig) bool {
 
 // needsOCRUpdate checks if an OCR provider needs to be recreated.
 func needsOCRUpdate(provider OCRProvider, cfg OCRProviderConfig) bool {
-	switch p := provider.(type) {
-	case *MistralOCRClient:
+	if p, ok := provider.(*MistralOCRClient); ok {
 		return p.apiKey != cfg.APIKey || p.rateLimit != cfg.RateLimit
-	case *DeepInfraOCRClient:
-		return p.apiKey != cfg.APIKey ||
-			p.model != cfg.Model ||
-			p.rateLimit != cfg.RateLimit
-	default:
-		return true
 	}
+	return true
 }
 
 // createTTSProvider creates a TTS provider based on provider type.

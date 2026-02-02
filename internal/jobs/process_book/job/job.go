@@ -192,7 +192,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			j.CheckCompletion(ctx)
 			return nil, nil
 		default:
-			// Page-level operations (extract, ocr, blend, label) - retry if under limit
+			// Page-level operations (extract, ocr) - retry if under limit
 			if info.RetryCount < MaxPageOpRetries {
 				retryUnit := j.createRetryUnit(ctx, info, logger)
 				if retryUnit != nil {
@@ -232,22 +232,6 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			newUnits = append(newUnits, units...)
 		}
 
-	case "blend":
-		units, err := j.HandleBlendComplete(ctx, info, result)
-		if err != nil {
-			handlerErr = err
-		} else {
-			newUnits = append(newUnits, units...)
-		}
-
-	case "label":
-		units, err := j.HandleLabelComplete(ctx, info, result)
-		if err != nil {
-			handlerErr = err
-		} else {
-			newUnits = append(newUnits, units...)
-		}
-
 	case "metadata":
 		if err := j.HandleMetadataComplete(ctx, result); err != nil {
 			handlerErr = err
@@ -275,17 +259,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			handlerErr = err
 		} else {
 			newUnits = append(newUnits, units...)
-			// Check if pattern analysis complete - if so, trigger label work units for all pages
+			// Check if pattern analysis complete - if so, check for book-level operations
 			if j.Book.PatternAnalysisIsComplete() {
-				// Generate label work units for all blended pages
-				for pageNum := 1; pageNum <= j.Book.TotalPages; pageNum++ {
-					state := j.Book.GetPage(pageNum)
-					if state != nil && state.IsBlendDone() && !state.IsLabelDone() {
-						labelUnits := j.GeneratePageWorkUnits(ctx, pageNum, state)
-						newUnits = append(newUnits, labelUnits...)
-					}
-				}
-				// Also check for book-level operations
 				newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
 			}
 		}
@@ -324,8 +299,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 	// Handle handler errors with retry for page-level operations
 	if handlerErr != nil {
-		isPageOp := info.UnitType == "extract" || info.UnitType == "ocr" ||
-			info.UnitType == "blend" || info.UnitType == "label"
+		isPageOp := info.UnitType == "extract" || info.UnitType == "ocr"
 
 		if isPageOp && info.RetryCount < MaxPageOpRetries {
 			if logger != nil {
@@ -373,10 +347,6 @@ func (j *Job) createRetryUnit(ctx context.Context, info WorkUnitInfo, logger *sl
 		unit = j.CreateExtractWorkUnit(info.PageNum)
 	case "ocr":
 		unit = j.CreateOcrWorkUnit(ctx, info.PageNum, info.Provider)
-	case "blend":
-		unit = j.CreateBlendWorkUnit(ctx, info.PageNum, state)
-	case "label":
-		unit = j.CreateLabelWorkUnit(ctx, info.PageNum, state)
 	}
 
 	if unit != nil {
@@ -396,7 +366,7 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 	j.Mu.Lock()
 	defer j.Mu.Unlock()
 
-	extractDone, ocrDone, blendDone, labelDone := 0, 0, 0, 0
+	extractDone, ocrDone := 0, 0
 	j.Book.ForEachPage(func(pageNum int, state *PageState) {
 		// Use thread-safe accessors for all field reads
 		if state.IsExtractDone() {
@@ -412,12 +382,6 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		if allOcr {
 			ocrDone++
 		}
-		if state.IsBlendDone() {
-			blendDone++
-		}
-		if state.IsLabelDone() {
-			labelDone++
-		}
 	})
 
 	// Get ToC page range using thread-safe accessor
@@ -428,8 +392,6 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		"total_pages":         fmt.Sprintf("%d", j.Book.TotalPages),
 		"extract_complete":    fmt.Sprintf("%d", extractDone),
 		"ocr_complete":        fmt.Sprintf("%d", ocrDone),
-		"blend_complete":      fmt.Sprintf("%d", blendDone),
-		"label_complete":      fmt.Sprintf("%d", labelDone),
 		"metadata_started":    fmt.Sprintf("%v", j.Book.MetadataIsStarted()),
 		"metadata_complete":   fmt.Sprintf("%v", j.Book.MetadataIsComplete()),
 		"toc_finder_started":  fmt.Sprintf("%v", j.Book.TocFinderIsStarted()),

@@ -194,13 +194,9 @@ func TestPriorityForStage(t *testing.T) {
 
 		// Page-level operations - normal priority
 		{"ocr", PriorityNormal},
-		{"blend", PriorityNormal},
-		{"label", PriorityNormal},
 		{"extract", PriorityNormal},
 
 		// Dynamic page-level keys - normal priority
-		{"page_0001_blend", PriorityNormal},
-		{"page_0042_label", PriorityNormal},
 		{"page_0100_openrouter", PriorityNormal},
 
 		// Unknown defaults to normal

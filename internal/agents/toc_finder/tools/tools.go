@@ -84,16 +84,16 @@ func (t *ToCFinderTools) GetResult() any {
 	return t.pendingResult
 }
 
-// getPageBlendedText retrieves blended OCR text from BookState.
-func (t *ToCFinderTools) getPageBlendedText(ctx context.Context, pageNum int) (string, error) {
+// getPageOcrMarkdown retrieves OCR markdown text from BookState.
+func (t *ToCFinderTools) getPageOcrMarkdown(ctx context.Context, pageNum int) (string, error) {
 	page := t.book.GetPage(pageNum)
 	if page == nil {
 		return "", fmt.Errorf("page %d not in state", pageNum)
 	}
 
-	text := page.GetBlendedText()
+	text := page.GetOcrMarkdown()
 	if text == "" {
-		return "", fmt.Errorf("no blended text for page %d", pageNum)
+		return "", fmt.Errorf("no ocr markdown for page %d", pageNum)
 	}
 
 	return text, nil

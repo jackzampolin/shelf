@@ -198,8 +198,6 @@ describe('Jobs Endpoints', () => {
         // Check all expected fields are present
         expect('total_pages' in data).toBe(true)
         expect('ocr_complete' in data).toBe(true)
-        expect('blend_complete' in data).toBe(true)
-        expect('label_complete' in data).toBe(true)
         expect('metadata_complete' in data).toBe(true)
         expect('toc_found' in data).toBe(true)
         expect('toc_extracted' in data).toBe(true)

@@ -18,16 +18,12 @@ type LoadBookConfig struct {
 
 	// Provider config
 	OcrProviders     []string
-	BlendProvider    string
-	LabelProvider    string
 	MetadataProvider string
 	TocProvider      string
 	DebugAgents      bool
 
 	// Pipeline stage toggles (all default to false - should be set by variant)
 	EnableOCR             bool
-	EnableBlend           bool
-	EnableLabel           bool
 	EnableMetadata        bool
 	EnableTocFinder       bool
 	EnableTocExtract      bool
@@ -135,16 +131,12 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	// 2. Set config
 	book.HomeDir = cfg.HomeDir
 	book.OcrProviders = cfg.OcrProviders
-	book.BlendProvider = cfg.BlendProvider
-	book.LabelProvider = cfg.LabelProvider
 	book.MetadataProvider = cfg.MetadataProvider
 	book.TocProvider = cfg.TocProvider
 	book.DebugAgents = cfg.DebugAgents
 
 	// Pipeline stage toggles
 	book.EnableOCR = cfg.EnableOCR
-	book.EnableBlend = cfg.EnableBlend
-	book.EnableLabel = cfg.EnableLabel
 	book.EnableMetadata = cfg.EnableMetadata
 	book.EnableTocFinder = cfg.EnableTocFinder
 	book.EnableTocExtract = cfg.EnableTocExtract
@@ -307,15 +299,13 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 	}
 
 	// Query pages with their related OCR results
-	// Include blend_markdown for pattern analysis on resume
 	query := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}}) {
 			_docID
 			page_num
 			extract_complete
-			blend_complete
-			blend_markdown
-			label_complete
+			ocr_complete
+			ocr_markdown
 			ocr_results {
 				provider
 				text
@@ -380,17 +370,9 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 			}
 		}
 
-		if blendComplete, ok := page["blend_complete"].(bool); ok {
-			state.SetBlendDone(blendComplete)
-			// Also populate the blended text if available (for pattern analysis on resume)
-			if blendComplete {
-				if blendMarkdown, ok := page["blend_markdown"].(string); ok && blendMarkdown != "" {
-					state.SetBlendResult(blendMarkdown)
-				}
-			}
-		}
-		if labelComplete, ok := page["label_complete"].(bool); ok {
-			state.SetLabelDone(labelComplete)
+		// Load OCR markdown if available (for pattern analysis on resume)
+		if ocrMarkdown, ok := page["ocr_markdown"].(string); ok && ocrMarkdown != "" {
+			state.SetOcrMarkdown(ocrMarkdown)
 		}
 
 		book.Pages[pageNum] = state

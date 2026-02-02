@@ -7,9 +7,7 @@ import (
 	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
-	"github.com/jackzampolin/shelf/internal/prompts/blend"
 	"github.com/jackzampolin/shelf/internal/prompts/extract_toc"
-	"github.com/jackzampolin/shelf/internal/prompts/label"
 	"github.com/jackzampolin/shelf/internal/prompts/metadata"
 )
 
@@ -18,18 +16,6 @@ import (
 // For user prompts (templates), returns empty string since they require template execution.
 func GetEmbeddedDefault(key string) string {
 	switch key {
-	// Blend prompts
-	case blend.SystemPromptKey:
-		return blend.SystemPrompt()
-	case blend.UserPromptKey:
-		return "" // User prompts are templates, require data to render
-
-	// Label prompts
-	case label.SystemPromptKey:
-		return label.SystemPrompt()
-	case label.UserPromptKey:
-		return "" // User prompts are templates, require data to render
-
 	// Metadata prompts
 	case metadata.SystemPromptKey:
 		return metadata.SystemPrompt()

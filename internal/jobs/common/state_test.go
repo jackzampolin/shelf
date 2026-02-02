@@ -241,7 +241,7 @@ func TestPageState_ConcurrentAccess(t *testing.T) {
 		const numGoroutines = 10
 		const numIterations = 100
 
-		providers := []string{"openrouter", "mistral", "deepinfra"}
+		providers := []string{"openrouter", "mistral"}
 
 		wg.Add(numGoroutines * 2)
 
@@ -325,7 +325,7 @@ func TestPageState_ConcurrentAccess(t *testing.T) {
 			go func(id int) {
 				defer wg.Done()
 				for j := 0; j < numIterations; j++ {
-					page.SetBlendResult("blended text content")
+					page.SetOcrMarkdown("blended text content")
 				}
 			}(i)
 		}
@@ -335,8 +335,8 @@ func TestPageState_ConcurrentAccess(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				for j := 0; j < numIterations; j++ {
-					_ = page.GetBlendedText()
-					_ = page.IsBlendDone()
+					_ = page.GetOcrMarkdown()
+					_ = page.IsOcrMarkdownSet()
 				}
 			}()
 		}

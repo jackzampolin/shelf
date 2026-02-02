@@ -12,8 +12,7 @@ type Config struct {
 
 // OCRProviderCfg configures an OCR provider.
 type OCRProviderCfg struct {
-	Type          string  `mapstructure:"type" yaml:"type"`                     // "mistral-ocr", "deepinfra"
-	Model         string  `mapstructure:"model" yaml:"model"`                   // Model name (for deepinfra)
+	Type          string  `mapstructure:"type" yaml:"type"`                     // "mistral-ocr"
 	APIKey        string  `mapstructure:"api_key" yaml:"api_key"`               // API key (supports ${ENV_VAR} syntax)
 	RateLimit     float64 `mapstructure:"rate_limit" yaml:"rate_limit"`         // Requests per second
 	Enabled       bool    `mapstructure:"enabled" yaml:"enabled"`
@@ -73,13 +72,6 @@ func DefaultConfig() *Config {
 				Enabled:       true,
 				IncludeImages: true, // Extract images from pages
 			},
-			"paddle": {
-				Type:      "deepinfra",
-				Model:     "PaddlePaddle/PaddleOCR-VL-0.9B",
-				APIKey:    "${DEEPINFRA_API_KEY}",
-				RateLimit: 10.0, // 10 RPS
-				Enabled:   true,
-			},
 		},
 		LLMProviders: map[string]LLMProviderCfg{
 			"openrouter": {
@@ -105,7 +97,7 @@ func DefaultConfig() *Config {
 			},
 		},
 		Defaults: DefaultsCfg{
-			OCRProviders: []string{"mistral", "paddle"},
+			OCRProviders: []string{"mistral"},
 			LLMProvider:  "openrouter",
 			TTSProvider:  "elevenlabs",
 			MaxWorkers:   10,

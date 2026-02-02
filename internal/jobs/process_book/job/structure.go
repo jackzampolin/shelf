@@ -330,16 +330,16 @@ func (j *Job) extractChapterPages(startPage, endPage int) []common.PageText {
 			continue
 		}
 
-		// Get blended text
-		blendText := pageState.GetBlendedText()
-		if blendText == "" {
+		// Get OCR markdown text
+		ocrText := pageState.GetOcrMarkdown()
+		if ocrText == "" {
 			continue
 		}
 
 		pageTexts = append(pageTexts, common.PageText{
 			ScanPage:    pageNum,
-			RawText:     blendText,
-			CleanedText: common.CleanPageText(blendText),
+			RawText:     ocrText,
+			CleanedText: common.CleanPageText(ocrText),
 		})
 	}
 
@@ -347,7 +347,7 @@ func (j *Job) extractChapterPages(startPage, endPage int) []common.PageText {
 }
 
 // persistExtractResults saves extract results to DefraDB using async writes.
-// Extract results can be recalculated on crash recovery from page blend data.
+// Extract results can be recalculated on crash recovery from page OCR data.
 func (j *Job) persistExtractResults(ctx context.Context) error {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {

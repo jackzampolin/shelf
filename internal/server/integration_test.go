@@ -285,7 +285,7 @@ llm_providers:
 		t.Errorf("expected openrouter in LLM providers, got %v", status.Providers.LLM)
 	}
 
-	// Update config to add DeepInfra OCR provider
+	// Update config to add a second Mistral OCR provider
 	updatedConfig := `
 ocr_providers:
   mistral:
@@ -293,10 +293,9 @@ ocr_providers:
     api_key: "test-mistral-key"
     rate_limit: 6.0
     enabled: true
-  deepinfra:
-    type: deepinfra
-    model: "ds-paddleocr-vl"
-    api_key: "test-deepinfra-key"
+  mistral2:
+    type: mistral-ocr
+    api_key: "test-mistral-key-2"
     rate_limit: 10.0
     enabled: true
 
@@ -314,34 +313,33 @@ llm_providers:
 	// Wait for hot reload to pick up changes
 	time.Sleep(500 * time.Millisecond)
 
-	// Poll for DeepInfra to appear
+	// Poll for mistral2 to appear
 	deadline := time.Now().Add(5 * time.Second)
-	var foundDeepInfra bool
+	var foundMistral2 bool
 	for time.Now().Before(deadline) {
 		status, err = testutil.GetStatus(cfg.URL())
 		if err != nil {
 			t.Fatalf("failed to get status after update: %v", err)
 		}
-		if slices.Contains(status.Providers.OCR, "deepinfra") {
-			foundDeepInfra = true
+		if slices.Contains(status.Providers.OCR, "mistral2") {
+			foundMistral2 = true
 			break
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	if !foundDeepInfra {
-		t.Errorf("expected deepinfra to appear after hot reload, got OCR=%v", status.Providers.OCR)
+	if !foundMistral2 {
+		t.Errorf("expected mistral2 to appear after hot reload, got OCR=%v", status.Providers.OCR)
 	}
 
-	t.Logf("After adding DeepInfra: OCR=%v, LLM=%v", status.Providers.OCR, status.Providers.LLM)
+	t.Logf("After adding mistral2: OCR=%v, LLM=%v", status.Providers.OCR, status.Providers.LLM)
 
-	// Now remove Mistral provider
+	// Now remove first Mistral provider
 	removedConfig := `
 ocr_providers:
-  deepinfra:
-    type: deepinfra
-    model: "ds-paddleocr-vl"
-    api_key: "test-deepinfra-key"
+  mistral2:
+    type: mistral-ocr
+    api_key: "test-mistral-key-2"
     rate_limit: 10.0
     enabled: true
 
@@ -378,9 +376,9 @@ llm_providers:
 		t.Errorf("expected mistral to be removed after hot reload, got OCR=%v", status.Providers.OCR)
 	}
 
-	// Verify DeepInfra is still there
-	if !slices.Contains(status.Providers.OCR, "deepinfra") {
-		t.Errorf("expected deepinfra to remain, got OCR=%v", status.Providers.OCR)
+	// Verify mistral2 is still there
+	if !slices.Contains(status.Providers.OCR, "mistral2") {
+		t.Errorf("expected mistral2 to remain, got OCR=%v", status.Providers.OCR)
 	}
 
 	t.Logf("After removing Mistral: OCR=%v, LLM=%v", status.Providers.OCR, status.Providers.LLM)

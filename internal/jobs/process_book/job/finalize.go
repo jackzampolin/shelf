@@ -144,7 +144,7 @@ func (j *Job) CreateFinalizePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit
 	// Load candidate headings from Page.headings
 	candidates := j.loadCandidateHeadings()
 
-	// Load chapter start pages from labels
+	// Load chapter start pages from DefraDB
 	chapterStartPages, err := j.loadChapterStartPages(ctx)
 	if err != nil {
 		if logger := svcctx.LoggerFrom(ctx); logger != nil {
@@ -1109,48 +1109,25 @@ type candidateHeading struct {
 	Level   int
 }
 
-func (j *Job) loadChapterStartPages(ctx context.Context) ([]types.ChapterStartPage, error) {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return nil, fmt.Errorf("defra client not in context")
-	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, is_chapter_start: {_eq: true}}, order: {page_num: ASC}) {
-			page_num
-			running_header
-		}
-	}`, j.Book.BookDocID)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query chapter start pages: %w", err)
-	}
-
-	rawPages, ok := resp.Data["Page"].([]any)
-	if !ok {
+func (j *Job) loadChapterStartPages(_ context.Context) ([]types.ChapterStartPage, error) {
+	// Derive chapter start pages from pattern analysis ChapterPatterns data.
+	// This replaces the old approach of querying is_chapter_start (a label field).
+	patternResult := j.Book.GetPatternAnalysisResult()
+	if patternResult == nil {
 		return nil, nil
 	}
 
 	var result []types.ChapterStartPage
-	for _, p := range rawPages {
-		page, ok := p.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		csp := types.ChapterStartPage{}
-		if pageNum, ok := page["page_num"].(float64); ok {
-			csp.PageNum = int(pageNum)
-		}
-		if rh, ok := page["running_header"].(string); ok {
-			csp.RunningHeader = rh
-		}
-
-		if csp.PageNum > 0 {
-			result = append(result, csp)
-		}
+	for _, cp := range patternResult.ChapterPatterns {
+		result = append(result, types.ChapterStartPage{
+			PageNum:       cp.StartPage,
+			RunningHeader: cp.RunningHeader,
+		})
 	}
+
+	sort.Slice(result, func(i, k int) bool {
+		return result[i].PageNum < result[k].PageNum
+	})
 
 	return result, nil
 }

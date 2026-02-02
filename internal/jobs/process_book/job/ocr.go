@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateOcrWorkUnit creates an OCR work unit for a page and provider.
@@ -23,7 +25,8 @@ func (j *Job) CreateOcrWorkUnit(ctx context.Context, pageNum int, provider strin
 }
 
 // HandleOcrComplete processes OCR completion.
-// Updates state, persists to DefraDB, and triggers blend if all OCR done.
+// Updates state, persists to DefraDB, and when all OCR is done, stores ocr_markdown
+// directly and triggers book-level operations.
 func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
 	state := j.Book.GetPage(info.PageNum)
 	if state == nil {
@@ -44,13 +47,36 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 		return nil, fmt.Errorf("failed to persist OCR result for page %d provider %s: %w", info.PageNum, info.Provider, err)
 	}
 
-	// If all OCR done, trigger blend
+	// If all OCR done, store the text directly as ocr_markdown and trigger book operations
 	var units []jobs.WorkUnit
 	if allDone {
-		blendUnit := j.CreateBlendWorkUnit(ctx, info.PageNum, state)
-		if blendUnit != nil {
-			units = append(units, *blendUnit)
+		// Use the first provider's OCR text as the ocr_markdown
+		ocrText := ""
+		for _, provider := range j.Book.OcrProviders {
+			if text, ok := state.GetOcrResult(provider); ok && text != "" {
+				ocrText = text
+				break
+			}
 		}
+
+		// Persist ocr_markdown to page state and DefraDB
+		if ocrText != "" {
+			state.SetOcrMarkdown(ocrText)
+
+			sink := svcctx.DefraSinkFrom(ctx)
+			if sink != nil {
+				pageDocID := state.GetPageDocID()
+				sink.Send(defra.WriteOp{
+					Collection: "Page",
+					DocID:      pageDocID,
+					Document:   map[string]any{"ocr_markdown": ocrText},
+					Op:         defra.OpUpdate,
+				})
+			}
+		}
+
+		// Check if any book operations should start now
+		units = append(units, j.MaybeStartBookOperations(ctx)...)
 	}
 
 	return units, nil

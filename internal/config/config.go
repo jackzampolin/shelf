@@ -142,7 +142,6 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 	for name, ocr := range c.OCRProviders {
 		cfg.OCRProviders[name] = providers.OCRProviderConfig{
 			Type:          ocr.Type,
-			Model:         ocr.Model,
 			APIKey:        ResolveEnvVars(ocr.APIKey),
 			RateLimit:     ocr.RateLimit,
 			Enabled:       ocr.Enabled,
@@ -189,7 +188,7 @@ func WriteDefault(path string) error {
 
 	header := []byte(`# Shelf configuration
 # API keys use ${ENV_VAR} syntax to reference environment variables
-# Set these in your shell: export MISTRAL_API_KEY=xxx DEEPINFRA_API_KEY=xxx OPENROUTER_API_KEY=xxx
+# Set these in your shell: export MISTRAL_API_KEY=xxx OPENROUTER_API_KEY=xxx
 
 `)
 	return os.WriteFile(path, append(header, data...), 0o644)

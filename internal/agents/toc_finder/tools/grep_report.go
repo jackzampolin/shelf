@@ -62,7 +62,7 @@ func (t *ToCFinderTools) getFrontmatterGrepReport(ctx context.Context) (string, 
 	pagesWithData := 0
 
 	for pageNum := 1; pageNum <= maxPages; pageNum++ {
-		text, err := t.getPageBlendedText(ctx, pageNum)
+		text, err := t.getPageOcrMarkdown(ctx, pageNum)
 		if err != nil {
 			failedPages = append(failedPages, pageNum)
 			continue

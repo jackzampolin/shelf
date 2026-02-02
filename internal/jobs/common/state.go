@@ -35,18 +35,12 @@ type PageState struct {
 	// Key presence indicates completion; value is the OCR text (may be empty for blank pages).
 	ocrResults map[string]string // provider -> OCR text
 
-	// Pipeline state (beyond OCR)
-	blendDone   bool
-	blendedText string // Cached blend result for label work unit
-	labelDone   bool
+	// OCR markdown (stored directly from OCR, no blend step)
+	ocrMarkdown string
 
 	// Cached data fields (populated on write-through or lazy load from DB)
-	// These avoid re-querying DB for data we just wrote or need repeatedly.
-	headings        []HeadingItem // Parsed headings from blend_markdown
-	pageNumberLabel *string       // nil = not loaded, empty string = loaded but no label
-	runningHeader   *string       // nil = not loaded
-	isTocPage       *bool         // nil = not loaded, true/false = loaded
-	dataLoaded      bool          // True if blend_markdown/headings/labels loaded from DB
+	headings   []HeadingItem // Parsed headings from ocr_markdown
+	dataLoaded bool          // True if ocr_markdown/headings loaded from DB
 }
 
 // NewPageState creates a new page state with initialized maps.
@@ -97,48 +91,25 @@ func (p *PageState) IsExtractDone() bool {
 	return p.extractDone
 }
 
-// SetBlendResult sets the blend result and marks blend as done (thread-safe).
-func (p *PageState) SetBlendResult(blendedText string) {
+// SetOcrMarkdown sets the OCR markdown text (thread-safe).
+func (p *PageState) SetOcrMarkdown(text string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.blendedText = blendedText
-	p.blendDone = true
+	p.ocrMarkdown = text
 }
 
-// GetBlendedText returns the blended text (thread-safe).
-func (p *PageState) GetBlendedText() string {
+// GetOcrMarkdown returns the OCR markdown text (thread-safe).
+func (p *PageState) GetOcrMarkdown() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.blendedText
+	return p.ocrMarkdown
 }
 
-// IsBlendDone returns true if blend is complete (thread-safe).
-func (p *PageState) IsBlendDone() bool {
+// IsOcrMarkdownSet returns true if OCR markdown has been set (thread-safe).
+func (p *PageState) IsOcrMarkdownSet() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.blendDone
-}
-
-// SetBlendDone marks blend as complete without updating blended text (thread-safe).
-// Use this when loading state from DB where blend_complete is true but text isn't cached.
-func (p *PageState) SetBlendDone(done bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.blendDone = done
-}
-
-// SetLabelDone marks label as complete (thread-safe).
-func (p *PageState) SetLabelDone(done bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.labelDone = done
-}
-
-// IsLabelDone returns true if label is complete (thread-safe).
-func (p *PageState) IsLabelDone() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.labelDone
+	return p.ocrMarkdown != ""
 }
 
 // GetOcrResult returns the OCR result for a provider (thread-safe).
@@ -185,51 +156,6 @@ func (p *PageState) SetHeadings(headings []HeadingItem) {
 	p.headings = headings
 }
 
-// GetPageNumberLabel returns the cached page number label (thread-safe).
-// Returns nil if not loaded from DB.
-func (p *PageState) GetPageNumberLabel() *string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.pageNumberLabel
-}
-
-// SetPageNumberLabel sets the cached page number label (thread-safe).
-func (p *PageState) SetPageNumberLabel(label *string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.pageNumberLabel = label
-}
-
-// GetRunningHeader returns the cached running header (thread-safe).
-// Returns nil if not loaded from DB.
-func (p *PageState) GetRunningHeader() *string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.runningHeader
-}
-
-// SetRunningHeader sets the cached running header (thread-safe).
-func (p *PageState) SetRunningHeader(header *string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.runningHeader = header
-}
-
-// GetIsTocPage returns the cached is_toc_page flag (thread-safe).
-// Returns nil if not loaded from DB.
-func (p *PageState) GetIsTocPage() *bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.isTocPage
-}
-
-// SetIsTocPage sets the cached is_toc_page flag (thread-safe).
-func (p *PageState) SetIsTocPage(isTocPage *bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.isTocPage = isTocPage
-}
-
 // IsDataLoaded returns true if page data has been loaded from DB (thread-safe).
 func (p *PageState) IsDataLoaded() bool {
 	p.mu.RLock()
@@ -244,25 +170,14 @@ func (p *PageState) SetDataLoaded(loaded bool) {
 	p.dataLoaded = loaded
 }
 
-// SetBlendResultWithHeadings sets the blend result and headings together (thread-safe).
-// Use this for write-through caching when persisting blend results.
-func (p *PageState) SetBlendResultWithHeadings(blendedText string, headings []HeadingItem) {
+// SetOcrMarkdownWithHeadings sets the OCR markdown and headings together (thread-safe).
+// Use this for write-through caching when persisting OCR results.
+func (p *PageState) SetOcrMarkdownWithHeadings(text string, headings []HeadingItem) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.blendedText = blendedText
+	p.ocrMarkdown = text
 	p.headings = headings
-	p.blendDone = true
-	p.dataLoaded = true // Mark as loaded since we have the data
-}
-
-// SetLabelResultCached sets the label results in cache (thread-safe).
-// Use this for write-through caching when persisting label results.
-func (p *PageState) SetLabelResultCached(pageNumberLabel, runningHeader *string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.pageNumberLabel = pageNumberLabel
-	p.runningHeader = runningHeader
-	p.labelDone = true
+	p.dataLoaded = true
 }
 
 // PopulateFromDBResult populates cache fields from a DB query result map.
@@ -271,14 +186,13 @@ func (p *PageState) PopulateFromDBResult(data map[string]any) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if bm, ok := data["blend_markdown"].(string); ok {
-		p.blendedText = bm
+	if om, ok := data["ocr_markdown"].(string); ok {
+		p.ocrMarkdown = om
 	}
 
 	if h, ok := data["headings"].(string); ok && h != "" {
 		var headings []HeadingItem
 		if err := json.Unmarshal([]byte(h), &headings); err != nil {
-			// Log at Error level - corrupt JSON indicates data corruption or schema issue
 			sample := h
 			if len(sample) > 200 {
 				sample = sample[:200] + "..."
@@ -288,18 +202,6 @@ func (p *PageState) PopulateFromDBResult(data map[string]any) {
 		} else {
 			p.headings = headings
 		}
-	}
-
-	if pnl, ok := data["page_number_label"].(string); ok {
-		p.pageNumberLabel = &pnl
-	}
-
-	if rh, ok := data["running_header"].(string); ok {
-		p.runningHeader = &rh
-	}
-
-	if isToc, ok := data["is_toc_page"].(bool); ok {
-		p.isTocPage = &isToc
 	}
 
 	p.dataLoaded = true
@@ -448,8 +350,6 @@ type BookState struct {
 
 	// Provider config (immutable after LoadBook)
 	OcrProviders     []string
-	BlendProvider    string
-	LabelProvider    string
 	MetadataProvider string
 	TocProvider      string
 	DebugAgents      bool // Enable debug logging for agent executions
@@ -457,8 +357,6 @@ type BookState struct {
 	// Pipeline stage toggles (immutable after LoadBook)
 	// Used by variants to enable/disable stages
 	EnableOCR             bool
-	EnableBlend           bool
-	EnableLabel           bool
 	EnableMetadata        bool
 	EnableTocFinder       bool
 	EnableTocExtract      bool
@@ -596,51 +494,40 @@ func (b *BookState) CountPages() int {
 	return len(b.Pages)
 }
 
-// CountLabeledPages returns the number of pages that have completed labeling.
-func (b *BookState) CountLabeledPages() int {
+// CountOcrPages returns the number of pages that have OCR markdown set.
+func (b *BookState) CountOcrPages() int {
 	count := 0
 	b.ForEachPage(func(pageNum int, state *PageState) {
-		if state.IsLabelDone() {
+		if state.IsOcrMarkdownSet() {
 			count++
 		}
 	})
 	return count
 }
 
-// CountBlendedPages returns the number of pages that have completed blend.
-func (b *BookState) CountBlendedPages() int {
-	count := 0
-	b.ForEachPage(func(pageNum int, state *PageState) {
-		if state.IsBlendDone() {
-			count++
-		}
-	})
-	return count
-}
-
-// AllPagesComplete returns true if all pages have completed the page-level pipeline.
+// AllPagesComplete returns true if all pages have completed the page-level pipeline (OCR).
 func (b *BookState) AllPagesComplete() bool {
 	allDone := true
 	b.ForEachPage(func(pageNum int, state *PageState) {
-		if !state.IsLabelDone() {
+		if !state.AllOcrDone(b.OcrProviders) {
 			allDone = false
 		}
 	})
 	return allDone && b.CountPages() >= b.TotalPages
 }
 
-// AllPagesBlendComplete returns true if all pages have completed blend.
-func (b *BookState) AllPagesBlendComplete() bool {
+// AllPagesOcrComplete returns true if all pages have completed OCR.
+func (b *BookState) AllPagesOcrComplete() bool {
 	allDone := true
 	b.ForEachPage(func(pageNum int, state *PageState) {
-		if !state.IsBlendDone() {
+		if !state.AllOcrDone(b.OcrProviders) {
 			allDone = false
 		}
 	})
 	return allDone && b.CountPages() >= b.TotalPages
 }
 
-// ConsecutivePagesComplete returns true if pages 1 through `required` all have blend_complete.
+// ConsecutivePagesComplete returns true if pages 1 through `required` all have OCR complete.
 // If TotalPages < required, checks up to TotalPages.
 func (b *BookState) ConsecutivePagesComplete(required int) bool {
 	if b.TotalPages < required {
@@ -648,7 +535,7 @@ func (b *BookState) ConsecutivePagesComplete(required int) bool {
 	}
 	for pageNum := 1; pageNum <= required; pageNum++ {
 		state := b.GetPage(pageNum)
-		if state == nil || !state.IsBlendDone() {
+		if state == nil || !state.AllOcrDone(b.OcrProviders) {
 			return false
 		}
 	}
@@ -662,7 +549,7 @@ type ProviderProgress struct {
 }
 
 // GetProviderProgress returns progress by provider for tracking job completion.
-// Includes extract, OCR per provider, blend, and label progress.
+// Includes extract and OCR per provider progress.
 func (b *BookState) GetProviderProgress() map[string]ProviderProgress {
 	progress := make(map[string]ProviderProgress)
 
@@ -690,30 +577,6 @@ func (b *BookState) GetProviderProgress() map[string]ProviderProgress {
 			TotalExpected: b.TotalPages,
 			Completed:     completed,
 		}
-	}
-
-	// Track blend progress
-	blendCompleted := 0
-	b.ForEachPage(func(pageNum int, state *PageState) {
-		if state.IsBlendDone() {
-			blendCompleted++
-		}
-	})
-	progress["blend"] = ProviderProgress{
-		TotalExpected: b.TotalPages,
-		Completed:     blendCompleted,
-	}
-
-	// Track label progress
-	labelCompleted := 0
-	b.ForEachPage(func(pageNum int, state *PageState) {
-		if state.IsLabelDone() {
-			labelCompleted++
-		}
-	})
-	progress["label"] = ProviderProgress{
-		TotalExpected: b.TotalPages,
-		Completed:     labelCompleted,
 	}
 
 	return progress

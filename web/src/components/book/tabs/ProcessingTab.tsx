@@ -21,9 +21,8 @@ interface ProcessingTabProps {
 }
 
 const JOB_TYPES = [
-  { id: 'process-book', label: 'Full Pipeline', description: 'OCR → Blend → Pattern Analysis → Label → ToC → Structure', force: false },
-  { id: 'ocr-book', label: 'OCR + Blend Only', description: 'OCR and blend all pages', force: false },
-  { id: 'label-book', label: 'Label Only', description: 'Label pages (requires pattern analysis)', force: false },
+  { id: 'process-book', label: 'Full Pipeline', description: 'OCR → Pattern Analysis → ToC → Structure', force: false },
+  { id: 'ocr-book', label: 'OCR Only', description: 'OCR all pages', force: false },
   { id: 'metadata-book', label: 'Metadata Only', description: 'Extract book metadata', force: false },
   { id: 'toc-book', label: 'ToC Only', description: 'Find and extract table of contents', force: false },
   { id: 'link-toc', label: 'Link ToC Only', description: 'Link ToC entries to actual pages', force: false },
@@ -182,24 +181,6 @@ export function ProcessingTab({ bookId, book }: ProcessingTabProps) {
               </CollapsibleSection>
             )}
 
-            {/* Blend Section */}
-            <CollapsibleSection
-              title="Blend"
-              current={detailedStatus.stages?.blend?.complete || 0}
-              total={detailedStatus.stages?.blend?.total || 0}
-              cost={detailedStatus.stages?.blend?.cost_usd}
-              metrics={detailedMetrics?.stages?.['blend']}
-              stageType="blend"
-            >
-              <div className="pl-4 border-l-2 border-gray-200">
-                <ProgressBar
-                  label="Pages"
-                  current={detailedStatus.stages?.blend?.complete || 0}
-                  total={detailedStatus.stages?.blend?.total || 0}
-                />
-              </div>
-            </CollapsibleSection>
-
             {/* Pattern Analysis Section */}
             <PatternAnalysisSection
               patternAnalysisJSON={book?.page_pattern_analysis_json}
@@ -207,23 +188,6 @@ export function ProcessingTab({ bookId, book }: ProcessingTabProps) {
               cost={detailedStatus.stages?.pattern_analysis?.cost_usd}
               metrics={detailedMetrics?.stages?.['pattern_analysis']}
             />
-
-            {/* Label Section */}
-            <CollapsibleSection
-              title="Label"
-              current={detailedStatus.stages?.label?.complete || 0}
-              total={detailedStatus.stages?.label?.total || 0}
-              cost={detailedStatus.stages?.label?.cost_usd}
-              metrics={detailedMetrics?.stages?.['label']}
-            >
-              <div className="pl-4 border-l-2 border-gray-200">
-                <ProgressBar
-                  label="Pages"
-                  current={detailedStatus.stages?.label?.complete || 0}
-                  total={detailedStatus.stages?.label?.total || 0}
-                />
-              </div>
-            </CollapsibleSection>
 
             {/* Metadata Section */}
             <div className="border-t pt-4">

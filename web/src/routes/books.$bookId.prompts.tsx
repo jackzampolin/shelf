@@ -121,8 +121,7 @@ function BookPromptsPage() {
   const overrideCount = prompts.filter((p) => p.is_override).length
 
   const groupTitles: Record<string, string> = {
-    'stages.blend': 'Blend Stage',
-    'stages.label': 'Label Stage',
+    'stages.ocr': 'OCR Stage',
     'stages.metadata': 'Metadata Stage',
     'stages.extract_toc': 'Extract ToC Stage',
     'agents.toc_finder': 'ToC Finder Agent',
