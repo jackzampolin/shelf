@@ -10,42 +10,19 @@ import (
 
 // GeneratePageWorkUnits creates work units for a page based on its current state.
 // Must be called with j.Mu held.
-// Respects pipeline stage toggles (EnableOCR, EnableBlend, EnableLabel).
+// Respects pipeline stage toggles (EnableOCR).
 func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *PageState) []jobs.WorkUnit {
 	var units []jobs.WorkUnit
 
 	// Check if OCR is needed (only if enabled)
-	allOcrDone := true
 	if j.Book.EnableOCR {
 		for _, provider := range j.Book.OcrProviders {
 			if !state.OcrComplete(provider) {
-				allOcrDone = false
 				unit := j.CreateOcrWorkUnit(ctx, pageNum, provider)
 				if unit != nil {
 					units = append(units, *unit)
 				}
 			}
-		}
-	}
-
-	// If all OCR done but blend not done, create blend unit (thread-safe accessor)
-	// Only if blend is enabled
-	if j.Book.EnableBlend && allOcrDone && !state.IsBlendDone() {
-		unit := j.CreateBlendWorkUnit(ctx, pageNum, state)
-		if unit != nil {
-			units = append(units, *unit)
-		}
-	}
-
-	// If blend done AND pattern analysis done but label not done, create label unit (thread-safe accessors)
-	// Label now runs after pattern analysis to use pattern context for guidance
-	// Only if label is enabled
-	// If pattern analysis is disabled, skip waiting for it
-	patternDone := !j.Book.EnablePatternAnalysis || j.Book.PatternAnalysisIsComplete()
-	if j.Book.EnableLabel && state.IsBlendDone() && patternDone && !state.IsLabelDone() {
-		unit := j.CreateLabelWorkUnit(ctx, pageNum, state)
-		if unit != nil {
-			units = append(units, *unit)
 		}
 	}
 
@@ -56,15 +33,15 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 // Must be called with j.mu held.
 // Respects pipeline stage toggles for each operation.
 func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
-	blendedCount := j.CountBlendedPages()
+	ocrCount := j.CountOcrPages()
 
 	var units []jobs.WorkUnit
 
-	// Start metadata extraction after threshold pages are blended
-	// Metadata only needs blended text (not labels), so it can start early
+	// Start metadata extraction after threshold pages have OCR complete
+	// Metadata only needs OCR text, so it can start early
 	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
 	// if work unit creation has side effects (like creating agent logs)
-	if j.Book.EnableMetadata && blendedCount >= BlendThresholdForMetadata && j.Book.MetadataCanStart() {
+	if j.Book.EnableMetadata && ocrCount >= OcrThresholdForMetadata && j.Book.MetadataCanStart() {
 		if err := j.Book.MetadataStart(); err == nil {
 			unit := j.CreateMetadataWorkUnit(ctx)
 			if unit != nil {
@@ -83,8 +60,8 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Start ToC finder after first 30 pages have blend complete.
-	// ToC finder only needs blended text (not labels), so no need to wait for labeling.
+	// Start ToC finder after first 30 pages have OCR complete.
+	// ToC finder only needs OCR text.
 	// IMPORTANT: Call Start() before creating work unit to prevent duplicate agents
 	if j.Book.EnableTocFinder && j.ConsecutiveFrontMatterComplete() && j.Book.TocFinderCanStart() {
 		if err := j.Book.TocFinderStart(); err == nil {
@@ -139,13 +116,13 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Start pattern analysis after ALL pages have blend complete
-	// Pattern analysis needs blended text from ALL pages for cross-page analysis
+	// Start pattern analysis after ALL pages have OCR complete
+	// Pattern analysis needs OCR text from ALL pages for cross-page analysis
 	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
-	if j.Book.EnablePatternAnalysis && j.AllPagesBlendComplete() && j.Book.PatternAnalysisCanStart() {
+	if j.Book.EnablePatternAnalysis && j.AllPagesOcrComplete() && j.Book.PatternAnalysisCanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
-			logger.Info("all pages blend complete, starting pattern analysis",
+			logger.Info("all pages OCR complete, starting pattern analysis",
 				"book_id", j.Book.BookID,
 				"total_pages", j.Book.TotalPages)
 		}
@@ -174,12 +151,12 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Start ToC linking if extraction is done AND pattern analysis is done (or disabled) AND all pages are labeled (or label disabled)
-	// ToC linker needs page labels to find chapter start pages
+	// Start ToC linking if extraction is done AND pattern analysis is done (or disabled) AND all pages have OCR complete
+	// ToC linker needs OCR text to find chapter start pages
 	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
 	patternReady := !j.Book.EnablePatternAnalysis || j.Book.PatternAnalysisIsComplete()
-	labelReady := !j.Book.EnableLabel || j.AllPagesComplete()
-	if j.Book.EnableTocLink && j.Book.TocExtractIsDone() && patternReady && labelReady && j.Book.TocLinkCanStart() {
+	ocrReady := j.AllPagesOcrComplete()
+	if j.Book.EnableTocLink && j.Book.TocExtractIsDone() && patternReady && ocrReady && j.Book.TocLinkCanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("starting ToC link operation",
@@ -202,7 +179,11 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 			} else {
 				// No entries to link - mark as complete
 				j.Book.TocLinkComplete()
-				j.PersistTocLinkState(ctx)
+				if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocLink); err != nil {
+					if logger != nil {
+						logger.Warn("failed to persist toc link completion", "error", err)
+					}
+				}
 				if logger != nil {
 					logger.Info("no ToC entries to link - marking complete")
 				}
@@ -242,30 +223,9 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 // are either complete or permanently failed.
 // Disabled stages are skipped in the completion check.
 func (j *Job) CheckCompletion(ctx context.Context) {
-	// All pages must complete enabled page-level stages
-	// For label-enabled: all pages must be labeled
-	// For blend-only: all pages must be blended
-	// For OCR-only: all pages must have OCR
-	if j.Book.EnableLabel {
-		if !j.AllPagesComplete() {
-			return
-		}
-	} else if j.Book.EnableBlend {
-		if !j.AllPagesBlendComplete() {
-			return
-		}
-	} else if j.Book.EnableOCR {
-		// For OCR-only, all pages need OCR complete
-		ocrComplete := true
-		j.Book.ForEachPage(func(pageNum int, state *PageState) {
-			for _, provider := range j.Book.OcrProviders {
-				if !state.OcrComplete(provider) {
-					ocrComplete = false
-					return
-				}
-			}
-		})
-		if !ocrComplete {
+	// All pages must complete OCR (the only page-level stage)
+	if j.Book.EnableOCR {
+		if !j.AllPagesOcrComplete() {
 			return
 		}
 	}
@@ -346,29 +306,26 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 
 // PersistBookStatus persists book status to DefraDB.
 func (j *Job) PersistBookStatus(ctx context.Context, status BookStatus) error {
-	return common.PersistBookStatus(ctx, j.Book.BookID, string(status))
+	_, err := common.PersistBookStatus(ctx, j.Book, string(status))
+	return err
 }
 
 // PersistMetadataState persists metadata state to DefraDB.
 func (j *Job) PersistMetadataState(ctx context.Context) error {
-	metadataState := j.Book.GetMetadataState()
-	return common.PersistMetadataState(ctx, j.Book.BookID, &metadataState)
+	return common.PersistOpState(ctx, j.Book, common.OpMetadata)
 }
 
 // PersistTocFinderState persists ToC finder state to DefraDB.
 func (j *Job) PersistTocFinderState(ctx context.Context) error {
-	tocFinderState := j.Book.GetTocFinderState()
-	return common.PersistTocFinderState(ctx, j.TocDocID, &tocFinderState)
+	return common.PersistOpState(ctx, j.Book, common.OpTocFinder)
 }
 
 // PersistTocExtractState persists ToC extract state to DefraDB.
 func (j *Job) PersistTocExtractState(ctx context.Context) error {
-	tocExtractState := j.Book.GetTocExtractState()
-	return common.PersistTocExtractState(ctx, j.TocDocID, &tocExtractState)
+	return common.PersistOpState(ctx, j.Book, common.OpTocExtract)
 }
 
 // PersistPatternAnalysisState persists pattern analysis state to DefraDB.
 func (j *Job) PersistPatternAnalysisState(ctx context.Context) error {
-	patternAnalysisState := j.Book.GetPatternAnalysisState()
-	return common.PersistPatternAnalysisState(ctx, j.Book.BookID, &patternAnalysisState)
+	return common.PersistOpState(ctx, j.Book, common.OpPatternAnalysis)
 }

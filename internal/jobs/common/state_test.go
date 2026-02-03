@@ -7,6 +7,13 @@ import (
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 )
 
+func assertCID(t *testing.T, label, got, want string) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("%s CID = %s, want %s", label, got, want)
+	}
+}
+
 // TestBookState_ConcurrentAccess tests thread-safety of BookState accessor methods.
 func TestBookState_ConcurrentAccess(t *testing.T) {
 	t.Run("concurrent_operation_state_transitions", func(t *testing.T) {
@@ -232,6 +239,83 @@ func TestBookState_ConcurrentAccess(t *testing.T) {
 	})
 }
 
+func TestPageStateCID(t *testing.T) {
+	state := NewPageState()
+	state.SetPageCID("bafyabc123")
+	if got := state.GetPageCID(); got != "bafyabc123" {
+		t.Fatalf("unexpected page CID: %s", got)
+	}
+}
+
+func TestBookStateOperationCIDs(t *testing.T) {
+	book := NewBookState("test-book")
+	book.SetOperationCID(OpMetadata, "bafymeta123")
+	if got := book.GetOperationCID(OpMetadata); got != "bafymeta123" {
+		t.Fatalf("unexpected operation CID: %s", got)
+	}
+}
+
+func TestBookStateTrackWriteRouting(t *testing.T) {
+	book := NewBookState("test-book")
+
+	book.SetTocDocID("toc-doc-1")
+
+	// Page state
+	page := book.GetOrCreatePage(1)
+	page.SetPageDocID("page-doc-1")
+
+	// Chapter state
+	chapter := &ChapterState{EntryID: "ch1", DocID: "chapter-doc-1", Title: "Chapter 1", StartPage: 1}
+	book.SetStructureChapters([]*ChapterState{chapter})
+
+	// Agent state
+	agentState := &AgentState{
+		AgentID:   "agent-1",
+		AgentType: AgentTypeTocFinder,
+		DocID:     "agent-doc-1",
+	}
+	book.SetAgentState(agentState)
+
+	book.TrackWrite("Page", "page-doc-1", "cid-page")
+	book.TrackWrite("Chapter", "chapter-doc-1", "cid-chapter")
+	book.TrackWrite("AgentState", "agent-doc-1", "cid-agent")
+	book.TrackWrite("Book", "test-book", "cid-book")
+	book.TrackWrite("ToC", "toc-doc-1", "cid-toc")
+
+	assertCID(t, "page", page.GetPageCID(), "cid-page")
+	assertCID(t, "chapter", chapter.CID, "cid-chapter")
+	assertCID(t, "agent", book.GetAgentState(AgentTypeTocFinder, "").CID, "cid-agent")
+	assertCID(t, "book", book.GetBookCID(), "cid-book")
+	assertCID(t, "toc", book.GetTocCID(), "cid-toc")
+
+	assertCID(t, "cidIndex page", book.GetCID("Page", "page-doc-1"), "cid-page")
+	assertCID(t, "cidIndex chapter", book.GetCID("Chapter", "chapter-doc-1"), "cid-chapter")
+	assertCID(t, "cidIndex agent", book.GetCID("AgentState", "agent-doc-1"), "cid-agent")
+	assertCID(t, "cidIndex book", book.GetCID("Book", "test-book"), "cid-book")
+	assertCID(t, "cidIndex toc", book.GetCID("ToC", "toc-doc-1"), "cid-toc")
+
+	// Unknown docIDs should not panic or mutate known state
+	book.TrackWrite("Page", "missing-doc", "cid-missing")
+	book.TrackWrite("ToC", "missing-doc", "cid-missing")
+	assertCID(t, "page", page.GetPageCID(), "cid-page")
+	assertCID(t, "toc", book.GetTocCID(), "cid-toc")
+}
+
+func TestBookStateGetCID(t *testing.T) {
+	book := NewBookState("test-book")
+	book.TrackWrite("Book", "test-book", "cid-book")
+	book.TrackWrite("Page", "page-doc-1", "cid-page")
+
+	assertCID(t, "GetCID book", book.GetCID("Book", "test-book"), "cid-book")
+	assertCID(t, "GetCID page", book.GetCID("Page", "page-doc-1"), "cid-page")
+	if got := book.GetCID("Page", "missing"); got != "" {
+		t.Fatalf("GetCID missing = %s, want empty", got)
+	}
+	if got := book.GetCID("Unknown", "doc"); got != "" {
+		t.Fatalf("GetCID unknown = %s, want empty", got)
+	}
+}
+
 // TestPageState_ConcurrentAccess tests thread-safety of PageState accessor methods.
 func TestPageState_ConcurrentAccess(t *testing.T) {
 	t.Run("concurrent_ocr_results", func(t *testing.T) {
@@ -241,7 +325,7 @@ func TestPageState_ConcurrentAccess(t *testing.T) {
 		const numGoroutines = 10
 		const numIterations = 100
 
-		providers := []string{"openrouter", "mistral", "deepinfra"}
+		providers := []string{"openrouter", "mistral"}
 
 		wg.Add(numGoroutines * 2)
 
@@ -325,7 +409,7 @@ func TestPageState_ConcurrentAccess(t *testing.T) {
 			go func(id int) {
 				defer wg.Done()
 				for j := 0; j < numIterations; j++ {
-					page.SetBlendResult("blended text content")
+					page.SetOcrMarkdown("blended text content")
 				}
 			}(i)
 		}
@@ -335,8 +419,8 @@ func TestPageState_ConcurrentAccess(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				for j := 0; j < numIterations; j++ {
-					_ = page.GetBlendedText()
-					_ = page.IsBlendDone()
+					_ = page.GetOcrMarkdown()
+					_ = page.IsOcrMarkdownSet()
 				}
 			}()
 		}

@@ -18,16 +18,12 @@ type LoadBookConfig struct {
 
 	// Provider config
 	OcrProviders     []string
-	BlendProvider    string
-	LabelProvider    string
 	MetadataProvider string
 	TocProvider      string
 	DebugAgents      bool
 
 	// Pipeline stage toggles (all default to false - should be set by variant)
 	EnableOCR             bool
-	EnableBlend           bool
-	EnableLabel           bool
 	EnableMetadata        bool
 	EnableTocFinder       bool
 	EnableTocExtract      bool
@@ -76,6 +72,7 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	// 1. Query book record for page_count and metadata
 	bookQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
+			_version { cid }
 			page_count
 			title
 			author
@@ -95,6 +92,13 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 
 	if books, ok := bookResp.Data["Book"].([]any); ok && len(books) > 0 {
 		if bookData, ok := books[0].(map[string]any); ok {
+			if versions, ok := bookData["_version"].([]any); ok && len(versions) > 0 {
+				if v, ok := versions[0].(map[string]any); ok {
+					if cid, ok := v["cid"].(string); ok && cid != "" {
+						book.SetBookCID(cid)
+					}
+				}
+			}
 			if pc, ok := bookData["page_count"].(float64); ok {
 				book.TotalPages = int(pc)
 			}
@@ -135,16 +139,12 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	// 2. Set config
 	book.HomeDir = cfg.HomeDir
 	book.OcrProviders = cfg.OcrProviders
-	book.BlendProvider = cfg.BlendProvider
-	book.LabelProvider = cfg.LabelProvider
 	book.MetadataProvider = cfg.MetadataProvider
 	book.TocProvider = cfg.TocProvider
 	book.DebugAgents = cfg.DebugAgents
 
 	// Pipeline stage toggles
 	book.EnableOCR = cfg.EnableOCR
-	book.EnableBlend = cfg.EnableBlend
-	book.EnableLabel = cfg.EnableLabel
 	book.EnableMetadata = cfg.EnableMetadata
 	book.EnableTocFinder = cfg.EnableTocFinder
 	book.EnableTocExtract = cfg.EnableTocExtract
@@ -307,15 +307,15 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 	}
 
 	// Query pages with their related OCR results
-	// Include blend_markdown for pattern analysis on resume
 	query := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}}) {
 			_docID
+			_version { cid }
 			page_num
 			extract_complete
-			blend_complete
-			blend_markdown
-			label_complete
+			ocr_complete
+			ocr_markdown
+			headings
 			ocr_results {
 				provider
 				text
@@ -357,9 +357,21 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 		state := NewPageState()
 
 		// Use thread-safe setters for all field assignments
-		if docID, ok := page["_docID"].(string); ok {
+		docID := ""
+		if v, ok := page["_docID"].(string); ok {
+			docID = v
 			state.SetPageDocID(docID)
 		}
+		cid := ""
+		if versions, ok := page["_version"].([]any); ok && len(versions) > 0 {
+			if v, ok := versions[0].(map[string]any); ok {
+				if c, ok := v["cid"].(string); ok && c != "" {
+					cid = c
+					state.SetPageCID(cid)
+				}
+			}
+		}
+		book.trackCIDLocked("Page", docID, cid)
 		if extractComplete, ok := page["extract_complete"].(bool); ok {
 			state.SetExtractDone(extractComplete)
 		}
@@ -380,23 +392,57 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 			}
 		}
 
-		if blendComplete, ok := page["blend_complete"].(bool); ok {
-			state.SetBlendDone(blendComplete)
-			// Also populate the blended text if available (for pattern analysis on resume)
-			if blendComplete {
-				if blendMarkdown, ok := page["blend_markdown"].(string); ok && blendMarkdown != "" {
-					state.SetBlendResult(blendMarkdown)
+		// Load OCR markdown/headings if available (for pattern analysis on resume)
+		ocrComplete, _ := page["ocr_complete"].(bool)
+		if ocrComplete {
+			state.PopulateFromDBResult(page)
+
+			// If OCR markdown wasn't persisted yet, derive it from OCR results.
+			if state.GetOcrMarkdown() == "" {
+				ocrText := ""
+				for _, provider := range book.OcrProviders {
+					if text, ok := state.GetOcrResult(provider); ok && text != "" {
+						ocrText = text
+						break
+					}
+				}
+				if ocrText != "" {
+					headings := ExtractHeadings(ocrText)
+					state.SetOcrMarkdownWithHeadings(ocrText, headings)
 				}
 			}
-		}
-		if labelComplete, ok := page["label_complete"].(bool); ok {
-			state.SetLabelDone(labelComplete)
+		} else {
+			if ocrMarkdown, ok := page["ocr_markdown"].(string); ok && ocrMarkdown != "" {
+				state.PopulateFromDBResult(page)
+			} else if headings, ok := page["headings"].(string); ok && headings != "" {
+				state.PopulateFromDBResult(page)
+			}
 		}
 
 		book.Pages[pageNum] = state
 	}
 
 	return nil
+}
+
+// loadOpStateFromData reads the 4 standard operation fields from a data map and sets the state.
+// The prefix is the DB field prefix (e.g. "metadata", "finder", "extract").
+func loadOpStateFromData(book *BookState, op OpType, data map[string]any, prefix string) {
+	var started, complete, failed bool
+	var retries int
+	if v, ok := data[prefix+"_started"].(bool); ok {
+		started = v
+	}
+	if v, ok := data[prefix+"_complete"].(bool); ok {
+		complete = v
+	}
+	if v, ok := data[prefix+"_failed"].(bool); ok {
+		failed = v
+	}
+	if v, ok := data[prefix+"_retries"].(float64); ok {
+		retries = int(v)
+	}
+	book.SetOpState(op, started, complete, failed, retries)
 }
 
 // boolsToOpState converts DB boolean fields to OperationState.
@@ -454,64 +500,18 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 
 	if books, ok := bookResp.Data["Book"].([]any); ok && len(books) > 0 {
 		if bookData, ok := books[0].(map[string]any); ok {
-			// Metadata state
-			var started, complete, failed bool
-			var retries int
-			if ms, ok := bookData["metadata_started"].(bool); ok {
-				started = ms
-			}
-			if mc, ok := bookData["metadata_complete"].(bool); ok {
-				complete = mc
-			}
-			if mf, ok := bookData["metadata_failed"].(bool); ok {
-				failed = mf
-			}
-			if mr, ok := bookData["metadata_retries"].(float64); ok {
-				retries = int(mr)
-			}
-			book.metadata = boolsToOpState(started, complete, failed, retries)
+			// Load Book-collection operation states via registry
+			loadOpStateFromData(book, OpMetadata, bookData, "metadata")
+			loadOpStateFromData(book, OpPatternAnalysis, bookData, "pattern_analysis")
+			loadOpStateFromData(book, OpStructure, bookData, "structure")
 
-			// Pattern analysis state
-			var paStarted, paComplete, paFailed bool
-			var paRetries int
-			if ps, ok := bookData["pattern_analysis_started"].(bool); ok {
-				paStarted = ps
-			}
-			if pc, ok := bookData["pattern_analysis_complete"].(bool); ok {
-				paComplete = pc
-			}
-			if pf, ok := bookData["pattern_analysis_failed"].(bool); ok {
-				paFailed = pf
-			}
-			if pr, ok := bookData["pattern_analysis_retries"].(float64); ok {
-				paRetries = int(pr)
-			}
-			book.patternAnalysis = boolsToOpState(paStarted, paComplete, paFailed, paRetries)
-
-			// Pattern analysis result JSON
+			// Pattern analysis result JSON (not part of standard op state)
 			if paJSON, ok := bookData["page_pattern_analysis_json"].(string); ok && paJSON != "" {
 				var result PagePatternResult
 				if err := json.Unmarshal([]byte(paJSON), &result); err == nil {
 					book.patternAnalysisResult = &result
 				}
 			}
-
-			// Structure operation state
-			var sStarted, sComplete, sFailed bool
-			var sRetries int
-			if ss, ok := bookData["structure_started"].(bool); ok {
-				sStarted = ss
-			}
-			if sc, ok := bookData["structure_complete"].(bool); ok {
-				sComplete = sc
-			}
-			if sf, ok := bookData["structure_failed"].(bool); ok {
-				sFailed = sf
-			}
-			if sr, ok := bookData["structure_retries"].(float64); ok {
-				sRetries = int(sr)
-			}
-			book.structure = boolsToOpState(sStarted, sComplete, sFailed, sRetries)
 
 			// Structure phase tracking
 			if sp, ok := bookData["structure_phase"].(string); ok {
@@ -537,6 +537,7 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			toc {
 				_docID
+				_version { cid }
 				toc_found
 				finder_started
 				finder_complete
@@ -578,77 +579,22 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				if docID, ok := toc["_docID"].(string); ok {
 					tocDocID = docID
 				}
-				// Finder state
-				var fStarted, fComplete, fFailed bool
-				var fRetries int
-				if fs, ok := toc["finder_started"].(bool); ok {
-					fStarted = fs
+				if versions, ok := toc["_version"].([]any); ok && len(versions) > 0 {
+					if v, ok := versions[0].(map[string]any); ok {
+						if cid, ok := v["cid"].(string); ok && cid != "" {
+							book.SetTocCID(cid)
+						}
+					}
 				}
-				if fc, ok := toc["finder_complete"].(bool); ok {
-					fComplete = fc
-				}
-				if ff, ok := toc["finder_failed"].(bool); ok {
-					fFailed = ff
-				}
-				if fr, ok := toc["finder_retries"].(float64); ok {
-					fRetries = int(fr)
-				}
-				book.tocFinder = boolsToOpState(fStarted, fComplete, fFailed, fRetries)
+				// Load ToC-collection operation states via registry
+				loadOpStateFromData(book, OpTocFinder, toc, "finder")
+				loadOpStateFromData(book, OpTocExtract, toc, "extract")
+				loadOpStateFromData(book, OpTocLink, toc, "link")
+				loadOpStateFromData(book, OpTocFinalize, toc, "finalize")
 
 				if found, ok := toc["toc_found"].(bool); ok {
 					book.tocFound = found
 				}
-
-				// Extract state
-				var eStarted, eComplete, eFailed bool
-				var eRetries int
-				if es, ok := toc["extract_started"].(bool); ok {
-					eStarted = es
-				}
-				if ec, ok := toc["extract_complete"].(bool); ok {
-					eComplete = ec
-				}
-				if ef, ok := toc["extract_failed"].(bool); ok {
-					eFailed = ef
-				}
-				if er, ok := toc["extract_retries"].(float64); ok {
-					eRetries = int(er)
-				}
-				book.tocExtract = boolsToOpState(eStarted, eComplete, eFailed, eRetries)
-
-				// Link state
-				var lStarted, lComplete, lFailed bool
-				var lRetries int
-				if ls, ok := toc["link_started"].(bool); ok {
-					lStarted = ls
-				}
-				if lc, ok := toc["link_complete"].(bool); ok {
-					lComplete = lc
-				}
-				if lf, ok := toc["link_failed"].(bool); ok {
-					lFailed = lf
-				}
-				if lr, ok := toc["link_retries"].(float64); ok {
-					lRetries = int(lr)
-				}
-				book.tocLink = boolsToOpState(lStarted, lComplete, lFailed, lRetries)
-
-				// Finalize state
-				var finStarted, finComplete, finFailed bool
-				var finRetries int
-				if fs, ok := toc["finalize_started"].(bool); ok {
-					finStarted = fs
-				}
-				if fc, ok := toc["finalize_complete"].(bool); ok {
-					finComplete = fc
-				}
-				if ff, ok := toc["finalize_failed"].(bool); ok {
-					finFailed = ff
-				}
-				if fr, ok := toc["finalize_retries"].(float64); ok {
-					finRetries = int(fr)
-				}
-				book.tocFinalize = boolsToOpState(finStarted, finComplete, finFailed, finRetries)
 
 				// Page range
 				if sp, ok := toc["start_page"].(float64); ok {
@@ -660,6 +606,9 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 			}
 		}
 	}
+
+	// Store tocDocID on the book so OpConfig.DocIDSource can access it
+	book.SetTocDocID(tocDocID)
 
 	return tocDocID, nil
 }
@@ -784,6 +733,7 @@ func LoadAgentStates(ctx context.Context, book *BookState) error {
 	query := fmt.Sprintf(`{
 		AgentState(filter: {book_id: {_eq: "%s"}}) {
 			_docID
+			_version { cid }
 			agent_id
 			agent_type
 			entry_doc_id
@@ -819,6 +769,13 @@ func LoadAgentStates(ctx context.Context, book *BookState) error {
 
 		if docID, ok := data["_docID"].(string); ok {
 			state.DocID = docID
+		}
+		if versions, ok := data["_version"].([]any); ok && len(versions) > 0 {
+			if v, ok := versions[0].(map[string]any); ok {
+				if cid, ok := v["cid"].(string); ok && cid != "" {
+					state.CID = cid
+				}
+			}
 		}
 		if agentID, ok := data["agent_id"].(string); ok {
 			state.AgentID = agentID
@@ -983,6 +940,7 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 	query := fmt.Sprintf(`{
 		Chapter(filter: {book_id: {_eq: "%s"}}, order: {sort_order: ASC}) {
 			_docID
+			_version { cid }
 			unique_key
 			entry_id
 			sort_order
@@ -1031,6 +989,13 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 
 		if docID, ok := data["_docID"].(string); ok {
 			chapter.DocID = docID
+		}
+		if versions, ok := data["_version"].([]any); ok && len(versions) > 0 {
+			if v, ok := versions[0].(map[string]any); ok {
+				if cid, ok := v["cid"].(string); ok && cid != "" {
+					chapter.CID = cid
+				}
+			}
 		}
 		if uniqueKey, ok := data["unique_key"].(string); ok {
 			chapter.UniqueKey = uniqueKey
@@ -1146,17 +1111,17 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 }
 
 // loadBookMetadataFromDB loads book metadata from DefraDB.
-// Returns nil if metadata is not available or on error.
-func loadBookMetadataFromDB(ctx context.Context, bookID string) *BookMetadata {
+// Returns (metadata, loaded). loaded is true when the query succeeded (even if metadata is nil).
+func loadBookMetadataFromDB(ctx context.Context, bookID string) (*BookMetadata, bool) {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		// No DefraDB client - expected in test contexts
-		return nil
+		return nil, false
 	}
 
 	// Validate bookID to prevent GraphQL injection
 	if err := defra.ValidateID(bookID); err != nil {
-		return nil
+		return nil, false
 	}
 
 	logger := svcctx.LoggerFrom(ctx)
@@ -1180,17 +1145,17 @@ func loadBookMetadataFromDB(ctx context.Context, bookID string) *BookMetadata {
 			logger.Error("loadBookMetadataFromDB: query failed - metadata will be unavailable",
 				"book_id", bookID, "error", err)
 		}
-		return nil
+		return nil, false
 	}
 
 	books, ok := resp.Data["Book"].([]any)
 	if !ok || len(books) == 0 {
-		return nil
+		return nil, true
 	}
 
 	bookData, ok := books[0].(map[string]any)
 	if !ok {
-		return nil
+		return nil, true
 	}
 
 	metadata := &BookMetadata{}
@@ -1220,7 +1185,7 @@ func loadBookMetadataFromDB(ctx context.Context, bookID string) *BookMetadata {
 		metadata.Description = v
 	}
 
-	return metadata
+	return metadata, true
 }
 
 // loadBookCostsFromDB loads cost data from Metric records for a book.

@@ -2,10 +2,13 @@ package job
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateOcrWorkUnit creates an OCR work unit for a page and provider.
@@ -23,7 +26,8 @@ func (j *Job) CreateOcrWorkUnit(ctx context.Context, pageNum int, provider strin
 }
 
 // HandleOcrComplete processes OCR completion.
-// Updates state, persists to DefraDB, and triggers blend if all OCR done.
+// Updates state, persists to DefraDB, and when all OCR is done, stores ocr_markdown
+// directly and triggers book-level operations.
 func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
 	state := j.Book.GetPage(info.PageNum)
 	if state == nil {
@@ -39,18 +43,49 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 	}
 
 	// Use common handler for persistence and state update
-	allDone, err := common.PersistOCRResult(ctx, state, j.Book.OcrProviders, info.Provider, result.OCRResult)
+	allDone, err := common.PersistOCRResult(ctx, j.Book, state, j.Book.OcrProviders, info.Provider, result.OCRResult)
 	if err != nil {
 		return nil, fmt.Errorf("failed to persist OCR result for page %d provider %s: %w", info.PageNum, info.Provider, err)
 	}
 
-	// If all OCR done, trigger blend
+	// If all OCR done, store the text directly as ocr_markdown and trigger book operations
 	var units []jobs.WorkUnit
 	if allDone {
-		blendUnit := j.CreateBlendWorkUnit(ctx, info.PageNum, state)
-		if blendUnit != nil {
-			units = append(units, *blendUnit)
+		// Use the first provider's OCR text as the ocr_markdown
+		ocrText := ""
+		for _, provider := range j.Book.OcrProviders {
+			if text, ok := state.GetOcrResult(provider); ok && text != "" {
+				ocrText = text
+				break
+			}
 		}
+
+		// Persist ocr_markdown and headings to page state and DefraDB
+		if ocrText != "" {
+			headings := common.ExtractHeadings(ocrText)
+			state.SetOcrMarkdownWithHeadings(ocrText, headings)
+
+			pageDocID := state.GetPageDocID()
+			update := map[string]any{"ocr_markdown": ocrText}
+			if headingsJSON, err := json.Marshal(headings); err == nil {
+				update["headings"] = string(headingsJSON)
+			} else if logger := svcctx.LoggerFrom(ctx); logger != nil {
+				logger.Warn("failed to marshal headings", "page_num", info.PageNum, "error", err)
+			}
+			if _, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
+				Collection: "Page",
+				DocID:      pageDocID,
+				Document:   update,
+				Op:         defra.OpUpdate,
+			}); err != nil {
+				if logger := svcctx.LoggerFrom(ctx); logger != nil {
+					logger.Warn("failed to persist ocr markdown", "page_num", info.PageNum, "error", err)
+				}
+			}
+		}
+
+		// Check if any book operations should start now
+		units = append(units, j.MaybeStartBookOperations(ctx)...)
 	}
 
 	return units, nil

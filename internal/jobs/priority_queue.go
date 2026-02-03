@@ -13,7 +13,7 @@ var ErrNilWorkUnit = errors.New("cannot push nil work unit")
 // Higher values are processed first.
 const (
 	PriorityLow    = 0  // Background/optional operations
-	PriorityNormal = 10 // Page-level operations (blend, label, ocr, extract)
+	PriorityNormal = 10 // Page-level operations (ocr, extract)
 	PriorityHigh   = 20 // Book-level operations (toc_finder, toc_extract, link_toc, metadata, finalize, structure)
 )
 
@@ -31,7 +31,7 @@ func PriorityForStage(stageOrKey string) int {
 		return PriorityHigh
 
 	// Page-level operations - normal priority
-	case "ocr", "blend", "label", "extract":
+	case "ocr", "extract":
 		return PriorityNormal
 	}
 

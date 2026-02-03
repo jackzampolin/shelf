@@ -55,48 +55,6 @@ func DefaultEntries() []Entry {
 			Description: "Maximum concurrent requests to Mistral",
 		},
 
-		// OCR Providers - Paddle
-		{
-			Key:         "providers.ocr.paddle.type",
-			Value:       "deepinfra",
-			Description: "OCR provider type for Paddle (via DeepInfra)",
-		},
-		{
-			Key:         "providers.ocr.paddle.model",
-			Value:       "PaddlePaddle/PaddleOCR-VL-0.9B",
-			Description: "Model name for Paddle OCR",
-		},
-		{
-			Key:         "providers.ocr.paddle.api_key",
-			Value:       "${DEEPINFRA_API_KEY}",
-			Description: "DeepInfra API key (uses environment variable)",
-		},
-		{
-			Key:         "providers.ocr.paddle.rate_limit",
-			Value:       10.0,
-			Description: "Rate limit in requests per second for Paddle",
-		},
-		{
-			Key:         "providers.ocr.paddle.enabled",
-			Value:       true,
-			Description: "Whether Paddle OCR provider is enabled",
-		},
-		{
-			Key:         "providers.ocr.paddle.timeout_seconds",
-			Value:       500,
-			Description: "HTTP timeout in seconds for Paddle OCR requests",
-		},
-		{
-			Key:         "providers.ocr.paddle.max_retries",
-			Value:       7,
-			Description: "Maximum retry attempts for failed Paddle requests",
-		},
-		{
-			Key:         "providers.ocr.paddle.max_concurrency",
-			Value:       30,
-			Description: "Maximum concurrent requests to Paddle",
-		},
-
 		// ===================
 		// LLM Providers
 		// ===================
@@ -194,13 +152,13 @@ func DefaultEntries() []Entry {
 		// ===================
 		{
 			Key:         "defaults.ocr_providers",
-			Value:       []string{"mistral", "paddle"},
-			Description: "Ordered list of OCR providers to use for blending",
+			Value:       []string{"mistral"},
+			Description: "Ordered list of OCR providers",
 		},
 		{
 			Key:         "defaults.llm_provider",
 			Value:       "openrouter",
-			Description: "Default LLM provider used for all pipeline stages (blend, label, metadata, toc, structure)",
+			Description: "Default LLM provider used for pipeline stages (metadata, toc, structure)",
 		},
 		{
 			Key:         "defaults.tts_provider",

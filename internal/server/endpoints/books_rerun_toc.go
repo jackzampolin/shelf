@@ -30,9 +30,9 @@ func (e *RerunTocEndpoint) Route() (string, string, http.HandlerFunc) {
 
 func (e *RerunTocEndpoint) RequiresInit() bool { return true }
 
-// BlendCompleteThreshold is the minimum number of pages with blend_complete
+// OcrCompleteThreshold is the minimum number of pages with ocr_complete
 // required before allowing ToC rerun.
-const BlendCompleteThreshold = 50
+const OcrCompleteThreshold = 50
 
 // handler godoc
 //
@@ -44,7 +44,7 @@ const BlendCompleteThreshold = 50
 //	@Success		202		{object}	RerunTocResponse
 //	@Failure		400		{object}	ErrorResponse
 //	@Failure		404		{object}	ErrorResponse
-//	@Failure		412		{object}	ErrorResponse	"Not enough pages have blend complete"
+//	@Failure		412		{object}	ErrorResponse	"Not enough pages have OCR complete"
 //	@Failure		500		{object}	ErrorResponse
 //	@Failure		503		{object}	ErrorResponse
 //	@Router			/api/books/{book_id}/rerun-toc [post]
@@ -110,9 +110,9 @@ func (e *RerunTocEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Count pages with blend_complete
+	// Count pages with ocr_complete
 	pageQuery := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, blend_complete: {_eq: true}}) {
+		Page(filter: {book_id: {_eq: "%s"}, ocr_complete: {_eq: true}}) {
 			_docID
 		}
 	}`, bookID)
@@ -123,21 +123,21 @@ func (e *RerunTocEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blendCompleteCount := 0
+	ocrCompleteCount := 0
 	if pages, ok := pageResp.Data["Page"].([]any); ok {
-		blendCompleteCount = len(pages)
+		ocrCompleteCount = len(pages)
 	}
 
 	// Check threshold - use min of threshold and page count for small books
-	threshold := BlendCompleteThreshold
+	threshold := OcrCompleteThreshold
 	if pageCount < threshold {
 		threshold = pageCount
 	}
 
-	if blendCompleteCount < threshold {
+	if ocrCompleteCount < threshold {
 		writeError(w, http.StatusPreconditionFailed,
-			fmt.Sprintf("not enough pages have blend complete: %d/%d (need %d)",
-				blendCompleteCount, pageCount, threshold))
+			fmt.Sprintf("not enough pages have OCR complete: %d/%d (need %d)",
+				ocrCompleteCount, pageCount, threshold))
 		return
 	}
 

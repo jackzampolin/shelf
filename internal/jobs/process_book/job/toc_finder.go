@@ -22,14 +22,6 @@ const AgentTypeTocFinder = common.AgentTypeTocFinder
 // Must be called with j.Mu held.
 func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	logger := svcctx.LoggerFrom(ctx)
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		if logger != nil {
-			logger.Error("CreateTocFinderWorkUnit: defra sink not in context - check service initialization",
-				"book_id", j.Book.BookID)
-		}
-		return nil
-	}
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		if logger != nil {
@@ -68,7 +60,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 		if j.TocDocID == "" {
 			// Include created_at timestamp to ensure unique DocID per book/attempt
 			// (DefraDB generates deterministic DocIDs based on content)
-			result, err := sink.SendSync(ctx, defra.WriteOp{
+			result, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
 				Collection: "ToC",
 				Document: map[string]any{
 					"toc_found":        false,
@@ -84,13 +76,20 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 				Op: defra.OpCreate,
 			})
 			if err != nil {
+				if logger != nil {
+					logger.Warn("failed to create ToC record", "error", err)
+				}
 				return nil
 			}
 			j.TocDocID = result.DocID
+			j.Book.SetTocDocID(j.TocDocID)
+			if result.CID != "" {
+				j.Book.SetTocCID(result.CID)
+			}
 
 			// Update the Book to link to this ToC synchronously to ensure
 			// the relationship exists before we return
-			_, err = sink.SendSync(ctx, defra.WriteOp{
+			_, err = common.SendTracked(ctx, j.Book, defra.WriteOp{
 				Collection: "Book",
 				DocID:      j.Book.BookID,
 				Document: map[string]any{
@@ -105,6 +104,9 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 				}
 			}
 		}
+	}
+	if j.TocDocID != "" {
+		j.Book.SetTocDocID(j.TocDocID)
 	}
 
 	// Check for saved agent state (job resume case)
@@ -165,7 +167,11 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 			ToolResults:      exported.ToolResults,
 			ResultJSON:       "",
 		}
-		common.PersistAgentStateAsync(ctx, j.Book.BookID, initialState)
+		if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
+			if logger != nil {
+				logger.Warn("failed to persist toc finder agent state", "error", err)
+			}
+		}
 		j.Book.SetAgentState(initialState)
 	}
 
@@ -225,8 +231,18 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		if agentResult != nil && agentResult.Success {
 			// Save result to DefraDB
 			if tocResult, ok := agentResult.ToolResult.(*toc_finder.Result); ok {
-				if err := common.SaveTocFinderResult(ctx, j.TocDocID, tocResult); err != nil {
+				cid, err := common.SaveTocFinderResult(ctx, j.TocDocID, tocResult)
+				if err != nil {
 					return nil, fmt.Errorf("failed to save ToC finder result: %w", err)
+				}
+				if cid != "" {
+					j.Book.SetTocCID(cid)
+					j.Book.SetOperationCID(common.OpTocFinder, cid)
+				}
+				if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, cid); err != nil {
+					if logger != nil {
+						logger.Warn("failed to update metric output ref", "error", err)
+					}
 				}
 				// Update in-memory state using thread-safe accessor
 				if tocResult.ToCPageRange != nil {
@@ -238,8 +254,18 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		} else {
 			// Agent failed or no ToC found - mark finder as done with no ToC
 			j.Book.SetTocFound(false)
-			if err := common.SaveTocFinderNoResult(ctx, j.TocDocID); err != nil {
+			cid, err := common.SaveTocFinderNoResult(ctx, j.TocDocID)
+			if err != nil {
 				return nil, err
+			}
+			if cid != "" {
+				j.Book.SetTocCID(cid)
+				j.Book.SetOperationCID(common.OpTocFinder, cid)
+			}
+			if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, cid); err != nil {
+				if logger != nil {
+					logger.Warn("failed to update metric output ref", "error", err)
+				}
 			}
 		}
 

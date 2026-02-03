@@ -20,13 +20,13 @@ export const Route = createFileRoute('/prompts')({
   component: PromptsPage,
 })
 
-// Group prompts by prefix (stages.blend.system -> stages.blend)
+// Group prompts by prefix (stages.ocr.system -> stages.ocr)
 function groupByPrefix(prompts: Prompt[]): Record<string, Prompt[]> {
   const groups: Record<string, Prompt[]> = {}
 
   for (const prompt of prompts) {
     const parts = prompt.key.split('.')
-    // Use first two parts as prefix (e.g., "stages.blend" or "agents.toc_finder")
+    // Use first two parts as prefix (e.g., "stages.ocr" or "agents.toc_finder")
     const prefix = parts.length >= 2 ? `${parts[0]}.${parts[1]}` : parts[0]
 
     if (!groups[prefix]) {
@@ -75,8 +75,7 @@ function PromptsPage() {
   const groups = groupByPrefix(prompts)
 
   const groupTitles: Record<string, string> = {
-    'stages.blend': 'Blend Stage',
-    'stages.label': 'Label Stage',
+    'stages.ocr': 'OCR Stage',
     'stages.metadata': 'Metadata Stage',
     'stages.extract_toc': 'Extract ToC Stage',
     'agents.toc_finder': 'ToC Finder Agent',

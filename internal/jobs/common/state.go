@@ -10,7 +10,9 @@ import (
 
 	page_pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/page_pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // HomeDir is an alias for home.Dir for external use.
@@ -27,6 +29,7 @@ type PageState struct {
 
 	// DefraDB document ID for the Page record
 	pageDocID string
+	pageCID   string // Latest commit CID for this page
 
 	// Extraction state
 	extractDone bool
@@ -35,18 +38,12 @@ type PageState struct {
 	// Key presence indicates completion; value is the OCR text (may be empty for blank pages).
 	ocrResults map[string]string // provider -> OCR text
 
-	// Pipeline state (beyond OCR)
-	blendDone   bool
-	blendedText string // Cached blend result for label work unit
-	labelDone   bool
+	// OCR markdown (stored directly from OCR, no blend step)
+	ocrMarkdown string
 
 	// Cached data fields (populated on write-through or lazy load from DB)
-	// These avoid re-querying DB for data we just wrote or need repeatedly.
-	headings        []HeadingItem // Parsed headings from blend_markdown
-	pageNumberLabel *string       // nil = not loaded, empty string = loaded but no label
-	runningHeader   *string       // nil = not loaded
-	isTocPage       *bool         // nil = not loaded, true/false = loaded
-	dataLoaded      bool          // True if blend_markdown/headings/labels loaded from DB
+	headings   []HeadingItem // Parsed headings from ocr_markdown
+	dataLoaded bool          // True if ocr_markdown/headings loaded from DB
 }
 
 // NewPageState creates a new page state with initialized maps.
@@ -97,48 +94,25 @@ func (p *PageState) IsExtractDone() bool {
 	return p.extractDone
 }
 
-// SetBlendResult sets the blend result and marks blend as done (thread-safe).
-func (p *PageState) SetBlendResult(blendedText string) {
+// SetOcrMarkdown sets the OCR markdown text (thread-safe).
+func (p *PageState) SetOcrMarkdown(text string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.blendedText = blendedText
-	p.blendDone = true
+	p.ocrMarkdown = text
 }
 
-// GetBlendedText returns the blended text (thread-safe).
-func (p *PageState) GetBlendedText() string {
+// GetOcrMarkdown returns the OCR markdown text (thread-safe).
+func (p *PageState) GetOcrMarkdown() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.blendedText
+	return p.ocrMarkdown
 }
 
-// IsBlendDone returns true if blend is complete (thread-safe).
-func (p *PageState) IsBlendDone() bool {
+// IsOcrMarkdownSet returns true if OCR markdown has been set (thread-safe).
+func (p *PageState) IsOcrMarkdownSet() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.blendDone
-}
-
-// SetBlendDone marks blend as complete without updating blended text (thread-safe).
-// Use this when loading state from DB where blend_complete is true but text isn't cached.
-func (p *PageState) SetBlendDone(done bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.blendDone = done
-}
-
-// SetLabelDone marks label as complete (thread-safe).
-func (p *PageState) SetLabelDone(done bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.labelDone = done
-}
-
-// IsLabelDone returns true if label is complete (thread-safe).
-func (p *PageState) IsLabelDone() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.labelDone
+	return p.ocrMarkdown != ""
 }
 
 // GetOcrResult returns the OCR result for a provider (thread-safe).
@@ -163,6 +137,20 @@ func (p *PageState) SetPageDocID(docID string) {
 	p.pageDocID = docID
 }
 
+// GetPageCID returns the page commit CID (thread-safe).
+func (p *PageState) GetPageCID() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.pageCID
+}
+
+// SetPageCID sets the page commit CID (thread-safe).
+func (p *PageState) SetPageCID(cid string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pageCID = cid
+}
+
 // --- Cache accessor methods ---
 
 // GetHeadings returns the cached headings (thread-safe).
@@ -185,51 +173,6 @@ func (p *PageState) SetHeadings(headings []HeadingItem) {
 	p.headings = headings
 }
 
-// GetPageNumberLabel returns the cached page number label (thread-safe).
-// Returns nil if not loaded from DB.
-func (p *PageState) GetPageNumberLabel() *string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.pageNumberLabel
-}
-
-// SetPageNumberLabel sets the cached page number label (thread-safe).
-func (p *PageState) SetPageNumberLabel(label *string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.pageNumberLabel = label
-}
-
-// GetRunningHeader returns the cached running header (thread-safe).
-// Returns nil if not loaded from DB.
-func (p *PageState) GetRunningHeader() *string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.runningHeader
-}
-
-// SetRunningHeader sets the cached running header (thread-safe).
-func (p *PageState) SetRunningHeader(header *string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.runningHeader = header
-}
-
-// GetIsTocPage returns the cached is_toc_page flag (thread-safe).
-// Returns nil if not loaded from DB.
-func (p *PageState) GetIsTocPage() *bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.isTocPage
-}
-
-// SetIsTocPage sets the cached is_toc_page flag (thread-safe).
-func (p *PageState) SetIsTocPage(isTocPage *bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.isTocPage = isTocPage
-}
-
 // IsDataLoaded returns true if page data has been loaded from DB (thread-safe).
 func (p *PageState) IsDataLoaded() bool {
 	p.mu.RLock()
@@ -244,25 +187,14 @@ func (p *PageState) SetDataLoaded(loaded bool) {
 	p.dataLoaded = loaded
 }
 
-// SetBlendResultWithHeadings sets the blend result and headings together (thread-safe).
-// Use this for write-through caching when persisting blend results.
-func (p *PageState) SetBlendResultWithHeadings(blendedText string, headings []HeadingItem) {
+// SetOcrMarkdownWithHeadings sets the OCR markdown and headings together (thread-safe).
+// Use this for write-through caching when persisting OCR results.
+func (p *PageState) SetOcrMarkdownWithHeadings(text string, headings []HeadingItem) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.blendedText = blendedText
+	p.ocrMarkdown = text
 	p.headings = headings
-	p.blendDone = true
-	p.dataLoaded = true // Mark as loaded since we have the data
-}
-
-// SetLabelResultCached sets the label results in cache (thread-safe).
-// Use this for write-through caching when persisting label results.
-func (p *PageState) SetLabelResultCached(pageNumberLabel, runningHeader *string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.pageNumberLabel = pageNumberLabel
-	p.runningHeader = runningHeader
-	p.labelDone = true
+	p.dataLoaded = true
 }
 
 // PopulateFromDBResult populates cache fields from a DB query result map.
@@ -271,14 +203,13 @@ func (p *PageState) PopulateFromDBResult(data map[string]any) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if bm, ok := data["blend_markdown"].(string); ok {
-		p.blendedText = bm
+	if om, ok := data["ocr_markdown"].(string); ok {
+		p.ocrMarkdown = om
 	}
 
 	if h, ok := data["headings"].(string); ok && h != "" {
 		var headings []HeadingItem
 		if err := json.Unmarshal([]byte(h), &headings); err != nil {
-			// Log at Error level - corrupt JSON indicates data corruption or schema issue
 			sample := h
 			if len(sample) > 200 {
 				sample = sample[:200] + "..."
@@ -288,18 +219,6 @@ func (p *PageState) PopulateFromDBResult(data map[string]any) {
 		} else {
 			p.headings = headings
 		}
-	}
-
-	if pnl, ok := data["page_number_label"].(string); ok {
-		p.pageNumberLabel = &pnl
-	}
-
-	if rh, ok := data["running_header"].(string); ok {
-		p.runningHeader = &rh
-	}
-
-	if isToc, ok := data["is_toc_page"].(bool); ok {
-		p.isTocPage = &isToc
 	}
 
 	p.dataLoaded = true
@@ -438,6 +357,12 @@ type BookState struct {
 	bookMetadata       *BookMetadata
 	bookMetadataLoaded bool // True if metadata has been loaded/attempted
 
+	// Version tracking (mutable - use accessor methods)
+	bookCID       string
+	tocCID        string
+	operationCIDs map[OpType]string // CID when each operation completed
+	cidIndex      map[string]map[string]string
+
 	// Context (immutable after LoadBook)
 	HomeDir    *home.Dir
 	PDFs       PDFList
@@ -448,8 +373,6 @@ type BookState struct {
 
 	// Provider config (immutable after LoadBook)
 	OcrProviders     []string
-	BlendProvider    string
-	LabelProvider    string
 	MetadataProvider string
 	TocProvider      string
 	DebugAgents      bool // Enable debug logging for agent executions
@@ -457,8 +380,6 @@ type BookState struct {
 	// Pipeline stage toggles (immutable after LoadBook)
 	// Used by variants to enable/disable stages
 	EnableOCR             bool
-	EnableBlend           bool
-	EnableLabel           bool
 	EnableMetadata        bool
 	EnableTocFinder       bool
 	EnableTocExtract      bool
@@ -471,14 +392,15 @@ type BookState struct {
 	Prompts    map[string]string // prompt_key -> resolved text
 	PromptCIDs map[string]string // prompt_key -> CID for traceability
 
-	// Book-level operation state (mutable - unexported, use accessor methods)
-	metadata        OperationState
-	tocFinder       OperationState
-	tocExtract      OperationState
-	patternAnalysis OperationState
-	tocLink         OperationState
-	tocFinalize     OperationState
-	structure       OperationState
+	// Generic operation state map (mutable - use Op* methods for access)
+	ops map[OpType]*OperationState
+
+	// ToC document ID (set during LoadBook, used for persistence)
+	tocDocID string
+
+	// Legacy operation state fields - delegated to ops map
+	// These are kept as computed properties via the deprecated wrapper methods.
+	// New code should use Op* methods and OpRegistry.
 
 	// Structure phase tracking (mutable - unexported, use accessor methods)
 	// Phases: build -> extract -> classify -> polish -> finalize
@@ -546,21 +468,157 @@ type BookState struct {
 	// Write-through: updated when agent runs complete, lazy-loaded from DB on first access
 	agentRuns       []AgentRunSummary // cached summaries of agent executions
 	agentRunsLoaded bool              // true if agent runs have been loaded from DB
+
+	// Store abstracts DB operations for testability.
+	// When nil, functions fall back to extracting client/sink from context.
+	Store StateStore
 }
 
 // NewBookState creates a new BookState with initialized maps.
 func NewBookState(bookID string) *BookState {
 	return &BookState{
-		BookID:                      bookID,
-		BookDocID:                   bookID, // Same as BookID - both are the DefraDB document ID
-		Pages:                       make(map[int]*PageState),
-		Prompts:                     make(map[string]string),
-		PromptCIDs:                  make(map[string]string),
+		BookID:     bookID,
+		BookDocID:  bookID, // Same as BookID - both are the DefraDB document ID
+		Pages:      make(map[int]*PageState),
+		Prompts:    make(map[string]string),
+		PromptCIDs: make(map[string]string),
+		ops: map[OpType]*OperationState{
+			OpMetadata:        {},
+			OpTocFinder:       {},
+			OpTocExtract:      {},
+			OpPatternAnalysis: {},
+			OpTocLink:         {},
+			OpTocFinalize:     {},
+			OpStructure:       {},
+		},
+		operationCIDs:               make(map[OpType]string),
+		cidIndex:                    make(map[string]map[string]string),
 		agentStates:                 make(map[string]*AgentState),
 		structureClassifications:    make(map[string]string),
 		structureClassifyReasonings: make(map[string]string),
 		costsByStage:                make(map[string]float64),
 	}
+}
+
+// GetBookCID returns the latest book commit CID (thread-safe).
+func (b *BookState) GetBookCID() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.bookCID
+}
+
+// SetBookCID sets the latest book commit CID (thread-safe).
+func (b *BookState) SetBookCID(cid string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.bookCID = cid
+	b.trackCIDLocked("Book", b.BookID, cid)
+}
+
+// GetTocCID returns the latest ToC commit CID (thread-safe).
+func (b *BookState) GetTocCID() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.tocCID
+}
+
+// SetTocCID sets the latest ToC commit CID (thread-safe).
+func (b *BookState) SetTocCID(cid string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.tocCID = cid
+	if b.tocDocID != "" {
+		b.trackCIDLocked("ToC", b.tocDocID, cid)
+	}
+}
+
+// GetOperationCID returns the commit CID for a completed operation (thread-safe).
+func (b *BookState) GetOperationCID(op OpType) string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.operationCIDs[op]
+}
+
+// SetOperationCID sets the commit CID for a completed operation (thread-safe).
+func (b *BookState) SetOperationCID(op OpType, cid string) {
+	if cid == "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.operationCIDs == nil {
+		b.operationCIDs = make(map[OpType]string)
+	}
+	b.operationCIDs[op] = cid
+}
+
+// TrackWrite updates CID tracking for a write result.
+func (b *BookState) TrackWrite(collection, docID, cid string) {
+	if cid == "" || docID == "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.trackCIDLocked(collection, docID, cid)
+
+	switch collection {
+	case "Book":
+		if docID == b.BookID {
+			b.bookCID = cid
+		}
+	case "ToC":
+		if docID == b.tocDocID {
+			b.tocCID = cid
+		}
+	case "Page":
+		for _, state := range b.Pages {
+			if state != nil && state.pageDocID == docID {
+				state.pageCID = cid
+				break
+			}
+		}
+	case "Chapter":
+		for _, chapter := range b.structureChapters {
+			if chapter != nil && chapter.DocID == docID {
+				chapter.CID = cid
+				break
+			}
+		}
+	case "AgentState":
+		for _, state := range b.agentStates {
+			if state != nil && state.DocID == docID {
+				state.CID = cid
+				break
+			}
+		}
+	}
+}
+
+// GetCID returns the tracked CID for a collection/docID pair.
+func (b *BookState) GetCID(collection, docID string) string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.cidIndex == nil {
+		return ""
+	}
+	if docs, ok := b.cidIndex[collection]; ok {
+		return docs[docID]
+	}
+	return ""
+}
+
+// trackCIDLocked stores a CID in the index. Caller must hold b.mu.
+func (b *BookState) trackCIDLocked(collection, docID, cid string) {
+	if cid == "" || docID == "" {
+		return
+	}
+	if b.cidIndex == nil {
+		b.cidIndex = make(map[string]map[string]string)
+	}
+	if b.cidIndex[collection] == nil {
+		b.cidIndex[collection] = make(map[string]string)
+	}
+	b.cidIndex[collection][docID] = cid
 }
 
 // GetPage returns the page state for a given page number (thread-safe).
@@ -580,6 +638,38 @@ func (b *BookState) GetOrCreatePage(pageNum int) *PageState {
 	return b.Pages[pageNum]
 }
 
+// GetPageAtCID loads a page's state at a specific DefraDB commit CID.
+func (b *BookState) GetPageAtCID(ctx context.Context, pageNum int, cid string) (map[string]any, error) {
+	if cid == "" {
+		return nil, fmt.Errorf("cid is required")
+	}
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil, fmt.Errorf("defra client not in context")
+	}
+
+	query, vars := defra.NewQuery("Page").
+		Filter("book_id", b.BookID).
+		Filter("page_num", pageNum).
+		WithCID(cid).
+		Fields("_docID", "page_num", "ocr_markdown", "headings", "ocr_complete").
+		Build()
+
+	resp, err := defraClient.Execute(ctx, query, vars)
+	if err != nil {
+		return nil, err
+	}
+	pages, ok := resp.Data["Page"].([]any)
+	if !ok || len(pages) == 0 {
+		return nil, fmt.Errorf("page not found at CID %s", cid)
+	}
+	page, ok := pages[0].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected page format at CID %s", cid)
+	}
+	return page, nil
+}
+
 // ForEachPage calls the function for each page (thread-safe, read lock).
 func (b *BookState) ForEachPage(fn func(pageNum int, state *PageState)) {
 	b.mu.RLock()
@@ -596,51 +686,40 @@ func (b *BookState) CountPages() int {
 	return len(b.Pages)
 }
 
-// CountLabeledPages returns the number of pages that have completed labeling.
-func (b *BookState) CountLabeledPages() int {
+// CountOcrPages returns the number of pages that have OCR markdown set.
+func (b *BookState) CountOcrPages() int {
 	count := 0
 	b.ForEachPage(func(pageNum int, state *PageState) {
-		if state.IsLabelDone() {
+		if state.IsOcrMarkdownSet() {
 			count++
 		}
 	})
 	return count
 }
 
-// CountBlendedPages returns the number of pages that have completed blend.
-func (b *BookState) CountBlendedPages() int {
-	count := 0
-	b.ForEachPage(func(pageNum int, state *PageState) {
-		if state.IsBlendDone() {
-			count++
-		}
-	})
-	return count
-}
-
-// AllPagesComplete returns true if all pages have completed the page-level pipeline.
+// AllPagesComplete returns true if all pages have completed the page-level pipeline (OCR).
 func (b *BookState) AllPagesComplete() bool {
 	allDone := true
 	b.ForEachPage(func(pageNum int, state *PageState) {
-		if !state.IsLabelDone() {
+		if !state.AllOcrDone(b.OcrProviders) {
 			allDone = false
 		}
 	})
 	return allDone && b.CountPages() >= b.TotalPages
 }
 
-// AllPagesBlendComplete returns true if all pages have completed blend.
-func (b *BookState) AllPagesBlendComplete() bool {
+// AllPagesOcrComplete returns true if all pages have completed OCR.
+func (b *BookState) AllPagesOcrComplete() bool {
 	allDone := true
 	b.ForEachPage(func(pageNum int, state *PageState) {
-		if !state.IsBlendDone() {
+		if !state.AllOcrDone(b.OcrProviders) {
 			allDone = false
 		}
 	})
 	return allDone && b.CountPages() >= b.TotalPages
 }
 
-// ConsecutivePagesComplete returns true if pages 1 through `required` all have blend_complete.
+// ConsecutivePagesComplete returns true if pages 1 through `required` all have OCR complete.
 // If TotalPages < required, checks up to TotalPages.
 func (b *BookState) ConsecutivePagesComplete(required int) bool {
 	if b.TotalPages < required {
@@ -648,7 +727,7 @@ func (b *BookState) ConsecutivePagesComplete(required int) bool {
 	}
 	for pageNum := 1; pageNum <= required; pageNum++ {
 		state := b.GetPage(pageNum)
-		if state == nil || !state.IsBlendDone() {
+		if state == nil || !state.AllOcrDone(b.OcrProviders) {
 			return false
 		}
 	}
@@ -662,7 +741,7 @@ type ProviderProgress struct {
 }
 
 // GetProviderProgress returns progress by provider for tracking job completion.
-// Includes extract, OCR per provider, blend, and label progress.
+// Includes extract and OCR per provider progress.
 func (b *BookState) GetProviderProgress() map[string]ProviderProgress {
 	progress := make(map[string]ProviderProgress)
 
@@ -690,30 +769,6 @@ func (b *BookState) GetProviderProgress() map[string]ProviderProgress {
 			TotalExpected: b.TotalPages,
 			Completed:     completed,
 		}
-	}
-
-	// Track blend progress
-	blendCompleted := 0
-	b.ForEachPage(func(pageNum int, state *PageState) {
-		if state.IsBlendDone() {
-			blendCompleted++
-		}
-	})
-	progress["blend"] = ProviderProgress{
-		TotalExpected: b.TotalPages,
-		Completed:     blendCompleted,
-	}
-
-	// Track label progress
-	labelCompleted := 0
-	b.ForEachPage(func(pageNum int, state *PageState) {
-		if state.IsLabelDone() {
-			labelCompleted++
-		}
-	})
-	progress["label"] = ProviderProgress{
-		TotalExpected: b.TotalPages,
-		Completed:     labelCompleted,
 	}
 
 	return progress
@@ -949,13 +1004,14 @@ type AgentState struct {
 
 	// Database identity
 	DocID string // DefraDB document ID for this agent state
+	CID   string // DefraDB commit CID for this agent state
 }
 
 // Valid agent types - used for validation
 const (
-	AgentTypeTocFinder      = "toc_finder"
-	AgentTypeTocEntryFinder = "toc_entry_finder"
-	AgentTypeChapterFinder  = "chapter_finder"
+	AgentTypeTocFinder       = "toc_finder"
+	AgentTypeTocEntryFinder  = "toc_entry_finder"
+	AgentTypeChapterFinder   = "chapter_finder"
 	AgentTypeGapInvestigator = "gap_investigator"
 )
 
@@ -1012,6 +1068,9 @@ func (b *BookState) SetAgentState(state *AgentState) {
 	defer b.mu.Unlock()
 	key := AgentStateKey(state.AgentType, state.EntryDocID)
 	b.agentStates[key] = state
+	if state != nil {
+		b.trackCIDLocked("AgentState", state.DocID, state.CID)
+	}
 }
 
 // RemoveAgentState removes agent state (thread-safe).
@@ -1090,10 +1149,10 @@ type ExcludedRange struct {
 
 // EntryToFind represents a missing chapter/section to discover.
 type EntryToFind struct {
-	Key              string `json:"key"`                // Unique key like "chapter_14"
-	LevelName        string `json:"level_name"`         // "chapter", "part"
-	Identifier       string `json:"identifier"`         // "14", "III", "A"
-	HeadingFormat    string `json:"heading_format"`     // "Chapter {n}"
+	Key              string `json:"key"`            // Unique key like "chapter_14"
+	LevelName        string `json:"level_name"`     // "chapter", "part"
+	Identifier       string `json:"identifier"`     // "14", "III", "A"
+	HeadingFormat    string `json:"heading_format"` // "Chapter {n}"
 	Level            int    `json:"level"`
 	ExpectedNearPage int    `json:"expected_near_page"` // Estimated page based on sequence
 	SearchRangeStart int    `json:"search_range_start"`
@@ -1102,7 +1161,7 @@ type EntryToFind struct {
 
 // FinalizeGap represents a gap in page coverage between entries.
 type FinalizeGap struct {
-	Key            string `json:"key"`              // Unique key like "gap_100_150"
+	Key            string `json:"key"` // Unique key like "gap_100_150"
 	StartPage      int    `json:"start_page"`
 	EndPage        int    `json:"end_page"`
 	Size           int    `json:"size"`
@@ -1116,7 +1175,7 @@ type FinalizeGap struct {
 
 // FinalizeState holds finalize ToC sub-job state within BookState.
 type FinalizeState struct {
-	Phase           string                 `json:"phase"`            // pattern, discover, validate
+	Phase           string                 `json:"phase"` // pattern, discover, validate
 	PatternResult   *FinalizePatternResult `json:"pattern_result"`
 	EntriesToFind   []*EntryToFind         `json:"entries_to_find"`
 	EntriesComplete int                    `json:"entries_complete"`
@@ -1275,6 +1334,7 @@ type ChapterState struct {
 	EntryID   string `json:"entry_id"`   // Unique within book (e.g., "ch_001")
 	UniqueKey string `json:"unique_key"` // For upsert: "{book_id}:{toc_entry_id}" or "{book_id}:orphan:{sort_order}"
 	DocID     string `json:"doc_id"`     // DefraDB doc ID (after create)
+	CID       string `json:"cid"`        // DefraDB commit CID (latest)
 
 	// From ToC
 	Title       string `json:"title"`
@@ -1335,17 +1395,17 @@ func NewChapterState(entryID, uniqueKey, title string, startPage int) (*ChapterS
 
 // StructureState holds structure sub-job state within BookState (for serialization).
 type StructureState struct {
-	Phase              string                    `json:"phase"` // build, extract, classify, polish, finalize
-	Chapters           []*ChapterState           `json:"chapters"`
-	ChaptersToExtract  int                       `json:"chapters_to_extract"`
-	ChaptersExtracted  int                       `json:"chapters_extracted"`
-	ExtractsFailed     int                       `json:"extracts_failed"`
-	ClassifyPending    bool                      `json:"classify_pending"`
-	Classifications    map[string]string         `json:"classifications"`     // entry_id -> matter_type
-	ClassifyReasonings map[string]string         `json:"classify_reasonings"` // entry_id -> reasoning
-	ChaptersToPolish   int                       `json:"chapters_to_polish"`
-	ChaptersPolished   int                       `json:"chapters_polished"`
-	PolishFailed       int                       `json:"polish_failed"`
+	Phase              string            `json:"phase"` // build, extract, classify, polish, finalize
+	Chapters           []*ChapterState   `json:"chapters"`
+	ChaptersToExtract  int               `json:"chapters_to_extract"`
+	ChaptersExtracted  int               `json:"chapters_extracted"`
+	ExtractsFailed     int               `json:"extracts_failed"`
+	ClassifyPending    bool              `json:"classify_pending"`
+	Classifications    map[string]string `json:"classifications"`     // entry_id -> matter_type
+	ClassifyReasonings map[string]string `json:"classify_reasonings"` // entry_id -> reasoning
+	ChaptersToPolish   int               `json:"chapters_to_polish"`
+	ChaptersPolished   int               `json:"chapters_polished"`
+	PolishFailed       int               `json:"polish_failed"`
 }
 
 // GetStructureChapters returns the structure chapters (thread-safe).
@@ -1366,6 +1426,12 @@ func (b *BookState) SetStructureChapters(chapters []*ChapterState) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.structureChapters = chapters
+	for _, chapter := range chapters {
+		if chapter == nil {
+			continue
+		}
+		b.trackCIDLocked("Chapter", chapter.DocID, chapter.CID)
+	}
 }
 
 // GetStructureClassifications returns the matter classifications (thread-safe).
@@ -1535,71 +1601,18 @@ func (b *BookState) SetPatternAnalysisResult(result *PagePatternResult) {
 }
 
 // --- Operation State Accessors ---
-// These provide thread-safe access to OperationState fields.
-// Each book-level operation (Metadata, TocFinder, etc.) has its own state.
+// Deprecated: These wrapper methods delegate to the generic Op* methods.
+// New code should use OpStart(OpMetadata), OpComplete(OpMetadata), etc.
 
-// MetadataStart starts the metadata operation (thread-safe).
-func (b *BookState) MetadataStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.metadata.Start()
-}
-
-// MetadataComplete marks metadata as complete (thread-safe).
-func (b *BookState) MetadataComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.metadata.Complete()
-}
-
-// MetadataFail records a metadata failure (thread-safe).
-func (b *BookState) MetadataFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.metadata.Fail(maxRetries)
-}
-
-// MetadataReset resets metadata state (thread-safe).
-func (b *BookState) MetadataReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.metadata.Reset()
-}
-
-// MetadataIsStarted returns true if metadata is started (thread-safe).
-func (b *BookState) MetadataIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.metadata.IsStarted()
-}
-
-// MetadataIsDone returns true if metadata is done (thread-safe).
-func (b *BookState) MetadataIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.metadata.IsDone()
-}
-
-// MetadataCanStart returns true if metadata can start (thread-safe).
-func (b *BookState) MetadataCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.metadata.CanStart()
-}
-
-// MetadataIsComplete returns true if metadata completed successfully (thread-safe).
-func (b *BookState) MetadataIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.metadata.IsComplete()
-}
-
-// GetMetadataState returns a copy of the metadata operation state (thread-safe).
-func (b *BookState) GetMetadataState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.metadata
-}
+func (b *BookState) MetadataStart() error             { return b.OpStart(OpMetadata) }
+func (b *BookState) MetadataComplete()                { b.OpComplete(OpMetadata) }
+func (b *BookState) MetadataFail(maxRetries int) bool { return b.OpFail(OpMetadata, maxRetries) }
+func (b *BookState) MetadataReset()                   { b.OpReset(OpMetadata) }
+func (b *BookState) MetadataIsStarted() bool          { return b.OpIsStarted(OpMetadata) }
+func (b *BookState) MetadataIsDone() bool             { return b.OpIsDone(OpMetadata) }
+func (b *BookState) MetadataCanStart() bool           { return b.OpCanStart(OpMetadata) }
+func (b *BookState) MetadataIsComplete() bool         { return b.OpIsComplete(OpMetadata) }
+func (b *BookState) GetMetadataState() OperationState { return b.OpGetState(OpMetadata) }
 
 // GetBookMetadata returns the book metadata (thread-safe).
 // Returns nil if metadata has not been extracted or loaded.
@@ -1641,8 +1654,11 @@ func (b *BookState) GetBookMetadataWithLazyLoad(ctx context.Context) *BookMetada
 	}
 
 	// Load from DefraDB
-	b.bookMetadata = loadBookMetadataFromDB(ctx, b.BookID)
-	b.bookMetadataLoaded = true
+	metadata, loaded := loadBookMetadataFromDB(ctx, b.BookID)
+	if loaded {
+		b.bookMetadata = metadata
+		b.bookMetadataLoaded = true
+	}
 	return b.bookMetadata
 }
 
@@ -1656,383 +1672,67 @@ func (b *BookState) GetBookTitle() string {
 	return ""
 }
 
-// TocFinderStart starts the ToC finder operation (thread-safe).
-func (b *BookState) TocFinderStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocFinder.Start()
-}
+func (b *BookState) TocFinderStart() error             { return b.OpStart(OpTocFinder) }
+func (b *BookState) TocFinderComplete()                { b.OpComplete(OpTocFinder) }
+func (b *BookState) TocFinderFail(maxRetries int) bool { return b.OpFail(OpTocFinder, maxRetries) }
+func (b *BookState) TocFinderReset()                   { b.OpReset(OpTocFinder) }
+func (b *BookState) TocFinderIsStarted() bool          { return b.OpIsStarted(OpTocFinder) }
+func (b *BookState) TocFinderIsDone() bool             { return b.OpIsDone(OpTocFinder) }
+func (b *BookState) TocFinderCanStart() bool           { return b.OpCanStart(OpTocFinder) }
+func (b *BookState) TocFinderIsComplete() bool         { return b.OpIsComplete(OpTocFinder) }
+func (b *BookState) GetTocFinderState() OperationState { return b.OpGetState(OpTocFinder) }
 
-// TocFinderComplete marks ToC finder as complete (thread-safe).
-func (b *BookState) TocFinderComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocFinder.Complete()
-}
+func (b *BookState) TocExtractStart() error             { return b.OpStart(OpTocExtract) }
+func (b *BookState) TocExtractComplete()                { b.OpComplete(OpTocExtract) }
+func (b *BookState) TocExtractFail(maxRetries int) bool { return b.OpFail(OpTocExtract, maxRetries) }
+func (b *BookState) TocExtractReset()                   { b.OpReset(OpTocExtract) }
+func (b *BookState) TocExtractIsStarted() bool          { return b.OpIsStarted(OpTocExtract) }
+func (b *BookState) TocExtractIsDone() bool             { return b.OpIsDone(OpTocExtract) }
+func (b *BookState) TocExtractCanStart() bool           { return b.OpCanStart(OpTocExtract) }
+func (b *BookState) TocExtractIsComplete() bool         { return b.OpIsComplete(OpTocExtract) }
+func (b *BookState) GetTocExtractState() OperationState { return b.OpGetState(OpTocExtract) }
 
-// TocFinderFail records a ToC finder failure (thread-safe).
-func (b *BookState) TocFinderFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocFinder.Fail(maxRetries)
-}
-
-// TocFinderReset resets ToC finder state (thread-safe).
-func (b *BookState) TocFinderReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocFinder.Reset()
-}
-
-// TocFinderIsStarted returns true if ToC finder is started (thread-safe).
-func (b *BookState) TocFinderIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinder.IsStarted()
-}
-
-// TocFinderIsDone returns true if ToC finder is done (thread-safe).
-func (b *BookState) TocFinderIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinder.IsDone()
-}
-
-// TocFinderCanStart returns true if ToC finder can start (thread-safe).
-func (b *BookState) TocFinderCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinder.CanStart()
-}
-
-// TocFinderIsComplete returns true if ToC finder completed successfully (thread-safe).
-func (b *BookState) TocFinderIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinder.IsComplete()
-}
-
-// GetTocFinderState returns a copy of the ToC finder operation state (thread-safe).
-func (b *BookState) GetTocFinderState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinder
-}
-
-// TocExtractStart starts the ToC extract operation (thread-safe).
-func (b *BookState) TocExtractStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocExtract.Start()
-}
-
-// TocExtractComplete marks ToC extract as complete (thread-safe).
-func (b *BookState) TocExtractComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocExtract.Complete()
-}
-
-// TocExtractFail records a ToC extract failure (thread-safe).
-func (b *BookState) TocExtractFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocExtract.Fail(maxRetries)
-}
-
-// TocExtractReset resets ToC extract state (thread-safe).
-func (b *BookState) TocExtractReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocExtract.Reset()
-}
-
-// TocExtractIsStarted returns true if ToC extract is started (thread-safe).
-func (b *BookState) TocExtractIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocExtract.IsStarted()
-}
-
-// TocExtractIsDone returns true if ToC extract is done (thread-safe).
-func (b *BookState) TocExtractIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocExtract.IsDone()
-}
-
-// TocExtractCanStart returns true if ToC extract can start (thread-safe).
-func (b *BookState) TocExtractCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocExtract.CanStart()
-}
-
-// TocExtractIsComplete returns true if ToC extract completed successfully (thread-safe).
-func (b *BookState) TocExtractIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocExtract.IsComplete()
-}
-
-// GetTocExtractState returns a copy of the ToC extract operation state (thread-safe).
-func (b *BookState) GetTocExtractState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocExtract
-}
-
-// PatternAnalysisStart starts the pattern analysis operation (thread-safe).
-func (b *BookState) PatternAnalysisStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.patternAnalysis.Start()
-}
-
-// PatternAnalysisComplete marks pattern analysis as complete (thread-safe).
-func (b *BookState) PatternAnalysisComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.patternAnalysis.Complete()
-}
-
-// PatternAnalysisFail records a pattern analysis failure (thread-safe).
+func (b *BookState) PatternAnalysisStart() error { return b.OpStart(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisComplete()    { b.OpComplete(OpPatternAnalysis) }
 func (b *BookState) PatternAnalysisFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.patternAnalysis.Fail(maxRetries)
+	return b.OpFail(OpPatternAnalysis, maxRetries)
 }
+func (b *BookState) PatternAnalysisReset()                   { b.OpReset(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisIsStarted() bool          { return b.OpIsStarted(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisIsDone() bool             { return b.OpIsDone(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisCanStart() bool           { return b.OpCanStart(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisIsComplete() bool         { return b.OpIsComplete(OpPatternAnalysis) }
+func (b *BookState) GetPatternAnalysisState() OperationState { return b.OpGetState(OpPatternAnalysis) }
 
-// PatternAnalysisReset resets pattern analysis state (thread-safe).
-func (b *BookState) PatternAnalysisReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.patternAnalysis.Reset()
-}
+func (b *BookState) TocLinkStart() error             { return b.OpStart(OpTocLink) }
+func (b *BookState) TocLinkComplete()                { b.OpComplete(OpTocLink) }
+func (b *BookState) TocLinkFail(maxRetries int) bool { return b.OpFail(OpTocLink, maxRetries) }
+func (b *BookState) TocLinkReset()                   { b.OpReset(OpTocLink) }
+func (b *BookState) TocLinkIsStarted() bool          { return b.OpIsStarted(OpTocLink) }
+func (b *BookState) TocLinkIsDone() bool             { return b.OpIsDone(OpTocLink) }
+func (b *BookState) TocLinkCanStart() bool           { return b.OpCanStart(OpTocLink) }
+func (b *BookState) TocLinkIsComplete() bool         { return b.OpIsComplete(OpTocLink) }
+func (b *BookState) GetTocLinkState() OperationState { return b.OpGetState(OpTocLink) }
 
-// PatternAnalysisIsStarted returns true if pattern analysis is started (thread-safe).
-func (b *BookState) PatternAnalysisIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.patternAnalysis.IsStarted()
-}
+func (b *BookState) TocFinalizeStart() error             { return b.OpStart(OpTocFinalize) }
+func (b *BookState) TocFinalizeComplete()                { b.OpComplete(OpTocFinalize) }
+func (b *BookState) TocFinalizeFail(maxRetries int) bool { return b.OpFail(OpTocFinalize, maxRetries) }
+func (b *BookState) TocFinalizeReset()                   { b.OpReset(OpTocFinalize) }
+func (b *BookState) TocFinalizeIsStarted() bool          { return b.OpIsStarted(OpTocFinalize) }
+func (b *BookState) TocFinalizeIsDone() bool             { return b.OpIsDone(OpTocFinalize) }
+func (b *BookState) TocFinalizeCanStart() bool           { return b.OpCanStart(OpTocFinalize) }
+func (b *BookState) TocFinalizeIsComplete() bool         { return b.OpIsComplete(OpTocFinalize) }
+func (b *BookState) GetTocFinalizeState() OperationState { return b.OpGetState(OpTocFinalize) }
 
-// PatternAnalysisIsDone returns true if pattern analysis is done (thread-safe).
-func (b *BookState) PatternAnalysisIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.patternAnalysis.IsDone()
-}
-
-// PatternAnalysisCanStart returns true if pattern analysis can start (thread-safe).
-func (b *BookState) PatternAnalysisCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.patternAnalysis.CanStart()
-}
-
-// PatternAnalysisIsComplete returns true if pattern analysis completed successfully (thread-safe).
-func (b *BookState) PatternAnalysisIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.patternAnalysis.IsComplete()
-}
-
-// GetPatternAnalysisState returns a copy of the pattern analysis operation state (thread-safe).
-func (b *BookState) GetPatternAnalysisState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.patternAnalysis
-}
-
-// TocLinkStart starts the ToC link operation (thread-safe).
-func (b *BookState) TocLinkStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocLink.Start()
-}
-
-// TocLinkComplete marks ToC link as complete (thread-safe).
-func (b *BookState) TocLinkComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocLink.Complete()
-}
-
-// TocLinkFail records a ToC link failure (thread-safe).
-func (b *BookState) TocLinkFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocLink.Fail(maxRetries)
-}
-
-// TocLinkReset resets ToC link state (thread-safe).
-func (b *BookState) TocLinkReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocLink.Reset()
-}
-
-// TocLinkIsStarted returns true if ToC link is started (thread-safe).
-func (b *BookState) TocLinkIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocLink.IsStarted()
-}
-
-// TocLinkIsDone returns true if ToC link is done (thread-safe).
-func (b *BookState) TocLinkIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocLink.IsDone()
-}
-
-// TocLinkCanStart returns true if ToC link can start (thread-safe).
-func (b *BookState) TocLinkCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocLink.CanStart()
-}
-
-// TocLinkIsComplete returns true if ToC link completed successfully (thread-safe).
-func (b *BookState) TocLinkIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocLink.IsComplete()
-}
-
-// GetTocLinkState returns a copy of the ToC link operation state (thread-safe).
-func (b *BookState) GetTocLinkState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocLink
-}
-
-// TocFinalizeStart starts the ToC finalize operation (thread-safe).
-func (b *BookState) TocFinalizeStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocFinalize.Start()
-}
-
-// TocFinalizeComplete marks ToC finalize as complete (thread-safe).
-func (b *BookState) TocFinalizeComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocFinalize.Complete()
-}
-
-// TocFinalizeFail records a ToC finalize failure (thread-safe).
-func (b *BookState) TocFinalizeFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocFinalize.Fail(maxRetries)
-}
-
-// TocFinalizeReset resets ToC finalize state (thread-safe).
-func (b *BookState) TocFinalizeReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocFinalize.Reset()
-}
-
-// TocFinalizeIsStarted returns true if ToC finalize is started (thread-safe).
-func (b *BookState) TocFinalizeIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinalize.IsStarted()
-}
-
-// TocFinalizeIsDone returns true if ToC finalize is done (thread-safe).
-func (b *BookState) TocFinalizeIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinalize.IsDone()
-}
-
-// TocFinalizeCanStart returns true if ToC finalize can start (thread-safe).
-func (b *BookState) TocFinalizeCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinalize.CanStart()
-}
-
-// TocFinalizeIsComplete returns true if ToC finalize completed successfully (thread-safe).
-func (b *BookState) TocFinalizeIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinalize.IsComplete()
-}
-
-// GetTocFinalizeState returns a copy of the ToC finalize operation state (thread-safe).
-func (b *BookState) GetTocFinalizeState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinalize
-}
-
-// StructureStart starts the structure operation (thread-safe).
-func (b *BookState) StructureStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.structure.Start()
-}
-
-// StructureComplete marks structure as complete (thread-safe).
-func (b *BookState) StructureComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.structure.Complete()
-}
-
-// StructureFail records a structure failure (thread-safe).
-func (b *BookState) StructureFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.structure.Fail(maxRetries)
-}
-
-// StructureReset resets structure state (thread-safe).
-func (b *BookState) StructureReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.structure.Reset()
-}
-
-// StructureIsStarted returns true if structure is started (thread-safe).
-func (b *BookState) StructureIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.structure.IsStarted()
-}
-
-// StructureIsDone returns true if structure is done (thread-safe).
-func (b *BookState) StructureIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.structure.IsDone()
-}
-
-// StructureCanStart returns true if structure can start (thread-safe).
-func (b *BookState) StructureCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.structure.CanStart()
-}
-
-// StructureIsComplete returns true if structure completed successfully (thread-safe).
-func (b *BookState) StructureIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.structure.IsComplete()
-}
-
-// GetStructureState returns a copy of the structure operation state (thread-safe).
-func (b *BookState) GetStructureState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.structure
-}
+func (b *BookState) StructureStart() error             { return b.OpStart(OpStructure) }
+func (b *BookState) StructureComplete()                { b.OpComplete(OpStructure) }
+func (b *BookState) StructureFail(maxRetries int) bool { return b.OpFail(OpStructure, maxRetries) }
+func (b *BookState) StructureReset()                   { b.OpReset(OpStructure) }
+func (b *BookState) StructureIsStarted() bool          { return b.OpIsStarted(OpStructure) }
+func (b *BookState) StructureIsDone() bool             { return b.OpIsDone(OpStructure) }
+func (b *BookState) StructureCanStart() bool           { return b.OpCanStart(OpStructure) }
+func (b *BookState) StructureIsComplete() bool         { return b.OpIsComplete(OpStructure) }
+func (b *BookState) GetStructureState() OperationState { return b.OpGetState(OpStructure) }
 
 // --- Cost Tracking Accessors ---
 // Write-through cache: costs are updated when work units complete.

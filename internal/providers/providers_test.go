@@ -269,7 +269,6 @@ func TestTestConfig(t *testing.T) {
 		// Just verify it doesn't panic - actual values depend on environment
 		_ = cfg.HasOpenRouter()
 		_ = cfg.HasMistral()
-		_ = cfg.HasDeepInfra()
 		_ = cfg.HasAnyOCR()
 		_ = cfg.HasAnyLLM()
 	})

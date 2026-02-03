@@ -25,14 +25,8 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	// Get ToC page range
 	tocStartPage, tocEndPage := book.GetTocPageRange()
 
-	// Load ToC pages from BookState (in-memory)
-	tocPages := LoadTocPagesFromState(book, tocStartPage, tocEndPage)
-
-	// Fall back to DB if in-memory state doesn't have blend_markdown cached
-	// (happens after job reload)
-	if len(tocPages) == 0 {
-		tocPages = LoadTocPagesFromDB(ctx, book.BookID, tocStartPage, tocEndPage)
-	}
+	// Load ToC pages via read-through BookState.
+	tocPages := LoadTocPagesFromState(ctx, book, tocStartPage, tocEndPage)
 
 	if len(tocPages) == 0 {
 		if logger != nil {
@@ -70,27 +64,26 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	return unit, unitID
 }
 
-// LoadTocPagesFromState loads ToC page content from BookState.
-func LoadTocPagesFromState(book *BookState, startPage, endPage int) []extract_toc.ToCPage {
+// LoadTocPagesFromState loads ToC page content via read-through cache.
+// Uses BookState.GetOcrMarkdown to load from DB when needed.
+func LoadTocPagesFromState(ctx context.Context, book *BookState, startPage, endPage int) []extract_toc.ToCPage {
 	if startPage == 0 || endPage == 0 {
 		return nil
 	}
 
 	var tocPages []extract_toc.ToCPage
 	for pageNum := startPage; pageNum <= endPage; pageNum++ {
-		state := book.GetPage(pageNum)
-		if state == nil {
+		ocrMarkdown, err := book.GetOcrMarkdown(ctx, pageNum)
+		if err != nil {
 			continue
 		}
-
-		blendMarkdown := state.GetBlendedText()
-		if blendMarkdown == "" {
+		if ocrMarkdown == "" {
 			continue
 		}
 
 		tocPages = append(tocPages, extract_toc.ToCPage{
 			PageNum: pageNum,
-			OCRText: blendMarkdown,
+			OCRText: ocrMarkdown,
 		})
 	}
 
@@ -98,7 +91,7 @@ func LoadTocPagesFromState(book *BookState, startPage, endPage int) []extract_to
 }
 
 // LoadTocPagesFromDB loads ToC page content directly from DefraDB.
-// Use this when in-memory cache doesn't have blend_markdown (e.g., after job reload).
+// Use this when in-memory cache doesn't have ocr_markdown (e.g., after job reload).
 func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage int) []extract_toc.ToCPage {
 	if startPage == 0 || endPage == 0 {
 		return nil
@@ -116,9 +109,9 @@ func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage i
 
 	// Note: DefraDB doesn't support range queries well, so we fetch all pages and filter
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, blend_complete: {_eq: true}}, order: {page_num: ASC}) {
+		Page(filter: {book_id: {_eq: "%s"}, ocr_complete: {_eq: true}}, order: {page_num: ASC}) {
 			page_num
-			blend_markdown
+			ocr_markdown
 		}
 	}`, bookID)
 
@@ -149,14 +142,14 @@ func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage i
 			continue
 		}
 
-		blendMarkdown, _ := page["blend_markdown"].(string)
-		if blendMarkdown == "" {
+		ocrMarkdown, _ := page["ocr_markdown"].(string)
+		if ocrMarkdown == "" {
 			continue
 		}
 
 		tocPages = append(tocPages, extract_toc.ToCPage{
 			PageNum: pageNum,
-			OCRText: blendMarkdown,
+			OCRText: ocrMarkdown,
 		})
 	}
 
@@ -205,10 +198,10 @@ func LoadTocStructureSummary(ctx context.Context, tocDocID string) (*extract_toc
 }
 
 // SaveTocFinderResult saves the ToC finder result to DefraDB.
-func SaveTocFinderResult(ctx context.Context, tocDocID string, result *toc_finder.Result) error {
+func SaveTocFinderResult(ctx context.Context, tocDocID string, result *toc_finder.Result) (string, error) {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
+		return "", fmt.Errorf("defra sink not in context")
 	}
 
 	update := map[string]any{
@@ -228,19 +221,25 @@ func SaveTocFinderResult(ctx context.Context, tocDocID string, result *toc_finde
 		}
 	}
 
-	// Fire-and-forget - no need to block
-	sink.Send(defra.WriteOp{
+	writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document:   update,
 		Op:         defra.OpUpdate,
 	})
-	return nil
+	if err != nil {
+		return "", err
+	}
+	return writeResult.CID, nil
 }
 
 // SaveTocFinderNoResult marks ToC finder as complete with no ToC found.
-func SaveTocFinderNoResult(ctx context.Context, tocDocID string) error {
-	return SendToSink(ctx, defra.WriteOp{
+func SaveTocFinderNoResult(ctx context.Context, tocDocID string) (string, error) {
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return "", fmt.Errorf("defra sink not in context")
+	}
+	writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document: map[string]any{
@@ -249,19 +248,23 @@ func SaveTocFinderNoResult(ctx context.Context, tocDocID string) error {
 		},
 		Op: defra.OpUpdate,
 	})
+	if err != nil {
+		return "", err
+	}
+	return writeResult.CID, nil
 }
 
 // SaveTocExtractResult saves the ToC extraction result to DefraDB.
 // This operation is idempotent - uses upsert to create or update entries.
-func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_toc.Result) error {
+func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_toc.Result) (string, error) {
 	logger := svcctx.LoggerFrom(ctx)
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
-		return fmt.Errorf("defra client not in context")
+		return "", fmt.Errorf("defra client not in context")
 	}
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
+		return "", fmt.Errorf("defra sink not in context")
 	}
 
 	if logger != nil {
@@ -307,7 +310,7 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 					"title", entry.Title,
 					"error", err)
 			}
-			return fmt.Errorf("failed to upsert TocEntry %d: %w", i, err)
+			return "", fmt.Errorf("failed to upsert TocEntry %d: %w", i, err)
 		}
 	}
 
@@ -318,7 +321,7 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 	}
 
 	// Mark extraction complete
-	sink.Send(defra.WriteOp{
+	writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document: map[string]any{
@@ -326,7 +329,10 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 		},
 		Op: defra.OpUpdate,
 	})
-	return nil
+	if err != nil {
+		return "", err
+	}
+	return writeResult.CID, nil
 }
 
 // LinkedTocEntry represents a ToC entry with its page link.
@@ -563,15 +569,15 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 
 // SaveTocEntryResult updates a TocEntry with the found page link.
 // Used by link_toc operations in both process_book and standalone link_toc jobs.
-func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string, result *toc_entry_finder.Result) error {
+func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string, result *toc_entry_finder.Result) (string, error) {
 	// Validate entryDocID to prevent injection
 	if err := defra.ValidateID(entryDocID); err != nil {
-		return fmt.Errorf("invalid entry doc ID: %w", err)
+		return "", fmt.Errorf("invalid entry doc ID: %w", err)
 	}
 
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
+		return "", fmt.Errorf("defra sink not in context")
 	}
 
 	update := map[string]any{}
@@ -588,13 +594,17 @@ func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string,
 	}
 
 	if len(update) > 0 {
-		sink.Send(defra.WriteOp{
+		writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "TocEntry",
 			DocID:      entryDocID,
 			Document:   update,
 			Op:         defra.OpUpdate,
 		})
+		if err != nil {
+			return "", err
+		}
+		return writeResult.CID, nil
 	}
 
-	return nil
+	return "", nil
 }

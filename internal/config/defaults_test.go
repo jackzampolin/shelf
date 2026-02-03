@@ -23,8 +23,6 @@ func TestDefaultEntries(t *testing.T) {
 		"providers.ocr.mistral.timeout_seconds",
 		"providers.ocr.mistral.max_retries",
 		"providers.ocr.mistral.max_concurrency",
-		"providers.ocr.paddle.type",
-		"providers.ocr.paddle.timeout_seconds",
 		// LLM providers
 		"providers.llm.openrouter.type",
 		"providers.llm.openrouter.timeout_seconds",

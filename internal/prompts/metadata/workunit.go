@@ -9,10 +9,10 @@ import (
 	"github.com/jackzampolin/shelf/internal/providers"
 )
 
-// Page represents a single page's blended text for metadata extraction.
+// Page represents a single page's OCR markdown text for metadata extraction.
 type Page struct {
-	PageNum       int
-	BlendMarkdown string
+	PageNum     int
+	OcrMarkdown string
 }
 
 // Input contains the data needed for a metadata work unit.
@@ -36,10 +36,10 @@ func PrepareBookText(pages []Page, maxPages int) string {
 		if i >= maxPages {
 			break
 		}
-		if p.BlendMarkdown == "" {
+		if p.OcrMarkdown == "" {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("--- Page %d ---\n%s", p.PageNum, p.BlendMarkdown))
+		parts = append(parts, fmt.Sprintf("--- Page %d ---\n%s", p.PageNum, p.OcrMarkdown))
 	}
 	return strings.Join(parts, "\n\n")
 }

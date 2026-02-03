@@ -131,7 +131,7 @@ function LLMCallsPage() {
               type="text"
               value={filters.prompt_key}
               onChange={(e) => setFilters({ ...filters, prompt_key: e.target.value })}
-              placeholder="e.g., stages.blend"
+              placeholder="e.g., stages.ocr"
               className="w-full px-3 py-1.5 text-sm border rounded-md"
             />
           </div>

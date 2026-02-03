@@ -368,6 +368,478 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/books/{book_id}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get audio status
+         * @description Get TTS audio generation status and available files
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.AudioStatusResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/audio/{chapter}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download chapter audio
+         * @description Download the generated audio file for a chapter
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                    /** @description Chapter index */
+                    chapter: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "audio/mpeg": string;
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "audio/mpeg": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "audio/mpeg": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/export/epub": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export book as ePub
+         * @description Generate an ePub 3.0 file from a processed book
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.EpubExportResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/export/epub/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download ePub file
+         * @description Download the generated ePub file for a book
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/epub+zip": string;
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/epub+zip": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/epub+zip": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/export/storyteller": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export book as EPUB with Media Overlays for Storyteller
+         * @description Generate an EPUB 3.0 file with synchronized audio (Media Overlays) for use with Storyteller
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.StorytellerExportResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/export/storyteller/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Storyteller EPUB file
+         * @description Download the generated EPUB file with Media Overlays for a book
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/epub+zip": string;
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/epub+zip": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/epub+zip": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/books/{book_id}/generate/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start TTS audio generation
+         * @description Start TTS audiobook generation for a book
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Book ID */
+                    book_id: string;
+                };
+                cookie?: never;
+            };
+            /** @description TTS options */
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["internal_server_endpoints.GenerateAudioRequest"];
+                };
+            };
+            responses: {
+                /** @description Accepted */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.GenerateAudioResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/books/{book_id}/pages": {
         parameters: {
             query?: never;
@@ -446,7 +918,7 @@ export interface paths {
         };
         /**
          * Get page details
-         * @description Get full details for a specific page including OCR results, blend output, and labels
+         * @description Get full details for a specific page including OCR results
          */
         get: {
             parameters: {
@@ -640,7 +1112,7 @@ export interface paths {
                         "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
                     };
                 };
-                /** @description Not enough pages have blend complete */
+                /** @description Not enough pages have OCR complete */
                 412: {
                     headers: {
                         [name: string]: unknown;
@@ -2627,6 +3099,338 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tts/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get TTS configuration
+         * @description Get available TTS voices, models, and formats
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.TTSConfigResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Service Unavailable */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List TTS voices
+         * @description List all available TTS voices from the database
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ListVoicesResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Create voice
+         * @description Add a custom voice to the database
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** @description Voice details */
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["internal_server_endpoints.CreateVoiceRequest"];
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.VoiceResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voices/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync TTS voices
+         * @description Sync voices from TTS provider to database
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.SyncVoicesResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voices/{voice_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete voice
+         * @description Delete a voice from the local database
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Voice ID */
+                    voice_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: string;
+                        };
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voices/{voice_id}/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set default voice
+         * @description Set a voice as the default TTS voice
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Voice ID */
+                    voice_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: string;
+                        };
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2650,6 +3454,15 @@ export interface components {
             /** @description Total work units expected for this provider */
             totalExpected?: number;
         };
+        "github_com_jackzampolin_shelf_internal_jobs.RateLimiterStatus": {
+            last_429_time?: string;
+            rps?: number;
+            time_until_token?: components["schemas"]["time.Duration"];
+            tokens_available?: number;
+            total_consumed?: number;
+            total_waited?: components["schemas"]["time.Duration"];
+            utilization?: number;
+        };
         "github_com_jackzampolin_shelf_internal_jobs.Record": {
             _docID?: string;
             book_id?: string;
@@ -2667,7 +3480,7 @@ export interface components {
         "github_com_jackzampolin_shelf_internal_jobs.Status": "queued" | "running" | "completed" | "failed" | "cancelled";
         "github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo": {
             queue_depth?: number;
-            rate_limiter?: components["schemas"]["github_com_jackzampolin_shelf_internal_providers.RateLimiterStatus"];
+            rate_limiter?: components["schemas"]["github_com_jackzampolin_shelf_internal_jobs.RateLimiterStatus"];
             type?: string;
         };
         "github_com_jackzampolin_shelf_internal_llmcall.Call": {
@@ -2757,15 +3570,6 @@ export interface components {
             total_seconds?: number;
             total_tokens?: number;
         };
-        "github_com_jackzampolin_shelf_internal_providers.RateLimiterStatus": {
-            last_429_time?: string;
-            rps?: number;
-            time_until_token?: components["schemas"]["time.Duration"];
-            tokens_available?: number;
-            total_consumed?: number;
-            total_waited?: components["schemas"]["time.Duration"];
-            utilization?: number;
-        };
         "internal_server_endpoints.AgentLogDetailResponse": {
             agent_type?: string;
             book_id?: string;
@@ -2804,6 +3608,18 @@ export interface components {
         "internal_server_endpoints.AgentLogsListResponse": {
             logs?: components["schemas"]["internal_server_endpoints.AgentLogSummaryResponse"][];
         };
+        "internal_server_endpoints.AudioStatusResponse": {
+            book_id?: string;
+            chapter_count?: number;
+            chapters?: components["schemas"]["internal_server_endpoints.ChapterAudioStatus"][];
+            format?: string;
+            provider?: string;
+            segment_count?: number;
+            status?: string;
+            total_cost_usd?: number;
+            total_duration_ms?: number;
+            voice?: string;
+        };
         "internal_server_endpoints.Book": {
             author?: string;
             created_at?: string;
@@ -2836,9 +3652,17 @@ export interface components {
             book_id?: string;
             prompts?: components["schemas"]["internal_server_endpoints.BookPromptResponse"][];
         };
+        "internal_server_endpoints.ChapterAudioStatus": {
+            audio_file?: string;
+            chapter_idx?: number;
+            cost_usd?: number;
+            download_url?: string;
+            duration_ms?: number;
+            segment_count?: number;
+            title?: string;
+        };
         "internal_server_endpoints.ChapterPage": {
-            blended_text?: string;
-            label?: string;
+            ocr_markdown?: string;
             page_num?: number;
         };
         "internal_server_endpoints.ChapterParagraph": {
@@ -2886,6 +3710,11 @@ export interface components {
         "internal_server_endpoints.CreateJobResponse": {
             id?: string;
         };
+        "internal_server_endpoints.CreateVoiceRequest": {
+            description?: string;
+            name?: string;
+            voice_id?: string;
+        };
         "internal_server_endpoints.DefraStatus": {
             container?: string;
             health?: string;
@@ -2918,6 +3747,16 @@ export interface components {
             range_start?: string;
             reasoning?: string;
         };
+        "internal_server_endpoints.EpubExportResponse": {
+            author?: string;
+            book_id?: string;
+            chapter_count?: number;
+            created_at?: string;
+            download_url?: string;
+            file_path?: string;
+            file_size?: number;
+            title?: string;
+        };
         "internal_server_endpoints.ErrorResponse": {
             error?: string;
         };
@@ -2925,6 +3764,19 @@ export interface components {
             end_page?: number;
             reason?: string;
             start_page?: number;
+        };
+        "internal_server_endpoints.GenerateAudioRequest": {
+            /** @description Optional: output format (mp3, wav) */
+            format?: string;
+            /** @description Optional: voice ID */
+            voice?: string;
+        };
+        "internal_server_endpoints.GenerateAudioResponse": {
+            book_id?: string;
+            chapters?: number;
+            job_id?: string;
+            provider?: string;
+            status?: string;
         };
         "internal_server_endpoints.GetJobResponse": {
             _docID?: string;
@@ -2951,9 +3803,7 @@ export interface components {
             };
         };
         "internal_server_endpoints.GetPageResponse": {
-            blend_confidence?: number;
-            blend_markdown?: string;
-            labels?: components["schemas"]["internal_server_endpoints.PageLabels"];
+            ocr_markdown?: string;
             ocr_results?: components["schemas"]["internal_server_endpoints.OcrResult"][];
             page_num?: number;
             status?: components["schemas"]["internal_server_endpoints.PageStatus"];
@@ -2976,11 +3826,9 @@ export interface components {
             title?: string;
         };
         "internal_server_endpoints.JobStatusResponse": {
-            blend_complete?: number;
             book_id?: string;
             is_complete?: boolean;
             job_type?: string;
-            label_complete?: number;
             metadata_complete?: boolean;
             ocr_complete?: number;
             toc_extracted?: boolean;
@@ -3013,6 +3861,9 @@ export interface components {
         "internal_server_endpoints.ListPagesResponse": {
             pages?: components["schemas"]["internal_server_endpoints.PageSummary"][];
             total_pages?: number;
+        };
+        "internal_server_endpoints.ListVoicesResponse": {
+            voices?: components["schemas"]["internal_server_endpoints.VoiceResponse"][];
         };
         "internal_server_endpoints.MetadataStatus": {
             complete?: boolean;
@@ -3049,36 +3900,13 @@ export interface components {
             provider?: string;
             text?: string;
         };
-        "internal_server_endpoints.PageLabels": {
-            content_type?: string;
-            is_back_matter?: boolean;
-            is_chapter_start?: boolean;
-            is_front_matter?: boolean;
-            is_toc_page?: boolean;
-            page_number_label?: string;
-            running_header?: string;
-        };
         "internal_server_endpoints.PageStatus": {
-            blend_complete?: boolean;
             extract_complete?: boolean;
-            label_complete?: boolean;
             ocr_complete?: boolean;
         };
         "internal_server_endpoints.PageSummary": {
-            blend_complete?: boolean;
-            chapter_number?: string;
-            chapter_title?: string;
-            content_type?: string;
-            has_footnotes?: boolean;
-            is_blank_page?: boolean;
-            is_chapter_start?: boolean;
-            is_toc_page?: boolean;
-            label_complete?: boolean;
             ocr_complete?: boolean;
             page_num?: number;
-            /** @description Label fields */
-            page_number_label?: string;
-            running_header?: string;
         };
         "internal_server_endpoints.PatternAnalysisResult": {
             excluded_ranges?: components["schemas"]["internal_server_endpoints.ExcludedRange"][];
@@ -3123,16 +3951,6 @@ export interface components {
             };
         };
         "internal_server_endpoints.StageProgress": {
-            blend?: {
-                complete?: number;
-                cost_usd?: number;
-                total?: number;
-            };
-            label?: {
-                complete?: number;
-                cost_usd?: number;
-                total?: number;
-            };
             ocr?: {
                 complete?: number;
                 cost_by_provider?: {
@@ -3151,6 +3969,10 @@ export interface components {
             force?: boolean;
             /** @description Optional: defaults to "process-book" */
             job_type?: string;
+            /** @description Optional: reset this operation and downstream deps before starting */
+            reset_from?: string;
+            /** @description Optional: pipeline variant (standard, photo-book, text-only, ocr-only) */
+            variant?: string;
         };
         "internal_server_endpoints.StartJobResponse": {
             book_id?: string;
@@ -3163,13 +3985,49 @@ export interface components {
             providers?: components["schemas"]["internal_server_endpoints.ProvidersStatus"];
             server?: string;
         };
+        "internal_server_endpoints.StorytellerExportResponse": {
+            audio_chapters?: number;
+            author?: string;
+            book_id?: string;
+            chapter_count?: number;
+            created_at?: string;
+            download_url?: string;
+            file_path?: string;
+            file_size?: number;
+            title?: string;
+            total_duration_ms?: number;
+        };
         "internal_server_endpoints.StructureStatus": {
             chapter_count?: number;
+            chapters_extracted?: number;
+            chapters_polished?: number;
+            chapters_total?: number;
             complete?: boolean;
             cost_usd?: number;
             failed?: boolean;
+            /** @description Phase tracking (build -> extract -> classify -> polish -> finalize) */
+            phase?: string;
+            polish_failed?: number;
             retries?: number;
             started?: boolean;
+        };
+        "internal_server_endpoints.SyncVoicesResponse": {
+            message?: string;
+            synced?: number;
+        };
+        "internal_server_endpoints.TTSConfigResponse": {
+            default_format?: string;
+            default_voice?: string;
+            formats?: string[];
+            model?: string;
+            provider?: string;
+            voice_cloning_url?: string;
+            voices?: components["schemas"]["internal_server_endpoints.TTSVoice"][];
+        };
+        "internal_server_endpoints.TTSVoice": {
+            description?: string;
+            name?: string;
+            voice_id?: string;
         };
         "internal_server_endpoints.ToCEntry": {
             actual_page_num?: number;
@@ -3237,6 +4095,15 @@ export interface components {
         "internal_server_endpoints.UpdateSettingRequest": {
             description?: string;
             value?: unknown;
+        };
+        "internal_server_endpoints.VoiceResponse": {
+            created_at?: string;
+            description?: string;
+            is_default?: boolean;
+            name?: string;
+            provider?: string;
+            synced_at?: string;
+            voice_id?: string;
         };
         /**
          * Format: int64

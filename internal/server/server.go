@@ -22,9 +22,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/prompts"
-	"github.com/jackzampolin/shelf/internal/prompts/blend"
 	"github.com/jackzampolin/shelf/internal/prompts/extract_toc"
-	"github.com/jackzampolin/shelf/internal/prompts/label"
 	"github.com/jackzampolin/shelf/internal/prompts/metadata"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
@@ -209,8 +207,6 @@ func (s *Server) Start(ctx context.Context) error {
 	// Create prompt resolver and register all embedded prompts
 	promptStore := prompts.NewStore(s.defraClient, s.logger)
 	s.promptResolver = prompts.NewResolver(promptStore, s.logger)
-	blend.RegisterPrompts(s.promptResolver)
-	label.RegisterPrompts(s.promptResolver)
 	metadata.RegisterPrompts(s.promptResolver)
 	extract_toc.RegisterPrompts(s.promptResolver)
 	toc_finder.RegisterPrompts(s.promptResolver)

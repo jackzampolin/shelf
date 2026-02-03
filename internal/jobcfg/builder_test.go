@@ -199,9 +199,9 @@ func TestBuilder_getStringSlice(t *testing.T) {
 		if err != nil {
 			t.Fatalf("getStringSlice() error = %v", err)
 		}
-		// Default should be ["mistral", "paddle"]
-		if len(val) != 2 || val[0] != "mistral" || val[1] != "paddle" {
-			t.Errorf("getStringSlice() = %v, want [mistral paddle]", val)
+		// Default should be ["mistral"]
+		if len(val) != 1 || val[0] != "mistral" {
+			t.Errorf("getStringSlice() = %v, want [mistral]", val)
 		}
 	})
 }
@@ -282,12 +282,6 @@ func TestBuilder_ProcessBookConfig(t *testing.T) {
 		if len(cfg.OcrProviders) != 2 || cfg.OcrProviders[0] != "custom1" {
 			t.Errorf("OcrProviders = %v, want [custom1 custom2]", cfg.OcrProviders)
 		}
-		if cfg.BlendProvider != "custom-llm" {
-			t.Errorf("BlendProvider = %q, want %q", cfg.BlendProvider, "custom-llm")
-		}
-		if cfg.LabelProvider != "custom-llm" {
-			t.Errorf("LabelProvider = %q, want %q", cfg.LabelProvider, "custom-llm")
-		}
 		if cfg.MetadataProvider != "custom-llm" {
 			t.Errorf("MetadataProvider = %q, want %q", cfg.MetadataProvider, "custom-llm")
 		}
@@ -309,11 +303,12 @@ func TestBuilder_ProcessBookConfig(t *testing.T) {
 		}
 
 		// Should use defaults
-		if len(cfg.OcrProviders) != 2 || cfg.OcrProviders[0] != "mistral" {
-			t.Errorf("OcrProviders = %v, want [mistral paddle]", cfg.OcrProviders)
+		if len(cfg.OcrProviders) != 1 || cfg.OcrProviders[0] != "mistral" {
+			t.Errorf("OcrProviders = %v, want [mistral]", cfg.OcrProviders)
 		}
-		if cfg.BlendProvider != "openrouter" {
-			t.Errorf("BlendProvider = %q, want %q", cfg.BlendProvider, "openrouter")
+		// MetadataProvider and TocProvider should use default llm_provider
+		if cfg.MetadataProvider != "openrouter" {
+			t.Errorf("MetadataProvider = %q, want %q", cfg.MetadataProvider, "openrouter")
 		}
 		if cfg.DebugAgents != false {
 			t.Errorf("DebugAgents = %v, want false", cfg.DebugAgents)

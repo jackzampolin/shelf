@@ -58,7 +58,7 @@ func CreateOcrWorkUnit(ctx context.Context, jc JobContext, pageNum int, provider
 // PersistOCRResult persists an OCR result to DefraDB and updates the page state (thread-safe).
 // Returns (allDone, error) where allDone is true if all OCR providers are now complete for this page.
 // Returns error if sink is not available (callers should distinguish failure from incomplete).
-func PersistOCRResult(ctx context.Context, state *PageState, ocrProviders []string, provider string, result *providers.OCRResult) (bool, error) {
+func PersistOCRResult(ctx context.Context, book *BookState, state *PageState, ocrProviders []string, provider string, result *providers.OCRResult) (bool, error) {
 	logger := svcctx.LoggerFrom(ctx)
 	pageDocID := state.GetPageDocID()
 
@@ -79,6 +79,32 @@ func PersistOCRResult(ctx context.Context, state *PageState, ocrProviders []stri
 			Op: defra.OpCreate,
 		})
 
+		// Persist header/footer extracted by OCR provider (Mistral)
+		if result.Header != "" || result.Footer != "" {
+			update := map[string]any{}
+			if result.Header != "" {
+				update["header"] = result.Header
+			}
+			if result.Footer != "" {
+				update["footer"] = result.Footer
+			}
+			if writeResult, err := SendTracked(ctx, book, defra.WriteOp{
+				Collection: "Page",
+				DocID:      pageDocID,
+				Document:   update,
+				Op:         defra.OpUpdate,
+			}); err == nil {
+				if writeResult.CID != "" {
+					state.SetPageCID(writeResult.CID)
+				}
+			} else if logger != nil {
+				logger.Warn("failed to persist OCR header/footer",
+					"page_doc_id", pageDocID,
+					"provider", provider,
+					"error", err)
+			}
+		}
+
 		// Update in-memory state (thread-safe)
 		state.MarkOcrComplete(provider, result.Text)
 	} else if logger != nil {
@@ -93,12 +119,20 @@ func PersistOCRResult(ctx context.Context, state *PageState, ocrProviders []stri
 
 	if allDone {
 		// Mark page as OCR complete
-		sink.Send(defra.WriteOp{
+		if writeResult, err := SendTracked(ctx, book, defra.WriteOp{
 			Collection: "Page",
 			DocID:      pageDocID,
 			Document:   map[string]any{"ocr_complete": true},
 			Op:         defra.OpUpdate,
-		})
+		}); err == nil {
+			if writeResult.CID != "" {
+				state.SetPageCID(writeResult.CID)
+			}
+		} else if logger != nil {
+			logger.Warn("failed to persist OCR completion",
+				"page_doc_id", pageDocID,
+				"error", err)
+		}
 	}
 
 	return allDone, nil

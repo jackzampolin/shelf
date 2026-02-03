@@ -124,7 +124,13 @@ func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
-	common.PersistAgentStateAsync(ctx, j.Book.BookID, initialState)
+	if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist toc entry finder agent state",
+				"entry_doc_id", entry.DocID,
+				"error", err)
+		}
+	}
 	j.Book.SetAgentState(initialState)
 
 	// Get first work unit
@@ -193,8 +199,17 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 		if agentResult != nil && agentResult.Success {
 			if entryResult, ok := agentResult.ToolResult.(*toc_entry_finder.Result); ok {
 				// Update TocEntry with actual_page using common utility
-				if err := common.SaveTocEntryResult(ctx, j.Book, info.EntryDocID, entryResult); err != nil {
+				cid, err := common.SaveTocEntryResult(ctx, j.Book, info.EntryDocID, entryResult)
+				if err != nil {
 					return nil, fmt.Errorf("failed to save entry result: %w", err)
+				}
+				if cid != "" {
+					j.Book.SetTocCID(cid)
+				}
+				if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "TocEntry", info.EntryDocID, cid); err != nil {
+					if logger != nil {
+						logger.Warn("failed to update metric output ref", "error", err)
+					}
 				}
 			}
 		}
@@ -251,8 +266,7 @@ func (j *Job) convertLinkTocAgentUnits(agentUnits []agent.WorkUnit, entryDocID s
 
 // PersistTocLinkState persists ToC link state to DefraDB.
 func (j *Job) PersistTocLinkState(ctx context.Context) error {
-	tocLinkState := j.Book.GetTocLinkState()
-	return common.PersistTocLinkState(ctx, j.TocDocID, &tocLinkState)
+	return common.PersistOpState(ctx, j.Book, common.OpTocLink)
 }
 
 // StartFinalizeTocInline creates and starts the finalize phase inline.

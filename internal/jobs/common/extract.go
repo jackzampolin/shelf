@@ -41,15 +41,20 @@ func CreateExtractWorkUnit(jc JobContext, pageNum int) (*jobs.WorkUnit, string) 
 }
 
 // PersistExtractState saves extraction completion to DefraDB.
+// Returns the commit CID for the update.
 // Returns error if pageDocID is empty or sink is not in context.
-func PersistExtractState(ctx context.Context, pageDocID string) error {
+func PersistExtractState(ctx context.Context, book *BookState, pageDocID string) (string, error) {
 	if pageDocID == "" {
-		return fmt.Errorf("cannot persist extract state: empty page document ID")
+		return "", fmt.Errorf("cannot persist extract state: empty page document ID")
 	}
-	return SendToSink(ctx, defra.WriteOp{
+	result, err := SendTracked(ctx, book, defra.WriteOp{
 		Collection: "Page",
 		DocID:      pageDocID,
 		Document:   map[string]any{"extract_complete": true},
 		Op:         defra.OpUpdate,
 	})
+	if err != nil {
+		return "", err
+	}
+	return result.CID, nil
 }

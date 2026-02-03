@@ -57,7 +57,7 @@ func (t *TocEntryFinderTools) grepText(ctx context.Context, query string) (strin
 
 	// Search all pages (data already in BookState)
 	for pageNum := 1; pageNum <= t.book.TotalPages; pageNum++ {
-		text, err := t.getPageBlendedText(ctx, pageNum)
+		text, err := t.getPageOcrMarkdown(ctx, pageNum)
 		if err != nil {
 			continue // Skip pages without OCR
 		}

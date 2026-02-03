@@ -3,32 +3,17 @@ type Page {
     book: Book
     page_num: Int
 
-    # Blend result
-    blend_markdown: String
-    blend_confidence: Float
-    blend_corrections: JSON
+    # OCR result (final markdown from OCR)
+    ocr_markdown: String
     headings: JSON
 
-    # Label fields (extracted from page content)
-    page_number_label: String
-    running_header: String
-    content_type: String
-    is_chapter_start: Boolean
-    chapter_number: String
-    chapter_title: String
-    is_blank_page: Boolean
-    has_footnotes: Boolean
-
-    # Deprecated label fields (kept for backwards compatibility)
-    is_toc_page: Boolean
-    is_front_matter: Boolean
-    is_back_matter: Boolean
+    # Header/footer from Mistral OCR
+    header: String
+    footer: String
 
     # Status
     extract_complete: Boolean
     ocr_complete: Boolean
-    blend_complete: Boolean
-    label_complete: Boolean
 
     # Relationships
     # One-to-many: Page has many OcrResults

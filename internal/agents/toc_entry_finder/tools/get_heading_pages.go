@@ -10,21 +10,15 @@ import (
 
 // HeadingPageResult represents a page with chapter-level headings.
 type HeadingPageResult struct {
-	ScanPage   int                    `json:"scan_page"`
-	Heading    HeadingInfo            `json:"heading"`
-	PageNumber *PageNumberInfo        `json:"page_number,omitempty"`
-	Confidence float64                `json:"confidence"`
+	ScanPage   int         `json:"scan_page"`
+	Heading    HeadingInfo `json:"heading"`
+	Confidence float64     `json:"confidence"`
 }
 
 // HeadingInfo describes a detected heading.
 type HeadingInfo struct {
 	Text  string `json:"text"`
 	Level int    `json:"level"`
-}
-
-// PageNumberInfo describes a detected page number.
-type PageNumberInfo struct {
-	Number string `json:"number"`
 }
 
 // HeadingItem matches the structure stored in DefraDB.
@@ -86,11 +80,6 @@ func (t *TocEntryFinderTools) getHeadingPages(startPage, endPage *int) (string, 
 			continue
 		}
 
-		// Skip if marked as ToC page
-		if isToc := page.GetIsTocPage(); isToc != nil && *isToc {
-			continue
-		}
-
 		// Get headings from page state
 		headings := page.GetHeadings()
 		if len(headings) == 0 {
@@ -125,11 +114,6 @@ func (t *TocEntryFinderTools) getHeadingPages(startPage, endPage *int) (string, 
 		}
 		if firstHeading.Level == 2 {
 			result.Confidence = 0.7
-		}
-
-		// Add page number if available
-		if pnLabel := page.GetPageNumberLabel(); pnLabel != nil && *pnLabel != "" {
-			result.PageNumber = &PageNumberInfo{Number: *pnLabel}
 		}
 
 		results = append(results, result)

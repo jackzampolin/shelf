@@ -18,10 +18,8 @@ func (b *BookState) GetPageData(ctx context.Context, pageNum int) (*PageData, er
 	// Check if data is already loaded
 	if state.IsDataLoaded() {
 		return &PageData{
-			BlendMarkdown:   state.GetBlendedText(),
-			Headings:        state.GetHeadings(),
-			PageNumberLabel: state.GetPageNumberLabel(),
-			RunningHeader:   state.GetRunningHeader(),
+			OcrMarkdown: state.GetOcrMarkdown(),
+			Headings:    state.GetHeadings(),
 		}, nil
 	}
 
@@ -31,15 +29,13 @@ func (b *BookState) GetPageData(ctx context.Context, pageNum int) (*PageData, er
 	}
 
 	return &PageData{
-		BlendMarkdown:   state.GetBlendedText(),
-		Headings:        state.GetHeadings(),
-		PageNumberLabel: state.GetPageNumberLabel(),
-		RunningHeader:   state.GetRunningHeader(),
+		OcrMarkdown: state.GetOcrMarkdown(),
+		Headings:    state.GetHeadings(),
 	}, nil
 }
 
-// GetBlendedText returns just the blended markdown for a page.
-func (b *BookState) GetBlendedText(ctx context.Context, pageNum int) (string, error) {
+// GetOcrMarkdown returns just the OCR markdown for a page.
+func (b *BookState) GetOcrMarkdown(ctx context.Context, pageNum int) (string, error) {
 	state := b.GetPage(pageNum)
 	if state == nil {
 		return "", fmt.Errorf("page %d not found in book state", pageNum)
@@ -47,11 +43,11 @@ func (b *BookState) GetBlendedText(ctx context.Context, pageNum int) (string, er
 
 	// If data is loaded, return from cache
 	if state.IsDataLoaded() {
-		return state.GetBlendedText(), nil
+		return state.GetOcrMarkdown(), nil
 	}
 
-	// Check if we have blendedText cached (from write-through) even if dataLoaded is false
-	if text := state.GetBlendedText(); text != "" {
+	// Check if we have ocrMarkdown cached (from write-through) even if dataLoaded is false
+	if text := state.GetOcrMarkdown(); text != "" {
 		return text, nil
 	}
 
@@ -60,7 +56,7 @@ func (b *BookState) GetBlendedText(ctx context.Context, pageNum int) (string, er
 		return "", fmt.Errorf("failed to load page %d data: %w", pageNum, err)
 	}
 
-	return state.GetBlendedText(), nil
+	return state.GetOcrMarkdown(), nil
 }
 
 // PreloadPages batch-loads data for a range of pages in one DB query.
@@ -109,11 +105,8 @@ func (b *BookState) PreloadPages(ctx context.Context, startPage, endPage int) er
 	query := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}}) {
 			page_num
-			blend_markdown
+			ocr_markdown
 			headings
-			page_number_label
-			running_header
-			is_toc_page
 		}
 	}`, b.BookID)
 
@@ -203,15 +196,9 @@ func (b *BookState) GetPagesWithHeadings(ctx context.Context, startPage, endPage
 		for _, h := range headings {
 			// Only chapter-level headings (level 1-2)
 			if h.Level <= 2 {
-				isTocPage := false
-				if cached := state.GetIsTocPage(); cached != nil {
-					isTocPage = *cached
-				}
 				results = append(results, PageWithHeading{
-					PageNum:         pageNum,
-					Heading:         h,
-					PageNumberLabel: state.GetPageNumberLabel(),
-					IsTocPage:       isTocPage,
+					PageNum: pageNum,
+					Heading: h,
 				})
 				break // Only first chapter heading per page
 			}
@@ -240,10 +227,8 @@ func (b *BookState) loadPageDataFromDB(ctx context.Context, pageNum int, state *
 
 	query := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
-			blend_markdown
+			ocr_markdown
 			headings
-			page_number_label
-			running_header
 		}
 	}`, b.BookID, pageNum)
 
@@ -270,18 +255,9 @@ func (b *BookState) loadPageDataFromDB(ctx context.Context, pageNum int, state *
 	return nil
 }
 
-// loadTocPageFlag loads is_toc_page flag for filtering.
-// This is a helper for GetPagesWithHeadings to exclude ToC pages.
-func loadTocPageFlag(data map[string]any) bool {
-	if isToc, ok := data["is_toc_page"].(bool); ok {
-		return isToc
-	}
-	return false
-}
-
-// GetPagesWithHeadingsFiltered returns pages with chapter headings, excluding ToC pages.
-// This queries DB directly to get is_toc_page flag for proper filtering.
-func (b *BookState) GetPagesWithHeadingsFiltered(ctx context.Context, startPage, endPage *int, excludeTocPages bool) ([]PageWithHeading, error) {
+// GetPagesWithHeadingsFiltered returns pages with chapter headings.
+// This queries DB directly to get headings for proper filtering.
+func (b *BookState) GetPagesWithHeadingsFiltered(ctx context.Context, startPage, endPage *int) ([]PageWithHeading, error) {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return nil, fmt.Errorf("defra client not in context")
@@ -302,10 +278,8 @@ func (b *BookState) GetPagesWithHeadingsFiltered(ctx context.Context, startPage,
 	query := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}}) {
 			page_num
-			blend_markdown
+			ocr_markdown
 			headings
-			page_number_label
-			is_toc_page
 		}
 	}`, b.BookID)
 
@@ -327,12 +301,6 @@ func (b *BookState) GetPagesWithHeadingsFiltered(ctx context.Context, startPage,
 	for _, p := range pages {
 		page, ok := p.(map[string]any)
 		if !ok {
-			continue
-		}
-
-		// Skip ToC pages if requested
-		isTocPage := loadTocPageFlag(page)
-		if excludeTocPages && isTocPage {
 			continue
 		}
 
@@ -371,16 +339,9 @@ func (b *BookState) GetPagesWithHeadingsFiltered(ctx context.Context, startPage,
 		// Find first chapter-level heading
 		for _, h := range headings {
 			if h.Level <= 2 {
-				var pageNumberLabel *string
-				if pnl, ok := page["page_number_label"].(string); ok {
-					pageNumberLabel = &pnl
-				}
-
 				results = append(results, PageWithHeading{
-					PageNum:         pageNum,
-					Heading:         h,
-					PageNumberLabel: pageNumberLabel,
-					IsTocPage:       isTocPage,
+					PageNum: pageNum,
+					Heading: h,
 				})
 				break
 			}

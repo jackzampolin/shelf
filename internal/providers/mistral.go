@@ -14,10 +14,9 @@ import (
 const (
 	MistralOCRName    = "mistral-ocr"
 	MistralOCRBaseURL = "https://api.mistral.ai/v1"
-	// Use mistral-ocr-2505 instead of mistral-ocr-latest because the older model
-	// properly outputs markdown headers (e.g., "# 4" for chapter headings) while
-	// the latest model strips markdown formatting from headings.
-	MistralOCRModel = "mistral-ocr-2505"
+	// Use mistral-ocr-2512 (OCR 3) which supports extract_header/extract_footer
+	// for native header/footer extraction, and preserves markdown formatting.
+	MistralOCRModel = "mistral-ocr-2512"
 
 	// Mistral OCR pricing: $1/1000 pages base + $3/1000 pages for annotations
 	// Actual cost averages ~$0.0012 per page since not all pages have images
@@ -153,6 +152,9 @@ func (c *MistralOCRClient) ProcessImage(ctx context.Context, image []byte, pageN
 			},
 		},
 		IncludeImageBase64: c.includeImages,
+		ExtractHeader:      true,
+		ExtractFooter:      true,
+		TableFormat:        "markdown",
 	}
 
 	// Make request
@@ -215,13 +217,23 @@ func (c *MistralOCRClient) ProcessImage(ctx context.Context, image []byte, pageN
 		}
 	}
 
-	return &OCRResult{
+	result := &OCRResult{
 		Success:       true,
 		Text:          page.Markdown,
 		Metadata:      metadata,
 		CostUSD:       MistralOCRCostPerPage,
 		ExecutionTime: time.Since(start),
-	}, nil
+	}
+
+	// Pass through header/footer from Mistral's native extraction
+	if page.Header != nil {
+		result.Header = *page.Header
+	}
+	if page.Footer != nil {
+		result.Footer = *page.Footer
+	}
+
+	return result, nil
 }
 
 // doRequest makes an HTTP request to Mistral API with retry logic.
@@ -330,6 +342,9 @@ type mistralOCRRequest struct {
 	Model              string          `json:"model"`
 	Document           mistralDocument `json:"document"`
 	IncludeImageBase64 bool            `json:"include_image_base64,omitempty"`
+	ExtractHeader      bool            `json:"extract_header,omitempty"`
+	ExtractFooter      bool            `json:"extract_footer,omitempty"`
+	TableFormat        string          `json:"table_format,omitempty"`
 	Pages              []int           `json:"pages,omitempty"`
 	ImageLimit         int             `json:"image_limit,omitempty"`
 	ImageMinSize       int             `json:"image_min_size,omitempty"`
@@ -358,6 +373,8 @@ type mistralOCRPage struct {
 	Markdown   string                `json:"markdown"`
 	Images     []mistralOCRImage     `json:"images,omitempty"`
 	Dimensions mistralPageDimensions `json:"dimensions"`
+	Header     *string               `json:"header,omitempty"`
+	Footer     *string               `json:"footer,omitempty"`
 }
 
 type mistralOCRImage struct {

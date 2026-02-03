@@ -6,9 +6,7 @@ import (
 	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
-	"github.com/jackzampolin/shelf/internal/prompts/blend"
 	"github.com/jackzampolin/shelf/internal/prompts/extract_toc"
-	"github.com/jackzampolin/shelf/internal/prompts/label"
 	"github.com/jackzampolin/shelf/internal/prompts/metadata"
 
 	"github.com/jackzampolin/shelf/internal/jobs/common"
@@ -16,12 +14,6 @@ import (
 
 // promptKeys used by the process-book job.
 var promptKeys = []string{
-	// Blend stage
-	blend.SystemPromptKey,
-	blend.UserPromptKey,
-	// Label stage
-	label.SystemPromptKey,
-	label.UserPromptKey,
 	// Metadata stage
 	metadata.SystemPromptKey,
 	metadata.UserPromptKey,

@@ -58,7 +58,7 @@ func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 // Uses the scheduler's context instead of the HTTP request context.
 func (s *Scheduler) startJobAsync(job Job) {
 	// Use scheduler's context (lives for duration of server)
-	ctx := s.ctx
+	ctx := s.schedulerContext()
 
 	// Inject services into context for the job
 	ctx = s.injectServices(ctx)

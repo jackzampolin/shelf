@@ -18,8 +18,6 @@ type JobStatusResponse struct {
 	JobType          string `json:"job_type"`
 	TotalPages       int    `json:"total_pages"`
 	OcrComplete      int    `json:"ocr_complete"`
-	BlendComplete    int    `json:"blend_complete"`
-	LabelComplete    int    `json:"label_complete"`
 	MetadataComplete bool   `json:"metadata_complete"`
 	TocFound         bool   `json:"toc_found"`
 	TocExtracted     bool   `json:"toc_extracted"`
@@ -74,12 +72,10 @@ func (e *JobStatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 					if live := provider.LiveStatus(); live != nil {
 						resp.TotalPages = live.TotalPages
 						resp.OcrComplete = live.OcrComplete
-						resp.BlendComplete = live.BlendComplete
-						resp.LabelComplete = live.LabelComplete
 						resp.MetadataComplete = live.MetadataComplete
 						resp.TocFound = live.TocFound
 						resp.TocExtracted = live.TocExtracted
-						resp.IsComplete = live.LabelComplete >= live.TotalPages && live.MetadataComplete && live.TocExtracted
+						resp.IsComplete = live.OcrComplete >= live.TotalPages && live.MetadataComplete && live.TocExtracted
 						writeJSON(w, http.StatusOK, resp)
 						return
 					}
@@ -95,8 +91,6 @@ func (e *JobStatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		}
 		resp.TotalPages = status.TotalPages
 		resp.OcrComplete = status.OcrComplete
-		resp.BlendComplete = status.BlendComplete
-		resp.LabelComplete = status.LabelComplete
 		resp.MetadataComplete = status.MetadataComplete
 		resp.TocFound = status.TocFound
 		resp.TocExtracted = status.TocExtracted

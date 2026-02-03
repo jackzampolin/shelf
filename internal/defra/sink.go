@@ -29,6 +29,8 @@ type WriteOp struct {
 // WriteResult contains the result of a write operation.
 type WriteResult struct {
 	DocID  string         // Stable document ID
+	CID    string         // Primary commit CID (head)
+	CIDs   []string       // All head commit CIDs (can be multiple)
 	Fields map[string]any // Additional fields returned (for matching)
 	Err    error          // Error if operation failed
 }
@@ -423,7 +425,7 @@ func (s *Sink) processCreates(collection string, ops []WriteOp) {
 			if pageNum, ok := op.Document["page_num"].(int); ok {
 				if r, found := resultsByPageNum[pageNum]; found {
 					if op.result != nil {
-						op.result <- WriteResult{DocID: r.DocID, Fields: r.Fields}
+						op.result <- WriteResult{DocID: r.DocID, CID: r.CID, CIDs: r.CIDs, Fields: r.Fields}
 						close(op.result)
 					}
 					continue
@@ -440,7 +442,7 @@ func (s *Sink) processCreates(collection string, ops []WriteOp) {
 		for i, op := range ops {
 			var result WriteResult
 			if i < len(results) {
-				result = WriteResult{DocID: results[i].DocID, Fields: results[i].Fields}
+				result = WriteResult{DocID: results[i].DocID, CID: results[i].CID, CIDs: results[i].CIDs, Fields: results[i].Fields}
 			}
 
 			if op.result != nil {
@@ -463,8 +465,15 @@ func (s *Sink) processUpdates(collection string, ops []WriteOp) {
 			continue
 		}
 
-		err := s.client.Update(s.ctx, collection, op.DocID, op.Document)
+		updateResult, err := s.client.UpdateWithVersion(s.ctx, collection, op.DocID, op.Document)
 		result := WriteResult{DocID: op.DocID, Err: err}
+		if err == nil {
+			if updateResult.DocID != "" {
+				result.DocID = updateResult.DocID
+			}
+			result.CID = updateResult.CID
+			result.CIDs = updateResult.CIDs
+		}
 
 		if err != nil {
 			s.logger.Error("update failed",

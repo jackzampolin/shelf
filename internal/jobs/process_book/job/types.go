@@ -7,9 +7,9 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 )
 
-// BlendThresholdForMetadata is the number of blended pages before triggering metadata extraction.
-// Metadata only needs blended text (not labels), so it can start early while OCR is still running.
-const BlendThresholdForMetadata = 20
+// OcrThresholdForMetadata is the number of OCR-complete pages before triggering metadata extraction.
+// Metadata only needs OCR text, so it can start early while other pages are still processing.
+const OcrThresholdForMetadata = 20
 
 // BookStatus represents the top-level status of a book.
 type BookStatus string
@@ -24,8 +24,8 @@ const (
 const FrontMatterPageCount = 50
 
 // ConsecutiveFrontMatterRequired is the number of consecutive pages from page 1
-// that must have blend_complete before starting ToC finder. This ensures the ToC
-// pages (typically in first 20-30 pages) have blend output before the agent runs.
+// that must have OCR complete before starting ToC finder. This ensures the ToC
+// pages (typically in first 20-30 pages) have OCR output before the agent runs.
 const ConsecutiveFrontMatterRequired = 30
 
 // PageState is an alias for common.PageState.
@@ -61,8 +61,6 @@ const MaxPageOpRetries = 10
 const (
 	WorkUnitTypeExtract         = "extract"
 	WorkUnitTypeOCR             = "ocr"
-	WorkUnitTypeBlend           = "blend"
-	WorkUnitTypeLabel           = "label"
 	WorkUnitTypeMetadata        = "metadata"
 	WorkUnitTypeTocFinder       = "toc_finder"
 	WorkUnitTypeTocExtract      = "toc_extract"
@@ -122,7 +120,7 @@ type WorkUnitInfo struct {
 // PDFInfo is an alias for common.PDFInfo for backwards compatibility.
 type PDFInfo = common.PDFInfo
 
-// Job processes all pages through Extract -> OCR -> Blend -> Label,
+// Job processes all pages through Extract -> OCR,
 // then triggers book-level operations (metadata, ToC, finalize, structure).
 // Services (DefraClient, DefraSink) are accessed via svcctx from the context
 // passed to Start() and OnComplete().
@@ -173,18 +171,13 @@ func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 	return j.BaseJob.MetricsFor(j.Type())
 }
 
-// CountLabeledPages returns the number of pages that have completed labeling.
-func (j *Job) CountLabeledPages() int {
-	return j.Book.CountLabeledPages()
-}
-
-// CountBlendedPages returns the number of pages that have completed blend.
-func (j *Job) CountBlendedPages() int {
-	return j.Book.CountBlendedPages()
+// CountOcrPages returns the number of pages that have completed OCR.
+func (j *Job) CountOcrPages() int {
+	return j.Book.CountOcrPages()
 }
 
 // ConsecutiveFrontMatterComplete returns true if pages 1 through ConsecutiveFrontMatterRequired
-// all have blend_complete. This ensures the ToC finder has OCR data for the pages where
+// all have OCR complete. This ensures the ToC finder has OCR data for the pages where
 // the ToC is typically located.
 func (j *Job) ConsecutiveFrontMatterComplete() bool {
 	return j.Book.ConsecutivePagesComplete(ConsecutiveFrontMatterRequired)
@@ -195,9 +188,9 @@ func (j *Job) AllPagesComplete() bool {
 	return j.Book.AllPagesComplete()
 }
 
-// AllPagesBlendComplete returns true if all pages have completed blend.
-func (j *Job) AllPagesBlendComplete() bool {
-	return j.Book.AllPagesBlendComplete()
+// AllPagesOcrComplete returns true if all pages have completed OCR.
+func (j *Job) AllPagesOcrComplete() bool {
+	return j.Book.AllPagesOcrComplete()
 }
 
 // FindPDFForPage returns the PDF path and page number within that PDF for a given output page number.
@@ -215,7 +208,7 @@ func (j *Job) LiveStatus() *jobs.LiveStatus {
 	}
 
 	// Count page completion from in-memory state
-	var ocrComplete, blendComplete, labelComplete int
+	var ocrComplete int
 	book.ForEachPage(func(pageNum int, state *common.PageState) {
 		// OCR is complete when all providers are done
 		allOcr := true
@@ -227,12 +220,6 @@ func (j *Job) LiveStatus() *jobs.LiveStatus {
 		}
 		if allOcr {
 			ocrComplete++
-		}
-		if state.IsBlendDone() {
-			blendComplete++
-		}
-		if state.IsLabelDone() {
-			labelComplete++
 		}
 	})
 
@@ -246,8 +233,6 @@ func (j *Job) LiveStatus() *jobs.LiveStatus {
 	return &jobs.LiveStatus{
 		TotalPages:        book.TotalPages,
 		OcrComplete:       ocrComplete,
-		BlendComplete:     blendComplete,
-		LabelComplete:     labelComplete,
 		MetadataComplete:  metadataState.IsComplete(),
 		TocFound:          book.GetTocFound(),
 		TocExtracted:      tocExtractState.IsComplete(),

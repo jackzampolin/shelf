@@ -219,13 +219,6 @@ func TestConfig_ToProviderRegistryConfig(t *testing.T) {
 				RateLimit: 6.0,
 				Enabled:   true,
 			},
-			"deepinfra": {
-				Type:      "deepinfra",
-				Model:     "ds-paddleocr-vl",
-				APIKey:    "literal-deepinfra-key",
-				RateLimit: 10.0,
-				Enabled:   true,
-			},
 			"disabled": {
 				Type:    "mistral-ocr",
 				APIKey:  "${TEST_MISTRAL_KEY}",
@@ -255,19 +248,6 @@ func TestConfig_ToProviderRegistryConfig(t *testing.T) {
 		}
 		if mistral.Type != "mistral-ocr" {
 			t.Errorf("expected type mistral-ocr, got %s", mistral.Type)
-		}
-	})
-
-	t.Run("keeps literal API keys", func(t *testing.T) {
-		deepinfra, ok := result.OCRProviders["deepinfra"]
-		if !ok {
-			t.Fatal("deepinfra provider not found")
-		}
-		if deepinfra.APIKey != "literal-deepinfra-key" {
-			t.Errorf("expected literal-deepinfra-key, got %s", deepinfra.APIKey)
-		}
-		if deepinfra.Model != "ds-paddleocr-vl" {
-			t.Errorf("expected model ds-paddleocr-vl, got %s", deepinfra.Model)
 		}
 	})
 

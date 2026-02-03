@@ -44,6 +44,18 @@ type Scheduler struct {
 	contextEnricher func(context.Context) context.Context
 }
 
+// schedulerContext returns the scheduler's long-lived context in a race-free way.
+// Falls back to context.Background() if Start hasn't been called yet.
+func (s *Scheduler) schedulerContext() context.Context {
+	s.mu.RLock()
+	ctx := s.ctx
+	s.mu.RUnlock()
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
+}
+
 // SchedulerConfig configures a new scheduler.
 type SchedulerConfig struct {
 	Manager *Manager // Required for persistence

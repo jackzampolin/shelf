@@ -29,8 +29,12 @@ func (j *Job) HandleExtractComplete(ctx context.Context, info WorkUnitInfo, resu
 	state.SetExtractDone(true)
 
 	// Persist to DefraDB using common function (thread-safe accessor)
-	if err := common.PersistExtractState(ctx, state.GetPageDocID()); err != nil {
+	cid, err := common.PersistExtractState(ctx, j.Book, state.GetPageDocID())
+	if err != nil {
 		return nil, fmt.Errorf("failed to persist extract state for page %d: %w", pageNum, err)
+	}
+	if cid != "" {
+		state.SetPageCID(cid)
 	}
 
 	// Generate OCR work units now that image is on disk

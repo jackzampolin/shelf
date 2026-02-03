@@ -42,8 +42,7 @@ type ChapterWithText struct {
 // ChapterPage represents a single page within a chapter.
 type ChapterPage struct {
 	PageNum     int    `json:"page_num"`
-	BlendedText string `json:"blended_text,omitempty"`
-	Label       string `json:"label,omitempty"`
+	OcrMarkdown string `json:"ocr_markdown,omitempty"`
 }
 
 // ChapterParagraph represents a paragraph within a chapter.
@@ -203,8 +202,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 					page_num: {_ge: %d, _le: %d}
 				}) {
 					page_num
-					blend_markdown
-					page_number_label
+					ocr_markdown
 				}
 			}`, bookID, startPage, endPage)
 
@@ -218,8 +216,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 						}
 						chapter.Pages = append(chapter.Pages, ChapterPage{
 							PageNum:     getInt(pm, "page_num"),
-							BlendedText: getString(pm, "blend_markdown"),
-							Label:       getString(pm, "page_number_label"),
+							OcrMarkdown: getString(pm, "ocr_markdown"),
 						})
 					}
 					// Sort pages by page number

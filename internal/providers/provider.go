@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -191,6 +192,10 @@ type OCRResult struct {
 	Success bool   `json:"success"`
 	Text    string `json:"text"` // Markdown formatted
 
+	// Header/footer extracted by the OCR provider (Mistral native extraction)
+	Header string `json:"header,omitempty"`
+	Footer string `json:"footer,omitempty"`
+
 	// Metadata from provider (dimensions, detected images, etc.)
 	Metadata map[string]any `json:"metadata,omitempty"`
 
@@ -267,4 +272,25 @@ type TTSResult struct {
 	// This ID can be passed to subsequent requests for prosody continuity.
 	// Expires after 2 hours.
 	RequestID string `json:"request_id,omitempty"`
+}
+
+// parseRetryAfter parses the Retry-After header value.
+// Supports both seconds (integer) and HTTP-date formats.
+func parseRetryAfter(value string) time.Duration {
+	if value == "" {
+		return 0
+	}
+
+	if seconds, err := strconv.Atoi(value); err == nil {
+		return time.Duration(seconds) * time.Second
+	}
+
+	if t, err := time.Parse(time.RFC1123, value); err == nil {
+		delay := time.Until(t)
+		if delay > 0 {
+			return delay
+		}
+	}
+
+	return 0
 }

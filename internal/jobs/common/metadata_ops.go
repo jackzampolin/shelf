@@ -22,14 +22,8 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 	book := jc.GetBook()
 	logger := svcctx.LoggerFrom(ctx)
 
-	// Load first N pages of blended text from BookState (in-memory)
-	pages := LoadPagesForMetadataFromState(book, MetadataPageCount)
-
-	// Fall back to DB if in-memory state doesn't have blend markdown cached
-	// (happens after job reload from DB)
-	if len(pages) == 0 {
-		pages = LoadPagesForMetadataFromDB(ctx, book.BookID, MetadataPageCount)
-	}
+	// Load first N pages of OCR markdown via read-through BookState.
+	pages := LoadPagesForMetadataFromState(ctx, book, MetadataPageCount)
 
 	if len(pages) == 0 {
 		if logger != nil {
@@ -71,26 +65,24 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 	return unit, unitID
 }
 
-// LoadPagesForMetadataFromState loads page data for metadata extraction.
-// First tries in-memory state, then falls back to querying DefraDB.
-func LoadPagesForMetadataFromState(book *BookState, maxPages int) []metadata.Page {
+// LoadPagesForMetadataFromState loads page data for metadata extraction via read-through cache.
+// Uses BookState.GetOcrMarkdown to load from DB when needed.
+func LoadPagesForMetadataFromState(ctx context.Context, book *BookState, maxPages int) []metadata.Page {
 	var pages []metadata.Page
 
 	// Iterate through pages in order
 	for pageNum := 1; pageNum <= book.TotalPages && len(pages) < maxPages; pageNum++ {
-		state := book.GetPage(pageNum)
-		if state == nil {
+		ocrMarkdown, err := book.GetOcrMarkdown(ctx, pageNum)
+		if err != nil {
 			continue
 		}
-
-		blendMarkdown := state.GetBlendedText()
-		if blendMarkdown == "" {
+		if ocrMarkdown == "" {
 			continue
 		}
 
 		pages = append(pages, metadata.Page{
-			PageNum:       pageNum,
-			BlendMarkdown: blendMarkdown,
+			PageNum:     pageNum,
+			OcrMarkdown: ocrMarkdown,
 		})
 	}
 
@@ -98,7 +90,7 @@ func LoadPagesForMetadataFromState(book *BookState, maxPages int) []metadata.Pag
 }
 
 // LoadPagesForMetadataFromDB loads page data for metadata extraction directly from DefraDB.
-// Use this when blend markdown isn't cached in memory (e.g., after job reload).
+// Use this when OCR markdown isn't cached in memory (e.g., after job reload).
 func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int) []metadata.Page {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
@@ -106,9 +98,9 @@ func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int
 	}
 
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, blend_complete: {_eq: true}}, order: {page_num: ASC}, limit: %d) {
+		Page(filter: {book_id: {_eq: "%s"}, ocr_complete: {_eq: true}}, order: {page_num: ASC}, limit: %d) {
 			page_num
-			blend_markdown
+			ocr_markdown
 		}
 	}`, bookID, maxPages)
 
@@ -133,12 +125,12 @@ func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int
 		if pn, ok := page["page_num"].(float64); ok {
 			pageNum = int(pn)
 		}
-		blendMarkdown, _ := page["blend_markdown"].(string)
+		ocrMarkdown, _ := page["ocr_markdown"].(string)
 
-		if pageNum > 0 && blendMarkdown != "" {
+		if pageNum > 0 && ocrMarkdown != "" {
 			pages = append(pages, metadata.Page{
-				PageNum:       pageNum,
-				BlendMarkdown: blendMarkdown,
+				PageNum:     pageNum,
+				OcrMarkdown: ocrMarkdown,
 			})
 		}
 	}
@@ -147,10 +139,10 @@ func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int
 }
 
 // SaveMetadataResult saves the metadata result to the Book record in DefraDB.
-func SaveMetadataResult(ctx context.Context, bookID string, result metadata.Result) error {
+func SaveMetadataResult(ctx context.Context, bookID string, result metadata.Result) (string, error) {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
+		return "", fmt.Errorf("defra sink not in context")
 	}
 
 	update := map[string]any{
@@ -179,12 +171,14 @@ func SaveMetadataResult(ctx context.Context, bookID string, result metadata.Resu
 		update["subjects"] = result.Subjects
 	}
 
-	// Fire-and-forget - no need to block
-	sink.Send(defra.WriteOp{
+	writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      bookID,
 		Document:   update,
 		Op:         defra.OpUpdate,
 	})
-	return nil
+	if err != nil {
+		return "", err
+	}
+	return writeResult.CID, nil
 }

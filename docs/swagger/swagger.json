@@ -286,6 +286,350 @@
                 }
             }
         },
+        "/api/books/{book_id}/audio": {
+            "get": {
+                "description": "Get TTS audio generation status and available files",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "books",
+                    "audio"
+                ],
+                "summary": "Get audio status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.AudioStatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{book_id}/audio/{chapter}/download": {
+            "get": {
+                "description": "Download the generated audio file for a chapter",
+                "produces": [
+                    "audio/mpeg"
+                ],
+                "tags": [
+                    "books",
+                    "audio"
+                ],
+                "summary": "Download chapter audio",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Chapter index",
+                        "name": "chapter",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{book_id}/export/epub": {
+            "post": {
+                "description": "Generate an ePub 3.0 file from a processed book",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "books",
+                    "export"
+                ],
+                "summary": "Export book as ePub",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.EpubExportResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{book_id}/export/epub/download": {
+            "get": {
+                "description": "Download the generated ePub file for a book",
+                "produces": [
+                    "application/epub+zip"
+                ],
+                "tags": [
+                    "books",
+                    "export"
+                ],
+                "summary": "Download ePub file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{book_id}/export/storyteller": {
+            "post": {
+                "description": "Generate an EPUB 3.0 file with synchronized audio (Media Overlays) for use with Storyteller",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "books",
+                    "export",
+                    "storyteller"
+                ],
+                "summary": "Export book as EPUB with Media Overlays for Storyteller",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.StorytellerExportResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{book_id}/export/storyteller/download": {
+            "get": {
+                "description": "Download the generated EPUB file with Media Overlays for a book",
+                "produces": [
+                    "application/epub+zip"
+                ],
+                "tags": [
+                    "books",
+                    "export",
+                    "storyteller"
+                ],
+                "summary": "Download Storyteller EPUB file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{book_id}/generate/audio": {
+            "post": {
+                "description": "Start TTS audiobook generation for a book",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "books",
+                    "audio"
+                ],
+                "summary": "Start TTS audio generation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Book ID",
+                        "name": "book_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "TTS options",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.GenerateAudioRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.GenerateAudioResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/books/{book_id}/pages": {
             "get": {
                 "description": "List all pages for a book with processing status",
@@ -335,7 +679,7 @@
         },
         "/api/books/{book_id}/pages/{page_num}": {
             "get": {
-                "description": "Get full details for a specific page including OCR results, blend output, and labels",
+                "description": "Get full details for a specific page including OCR results",
                 "produces": [
                     "application/json"
                 ],
@@ -486,7 +830,7 @@
                         }
                     },
                     "412": {
-                        "description": "Not enough pages have blend complete",
+                        "description": "Not enough pages have OCR complete",
                         "schema": {
                             "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
                         }
@@ -2038,6 +2382,228 @@
                     }
                 }
             }
+        },
+        "/api/tts/config": {
+            "get": {
+                "description": "Get available TTS voices, models, and formats",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tts"
+                ],
+                "summary": "Get TTS configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.TTSConfigResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/voices": {
+            "get": {
+                "description": "List all available TTS voices from the database",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "voices"
+                ],
+                "summary": "List TTS voices",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ListVoicesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Add a custom voice to the database",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "voices"
+                ],
+                "summary": "Create voice",
+                "parameters": [
+                    {
+                        "description": "Voice details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.CreateVoiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.VoiceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/voices/sync": {
+            "post": {
+                "description": "Sync voices from TTS provider to database",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "voices"
+                ],
+                "summary": "Sync TTS voices",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.SyncVoicesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/voices/{voice_id}": {
+            "delete": {
+                "description": "Delete a voice from the local database",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "voices"
+                ],
+                "summary": "Delete voice",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Voice ID",
+                        "name": "voice_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/voices/{voice_id}/default": {
+            "put": {
+                "description": "Set a voice as the default TTS voice",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "voices"
+                ],
+                "summary": "Set default voice",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Voice ID",
+                        "name": "voice_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -2079,6 +2645,32 @@
                 "totalExpected": {
                     "description": "Total work units expected for this provider",
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_jackzampolin_shelf_internal_jobs.RateLimiterStatus": {
+            "type": "object",
+            "properties": {
+                "last_429_time": {
+                    "type": "string"
+                },
+                "rps": {
+                    "type": "number"
+                },
+                "time_until_token": {
+                    "$ref": "#/definitions/time.Duration"
+                },
+                "tokens_available": {
+                    "type": "number"
+                },
+                "total_consumed": {
+                    "type": "integer"
+                },
+                "total_waited": {
+                    "$ref": "#/definitions/time.Duration"
+                },
+                "utilization": {
+                    "type": "number"
                 }
             }
         },
@@ -2139,7 +2731,7 @@
                     "type": "integer"
                 },
                 "rate_limiter": {
-                    "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_providers.RateLimiterStatus"
+                    "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_jobs.RateLimiterStatus"
                 },
                 "type": {
                     "type": "string"
@@ -2359,32 +2951,6 @@
                 }
             }
         },
-        "github_com_jackzampolin_shelf_internal_providers.RateLimiterStatus": {
-            "type": "object",
-            "properties": {
-                "last_429_time": {
-                    "type": "string"
-                },
-                "rps": {
-                    "type": "number"
-                },
-                "time_until_token": {
-                    "$ref": "#/definitions/time.Duration"
-                },
-                "tokens_available": {
-                    "type": "number"
-                },
-                "total_consumed": {
-                    "type": "integer"
-                },
-                "total_waited": {
-                    "$ref": "#/definitions/time.Duration"
-                },
-                "utilization": {
-                    "type": "number"
-                }
-            }
-        },
         "internal_server_endpoints.AgentLogDetailResponse": {
             "type": "object",
             "properties": {
@@ -2505,6 +3071,44 @@
                 }
             }
         },
+        "internal_server_endpoints.AudioStatusResponse": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "string"
+                },
+                "chapter_count": {
+                    "type": "integer"
+                },
+                "chapters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.ChapterAudioStatus"
+                    }
+                },
+                "format": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "segment_count": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "total_cost_usd": {
+                    "type": "number"
+                },
+                "total_duration_ms": {
+                    "type": "integer"
+                },
+                "voice": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_server_endpoints.Book": {
             "type": "object",
             "properties": {
@@ -2609,13 +3213,36 @@
                 }
             }
         },
+        "internal_server_endpoints.ChapterAudioStatus": {
+            "type": "object",
+            "properties": {
+                "audio_file": {
+                    "type": "string"
+                },
+                "chapter_idx": {
+                    "type": "integer"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "segment_count": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_server_endpoints.ChapterPage": {
             "type": "object",
             "properties": {
-                "blended_text": {
-                    "type": "string"
-                },
-                "label": {
+                "ocr_markdown": {
                     "type": "string"
                 },
                 "page_num": {
@@ -2757,6 +3384,20 @@
                 }
             }
         },
+        "internal_server_endpoints.CreateVoiceRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "voice_id": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_server_endpoints.DefraStatus": {
             "type": "object",
             "properties": {
@@ -2854,6 +3495,35 @@
                 }
             }
         },
+        "internal_server_endpoints.EpubExportResponse": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "string"
+                },
+                "chapter_count": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "file_path": {
+                    "type": "string"
+                },
+                "file_size": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_server_endpoints.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -2873,6 +3543,39 @@
                 },
                 "start_page": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_server_endpoints.GenerateAudioRequest": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "description": "Optional: output format (mp3, wav)",
+                    "type": "string"
+                },
+                "voice": {
+                    "description": "Optional: voice ID",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_server_endpoints.GenerateAudioResponse": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "string"
+                },
+                "chapters": {
+                    "type": "integer"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
                 }
             }
         },
@@ -2934,14 +3637,8 @@
         "internal_server_endpoints.GetPageResponse": {
             "type": "object",
             "properties": {
-                "blend_confidence": {
-                    "type": "number"
-                },
-                "blend_markdown": {
+                "ocr_markdown": {
                     "type": "string"
-                },
-                "labels": {
-                    "$ref": "#/definitions/internal_server_endpoints.PageLabels"
                 },
                 "ocr_results": {
                     "type": "array",
@@ -3011,9 +3708,6 @@
         "internal_server_endpoints.JobStatusResponse": {
             "type": "object",
             "properties": {
-                "blend_complete": {
-                    "type": "integer"
-                },
                 "book_id": {
                     "type": "string"
                 },
@@ -3022,9 +3716,6 @@
                 },
                 "job_type": {
                     "type": "string"
-                },
-                "label_complete": {
-                    "type": "integer"
                 },
                 "metadata_complete": {
                     "type": "boolean"
@@ -3129,6 +3820,17 @@
                 }
             }
         },
+        "internal_server_endpoints.ListVoicesResponse": {
+            "type": "object",
+            "properties": {
+                "voices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.VoiceResponse"
+                    }
+                }
+            }
+        },
         "internal_server_endpoints.MetadataStatus": {
             "type": "object",
             "properties": {
@@ -3224,42 +3926,10 @@
                 }
             }
         },
-        "internal_server_endpoints.PageLabels": {
-            "type": "object",
-            "properties": {
-                "content_type": {
-                    "type": "string"
-                },
-                "is_back_matter": {
-                    "type": "boolean"
-                },
-                "is_chapter_start": {
-                    "type": "boolean"
-                },
-                "is_front_matter": {
-                    "type": "boolean"
-                },
-                "is_toc_page": {
-                    "type": "boolean"
-                },
-                "page_number_label": {
-                    "type": "string"
-                },
-                "running_header": {
-                    "type": "string"
-                }
-            }
-        },
         "internal_server_endpoints.PageStatus": {
             "type": "object",
             "properties": {
-                "blend_complete": {
-                    "type": "boolean"
-                },
                 "extract_complete": {
-                    "type": "boolean"
-                },
-                "label_complete": {
                     "type": "boolean"
                 },
                 "ocr_complete": {
@@ -3270,45 +3940,11 @@
         "internal_server_endpoints.PageSummary": {
             "type": "object",
             "properties": {
-                "blend_complete": {
-                    "type": "boolean"
-                },
-                "chapter_number": {
-                    "type": "string"
-                },
-                "chapter_title": {
-                    "type": "string"
-                },
-                "content_type": {
-                    "type": "string"
-                },
-                "has_footnotes": {
-                    "type": "boolean"
-                },
-                "is_blank_page": {
-                    "type": "boolean"
-                },
-                "is_chapter_start": {
-                    "type": "boolean"
-                },
-                "is_toc_page": {
-                    "type": "boolean"
-                },
-                "label_complete": {
-                    "type": "boolean"
-                },
                 "ocr_complete": {
                     "type": "boolean"
                 },
                 "page_num": {
                     "type": "integer"
-                },
-                "page_number_label": {
-                    "description": "Label fields",
-                    "type": "string"
-                },
-                "running_header": {
-                    "type": "string"
                 }
             }
         },
@@ -3447,34 +4083,6 @@
         "internal_server_endpoints.StageProgress": {
             "type": "object",
             "properties": {
-                "blend": {
-                    "type": "object",
-                    "properties": {
-                        "complete": {
-                            "type": "integer"
-                        },
-                        "cost_usd": {
-                            "type": "number"
-                        },
-                        "total": {
-                            "type": "integer"
-                        }
-                    }
-                },
-                "label": {
-                    "type": "object",
-                    "properties": {
-                        "complete": {
-                            "type": "integer"
-                        },
-                        "cost_usd": {
-                            "type": "number"
-                        },
-                        "total": {
-                            "type": "integer"
-                        }
-                    }
-                },
                 "ocr": {
                     "type": "object",
                     "properties": {
@@ -3519,6 +4127,14 @@
                 "job_type": {
                     "description": "Optional: defaults to \"process-book\"",
                     "type": "string"
+                },
+                "reset_from": {
+                    "description": "Optional: reset this operation and downstream deps before starting",
+                    "type": "string"
+                },
+                "variant": {
+                    "description": "Optional: pipeline variant (standard, photo-book, text-only, ocr-only)",
+                    "type": "string"
                 }
             }
         },
@@ -3553,10 +4169,54 @@
                 }
             }
         },
+        "internal_server_endpoints.StorytellerExportResponse": {
+            "type": "object",
+            "properties": {
+                "audio_chapters": {
+                    "type": "integer"
+                },
+                "author": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "string"
+                },
+                "chapter_count": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "file_path": {
+                    "type": "string"
+                },
+                "file_size": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "total_duration_ms": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_server_endpoints.StructureStatus": {
             "type": "object",
             "properties": {
                 "chapter_count": {
+                    "type": "integer"
+                },
+                "chapters_extracted": {
+                    "type": "integer"
+                },
+                "chapters_polished": {
+                    "type": "integer"
+                },
+                "chapters_total": {
                     "type": "integer"
                 },
                 "complete": {
@@ -3568,11 +4228,75 @@
                 "failed": {
                     "type": "boolean"
                 },
+                "phase": {
+                    "description": "Phase tracking (build -\u003e extract -\u003e classify -\u003e polish -\u003e finalize)",
+                    "type": "string"
+                },
+                "polish_failed": {
+                    "type": "integer"
+                },
                 "retries": {
                     "type": "integer"
                 },
                 "started": {
                     "type": "boolean"
+                }
+            }
+        },
+        "internal_server_endpoints.SyncVoicesResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "synced": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_server_endpoints.TTSConfigResponse": {
+            "type": "object",
+            "properties": {
+                "default_format": {
+                    "type": "string"
+                },
+                "default_voice": {
+                    "type": "string"
+                },
+                "formats": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "model": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "voice_cloning_url": {
+                    "type": "string"
+                },
+                "voices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_server_endpoints.TTSVoice"
+                    }
+                }
+            }
+        },
+        "internal_server_endpoints.TTSVoice": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "voice_id": {
+                    "type": "string"
                 }
             }
         },
@@ -3743,6 +4467,32 @@
                     "type": "string"
                 },
                 "value": {}
+            }
+        },
+        "internal_server_endpoints.VoiceResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "synced_at": {
+                    "type": "string"
+                },
+                "voice_id": {
+                    "type": "string"
+                }
             }
         },
         "time.Duration": {

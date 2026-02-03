@@ -28,8 +28,6 @@ export function OverviewTab({ bookId, book }: OverviewTabProps) {
     if (detailedStatus.toc?.link_started) return 'Linking ToC'
     if (detailedStatus.toc?.extract_started) return 'Extracting ToC'
     if (detailedStatus.toc?.finder_started) return 'Finding ToC'
-    if (detailedStatus.stages?.label?.complete) return 'Labeling Complete'
-    if (detailedStatus.stages?.blend?.complete) return 'Blending Complete'
     if (detailedStatus.stages?.ocr?.complete) return 'OCR Complete'
     return 'Processing'
   }

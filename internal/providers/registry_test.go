@@ -189,32 +189,6 @@ func TestNewRegistryFromConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("registers DeepInfra OCR provider", func(t *testing.T) {
-		r := NewRegistryFromConfig(RegistryConfig{
-			OCRProviders: map[string]OCRProviderConfig{
-				"deepinfra": {
-					Type:    "deepinfra",
-					Model:   "ds-paddleocr-vl",
-					APIKey:  "test-key",
-					Enabled: true,
-				},
-			},
-		})
-
-		if !r.HasOCR("deepinfra") {
-			t.Error("expected deepinfra to be registered")
-		}
-
-		provider, _ := r.GetOCR("deepinfra")
-		diClient, ok := provider.(*DeepInfraOCRClient)
-		if !ok {
-			t.Fatal("expected DeepInfraOCRClient")
-		}
-		if diClient.model != "ds-paddleocr-vl" {
-			t.Errorf("expected model ds-paddleocr-vl, got %s", diClient.model)
-		}
-	})
-
 	t.Run("uses custom model for LLM provider", func(t *testing.T) {
 		r := NewRegistryFromConfig(RegistryConfig{
 			LLMProviders: map[string]LLMProviderConfig{

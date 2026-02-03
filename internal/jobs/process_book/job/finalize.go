@@ -51,8 +51,7 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		return nil
 	}
 	// Use sync write at operation start to ensure state is persisted before continuing
-	tocFinalizeState := j.Book.GetTocFinalizeState()
-	if err := common.PersistTocFinalizeStateSync(ctx, j.TocDocID, &tocFinalizeState); err != nil {
+	if err := common.PersistOpState(ctx, j.Book, common.OpTocFinalize); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist finalize start", "error", err)
 		}
@@ -69,8 +68,7 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 				"error", err)
 		}
 		j.Book.TocFinalizeFail(MaxBookOpRetries)
-		tocFinalizeState := j.Book.GetTocFinalizeState()
-		common.PersistTocFinalizeState(ctx, j.TocDocID, &tocFinalizeState)
+		common.PersistOpState(ctx, j.Book, common.OpTocFinalize)
 		return nil
 	}
 
@@ -102,10 +100,13 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	// Set phase and persist for crash recovery
 	j.Book.SetFinalizePhase(FinalizePhasePattern)
-	if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhasePattern); err != nil {
+	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhasePattern)
+	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "phase", FinalizePhasePattern, "error", err)
 		}
+	} else if cid != "" {
+		j.Book.SetTocCID(cid)
 	}
 
 	if logger != nil {
@@ -144,7 +145,7 @@ func (j *Job) CreateFinalizePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit
 	// Load candidate headings from Page.headings
 	candidates := j.loadCandidateHeadings()
 
-	// Load chapter start pages from labels
+	// Load chapter start pages from DefraDB
 	chapterStartPages, err := j.loadChapterStartPages(ctx)
 	if err != nil {
 		if logger := svcctx.LoggerFrom(ctx); logger != nil {
@@ -257,18 +258,26 @@ func (j *Job) HandleFinalizePatternComplete(ctx context.Context, result jobs.Wor
 		}
 		// Mark pattern phase as skipped to prevent re-attempts on restart
 		j.Book.SetFinalizePhase(FinalizePhaseDiscover)
-		if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDiscover); err != nil {
+		cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseDiscover)
+		if err != nil {
 			if logger != nil {
 				logger.Error("failed to persist pattern phase skip", "error", err)
 			}
+		} else if cid != "" {
+			j.Book.SetTocCID(cid)
 		}
 		return j.transitionToFinalizeDiscover(ctx), nil
 	}
 
 	// Process pattern analysis result
-	if err := j.processFinalizePatternResult(ctx, result); err != nil {
+	writeResult, err := j.processFinalizePatternResult(ctx, result)
+	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to process pattern result", "error", err)
+		}
+	} else if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "Book", j.Book.BookID, writeResult.CID); err != nil {
+		if logger != nil {
+			logger.Warn("failed to update metric output ref", "error", err)
 		}
 	}
 
@@ -276,9 +285,9 @@ func (j *Job) HandleFinalizePatternComplete(ctx context.Context, result jobs.Wor
 }
 
 // processFinalizePatternResult parses and stores pattern analysis results.
-func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.WorkResult) error {
+func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.WorkResult) (defra.WriteResult, error) {
 	if result.ChatResult == nil {
-		return fmt.Errorf("no chat result")
+		return defra.WriteResult{}, fmt.Errorf("no chat result")
 	}
 
 	var content []byte
@@ -287,12 +296,12 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 	} else if result.ChatResult.Content != "" {
 		content = []byte(result.ChatResult.Content)
 	} else {
-		return fmt.Errorf("empty response")
+		return defra.WriteResult{}, fmt.Errorf("empty response")
 	}
 
 	var response pattern_analyzer.Result
 	if err := json.Unmarshal(content, &response); err != nil {
-		return fmt.Errorf("failed to parse pattern response: %w", err)
+		return defra.WriteResult{}, fmt.Errorf("failed to parse pattern response: %w", err)
 	}
 
 	// Build result locally before storing in BookState
@@ -338,14 +347,15 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 	}
 
 	// Persist pattern results - return error to allow retry on failure
-	if err := j.persistFinalizePatternResults(ctx); err != nil {
+	writeResult, err := j.persistFinalizePatternResults(ctx)
+	if err != nil {
 		if logger != nil {
 			logger.Error("failed to persist pattern results", "error", err)
 		}
-		return fmt.Errorf("failed to persist pattern results: %w", err)
+		return defra.WriteResult{}, fmt.Errorf("failed to persist pattern results: %w", err)
 	}
 
-	return nil
+	return writeResult, nil
 }
 
 // generateEntriesToFind creates EntryToFind records from discovered patterns.
@@ -411,10 +421,13 @@ func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit 
 
 	// Set phase and persist for crash recovery
 	j.Book.SetFinalizePhase(FinalizePhaseDiscover)
-	if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDiscover); err != nil {
+	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseDiscover)
+	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseDiscover, "error", err)
 		}
+	} else if cid != "" {
+		j.Book.SetTocCID(cid)
 	}
 
 	if logger != nil {
@@ -535,7 +548,13 @@ func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.Ent
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
-	common.PersistAgentStateAsync(ctx, j.Book.BookID, initialState)
+	if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist chapter finder agent state",
+				"entry_key", entry.Key,
+				"error", err)
+		}
+	}
 	j.Book.SetAgentState(initialState)
 
 	agentUnits := agents.ExecuteToolLoop(ctx, ag)
@@ -618,9 +637,14 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 		agentResult := ag.Result()
 		if agentResult != nil && agentResult.Success {
 			if finderResult, ok := agentResult.ToolResult.(*chapter_finder.Result); ok {
-				if err := j.saveDiscoveredEntry(ctx, info.FinalizeKey, finderResult); err != nil {
+				writeResult, err := j.saveDiscoveredEntry(ctx, info.FinalizeKey, finderResult)
+				if err != nil {
 					if logger != nil {
 						logger.Warn("failed to save discovered entry", "error", err)
+					}
+				} else if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "TocEntry", writeResult.DocID, writeResult.CID); err != nil {
+					if logger != nil {
+						logger.Warn("failed to update metric output ref", "error", err)
 					}
 				}
 				if finderResult.ScanPage != nil && *finderResult.ScanPage > 0 {
@@ -656,10 +680,13 @@ func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit 
 
 	// Set phase and persist for crash recovery
 	j.Book.SetFinalizePhase(FinalizePhaseValidate)
-	if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseValidate); err != nil {
+	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseValidate)
+	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseValidate, "error", err)
 		}
+	} else if cid != "" {
+		j.Book.SetTocCID(cid)
 	}
 
 	// Find gaps in page coverage
@@ -884,7 +911,13 @@ func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.Fin
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
-	common.PersistAgentStateAsync(ctx, j.Book.BookID, initialState)
+	if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist gap investigator agent state",
+				"gap_key", gap.Key,
+				"error", err)
+		}
+	}
 	j.Book.SetAgentState(initialState)
 
 	agentUnits := agents.ExecuteToolLoop(ctx, ag)
@@ -967,9 +1000,14 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 		agentResult := ag.Result()
 		if agentResult != nil && agentResult.Success {
 			if gapResult, ok := agentResult.ToolResult.(*gap_investigator.Result); ok {
-				if err := j.applyGapFix(ctx, info.FinalizeKey, gapResult); err != nil {
+				writeResult, err := j.applyGapFix(ctx, info.FinalizeKey, gapResult)
+				if err != nil {
 					if logger != nil {
 						logger.Warn("failed to apply gap fix", "error", err)
+					}
+				} else if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "TocEntry", writeResult.DocID, writeResult.CID); err != nil {
+					if logger != nil {
+						logger.Warn("failed to update metric output ref", "error", err)
 					}
 				}
 				if gapResult.FixType == "add_entry" || gapResult.FixType == "correct_entry" {
@@ -1012,16 +1050,18 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	// Persist finalize phase before marking complete
 	j.Book.SetFinalizePhase(FinalizePhaseDone)
-	if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDone); err != nil {
+	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseDone)
+	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "error", err)
 		}
+	} else if cid != "" {
+		j.Book.SetTocCID(cid)
 	}
 
 	j.Book.TocFinalizeComplete()
 	// Use sync write for completion to ensure state is persisted before continuing to structure
-	tocFinalizeState := j.Book.GetTocFinalizeState()
-	if err := common.PersistTocFinalizeStateSync(ctx, j.TocDocID, &tocFinalizeState); err != nil {
+	if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocFinalize); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist finalize completion", "error", err)
 		}
@@ -1109,48 +1149,25 @@ type candidateHeading struct {
 	Level   int
 }
 
-func (j *Job) loadChapterStartPages(ctx context.Context) ([]types.ChapterStartPage, error) {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return nil, fmt.Errorf("defra client not in context")
-	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, is_chapter_start: {_eq: true}}, order: {page_num: ASC}) {
-			page_num
-			running_header
-		}
-	}`, j.Book.BookDocID)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query chapter start pages: %w", err)
-	}
-
-	rawPages, ok := resp.Data["Page"].([]any)
-	if !ok {
+func (j *Job) loadChapterStartPages(_ context.Context) ([]types.ChapterStartPage, error) {
+	// Derive chapter start pages from pattern analysis ChapterPatterns data.
+	// This replaces the old approach of querying is_chapter_start (a label field).
+	patternResult := j.Book.GetPatternAnalysisResult()
+	if patternResult == nil {
 		return nil, nil
 	}
 
 	var result []types.ChapterStartPage
-	for _, p := range rawPages {
-		page, ok := p.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		csp := types.ChapterStartPage{}
-		if pageNum, ok := page["page_num"].(float64); ok {
-			csp.PageNum = int(pageNum)
-		}
-		if rh, ok := page["running_header"].(string); ok {
-			csp.RunningHeader = rh
-		}
-
-		if csp.PageNum > 0 {
-			result = append(result, csp)
-		}
+	for _, cp := range patternResult.ChapterPatterns {
+		result = append(result, types.ChapterStartPage{
+			PageNum:       cp.StartPage,
+			RunningHeader: cp.RunningHeader,
+		})
 	}
+
+	sort.Slice(result, func(i, k int) bool {
+		return result[i].PageNum < result[k].PageNum
+	})
 
 	return result, nil
 }
@@ -1308,14 +1325,9 @@ func intToRoman(num int) string {
 	return result.String()
 }
 
-func (j *Job) persistFinalizePatternResults(ctx context.Context) error {
+func (j *Job) persistFinalizePatternResults(ctx context.Context) (defra.WriteResult, error) {
 	if j.Book.GetFinalizePatternResult() == nil {
-		return nil
-	}
-
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
+		return defra.WriteResult{}, nil
 	}
 
 	data := struct {
@@ -1332,11 +1344,11 @@ func (j *Job) persistFinalizePatternResults(ctx context.Context) error {
 
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
-		return fmt.Errorf("failed to marshal pattern analysis: %w", err)
+		return defra.WriteResult{}, fmt.Errorf("failed to marshal pattern analysis: %w", err)
 	}
 
 	// Use sync write for pattern results - this data is critical for restart
-	_, err = sink.SendSync(ctx, defra.WriteOp{
+	writeResult, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
 		Collection: "Book",
 		DocID:      j.Book.BookID,
 		Document: map[string]any{
@@ -1345,20 +1357,20 @@ func (j *Job) persistFinalizePatternResults(ctx context.Context) error {
 		Op: defra.OpUpdate,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to persist pattern results: %w", err)
+		return defra.WriteResult{}, fmt.Errorf("failed to persist pattern results: %w", err)
 	}
 
-	return nil
+	return writeResult, nil
 }
 
-func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *chapter_finder.Result) error {
+func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *chapter_finder.Result) (defra.WriteResult, error) {
 	if result.ScanPage == nil || *result.ScanPage == 0 {
-		return nil
+		return defra.WriteResult{}, nil
 	}
 
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
-		return fmt.Errorf("defra client not in context")
+		return defra.WriteResult{}, fmt.Errorf("defra client not in context")
 	}
 
 	var entry *common.EntryToFind
@@ -1369,7 +1381,7 @@ func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *
 		}
 	}
 	if entry == nil {
-		return fmt.Errorf("entry not found: %s", entryKey)
+		return defra.WriteResult{}, fmt.Errorf("entry not found: %s", entryKey)
 	}
 
 	pageDocID := j.getPageDocID(*result.ScanPage)
@@ -1396,12 +1408,13 @@ func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *
 		"unique_key": map[string]any{"_eq": uniqueKey},
 	}
 
-	_, err := defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData)
+	writeResult, err := defraClient.UpsertWithVersion(ctx, "TocEntry", filter, entryData, entryData)
 	if err != nil {
-		return fmt.Errorf("failed to upsert discovered entry: %w", err)
+		return defra.WriteResult{}, fmt.Errorf("failed to upsert discovered entry: %w", err)
 	}
+	j.Book.TrackWrite("TocEntry", writeResult.DocID, writeResult.CID)
 
-	return nil
+	return writeResult, nil
 }
 
 func titleCase(s string) string {
@@ -1421,20 +1434,16 @@ func (j *Job) getPageDocID(pageNum int) string {
 	return state.GetPageDocID()
 }
 
-func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_investigator.Result) error {
+func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_investigator.Result) (defra.WriteResult, error) {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
-		return fmt.Errorf("defra client not in context")
-	}
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
+		return defra.WriteResult{}, fmt.Errorf("defra client not in context")
 	}
 
 	switch result.FixType {
 	case "add_entry":
 		if result.ScanPage == 0 {
-			return nil
+			return defra.WriteResult{}, nil
 		}
 
 		pageDocID := j.getPageDocID(result.ScanPage)
@@ -1459,19 +1468,22 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 			"unique_key": map[string]any{"_eq": uniqueKey},
 		}
 
-		if _, err := defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData); err != nil {
-			return fmt.Errorf("failed to upsert validated entry: %w", err)
+		writeResult, err := defraClient.UpsertWithVersion(ctx, "TocEntry", filter, entryData, entryData)
+		if err != nil {
+			return defra.WriteResult{}, fmt.Errorf("failed to upsert validated entry: %w", err)
 		}
+		j.Book.TrackWrite("TocEntry", writeResult.DocID, writeResult.CID)
+		return writeResult, nil
 
 	case "correct_entry":
 		if result.EntryDocID == "" || result.ScanPage == 0 {
-			return nil
+			return defra.WriteResult{}, nil
 		}
 
 		pageDocID := j.getPageDocID(result.ScanPage)
 		if pageDocID != "" {
 			// Use sync write for entry corrections - this is the result of LLM work
-			_, err := sink.SendSync(ctx, defra.WriteOp{
+			writeResult, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
 				Collection: "TocEntry",
 				DocID:      result.EntryDocID,
 				Document: map[string]any{
@@ -1480,8 +1492,9 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 				Op: defra.OpUpdate,
 			})
 			if err != nil {
-				return fmt.Errorf("failed to correct entry %s: %w", result.EntryDocID, err)
+				return defra.WriteResult{}, fmt.Errorf("failed to correct entry %s: %w", result.EntryDocID, err)
 			}
+			return writeResult, nil
 		}
 
 	case "flag_for_review":
@@ -1496,7 +1509,7 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 		// Nothing to do
 	}
 
-	return nil
+	return defra.WriteResult{}, nil
 }
 
 func (j *Job) resortEntriesByPage(ctx context.Context) error {
@@ -1522,24 +1535,29 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 		return *entries[i].ActualPage < *entries[k].ActualPage
 	})
 
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
 	var updatedCount int
+	var firstErr error
 	for i, entry := range entries {
 		newSortOrder := (i + 1) * 100
 		if entry.SortOrder != newSortOrder {
-			// Use async write - sort order can be recalculated on crash recovery
-			sink.Send(defra.WriteOp{
+			if _, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
 				Collection: "TocEntry",
 				DocID:      entry.DocID,
 				Document: map[string]any{
 					"sort_order": newSortOrder,
 				},
 				Op: defra.OpUpdate,
-			})
+			}); err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				if logger := svcctx.LoggerFrom(ctx); logger != nil {
+					logger.Warn("failed to re-sort ToC entry",
+						"entry_doc_id", entry.DocID,
+						"error", err)
+				}
+				continue
+			}
 			updatedCount++
 		}
 	}
@@ -1551,7 +1569,7 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 			"updated", updatedCount)
 	}
 
-	return nil
+	return firstErr
 }
 
 func (j *Job) convertDiscoverAgentUnits(agentUnits []agent.WorkUnit, entryKey string) []jobs.WorkUnit {

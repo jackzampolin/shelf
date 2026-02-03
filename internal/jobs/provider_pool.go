@@ -283,7 +283,19 @@ func (p *ProviderWorkerPool) Status() PoolStatus {
 		InFlight:        int(p.inFlight.Load()),
 		QueueDepth:      queueStats.Total,
 		QueueByPriority: &queueStats,
-		RateLimiter:     &rlStatus,
+		RateLimiter:     toRateLimiterStatus(rlStatus),
+	}
+}
+
+func toRateLimiterStatus(status providers.RateLimiterStatus) *RateLimiterStatus {
+	return &RateLimiterStatus{
+		TokensAvailable: status.TokensAvailable,
+		RPS:             status.RPS,
+		Utilization:     status.Utilization,
+		TimeUntilToken:  status.TimeUntilToken,
+		TotalConsumed:   status.TotalConsumed,
+		TotalWaited:     status.TotalWaited,
+		Last429Time:     status.Last429Time,
 	}
 }
 
@@ -433,7 +445,7 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkRe
 	}
 
 	// Record metrics
-	p.recordMetrics(unit, &result)
+	p.recordMetrics(ctx, unit, &result)
 
 	if result.Success {
 		p.logger.Debug("work unit completed", "unit_id", unit.ID)
@@ -528,7 +540,7 @@ func (p *ProviderWorkerPool) sleepBeforeRetry(ctx context.Context, err error, at
 	}
 }
 
-func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
+func (p *ProviderWorkerPool) recordMetrics(ctx context.Context, unit *WorkUnit, result *WorkResult) {
 	if p.sink == nil {
 		p.logger.Warn("recordMetrics: sink not configured, metrics and LLM calls not recorded")
 		return
@@ -595,11 +607,27 @@ func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
 		"stage", m.Stage,
 		"cost_usd", m.CostUSD)
 
-	p.sink.Send(defra.WriteOp{
-		Op:         defra.OpCreate,
-		Collection: "Metric",
-		Document:   m.ToMap(),
-	})
+	if p.poolType == PoolTypeLLM {
+		writeResult, err := p.sink.SendSync(ctx, defra.WriteOp{
+			Op:         defra.OpCreate,
+			Collection: "Metric",
+			Document:   m.ToMap(),
+		})
+		if err != nil {
+			p.logger.Warn("recordMetrics: failed to persist metric",
+				"unit_id", unit.ID,
+				"error", err)
+		} else {
+			result.MetricDocID = writeResult.DocID
+		}
+	} else {
+		// Intentionally untracked: audit trail record, not mutable state.
+		p.sink.Send(defra.WriteOp{
+			Op:         defra.OpCreate,
+			Collection: "Metric",
+			Document:   m.ToMap(),
+		})
+	}
 
 	// Also record LLM call for traceability (Phase 2)
 	if p.poolType == PoolTypeLLM && result.ChatResult != nil {
@@ -612,6 +640,7 @@ func (p *ProviderWorkerPool) recordMetrics(unit *WorkUnit, result *WorkResult) {
 		}
 		call := llmcall.FromChatResult(result.ChatResult, opts)
 		if call != nil {
+			// Intentionally untracked: audit trail record, not mutable state.
 			p.sink.Send(defra.WriteOp{
 				Op:         defra.OpCreate,
 				Collection: "LLMCall",

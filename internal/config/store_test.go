@@ -132,11 +132,6 @@ func TestDefraStore_GetByPrefix(t *testing.T) {
 					"value":  `"mistral-ocr"`,
 				},
 				map[string]any{
-					"_docID": "doc2",
-					"name":    "providers.ocr.paddle.type",
-					"value":  `"deepinfra"`,
-				},
-				map[string]any{
 					"_docID": "doc3",
 					"name":    "providers.llm.openrouter.type",
 					"value":  `"openrouter"`,
@@ -154,8 +149,8 @@ func TestDefraStore_GetByPrefix(t *testing.T) {
 		t.Fatalf("GetByPrefix() error = %v", err)
 	}
 
-	if len(entries) != 2 {
-		t.Errorf("GetByPrefix('providers.ocr.') returned %d entries, want 2", len(entries))
+	if len(entries) != 1 {
+		t.Errorf("GetByPrefix('providers.ocr.') returned %d entries, want 1", len(entries))
 	}
 
 	// Should not include LLM provider
@@ -170,7 +165,6 @@ func TestExtractProviders(t *testing.T) {
 		"providers.ocr.mistral.api_key":    {Key: "providers.ocr.mistral.api_key", Value: "${MISTRAL_API_KEY}"},
 		"providers.ocr.mistral.rate_limit": {Key: "providers.ocr.mistral.rate_limit", Value: float64(6)},
 		"providers.ocr.mistral.enabled":    {Key: "providers.ocr.mistral.enabled", Value: true},
-		"providers.ocr.paddle.type":        {Key: "providers.ocr.paddle.type", Value: "deepinfra"},
 		"providers.llm.openrouter.type":    {Key: "providers.llm.openrouter.type", Value: "openrouter"},
 		"scheduler.cpu_workers":            {Key: "scheduler.cpu_workers", Value: float64(0)},
 	}
@@ -178,8 +172,8 @@ func TestExtractProviders(t *testing.T) {
 	t.Run("extract_ocr_providers", func(t *testing.T) {
 		result := extractProviders(entries, "providers.ocr.")
 
-		if len(result) != 2 {
-			t.Errorf("extractProviders() returned %d providers, want 2", len(result))
+		if len(result) != 1 {
+			t.Errorf("extractProviders() returned %d providers, want 1", len(result))
 		}
 
 		mistral, ok := result["mistral"]
