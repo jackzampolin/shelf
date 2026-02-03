@@ -381,6 +381,26 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 	return nil
 }
 
+// loadOpStateFromData reads the 4 standard operation fields from a data map and sets the state.
+// The prefix is the DB field prefix (e.g. "metadata", "finder", "extract").
+func loadOpStateFromData(book *BookState, op OpType, data map[string]any, prefix string) {
+	var started, complete, failed bool
+	var retries int
+	if v, ok := data[prefix+"_started"].(bool); ok {
+		started = v
+	}
+	if v, ok := data[prefix+"_complete"].(bool); ok {
+		complete = v
+	}
+	if v, ok := data[prefix+"_failed"].(bool); ok {
+		failed = v
+	}
+	if v, ok := data[prefix+"_retries"].(float64); ok {
+		retries = int(v)
+	}
+	book.SetOpState(op, started, complete, failed, retries)
+}
+
 // boolsToOpState converts DB boolean fields to OperationState.
 func boolsToOpState(started, complete, failed bool, retries int) OperationState {
 	var status OpStatus
@@ -436,64 +456,18 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 
 	if books, ok := bookResp.Data["Book"].([]any); ok && len(books) > 0 {
 		if bookData, ok := books[0].(map[string]any); ok {
-			// Metadata state
-			var started, complete, failed bool
-			var retries int
-			if ms, ok := bookData["metadata_started"].(bool); ok {
-				started = ms
-			}
-			if mc, ok := bookData["metadata_complete"].(bool); ok {
-				complete = mc
-			}
-			if mf, ok := bookData["metadata_failed"].(bool); ok {
-				failed = mf
-			}
-			if mr, ok := bookData["metadata_retries"].(float64); ok {
-				retries = int(mr)
-			}
-			book.metadata = boolsToOpState(started, complete, failed, retries)
+			// Load Book-collection operation states via registry
+			loadOpStateFromData(book, OpMetadata, bookData, "metadata")
+			loadOpStateFromData(book, OpPatternAnalysis, bookData, "pattern_analysis")
+			loadOpStateFromData(book, OpStructure, bookData, "structure")
 
-			// Pattern analysis state
-			var paStarted, paComplete, paFailed bool
-			var paRetries int
-			if ps, ok := bookData["pattern_analysis_started"].(bool); ok {
-				paStarted = ps
-			}
-			if pc, ok := bookData["pattern_analysis_complete"].(bool); ok {
-				paComplete = pc
-			}
-			if pf, ok := bookData["pattern_analysis_failed"].(bool); ok {
-				paFailed = pf
-			}
-			if pr, ok := bookData["pattern_analysis_retries"].(float64); ok {
-				paRetries = int(pr)
-			}
-			book.patternAnalysis = boolsToOpState(paStarted, paComplete, paFailed, paRetries)
-
-			// Pattern analysis result JSON
+			// Pattern analysis result JSON (not part of standard op state)
 			if paJSON, ok := bookData["page_pattern_analysis_json"].(string); ok && paJSON != "" {
 				var result PagePatternResult
 				if err := json.Unmarshal([]byte(paJSON), &result); err == nil {
 					book.patternAnalysisResult = &result
 				}
 			}
-
-			// Structure operation state
-			var sStarted, sComplete, sFailed bool
-			var sRetries int
-			if ss, ok := bookData["structure_started"].(bool); ok {
-				sStarted = ss
-			}
-			if sc, ok := bookData["structure_complete"].(bool); ok {
-				sComplete = sc
-			}
-			if sf, ok := bookData["structure_failed"].(bool); ok {
-				sFailed = sf
-			}
-			if sr, ok := bookData["structure_retries"].(float64); ok {
-				sRetries = int(sr)
-			}
-			book.structure = boolsToOpState(sStarted, sComplete, sFailed, sRetries)
 
 			// Structure phase tracking
 			if sp, ok := bookData["structure_phase"].(string); ok {
@@ -560,77 +534,15 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 				if docID, ok := toc["_docID"].(string); ok {
 					tocDocID = docID
 				}
-				// Finder state
-				var fStarted, fComplete, fFailed bool
-				var fRetries int
-				if fs, ok := toc["finder_started"].(bool); ok {
-					fStarted = fs
-				}
-				if fc, ok := toc["finder_complete"].(bool); ok {
-					fComplete = fc
-				}
-				if ff, ok := toc["finder_failed"].(bool); ok {
-					fFailed = ff
-				}
-				if fr, ok := toc["finder_retries"].(float64); ok {
-					fRetries = int(fr)
-				}
-				book.tocFinder = boolsToOpState(fStarted, fComplete, fFailed, fRetries)
+				// Load ToC-collection operation states via registry
+				loadOpStateFromData(book, OpTocFinder, toc, "finder")
+				loadOpStateFromData(book, OpTocExtract, toc, "extract")
+				loadOpStateFromData(book, OpTocLink, toc, "link")
+				loadOpStateFromData(book, OpTocFinalize, toc, "finalize")
 
 				if found, ok := toc["toc_found"].(bool); ok {
 					book.tocFound = found
 				}
-
-				// Extract state
-				var eStarted, eComplete, eFailed bool
-				var eRetries int
-				if es, ok := toc["extract_started"].(bool); ok {
-					eStarted = es
-				}
-				if ec, ok := toc["extract_complete"].(bool); ok {
-					eComplete = ec
-				}
-				if ef, ok := toc["extract_failed"].(bool); ok {
-					eFailed = ef
-				}
-				if er, ok := toc["extract_retries"].(float64); ok {
-					eRetries = int(er)
-				}
-				book.tocExtract = boolsToOpState(eStarted, eComplete, eFailed, eRetries)
-
-				// Link state
-				var lStarted, lComplete, lFailed bool
-				var lRetries int
-				if ls, ok := toc["link_started"].(bool); ok {
-					lStarted = ls
-				}
-				if lc, ok := toc["link_complete"].(bool); ok {
-					lComplete = lc
-				}
-				if lf, ok := toc["link_failed"].(bool); ok {
-					lFailed = lf
-				}
-				if lr, ok := toc["link_retries"].(float64); ok {
-					lRetries = int(lr)
-				}
-				book.tocLink = boolsToOpState(lStarted, lComplete, lFailed, lRetries)
-
-				// Finalize state
-				var finStarted, finComplete, finFailed bool
-				var finRetries int
-				if fs, ok := toc["finalize_started"].(bool); ok {
-					finStarted = fs
-				}
-				if fc, ok := toc["finalize_complete"].(bool); ok {
-					finComplete = fc
-				}
-				if ff, ok := toc["finalize_failed"].(bool); ok {
-					finFailed = ff
-				}
-				if fr, ok := toc["finalize_retries"].(float64); ok {
-					finRetries = int(fr)
-				}
-				book.tocFinalize = boolsToOpState(finStarted, finComplete, finFailed, finRetries)
 
 				// Page range
 				if sp, ok := toc["start_page"].(float64); ok {
@@ -642,6 +554,9 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 			}
 		}
 	}
+
+	// Store tocDocID on the book so OpConfig.DocIDSource can access it
+	book.SetTocDocID(tocDocID)
 
 	return tocDocID, nil
 }

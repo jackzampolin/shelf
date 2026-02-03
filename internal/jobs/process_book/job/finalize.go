@@ -51,8 +51,7 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		return nil
 	}
 	// Use sync write at operation start to ensure state is persisted before continuing
-	tocFinalizeState := j.Book.GetTocFinalizeState()
-	if err := common.PersistTocFinalizeStateSync(ctx, j.TocDocID, &tocFinalizeState); err != nil {
+	if err := common.PersistOpStateSync(ctx, j.Book, common.OpTocFinalize); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist finalize start", "error", err)
 		}
@@ -69,8 +68,7 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 				"error", err)
 		}
 		j.Book.TocFinalizeFail(MaxBookOpRetries)
-		tocFinalizeState := j.Book.GetTocFinalizeState()
-		common.PersistTocFinalizeState(ctx, j.TocDocID, &tocFinalizeState)
+		common.PersistOpState(ctx, j.Book, common.OpTocFinalize)
 		return nil
 	}
 
@@ -1020,8 +1018,7 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	j.Book.TocFinalizeComplete()
 	// Use sync write for completion to ensure state is persisted before continuing to structure
-	tocFinalizeState := j.Book.GetTocFinalizeState()
-	if err := common.PersistTocFinalizeStateSync(ctx, j.TocDocID, &tocFinalizeState); err != nil {
+	if err := common.PersistOpStateSync(ctx, j.Book, common.OpTocFinalize); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist finalize completion", "error", err)
 		}

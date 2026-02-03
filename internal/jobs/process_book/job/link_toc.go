@@ -251,8 +251,7 @@ func (j *Job) convertLinkTocAgentUnits(agentUnits []agent.WorkUnit, entryDocID s
 
 // PersistTocLinkState persists ToC link state to DefraDB.
 func (j *Job) PersistTocLinkState(ctx context.Context) error {
-	tocLinkState := j.Book.GetTocLinkState()
-	return common.PersistTocLinkState(ctx, j.TocDocID, &tocLinkState)
+	return common.PersistOpState(ctx, j.Book, common.OpTocLink)
 }
 
 // StartFinalizeTocInline creates and starts the finalize phase inline.

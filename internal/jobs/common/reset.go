@@ -47,15 +47,8 @@ func IsValidResetOperation(op string) bool {
 // ResetFrom resets an operation and all its downstream dependencies.
 // This enables re-running specific stages of the pipeline.
 //
-// Cascade dependencies:
-//   - metadata         -> (none)
-//   - toc_finder       -> toc_extract, toc_link, toc_finalize, structure
-//   - toc_extract      -> toc_link, toc_finalize, structure
-//   - pattern_analysis -> toc_link, toc_finalize, structure
-//   - toc_link         -> toc_finalize, structure
-//   - toc_finalize     -> structure
-//   - structure        -> (none)
-//   - ocr              -> pattern_analysis, (cascade from pattern_analysis)
+// Cascade dependencies are defined in OpRegistry.CascadesTo.
+// OCR is a special case handled separately (not in OpRegistry).
 func ResetFrom(ctx context.Context, book *BookState, tocDocID string, op ResetOperation) error {
 	// Validate IDs to prevent GraphQL injection
 	if err := defra.ValidateID(book.BookID); err != nil {
@@ -67,297 +60,175 @@ func ResetFrom(ctx context.Context, book *BookState, tocDocID string, op ResetOp
 		}
 	}
 
+	// Ensure tocDocID is stored on book for OpConfig.DocIDSource
+	if tocDocID != "" {
+		book.SetTocDocID(tocDocID)
+	}
+
 	logger := svcctx.LoggerFrom(ctx)
 	if logger != nil {
 		logger.Info("resetting operation with cascade", "operation", op, "book_id", book.BookID)
 	}
 
-	switch op {
-	case ResetMetadata:
-		return resetMetadata(ctx, book)
-
-	case ResetTocFinder:
-		if err := resetTocFinder(ctx, book, tocDocID); err != nil {
-			return err
-		}
-		return ResetFrom(ctx, book, tocDocID, ResetTocExtract)
-
-	case ResetTocExtract:
-		if err := resetTocExtract(ctx, book, tocDocID); err != nil {
-			return err
-		}
-		return ResetFrom(ctx, book, tocDocID, ResetTocLink)
-
-	case ResetPatternAnalysis:
-		if err := resetPatternAnalysis(ctx, book); err != nil {
-			return err
-		}
-		return ResetFrom(ctx, book, tocDocID, ResetTocLink)
-
-	case ResetTocLink:
-		if err := resetTocLink(ctx, book, tocDocID); err != nil {
-			return err
-		}
-		return ResetFrom(ctx, book, tocDocID, ResetTocFinalize)
-
-	case ResetTocFinalize:
-		if err := resetTocFinalize(ctx, book, tocDocID); err != nil {
-			return err
-		}
-		return ResetFrom(ctx, book, tocDocID, ResetStructure)
-
-	case ResetStructure:
-		return resetStructure(ctx, book)
-
-	case ResetOcr:
+	// OCR is a special case — not in the OpRegistry
+	if op == ResetOcr {
 		if err := resetAllOcr(ctx, book); err != nil {
 			return err
 		}
 		// OCR reset cascades through pattern analysis
-		if err := resetPatternAnalysis(ctx, book); err != nil {
+		if err := resetOp(ctx, book, tocDocID, OpPatternAnalysis); err != nil {
 			return err
 		}
-		return ResetFrom(ctx, book, tocDocID, ResetTocLink)
+		return resetOpWithCascade(ctx, book, tocDocID, OpTocLink)
+	}
 
-	default:
+	// Standard operations use the registry
+	opType := OpType(op)
+	if _, ok := OpRegistry[opType]; !ok {
 		return fmt.Errorf("unknown reset operation: %s", op)
 	}
+
+	return resetOpWithCascade(ctx, book, tocDocID, opType)
 }
 
-// resetMetadata resets metadata extraction state.
-func resetMetadata(ctx context.Context, book *BookState) error {
-	book.MetadataReset()
-
-	// Clear agent state for metadata (if any) - both memory and DB
-	book.ClearAgentStates("metadata")
-	if err := DeleteAgentStatesForType(ctx, book.BookID, "metadata"); err != nil {
-		return fmt.Errorf("failed to delete metadata agent states: %w", err)
+// resetOpWithCascade resets an operation and recursively resets all downstream operations.
+func resetOpWithCascade(ctx context.Context, book *BookState, tocDocID string, op OpType) error {
+	cfg, ok := OpRegistry[op]
+	if !ok {
+		return fmt.Errorf("unknown operation: %s", op)
 	}
 
-	metadataState := book.GetMetadataState()
-	return PersistMetadataState(ctx, book.BookID, &metadataState)
-}
-
-// resetTocFinder resets ToC finder state.
-func resetTocFinder(ctx context.Context, book *BookState, tocDocID string) error {
-	book.TocFinderReset()
-	book.SetTocFound(false)
-	book.SetTocPageRange(0, 0)
-
-	// Clear agent state - both memory and DB
-	book.ClearAgentStates("toc_finder")
-	if err := DeleteAgentStatesForType(ctx, book.BookID, "toc_finder"); err != nil {
-		return fmt.Errorf("failed to delete toc_finder agent states: %w", err)
-	}
-
-	if tocDocID == "" {
-		return nil
-	}
-
-	// Reset ToC record - use sync to ensure reset completes before proceeding
-	return SendToSinkSync(ctx, defra.WriteOp{
-		Collection: "ToC",
-		DocID:      tocDocID,
-		Document: map[string]any{
-			"toc_found":        false,
-			"finder_started":   false,
-			"finder_complete":  false,
-			"finder_failed":    false,
-			"finder_retries":   0,
-			"start_page":       nil,
-			"end_page":         nil,
-		},
-		Op: defra.OpUpdate,
-	})
-}
-
-// resetTocExtract resets ToC extraction state.
-func resetTocExtract(ctx context.Context, book *BookState, tocDocID string) error {
-	book.TocExtractReset()
-	book.SetTocEntries(nil)
-
-	// Clear agent state - both memory and DB
-	book.ClearAgentStates("toc_extract")
-	if err := DeleteAgentStatesForType(ctx, book.BookID, "toc_extract"); err != nil {
-		return fmt.Errorf("failed to delete toc_extract agent states: %w", err)
-	}
-
-	if tocDocID == "" {
-		return nil
-	}
-
-	// Delete all ToC entries for this ToC
-	if err := deleteTocEntries(ctx, tocDocID); err != nil {
+	// Reset this operation
+	if err := resetOp(ctx, book, tocDocID, op); err != nil {
 		return err
 	}
 
-	// Reset ToC record - use sync to ensure reset completes before proceeding
-	return SendToSinkSync(ctx, defra.WriteOp{
-		Collection: "ToC",
-		DocID:      tocDocID,
-		Document: map[string]any{
-			"extract_started":  false,
-			"extract_complete": false,
-			"extract_failed":   false,
-			"extract_retries":  0,
-		},
-		Op: defra.OpUpdate,
-	})
+	// Cascade to downstream operations
+	for _, downstream := range cfg.CascadesTo {
+		if err := resetOpWithCascade(ctx, book, tocDocID, downstream); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// resetPatternAnalysis resets pattern analysis state.
-func resetPatternAnalysis(ctx context.Context, book *BookState) error {
-	book.PatternAnalysisReset()
-	book.SetPatternAnalysisResult(nil)
-	book.SetPageNumberPattern(nil)
-	book.SetChapterPatterns(nil)
-
-	// Clear agent state - both memory and DB
-	book.ClearAgentStates("pattern_analysis")
-	if err := DeleteAgentStatesForType(ctx, book.BookID, "pattern_analysis"); err != nil {
-		return fmt.Errorf("failed to delete pattern_analysis agent states: %w", err)
+// resetOp performs the full reset sequence for a single operation:
+// 1. Reset in-memory operation state
+// 2. Run memory cleanup hook
+// 3. Clear agent states (memory + DB)
+// 4. Persist standard + extra DB fields
+// 5. Run operation-specific DB hook
+func resetOp(ctx context.Context, book *BookState, tocDocID string, op OpType) error {
+	cfg, ok := OpRegistry[op]
+	if !ok {
+		return fmt.Errorf("unknown operation: %s", op)
 	}
 
-	// Clear pattern analysis JSON from book (sync to ensure it completes)
-	return SendToSinkSync(ctx, defra.WriteOp{
-		Collection: "Book",
-		DocID:      book.BookID,
-		Document: map[string]any{
-			"pattern_analysis_started":   false,
-			"pattern_analysis_complete":  false,
-			"pattern_analysis_failed":    false,
-			"pattern_analysis_retries":   0,
-			"page_pattern_analysis_json": nil,
-		},
-		Op: defra.OpUpdate,
-	})
+	// 1. Reset operation state
+	book.OpReset(op)
+
+	// 2. Run memory cleanup hook
+	if cfg.ResetMemoryHook != nil {
+		book.mu.Lock()
+		cfg.ResetMemoryHook(book)
+		book.mu.Unlock()
+	}
+
+	// 3. Clear agent states (memory + DB)
+	for _, agentType := range cfg.AgentTypes {
+		book.ClearAgentStates(agentType)
+		if book.Store != nil {
+			// Use Store-based deletion: query then delete
+			if err := deleteAgentStatesForTypeViaStore(ctx, book.Store, book.BookID, agentType); err != nil {
+				return fmt.Errorf("failed to delete %s agent states: %w", agentType, err)
+			}
+		} else {
+			if err := DeleteAgentStatesForType(ctx, book.BookID, agentType); err != nil {
+				return fmt.Errorf("failed to delete %s agent states: %w", agentType, err)
+			}
+		}
+	}
+
+	// 4. Build and persist DB fields
+	docID := cfg.DocIDSource(book)
+	if docID == "" {
+		return nil // No document yet (e.g., no ToC record)
+	}
+
+	// Merge standard op state fields + extra reset fields
+	fields := map[string]any{
+		cfg.FieldPrefix + "_started":  false,
+		cfg.FieldPrefix + "_complete": false,
+		cfg.FieldPrefix + "_failed":   false,
+		cfg.FieldPrefix + "_retries":  0,
+	}
+	for k, v := range cfg.ResetDBFields {
+		fields[k] = v
+	}
+
+	writeOp := defra.WriteOp{
+		Collection: cfg.Collection,
+		DocID:      docID,
+		Document:   fields,
+		Op:         defra.OpUpdate,
+	}
+	if book.Store != nil {
+		if _, err := book.Store.SendSync(ctx, writeOp); err != nil {
+			return fmt.Errorf("failed to persist %s reset: %w", op, err)
+		}
+	} else if err := SendToSinkSync(ctx, writeOp); err != nil {
+		return fmt.Errorf("failed to persist %s reset: %w", op, err)
+	}
+
+	// 5. Run operation-specific DB hook
+	if cfg.ResetHook != nil {
+		if err := cfg.ResetHook(ctx, book, tocDocID); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// resetTocLink resets ToC linking state.
-func resetTocLink(ctx context.Context, book *BookState, tocDocID string) error {
-	book.TocLinkReset()
+// deleteAgentStatesForTypeViaStore deletes agent states using the StateStore interface.
+// This enables reset operations to work without a DefraDB client in context.
+func deleteAgentStatesForTypeViaStore(ctx context.Context, store StateStore, bookID, agentType string) error {
+	query := fmt.Sprintf(`{
+		AgentState(filter: {book_id: {_eq: "%s"}, agent_type: {_eq: "%s"}}) {
+			_docID
+		}
+	}`, bookID, agentType)
 
-	// Clear agent state for all link agents - both memory and DB
-	book.ClearAgentStates(AgentTypeTocEntryFinder)
-	book.ClearAgentStates(AgentTypeChapterFinder)
-	if err := DeleteAgentStatesForType(ctx, book.BookID, AgentTypeTocEntryFinder); err != nil {
-		return fmt.Errorf("failed to delete %s agent states: %w", AgentTypeTocEntryFinder, err)
+	resp, err := store.Execute(ctx, query, nil)
+	if err != nil {
+		return fmt.Errorf("failed to query agent states: %w", err)
 	}
-	if err := DeleteAgentStatesForType(ctx, book.BookID, AgentTypeChapterFinder); err != nil {
-		return fmt.Errorf("failed to delete %s agent states: %w", AgentTypeChapterFinder, err)
-	}
 
-	// Clear cached LinkedEntries since links are being cleared
-	book.SetLinkedEntries(nil)
-
-	if tocDocID == "" {
+	states, ok := resp.Data["AgentState"].([]any)
+	if !ok || len(states) == 0 {
 		return nil
 	}
 
-	// Clear actual_page links from all ToC entries
-	if err := clearTocEntryLinks(ctx, tocDocID); err != nil {
-		return err
+	for _, s := range states {
+		state, ok := s.(map[string]any)
+		if !ok {
+			continue
+		}
+		docID, ok := state["_docID"].(string)
+		if !ok || docID == "" {
+			continue
+		}
+		if _, err := store.SendSync(ctx, defra.WriteOp{
+			Collection: "AgentState",
+			DocID:      docID,
+			Op:         defra.OpDelete,
+		}); err != nil {
+			return fmt.Errorf("failed to delete agent state %s: %w", docID, err)
+		}
 	}
 
-	// Reset ToC record - use sync to ensure reset completes before proceeding
-	return SendToSinkSync(ctx, defra.WriteOp{
-		Collection: "ToC",
-		DocID:      tocDocID,
-		Document: map[string]any{
-			"link_started":  false,
-			"link_complete": false,
-			"link_failed":   false,
-			"link_retries":  0,
-		},
-		Op: defra.OpUpdate,
-	})
-}
-
-// resetTocFinalize resets ToC finalization state.
-func resetTocFinalize(ctx context.Context, book *BookState, tocDocID string) error {
-	book.TocFinalizeReset()
-
-	// Clear in-memory finalize state
-	book.SetFinalizePhase("")
-	book.SetFinalizePatternResult(nil)
-	book.SetEntriesToFind(nil)
-	book.SetFinalizeGaps(nil)
-	book.SetFinalizeProgress(0, 0, 0, 0)
-
-	// Clear agent states for finalize agents - both memory and DB
-	book.ClearAgentStates(AgentTypeGapInvestigator)
-	book.ClearAgentStates("discover_entry") // Not in common constants - used by discover phase
-	if err := DeleteAgentStatesForType(ctx, book.BookID, AgentTypeGapInvestigator); err != nil {
-		return fmt.Errorf("failed to delete %s agent states: %w", AgentTypeGapInvestigator, err)
-	}
-	if err := DeleteAgentStatesForType(ctx, book.BookID, "discover_entry"); err != nil {
-		return fmt.Errorf("failed to delete discover_entry agent states: %w", err)
-	}
-
-	if tocDocID == "" {
-		return nil
-	}
-
-	// Reset ToC record - use sync to ensure reset completes before proceeding
-	return SendToSinkSync(ctx, defra.WriteOp{
-		Collection: "ToC",
-		DocID:      tocDocID,
-		Document: map[string]any{
-			"finalize_started":  false,
-			"finalize_complete": false,
-			"finalize_failed":   false,
-			"finalize_retries":  0,
-		},
-		Op: defra.OpUpdate,
-	})
-}
-
-// resetStructure resets structure extraction state.
-func resetStructure(ctx context.Context, book *BookState) error {
-	book.StructureReset()
-	book.SetStructurePhase("")
-	book.SetStructureProgress(0, 0, 0, 0)
-
-	// Clear in-memory structure state
-	book.SetStructureChapters(nil)
-	book.SetStructureClassifications(nil)
-	book.SetStructureClassifyPending(false)
-
-	// Clear agent state - both memory and DB
-	book.ClearAgentStates("structure")
-	book.ClearAgentStates("polish_chapter")
-	if err := DeleteAgentStatesForType(ctx, book.BookID, "structure"); err != nil {
-		return fmt.Errorf("failed to delete structure agent states: %w", err)
-	}
-	if err := DeleteAgentStatesForType(ctx, book.BookID, "polish_chapter"); err != nil {
-		return fmt.Errorf("failed to delete polish_chapter agent states: %w", err)
-	}
-
-	// Delete all chapters for this book
-	if err := deleteChapters(ctx, book.BookID); err != nil {
-		return err
-	}
-
-	// Reset book record - use sync to ensure reset completes before proceeding
-	return SendToSinkSync(ctx, defra.WriteOp{
-		Collection: "Book",
-		DocID:      book.BookID,
-		Document: map[string]any{
-			"structure_started":            false,
-			"structure_complete":           false,
-			"structure_failed":             false,
-			"structure_retries":            0,
-			"structure_phase":              nil,
-			"structure_chapters_total":     0,
-			"structure_chapters_extracted": 0,
-			"structure_chapters_polished":  0,
-			"structure_polish_failed":      0,
-			"total_chapters":               0,
-			"total_paragraphs":             0,
-			"total_words":                  0,
-		},
-		Op: defra.OpUpdate,
-	})
+	return nil
 }
 
 // resetAllOcr resets ocr_complete and ocr_markdown for all pages.

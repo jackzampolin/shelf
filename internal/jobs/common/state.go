@@ -369,14 +369,15 @@ type BookState struct {
 	Prompts    map[string]string // prompt_key -> resolved text
 	PromptCIDs map[string]string // prompt_key -> CID for traceability
 
-	// Book-level operation state (mutable - unexported, use accessor methods)
-	metadata        OperationState
-	tocFinder       OperationState
-	tocExtract      OperationState
-	patternAnalysis OperationState
-	tocLink         OperationState
-	tocFinalize     OperationState
-	structure       OperationState
+	// Generic operation state map (mutable - use Op* methods for access)
+	ops map[OpType]*OperationState
+
+	// ToC document ID (set during LoadBook, used for persistence)
+	tocDocID string
+
+	// Legacy operation state fields - delegated to ops map
+	// These are kept as computed properties via the deprecated wrapper methods.
+	// New code should use Op* methods and OpRegistry.
 
 	// Structure phase tracking (mutable - unexported, use accessor methods)
 	// Phases: build -> extract -> classify -> polish -> finalize
@@ -444,16 +445,29 @@ type BookState struct {
 	// Write-through: updated when agent runs complete, lazy-loaded from DB on first access
 	agentRuns       []AgentRunSummary // cached summaries of agent executions
 	agentRunsLoaded bool              // true if agent runs have been loaded from DB
+
+	// Store abstracts DB operations for testability.
+	// When nil, functions fall back to extracting client/sink from context.
+	Store StateStore
 }
 
 // NewBookState creates a new BookState with initialized maps.
 func NewBookState(bookID string) *BookState {
 	return &BookState{
-		BookID:                      bookID,
-		BookDocID:                   bookID, // Same as BookID - both are the DefraDB document ID
-		Pages:                       make(map[int]*PageState),
-		Prompts:                     make(map[string]string),
-		PromptCIDs:                  make(map[string]string),
+		BookID:    bookID,
+		BookDocID: bookID, // Same as BookID - both are the DefraDB document ID
+		Pages:     make(map[int]*PageState),
+		Prompts:   make(map[string]string),
+		PromptCIDs: make(map[string]string),
+		ops: map[OpType]*OperationState{
+			OpMetadata:        {},
+			OpTocFinder:       {},
+			OpTocExtract:      {},
+			OpPatternAnalysis: {},
+			OpTocLink:         {},
+			OpTocFinalize:     {},
+			OpStructure:       {},
+		},
 		agentStates:                 make(map[string]*AgentState),
 		structureClassifications:    make(map[string]string),
 		structureClassifyReasonings: make(map[string]string),
@@ -1398,71 +1412,18 @@ func (b *BookState) SetPatternAnalysisResult(result *PagePatternResult) {
 }
 
 // --- Operation State Accessors ---
-// These provide thread-safe access to OperationState fields.
-// Each book-level operation (Metadata, TocFinder, etc.) has its own state.
+// Deprecated: These wrapper methods delegate to the generic Op* methods.
+// New code should use OpStart(OpMetadata), OpComplete(OpMetadata), etc.
 
-// MetadataStart starts the metadata operation (thread-safe).
-func (b *BookState) MetadataStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.metadata.Start()
-}
-
-// MetadataComplete marks metadata as complete (thread-safe).
-func (b *BookState) MetadataComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.metadata.Complete()
-}
-
-// MetadataFail records a metadata failure (thread-safe).
-func (b *BookState) MetadataFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.metadata.Fail(maxRetries)
-}
-
-// MetadataReset resets metadata state (thread-safe).
-func (b *BookState) MetadataReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.metadata.Reset()
-}
-
-// MetadataIsStarted returns true if metadata is started (thread-safe).
-func (b *BookState) MetadataIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.metadata.IsStarted()
-}
-
-// MetadataIsDone returns true if metadata is done (thread-safe).
-func (b *BookState) MetadataIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.metadata.IsDone()
-}
-
-// MetadataCanStart returns true if metadata can start (thread-safe).
-func (b *BookState) MetadataCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.metadata.CanStart()
-}
-
-// MetadataIsComplete returns true if metadata completed successfully (thread-safe).
-func (b *BookState) MetadataIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.metadata.IsComplete()
-}
-
-// GetMetadataState returns a copy of the metadata operation state (thread-safe).
-func (b *BookState) GetMetadataState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.metadata
-}
+func (b *BookState) MetadataStart() error          { return b.OpStart(OpMetadata) }
+func (b *BookState) MetadataComplete()              { b.OpComplete(OpMetadata) }
+func (b *BookState) MetadataFail(maxRetries int) bool { return b.OpFail(OpMetadata, maxRetries) }
+func (b *BookState) MetadataReset()                 { b.OpReset(OpMetadata) }
+func (b *BookState) MetadataIsStarted() bool        { return b.OpIsStarted(OpMetadata) }
+func (b *BookState) MetadataIsDone() bool           { return b.OpIsDone(OpMetadata) }
+func (b *BookState) MetadataCanStart() bool         { return b.OpCanStart(OpMetadata) }
+func (b *BookState) MetadataIsComplete() bool       { return b.OpIsComplete(OpMetadata) }
+func (b *BookState) GetMetadataState() OperationState { return b.OpGetState(OpMetadata) }
 
 // GetBookMetadata returns the book metadata (thread-safe).
 // Returns nil if metadata has not been extracted or loaded.
@@ -1519,383 +1480,65 @@ func (b *BookState) GetBookTitle() string {
 	return ""
 }
 
-// TocFinderStart starts the ToC finder operation (thread-safe).
-func (b *BookState) TocFinderStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocFinder.Start()
-}
+func (b *BookState) TocFinderStart() error            { return b.OpStart(OpTocFinder) }
+func (b *BookState) TocFinderComplete()                { b.OpComplete(OpTocFinder) }
+func (b *BookState) TocFinderFail(maxRetries int) bool { return b.OpFail(OpTocFinder, maxRetries) }
+func (b *BookState) TocFinderReset()                   { b.OpReset(OpTocFinder) }
+func (b *BookState) TocFinderIsStarted() bool          { return b.OpIsStarted(OpTocFinder) }
+func (b *BookState) TocFinderIsDone() bool             { return b.OpIsDone(OpTocFinder) }
+func (b *BookState) TocFinderCanStart() bool           { return b.OpCanStart(OpTocFinder) }
+func (b *BookState) TocFinderIsComplete() bool         { return b.OpIsComplete(OpTocFinder) }
+func (b *BookState) GetTocFinderState() OperationState { return b.OpGetState(OpTocFinder) }
 
-// TocFinderComplete marks ToC finder as complete (thread-safe).
-func (b *BookState) TocFinderComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocFinder.Complete()
-}
+func (b *BookState) TocExtractStart() error            { return b.OpStart(OpTocExtract) }
+func (b *BookState) TocExtractComplete()                { b.OpComplete(OpTocExtract) }
+func (b *BookState) TocExtractFail(maxRetries int) bool { return b.OpFail(OpTocExtract, maxRetries) }
+func (b *BookState) TocExtractReset()                   { b.OpReset(OpTocExtract) }
+func (b *BookState) TocExtractIsStarted() bool          { return b.OpIsStarted(OpTocExtract) }
+func (b *BookState) TocExtractIsDone() bool             { return b.OpIsDone(OpTocExtract) }
+func (b *BookState) TocExtractCanStart() bool           { return b.OpCanStart(OpTocExtract) }
+func (b *BookState) TocExtractIsComplete() bool         { return b.OpIsComplete(OpTocExtract) }
+func (b *BookState) GetTocExtractState() OperationState { return b.OpGetState(OpTocExtract) }
 
-// TocFinderFail records a ToC finder failure (thread-safe).
-func (b *BookState) TocFinderFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocFinder.Fail(maxRetries)
-}
+func (b *BookState) PatternAnalysisStart() error            { return b.OpStart(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisComplete()                { b.OpComplete(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisFail(maxRetries int) bool { return b.OpFail(OpPatternAnalysis, maxRetries) }
+func (b *BookState) PatternAnalysisReset()                   { b.OpReset(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisIsStarted() bool          { return b.OpIsStarted(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisIsDone() bool             { return b.OpIsDone(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisCanStart() bool           { return b.OpCanStart(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisIsComplete() bool         { return b.OpIsComplete(OpPatternAnalysis) }
+func (b *BookState) GetPatternAnalysisState() OperationState { return b.OpGetState(OpPatternAnalysis) }
 
-// TocFinderReset resets ToC finder state (thread-safe).
-func (b *BookState) TocFinderReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocFinder.Reset()
-}
+func (b *BookState) TocLinkStart() error            { return b.OpStart(OpTocLink) }
+func (b *BookState) TocLinkComplete()                { b.OpComplete(OpTocLink) }
+func (b *BookState) TocLinkFail(maxRetries int) bool { return b.OpFail(OpTocLink, maxRetries) }
+func (b *BookState) TocLinkReset()                   { b.OpReset(OpTocLink) }
+func (b *BookState) TocLinkIsStarted() bool          { return b.OpIsStarted(OpTocLink) }
+func (b *BookState) TocLinkIsDone() bool             { return b.OpIsDone(OpTocLink) }
+func (b *BookState) TocLinkCanStart() bool           { return b.OpCanStart(OpTocLink) }
+func (b *BookState) TocLinkIsComplete() bool         { return b.OpIsComplete(OpTocLink) }
+func (b *BookState) GetTocLinkState() OperationState { return b.OpGetState(OpTocLink) }
 
-// TocFinderIsStarted returns true if ToC finder is started (thread-safe).
-func (b *BookState) TocFinderIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinder.IsStarted()
-}
+func (b *BookState) TocFinalizeStart() error            { return b.OpStart(OpTocFinalize) }
+func (b *BookState) TocFinalizeComplete()                { b.OpComplete(OpTocFinalize) }
+func (b *BookState) TocFinalizeFail(maxRetries int) bool { return b.OpFail(OpTocFinalize, maxRetries) }
+func (b *BookState) TocFinalizeReset()                   { b.OpReset(OpTocFinalize) }
+func (b *BookState) TocFinalizeIsStarted() bool          { return b.OpIsStarted(OpTocFinalize) }
+func (b *BookState) TocFinalizeIsDone() bool             { return b.OpIsDone(OpTocFinalize) }
+func (b *BookState) TocFinalizeCanStart() bool           { return b.OpCanStart(OpTocFinalize) }
+func (b *BookState) TocFinalizeIsComplete() bool         { return b.OpIsComplete(OpTocFinalize) }
+func (b *BookState) GetTocFinalizeState() OperationState { return b.OpGetState(OpTocFinalize) }
 
-// TocFinderIsDone returns true if ToC finder is done (thread-safe).
-func (b *BookState) TocFinderIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinder.IsDone()
-}
-
-// TocFinderCanStart returns true if ToC finder can start (thread-safe).
-func (b *BookState) TocFinderCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinder.CanStart()
-}
-
-// TocFinderIsComplete returns true if ToC finder completed successfully (thread-safe).
-func (b *BookState) TocFinderIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinder.IsComplete()
-}
-
-// GetTocFinderState returns a copy of the ToC finder operation state (thread-safe).
-func (b *BookState) GetTocFinderState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinder
-}
-
-// TocExtractStart starts the ToC extract operation (thread-safe).
-func (b *BookState) TocExtractStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocExtract.Start()
-}
-
-// TocExtractComplete marks ToC extract as complete (thread-safe).
-func (b *BookState) TocExtractComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocExtract.Complete()
-}
-
-// TocExtractFail records a ToC extract failure (thread-safe).
-func (b *BookState) TocExtractFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocExtract.Fail(maxRetries)
-}
-
-// TocExtractReset resets ToC extract state (thread-safe).
-func (b *BookState) TocExtractReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocExtract.Reset()
-}
-
-// TocExtractIsStarted returns true if ToC extract is started (thread-safe).
-func (b *BookState) TocExtractIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocExtract.IsStarted()
-}
-
-// TocExtractIsDone returns true if ToC extract is done (thread-safe).
-func (b *BookState) TocExtractIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocExtract.IsDone()
-}
-
-// TocExtractCanStart returns true if ToC extract can start (thread-safe).
-func (b *BookState) TocExtractCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocExtract.CanStart()
-}
-
-// TocExtractIsComplete returns true if ToC extract completed successfully (thread-safe).
-func (b *BookState) TocExtractIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocExtract.IsComplete()
-}
-
-// GetTocExtractState returns a copy of the ToC extract operation state (thread-safe).
-func (b *BookState) GetTocExtractState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocExtract
-}
-
-// PatternAnalysisStart starts the pattern analysis operation (thread-safe).
-func (b *BookState) PatternAnalysisStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.patternAnalysis.Start()
-}
-
-// PatternAnalysisComplete marks pattern analysis as complete (thread-safe).
-func (b *BookState) PatternAnalysisComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.patternAnalysis.Complete()
-}
-
-// PatternAnalysisFail records a pattern analysis failure (thread-safe).
-func (b *BookState) PatternAnalysisFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.patternAnalysis.Fail(maxRetries)
-}
-
-// PatternAnalysisReset resets pattern analysis state (thread-safe).
-func (b *BookState) PatternAnalysisReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.patternAnalysis.Reset()
-}
-
-// PatternAnalysisIsStarted returns true if pattern analysis is started (thread-safe).
-func (b *BookState) PatternAnalysisIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.patternAnalysis.IsStarted()
-}
-
-// PatternAnalysisIsDone returns true if pattern analysis is done (thread-safe).
-func (b *BookState) PatternAnalysisIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.patternAnalysis.IsDone()
-}
-
-// PatternAnalysisCanStart returns true if pattern analysis can start (thread-safe).
-func (b *BookState) PatternAnalysisCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.patternAnalysis.CanStart()
-}
-
-// PatternAnalysisIsComplete returns true if pattern analysis completed successfully (thread-safe).
-func (b *BookState) PatternAnalysisIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.patternAnalysis.IsComplete()
-}
-
-// GetPatternAnalysisState returns a copy of the pattern analysis operation state (thread-safe).
-func (b *BookState) GetPatternAnalysisState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.patternAnalysis
-}
-
-// TocLinkStart starts the ToC link operation (thread-safe).
-func (b *BookState) TocLinkStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocLink.Start()
-}
-
-// TocLinkComplete marks ToC link as complete (thread-safe).
-func (b *BookState) TocLinkComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocLink.Complete()
-}
-
-// TocLinkFail records a ToC link failure (thread-safe).
-func (b *BookState) TocLinkFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocLink.Fail(maxRetries)
-}
-
-// TocLinkReset resets ToC link state (thread-safe).
-func (b *BookState) TocLinkReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocLink.Reset()
-}
-
-// TocLinkIsStarted returns true if ToC link is started (thread-safe).
-func (b *BookState) TocLinkIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocLink.IsStarted()
-}
-
-// TocLinkIsDone returns true if ToC link is done (thread-safe).
-func (b *BookState) TocLinkIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocLink.IsDone()
-}
-
-// TocLinkCanStart returns true if ToC link can start (thread-safe).
-func (b *BookState) TocLinkCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocLink.CanStart()
-}
-
-// TocLinkIsComplete returns true if ToC link completed successfully (thread-safe).
-func (b *BookState) TocLinkIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocLink.IsComplete()
-}
-
-// GetTocLinkState returns a copy of the ToC link operation state (thread-safe).
-func (b *BookState) GetTocLinkState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocLink
-}
-
-// TocFinalizeStart starts the ToC finalize operation (thread-safe).
-func (b *BookState) TocFinalizeStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocFinalize.Start()
-}
-
-// TocFinalizeComplete marks ToC finalize as complete (thread-safe).
-func (b *BookState) TocFinalizeComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocFinalize.Complete()
-}
-
-// TocFinalizeFail records a ToC finalize failure (thread-safe).
-func (b *BookState) TocFinalizeFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.tocFinalize.Fail(maxRetries)
-}
-
-// TocFinalizeReset resets ToC finalize state (thread-safe).
-func (b *BookState) TocFinalizeReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.tocFinalize.Reset()
-}
-
-// TocFinalizeIsStarted returns true if ToC finalize is started (thread-safe).
-func (b *BookState) TocFinalizeIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinalize.IsStarted()
-}
-
-// TocFinalizeIsDone returns true if ToC finalize is done (thread-safe).
-func (b *BookState) TocFinalizeIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinalize.IsDone()
-}
-
-// TocFinalizeCanStart returns true if ToC finalize can start (thread-safe).
-func (b *BookState) TocFinalizeCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinalize.CanStart()
-}
-
-// TocFinalizeIsComplete returns true if ToC finalize completed successfully (thread-safe).
-func (b *BookState) TocFinalizeIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinalize.IsComplete()
-}
-
-// GetTocFinalizeState returns a copy of the ToC finalize operation state (thread-safe).
-func (b *BookState) GetTocFinalizeState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.tocFinalize
-}
-
-// StructureStart starts the structure operation (thread-safe).
-func (b *BookState) StructureStart() error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.structure.Start()
-}
-
-// StructureComplete marks structure as complete (thread-safe).
-func (b *BookState) StructureComplete() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.structure.Complete()
-}
-
-// StructureFail records a structure failure (thread-safe).
-func (b *BookState) StructureFail(maxRetries int) bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.structure.Fail(maxRetries)
-}
-
-// StructureReset resets structure state (thread-safe).
-func (b *BookState) StructureReset() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.structure.Reset()
-}
-
-// StructureIsStarted returns true if structure is started (thread-safe).
-func (b *BookState) StructureIsStarted() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.structure.IsStarted()
-}
-
-// StructureIsDone returns true if structure is done (thread-safe).
-func (b *BookState) StructureIsDone() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.structure.IsDone()
-}
-
-// StructureCanStart returns true if structure can start (thread-safe).
-func (b *BookState) StructureCanStart() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.structure.CanStart()
-}
-
-// StructureIsComplete returns true if structure completed successfully (thread-safe).
-func (b *BookState) StructureIsComplete() bool {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.structure.IsComplete()
-}
-
-// GetStructureState returns a copy of the structure operation state (thread-safe).
-func (b *BookState) GetStructureState() OperationState {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.structure
-}
+func (b *BookState) StructureStart() error            { return b.OpStart(OpStructure) }
+func (b *BookState) StructureComplete()                { b.OpComplete(OpStructure) }
+func (b *BookState) StructureFail(maxRetries int) bool { return b.OpFail(OpStructure, maxRetries) }
+func (b *BookState) StructureReset()                   { b.OpReset(OpStructure) }
+func (b *BookState) StructureIsStarted() bool          { return b.OpIsStarted(OpStructure) }
+func (b *BookState) StructureIsDone() bool             { return b.OpIsDone(OpStructure) }
+func (b *BookState) StructureCanStart() bool           { return b.OpCanStart(OpStructure) }
+func (b *BookState) StructureIsComplete() bool         { return b.OpIsComplete(OpStructure) }
+func (b *BookState) GetStructureState() OperationState { return b.OpGetState(OpStructure) }
 
 // --- Cost Tracking Accessors ---
 // Write-through cache: costs are updated when work units complete.

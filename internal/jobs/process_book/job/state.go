@@ -307,24 +307,20 @@ func (j *Job) PersistBookStatus(ctx context.Context, status BookStatus) error {
 
 // PersistMetadataState persists metadata state to DefraDB.
 func (j *Job) PersistMetadataState(ctx context.Context) error {
-	metadataState := j.Book.GetMetadataState()
-	return common.PersistMetadataState(ctx, j.Book.BookID, &metadataState)
+	return common.PersistOpState(ctx, j.Book, common.OpMetadata)
 }
 
 // PersistTocFinderState persists ToC finder state to DefraDB.
 func (j *Job) PersistTocFinderState(ctx context.Context) error {
-	tocFinderState := j.Book.GetTocFinderState()
-	return common.PersistTocFinderState(ctx, j.TocDocID, &tocFinderState)
+	return common.PersistOpState(ctx, j.Book, common.OpTocFinder)
 }
 
 // PersistTocExtractState persists ToC extract state to DefraDB.
 func (j *Job) PersistTocExtractState(ctx context.Context) error {
-	tocExtractState := j.Book.GetTocExtractState()
-	return common.PersistTocExtractState(ctx, j.TocDocID, &tocExtractState)
+	return common.PersistOpState(ctx, j.Book, common.OpTocExtract)
 }
 
 // PersistPatternAnalysisState persists pattern analysis state to DefraDB.
 func (j *Job) PersistPatternAnalysisState(ctx context.Context) error {
-	patternAnalysisState := j.Book.GetPatternAnalysisState()
-	return common.PersistPatternAnalysisState(ctx, j.Book.BookID, &patternAnalysisState)
+	return common.PersistOpState(ctx, j.Book, common.OpPatternAnalysis)
 }
