@@ -1055,6 +1055,14 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 		}
 		if include, ok := data["audio_include"].(bool); ok {
 			chapter.AudioInclude = include
+		} else if chapter.MatterType != "" {
+			// Backwards compat for older books without audio_include persisted.
+			switch chapter.MatterType {
+			case "back_matter":
+				chapter.AudioInclude = false
+			default:
+				chapter.AudioInclude = true
+			}
 		}
 		if reasoning, ok := data["audio_include_reasoning"].(string); ok {
 			chapter.AudioIncludeReasoning = reasoning

@@ -663,6 +663,7 @@ func (j *Job) createStructurePolishWorkUnits(ctx context.Context) []jobs.WorkUni
 		if !chapter.AudioInclude {
 			chapter.PolishedText = chapter.MechanicalText
 			chapter.PolishDone = true
+			j.Book.IncrementStructurePolished()
 			continue
 		}
 
