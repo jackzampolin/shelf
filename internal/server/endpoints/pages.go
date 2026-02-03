@@ -94,13 +94,6 @@ type ListPagesResponse struct {
 type PageSummary struct {
 	PageNum     int  `json:"page_num"`
 	OcrComplete bool `json:"ocr_complete"`
-
-	ContentType    string `json:"content_type,omitempty"`
-	IsChapterStart bool   `json:"is_chapter_start"`
-	ChapterNumber  string `json:"chapter_number,omitempty"`
-	ChapterTitle   string `json:"chapter_title,omitempty"`
-	IsBlankPage    bool   `json:"is_blank_page"`
-	HasFootnotes   bool   `json:"has_footnotes"`
 }
 
 // ListPagesEndpoint handles GET /api/books/{book_id}/pages.
@@ -144,12 +137,6 @@ func (e *ListPagesEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		Page(filter: {book_id: {_eq: "%s"}}, order: {page_num: ASC}) {
 			page_num
 			ocr_complete
-			content_type
-			is_chapter_start
-			chapter_number
-			chapter_title
-			is_blank_page
-			has_footnotes
 		}
 	}`, bookID)
 
@@ -175,24 +162,6 @@ func (e *ListPagesEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 				if oc, ok := m["ocr_complete"].(bool); ok {
 					page.OcrComplete = oc
 				}
-				if ct, ok := m["content_type"].(string); ok {
-					page.ContentType = ct
-				}
-				if ics, ok := m["is_chapter_start"].(bool); ok {
-					page.IsChapterStart = ics
-				}
-				if cn, ok := m["chapter_number"].(string); ok {
-					page.ChapterNumber = cn
-				}
-				if ct, ok := m["chapter_title"].(string); ok {
-					page.ChapterTitle = ct
-				}
-				if ibp, ok := m["is_blank_page"].(bool); ok {
-					page.IsBlankPage = ibp
-				}
-				if hf, ok := m["has_footnotes"].(bool); ok {
-					page.HasFootnotes = hf
-				}
 				pages = append(pages, page)
 			}
 		}
@@ -206,14 +175,6 @@ func (e *ListPagesEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 func (e *ListPagesEndpoint) Command(_ func() string) *cobra.Command {
 	return nil
-}
-
-// PageLabels contains the label fields for a page.
-type PageLabels struct {
-	ContentType    string `json:"content_type,omitempty"`
-	IsChapterStart bool   `json:"is_chapter_start"`
-	IsFrontMatter  bool   `json:"is_front_matter"`
-	IsBackMatter   bool   `json:"is_back_matter"`
 }
 
 // PageStatus contains processing status flags.
@@ -231,11 +192,10 @@ type OcrResult struct {
 
 // GetPageResponse is the response for getting a single page.
 type GetPageResponse struct {
-	PageNum    int         `json:"page_num"`
-	OcrMarkdown string    `json:"ocr_markdown"`
-	Labels     PageLabels  `json:"labels"`
-	OcrResults []OcrResult `json:"ocr_results"`
-	Status     PageStatus  `json:"status"`
+	PageNum     int         `json:"page_num"`
+	OcrMarkdown string      `json:"ocr_markdown"`
+	OcrResults  []OcrResult `json:"ocr_results"`
+	Status      PageStatus  `json:"status"`
 }
 
 // GetPageEndpoint handles GET /api/books/{book_id}/pages/{page_num}.
@@ -252,7 +212,7 @@ func (e *GetPageEndpoint) RequiresInit() bool { return true }
 // handler godoc
 //
 //	@Summary		Get page details
-//	@Description	Get full details for a specific page including OCR results and labels
+//	@Description	Get full details for a specific page including OCR results
 //	@Tags			pages
 //	@Produce		json
 //	@Param			book_id		path		string	true	"Book ID"
@@ -288,10 +248,6 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
 			page_num
 			ocr_markdown
-			content_type
-			is_chapter_start
-			is_front_matter
-			is_back_matter
 			extract_complete
 			ocr_complete
 			ocr_results {
@@ -326,7 +282,6 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := GetPageResponse{
-		Labels: PageLabels{},
 		Status: PageStatus{},
 	}
 
@@ -335,20 +290,6 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	if om, ok := m["ocr_markdown"].(string); ok {
 		response.OcrMarkdown = om
-	}
-
-	// Labels
-	if ct, ok := m["content_type"].(string); ok {
-		response.Labels.ContentType = ct
-	}
-	if ics, ok := m["is_chapter_start"].(bool); ok {
-		response.Labels.IsChapterStart = ics
-	}
-	if ifm, ok := m["is_front_matter"].(bool); ok {
-		response.Labels.IsFrontMatter = ifm
-	}
-	if ibm, ok := m["is_back_matter"].(bool); ok {
-		response.Labels.IsBackMatter = ibm
 	}
 
 	// Status

@@ -3,8 +3,6 @@ package jobs
 import (
 	"context"
 	"fmt"
-
-	"github.com/jackzampolin/shelf/internal/providers"
 )
 
 // JobStatus returns the status of a specific job.
@@ -72,9 +70,9 @@ func (s *Scheduler) WorkerStatus() map[string]WorkerStatusInfo {
 // WorkerStatusInfo reports a worker's current state.
 // Deprecated: Use PoolStatus instead.
 type WorkerStatusInfo struct {
-	Type        string                       `json:"type"`
-	QueueDepth  int                          `json:"queue_depth"`
-	RateLimiter *providers.RateLimiterStatus `json:"rate_limiter,omitempty"`
+	Type        string             `json:"type"`
+	QueueDepth  int                `json:"queue_depth"`
+	RateLimiter *RateLimiterStatus `json:"rate_limiter,omitempty"`
 }
 
 // JobProgress returns the per-provider progress for a specific job.

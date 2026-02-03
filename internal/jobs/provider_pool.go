@@ -283,7 +283,19 @@ func (p *ProviderWorkerPool) Status() PoolStatus {
 		InFlight:        int(p.inFlight.Load()),
 		QueueDepth:      queueStats.Total,
 		QueueByPriority: &queueStats,
-		RateLimiter:     &rlStatus,
+		RateLimiter:     toRateLimiterStatus(rlStatus),
+	}
+}
+
+func toRateLimiterStatus(status providers.RateLimiterStatus) *RateLimiterStatus {
+	return &RateLimiterStatus{
+		TokensAvailable: status.TokensAvailable,
+		RPS:             status.RPS,
+		Utilization:     status.Utilization,
+		TimeUntilToken:  status.TimeUntilToken,
+		TotalConsumed:   status.TotalConsumed,
+		TotalWaited:     status.TotalWaited,
+		Last429Time:     status.Last429Time,
 	}
 }
 

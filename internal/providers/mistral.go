@@ -154,6 +154,7 @@ func (c *MistralOCRClient) ProcessImage(ctx context.Context, image []byte, pageN
 		IncludeImageBase64: c.includeImages,
 		ExtractHeader:      true,
 		ExtractFooter:      true,
+		TableFormat:        "markdown",
 	}
 
 	// Make request
@@ -343,6 +344,7 @@ type mistralOCRRequest struct {
 	IncludeImageBase64 bool            `json:"include_image_base64,omitempty"`
 	ExtractHeader      bool            `json:"extract_header,omitempty"`
 	ExtractFooter      bool            `json:"extract_footer,omitempty"`
+	TableFormat        string          `json:"table_format,omitempty"`
 	Pages              []int           `json:"pages,omitempty"`
 	ImageLimit         int             `json:"image_limit,omitempty"`
 	ImageMinSize       int             `json:"image_min_size,omitempty"`

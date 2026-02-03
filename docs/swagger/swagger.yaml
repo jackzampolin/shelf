@@ -29,6 +29,23 @@ definitions:
         description: Total work units expected for this provider
         type: integer
     type: object
+  github_com_jackzampolin_shelf_internal_jobs.RateLimiterStatus:
+    properties:
+      last_429_time:
+        type: string
+      rps:
+        type: number
+      time_until_token:
+        $ref: '#/definitions/time.Duration'
+      tokens_available:
+        type: number
+      total_consumed:
+        type: integer
+      total_waited:
+        $ref: '#/definitions/time.Duration'
+      utilization:
+        type: number
+    type: object
   github_com_jackzampolin_shelf_internal_jobs.Record:
     properties:
       _docID:
@@ -70,7 +87,7 @@ definitions:
       queue_depth:
         type: integer
       rate_limiter:
-        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_providers.RateLimiterStatus'
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.RateLimiterStatus'
       type:
         type: string
     type: object
@@ -223,23 +240,6 @@ definitions:
       total_tokens:
         type: integer
     type: object
-  github_com_jackzampolin_shelf_internal_providers.RateLimiterStatus:
-    properties:
-      last_429_time:
-        type: string
-      rps:
-        type: number
-      time_until_token:
-        $ref: '#/definitions/time.Duration'
-      tokens_available:
-        type: number
-      total_consumed:
-        type: integer
-      total_waited:
-        $ref: '#/definitions/time.Duration'
-      utilization:
-        type: number
-    type: object
   internal_server_endpoints.AgentLogDetailResponse:
     properties:
       agent_type:
@@ -319,6 +319,31 @@ definitions:
           $ref: '#/definitions/internal_server_endpoints.AgentLogSummaryResponse'
         type: array
     type: object
+  internal_server_endpoints.AudioStatusResponse:
+    properties:
+      book_id:
+        type: string
+      chapter_count:
+        type: integer
+      chapters:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.ChapterAudioStatus'
+        type: array
+      format:
+        type: string
+      provider:
+        type: string
+      segment_count:
+        type: integer
+      status:
+        type: string
+      total_cost_usd:
+        type: number
+      total_duration_ms:
+        type: integer
+      voice:
+        type: string
+    type: object
   internal_server_endpoints.Book:
     properties:
       author:
@@ -387,11 +412,26 @@ definitions:
           $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
         type: array
     type: object
+  internal_server_endpoints.ChapterAudioStatus:
+    properties:
+      audio_file:
+        type: string
+      chapter_idx:
+        type: integer
+      cost_usd:
+        type: number
+      download_url:
+        type: string
+      duration_ms:
+        type: integer
+      segment_count:
+        type: integer
+      title:
+        type: string
+    type: object
   internal_server_endpoints.ChapterPage:
     properties:
-      blended_text:
-        type: string
-      label:
+      ocr_markdown:
         type: string
       page_num:
         type: integer
@@ -484,6 +524,15 @@ definitions:
       id:
         type: string
     type: object
+  internal_server_endpoints.CreateVoiceRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      voice_id:
+        type: string
+    type: object
   internal_server_endpoints.DefraStatus:
     properties:
       container:
@@ -543,6 +592,25 @@ definitions:
       reasoning:
         type: string
     type: object
+  internal_server_endpoints.EpubExportResponse:
+    properties:
+      author:
+        type: string
+      book_id:
+        type: string
+      chapter_count:
+        type: integer
+      created_at:
+        type: string
+      download_url:
+        type: string
+      file_path:
+        type: string
+      file_size:
+        type: integer
+      title:
+        type: string
+    type: object
   internal_server_endpoints.ErrorResponse:
     properties:
       error:
@@ -556,6 +624,28 @@ definitions:
         type: string
       start_page:
         type: integer
+    type: object
+  internal_server_endpoints.GenerateAudioRequest:
+    properties:
+      format:
+        description: 'Optional: output format (mp3, wav)'
+        type: string
+      voice:
+        description: 'Optional: voice ID'
+        type: string
+    type: object
+  internal_server_endpoints.GenerateAudioResponse:
+    properties:
+      book_id:
+        type: string
+      chapters:
+        type: integer
+      job_id:
+        type: string
+      provider:
+        type: string
+      status:
+        type: string
     type: object
   internal_server_endpoints.GetJobResponse:
     properties:
@@ -596,12 +686,8 @@ definitions:
     type: object
   internal_server_endpoints.GetPageResponse:
     properties:
-      blend_confidence:
-        type: number
-      blend_markdown:
+      ocr_markdown:
         type: string
-      labels:
-        $ref: '#/definitions/internal_server_endpoints.PageLabels'
       ocr_results:
         items:
           $ref: '#/definitions/internal_server_endpoints.OcrResult'
@@ -646,16 +732,12 @@ definitions:
     type: object
   internal_server_endpoints.JobStatusResponse:
     properties:
-      blend_complete:
-        type: integer
       book_id:
         type: string
       is_complete:
         type: boolean
       job_type:
         type: string
-      label_complete:
-        type: integer
       metadata_complete:
         type: boolean
       ocr_complete:
@@ -722,6 +804,13 @@ definitions:
       total_pages:
         type: integer
     type: object
+  internal_server_endpoints.ListVoicesResponse:
+    properties:
+      voices:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.VoiceResponse'
+        type: array
+    type: object
   internal_server_endpoints.MetadataStatus:
     properties:
       complete:
@@ -784,63 +873,19 @@ definitions:
       text:
         type: string
     type: object
-  internal_server_endpoints.PageLabels:
-    properties:
-      content_type:
-        type: string
-      is_back_matter:
-        type: boolean
-      is_chapter_start:
-        type: boolean
-      is_front_matter:
-        type: boolean
-      is_toc_page:
-        type: boolean
-      page_number_label:
-        type: string
-      running_header:
-        type: string
-    type: object
   internal_server_endpoints.PageStatus:
     properties:
-      blend_complete:
-        type: boolean
       extract_complete:
-        type: boolean
-      label_complete:
         type: boolean
       ocr_complete:
         type: boolean
     type: object
   internal_server_endpoints.PageSummary:
     properties:
-      blend_complete:
-        type: boolean
-      chapter_number:
-        type: string
-      chapter_title:
-        type: string
-      content_type:
-        type: string
-      has_footnotes:
-        type: boolean
-      is_blank_page:
-        type: boolean
-      is_chapter_start:
-        type: boolean
-      is_toc_page:
-        type: boolean
-      label_complete:
-        type: boolean
       ocr_complete:
         type: boolean
       page_num:
         type: integer
-      page_number_label:
-        description: Label fields
-        type: string
-      running_header:
-        type: string
     type: object
   internal_server_endpoints.PatternAnalysisResult:
     properties:
@@ -929,24 +974,6 @@ definitions:
     type: object
   internal_server_endpoints.StageProgress:
     properties:
-      blend:
-        properties:
-          complete:
-            type: integer
-          cost_usd:
-            type: number
-          total:
-            type: integer
-        type: object
-      label:
-        properties:
-          complete:
-            type: integer
-          cost_usd:
-            type: number
-          total:
-            type: integer
-        type: object
       ocr:
         properties:
           complete:
@@ -977,6 +1004,13 @@ definitions:
       job_type:
         description: 'Optional: defaults to "process-book"'
         type: string
+      reset_from:
+        description: 'Optional: reset this operation and downstream deps before starting'
+        type: string
+      variant:
+        description: 'Optional: pipeline variant (standard, photo-book, text-only,
+          ocr-only)'
+        type: string
     type: object
   internal_server_endpoints.StartJobResponse:
     properties:
@@ -998,9 +1032,38 @@ definitions:
       server:
         type: string
     type: object
+  internal_server_endpoints.StorytellerExportResponse:
+    properties:
+      audio_chapters:
+        type: integer
+      author:
+        type: string
+      book_id:
+        type: string
+      chapter_count:
+        type: integer
+      created_at:
+        type: string
+      download_url:
+        type: string
+      file_path:
+        type: string
+      file_size:
+        type: integer
+      title:
+        type: string
+      total_duration_ms:
+        type: integer
+    type: object
   internal_server_endpoints.StructureStatus:
     properties:
       chapter_count:
+        type: integer
+      chapters_extracted:
+        type: integer
+      chapters_polished:
+        type: integer
+      chapters_total:
         type: integer
       complete:
         type: boolean
@@ -1008,10 +1071,52 @@ definitions:
         type: number
       failed:
         type: boolean
+      phase:
+        description: Phase tracking (build -> extract -> classify -> polish -> finalize)
+        type: string
+      polish_failed:
+        type: integer
       retries:
         type: integer
       started:
         type: boolean
+    type: object
+  internal_server_endpoints.SyncVoicesResponse:
+    properties:
+      message:
+        type: string
+      synced:
+        type: integer
+    type: object
+  internal_server_endpoints.TTSConfigResponse:
+    properties:
+      default_format:
+        type: string
+      default_voice:
+        type: string
+      formats:
+        items:
+          type: string
+        type: array
+      model:
+        type: string
+      provider:
+        type: string
+      voice_cloning_url:
+        type: string
+      voices:
+        items:
+          $ref: '#/definitions/internal_server_endpoints.TTSVoice'
+        type: array
+    type: object
+  internal_server_endpoints.TTSVoice:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      voice_id:
+        type: string
     type: object
   internal_server_endpoints.ToCEntry:
     properties:
@@ -1128,6 +1233,23 @@ definitions:
       description:
         type: string
       value: {}
+    type: object
+  internal_server_endpoints.VoiceResponse:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      is_default:
+        type: boolean
+      name:
+        type: string
+      provider:
+        type: string
+      synced_at:
+        type: string
+      voice_id:
+        type: string
     type: object
   time.Duration:
     enum:
@@ -1262,6 +1384,237 @@ paths:
       summary: List agent logs for a book
       tags:
       - agent-logs
+  /api/books/{book_id}/audio:
+    get:
+      description: Get TTS audio generation status and available files
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.AudioStatusResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get audio status
+      tags:
+      - books
+      - audio
+  /api/books/{book_id}/audio/{chapter}/download:
+    get:
+      description: Download the generated audio file for a chapter
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      - description: Chapter index
+        in: path
+        name: chapter
+        required: true
+        type: integer
+      produces:
+      - audio/mpeg
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Download chapter audio
+      tags:
+      - books
+      - audio
+  /api/books/{book_id}/export/epub:
+    post:
+      description: Generate an ePub 3.0 file from a processed book
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.EpubExportResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Export book as ePub
+      tags:
+      - books
+      - export
+  /api/books/{book_id}/export/epub/download:
+    get:
+      description: Download the generated ePub file for a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/epub+zip
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Download ePub file
+      tags:
+      - books
+      - export
+  /api/books/{book_id}/export/storyteller:
+    post:
+      description: Generate an EPUB 3.0 file with synchronized audio (Media Overlays)
+        for use with Storyteller
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.StorytellerExportResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Export book as EPUB with Media Overlays for Storyteller
+      tags:
+      - books
+      - export
+      - storyteller
+  /api/books/{book_id}/export/storyteller/download:
+    get:
+      description: Download the generated EPUB file with Media Overlays for a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      produces:
+      - application/epub+zip
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Download Storyteller EPUB file
+      tags:
+      - books
+      - export
+      - storyteller
+  /api/books/{book_id}/generate/audio:
+    post:
+      consumes:
+      - application/json
+      description: Start TTS audiobook generation for a book
+      parameters:
+      - description: Book ID
+        in: path
+        name: book_id
+        required: true
+        type: string
+      - description: TTS options
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.GenerateAudioRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.GenerateAudioResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Start TTS audio generation
+      tags:
+      - books
+      - audio
   /api/books/{book_id}/pages:
     get:
       description: List all pages for a book with processing status
@@ -1295,8 +1648,7 @@ paths:
       - pages
   /api/books/{book_id}/pages/{page_num}:
     get:
-      description: Get full details for a specific page including OCR results, blend
-        output, and labels
+      description: Get full details for a specific page including OCR results
       parameters:
       - description: Book ID
         in: path
@@ -1395,7 +1747,7 @@ paths:
           schema:
             $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
         "412":
-          description: Not enough pages have blend complete
+          description: Not enough pages have OCR complete
           schema:
             $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
         "500":
@@ -2504,4 +2856,150 @@ paths:
       summary: Server status
       tags:
       - health
+  /api/tts/config:
+    get:
+      description: Get available TTS voices, models, and formats
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.TTSConfigResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Get TTS configuration
+      tags:
+      - tts
+  /api/voices:
+    get:
+      description: List all available TTS voices from the database
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ListVoicesResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: List TTS voices
+      tags:
+      - voices
+    post:
+      consumes:
+      - application/json
+      description: Add a custom voice to the database
+      parameters:
+      - description: Voice details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_server_endpoints.CreateVoiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.VoiceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Create voice
+      tags:
+      - voices
+  /api/voices/{voice_id}:
+    delete:
+      description: Delete a voice from the local database
+      parameters:
+      - description: Voice ID
+        in: path
+        name: voice_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Delete voice
+      tags:
+      - voices
+  /api/voices/{voice_id}/default:
+    put:
+      description: Set a voice as the default TTS voice
+      parameters:
+      - description: Voice ID
+        in: path
+        name: voice_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Set default voice
+      tags:
+      - voices
+  /api/voices/sync:
+    post:
+      description: Sync voices from TTS provider to database
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.SyncVoicesResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+      summary: Sync TTS voices
+      tags:
+      - voices
 swagger: "2.0"

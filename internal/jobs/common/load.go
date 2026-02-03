@@ -306,6 +306,7 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 			extract_complete
 			ocr_complete
 			ocr_markdown
+			headings
 			ocr_results {
 				provider
 				text
@@ -370,9 +371,16 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 			}
 		}
 
-		// Load OCR markdown if available (for pattern analysis on resume)
-		if ocrMarkdown, ok := page["ocr_markdown"].(string); ok && ocrMarkdown != "" {
-			state.SetOcrMarkdown(ocrMarkdown)
+		// Load OCR markdown/headings if available (for pattern analysis on resume)
+		ocrComplete, _ := page["ocr_complete"].(bool)
+		if ocrComplete {
+			state.PopulateFromDBResult(page)
+		} else {
+			if ocrMarkdown, ok := page["ocr_markdown"].(string); ok && ocrMarkdown != "" {
+				state.PopulateFromDBResult(page)
+			} else if headings, ok := page["headings"].(string); ok && headings != "" {
+				state.PopulateFromDBResult(page)
+			}
 		}
 
 		book.Pages[pageNum] = state

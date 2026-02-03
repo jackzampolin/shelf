@@ -79,6 +79,23 @@ func PersistOCRResult(ctx context.Context, state *PageState, ocrProviders []stri
 			Op: defra.OpCreate,
 		})
 
+		// Persist header/footer extracted by OCR provider (Mistral)
+		if result.Header != "" || result.Footer != "" {
+			update := map[string]any{}
+			if result.Header != "" {
+				update["header"] = result.Header
+			}
+			if result.Footer != "" {
+				update["footer"] = result.Footer
+			}
+			sink.Send(defra.WriteOp{
+				Collection: "Page",
+				DocID:      pageDocID,
+				Document:   update,
+				Op:         defra.OpUpdate,
+			})
+		}
+
 		// Update in-memory state (thread-safe)
 		state.MarkOcrComplete(provider, result.Text)
 	} else if logger != nil {

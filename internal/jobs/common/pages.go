@@ -38,8 +38,6 @@ func CreateMissingPages(ctx context.Context, book *BookState) (int, error) {
 				"page_num":         pageNum,
 				"extract_complete": false,
 				"ocr_complete":     false,
-				"blend_complete":   false,
-				"label_complete":   false,
 			},
 			Op: defra.OpCreate,
 		}

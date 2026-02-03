@@ -2,8 +2,7 @@ package jobs
 
 import (
 	"context"
-
-	"github.com/jackzampolin/shelf/internal/providers"
+	"time"
 )
 
 // PoolType indicates what kind of work this pool handles.
@@ -53,7 +52,19 @@ type PoolStatus struct {
 	QueueByPriority *PriorityQueueStats `json:"queue_by_priority,omitempty"`
 
 	// Only for provider pools (nil for CPU)
-	RateLimiter *providers.RateLimiterStatus `json:"rate_limiter,omitempty"`
+	RateLimiter *RateLimiterStatus `json:"rate_limiter,omitempty"`
+}
+
+// RateLimiterStatus mirrors providers.RateLimiterStatus for API responses.
+// Keep fields in sync with internal/providers/ratelimit.go.
+type RateLimiterStatus struct {
+	TokensAvailable float64       `json:"tokens_available"`
+	RPS             float64       `json:"rps"`
+	Utilization     float64       `json:"utilization"`
+	TimeUntilToken  time.Duration `json:"time_until_token"`
+	TotalConsumed   int64         `json:"total_consumed"`
+	TotalWaited     time.Duration `json:"total_waited"`
+	Last429Time     time.Time     `json:"last_429_time,omitempty"`
 }
 
 // workerResult pairs a work result with its job ID for routing.

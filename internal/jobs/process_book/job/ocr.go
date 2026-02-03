@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/defra"
@@ -59,17 +60,24 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 			}
 		}
 
-		// Persist ocr_markdown to page state and DefraDB
+		// Persist ocr_markdown and headings to page state and DefraDB
 		if ocrText != "" {
-			state.SetOcrMarkdown(ocrText)
+			headings := common.ExtractHeadings(ocrText)
+			state.SetOcrMarkdownWithHeadings(ocrText, headings)
 
 			sink := svcctx.DefraSinkFrom(ctx)
 			if sink != nil {
 				pageDocID := state.GetPageDocID()
+				update := map[string]any{"ocr_markdown": ocrText}
+				if headingsJSON, err := json.Marshal(headings); err == nil {
+					update["headings"] = string(headingsJSON)
+				} else if logger := svcctx.LoggerFrom(ctx); logger != nil {
+					logger.Warn("failed to marshal headings", "page_num", info.PageNum, "error", err)
+				}
 				sink.Send(defra.WriteOp{
 					Collection: "Page",
 					DocID:      pageDocID,
-					Document:   map[string]any{"ocr_markdown": ocrText},
+					Document:   update,
 					Op:         defra.OpUpdate,
 				})
 			}
