@@ -96,9 +96,10 @@ type CPUWorkRequest struct {
 
 // WorkResult is the result of a completed work unit.
 type WorkResult struct {
-	WorkUnitID string
-	Success    bool
-	Error      error
+	WorkUnitID  string
+	Success     bool
+	Error       error
+	MetricDocID string // DefraDB Metric doc ID (if recorded)
 
 	// Result data (one of these will be set based on work unit type)
 	ChatResult *providers.ChatResult
@@ -115,11 +116,11 @@ type CPUWorkResult struct {
 // ProviderProgress tracks work unit progress for a single provider.
 // This enables granular progress tracking during job execution.
 type ProviderProgress struct {
-	TotalExpected      int // Total work units expected for this provider
-	CompletedAtStart   int // Already completed before job started (from DefraDB)
-	Queued             int // Currently queued/in-flight
-	Completed          int // Completed during this job execution
-	Failed             int // Failed during this job execution
+	TotalExpected    int // Total work units expected for this provider
+	CompletedAtStart int // Already completed before job started (from DefraDB)
+	Queued           int // Currently queued/in-flight
+	Completed        int // Completed during this job execution
+	Failed           int // Failed during this job execution
 }
 
 // Remaining returns work units not yet processed.
@@ -204,9 +205,9 @@ type LiveStatusProvider interface {
 
 // LiveStatus contains real-time status from a running job's in-memory state.
 type LiveStatus struct {
-	TotalPages       int
-	OcrComplete      int
-	MetadataComplete bool
+	TotalPages        int
+	OcrComplete       int
+	MetadataComplete  bool
 	TocFound          bool
 	TocExtracted      bool
 	TocLinked         bool

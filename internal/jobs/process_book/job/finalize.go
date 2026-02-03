@@ -264,9 +264,14 @@ func (j *Job) HandleFinalizePatternComplete(ctx context.Context, result jobs.Wor
 	}
 
 	// Process pattern analysis result
-	if err := j.processFinalizePatternResult(ctx, result); err != nil {
+	writeResult, err := j.processFinalizePatternResult(ctx, result)
+	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to process pattern result", "error", err)
+		}
+	} else if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "Book", j.Book.BookID, writeResult.CID); err != nil {
+		if logger != nil {
+			logger.Warn("failed to update metric output ref", "error", err)
 		}
 	}
 
@@ -274,9 +279,9 @@ func (j *Job) HandleFinalizePatternComplete(ctx context.Context, result jobs.Wor
 }
 
 // processFinalizePatternResult parses and stores pattern analysis results.
-func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.WorkResult) error {
+func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.WorkResult) (defra.WriteResult, error) {
 	if result.ChatResult == nil {
-		return fmt.Errorf("no chat result")
+		return defra.WriteResult{}, fmt.Errorf("no chat result")
 	}
 
 	var content []byte
@@ -285,12 +290,12 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 	} else if result.ChatResult.Content != "" {
 		content = []byte(result.ChatResult.Content)
 	} else {
-		return fmt.Errorf("empty response")
+		return defra.WriteResult{}, fmt.Errorf("empty response")
 	}
 
 	var response pattern_analyzer.Result
 	if err := json.Unmarshal(content, &response); err != nil {
-		return fmt.Errorf("failed to parse pattern response: %w", err)
+		return defra.WriteResult{}, fmt.Errorf("failed to parse pattern response: %w", err)
 	}
 
 	// Build result locally before storing in BookState
@@ -336,14 +341,15 @@ func (j *Job) processFinalizePatternResult(ctx context.Context, result jobs.Work
 	}
 
 	// Persist pattern results - return error to allow retry on failure
-	if err := j.persistFinalizePatternResults(ctx); err != nil {
+	writeResult, err := j.persistFinalizePatternResults(ctx)
+	if err != nil {
 		if logger != nil {
 			logger.Error("failed to persist pattern results", "error", err)
 		}
-		return fmt.Errorf("failed to persist pattern results: %w", err)
+		return defra.WriteResult{}, fmt.Errorf("failed to persist pattern results: %w", err)
 	}
 
-	return nil
+	return writeResult, nil
 }
 
 // generateEntriesToFind creates EntryToFind records from discovered patterns.
@@ -616,9 +622,14 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 		agentResult := ag.Result()
 		if agentResult != nil && agentResult.Success {
 			if finderResult, ok := agentResult.ToolResult.(*chapter_finder.Result); ok {
-				if err := j.saveDiscoveredEntry(ctx, info.FinalizeKey, finderResult); err != nil {
+				writeResult, err := j.saveDiscoveredEntry(ctx, info.FinalizeKey, finderResult)
+				if err != nil {
 					if logger != nil {
 						logger.Warn("failed to save discovered entry", "error", err)
+					}
+				} else if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "TocEntry", writeResult.DocID, writeResult.CID); err != nil {
+					if logger != nil {
+						logger.Warn("failed to update metric output ref", "error", err)
 					}
 				}
 				if finderResult.ScanPage != nil && *finderResult.ScanPage > 0 {
@@ -965,9 +976,14 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 		agentResult := ag.Result()
 		if agentResult != nil && agentResult.Success {
 			if gapResult, ok := agentResult.ToolResult.(*gap_investigator.Result); ok {
-				if err := j.applyGapFix(ctx, info.FinalizeKey, gapResult); err != nil {
+				writeResult, err := j.applyGapFix(ctx, info.FinalizeKey, gapResult)
+				if err != nil {
 					if logger != nil {
 						logger.Warn("failed to apply gap fix", "error", err)
+					}
+				} else if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "TocEntry", writeResult.DocID, writeResult.CID); err != nil {
+					if logger != nil {
+						logger.Warn("failed to update metric output ref", "error", err)
 					}
 				}
 				if gapResult.FixType == "add_entry" || gapResult.FixType == "correct_entry" {
@@ -1282,14 +1298,14 @@ func intToRoman(num int) string {
 	return result.String()
 }
 
-func (j *Job) persistFinalizePatternResults(ctx context.Context) error {
+func (j *Job) persistFinalizePatternResults(ctx context.Context) (defra.WriteResult, error) {
 	if j.Book.GetFinalizePatternResult() == nil {
-		return nil
+		return defra.WriteResult{}, nil
 	}
 
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
+		return defra.WriteResult{}, fmt.Errorf("defra sink not in context")
 	}
 
 	data := struct {
@@ -1306,11 +1322,11 @@ func (j *Job) persistFinalizePatternResults(ctx context.Context) error {
 
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
-		return fmt.Errorf("failed to marshal pattern analysis: %w", err)
+		return defra.WriteResult{}, fmt.Errorf("failed to marshal pattern analysis: %w", err)
 	}
 
 	// Use sync write for pattern results - this data is critical for restart
-	_, err = sink.SendSync(ctx, defra.WriteOp{
+	writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      j.Book.BookID,
 		Document: map[string]any{
@@ -1319,20 +1335,20 @@ func (j *Job) persistFinalizePatternResults(ctx context.Context) error {
 		Op: defra.OpUpdate,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to persist pattern results: %w", err)
+		return defra.WriteResult{}, fmt.Errorf("failed to persist pattern results: %w", err)
 	}
 
-	return nil
+	return writeResult, nil
 }
 
-func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *chapter_finder.Result) error {
+func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *chapter_finder.Result) (defra.WriteResult, error) {
 	if result.ScanPage == nil || *result.ScanPage == 0 {
-		return nil
+		return defra.WriteResult{}, nil
 	}
 
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
-		return fmt.Errorf("defra client not in context")
+		return defra.WriteResult{}, fmt.Errorf("defra client not in context")
 	}
 
 	var entry *common.EntryToFind
@@ -1343,7 +1359,7 @@ func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *
 		}
 	}
 	if entry == nil {
-		return fmt.Errorf("entry not found: %s", entryKey)
+		return defra.WriteResult{}, fmt.Errorf("entry not found: %s", entryKey)
 	}
 
 	pageDocID := j.getPageDocID(*result.ScanPage)
@@ -1370,12 +1386,12 @@ func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *
 		"unique_key": map[string]any{"_eq": uniqueKey},
 	}
 
-	_, err := defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData)
+	writeResult, err := defraClient.UpsertWithVersion(ctx, "TocEntry", filter, entryData, entryData)
 	if err != nil {
-		return fmt.Errorf("failed to upsert discovered entry: %w", err)
+		return defra.WriteResult{}, fmt.Errorf("failed to upsert discovered entry: %w", err)
 	}
 
-	return nil
+	return writeResult, nil
 }
 
 func titleCase(s string) string {
@@ -1395,20 +1411,20 @@ func (j *Job) getPageDocID(pageNum int) string {
 	return state.GetPageDocID()
 }
 
-func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_investigator.Result) error {
+func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_investigator.Result) (defra.WriteResult, error) {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
-		return fmt.Errorf("defra client not in context")
+		return defra.WriteResult{}, fmt.Errorf("defra client not in context")
 	}
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
+		return defra.WriteResult{}, fmt.Errorf("defra sink not in context")
 	}
 
 	switch result.FixType {
 	case "add_entry":
 		if result.ScanPage == 0 {
-			return nil
+			return defra.WriteResult{}, nil
 		}
 
 		pageDocID := j.getPageDocID(result.ScanPage)
@@ -1433,19 +1449,21 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 			"unique_key": map[string]any{"_eq": uniqueKey},
 		}
 
-		if _, err := defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData); err != nil {
-			return fmt.Errorf("failed to upsert validated entry: %w", err)
+		writeResult, err := defraClient.UpsertWithVersion(ctx, "TocEntry", filter, entryData, entryData)
+		if err != nil {
+			return defra.WriteResult{}, fmt.Errorf("failed to upsert validated entry: %w", err)
 		}
+		return writeResult, nil
 
 	case "correct_entry":
 		if result.EntryDocID == "" || result.ScanPage == 0 {
-			return nil
+			return defra.WriteResult{}, nil
 		}
 
 		pageDocID := j.getPageDocID(result.ScanPage)
 		if pageDocID != "" {
 			// Use sync write for entry corrections - this is the result of LLM work
-			_, err := sink.SendSync(ctx, defra.WriteOp{
+			writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 				Collection: "TocEntry",
 				DocID:      result.EntryDocID,
 				Document: map[string]any{
@@ -1454,8 +1472,9 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 				Op: defra.OpUpdate,
 			})
 			if err != nil {
-				return fmt.Errorf("failed to correct entry %s: %w", result.EntryDocID, err)
+				return defra.WriteResult{}, fmt.Errorf("failed to correct entry %s: %w", result.EntryDocID, err)
 			}
+			return writeResult, nil
 		}
 
 	case "flag_for_review":
@@ -1470,7 +1489,7 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 		// Nothing to do
 	}
 
-	return nil
+	return defra.WriteResult{}, nil
 }
 
 func (j *Job) resortEntriesByPage(ctx context.Context) error {

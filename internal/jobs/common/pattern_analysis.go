@@ -308,20 +308,20 @@ func CreateBodyBoundariesWorkUnit(
 }
 
 // SavePatternAnalysisResult persists the complete pattern analysis result to DefraDB.
-func SavePatternAnalysisResult(ctx context.Context, bookDocID string, result *page_pattern_analyzer.Result) error {
+func SavePatternAnalysisResult(ctx context.Context, bookDocID string, result *page_pattern_analyzer.Result) (defra.WriteResult, error) {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
+		return defra.WriteResult{}, fmt.Errorf("defra sink not in context")
 	}
 
 	// Marshal result to JSON
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
-		return fmt.Errorf("failed to marshal pattern analysis result: %w", err)
+		return defra.WriteResult{}, fmt.Errorf("failed to marshal pattern analysis result: %w", err)
 	}
 
 	// Persist to Book record
-	sink.Send(defra.WriteOp{
+	writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      bookDocID,
 		Document: map[string]any{
@@ -329,6 +329,9 @@ func SavePatternAnalysisResult(ctx context.Context, bookDocID string, result *pa
 		},
 		Op: defra.OpUpdate,
 	})
+	if err != nil {
+		return defra.WriteResult{}, err
+	}
 
-	return nil
+	return writeResult, nil
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/prompts/metadata"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateMetadataWorkUnit creates a metadata extraction work unit.
@@ -31,8 +32,14 @@ func (j *Job) HandleMetadataComplete(ctx context.Context, result jobs.WorkResult
 		return fmt.Errorf("failed to parse metadata result: %w", err)
 	}
 
-	if err := common.SaveMetadataResult(ctx, j.Book.BookID, *metadataResult); err != nil {
+	writeResult, err := common.SaveMetadataResult(ctx, j.Book.BookID, *metadataResult)
+	if err != nil {
 		return fmt.Errorf("failed to save metadata: %w", err)
+	}
+	if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "Book", j.Book.BookID, writeResult.CID); err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("failed to update metric output ref", "error", err)
+		}
 	}
 
 	j.Book.MetadataComplete()

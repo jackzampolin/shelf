@@ -32,8 +32,14 @@ func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResu
 		return fmt.Errorf("failed to parse ToC extract result: %w", err)
 	}
 
-	if err := common.SaveTocExtractResult(ctx, j.TocDocID, extractResult); err != nil {
+	writeResult, err := common.SaveTocExtractResult(ctx, j.TocDocID, extractResult)
+	if err != nil {
 		return fmt.Errorf("failed to save ToC extract result: %w", err)
+	}
+	if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, writeResult.CID); err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("failed to update metric output ref", "error", err)
+		}
 	}
 
 	// Flush sink to ensure entries are written before loading
@@ -59,4 +65,3 @@ func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResu
 	j.Book.TocExtractComplete()
 	return nil
 }
-

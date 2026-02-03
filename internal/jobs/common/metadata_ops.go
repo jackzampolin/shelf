@@ -81,7 +81,7 @@ func LoadPagesForMetadataFromState(ctx context.Context, book *BookState, maxPage
 		}
 
 		pages = append(pages, metadata.Page{
-			PageNum:       pageNum,
+			PageNum:     pageNum,
 			OcrMarkdown: ocrMarkdown,
 		})
 	}
@@ -129,7 +129,7 @@ func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int
 
 		if pageNum > 0 && ocrMarkdown != "" {
 			pages = append(pages, metadata.Page{
-				PageNum:       pageNum,
+				PageNum:     pageNum,
 				OcrMarkdown: ocrMarkdown,
 			})
 		}
@@ -139,10 +139,10 @@ func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int
 }
 
 // SaveMetadataResult saves the metadata result to the Book record in DefraDB.
-func SaveMetadataResult(ctx context.Context, bookID string, result metadata.Result) error {
+func SaveMetadataResult(ctx context.Context, bookID string, result metadata.Result) (defra.WriteResult, error) {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
+		return defra.WriteResult{}, fmt.Errorf("defra sink not in context")
 	}
 
 	update := map[string]any{
@@ -171,12 +171,14 @@ func SaveMetadataResult(ctx context.Context, bookID string, result metadata.Resu
 		update["subjects"] = result.Subjects
 	}
 
-	// Fire-and-forget - no need to block
-	sink.Send(defra.WriteOp{
+	writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      bookID,
 		Document:   update,
 		Op:         defra.OpUpdate,
 	})
-	return nil
+	if err != nil {
+		return defra.WriteResult{}, err
+	}
+	return writeResult, nil
 }

@@ -152,37 +152,20 @@ func (c *Client) Mutation(ctx context.Context, mutation string, variables map[st
 }
 
 // Create creates a document in a collection.
+// It returns the document ID (CID info is available via CreateWithVersion).
 func (c *Client) Create(ctx context.Context, collection string, input map[string]any) (string, error) {
-	inputGQL, err := mapToGraphQLInput(input)
-	if err != nil {
-		return "", fmt.Errorf("failed to build input: %w", err)
-	}
-	query := fmt.Sprintf(`mutation { create_%s(input: %s) { _docID } }`, collection, inputGQL)
-
-	resp, err := c.Execute(ctx, query, nil)
+	result, err := c.CreateWithVersion(ctx, collection, input)
 	if err != nil {
 		return "", err
 	}
-	if errMsg := resp.Error(); errMsg != "" {
-		return "", fmt.Errorf("create error: %s", errMsg)
-	}
-
-	// Extract _docID from response
-	createKey := fmt.Sprintf("create_%s", collection)
-	if docs, ok := resp.Data[createKey].([]any); ok && len(docs) > 0 {
-		if doc, ok := docs[0].(map[string]any); ok {
-			if docID, ok := doc["_docID"].(string); ok {
-				return docID, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("unexpected response format: %+v", resp.Data)
+	return result.DocID, nil
 }
 
 // CreateManyResult contains the result of a batch create operation.
 type CreateManyResult struct {
 	DocID  string
+	CID    string
+	CIDs   []string
 	Fields map[string]any
 }
 
@@ -207,8 +190,8 @@ func (c *Client) CreateMany(ctx context.Context, collection string, inputs []map
 	}
 	inputArray := "[" + strings.Join(inputParts, ", ") + "]"
 
-	// Build return fields: always include _docID, plus any requested fields
-	fields := "_docID"
+	// Build return fields: always include _docID and _version, plus any requested fields
+	fields := "_docID _version { cid }"
 	for _, f := range returnFields {
 		fields += " " + f
 	}
@@ -239,9 +222,13 @@ func (c *Client) CreateMany(ctx context.Context, collection string, inputs []map
 			if docID, ok := doc["_docID"].(string); ok {
 				result.DocID = docID
 			}
+			if cids := extractVersionCIDs(doc); len(cids) > 0 {
+				result.CIDs = cids
+				result.CID = cids[0]
+			}
 			// Copy all returned fields except _docID
 			for k, v := range doc {
-				if k != "_docID" {
+				if k != "_docID" && k != "_version" {
 					result.Fields[k] = v
 				}
 			}
@@ -257,21 +244,10 @@ func (c *Client) CreateMany(ctx context.Context, collection string, inputs []map
 }
 
 // Update updates a document in a collection.
+// CID info is available via UpdateWithVersion.
 func (c *Client) Update(ctx context.Context, collection string, docID string, input map[string]any) error {
-	inputGQL, err := mapToGraphQLInput(input)
-	if err != nil {
-		return fmt.Errorf("failed to build input: %w", err)
-	}
-	query := fmt.Sprintf(`mutation { update_%s(docID: %q, input: %s) { _docID } }`, collection, docID, inputGQL)
-
-	resp, err := c.Execute(ctx, query, nil)
-	if err != nil {
-		return err
-	}
-	if errMsg := resp.Error(); errMsg != "" {
-		return fmt.Errorf("update error: %s", errMsg)
-	}
-	return nil
+	_, err := c.UpdateWithVersion(ctx, collection, docID, input)
+	return err
 }
 
 // Delete deletes a document from a collection.
@@ -292,42 +268,143 @@ func (c *Client) Delete(ctx context.Context, collection string, docID string) er
 // If the filter matches exactly one document, it updates with updateInput.
 // If no match, it creates with createInput.
 // The filter must match 0 or 1 documents (errors if multiple matches).
+// CID info is available via UpsertWithVersion.
 func (c *Client) Upsert(ctx context.Context, collection string, filter, createInput, updateInput map[string]any) (string, error) {
+	result, err := c.UpsertWithVersion(ctx, collection, filter, createInput, updateInput)
+	if err != nil {
+		return "", err
+	}
+	return result.DocID, nil
+}
+
+// CreateWithVersion creates a document and returns DocID + commit CIDs.
+func (c *Client) CreateWithVersion(ctx context.Context, collection string, input map[string]any) (WriteResult, error) {
+	inputGQL, err := mapToGraphQLInput(input)
+	if err != nil {
+		return WriteResult{}, fmt.Errorf("failed to build input: %w", err)
+	}
+	query := fmt.Sprintf(`mutation { create_%s(input: %s) { _docID _version { cid } } }`, collection, inputGQL)
+
+	resp, err := c.Execute(ctx, query, nil)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	if errMsg := resp.Error(); errMsg != "" {
+		return WriteResult{}, fmt.Errorf("create error: %s", errMsg)
+	}
+
+	createKey := fmt.Sprintf("create_%s", collection)
+	if docs, ok := resp.Data[createKey].([]any); ok && len(docs) > 0 {
+		if doc, ok := docs[0].(map[string]any); ok {
+			result := WriteResult{}
+			if docID, ok := doc["_docID"].(string); ok {
+				result.DocID = docID
+			}
+			if cids := extractVersionCIDs(doc); len(cids) > 0 {
+				result.CIDs = cids
+				result.CID = cids[0]
+			}
+			return result, nil
+		}
+	}
+
+	return WriteResult{}, fmt.Errorf("unexpected response format: %+v", resp.Data)
+}
+
+// UpdateWithVersion updates a document and returns DocID + commit CIDs.
+func (c *Client) UpdateWithVersion(ctx context.Context, collection string, docID string, input map[string]any) (WriteResult, error) {
+	inputGQL, err := mapToGraphQLInput(input)
+	if err != nil {
+		return WriteResult{}, fmt.Errorf("failed to build input: %w", err)
+	}
+	query := fmt.Sprintf(`mutation { update_%s(docID: %q, input: %s) { _docID _version { cid } } }`, collection, docID, inputGQL)
+
+	resp, err := c.Execute(ctx, query, nil)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	if errMsg := resp.Error(); errMsg != "" {
+		return WriteResult{}, fmt.Errorf("update error: %s", errMsg)
+	}
+
+	updateKey := fmt.Sprintf("update_%s", collection)
+	if docs, ok := resp.Data[updateKey].([]any); ok && len(docs) > 0 {
+		if doc, ok := docs[0].(map[string]any); ok {
+			result := WriteResult{DocID: docID}
+			if docIDResp, ok := doc["_docID"].(string); ok && docIDResp != "" {
+				result.DocID = docIDResp
+			}
+			if cids := extractVersionCIDs(doc); len(cids) > 0 {
+				result.CIDs = cids
+				result.CID = cids[0]
+			}
+			return result, nil
+		}
+	}
+
+	return WriteResult{DocID: docID}, nil
+}
+
+// UpsertWithVersion creates or updates a document and returns DocID + commit CIDs.
+func (c *Client) UpsertWithVersion(ctx context.Context, collection string, filter, createInput, updateInput map[string]any) (WriteResult, error) {
 	filterGQL, err := mapToGraphQLInput(filter)
 	if err != nil {
-		return "", fmt.Errorf("failed to build filter: %w", err)
+		return WriteResult{}, fmt.Errorf("failed to build filter: %w", err)
 	}
 	createGQL, err := mapToGraphQLInput(createInput)
 	if err != nil {
-		return "", fmt.Errorf("failed to build create input: %w", err)
+		return WriteResult{}, fmt.Errorf("failed to build create input: %w", err)
 	}
 	updateGQL, err := mapToGraphQLInput(updateInput)
 	if err != nil {
-		return "", fmt.Errorf("failed to build update input: %w", err)
+		return WriteResult{}, fmt.Errorf("failed to build update input: %w", err)
 	}
 
-	query := fmt.Sprintf(`mutation { upsert_%s(filter: %s, create: %s, update: %s) { _docID } }`,
+	query := fmt.Sprintf(`mutation { upsert_%s(filter: %s, create: %s, update: %s) { _docID _version { cid } } }`,
 		collection, filterGQL, createGQL, updateGQL)
 
 	resp, err := c.Execute(ctx, query, nil)
 	if err != nil {
-		return "", err
+		return WriteResult{}, err
 	}
 	if errMsg := resp.Error(); errMsg != "" {
-		return "", fmt.Errorf("upsert error: %s", errMsg)
+		return WriteResult{}, fmt.Errorf("upsert error: %s", errMsg)
 	}
 
-	// Extract _docID from response
 	upsertKey := fmt.Sprintf("upsert_%s", collection)
 	if docs, ok := resp.Data[upsertKey].([]any); ok && len(docs) > 0 {
 		if doc, ok := docs[0].(map[string]any); ok {
+			result := WriteResult{}
 			if docID, ok := doc["_docID"].(string); ok {
-				return docID, nil
+				result.DocID = docID
 			}
+			if cids := extractVersionCIDs(doc); len(cids) > 0 {
+				result.CIDs = cids
+				result.CID = cids[0]
+			}
+			return result, nil
 		}
 	}
 
-	return "", fmt.Errorf("unexpected response format: %+v", resp.Data)
+	return WriteResult{}, fmt.Errorf("unexpected response format: %+v", resp.Data)
+}
+
+func extractVersionCIDs(doc map[string]any) []string {
+	raw, ok := doc["_version"].([]any)
+	if !ok {
+		return nil
+	}
+	cids := make([]string, 0, len(raw))
+	for _, entry := range raw {
+		version, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if cid, ok := version["cid"].(string); ok && cid != "" {
+			cids = append(cids, cid)
+		}
+	}
+	return cids
 }
 
 // mapToGraphQLInput converts a map to GraphQL input format.

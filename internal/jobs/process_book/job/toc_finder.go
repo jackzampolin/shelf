@@ -225,8 +225,14 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		if agentResult != nil && agentResult.Success {
 			// Save result to DefraDB
 			if tocResult, ok := agentResult.ToolResult.(*toc_finder.Result); ok {
-				if err := common.SaveTocFinderResult(ctx, j.TocDocID, tocResult); err != nil {
+				writeResult, err := common.SaveTocFinderResult(ctx, j.TocDocID, tocResult)
+				if err != nil {
 					return nil, fmt.Errorf("failed to save ToC finder result: %w", err)
+				}
+				if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, writeResult.CID); err != nil {
+					if logger != nil {
+						logger.Warn("failed to update metric output ref", "error", err)
+					}
 				}
 				// Update in-memory state using thread-safe accessor
 				if tocResult.ToCPageRange != nil {
@@ -238,8 +244,14 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		} else {
 			// Agent failed or no ToC found - mark finder as done with no ToC
 			j.Book.SetTocFound(false)
-			if err := common.SaveTocFinderNoResult(ctx, j.TocDocID); err != nil {
+			writeResult, err := common.SaveTocFinderNoResult(ctx, j.TocDocID)
+			if err != nil {
 				return nil, err
+			}
+			if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, writeResult.CID); err != nil {
+				if logger != nil {
+					logger.Warn("failed to update metric output ref", "error", err)
+				}
 			}
 		}
 

@@ -54,6 +54,10 @@ type QueryBuilder struct {
 	order      string
 	limit      int
 	offset     int
+	cid        string
+	cidVarName string
+	cidVarType string
+	varIndex   int
 }
 
 type filterDef struct {
@@ -83,6 +87,20 @@ func (q *QueryBuilder) Filter(field string, value any) *QueryBuilder {
 		varType: inferGraphQLType(value),
 		value:   value,
 	})
+	return q
+}
+
+// WithCID scopes the query to a specific commit CID (historical version).
+// This uses DefraDB's top-level `cid` argument.
+func (q *QueryBuilder) WithCID(cid string) *QueryBuilder {
+	if cid == "" {
+		return q
+	}
+	if q.cidVarName == "" {
+		q.cidVarName = q.nextVarName()
+		q.cidVarType = "String"
+	}
+	q.cid = cid
 	return q
 }
 
@@ -185,6 +203,10 @@ func (q *QueryBuilder) Build() (string, map[string]any) {
 		varDefs = append(varDefs, fmt.Sprintf("$%s: %s", f.varName, f.varType))
 		vars[f.varName] = f.value
 	}
+	if q.cidVarName != "" {
+		varDefs = append(varDefs, fmt.Sprintf("$%s: %s", q.cidVarName, q.cidVarType))
+		vars[q.cidVarName] = q.cid
+	}
 
 	// Build filter clause
 	var filterParts []string
@@ -203,38 +225,23 @@ func (q *QueryBuilder) Build() (string, map[string]any) {
 	query.WriteString("{ ")
 	query.WriteString(q.collection)
 
-	// Add filter if present
+	var args []string
 	if len(filterParts) > 0 {
-		query.WriteString(fmt.Sprintf("(filter: {%s}", strings.Join(filterParts, ", ")))
-
-		// Add order if present
-		if q.order != "" {
-			query.WriteString(fmt.Sprintf(", order: %s", q.order))
-		}
-
-		// Add limit if present
-		if q.limit > 0 {
-			query.WriteString(fmt.Sprintf(", limit: %d", q.limit))
-		}
-
-		// Add offset if present
-		if q.offset > 0 {
-			query.WriteString(fmt.Sprintf(", offset: %d", q.offset))
-		}
-
-		query.WriteString(")")
-	} else if q.order != "" || q.limit > 0 || q.offset > 0 {
-		// No filter but has order/limit/offset
-		var args []string
-		if q.order != "" {
-			args = append(args, fmt.Sprintf("order: %s", q.order))
-		}
-		if q.limit > 0 {
-			args = append(args, fmt.Sprintf("limit: %d", q.limit))
-		}
-		if q.offset > 0 {
-			args = append(args, fmt.Sprintf("offset: %d", q.offset))
-		}
+		args = append(args, fmt.Sprintf("filter: {%s}", strings.Join(filterParts, ", ")))
+	}
+	if q.cidVarName != "" {
+		args = append(args, fmt.Sprintf("cid: $%s", q.cidVarName))
+	}
+	if q.order != "" {
+		args = append(args, fmt.Sprintf("order: %s", q.order))
+	}
+	if q.limit > 0 {
+		args = append(args, fmt.Sprintf("limit: %d", q.limit))
+	}
+	if q.offset > 0 {
+		args = append(args, fmt.Sprintf("offset: %d", q.offset))
+	}
+	if len(args) > 0 {
 		query.WriteString(fmt.Sprintf("(%s)", strings.Join(args, ", ")))
 	}
 
@@ -254,7 +261,9 @@ func (q *QueryBuilder) Execute(ctx context.Context, client *Client) (*GQLRespons
 
 // nextVarName generates the next variable name.
 func (q *QueryBuilder) nextVarName() string {
-	return fmt.Sprintf("v%d", len(q.filters))
+	name := fmt.Sprintf("v%d", q.varIndex)
+	q.varIndex++
+	return name
 }
 
 // inferGraphQLType infers the GraphQL type from a Go value.

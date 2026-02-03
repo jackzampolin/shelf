@@ -8,6 +8,7 @@ import (
 	page_pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/page_pattern_analyzer"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/common"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // PatternAnalysisSubtype identifies which of the 3 pattern analysis calls a work unit represents.
@@ -21,9 +22,11 @@ const (
 
 // CreatePatternAnalysisWorkUnits creates the initial pattern analysis work units.
 // This is a 3-phase sequential process:
-//   Phase 1: Returns 2 parallel work units (page_numbers and chapters)
-//   Phase 2: After both complete, maybeCreateBoundariesWorkUnit creates the boundaries unit
-//   Phase 3: handleBodyBoundariesComplete aggregates all results and persists to DefraDB
+//
+//	Phase 1: Returns 2 parallel work units (page_numbers and chapters)
+//	Phase 2: After both complete, maybeCreateBoundariesWorkUnit creates the boundaries unit
+//	Phase 3: handleBodyBoundariesComplete aggregates all results and persists to DefraDB
+//
 // Only returns the Phase 1 units. Phases 2-3 are triggered via completion handlers.
 func (j *Job) CreatePatternAnalysisWorkUnits(ctx context.Context) []jobs.WorkUnit {
 	var units []jobs.WorkUnit
@@ -143,8 +146,14 @@ func (j *Job) handleBodyBoundariesComplete(ctx context.Context, result jobs.Work
 	}
 
 	// Save to database
-	if err := common.SavePatternAnalysisResult(ctx, j.Book.BookDocID, aggregatedResult); err != nil {
+	writeResult, err := common.SavePatternAnalysisResult(ctx, j.Book.BookDocID, aggregatedResult)
+	if err != nil {
 		return nil, fmt.Errorf("failed to save pattern analysis result: %w", err)
+	}
+	if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "Book", j.Book.BookDocID, writeResult.CID); err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("failed to update metric output ref", "error", err)
+		}
 	}
 
 	// Store in book state
