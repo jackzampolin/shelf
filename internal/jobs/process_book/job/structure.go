@@ -38,7 +38,7 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 		return nil
 	}
 	// Use sync write at operation start to ensure state is persisted before continuing
-	if err := common.PersistOpStateSync(ctx, j.Book, common.OpStructure); err != nil {
+	if err := common.PersistOpState(ctx, j.Book, common.OpStructure); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist structure start", "error", err)
 		}

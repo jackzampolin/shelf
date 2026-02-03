@@ -248,6 +248,75 @@ func TestBookStateOperationCIDs(t *testing.T) {
 	}
 }
 
+func TestBookStateTrackWriteRouting(t *testing.T) {
+	book := NewBookState("test-book")
+
+	// Page state
+	page := book.GetOrCreatePage(1)
+	page.SetPageDocID("page-doc-1")
+
+	// Chapter state
+	chapter := &ChapterState{EntryID: "ch1", DocID: "chapter-doc-1", Title: "Chapter 1", StartPage: 1}
+	book.SetStructureChapters([]*ChapterState{chapter})
+
+	// Agent state
+	agentState := &AgentState{
+		AgentID:   "agent-1",
+		AgentType: AgentTypeTocFinder,
+		DocID:     "agent-doc-1",
+	}
+	book.SetAgentState(agentState)
+
+	book.TrackWrite("Page", "page-doc-1", "cid-page")
+	book.TrackWrite("Chapter", "chapter-doc-1", "cid-chapter")
+	book.TrackWrite("AgentState", "agent-doc-1", "cid-agent")
+
+	if got := page.GetPageCID(); got != "cid-page" {
+		t.Fatalf("page CID = %s, want cid-page", got)
+	}
+	if got := chapter.CID; got != "cid-chapter" {
+		t.Fatalf("chapter CID = %s, want cid-chapter", got)
+	}
+	if got := book.GetAgentState(AgentTypeTocFinder, "").CID; got != "cid-agent" {
+		t.Fatalf("agent CID = %s, want cid-agent", got)
+	}
+
+	if got := book.GetCID("Page", "page-doc-1"); got != "cid-page" {
+		t.Fatalf("cidIndex page = %s, want cid-page", got)
+	}
+	if got := book.GetCID("Chapter", "chapter-doc-1"); got != "cid-chapter" {
+		t.Fatalf("cidIndex chapter = %s, want cid-chapter", got)
+	}
+	if got := book.GetCID("AgentState", "agent-doc-1"); got != "cid-agent" {
+		t.Fatalf("cidIndex agent = %s, want cid-agent", got)
+	}
+
+	// Unknown docIDs should not panic or mutate known state
+	book.TrackWrite("Page", "missing-doc", "cid-missing")
+	if got := page.GetPageCID(); got != "cid-page" {
+		t.Fatalf("page CID changed unexpectedly: %s", got)
+	}
+}
+
+func TestBookStateGetCID(t *testing.T) {
+	book := NewBookState("test-book")
+	book.TrackWrite("Book", "test-book", "cid-book")
+	book.TrackWrite("Page", "page-doc-1", "cid-page")
+
+	if got := book.GetCID("Book", "test-book"); got != "cid-book" {
+		t.Fatalf("GetCID book = %s, want cid-book", got)
+	}
+	if got := book.GetCID("Page", "page-doc-1"); got != "cid-page" {
+		t.Fatalf("GetCID page = %s, want cid-page", got)
+	}
+	if got := book.GetCID("Page", "missing"); got != "" {
+		t.Fatalf("GetCID missing = %s, want empty", got)
+	}
+	if got := book.GetCID("Unknown", "doc"); got != "" {
+		t.Fatalf("GetCID unknown = %s, want empty", got)
+	}
+}
+
 // TestPageState_ConcurrentAccess tests thread-safety of PageState accessor methods.
 func TestPageState_ConcurrentAccess(t *testing.T) {
 	t.Run("concurrent_ocr_results", func(t *testing.T) {

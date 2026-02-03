@@ -51,7 +51,7 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		return nil
 	}
 	// Use sync write at operation start to ensure state is persisted before continuing
-	if err := common.PersistOpStateSync(ctx, j.Book, common.OpTocFinalize); err != nil {
+	if err := common.PersistOpState(ctx, j.Book, common.OpTocFinalize); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist finalize start", "error", err)
 		}
@@ -100,7 +100,7 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	// Set phase and persist for crash recovery
 	j.Book.SetFinalizePhase(FinalizePhasePattern)
-	cid, err := common.PersistFinalizePhaseSync(ctx, j.Book, FinalizePhasePattern)
+	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhasePattern)
 	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "phase", FinalizePhasePattern, "error", err)
@@ -258,7 +258,7 @@ func (j *Job) HandleFinalizePatternComplete(ctx context.Context, result jobs.Wor
 		}
 		// Mark pattern phase as skipped to prevent re-attempts on restart
 		j.Book.SetFinalizePhase(FinalizePhaseDiscover)
-		cid, err := common.PersistFinalizePhaseSync(ctx, j.Book, FinalizePhaseDiscover)
+		cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseDiscover)
 		if err != nil {
 			if logger != nil {
 				logger.Error("failed to persist pattern phase skip", "error", err)
@@ -421,7 +421,7 @@ func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit 
 
 	// Set phase and persist for crash recovery
 	j.Book.SetFinalizePhase(FinalizePhaseDiscover)
-	cid, err := common.PersistFinalizePhaseSync(ctx, j.Book, FinalizePhaseDiscover)
+	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseDiscover)
 	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseDiscover, "error", err)
@@ -680,7 +680,7 @@ func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit 
 
 	// Set phase and persist for crash recovery
 	j.Book.SetFinalizePhase(FinalizePhaseValidate)
-	cid, err := common.PersistFinalizePhaseSync(ctx, j.Book, FinalizePhaseValidate)
+	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseValidate)
 	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseValidate, "error", err)
@@ -1050,7 +1050,7 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	// Persist finalize phase before marking complete
 	j.Book.SetFinalizePhase(FinalizePhaseDone)
-	cid, err := common.PersistFinalizePhaseSync(ctx, j.Book, FinalizePhaseDone)
+	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseDone)
 	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "error", err)

@@ -222,8 +222,8 @@ func TestStateIntegration_PersistAndReload(t *testing.T) {
 	book.OpComplete(OpMetadata)
 
 	// Persist metadata state
-	if err := PersistOpStateSync(ctx, book, OpMetadata); err != nil {
-		t.Fatalf("PersistOpStateSync(metadata) failed: %v", err)
+	if err := PersistOpState(ctx, book, OpMetadata); err != nil {
+		t.Fatalf("PersistOpState(metadata) failed: %v", err)
 	}
 
 	// Start ToC finder and fail it
@@ -233,8 +233,8 @@ func TestStateIntegration_PersistAndReload(t *testing.T) {
 	book.OpFail(OpTocFinder, 3)
 
 	// Persist ToC finder state
-	if err := PersistOpStateSync(ctx, book, OpTocFinder); err != nil {
-		t.Fatalf("PersistOpStateSync(toc_finder) failed: %v", err)
+	if err := PersistOpState(ctx, book, OpTocFinder); err != nil {
+		t.Fatalf("PersistOpState(toc_finder) failed: %v", err)
 	}
 
 	// Read back from DB and verify
@@ -581,7 +581,7 @@ func TestStateIntegration_ConcurrentPersist(t *testing.T) {
 			} else {
 				book.OpComplete(OpMetadata)
 			}
-			err := PersistOpStateSync(ctx, book, OpMetadata)
+			err := PersistOpState(ctx, book, OpMetadata)
 			done <- err
 		}(i)
 	}

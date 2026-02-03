@@ -237,8 +237,8 @@ func TestPersistOpState_WithMemoryStore(t *testing.T) {
 	}
 }
 
-// TestPersistOpStateSync_WithMemoryStore tests synchronous persist.
-func TestPersistOpStateSync_WithMemoryStore(t *testing.T) {
+// TestPersistOpState_WithMemoryStore_StartedOnly tests started-only persistence.
+func TestPersistOpState_WithMemoryStore_StartedOnly(t *testing.T) {
 	store := NewMemoryStateStore()
 	book := NewBookState("test-book")
 	book.Store = store
@@ -246,8 +246,8 @@ func TestPersistOpStateSync_WithMemoryStore(t *testing.T) {
 	_ = book.OpStart(OpMetadata)
 
 	ctx := context.Background()
-	if err := PersistOpStateSync(ctx, book, OpMetadata); err != nil {
-		t.Fatalf("PersistOpStateSync error = %v", err)
+	if err := PersistOpState(ctx, book, OpMetadata); err != nil {
+		t.Fatalf("PersistOpState error = %v", err)
 	}
 
 	if store.WriteCount() != 1 {
@@ -590,10 +590,10 @@ func TestPersistAndReload_Roundtrip(t *testing.T) {
 	// Leave toc_finder as started (not complete)
 
 	// Persist both ops
-	if err := PersistOpStateSync(ctx, book1, OpMetadata); err != nil {
+	if err := PersistOpState(ctx, book1, OpMetadata); err != nil {
 		t.Fatalf("persist metadata error = %v", err)
 	}
-	if err := PersistOpStateSync(ctx, book1, OpTocFinder); err != nil {
+	if err := PersistOpState(ctx, book1, OpTocFinder); err != nil {
 		t.Fatalf("persist toc_finder error = %v", err)
 	}
 

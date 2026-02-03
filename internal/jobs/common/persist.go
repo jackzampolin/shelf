@@ -125,34 +125,6 @@ func PersistOpState(ctx context.Context, book *BookState, op OpType) error {
 	return err
 }
 
-// PersistOpStateSync persists operation state to DefraDB synchronously via the registry.
-// Use this for critical state transitions where you need to ensure the write succeeded.
-// If book.Store is set, uses it directly; otherwise falls back to context.
-func PersistOpStateSync(ctx context.Context, book *BookState, op OpType) error {
-	cfg, ok := OpRegistry[op]
-	if !ok {
-		return fmt.Errorf("PersistOpStateSync: unknown operation: %s", op)
-	}
-	state := book.OpGetState(op)
-	docID := cfg.DocIDSource(book)
-	if docID == "" {
-		return nil // No document yet (e.g., no ToC record)
-	}
-	writeOp := defra.WriteOp{
-		Collection: cfg.Collection,
-		DocID:      docID,
-		Document: map[string]any{
-			cfg.FieldPrefix + "_started":  state.IsStarted(),
-			cfg.FieldPrefix + "_complete": state.IsComplete(),
-			cfg.FieldPrefix + "_failed":   state.IsFailed(),
-			cfg.FieldPrefix + "_retries":  state.GetRetries(),
-		},
-		Op: defra.OpUpdate,
-	}
-	_, err := SendTracked(ctx, book, writeOp)
-	return err
-}
-
 // PersistBookStatus persists book status to DefraDB and updates CID tracking.
 func PersistBookStatus(ctx context.Context, book *BookState, status string) (string, error) {
 	if book == nil {
@@ -495,29 +467,6 @@ func PersistStructurePhaseSync(ctx context.Context, book *BookState) error {
 
 // PersistFinalizePhase persists finalize phase tracking to ToC.
 func PersistFinalizePhase(ctx context.Context, book *BookState, phase string) (string, error) {
-	if book == nil {
-		return "", fmt.Errorf("book is nil")
-	}
-	tocDocID := book.TocDocID()
-	if tocDocID == "" {
-		return "", nil
-	}
-	result, err := SendTracked(ctx, book, defra.WriteOp{
-		Collection: "ToC",
-		DocID:      tocDocID,
-		Document: map[string]any{
-			"finalize_phase": phase,
-		},
-		Op: defra.OpUpdate,
-	})
-	if err != nil {
-		return "", err
-	}
-	return result.CID, nil
-}
-
-// PersistFinalizePhaseSync persists finalize phase tracking to ToC and waits for confirmation.
-func PersistFinalizePhaseSync(ctx context.Context, book *BookState, phase string) (string, error) {
 	if book == nil {
 		return "", fmt.Errorf("book is nil")
 	}

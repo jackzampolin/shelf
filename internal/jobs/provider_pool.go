@@ -621,6 +621,7 @@ func (p *ProviderWorkerPool) recordMetrics(ctx context.Context, unit *WorkUnit, 
 			result.MetricDocID = writeResult.DocID
 		}
 	} else {
+		// Intentionally untracked: audit trail record, not mutable state.
 		p.sink.Send(defra.WriteOp{
 			Op:         defra.OpCreate,
 			Collection: "Metric",
@@ -639,6 +640,7 @@ func (p *ProviderWorkerPool) recordMetrics(ctx context.Context, unit *WorkUnit, 
 		}
 		call := llmcall.FromChatResult(result.ChatResult, opts)
 		if call != nil {
+			// Intentionally untracked: audit trail record, not mutable state.
 			p.sink.Send(defra.WriteOp{
 				Op:         defra.OpCreate,
 				Collection: "LLMCall",
