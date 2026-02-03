@@ -33,7 +33,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.AgentLogDetailResponse"];
+                        "application/json": components["schemas"]["endpoints.AgentLogDetailResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -42,7 +42,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -51,7 +51,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -60,7 +60,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -69,7 +69,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -108,7 +108,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ListBooksResponse"];
+                        "application/json": components["schemas"]["endpoints.ListBooksResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -117,7 +117,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -126,7 +126,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -162,7 +162,7 @@ export interface paths {
             /** @description Ingest request */
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["internal_server_endpoints.IngestRequest"];
+                    "application/json": components["schemas"]["endpoints.IngestRequest"];
                 };
             };
             responses: {
@@ -172,7 +172,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.IngestResponse"];
+                        "application/json": components["schemas"]["endpoints.IngestResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -181,7 +181,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -190,7 +190,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -199,7 +199,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -254,7 +254,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.IngestResponse"];
+                        "application/json": components["schemas"]["endpoints.IngestResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -263,7 +263,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -272,7 +272,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -281,7 +281,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -328,7 +328,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.AgentLogsListResponse"];
+                        "application/json": components["schemas"]["endpoints.AgentLogsListResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -337,7 +337,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -346,7 +346,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -355,7 +355,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -397,7 +397,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.AudioStatusResponse"];
+                        "application/json": components["schemas"]["endpoints.AudioStatusResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -406,7 +406,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -415,7 +415,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -424,7 +424,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -477,7 +477,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "audio/mpeg": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "audio/mpeg": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -486,7 +486,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "audio/mpeg": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "audio/mpeg": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -530,7 +530,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.EpubExportResponse"];
+                        "application/json": components["schemas"]["endpoints.EpubExportResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -539,7 +539,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -548,7 +548,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -557,7 +557,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -606,7 +606,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/epub+zip": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/epub+zip": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -615,7 +615,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/epub+zip": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/epub+zip": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -659,7 +659,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.StorytellerExportResponse"];
+                        "application/json": components["schemas"]["endpoints.StorytellerExportResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -668,7 +668,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -677,7 +677,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -686,7 +686,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -735,7 +735,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/epub+zip": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/epub+zip": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -744,7 +744,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/epub+zip": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/epub+zip": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -783,7 +783,7 @@ export interface paths {
             /** @description TTS options */
             requestBody?: {
                 content: {
-                    "application/json": components["schemas"]["internal_server_endpoints.GenerateAudioRequest"];
+                    "application/json": components["schemas"]["endpoints.GenerateAudioRequest"];
                 };
             };
             responses: {
@@ -793,7 +793,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.GenerateAudioResponse"];
+                        "application/json": components["schemas"]["endpoints.GenerateAudioResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -802,7 +802,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -811,7 +811,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -820,7 +820,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -829,7 +829,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -869,7 +869,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ListPagesResponse"];
+                        "application/json": components["schemas"]["endpoints.ListPagesResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -878,7 +878,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -887,7 +887,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -896,7 +896,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -940,7 +940,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.GetPageResponse"];
+                        "application/json": components["schemas"]["endpoints.GetPageResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -949,7 +949,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -958,7 +958,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -967,7 +967,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -976,7 +976,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1029,7 +1029,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "image/png": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "image/png": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -1038,7 +1038,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "image/png": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "image/png": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -1047,7 +1047,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "image/png": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "image/png": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1091,7 +1091,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.RerunTocResponse"];
+                        "application/json": components["schemas"]["endpoints.RerunTocResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -1100,7 +1100,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -1109,7 +1109,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not enough pages have OCR complete */
@@ -1118,7 +1118,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1127,7 +1127,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -1136,7 +1136,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1176,7 +1176,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.Book"];
+                        "application/json": components["schemas"]["endpoints.Book"];
                     };
                 };
                 /** @description Bad Request */
@@ -1185,7 +1185,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -1194,7 +1194,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1203,7 +1203,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -1212,7 +1212,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1259,7 +1259,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ChaptersResponse"];
+                        "application/json": components["schemas"]["endpoints.ChaptersResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -1268,7 +1268,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -1277,7 +1277,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1286,7 +1286,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1331,7 +1331,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.MetricsCostResponse"];
+                        "application/json": components["schemas"]["endpoints.MetricsCostResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -1340,7 +1340,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1349,7 +1349,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -1358,7 +1358,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1400,7 +1400,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.MetricsDetailedResponse"];
+                        "application/json": components["schemas"]["endpoints.MetricsDetailedResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -1409,7 +1409,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1418,7 +1418,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -1427,7 +1427,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1469,7 +1469,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.BookPromptsListResponse"];
+                        "application/json": components["schemas"]["endpoints.BookPromptsListResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1478,7 +1478,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1522,7 +1522,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.BookPromptResponse"];
+                        "application/json": components["schemas"]["endpoints.BookPromptResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -1531,7 +1531,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1540,7 +1540,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1564,7 +1564,7 @@ export interface paths {
             /** @description Prompt override */
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["internal_server_endpoints.SetPromptRequest"];
+                    "application/json": components["schemas"]["endpoints.SetPromptRequest"];
                 };
             };
             responses: {
@@ -1574,7 +1574,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.BookPromptResponse"];
+                        "application/json": components["schemas"]["endpoints.BookPromptResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -1583,7 +1583,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1592,7 +1592,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1622,7 +1622,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.BookPromptResponse"];
+                        "application/json": components["schemas"]["endpoints.BookPromptResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -1631,7 +1631,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1640,7 +1640,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1676,7 +1676,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
+                        "application/json": components["schemas"]["endpoints.HealthResponse"];
                     };
                 };
             };
@@ -1722,7 +1722,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ListJobsResponse"];
+                        "application/json": components["schemas"]["endpoints.ListJobsResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1731,7 +1731,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -1740,7 +1740,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1760,7 +1760,7 @@ export interface paths {
             /** @description Job creation request */
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["internal_server_endpoints.CreateJobRequest"];
+                    "application/json": components["schemas"]["endpoints.CreateJobRequest"];
                 };
             };
             responses: {
@@ -1770,7 +1770,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.CreateJobResponse"];
+                        "application/json": components["schemas"]["endpoints.CreateJobResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -1779,7 +1779,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1788,7 +1788,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -1797,7 +1797,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1834,7 +1834,7 @@ export interface paths {
             /** @description Optional job type */
             requestBody?: {
                 content: {
-                    "application/json": components["schemas"]["internal_server_endpoints.StartJobRequest"];
+                    "application/json": components["schemas"]["endpoints.StartJobRequest"];
                 };
             };
             responses: {
@@ -1844,7 +1844,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.StartJobResponse"];
+                        "application/json": components["schemas"]["endpoints.StartJobResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -1853,7 +1853,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1862,7 +1862,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -1871,7 +1871,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1914,7 +1914,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.JobStatusResponse"];
+                        "application/json": components["schemas"]["endpoints.JobStatusResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -1923,7 +1923,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -1932,7 +1932,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -1941,7 +1941,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -1983,7 +1983,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.DetailedJobStatusResponse"];
+                        "application/json": components["schemas"]["endpoints.DetailedJobStatusResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -1992,7 +1992,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2001,7 +2001,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -2010,7 +2010,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2052,7 +2052,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.GetJobResponse"];
+                        "application/json": components["schemas"]["endpoints.GetJobResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -2061,7 +2061,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -2070,7 +2070,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2079,7 +2079,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -2088,7 +2088,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2124,7 +2124,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "*/*": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "*/*": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -2133,7 +2133,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "*/*": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "*/*": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2142,7 +2142,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "*/*": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "*/*": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -2151,7 +2151,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "*/*": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "*/*": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2175,7 +2175,7 @@ export interface paths {
             /** @description Update request */
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["internal_server_endpoints.UpdateJobRequest"];
+                    "application/json": components["schemas"]["endpoints.UpdateJobRequest"];
                 };
             };
             responses: {
@@ -2194,7 +2194,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2203,7 +2203,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -2212,7 +2212,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2268,7 +2268,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.LLMCallsResponse"];
+                        "application/json": components["schemas"]["endpoints.LLMCallsResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -2277,7 +2277,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2286,7 +2286,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2328,7 +2328,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.LLMCallCountsResponse"];
+                        "application/json": components["schemas"]["endpoints.LLMCallCountsResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2337,7 +2337,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2379,7 +2379,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.LLMCallResponse"];
+                        "application/json": components["schemas"]["endpoints.LLMCallResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -2388,7 +2388,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2397,7 +2397,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2449,7 +2449,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ListMetricsResponse"];
+                        "application/json": components["schemas"]["endpoints.ListMetricsResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2458,7 +2458,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -2467,7 +2467,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2519,7 +2519,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.MetricsCostResponse"];
+                        "application/json": components["schemas"]["endpoints.MetricsCostResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2528,7 +2528,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -2537,7 +2537,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2579,7 +2579,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.MetricsDetailedResponse"];
+                        "application/json": components["schemas"]["endpoints.MetricsDetailedResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2588,7 +2588,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -2597,7 +2597,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2647,7 +2647,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.MetricsSummaryResponse"];
+                        "application/json": components["schemas"]["endpoints.MetricsSummaryResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2656,7 +2656,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -2665,7 +2665,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2704,7 +2704,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.PromptsListResponse"];
+                        "application/json": components["schemas"]["endpoints.PromptsListResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2713,7 +2713,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2755,7 +2755,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.PromptResponse"];
+                        "application/json": components["schemas"]["endpoints.PromptResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -2764,7 +2764,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2773,7 +2773,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2812,7 +2812,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
+                        "application/json": components["schemas"]["endpoints.HealthResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -2821,7 +2821,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.HealthResponse"];
+                        "application/json": components["schemas"]["endpoints.HealthResponse"];
                     };
                 };
             };
@@ -2860,7 +2860,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.SettingsResponse"];
+                        "application/json": components["schemas"]["endpoints.SettingsResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2869,7 +2869,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2913,7 +2913,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.SettingResponse"];
+                        "application/json": components["schemas"]["endpoints.SettingResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -2922,7 +2922,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -2931,7 +2931,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2940,7 +2940,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -2980,7 +2980,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.SettingResponse"];
+                        "application/json": components["schemas"]["endpoints.SettingResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -2989,7 +2989,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -2998,7 +2998,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -3020,7 +3020,7 @@ export interface paths {
             /** @description New value */
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["internal_server_endpoints.UpdateSettingRequest"];
+                    "application/json": components["schemas"]["endpoints.UpdateSettingRequest"];
                 };
             };
             responses: {
@@ -3030,7 +3030,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.SettingResponse"];
+                        "application/json": components["schemas"]["endpoints.SettingResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -3039,7 +3039,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -3048,7 +3048,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -3086,7 +3086,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.StatusResponse"];
+                        "application/json": components["schemas"]["endpoints.StatusResponse"];
                     };
                 };
             };
@@ -3125,7 +3125,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.TTSConfigResponse"];
+                        "application/json": components["schemas"]["endpoints.TTSConfigResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -3134,7 +3134,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Service Unavailable */
@@ -3143,7 +3143,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -3182,7 +3182,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ListVoicesResponse"];
+                        "application/json": components["schemas"]["endpoints.ListVoicesResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -3191,7 +3191,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -3211,7 +3211,7 @@ export interface paths {
             /** @description Voice details */
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["internal_server_endpoints.CreateVoiceRequest"];
+                    "application/json": components["schemas"]["endpoints.CreateVoiceRequest"];
                 };
             };
             responses: {
@@ -3221,7 +3221,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.VoiceResponse"];
+                        "application/json": components["schemas"]["endpoints.VoiceResponse"];
                     };
                 };
                 /** @description Bad Request */
@@ -3230,7 +3230,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -3239,7 +3239,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -3278,7 +3278,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.SyncVoicesResponse"];
+                        "application/json": components["schemas"]["endpoints.SyncVoicesResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -3287,7 +3287,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -3341,7 +3341,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -3350,7 +3350,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -3401,7 +3401,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -3410,7 +3410,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
                 /** @description Internal Server Error */
@@ -3419,7 +3419,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["internal_server_endpoints.ErrorResponse"];
+                        "application/json": components["schemas"]["endpoints.ErrorResponse"];
                     };
                 };
             };
@@ -3435,6 +3435,544 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        "endpoints.AgentLogDetailResponse": {
+            agent_type?: string;
+            book_id?: string;
+            completed_at?: string;
+            error?: string;
+            id?: string;
+            iterations?: number;
+            job_id?: string;
+            /** @description Detailed data */
+            messages?: number[];
+            result?: number[];
+            started_at?: string;
+            success?: boolean;
+            tool_calls?: number[];
+        };
+        "endpoints.AgentLogSummary": {
+            agent_type?: string;
+            completed_at?: string;
+            error?: string;
+            id?: string;
+            iterations?: number;
+            started_at?: string;
+            success?: boolean;
+        };
+        "endpoints.AgentLogSummaryResponse": {
+            agent_type?: string;
+            book_id?: string;
+            completed_at?: string;
+            error?: string;
+            id?: string;
+            iterations?: number;
+            job_id?: string;
+            started_at?: string;
+            success?: boolean;
+        };
+        "endpoints.AgentLogsListResponse": {
+            logs?: components["schemas"]["endpoints.AgentLogSummaryResponse"][];
+        };
+        "endpoints.AudioStatusResponse": {
+            book_id?: string;
+            chapter_count?: number;
+            chapters?: components["schemas"]["endpoints.ChapterAudioStatus"][];
+            format?: string;
+            provider?: string;
+            segment_count?: number;
+            status?: string;
+            total_cost_usd?: number;
+            total_duration_ms?: number;
+            voice?: string;
+        };
+        "endpoints.Book": {
+            author?: string;
+            created_at?: string;
+            id?: string;
+            page_count?: number;
+            page_pattern_analysis_json?: string;
+            status?: string;
+            title?: string;
+        };
+        "endpoints.BookMetadata": {
+            author?: string;
+            authors?: string[];
+            description?: string;
+            isbn?: string;
+            language?: string;
+            lccn?: string;
+            publication_year?: number;
+            publisher?: string;
+            subjects?: string[];
+            title?: string;
+        };
+        "endpoints.BookPromptResponse": {
+            cid?: string;
+            is_override?: boolean;
+            key?: string;
+            text?: string;
+            variables?: string[];
+        };
+        "endpoints.BookPromptsListResponse": {
+            book_id?: string;
+            prompts?: components["schemas"]["endpoints.BookPromptResponse"][];
+        };
+        "endpoints.ChapterAudioStatus": {
+            audio_file?: string;
+            chapter_idx?: number;
+            cost_usd?: number;
+            download_url?: string;
+            duration_ms?: number;
+            segment_count?: number;
+            title?: string;
+        };
+        "endpoints.ChapterPage": {
+            ocr_markdown?: string;
+            page_num?: number;
+        };
+        "endpoints.ChapterParagraph": {
+            id?: string;
+            polished_text?: string;
+            raw_text?: string;
+            sort_order?: number;
+            start_page?: number;
+            word_count?: number;
+        };
+        "endpoints.ChapterWithText": {
+            audio_include?: boolean;
+            audio_include_reasoning?: string;
+            classification_reasoning?: string;
+            content_type?: string;
+            edits_applied_json?: string;
+            end_page?: number;
+            entry_id?: string;
+            entry_number?: string;
+            id?: string;
+            level?: number;
+            level_name?: string;
+            matter_type?: string;
+            page_count?: number;
+            pages?: components["schemas"]["endpoints.ChapterPage"][];
+            paragraphs?: components["schemas"]["endpoints.ChapterParagraph"][];
+            polish_complete?: boolean;
+            polish_failed?: boolean;
+            polished_text?: string;
+            sort_order?: number;
+            start_page?: number;
+            title?: string;
+            word_count?: number;
+        };
+        "endpoints.ChaptersResponse": {
+            book_id?: string;
+            book_title?: string;
+            chapters?: components["schemas"]["endpoints.ChapterWithText"][];
+            has_chapters?: boolean;
+            total_pages?: number;
+        };
+        "endpoints.CreateJobRequest": {
+            job_type?: string;
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        "endpoints.CreateJobResponse": {
+            id?: string;
+        };
+        "endpoints.CreateVoiceRequest": {
+            description?: string;
+            name?: string;
+            voice_id?: string;
+        };
+        "endpoints.DefraStatus": {
+            container?: string;
+            health?: string;
+            url?: string;
+        };
+        "endpoints.DetailedJobStatusResponse": {
+            /** @description Agent logs summary */
+            agent_logs?: components["schemas"]["endpoints.AgentLogSummary"][];
+            book_id?: string;
+            /** @description Metadata status */
+            metadata?: components["schemas"]["endpoints.MetadataStatus"];
+            /** @description Per-provider OCR progress */
+            ocr_progress?: {
+                [key: string]: components["schemas"]["endpoints.ProviderProgress"];
+            };
+            /** @description Stage progress with costs */
+            stages?: components["schemas"]["endpoints.StageProgress"];
+            /** @description Structure status (common-structure job) */
+            structure?: components["schemas"]["endpoints.StructureStatus"];
+            /** @description ToC status */
+            toc?: components["schemas"]["endpoints.ToCStatus"];
+            total_pages?: number;
+        };
+        "endpoints.DiscoveredPattern": {
+            heading_format?: string;
+            level?: number;
+            level_name?: string;
+            pattern_type?: string;
+            range_end?: string;
+            range_start?: string;
+            reasoning?: string;
+        };
+        "endpoints.EpubExportResponse": {
+            author?: string;
+            book_id?: string;
+            chapter_count?: number;
+            created_at?: string;
+            download_url?: string;
+            file_path?: string;
+            file_size?: number;
+            title?: string;
+        };
+        "endpoints.ErrorResponse": {
+            error?: string;
+        };
+        "endpoints.ExcludedRange": {
+            end_page?: number;
+            reason?: string;
+            start_page?: number;
+        };
+        "endpoints.GenerateAudioRequest": {
+            /** @description Optional: output format (mp3, wav) */
+            format?: string;
+            /** @description Optional: voice ID */
+            voice?: string;
+        };
+        "endpoints.GenerateAudioResponse": {
+            book_id?: string;
+            chapters?: number;
+            job_id?: string;
+            provider?: string;
+            status?: string;
+        };
+        "endpoints.GetJobResponse": {
+            _docID?: string;
+            book_id?: string;
+            completed_at?: string;
+            created_at?: string;
+            error?: string;
+            job_type?: string;
+            /** @description Live status fields (only populated for running jobs) */
+            live_status?: {
+                [key: string]: string;
+            };
+            metadata?: {
+                [key: string]: unknown;
+            };
+            pending_units?: number;
+            progress?: {
+                [key: string]: components["schemas"]["github_com_jackzampolin_shelf_internal_jobs.ProviderProgress"];
+            };
+            started_at?: string;
+            status?: components["schemas"]["github_com_jackzampolin_shelf_internal_jobs.Status"];
+            worker_status?: {
+                [key: string]: components["schemas"]["github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo"];
+            };
+        };
+        "endpoints.GetPageResponse": {
+            ocr_markdown?: string;
+            ocr_results?: components["schemas"]["endpoints.OcrResult"][];
+            page_num?: number;
+            status?: components["schemas"]["endpoints.PageStatus"];
+        };
+        "endpoints.HealthResponse": {
+            defra?: string;
+            status?: string;
+        };
+        "endpoints.IngestRequest": {
+            author?: string;
+            pdf_paths?: string[];
+            title?: string;
+        };
+        "endpoints.IngestResponse": {
+            author?: string;
+            book_id?: string;
+            job_id?: string;
+            process_job_id?: string;
+            status?: string;
+            title?: string;
+        };
+        "endpoints.JobStatusResponse": {
+            book_id?: string;
+            is_complete?: boolean;
+            job_type?: string;
+            metadata_complete?: boolean;
+            ocr_complete?: number;
+            toc_extracted?: boolean;
+            toc_found?: boolean;
+            total_pages?: number;
+        };
+        "endpoints.LLMCallCountsResponse": {
+            counts?: {
+                [key: string]: number;
+            };
+        };
+        "endpoints.LLMCallResponse": {
+            call?: components["schemas"]["github_com_jackzampolin_shelf_internal_llmcall.Call"];
+            error?: string;
+        };
+        "endpoints.LLMCallsResponse": {
+            calls?: components["schemas"]["github_com_jackzampolin_shelf_internal_llmcall.Call"][];
+            total?: number;
+        };
+        "endpoints.ListBooksResponse": {
+            books?: components["schemas"]["endpoints.Book"][];
+        };
+        "endpoints.ListJobsResponse": {
+            jobs?: components["schemas"]["github_com_jackzampolin_shelf_internal_jobs.Record"][];
+        };
+        "endpoints.ListMetricsResponse": {
+            count?: number;
+            metrics?: components["schemas"]["github_com_jackzampolin_shelf_internal_metrics.Metric"][];
+        };
+        "endpoints.ListPagesResponse": {
+            pages?: components["schemas"]["endpoints.PageSummary"][];
+            total_pages?: number;
+        };
+        "endpoints.ListVoicesResponse": {
+            voices?: components["schemas"]["endpoints.VoiceResponse"][];
+        };
+        "endpoints.MetadataStatus": {
+            complete?: boolean;
+            cost_usd?: number;
+            data?: components["schemas"]["endpoints.BookMetadata"];
+            failed?: boolean;
+            started?: boolean;
+        };
+        "endpoints.MetricsCostResponse": {
+            breakdown?: {
+                [key: string]: number;
+            };
+            total_cost_usd?: number;
+        };
+        "endpoints.MetricsDetailedResponse": {
+            book_id?: string;
+            stages?: {
+                [key: string]: components["schemas"]["github_com_jackzampolin_shelf_internal_metrics.DetailedStats"];
+            };
+        };
+        "endpoints.MetricsSummaryResponse": {
+            avg_cost_usd?: number;
+            avg_time_seconds?: number;
+            avg_tokens?: number;
+            count?: number;
+            error_count?: number;
+            success_count?: number;
+            total_cost_usd?: number;
+            total_time_seconds?: number;
+            total_tokens?: number;
+        };
+        "endpoints.OcrResult": {
+            confidence?: number;
+            provider?: string;
+            text?: string;
+        };
+        "endpoints.PageStatus": {
+            extract_complete?: boolean;
+            ocr_complete?: boolean;
+        };
+        "endpoints.PageSummary": {
+            ocr_complete?: boolean;
+            page_num?: number;
+        };
+        "endpoints.PatternAnalysisResult": {
+            excluded_ranges?: components["schemas"]["endpoints.ExcludedRange"][];
+            patterns?: components["schemas"]["endpoints.DiscoveredPattern"][];
+            reasoning?: string;
+        };
+        "endpoints.PromptResponse": {
+            description?: string;
+            doc_id?: string;
+            hash?: string;
+            key?: string;
+            text?: string;
+            variables?: string[];
+        };
+        "endpoints.PromptsListResponse": {
+            prompts?: components["schemas"]["endpoints.PromptResponse"][];
+        };
+        "endpoints.ProviderProgress": {
+            complete?: number;
+            cost_usd?: number;
+            total?: number;
+        };
+        "endpoints.ProvidersStatus": {
+            llm?: string[];
+            ocr?: string[];
+        };
+        "endpoints.RerunTocResponse": {
+            job_id?: string;
+            message?: string;
+        };
+        "endpoints.SetPromptRequest": {
+            note?: string;
+            text?: string;
+        };
+        "endpoints.SettingResponse": {
+            entry?: components["schemas"]["github_com_jackzampolin_shelf_internal_config.Entry"];
+            error?: string;
+        };
+        "endpoints.SettingsResponse": {
+            settings?: {
+                [key: string]: components["schemas"]["github_com_jackzampolin_shelf_internal_config.Entry"];
+            };
+        };
+        "endpoints.StageProgress": {
+            ocr?: {
+                complete?: number;
+                cost_by_provider?: {
+                    [key: string]: number;
+                };
+                total?: number;
+                total_cost_usd?: number;
+            };
+            pattern_analysis?: {
+                complete?: boolean;
+                cost_usd?: number;
+            };
+        };
+        "endpoints.StartJobRequest": {
+            /** @description Optional: force restart even if already complete */
+            force?: boolean;
+            /** @description Optional: defaults to "process-book" */
+            job_type?: string;
+            /** @description Optional: reset this operation and downstream deps before starting */
+            reset_from?: string;
+            /** @description Optional: pipeline variant (standard, photo-book, text-only, ocr-only) */
+            variant?: string;
+        };
+        "endpoints.StartJobResponse": {
+            book_id?: string;
+            job_id?: string;
+            job_type?: string;
+            status?: string;
+        };
+        "endpoints.StatusResponse": {
+            defra?: components["schemas"]["endpoints.DefraStatus"];
+            providers?: components["schemas"]["endpoints.ProvidersStatus"];
+            server?: string;
+        };
+        "endpoints.StorytellerExportResponse": {
+            audio_chapters?: number;
+            author?: string;
+            book_id?: string;
+            chapter_count?: number;
+            created_at?: string;
+            download_url?: string;
+            file_path?: string;
+            file_size?: number;
+            title?: string;
+            total_duration_ms?: number;
+        };
+        "endpoints.StructureStatus": {
+            chapter_count?: number;
+            chapters_extracted?: number;
+            chapters_polished?: number;
+            chapters_total?: number;
+            complete?: boolean;
+            cost_usd?: number;
+            failed?: boolean;
+            /** @description Phase tracking (build -> extract -> classify -> polish -> finalize) */
+            phase?: string;
+            polish_failed?: number;
+            retries?: number;
+            started?: boolean;
+        };
+        "endpoints.SyncVoicesResponse": {
+            message?: string;
+            synced?: number;
+        };
+        "endpoints.TTSConfigResponse": {
+            default_format?: string;
+            default_voice?: string;
+            formats?: string[];
+            model?: string;
+            provider?: string;
+            voice_cloning_url?: string;
+            voices?: components["schemas"]["endpoints.TTSVoice"][];
+        };
+        "endpoints.TTSVoice": {
+            description?: string;
+            name?: string;
+            voice_id?: string;
+        };
+        "endpoints.ToCEntry": {
+            actual_page_num?: number;
+            entry_number?: string;
+            is_linked?: boolean;
+            level?: number;
+            level_name?: string;
+            printed_page_number?: string;
+            sort_order?: number;
+            /** @description "extracted" or "discovered" */
+            source?: string;
+            title?: string;
+        };
+        "endpoints.ToCStatus": {
+            cost_usd?: number;
+            /** @description All entries discovered */
+            discover_complete?: boolean;
+            end_page?: number;
+            entries?: components["schemas"]["endpoints.ToCEntry"][];
+            /** @description Actually discovered (source="discovered") */
+            entries_discovered?: number;
+            entries_linked?: number;
+            /** @description From pattern analysis (how many should be discovered) */
+            entries_to_find?: number;
+            /** @description Entries (when extracted) */
+            entry_count?: number;
+            /** @description Number of excluded page ranges */
+            excluded_ranges?: number;
+            extract_complete?: boolean;
+            extract_failed?: boolean;
+            /** @description Extract stage */
+            extract_started?: boolean;
+            finalize_complete?: boolean;
+            finalize_failed?: boolean;
+            finalize_retries?: number;
+            /** @description Finalize stage (overall) */
+            finalize_started?: boolean;
+            finder_complete?: boolean;
+            finder_failed?: boolean;
+            /** @description Finder stage */
+            finder_started?: boolean;
+            found?: boolean;
+            link_complete?: boolean;
+            link_failed?: boolean;
+            link_retries?: number;
+            /** @description Link stage */
+            link_started?: boolean;
+            /** @description Full pattern analysis result */
+            pattern_analysis?: components["schemas"]["endpoints.PatternAnalysisResult"];
+            /** @description Finalize sub-phases: Pattern Analysis → Chapter Discovery → Gap Validation */
+            pattern_complete?: boolean;
+            /** @description Number of patterns discovered */
+            patterns_found?: number;
+            start_page?: number;
+            /** @description Gap validation done (same as FinalizeComplete for now) */
+            validate_complete?: boolean;
+        };
+        "endpoints.UpdateJobRequest": {
+            error?: string;
+            metadata?: {
+                [key: string]: unknown;
+            };
+            status?: string;
+        };
+        "endpoints.UpdateSettingRequest": {
+            description?: string;
+            value?: unknown;
+        };
+        "endpoints.VoiceResponse": {
+            created_at?: string;
+            description?: string;
+            is_default?: boolean;
+            name?: string;
+            provider?: string;
+            synced_at?: string;
+            voice_id?: string;
+        };
         "github_com_jackzampolin_shelf_internal_config.Entry": {
             /** @description DefraDB document ID */
             _docID?: string;
@@ -3569,541 +4107,6 @@ export interface components {
             success?: boolean;
             total_seconds?: number;
             total_tokens?: number;
-        };
-        "internal_server_endpoints.AgentLogDetailResponse": {
-            agent_type?: string;
-            book_id?: string;
-            completed_at?: string;
-            error?: string;
-            id?: string;
-            iterations?: number;
-            job_id?: string;
-            /** @description Detailed data */
-            messages?: number[];
-            result?: number[];
-            started_at?: string;
-            success?: boolean;
-            tool_calls?: number[];
-        };
-        "internal_server_endpoints.AgentLogSummary": {
-            agent_type?: string;
-            completed_at?: string;
-            error?: string;
-            id?: string;
-            iterations?: number;
-            started_at?: string;
-            success?: boolean;
-        };
-        "internal_server_endpoints.AgentLogSummaryResponse": {
-            agent_type?: string;
-            book_id?: string;
-            completed_at?: string;
-            error?: string;
-            id?: string;
-            iterations?: number;
-            job_id?: string;
-            started_at?: string;
-            success?: boolean;
-        };
-        "internal_server_endpoints.AgentLogsListResponse": {
-            logs?: components["schemas"]["internal_server_endpoints.AgentLogSummaryResponse"][];
-        };
-        "internal_server_endpoints.AudioStatusResponse": {
-            book_id?: string;
-            chapter_count?: number;
-            chapters?: components["schemas"]["internal_server_endpoints.ChapterAudioStatus"][];
-            format?: string;
-            provider?: string;
-            segment_count?: number;
-            status?: string;
-            total_cost_usd?: number;
-            total_duration_ms?: number;
-            voice?: string;
-        };
-        "internal_server_endpoints.Book": {
-            author?: string;
-            created_at?: string;
-            id?: string;
-            page_count?: number;
-            page_pattern_analysis_json?: string;
-            status?: string;
-            title?: string;
-        };
-        "internal_server_endpoints.BookMetadata": {
-            author?: string;
-            authors?: string[];
-            description?: string;
-            isbn?: string;
-            language?: string;
-            lccn?: string;
-            publication_year?: number;
-            publisher?: string;
-            subjects?: string[];
-            title?: string;
-        };
-        "internal_server_endpoints.BookPromptResponse": {
-            cid?: string;
-            is_override?: boolean;
-            key?: string;
-            text?: string;
-            variables?: string[];
-        };
-        "internal_server_endpoints.BookPromptsListResponse": {
-            book_id?: string;
-            prompts?: components["schemas"]["internal_server_endpoints.BookPromptResponse"][];
-        };
-        "internal_server_endpoints.ChapterAudioStatus": {
-            audio_file?: string;
-            chapter_idx?: number;
-            cost_usd?: number;
-            download_url?: string;
-            duration_ms?: number;
-            segment_count?: number;
-            title?: string;
-        };
-        "internal_server_endpoints.ChapterPage": {
-            ocr_markdown?: string;
-            page_num?: number;
-        };
-        "internal_server_endpoints.ChapterParagraph": {
-            id?: string;
-            polished_text?: string;
-            raw_text?: string;
-            sort_order?: number;
-            start_page?: number;
-            word_count?: number;
-        };
-        "internal_server_endpoints.ChapterWithText": {
-            classification_reasoning?: string;
-            edits_applied_json?: string;
-            end_page?: number;
-            entry_id?: string;
-            entry_number?: string;
-            id?: string;
-            level?: number;
-            level_name?: string;
-            matter_type?: string;
-            page_count?: number;
-            pages?: components["schemas"]["internal_server_endpoints.ChapterPage"][];
-            paragraphs?: components["schemas"]["internal_server_endpoints.ChapterParagraph"][];
-            polish_complete?: boolean;
-            polish_failed?: boolean;
-            polished_text?: string;
-            sort_order?: number;
-            start_page?: number;
-            title?: string;
-            word_count?: number;
-        };
-        "internal_server_endpoints.ChaptersResponse": {
-            book_id?: string;
-            book_title?: string;
-            chapters?: components["schemas"]["internal_server_endpoints.ChapterWithText"][];
-            has_chapters?: boolean;
-            total_pages?: number;
-        };
-        "internal_server_endpoints.CreateJobRequest": {
-            job_type?: string;
-            metadata?: {
-                [key: string]: unknown;
-            };
-        };
-        "internal_server_endpoints.CreateJobResponse": {
-            id?: string;
-        };
-        "internal_server_endpoints.CreateVoiceRequest": {
-            description?: string;
-            name?: string;
-            voice_id?: string;
-        };
-        "internal_server_endpoints.DefraStatus": {
-            container?: string;
-            health?: string;
-            url?: string;
-        };
-        "internal_server_endpoints.DetailedJobStatusResponse": {
-            /** @description Agent logs summary */
-            agent_logs?: components["schemas"]["internal_server_endpoints.AgentLogSummary"][];
-            book_id?: string;
-            /** @description Metadata status */
-            metadata?: components["schemas"]["internal_server_endpoints.MetadataStatus"];
-            /** @description Per-provider OCR progress */
-            ocr_progress?: {
-                [key: string]: components["schemas"]["internal_server_endpoints.ProviderProgress"];
-            };
-            /** @description Stage progress with costs */
-            stages?: components["schemas"]["internal_server_endpoints.StageProgress"];
-            /** @description Structure status (common-structure job) */
-            structure?: components["schemas"]["internal_server_endpoints.StructureStatus"];
-            /** @description ToC status */
-            toc?: components["schemas"]["internal_server_endpoints.ToCStatus"];
-            total_pages?: number;
-        };
-        "internal_server_endpoints.DiscoveredPattern": {
-            heading_format?: string;
-            level?: number;
-            level_name?: string;
-            pattern_type?: string;
-            range_end?: string;
-            range_start?: string;
-            reasoning?: string;
-        };
-        "internal_server_endpoints.EpubExportResponse": {
-            author?: string;
-            book_id?: string;
-            chapter_count?: number;
-            created_at?: string;
-            download_url?: string;
-            file_path?: string;
-            file_size?: number;
-            title?: string;
-        };
-        "internal_server_endpoints.ErrorResponse": {
-            error?: string;
-        };
-        "internal_server_endpoints.ExcludedRange": {
-            end_page?: number;
-            reason?: string;
-            start_page?: number;
-        };
-        "internal_server_endpoints.GenerateAudioRequest": {
-            /** @description Optional: output format (mp3, wav) */
-            format?: string;
-            /** @description Optional: voice ID */
-            voice?: string;
-        };
-        "internal_server_endpoints.GenerateAudioResponse": {
-            book_id?: string;
-            chapters?: number;
-            job_id?: string;
-            provider?: string;
-            status?: string;
-        };
-        "internal_server_endpoints.GetJobResponse": {
-            _docID?: string;
-            book_id?: string;
-            completed_at?: string;
-            created_at?: string;
-            error?: string;
-            job_type?: string;
-            /** @description Live status fields (only populated for running jobs) */
-            live_status?: {
-                [key: string]: string;
-            };
-            metadata?: {
-                [key: string]: unknown;
-            };
-            pending_units?: number;
-            progress?: {
-                [key: string]: components["schemas"]["github_com_jackzampolin_shelf_internal_jobs.ProviderProgress"];
-            };
-            started_at?: string;
-            status?: components["schemas"]["github_com_jackzampolin_shelf_internal_jobs.Status"];
-            worker_status?: {
-                [key: string]: components["schemas"]["github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo"];
-            };
-        };
-        "internal_server_endpoints.GetPageResponse": {
-            ocr_markdown?: string;
-            ocr_results?: components["schemas"]["internal_server_endpoints.OcrResult"][];
-            page_num?: number;
-            status?: components["schemas"]["internal_server_endpoints.PageStatus"];
-        };
-        "internal_server_endpoints.HealthResponse": {
-            defra?: string;
-            status?: string;
-        };
-        "internal_server_endpoints.IngestRequest": {
-            author?: string;
-            pdf_paths?: string[];
-            title?: string;
-        };
-        "internal_server_endpoints.IngestResponse": {
-            author?: string;
-            book_id?: string;
-            job_id?: string;
-            process_job_id?: string;
-            status?: string;
-            title?: string;
-        };
-        "internal_server_endpoints.JobStatusResponse": {
-            book_id?: string;
-            is_complete?: boolean;
-            job_type?: string;
-            metadata_complete?: boolean;
-            ocr_complete?: number;
-            toc_extracted?: boolean;
-            toc_found?: boolean;
-            total_pages?: number;
-        };
-        "internal_server_endpoints.LLMCallCountsResponse": {
-            counts?: {
-                [key: string]: number;
-            };
-        };
-        "internal_server_endpoints.LLMCallResponse": {
-            call?: components["schemas"]["github_com_jackzampolin_shelf_internal_llmcall.Call"];
-            error?: string;
-        };
-        "internal_server_endpoints.LLMCallsResponse": {
-            calls?: components["schemas"]["github_com_jackzampolin_shelf_internal_llmcall.Call"][];
-            total?: number;
-        };
-        "internal_server_endpoints.ListBooksResponse": {
-            books?: components["schemas"]["internal_server_endpoints.Book"][];
-        };
-        "internal_server_endpoints.ListJobsResponse": {
-            jobs?: components["schemas"]["github_com_jackzampolin_shelf_internal_jobs.Record"][];
-        };
-        "internal_server_endpoints.ListMetricsResponse": {
-            count?: number;
-            metrics?: components["schemas"]["github_com_jackzampolin_shelf_internal_metrics.Metric"][];
-        };
-        "internal_server_endpoints.ListPagesResponse": {
-            pages?: components["schemas"]["internal_server_endpoints.PageSummary"][];
-            total_pages?: number;
-        };
-        "internal_server_endpoints.ListVoicesResponse": {
-            voices?: components["schemas"]["internal_server_endpoints.VoiceResponse"][];
-        };
-        "internal_server_endpoints.MetadataStatus": {
-            complete?: boolean;
-            cost_usd?: number;
-            data?: components["schemas"]["internal_server_endpoints.BookMetadata"];
-            failed?: boolean;
-            started?: boolean;
-        };
-        "internal_server_endpoints.MetricsCostResponse": {
-            breakdown?: {
-                [key: string]: number;
-            };
-            total_cost_usd?: number;
-        };
-        "internal_server_endpoints.MetricsDetailedResponse": {
-            book_id?: string;
-            stages?: {
-                [key: string]: components["schemas"]["github_com_jackzampolin_shelf_internal_metrics.DetailedStats"];
-            };
-        };
-        "internal_server_endpoints.MetricsSummaryResponse": {
-            avg_cost_usd?: number;
-            avg_time_seconds?: number;
-            avg_tokens?: number;
-            count?: number;
-            error_count?: number;
-            success_count?: number;
-            total_cost_usd?: number;
-            total_time_seconds?: number;
-            total_tokens?: number;
-        };
-        "internal_server_endpoints.OcrResult": {
-            confidence?: number;
-            provider?: string;
-            text?: string;
-        };
-        "internal_server_endpoints.PageStatus": {
-            extract_complete?: boolean;
-            ocr_complete?: boolean;
-        };
-        "internal_server_endpoints.PageSummary": {
-            ocr_complete?: boolean;
-            page_num?: number;
-        };
-        "internal_server_endpoints.PatternAnalysisResult": {
-            excluded_ranges?: components["schemas"]["internal_server_endpoints.ExcludedRange"][];
-            patterns?: components["schemas"]["internal_server_endpoints.DiscoveredPattern"][];
-            reasoning?: string;
-        };
-        "internal_server_endpoints.PromptResponse": {
-            description?: string;
-            doc_id?: string;
-            hash?: string;
-            key?: string;
-            text?: string;
-            variables?: string[];
-        };
-        "internal_server_endpoints.PromptsListResponse": {
-            prompts?: components["schemas"]["internal_server_endpoints.PromptResponse"][];
-        };
-        "internal_server_endpoints.ProviderProgress": {
-            complete?: number;
-            cost_usd?: number;
-            total?: number;
-        };
-        "internal_server_endpoints.ProvidersStatus": {
-            llm?: string[];
-            ocr?: string[];
-        };
-        "internal_server_endpoints.RerunTocResponse": {
-            job_id?: string;
-            message?: string;
-        };
-        "internal_server_endpoints.SetPromptRequest": {
-            note?: string;
-            text?: string;
-        };
-        "internal_server_endpoints.SettingResponse": {
-            entry?: components["schemas"]["github_com_jackzampolin_shelf_internal_config.Entry"];
-            error?: string;
-        };
-        "internal_server_endpoints.SettingsResponse": {
-            settings?: {
-                [key: string]: components["schemas"]["github_com_jackzampolin_shelf_internal_config.Entry"];
-            };
-        };
-        "internal_server_endpoints.StageProgress": {
-            ocr?: {
-                complete?: number;
-                cost_by_provider?: {
-                    [key: string]: number;
-                };
-                total?: number;
-                total_cost_usd?: number;
-            };
-            pattern_analysis?: {
-                complete?: boolean;
-                cost_usd?: number;
-            };
-        };
-        "internal_server_endpoints.StartJobRequest": {
-            /** @description Optional: force restart even if already complete */
-            force?: boolean;
-            /** @description Optional: defaults to "process-book" */
-            job_type?: string;
-            /** @description Optional: reset this operation and downstream deps before starting */
-            reset_from?: string;
-            /** @description Optional: pipeline variant (standard, photo-book, text-only, ocr-only) */
-            variant?: string;
-        };
-        "internal_server_endpoints.StartJobResponse": {
-            book_id?: string;
-            job_id?: string;
-            job_type?: string;
-            status?: string;
-        };
-        "internal_server_endpoints.StatusResponse": {
-            defra?: components["schemas"]["internal_server_endpoints.DefraStatus"];
-            providers?: components["schemas"]["internal_server_endpoints.ProvidersStatus"];
-            server?: string;
-        };
-        "internal_server_endpoints.StorytellerExportResponse": {
-            audio_chapters?: number;
-            author?: string;
-            book_id?: string;
-            chapter_count?: number;
-            created_at?: string;
-            download_url?: string;
-            file_path?: string;
-            file_size?: number;
-            title?: string;
-            total_duration_ms?: number;
-        };
-        "internal_server_endpoints.StructureStatus": {
-            chapter_count?: number;
-            chapters_extracted?: number;
-            chapters_polished?: number;
-            chapters_total?: number;
-            complete?: boolean;
-            cost_usd?: number;
-            failed?: boolean;
-            /** @description Phase tracking (build -> extract -> classify -> polish -> finalize) */
-            phase?: string;
-            polish_failed?: number;
-            retries?: number;
-            started?: boolean;
-        };
-        "internal_server_endpoints.SyncVoicesResponse": {
-            message?: string;
-            synced?: number;
-        };
-        "internal_server_endpoints.TTSConfigResponse": {
-            default_format?: string;
-            default_voice?: string;
-            formats?: string[];
-            model?: string;
-            provider?: string;
-            voice_cloning_url?: string;
-            voices?: components["schemas"]["internal_server_endpoints.TTSVoice"][];
-        };
-        "internal_server_endpoints.TTSVoice": {
-            description?: string;
-            name?: string;
-            voice_id?: string;
-        };
-        "internal_server_endpoints.ToCEntry": {
-            actual_page_num?: number;
-            entry_number?: string;
-            is_linked?: boolean;
-            level?: number;
-            level_name?: string;
-            printed_page_number?: string;
-            sort_order?: number;
-            /** @description "extracted" or "discovered" */
-            source?: string;
-            title?: string;
-        };
-        "internal_server_endpoints.ToCStatus": {
-            cost_usd?: number;
-            /** @description All entries discovered */
-            discover_complete?: boolean;
-            end_page?: number;
-            entries?: components["schemas"]["internal_server_endpoints.ToCEntry"][];
-            /** @description Actually discovered (source="discovered") */
-            entries_discovered?: number;
-            entries_linked?: number;
-            /** @description From pattern analysis (how many should be discovered) */
-            entries_to_find?: number;
-            /** @description Entries (when extracted) */
-            entry_count?: number;
-            /** @description Number of excluded page ranges */
-            excluded_ranges?: number;
-            extract_complete?: boolean;
-            extract_failed?: boolean;
-            /** @description Extract stage */
-            extract_started?: boolean;
-            finalize_complete?: boolean;
-            finalize_failed?: boolean;
-            finalize_retries?: number;
-            /** @description Finalize stage (overall) */
-            finalize_started?: boolean;
-            finder_complete?: boolean;
-            finder_failed?: boolean;
-            /** @description Finder stage */
-            finder_started?: boolean;
-            found?: boolean;
-            link_complete?: boolean;
-            link_failed?: boolean;
-            link_retries?: number;
-            /** @description Link stage */
-            link_started?: boolean;
-            /** @description Full pattern analysis result */
-            pattern_analysis?: components["schemas"]["internal_server_endpoints.PatternAnalysisResult"];
-            /** @description Finalize sub-phases: Pattern Analysis → Chapter Discovery → Gap Validation */
-            pattern_complete?: boolean;
-            /** @description Number of patterns discovered */
-            patterns_found?: number;
-            start_page?: number;
-            /** @description Gap validation done (same as FinalizeComplete for now) */
-            validate_complete?: boolean;
-        };
-        "internal_server_endpoints.UpdateJobRequest": {
-            error?: string;
-            metadata?: {
-                [key: string]: unknown;
-            };
-            status?: string;
-        };
-        "internal_server_endpoints.UpdateSettingRequest": {
-            description?: string;
-            value?: unknown;
-        };
-        "internal_server_endpoints.VoiceResponse": {
-            created_at?: string;
-            description?: string;
-            is_default?: boolean;
-            name?: string;
-            provider?: string;
-            synced_at?: string;
-            voice_id?: string;
         };
         /**
          * Format: int64

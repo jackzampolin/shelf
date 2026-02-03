@@ -1,5 +1,1022 @@
 basePath: /
 definitions:
+  endpoints.AgentLogDetailResponse:
+    properties:
+      agent_type:
+        type: string
+      book_id:
+        type: string
+      completed_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      iterations:
+        type: integer
+      job_id:
+        type: string
+      messages:
+        description: Detailed data
+        items:
+          type: integer
+        type: array
+      result:
+        items:
+          type: integer
+        type: array
+      started_at:
+        type: string
+      success:
+        type: boolean
+      tool_calls:
+        items:
+          type: integer
+        type: array
+    type: object
+  endpoints.AgentLogSummary:
+    properties:
+      agent_type:
+        type: string
+      completed_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      iterations:
+        type: integer
+      started_at:
+        type: string
+      success:
+        type: boolean
+    type: object
+  endpoints.AgentLogSummaryResponse:
+    properties:
+      agent_type:
+        type: string
+      book_id:
+        type: string
+      completed_at:
+        type: string
+      error:
+        type: string
+      id:
+        type: string
+      iterations:
+        type: integer
+      job_id:
+        type: string
+      started_at:
+        type: string
+      success:
+        type: boolean
+    type: object
+  endpoints.AgentLogsListResponse:
+    properties:
+      logs:
+        items:
+          $ref: '#/definitions/endpoints.AgentLogSummaryResponse'
+        type: array
+    type: object
+  endpoints.AudioStatusResponse:
+    properties:
+      book_id:
+        type: string
+      chapter_count:
+        type: integer
+      chapters:
+        items:
+          $ref: '#/definitions/endpoints.ChapterAudioStatus'
+        type: array
+      format:
+        type: string
+      provider:
+        type: string
+      segment_count:
+        type: integer
+      status:
+        type: string
+      total_cost_usd:
+        type: number
+      total_duration_ms:
+        type: integer
+      voice:
+        type: string
+    type: object
+  endpoints.Book:
+    properties:
+      author:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      page_count:
+        type: integer
+      page_pattern_analysis_json:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+    type: object
+  endpoints.BookMetadata:
+    properties:
+      author:
+        type: string
+      authors:
+        items:
+          type: string
+        type: array
+      description:
+        type: string
+      isbn:
+        type: string
+      language:
+        type: string
+      lccn:
+        type: string
+      publication_year:
+        type: integer
+      publisher:
+        type: string
+      subjects:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+    type: object
+  endpoints.BookPromptResponse:
+    properties:
+      cid:
+        type: string
+      is_override:
+        type: boolean
+      key:
+        type: string
+      text:
+        type: string
+      variables:
+        items:
+          type: string
+        type: array
+    type: object
+  endpoints.BookPromptsListResponse:
+    properties:
+      book_id:
+        type: string
+      prompts:
+        items:
+          $ref: '#/definitions/endpoints.BookPromptResponse'
+        type: array
+    type: object
+  endpoints.ChapterAudioStatus:
+    properties:
+      audio_file:
+        type: string
+      chapter_idx:
+        type: integer
+      cost_usd:
+        type: number
+      download_url:
+        type: string
+      duration_ms:
+        type: integer
+      segment_count:
+        type: integer
+      title:
+        type: string
+    type: object
+  endpoints.ChapterPage:
+    properties:
+      ocr_markdown:
+        type: string
+      page_num:
+        type: integer
+    type: object
+  endpoints.ChapterParagraph:
+    properties:
+      id:
+        type: string
+      polished_text:
+        type: string
+      raw_text:
+        type: string
+      sort_order:
+        type: integer
+      start_page:
+        type: integer
+      word_count:
+        type: integer
+    type: object
+  endpoints.ChapterWithText:
+    properties:
+      audio_include:
+        type: boolean
+      audio_include_reasoning:
+        type: string
+      classification_reasoning:
+        type: string
+      content_type:
+        type: string
+      edits_applied_json:
+        type: string
+      end_page:
+        type: integer
+      entry_id:
+        type: string
+      entry_number:
+        type: string
+      id:
+        type: string
+      level:
+        type: integer
+      level_name:
+        type: string
+      matter_type:
+        type: string
+      page_count:
+        type: integer
+      pages:
+        items:
+          $ref: '#/definitions/endpoints.ChapterPage'
+        type: array
+      paragraphs:
+        items:
+          $ref: '#/definitions/endpoints.ChapterParagraph'
+        type: array
+      polish_complete:
+        type: boolean
+      polish_failed:
+        type: boolean
+      polished_text:
+        type: string
+      sort_order:
+        type: integer
+      start_page:
+        type: integer
+      title:
+        type: string
+      word_count:
+        type: integer
+    type: object
+  endpoints.ChaptersResponse:
+    properties:
+      book_id:
+        type: string
+      book_title:
+        type: string
+      chapters:
+        items:
+          $ref: '#/definitions/endpoints.ChapterWithText'
+        type: array
+      has_chapters:
+        type: boolean
+      total_pages:
+        type: integer
+    type: object
+  endpoints.CreateJobRequest:
+    properties:
+      job_type:
+        type: string
+      metadata:
+        additionalProperties: {}
+        type: object
+    type: object
+  endpoints.CreateJobResponse:
+    properties:
+      id:
+        type: string
+    type: object
+  endpoints.CreateVoiceRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      voice_id:
+        type: string
+    type: object
+  endpoints.DefraStatus:
+    properties:
+      container:
+        type: string
+      health:
+        type: string
+      url:
+        type: string
+    type: object
+  endpoints.DetailedJobStatusResponse:
+    properties:
+      agent_logs:
+        description: Agent logs summary
+        items:
+          $ref: '#/definitions/endpoints.AgentLogSummary'
+        type: array
+      book_id:
+        type: string
+      metadata:
+        allOf:
+        - $ref: '#/definitions/endpoints.MetadataStatus'
+        description: Metadata status
+      ocr_progress:
+        additionalProperties:
+          $ref: '#/definitions/endpoints.ProviderProgress'
+        description: Per-provider OCR progress
+        type: object
+      stages:
+        allOf:
+        - $ref: '#/definitions/endpoints.StageProgress'
+        description: Stage progress with costs
+      structure:
+        allOf:
+        - $ref: '#/definitions/endpoints.StructureStatus'
+        description: Structure status (common-structure job)
+      toc:
+        allOf:
+        - $ref: '#/definitions/endpoints.ToCStatus'
+        description: ToC status
+      total_pages:
+        type: integer
+    type: object
+  endpoints.DiscoveredPattern:
+    properties:
+      heading_format:
+        type: string
+      level:
+        type: integer
+      level_name:
+        type: string
+      pattern_type:
+        type: string
+      range_end:
+        type: string
+      range_start:
+        type: string
+      reasoning:
+        type: string
+    type: object
+  endpoints.EpubExportResponse:
+    properties:
+      author:
+        type: string
+      book_id:
+        type: string
+      chapter_count:
+        type: integer
+      created_at:
+        type: string
+      download_url:
+        type: string
+      file_path:
+        type: string
+      file_size:
+        type: integer
+      title:
+        type: string
+    type: object
+  endpoints.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  endpoints.ExcludedRange:
+    properties:
+      end_page:
+        type: integer
+      reason:
+        type: string
+      start_page:
+        type: integer
+    type: object
+  endpoints.GenerateAudioRequest:
+    properties:
+      format:
+        description: 'Optional: output format (mp3, wav)'
+        type: string
+      voice:
+        description: 'Optional: voice ID'
+        type: string
+    type: object
+  endpoints.GenerateAudioResponse:
+    properties:
+      book_id:
+        type: string
+      chapters:
+        type: integer
+      job_id:
+        type: string
+      provider:
+        type: string
+      status:
+        type: string
+    type: object
+  endpoints.GetJobResponse:
+    properties:
+      _docID:
+        type: string
+      book_id:
+        type: string
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error:
+        type: string
+      job_type:
+        type: string
+      live_status:
+        additionalProperties:
+          type: string
+        description: Live status fields (only populated for running jobs)
+        type: object
+      metadata:
+        additionalProperties: {}
+        type: object
+      pending_units:
+        type: integer
+      progress:
+        additionalProperties:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.ProviderProgress'
+        type: object
+      started_at:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Status'
+      worker_status:
+        additionalProperties:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo'
+        type: object
+    type: object
+  endpoints.GetPageResponse:
+    properties:
+      ocr_markdown:
+        type: string
+      ocr_results:
+        items:
+          $ref: '#/definitions/endpoints.OcrResult'
+        type: array
+      page_num:
+        type: integer
+      status:
+        $ref: '#/definitions/endpoints.PageStatus'
+    type: object
+  endpoints.HealthResponse:
+    properties:
+      defra:
+        type: string
+      status:
+        type: string
+    type: object
+  endpoints.IngestRequest:
+    properties:
+      author:
+        type: string
+      pdf_paths:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+    type: object
+  endpoints.IngestResponse:
+    properties:
+      author:
+        type: string
+      book_id:
+        type: string
+      job_id:
+        type: string
+      process_job_id:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+    type: object
+  endpoints.JobStatusResponse:
+    properties:
+      book_id:
+        type: string
+      is_complete:
+        type: boolean
+      job_type:
+        type: string
+      metadata_complete:
+        type: boolean
+      ocr_complete:
+        type: integer
+      toc_extracted:
+        type: boolean
+      toc_found:
+        type: boolean
+      total_pages:
+        type: integer
+    type: object
+  endpoints.LLMCallCountsResponse:
+    properties:
+      counts:
+        additionalProperties:
+          type: integer
+        type: object
+    type: object
+  endpoints.LLMCallResponse:
+    properties:
+      call:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_llmcall.Call'
+      error:
+        type: string
+    type: object
+  endpoints.LLMCallsResponse:
+    properties:
+      calls:
+        items:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_llmcall.Call'
+        type: array
+      total:
+        type: integer
+    type: object
+  endpoints.ListBooksResponse:
+    properties:
+      books:
+        items:
+          $ref: '#/definitions/endpoints.Book'
+        type: array
+    type: object
+  endpoints.ListJobsResponse:
+    properties:
+      jobs:
+        items:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Record'
+        type: array
+    type: object
+  endpoints.ListMetricsResponse:
+    properties:
+      count:
+        type: integer
+      metrics:
+        items:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_metrics.Metric'
+        type: array
+    type: object
+  endpoints.ListPagesResponse:
+    properties:
+      pages:
+        items:
+          $ref: '#/definitions/endpoints.PageSummary'
+        type: array
+      total_pages:
+        type: integer
+    type: object
+  endpoints.ListVoicesResponse:
+    properties:
+      voices:
+        items:
+          $ref: '#/definitions/endpoints.VoiceResponse'
+        type: array
+    type: object
+  endpoints.MetadataStatus:
+    properties:
+      complete:
+        type: boolean
+      cost_usd:
+        type: number
+      data:
+        $ref: '#/definitions/endpoints.BookMetadata'
+      failed:
+        type: boolean
+      started:
+        type: boolean
+    type: object
+  endpoints.MetricsCostResponse:
+    properties:
+      breakdown:
+        additionalProperties:
+          format: float64
+          type: number
+        type: object
+      total_cost_usd:
+        type: number
+    type: object
+  endpoints.MetricsDetailedResponse:
+    properties:
+      book_id:
+        type: string
+      stages:
+        additionalProperties:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_metrics.DetailedStats'
+        type: object
+    type: object
+  endpoints.MetricsSummaryResponse:
+    properties:
+      avg_cost_usd:
+        type: number
+      avg_time_seconds:
+        type: number
+      avg_tokens:
+        type: number
+      count:
+        type: integer
+      error_count:
+        type: integer
+      success_count:
+        type: integer
+      total_cost_usd:
+        type: number
+      total_time_seconds:
+        type: number
+      total_tokens:
+        type: integer
+    type: object
+  endpoints.OcrResult:
+    properties:
+      confidence:
+        type: number
+      provider:
+        type: string
+      text:
+        type: string
+    type: object
+  endpoints.PageStatus:
+    properties:
+      extract_complete:
+        type: boolean
+      ocr_complete:
+        type: boolean
+    type: object
+  endpoints.PageSummary:
+    properties:
+      ocr_complete:
+        type: boolean
+      page_num:
+        type: integer
+    type: object
+  endpoints.PatternAnalysisResult:
+    properties:
+      excluded_ranges:
+        items:
+          $ref: '#/definitions/endpoints.ExcludedRange'
+        type: array
+      patterns:
+        items:
+          $ref: '#/definitions/endpoints.DiscoveredPattern'
+        type: array
+      reasoning:
+        type: string
+    type: object
+  endpoints.PromptResponse:
+    properties:
+      description:
+        type: string
+      doc_id:
+        type: string
+      hash:
+        type: string
+      key:
+        type: string
+      text:
+        type: string
+      variables:
+        items:
+          type: string
+        type: array
+    type: object
+  endpoints.PromptsListResponse:
+    properties:
+      prompts:
+        items:
+          $ref: '#/definitions/endpoints.PromptResponse'
+        type: array
+    type: object
+  endpoints.ProviderProgress:
+    properties:
+      complete:
+        type: integer
+      cost_usd:
+        type: number
+      total:
+        type: integer
+    type: object
+  endpoints.ProvidersStatus:
+    properties:
+      llm:
+        items:
+          type: string
+        type: array
+      ocr:
+        items:
+          type: string
+        type: array
+    type: object
+  endpoints.RerunTocResponse:
+    properties:
+      job_id:
+        type: string
+      message:
+        type: string
+    type: object
+  endpoints.SetPromptRequest:
+    properties:
+      note:
+        type: string
+      text:
+        type: string
+    type: object
+  endpoints.SettingResponse:
+    properties:
+      entry:
+        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_config.Entry'
+      error:
+        type: string
+    type: object
+  endpoints.SettingsResponse:
+    properties:
+      settings:
+        additionalProperties:
+          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_config.Entry'
+        type: object
+    type: object
+  endpoints.StageProgress:
+    properties:
+      ocr:
+        properties:
+          complete:
+            type: integer
+          cost_by_provider:
+            additionalProperties:
+              format: float64
+              type: number
+            type: object
+          total:
+            type: integer
+          total_cost_usd:
+            type: number
+        type: object
+      pattern_analysis:
+        properties:
+          complete:
+            type: boolean
+          cost_usd:
+            type: number
+        type: object
+    type: object
+  endpoints.StartJobRequest:
+    properties:
+      force:
+        description: 'Optional: force restart even if already complete'
+        type: boolean
+      job_type:
+        description: 'Optional: defaults to "process-book"'
+        type: string
+      reset_from:
+        description: 'Optional: reset this operation and downstream deps before starting'
+        type: string
+      variant:
+        description: 'Optional: pipeline variant (standard, photo-book, text-only,
+          ocr-only)'
+        type: string
+    type: object
+  endpoints.StartJobResponse:
+    properties:
+      book_id:
+        type: string
+      job_id:
+        type: string
+      job_type:
+        type: string
+      status:
+        type: string
+    type: object
+  endpoints.StatusResponse:
+    properties:
+      defra:
+        $ref: '#/definitions/endpoints.DefraStatus'
+      providers:
+        $ref: '#/definitions/endpoints.ProvidersStatus'
+      server:
+        type: string
+    type: object
+  endpoints.StorytellerExportResponse:
+    properties:
+      audio_chapters:
+        type: integer
+      author:
+        type: string
+      book_id:
+        type: string
+      chapter_count:
+        type: integer
+      created_at:
+        type: string
+      download_url:
+        type: string
+      file_path:
+        type: string
+      file_size:
+        type: integer
+      title:
+        type: string
+      total_duration_ms:
+        type: integer
+    type: object
+  endpoints.StructureStatus:
+    properties:
+      chapter_count:
+        type: integer
+      chapters_extracted:
+        type: integer
+      chapters_polished:
+        type: integer
+      chapters_total:
+        type: integer
+      complete:
+        type: boolean
+      cost_usd:
+        type: number
+      failed:
+        type: boolean
+      phase:
+        description: Phase tracking (build -> extract -> classify -> polish -> finalize)
+        type: string
+      polish_failed:
+        type: integer
+      retries:
+        type: integer
+      started:
+        type: boolean
+    type: object
+  endpoints.SyncVoicesResponse:
+    properties:
+      message:
+        type: string
+      synced:
+        type: integer
+    type: object
+  endpoints.TTSConfigResponse:
+    properties:
+      default_format:
+        type: string
+      default_voice:
+        type: string
+      formats:
+        items:
+          type: string
+        type: array
+      model:
+        type: string
+      provider:
+        type: string
+      voice_cloning_url:
+        type: string
+      voices:
+        items:
+          $ref: '#/definitions/endpoints.TTSVoice'
+        type: array
+    type: object
+  endpoints.TTSVoice:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      voice_id:
+        type: string
+    type: object
+  endpoints.ToCEntry:
+    properties:
+      actual_page_num:
+        type: integer
+      entry_number:
+        type: string
+      is_linked:
+        type: boolean
+      level:
+        type: integer
+      level_name:
+        type: string
+      printed_page_number:
+        type: string
+      sort_order:
+        type: integer
+      source:
+        description: '"extracted" or "discovered"'
+        type: string
+      title:
+        type: string
+    type: object
+  endpoints.ToCStatus:
+    properties:
+      cost_usd:
+        type: number
+      discover_complete:
+        description: All entries discovered
+        type: boolean
+      end_page:
+        type: integer
+      entries:
+        items:
+          $ref: '#/definitions/endpoints.ToCEntry'
+        type: array
+      entries_discovered:
+        description: Actually discovered (source="discovered")
+        type: integer
+      entries_linked:
+        type: integer
+      entries_to_find:
+        description: From pattern analysis (how many should be discovered)
+        type: integer
+      entry_count:
+        description: Entries (when extracted)
+        type: integer
+      excluded_ranges:
+        description: Number of excluded page ranges
+        type: integer
+      extract_complete:
+        type: boolean
+      extract_failed:
+        type: boolean
+      extract_started:
+        description: Extract stage
+        type: boolean
+      finalize_complete:
+        type: boolean
+      finalize_failed:
+        type: boolean
+      finalize_retries:
+        type: integer
+      finalize_started:
+        description: Finalize stage (overall)
+        type: boolean
+      finder_complete:
+        type: boolean
+      finder_failed:
+        type: boolean
+      finder_started:
+        description: Finder stage
+        type: boolean
+      found:
+        type: boolean
+      link_complete:
+        type: boolean
+      link_failed:
+        type: boolean
+      link_retries:
+        type: integer
+      link_started:
+        description: Link stage
+        type: boolean
+      pattern_analysis:
+        allOf:
+        - $ref: '#/definitions/endpoints.PatternAnalysisResult'
+        description: Full pattern analysis result
+      pattern_complete:
+        description: 'Finalize sub-phases: Pattern Analysis → Chapter Discovery →
+          Gap Validation'
+        type: boolean
+      patterns_found:
+        description: Number of patterns discovered
+        type: integer
+      start_page:
+        type: integer
+      validate_complete:
+        description: Gap validation done (same as FinalizeComplete for now)
+        type: boolean
+    type: object
+  endpoints.UpdateJobRequest:
+    properties:
+      error:
+        type: string
+      metadata:
+        additionalProperties: {}
+        type: object
+      status:
+        type: string
+    type: object
+  endpoints.UpdateSettingRequest:
+    properties:
+      description:
+        type: string
+      value: {}
+    type: object
+  endpoints.VoiceResponse:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      is_default:
+        type: boolean
+      name:
+        type: string
+      provider:
+        type: string
+      synced_at:
+        type: string
+      voice_id:
+        type: string
+    type: object
   github_com_jackzampolin_shelf_internal_config.Entry:
     properties:
       _docID:
@@ -240,1017 +1257,6 @@ definitions:
       total_tokens:
         type: integer
     type: object
-  internal_server_endpoints.AgentLogDetailResponse:
-    properties:
-      agent_type:
-        type: string
-      book_id:
-        type: string
-      completed_at:
-        type: string
-      error:
-        type: string
-      id:
-        type: string
-      iterations:
-        type: integer
-      job_id:
-        type: string
-      messages:
-        description: Detailed data
-        items:
-          type: integer
-        type: array
-      result:
-        items:
-          type: integer
-        type: array
-      started_at:
-        type: string
-      success:
-        type: boolean
-      tool_calls:
-        items:
-          type: integer
-        type: array
-    type: object
-  internal_server_endpoints.AgentLogSummary:
-    properties:
-      agent_type:
-        type: string
-      completed_at:
-        type: string
-      error:
-        type: string
-      id:
-        type: string
-      iterations:
-        type: integer
-      started_at:
-        type: string
-      success:
-        type: boolean
-    type: object
-  internal_server_endpoints.AgentLogSummaryResponse:
-    properties:
-      agent_type:
-        type: string
-      book_id:
-        type: string
-      completed_at:
-        type: string
-      error:
-        type: string
-      id:
-        type: string
-      iterations:
-        type: integer
-      job_id:
-        type: string
-      started_at:
-        type: string
-      success:
-        type: boolean
-    type: object
-  internal_server_endpoints.AgentLogsListResponse:
-    properties:
-      logs:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.AgentLogSummaryResponse'
-        type: array
-    type: object
-  internal_server_endpoints.AudioStatusResponse:
-    properties:
-      book_id:
-        type: string
-      chapter_count:
-        type: integer
-      chapters:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.ChapterAudioStatus'
-        type: array
-      format:
-        type: string
-      provider:
-        type: string
-      segment_count:
-        type: integer
-      status:
-        type: string
-      total_cost_usd:
-        type: number
-      total_duration_ms:
-        type: integer
-      voice:
-        type: string
-    type: object
-  internal_server_endpoints.Book:
-    properties:
-      author:
-        type: string
-      created_at:
-        type: string
-      id:
-        type: string
-      page_count:
-        type: integer
-      page_pattern_analysis_json:
-        type: string
-      status:
-        type: string
-      title:
-        type: string
-    type: object
-  internal_server_endpoints.BookMetadata:
-    properties:
-      author:
-        type: string
-      authors:
-        items:
-          type: string
-        type: array
-      description:
-        type: string
-      isbn:
-        type: string
-      language:
-        type: string
-      lccn:
-        type: string
-      publication_year:
-        type: integer
-      publisher:
-        type: string
-      subjects:
-        items:
-          type: string
-        type: array
-      title:
-        type: string
-    type: object
-  internal_server_endpoints.BookPromptResponse:
-    properties:
-      cid:
-        type: string
-      is_override:
-        type: boolean
-      key:
-        type: string
-      text:
-        type: string
-      variables:
-        items:
-          type: string
-        type: array
-    type: object
-  internal_server_endpoints.BookPromptsListResponse:
-    properties:
-      book_id:
-        type: string
-      prompts:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
-        type: array
-    type: object
-  internal_server_endpoints.ChapterAudioStatus:
-    properties:
-      audio_file:
-        type: string
-      chapter_idx:
-        type: integer
-      cost_usd:
-        type: number
-      download_url:
-        type: string
-      duration_ms:
-        type: integer
-      segment_count:
-        type: integer
-      title:
-        type: string
-    type: object
-  internal_server_endpoints.ChapterPage:
-    properties:
-      ocr_markdown:
-        type: string
-      page_num:
-        type: integer
-    type: object
-  internal_server_endpoints.ChapterParagraph:
-    properties:
-      id:
-        type: string
-      polished_text:
-        type: string
-      raw_text:
-        type: string
-      sort_order:
-        type: integer
-      start_page:
-        type: integer
-      word_count:
-        type: integer
-    type: object
-  internal_server_endpoints.ChapterWithText:
-    properties:
-      classification_reasoning:
-        type: string
-      edits_applied_json:
-        type: string
-      end_page:
-        type: integer
-      entry_id:
-        type: string
-      entry_number:
-        type: string
-      id:
-        type: string
-      level:
-        type: integer
-      level_name:
-        type: string
-      matter_type:
-        type: string
-      page_count:
-        type: integer
-      pages:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.ChapterPage'
-        type: array
-      paragraphs:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.ChapterParagraph'
-        type: array
-      polish_complete:
-        type: boolean
-      polish_failed:
-        type: boolean
-      polished_text:
-        type: string
-      sort_order:
-        type: integer
-      start_page:
-        type: integer
-      title:
-        type: string
-      word_count:
-        type: integer
-    type: object
-  internal_server_endpoints.ChaptersResponse:
-    properties:
-      book_id:
-        type: string
-      book_title:
-        type: string
-      chapters:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.ChapterWithText'
-        type: array
-      has_chapters:
-        type: boolean
-      total_pages:
-        type: integer
-    type: object
-  internal_server_endpoints.CreateJobRequest:
-    properties:
-      job_type:
-        type: string
-      metadata:
-        additionalProperties: {}
-        type: object
-    type: object
-  internal_server_endpoints.CreateJobResponse:
-    properties:
-      id:
-        type: string
-    type: object
-  internal_server_endpoints.CreateVoiceRequest:
-    properties:
-      description:
-        type: string
-      name:
-        type: string
-      voice_id:
-        type: string
-    type: object
-  internal_server_endpoints.DefraStatus:
-    properties:
-      container:
-        type: string
-      health:
-        type: string
-      url:
-        type: string
-    type: object
-  internal_server_endpoints.DetailedJobStatusResponse:
-    properties:
-      agent_logs:
-        description: Agent logs summary
-        items:
-          $ref: '#/definitions/internal_server_endpoints.AgentLogSummary'
-        type: array
-      book_id:
-        type: string
-      metadata:
-        allOf:
-        - $ref: '#/definitions/internal_server_endpoints.MetadataStatus'
-        description: Metadata status
-      ocr_progress:
-        additionalProperties:
-          $ref: '#/definitions/internal_server_endpoints.ProviderProgress'
-        description: Per-provider OCR progress
-        type: object
-      stages:
-        allOf:
-        - $ref: '#/definitions/internal_server_endpoints.StageProgress'
-        description: Stage progress with costs
-      structure:
-        allOf:
-        - $ref: '#/definitions/internal_server_endpoints.StructureStatus'
-        description: Structure status (common-structure job)
-      toc:
-        allOf:
-        - $ref: '#/definitions/internal_server_endpoints.ToCStatus'
-        description: ToC status
-      total_pages:
-        type: integer
-    type: object
-  internal_server_endpoints.DiscoveredPattern:
-    properties:
-      heading_format:
-        type: string
-      level:
-        type: integer
-      level_name:
-        type: string
-      pattern_type:
-        type: string
-      range_end:
-        type: string
-      range_start:
-        type: string
-      reasoning:
-        type: string
-    type: object
-  internal_server_endpoints.EpubExportResponse:
-    properties:
-      author:
-        type: string
-      book_id:
-        type: string
-      chapter_count:
-        type: integer
-      created_at:
-        type: string
-      download_url:
-        type: string
-      file_path:
-        type: string
-      file_size:
-        type: integer
-      title:
-        type: string
-    type: object
-  internal_server_endpoints.ErrorResponse:
-    properties:
-      error:
-        type: string
-    type: object
-  internal_server_endpoints.ExcludedRange:
-    properties:
-      end_page:
-        type: integer
-      reason:
-        type: string
-      start_page:
-        type: integer
-    type: object
-  internal_server_endpoints.GenerateAudioRequest:
-    properties:
-      format:
-        description: 'Optional: output format (mp3, wav)'
-        type: string
-      voice:
-        description: 'Optional: voice ID'
-        type: string
-    type: object
-  internal_server_endpoints.GenerateAudioResponse:
-    properties:
-      book_id:
-        type: string
-      chapters:
-        type: integer
-      job_id:
-        type: string
-      provider:
-        type: string
-      status:
-        type: string
-    type: object
-  internal_server_endpoints.GetJobResponse:
-    properties:
-      _docID:
-        type: string
-      book_id:
-        type: string
-      completed_at:
-        type: string
-      created_at:
-        type: string
-      error:
-        type: string
-      job_type:
-        type: string
-      live_status:
-        additionalProperties:
-          type: string
-        description: Live status fields (only populated for running jobs)
-        type: object
-      metadata:
-        additionalProperties: {}
-        type: object
-      pending_units:
-        type: integer
-      progress:
-        additionalProperties:
-          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.ProviderProgress'
-        type: object
-      started_at:
-        type: string
-      status:
-        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Status'
-      worker_status:
-        additionalProperties:
-          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo'
-        type: object
-    type: object
-  internal_server_endpoints.GetPageResponse:
-    properties:
-      ocr_markdown:
-        type: string
-      ocr_results:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.OcrResult'
-        type: array
-      page_num:
-        type: integer
-      status:
-        $ref: '#/definitions/internal_server_endpoints.PageStatus'
-    type: object
-  internal_server_endpoints.HealthResponse:
-    properties:
-      defra:
-        type: string
-      status:
-        type: string
-    type: object
-  internal_server_endpoints.IngestRequest:
-    properties:
-      author:
-        type: string
-      pdf_paths:
-        items:
-          type: string
-        type: array
-      title:
-        type: string
-    type: object
-  internal_server_endpoints.IngestResponse:
-    properties:
-      author:
-        type: string
-      book_id:
-        type: string
-      job_id:
-        type: string
-      process_job_id:
-        type: string
-      status:
-        type: string
-      title:
-        type: string
-    type: object
-  internal_server_endpoints.JobStatusResponse:
-    properties:
-      book_id:
-        type: string
-      is_complete:
-        type: boolean
-      job_type:
-        type: string
-      metadata_complete:
-        type: boolean
-      ocr_complete:
-        type: integer
-      toc_extracted:
-        type: boolean
-      toc_found:
-        type: boolean
-      total_pages:
-        type: integer
-    type: object
-  internal_server_endpoints.LLMCallCountsResponse:
-    properties:
-      counts:
-        additionalProperties:
-          type: integer
-        type: object
-    type: object
-  internal_server_endpoints.LLMCallResponse:
-    properties:
-      call:
-        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_llmcall.Call'
-      error:
-        type: string
-    type: object
-  internal_server_endpoints.LLMCallsResponse:
-    properties:
-      calls:
-        items:
-          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_llmcall.Call'
-        type: array
-      total:
-        type: integer
-    type: object
-  internal_server_endpoints.ListBooksResponse:
-    properties:
-      books:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.Book'
-        type: array
-    type: object
-  internal_server_endpoints.ListJobsResponse:
-    properties:
-      jobs:
-        items:
-          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_jobs.Record'
-        type: array
-    type: object
-  internal_server_endpoints.ListMetricsResponse:
-    properties:
-      count:
-        type: integer
-      metrics:
-        items:
-          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_metrics.Metric'
-        type: array
-    type: object
-  internal_server_endpoints.ListPagesResponse:
-    properties:
-      pages:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.PageSummary'
-        type: array
-      total_pages:
-        type: integer
-    type: object
-  internal_server_endpoints.ListVoicesResponse:
-    properties:
-      voices:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.VoiceResponse'
-        type: array
-    type: object
-  internal_server_endpoints.MetadataStatus:
-    properties:
-      complete:
-        type: boolean
-      cost_usd:
-        type: number
-      data:
-        $ref: '#/definitions/internal_server_endpoints.BookMetadata'
-      failed:
-        type: boolean
-      started:
-        type: boolean
-    type: object
-  internal_server_endpoints.MetricsCostResponse:
-    properties:
-      breakdown:
-        additionalProperties:
-          format: float64
-          type: number
-        type: object
-      total_cost_usd:
-        type: number
-    type: object
-  internal_server_endpoints.MetricsDetailedResponse:
-    properties:
-      book_id:
-        type: string
-      stages:
-        additionalProperties:
-          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_metrics.DetailedStats'
-        type: object
-    type: object
-  internal_server_endpoints.MetricsSummaryResponse:
-    properties:
-      avg_cost_usd:
-        type: number
-      avg_time_seconds:
-        type: number
-      avg_tokens:
-        type: number
-      count:
-        type: integer
-      error_count:
-        type: integer
-      success_count:
-        type: integer
-      total_cost_usd:
-        type: number
-      total_time_seconds:
-        type: number
-      total_tokens:
-        type: integer
-    type: object
-  internal_server_endpoints.OcrResult:
-    properties:
-      confidence:
-        type: number
-      provider:
-        type: string
-      text:
-        type: string
-    type: object
-  internal_server_endpoints.PageStatus:
-    properties:
-      extract_complete:
-        type: boolean
-      ocr_complete:
-        type: boolean
-    type: object
-  internal_server_endpoints.PageSummary:
-    properties:
-      ocr_complete:
-        type: boolean
-      page_num:
-        type: integer
-    type: object
-  internal_server_endpoints.PatternAnalysisResult:
-    properties:
-      excluded_ranges:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.ExcludedRange'
-        type: array
-      patterns:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.DiscoveredPattern'
-        type: array
-      reasoning:
-        type: string
-    type: object
-  internal_server_endpoints.PromptResponse:
-    properties:
-      description:
-        type: string
-      doc_id:
-        type: string
-      hash:
-        type: string
-      key:
-        type: string
-      text:
-        type: string
-      variables:
-        items:
-          type: string
-        type: array
-    type: object
-  internal_server_endpoints.PromptsListResponse:
-    properties:
-      prompts:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.PromptResponse'
-        type: array
-    type: object
-  internal_server_endpoints.ProviderProgress:
-    properties:
-      complete:
-        type: integer
-      cost_usd:
-        type: number
-      total:
-        type: integer
-    type: object
-  internal_server_endpoints.ProvidersStatus:
-    properties:
-      llm:
-        items:
-          type: string
-        type: array
-      ocr:
-        items:
-          type: string
-        type: array
-    type: object
-  internal_server_endpoints.RerunTocResponse:
-    properties:
-      job_id:
-        type: string
-      message:
-        type: string
-    type: object
-  internal_server_endpoints.SetPromptRequest:
-    properties:
-      note:
-        type: string
-      text:
-        type: string
-    type: object
-  internal_server_endpoints.SettingResponse:
-    properties:
-      entry:
-        $ref: '#/definitions/github_com_jackzampolin_shelf_internal_config.Entry'
-      error:
-        type: string
-    type: object
-  internal_server_endpoints.SettingsResponse:
-    properties:
-      settings:
-        additionalProperties:
-          $ref: '#/definitions/github_com_jackzampolin_shelf_internal_config.Entry'
-        type: object
-    type: object
-  internal_server_endpoints.StageProgress:
-    properties:
-      ocr:
-        properties:
-          complete:
-            type: integer
-          cost_by_provider:
-            additionalProperties:
-              format: float64
-              type: number
-            type: object
-          total:
-            type: integer
-          total_cost_usd:
-            type: number
-        type: object
-      pattern_analysis:
-        properties:
-          complete:
-            type: boolean
-          cost_usd:
-            type: number
-        type: object
-    type: object
-  internal_server_endpoints.StartJobRequest:
-    properties:
-      force:
-        description: 'Optional: force restart even if already complete'
-        type: boolean
-      job_type:
-        description: 'Optional: defaults to "process-book"'
-        type: string
-      reset_from:
-        description: 'Optional: reset this operation and downstream deps before starting'
-        type: string
-      variant:
-        description: 'Optional: pipeline variant (standard, photo-book, text-only,
-          ocr-only)'
-        type: string
-    type: object
-  internal_server_endpoints.StartJobResponse:
-    properties:
-      book_id:
-        type: string
-      job_id:
-        type: string
-      job_type:
-        type: string
-      status:
-        type: string
-    type: object
-  internal_server_endpoints.StatusResponse:
-    properties:
-      defra:
-        $ref: '#/definitions/internal_server_endpoints.DefraStatus'
-      providers:
-        $ref: '#/definitions/internal_server_endpoints.ProvidersStatus'
-      server:
-        type: string
-    type: object
-  internal_server_endpoints.StorytellerExportResponse:
-    properties:
-      audio_chapters:
-        type: integer
-      author:
-        type: string
-      book_id:
-        type: string
-      chapter_count:
-        type: integer
-      created_at:
-        type: string
-      download_url:
-        type: string
-      file_path:
-        type: string
-      file_size:
-        type: integer
-      title:
-        type: string
-      total_duration_ms:
-        type: integer
-    type: object
-  internal_server_endpoints.StructureStatus:
-    properties:
-      chapter_count:
-        type: integer
-      chapters_extracted:
-        type: integer
-      chapters_polished:
-        type: integer
-      chapters_total:
-        type: integer
-      complete:
-        type: boolean
-      cost_usd:
-        type: number
-      failed:
-        type: boolean
-      phase:
-        description: Phase tracking (build -> extract -> classify -> polish -> finalize)
-        type: string
-      polish_failed:
-        type: integer
-      retries:
-        type: integer
-      started:
-        type: boolean
-    type: object
-  internal_server_endpoints.SyncVoicesResponse:
-    properties:
-      message:
-        type: string
-      synced:
-        type: integer
-    type: object
-  internal_server_endpoints.TTSConfigResponse:
-    properties:
-      default_format:
-        type: string
-      default_voice:
-        type: string
-      formats:
-        items:
-          type: string
-        type: array
-      model:
-        type: string
-      provider:
-        type: string
-      voice_cloning_url:
-        type: string
-      voices:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.TTSVoice'
-        type: array
-    type: object
-  internal_server_endpoints.TTSVoice:
-    properties:
-      description:
-        type: string
-      name:
-        type: string
-      voice_id:
-        type: string
-    type: object
-  internal_server_endpoints.ToCEntry:
-    properties:
-      actual_page_num:
-        type: integer
-      entry_number:
-        type: string
-      is_linked:
-        type: boolean
-      level:
-        type: integer
-      level_name:
-        type: string
-      printed_page_number:
-        type: string
-      sort_order:
-        type: integer
-      source:
-        description: '"extracted" or "discovered"'
-        type: string
-      title:
-        type: string
-    type: object
-  internal_server_endpoints.ToCStatus:
-    properties:
-      cost_usd:
-        type: number
-      discover_complete:
-        description: All entries discovered
-        type: boolean
-      end_page:
-        type: integer
-      entries:
-        items:
-          $ref: '#/definitions/internal_server_endpoints.ToCEntry'
-        type: array
-      entries_discovered:
-        description: Actually discovered (source="discovered")
-        type: integer
-      entries_linked:
-        type: integer
-      entries_to_find:
-        description: From pattern analysis (how many should be discovered)
-        type: integer
-      entry_count:
-        description: Entries (when extracted)
-        type: integer
-      excluded_ranges:
-        description: Number of excluded page ranges
-        type: integer
-      extract_complete:
-        type: boolean
-      extract_failed:
-        type: boolean
-      extract_started:
-        description: Extract stage
-        type: boolean
-      finalize_complete:
-        type: boolean
-      finalize_failed:
-        type: boolean
-      finalize_retries:
-        type: integer
-      finalize_started:
-        description: Finalize stage (overall)
-        type: boolean
-      finder_complete:
-        type: boolean
-      finder_failed:
-        type: boolean
-      finder_started:
-        description: Finder stage
-        type: boolean
-      found:
-        type: boolean
-      link_complete:
-        type: boolean
-      link_failed:
-        type: boolean
-      link_retries:
-        type: integer
-      link_started:
-        description: Link stage
-        type: boolean
-      pattern_analysis:
-        allOf:
-        - $ref: '#/definitions/internal_server_endpoints.PatternAnalysisResult'
-        description: Full pattern analysis result
-      pattern_complete:
-        description: 'Finalize sub-phases: Pattern Analysis → Chapter Discovery →
-          Gap Validation'
-        type: boolean
-      patterns_found:
-        description: Number of patterns discovered
-        type: integer
-      start_page:
-        type: integer
-      validate_complete:
-        description: Gap validation done (same as FinalizeComplete for now)
-        type: boolean
-    type: object
-  internal_server_endpoints.UpdateJobRequest:
-    properties:
-      error:
-        type: string
-      metadata:
-        additionalProperties: {}
-        type: object
-      status:
-        type: string
-    type: object
-  internal_server_endpoints.UpdateSettingRequest:
-    properties:
-      description:
-        type: string
-      value: {}
-    type: object
-  internal_server_endpoints.VoiceResponse:
-    properties:
-      created_at:
-        type: string
-      description:
-        type: string
-      is_default:
-        type: boolean
-      name:
-        type: string
-      provider:
-        type: string
-      synced_at:
-        type: string
-      voice_id:
-        type: string
-    type: object
   time.Duration:
     enum:
     - -9223372036854775808
@@ -1299,23 +1305,23 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.AgentLogDetailResponse'
+            $ref: '#/definitions/endpoints.AgentLogDetailResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get agent log details
       tags:
       - agent-logs
@@ -1328,15 +1334,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ListBooksResponse'
+            $ref: '#/definitions/endpoints.ListBooksResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: List books
       tags:
       - books
@@ -1368,19 +1374,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.AgentLogsListResponse'
+            $ref: '#/definitions/endpoints.AgentLogsListResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: List agent logs for a book
       tags:
       - agent-logs
@@ -1399,19 +1405,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.AudioStatusResponse'
+            $ref: '#/definitions/endpoints.AudioStatusResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get audio status
       tags:
       - books
@@ -1440,11 +1446,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Download chapter audio
       tags:
       - books
@@ -1464,19 +1470,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.EpubExportResponse'
+            $ref: '#/definitions/endpoints.EpubExportResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Export book as ePub
       tags:
       - books
@@ -1500,11 +1506,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Download ePub file
       tags:
       - books
@@ -1525,19 +1531,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.StorytellerExportResponse'
+            $ref: '#/definitions/endpoints.StorytellerExportResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Export book as EPUB with Media Overlays for Storyteller
       tags:
       - books
@@ -1562,11 +1568,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Download Storyteller EPUB file
       tags:
       - books
@@ -1587,30 +1593,30 @@ paths:
         in: body
         name: request
         schema:
-          $ref: '#/definitions/internal_server_endpoints.GenerateAudioRequest'
+          $ref: '#/definitions/endpoints.GenerateAudioRequest'
       produces:
       - application/json
       responses:
         "202":
           description: Accepted
           schema:
-            $ref: '#/definitions/internal_server_endpoints.GenerateAudioResponse'
+            $ref: '#/definitions/endpoints.GenerateAudioResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Start TTS audio generation
       tags:
       - books
@@ -1630,19 +1636,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ListPagesResponse'
+            $ref: '#/definitions/endpoints.ListPagesResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: List pages
       tags:
       - pages
@@ -1666,23 +1672,23 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.GetPageResponse'
+            $ref: '#/definitions/endpoints.GetPageResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get page details
       tags:
       - pages
@@ -1710,15 +1716,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get page image
       tags:
       - pages
@@ -1737,27 +1743,27 @@ paths:
         "202":
           description: Accepted
           schema:
-            $ref: '#/definitions/internal_server_endpoints.RerunTocResponse'
+            $ref: '#/definitions/endpoints.RerunTocResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "412":
           description: Not enough pages have OCR complete
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Rerun ToC finder and extractor
       tags:
       - books
@@ -1776,23 +1782,23 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.Book'
+            $ref: '#/definitions/endpoints.Book'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get book by ID
       tags:
       - books
@@ -1819,19 +1825,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ChaptersResponse'
+            $ref: '#/definitions/endpoints.ChaptersResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get book chapters
       tags:
       - books
@@ -1854,19 +1860,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.MetricsCostResponse'
+            $ref: '#/definitions/endpoints.MetricsCostResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get book processing cost
       tags:
       - books
@@ -1886,19 +1892,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.MetricsDetailedResponse'
+            $ref: '#/definitions/endpoints.MetricsDetailedResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get detailed book metrics with percentiles
       tags:
       - books
@@ -1918,11 +1924,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.BookPromptsListResponse'
+            $ref: '#/definitions/endpoints.BookPromptsListResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: List prompts for a book
       tags:
       - prompts
@@ -1946,15 +1952,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
+            $ref: '#/definitions/endpoints.BookPromptResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Clear a book prompt override
       tags:
       - prompts
@@ -1977,15 +1983,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
+            $ref: '#/definitions/endpoints.BookPromptResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get a prompt for a book
       tags:
       - prompts
@@ -2009,22 +2015,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_server_endpoints.SetPromptRequest'
+          $ref: '#/definitions/endpoints.SetPromptRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.BookPromptResponse'
+            $ref: '#/definitions/endpoints.BookPromptResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Set a book prompt override
       tags:
       - prompts
@@ -2039,26 +2045,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_server_endpoints.IngestRequest'
+          $ref: '#/definitions/endpoints.IngestRequest'
       produces:
       - application/json
       responses:
         "202":
           description: Accepted
           schema:
-            $ref: '#/definitions/internal_server_endpoints.IngestResponse'
+            $ref: '#/definitions/endpoints.IngestResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Ingest book scans
       tags:
       - books
@@ -2091,19 +2097,19 @@ paths:
         "202":
           description: Accepted
           schema:
-            $ref: '#/definitions/internal_server_endpoints.IngestResponse'
+            $ref: '#/definitions/endpoints.IngestResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Upload and ingest book PDFs
       tags:
       - books
@@ -2116,7 +2122,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
+            $ref: '#/definitions/endpoints.HealthResponse'
       summary: Health check
       tags:
       - health
@@ -2142,15 +2148,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ListJobsResponse'
+            $ref: '#/definitions/endpoints.ListJobsResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: List jobs
       tags:
       - jobs
@@ -2164,26 +2170,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_server_endpoints.CreateJobRequest'
+          $ref: '#/definitions/endpoints.CreateJobRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/internal_server_endpoints.CreateJobResponse'
+            $ref: '#/definitions/endpoints.CreateJobResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Create a job
       tags:
       - jobs
@@ -2202,19 +2208,19 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Delete a job
       tags:
       - jobs
@@ -2233,23 +2239,23 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.GetJobResponse'
+            $ref: '#/definitions/endpoints.GetJobResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get job by ID
       tags:
       - jobs
@@ -2268,7 +2274,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_server_endpoints.UpdateJobRequest'
+          $ref: '#/definitions/endpoints.UpdateJobRequest'
       produces:
       - application/json
       responses:
@@ -2279,15 +2285,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Update a job
       tags:
       - jobs
@@ -2306,26 +2312,26 @@ paths:
         in: body
         name: request
         schema:
-          $ref: '#/definitions/internal_server_endpoints.StartJobRequest'
+          $ref: '#/definitions/endpoints.StartJobRequest'
       produces:
       - application/json
       responses:
         "202":
           description: Accepted
           schema:
-            $ref: '#/definitions/internal_server_endpoints.StartJobResponse'
+            $ref: '#/definitions/endpoints.StartJobResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Start job for a book
       tags:
       - jobs
@@ -2348,19 +2354,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.JobStatusResponse'
+            $ref: '#/definitions/endpoints.JobStatusResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get job status for a book
       tags:
       - jobs
@@ -2380,19 +2386,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.DetailedJobStatusResponse'
+            $ref: '#/definitions/endpoints.DetailedJobStatusResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get detailed job status for a book
       tags:
       - jobs
@@ -2450,15 +2456,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.LLMCallsResponse'
+            $ref: '#/definitions/endpoints.LLMCallsResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: List LLM calls
       tags:
       - llmcalls
@@ -2477,15 +2483,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.LLMCallResponse'
+            $ref: '#/definitions/endpoints.LLMCallResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get an LLM call
       tags:
       - llmcalls
@@ -2504,11 +2510,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.LLMCallCountsResponse'
+            $ref: '#/definitions/endpoints.LLMCallCountsResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get LLM call counts by prompt key
       tags:
       - llmcalls
@@ -2546,15 +2552,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ListMetricsResponse'
+            $ref: '#/definitions/endpoints.ListMetricsResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: List metrics
       tags:
       - metrics
@@ -2592,15 +2598,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.MetricsCostResponse'
+            $ref: '#/definitions/endpoints.MetricsCostResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get cost breakdown
       tags:
       - metrics
@@ -2619,15 +2625,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.MetricsDetailedResponse'
+            $ref: '#/definitions/endpoints.MetricsDetailedResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get detailed metrics with percentiles
       tags:
       - metrics
@@ -2661,15 +2667,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.MetricsSummaryResponse'
+            $ref: '#/definitions/endpoints.MetricsSummaryResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get metrics summary
       tags:
       - metrics
@@ -2682,11 +2688,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.PromptsListResponse'
+            $ref: '#/definitions/endpoints.PromptsListResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: List all prompts
       tags:
       - prompts
@@ -2705,15 +2711,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.PromptResponse'
+            $ref: '#/definitions/endpoints.PromptResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get a prompt
       tags:
       - prompts
@@ -2726,11 +2732,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
+            $ref: '#/definitions/endpoints.HealthResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.HealthResponse'
+            $ref: '#/definitions/endpoints.HealthResponse'
       summary: Readiness check
       tags:
       - health
@@ -2743,11 +2749,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.SettingsResponse'
+            $ref: '#/definitions/endpoints.SettingsResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: List all settings
       tags:
       - settings
@@ -2766,15 +2772,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.SettingResponse'
+            $ref: '#/definitions/endpoints.SettingResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get a setting
       tags:
       - settings
@@ -2793,22 +2799,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_server_endpoints.UpdateSettingRequest'
+          $ref: '#/definitions/endpoints.UpdateSettingRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.SettingResponse'
+            $ref: '#/definitions/endpoints.SettingResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Update a setting
       tags:
       - settings
@@ -2827,19 +2833,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.SettingResponse'
+            $ref: '#/definitions/endpoints.SettingResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Reset a setting to default
       tags:
       - settings
@@ -2852,7 +2858,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.StatusResponse'
+            $ref: '#/definitions/endpoints.StatusResponse'
       summary: Server status
       tags:
       - health
@@ -2865,15 +2871,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.TTSConfigResponse'
+            $ref: '#/definitions/endpoints.TTSConfigResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "503":
           description: Service Unavailable
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Get TTS configuration
       tags:
       - tts
@@ -2886,11 +2892,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ListVoicesResponse'
+            $ref: '#/definitions/endpoints.ListVoicesResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: List TTS voices
       tags:
       - voices
@@ -2904,22 +2910,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_server_endpoints.CreateVoiceRequest'
+          $ref: '#/definitions/endpoints.CreateVoiceRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/internal_server_endpoints.VoiceResponse'
+            $ref: '#/definitions/endpoints.VoiceResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Create voice
       tags:
       - voices
@@ -2944,11 +2950,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Delete voice
       tags:
       - voices
@@ -2973,15 +2979,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Set default voice
       tags:
       - voices
@@ -2994,11 +3000,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_server_endpoints.SyncVoicesResponse'
+            $ref: '#/definitions/endpoints.SyncVoicesResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_server_endpoints.ErrorResponse'
+            $ref: '#/definitions/endpoints.ErrorResponse'
       summary: Sync TTS voices
       tags:
       - voices

@@ -19,6 +19,18 @@ export function OverviewTab({ bookId, book }: OverviewTabProps) {
   const bodyChapters = chapters.filter((c: { matter_type?: string }) => c.matter_type === 'body').length
   const backMatter = chapters.filter((c: { matter_type?: string }) => c.matter_type === 'back_matter').length
 
+  const resolveAudioInclude = (chapter: { audio_include?: boolean; matter_type?: string }) => {
+    if (typeof chapter.audio_include === 'boolean') {
+      return chapter.audio_include
+    }
+    return chapter.matter_type !== 'back_matter'
+  }
+
+  const audioIncluded = chapters.filter((c: { audio_include?: boolean; matter_type?: string }) =>
+    resolveAudioInclude(c)
+  ).length
+  const audioExcluded = chapters.length - audioIncluded
+
   // Determine processing stage
   const getProcessingStage = () => {
     if (!detailedStatus) return null
@@ -98,6 +110,15 @@ export function OverviewTab({ bookId, book }: OverviewTabProps) {
             <StructureStat label="Front Matter" count={frontMatter} color="purple" />
             <StructureStat label="Body" count={bodyChapters} color="blue" />
             <StructureStat label="Back Matter" count={backMatter} color="orange" />
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-gray-600">
+            <span className="font-medium text-gray-700">Audiobook:</span>
+            <span className="px-2 py-1 rounded-full bg-green-100 text-green-800">
+              {audioIncluded} included
+            </span>
+            <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+              {audioExcluded} excluded
+            </span>
           </div>
           <div className="mt-4 pt-4 border-t">
             <Link

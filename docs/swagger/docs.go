@@ -45,31 +45,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.AgentLogDetailResponse"
+                            "$ref": "#/definitions/endpoints.AgentLogDetailResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -89,19 +89,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ListBooksResponse"
+                            "$ref": "#/definitions/endpoints.ListBooksResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -127,7 +127,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.IngestRequest"
+                            "$ref": "#/definitions/endpoints.IngestRequest"
                         }
                     }
                 ],
@@ -135,25 +135,25 @@ const docTemplate = `{
                     "202": {
                         "description": "Accepted",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.IngestResponse"
+                            "$ref": "#/definitions/endpoints.IngestResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -203,25 +203,25 @@ const docTemplate = `{
                     "202": {
                         "description": "Accepted",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.IngestResponse"
+                            "$ref": "#/definitions/endpoints.IngestResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -268,25 +268,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.AgentLogsListResponse"
+                            "$ref": "#/definitions/endpoints.AgentLogsListResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -316,25 +316,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.AudioStatusResponse"
+                            "$ref": "#/definitions/endpoints.AudioStatusResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -377,13 +377,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -413,25 +413,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.EpubExportResponse"
+                            "$ref": "#/definitions/endpoints.EpubExportResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -467,13 +467,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -504,25 +504,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.StorytellerExportResponse"
+                            "$ref": "#/definitions/endpoints.StorytellerExportResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -559,13 +559,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -598,7 +598,7 @@ const docTemplate = `{
                         "name": "request",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.GenerateAudioRequest"
+                            "$ref": "#/definitions/endpoints.GenerateAudioRequest"
                         }
                     }
                 ],
@@ -606,31 +606,31 @@ const docTemplate = `{
                     "202": {
                         "description": "Accepted",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.GenerateAudioResponse"
+                            "$ref": "#/definitions/endpoints.GenerateAudioResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -659,25 +659,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ListPagesResponse"
+                            "$ref": "#/definitions/endpoints.ListPagesResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -713,31 +713,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.GetPageResponse"
+                            "$ref": "#/definitions/endpoints.GetPageResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -779,19 +779,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -820,37 +820,37 @@ const docTemplate = `{
                     "202": {
                         "description": "Accepted",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.RerunTocResponse"
+                            "$ref": "#/definitions/endpoints.RerunTocResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "412": {
                         "description": "Not enough pages have OCR complete",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -879,31 +879,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.Book"
+                            "$ref": "#/definitions/endpoints.Book"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -944,25 +944,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ChaptersResponse"
+                            "$ref": "#/definitions/endpoints.ChaptersResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -997,25 +997,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.MetricsCostResponse"
+                            "$ref": "#/definitions/endpoints.MetricsCostResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1045,25 +1045,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.MetricsDetailedResponse"
+                            "$ref": "#/definitions/endpoints.MetricsDetailedResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1092,13 +1092,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.BookPromptsListResponse"
+                            "$ref": "#/definitions/endpoints.BookPromptsListResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1134,19 +1134,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.BookPromptResponse"
+                            "$ref": "#/definitions/endpoints.BookPromptResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1184,7 +1184,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.SetPromptRequest"
+                            "$ref": "#/definitions/endpoints.SetPromptRequest"
                         }
                     }
                 ],
@@ -1192,19 +1192,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.BookPromptResponse"
+                            "$ref": "#/definitions/endpoints.BookPromptResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1238,19 +1238,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.BookPromptResponse"
+                            "$ref": "#/definitions/endpoints.BookPromptResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1270,7 +1270,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
+                            "$ref": "#/definitions/endpoints.HealthResponse"
                         }
                     }
                 }
@@ -1310,19 +1310,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ListJobsResponse"
+                            "$ref": "#/definitions/endpoints.ListJobsResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1346,7 +1346,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.CreateJobRequest"
+                            "$ref": "#/definitions/endpoints.CreateJobRequest"
                         }
                     }
                 ],
@@ -1354,25 +1354,25 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.CreateJobResponse"
+                            "$ref": "#/definitions/endpoints.CreateJobResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1404,7 +1404,7 @@ const docTemplate = `{
                         "name": "request",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.StartJobRequest"
+                            "$ref": "#/definitions/endpoints.StartJobRequest"
                         }
                     }
                 ],
@@ -1412,25 +1412,25 @@ const docTemplate = `{
                     "202": {
                         "description": "Accepted",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.StartJobResponse"
+                            "$ref": "#/definitions/endpoints.StartJobResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1465,25 +1465,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.JobStatusResponse"
+                            "$ref": "#/definitions/endpoints.JobStatusResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1512,25 +1512,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.DetailedJobStatusResponse"
+                            "$ref": "#/definitions/endpoints.DetailedJobStatusResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1559,31 +1559,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.GetJobResponse"
+                            "$ref": "#/definitions/endpoints.GetJobResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1610,25 +1610,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1659,7 +1659,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.UpdateJobRequest"
+                            "$ref": "#/definitions/endpoints.UpdateJobRequest"
                         }
                     }
                 ],
@@ -1673,19 +1673,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1773,19 +1773,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.LLMCallsResponse"
+                            "$ref": "#/definitions/endpoints.LLMCallsResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1814,13 +1814,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.LLMCallCountsResponse"
+                            "$ref": "#/definitions/endpoints.LLMCallCountsResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1849,19 +1849,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.LLMCallResponse"
+                            "$ref": "#/definitions/endpoints.LLMCallResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1919,19 +1919,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ListMetricsResponse"
+                            "$ref": "#/definitions/endpoints.ListMetricsResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -1989,19 +1989,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.MetricsCostResponse"
+                            "$ref": "#/definitions/endpoints.MetricsCostResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2029,19 +2029,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.MetricsDetailedResponse"
+                            "$ref": "#/definitions/endpoints.MetricsDetailedResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2093,19 +2093,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.MetricsSummaryResponse"
+                            "$ref": "#/definitions/endpoints.MetricsSummaryResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2125,13 +2125,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.PromptsListResponse"
+                            "$ref": "#/definitions/endpoints.PromptsListResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2160,19 +2160,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.PromptResponse"
+                            "$ref": "#/definitions/endpoints.PromptResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2192,13 +2192,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
+                            "$ref": "#/definitions/endpoints.HealthResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.HealthResponse"
+                            "$ref": "#/definitions/endpoints.HealthResponse"
                         }
                     }
                 }
@@ -2218,13 +2218,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.SettingsResponse"
+                            "$ref": "#/definitions/endpoints.SettingsResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2253,25 +2253,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.SettingResponse"
+                            "$ref": "#/definitions/endpoints.SettingResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2300,19 +2300,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.SettingResponse"
+                            "$ref": "#/definitions/endpoints.SettingResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2343,7 +2343,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.UpdateSettingRequest"
+                            "$ref": "#/definitions/endpoints.UpdateSettingRequest"
                         }
                     }
                 ],
@@ -2351,19 +2351,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.SettingResponse"
+                            "$ref": "#/definitions/endpoints.SettingResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2383,7 +2383,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.StatusResponse"
+                            "$ref": "#/definitions/endpoints.StatusResponse"
                         }
                     }
                 }
@@ -2403,19 +2403,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.TTSConfigResponse"
+                            "$ref": "#/definitions/endpoints.TTSConfigResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2435,13 +2435,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ListVoicesResponse"
+                            "$ref": "#/definitions/endpoints.ListVoicesResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2465,7 +2465,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.CreateVoiceRequest"
+                            "$ref": "#/definitions/endpoints.CreateVoiceRequest"
                         }
                     }
                 ],
@@ -2473,19 +2473,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.VoiceResponse"
+                            "$ref": "#/definitions/endpoints.VoiceResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2505,13 +2505,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.SyncVoicesResponse"
+                            "$ref": "#/definitions/endpoints.SyncVoicesResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2549,13 +2549,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2593,19 +2593,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_server_endpoints.ErrorResponse"
+                            "$ref": "#/definitions/endpoints.ErrorResponse"
                         }
                     }
                 }
@@ -2613,6 +2613,1559 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "endpoints.AgentLogDetailResponse": {
+            "type": "object",
+            "properties": {
+                "agent_type": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "string"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "iterations": {
+                    "type": "integer"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "messages": {
+                    "description": "Detailed data",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "result": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "tool_calls": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "endpoints.AgentLogSummary": {
+            "type": "object",
+            "properties": {
+                "agent_type": {
+                    "type": "string"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "iterations": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "endpoints.AgentLogSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "agent_type": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "string"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "iterations": {
+                    "type": "integer"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "endpoints.AgentLogsListResponse": {
+            "type": "object",
+            "properties": {
+                "logs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.AgentLogSummaryResponse"
+                    }
+                }
+            }
+        },
+        "endpoints.AudioStatusResponse": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "string"
+                },
+                "chapter_count": {
+                    "type": "integer"
+                },
+                "chapters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.ChapterAudioStatus"
+                    }
+                },
+                "format": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "segment_count": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "total_cost_usd": {
+                    "type": "number"
+                },
+                "total_duration_ms": {
+                    "type": "integer"
+                },
+                "voice": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.Book": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "page_count": {
+                    "type": "integer"
+                },
+                "page_pattern_analysis_json": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.BookMetadata": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "authors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "isbn": {
+                    "type": "string"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "lccn": {
+                    "type": "string"
+                },
+                "publication_year": {
+                    "type": "integer"
+                },
+                "publisher": {
+                    "type": "string"
+                },
+                "subjects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.BookPromptResponse": {
+            "type": "object",
+            "properties": {
+                "cid": {
+                    "type": "string"
+                },
+                "is_override": {
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "variables": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "endpoints.BookPromptsListResponse": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "string"
+                },
+                "prompts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.BookPromptResponse"
+                    }
+                }
+            }
+        },
+        "endpoints.ChapterAudioStatus": {
+            "type": "object",
+            "properties": {
+                "audio_file": {
+                    "type": "string"
+                },
+                "chapter_idx": {
+                    "type": "integer"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "segment_count": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.ChapterPage": {
+            "type": "object",
+            "properties": {
+                "ocr_markdown": {
+                    "type": "string"
+                },
+                "page_num": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.ChapterParagraph": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "polished_text": {
+                    "type": "string"
+                },
+                "raw_text": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "start_page": {
+                    "type": "integer"
+                },
+                "word_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.ChapterWithText": {
+            "type": "object",
+            "properties": {
+                "audio_include": {
+                    "type": "boolean"
+                },
+                "audio_include_reasoning": {
+                    "type": "string"
+                },
+                "classification_reasoning": {
+                    "type": "string"
+                },
+                "content_type": {
+                    "type": "string"
+                },
+                "edits_applied_json": {
+                    "type": "string"
+                },
+                "end_page": {
+                    "type": "integer"
+                },
+                "entry_id": {
+                    "type": "string"
+                },
+                "entry_number": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "level": {
+                    "type": "integer"
+                },
+                "level_name": {
+                    "type": "string"
+                },
+                "matter_type": {
+                    "type": "string"
+                },
+                "page_count": {
+                    "type": "integer"
+                },
+                "pages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.ChapterPage"
+                    }
+                },
+                "paragraphs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.ChapterParagraph"
+                    }
+                },
+                "polish_complete": {
+                    "type": "boolean"
+                },
+                "polish_failed": {
+                    "type": "boolean"
+                },
+                "polished_text": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "start_page": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "word_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.ChaptersResponse": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "string"
+                },
+                "book_title": {
+                    "type": "string"
+                },
+                "chapters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.ChapterWithText"
+                    }
+                },
+                "has_chapters": {
+                    "type": "boolean"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.CreateJobRequest": {
+            "type": "object",
+            "properties": {
+                "job_type": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "endpoints.CreateJobResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.CreateVoiceRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "voice_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.DefraStatus": {
+            "type": "object",
+            "properties": {
+                "container": {
+                    "type": "string"
+                },
+                "health": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.DetailedJobStatusResponse": {
+            "type": "object",
+            "properties": {
+                "agent_logs": {
+                    "description": "Agent logs summary",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.AgentLogSummary"
+                    }
+                },
+                "book_id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "Metadata status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/endpoints.MetadataStatus"
+                        }
+                    ]
+                },
+                "ocr_progress": {
+                    "description": "Per-provider OCR progress",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/endpoints.ProviderProgress"
+                    }
+                },
+                "stages": {
+                    "description": "Stage progress with costs",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/endpoints.StageProgress"
+                        }
+                    ]
+                },
+                "structure": {
+                    "description": "Structure status (common-structure job)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/endpoints.StructureStatus"
+                        }
+                    ]
+                },
+                "toc": {
+                    "description": "ToC status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/endpoints.ToCStatus"
+                        }
+                    ]
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.DiscoveredPattern": {
+            "type": "object",
+            "properties": {
+                "heading_format": {
+                    "type": "string"
+                },
+                "level": {
+                    "type": "integer"
+                },
+                "level_name": {
+                    "type": "string"
+                },
+                "pattern_type": {
+                    "type": "string"
+                },
+                "range_end": {
+                    "type": "string"
+                },
+                "range_start": {
+                    "type": "string"
+                },
+                "reasoning": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.EpubExportResponse": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "string"
+                },
+                "chapter_count": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "file_path": {
+                    "type": "string"
+                },
+                "file_size": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.ExcludedRange": {
+            "type": "object",
+            "properties": {
+                "end_page": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "start_page": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.GenerateAudioRequest": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "description": "Optional: output format (mp3, wav)",
+                    "type": "string"
+                },
+                "voice": {
+                    "description": "Optional: voice ID",
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.GenerateAudioResponse": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "string"
+                },
+                "chapters": {
+                    "type": "integer"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.GetJobResponse": {
+            "type": "object",
+            "properties": {
+                "_docID": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "string"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "job_type": {
+                    "type": "string"
+                },
+                "live_status": {
+                    "description": "Live status fields (only populated for running jobs)",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "pending_units": {
+                    "type": "integer"
+                },
+                "progress": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_jobs.ProviderProgress"
+                    }
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_jobs.Status"
+                },
+                "worker_status": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo"
+                    }
+                }
+            }
+        },
+        "endpoints.GetPageResponse": {
+            "type": "object",
+            "properties": {
+                "ocr_markdown": {
+                    "type": "string"
+                },
+                "ocr_results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.OcrResult"
+                    }
+                },
+                "page_num": {
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/endpoints.PageStatus"
+                }
+            }
+        },
+        "endpoints.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "defra": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.IngestRequest": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "pdf_paths": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.IngestResponse": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "string"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "process_job_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.JobStatusResponse": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "string"
+                },
+                "is_complete": {
+                    "type": "boolean"
+                },
+                "job_type": {
+                    "type": "string"
+                },
+                "metadata_complete": {
+                    "type": "boolean"
+                },
+                "ocr_complete": {
+                    "type": "integer"
+                },
+                "toc_extracted": {
+                    "type": "boolean"
+                },
+                "toc_found": {
+                    "type": "boolean"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.LLMCallCountsResponse": {
+            "type": "object",
+            "properties": {
+                "counts": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "endpoints.LLMCallResponse": {
+            "type": "object",
+            "properties": {
+                "call": {
+                    "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_llmcall.Call"
+                },
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.LLMCallsResponse": {
+            "type": "object",
+            "properties": {
+                "calls": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_llmcall.Call"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.ListBooksResponse": {
+            "type": "object",
+            "properties": {
+                "books": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.Book"
+                    }
+                }
+            }
+        },
+        "endpoints.ListJobsResponse": {
+            "type": "object",
+            "properties": {
+                "jobs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_jobs.Record"
+                    }
+                }
+            }
+        },
+        "endpoints.ListMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "metrics": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_metrics.Metric"
+                    }
+                }
+            }
+        },
+        "endpoints.ListPagesResponse": {
+            "type": "object",
+            "properties": {
+                "pages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.PageSummary"
+                    }
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.ListVoicesResponse": {
+            "type": "object",
+            "properties": {
+                "voices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.VoiceResponse"
+                    }
+                }
+            }
+        },
+        "endpoints.MetadataStatus": {
+            "type": "object",
+            "properties": {
+                "complete": {
+                    "type": "boolean"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "data": {
+                    "$ref": "#/definitions/endpoints.BookMetadata"
+                },
+                "failed": {
+                    "type": "boolean"
+                },
+                "started": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "endpoints.MetricsCostResponse": {
+            "type": "object",
+            "properties": {
+                "breakdown": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "number",
+                        "format": "float64"
+                    }
+                },
+                "total_cost_usd": {
+                    "type": "number"
+                }
+            }
+        },
+        "endpoints.MetricsDetailedResponse": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "string"
+                },
+                "stages": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_metrics.DetailedStats"
+                    }
+                }
+            }
+        },
+        "endpoints.MetricsSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "avg_cost_usd": {
+                    "type": "number"
+                },
+                "avg_time_seconds": {
+                    "type": "number"
+                },
+                "avg_tokens": {
+                    "type": "number"
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "error_count": {
+                    "type": "integer"
+                },
+                "success_count": {
+                    "type": "integer"
+                },
+                "total_cost_usd": {
+                    "type": "number"
+                },
+                "total_time_seconds": {
+                    "type": "number"
+                },
+                "total_tokens": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.OcrResult": {
+            "type": "object",
+            "properties": {
+                "confidence": {
+                    "type": "number"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.PageStatus": {
+            "type": "object",
+            "properties": {
+                "extract_complete": {
+                    "type": "boolean"
+                },
+                "ocr_complete": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "endpoints.PageSummary": {
+            "type": "object",
+            "properties": {
+                "ocr_complete": {
+                    "type": "boolean"
+                },
+                "page_num": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.PatternAnalysisResult": {
+            "type": "object",
+            "properties": {
+                "excluded_ranges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.ExcludedRange"
+                    }
+                },
+                "patterns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.DiscoveredPattern"
+                    }
+                },
+                "reasoning": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.PromptResponse": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "doc_id": {
+                    "type": "string"
+                },
+                "hash": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "variables": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "endpoints.PromptsListResponse": {
+            "type": "object",
+            "properties": {
+                "prompts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.PromptResponse"
+                    }
+                }
+            }
+        },
+        "endpoints.ProviderProgress": {
+            "type": "object",
+            "properties": {
+                "complete": {
+                    "type": "integer"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.ProvidersStatus": {
+            "type": "object",
+            "properties": {
+                "llm": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ocr": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "endpoints.RerunTocResponse": {
+            "type": "object",
+            "properties": {
+                "job_id": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.SetPromptRequest": {
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.SettingResponse": {
+            "type": "object",
+            "properties": {
+                "entry": {
+                    "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_config.Entry"
+                },
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.SettingsResponse": {
+            "type": "object",
+            "properties": {
+                "settings": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_config.Entry"
+                    }
+                }
+            }
+        },
+        "endpoints.StageProgress": {
+            "type": "object",
+            "properties": {
+                "ocr": {
+                    "type": "object",
+                    "properties": {
+                        "complete": {
+                            "type": "integer"
+                        },
+                        "cost_by_provider": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "number",
+                                "format": "float64"
+                            }
+                        },
+                        "total": {
+                            "type": "integer"
+                        },
+                        "total_cost_usd": {
+                            "type": "number"
+                        }
+                    }
+                },
+                "pattern_analysis": {
+                    "type": "object",
+                    "properties": {
+                        "complete": {
+                            "type": "boolean"
+                        },
+                        "cost_usd": {
+                            "type": "number"
+                        }
+                    }
+                }
+            }
+        },
+        "endpoints.StartJobRequest": {
+            "type": "object",
+            "properties": {
+                "force": {
+                    "description": "Optional: force restart even if already complete",
+                    "type": "boolean"
+                },
+                "job_type": {
+                    "description": "Optional: defaults to \"process-book\"",
+                    "type": "string"
+                },
+                "reset_from": {
+                    "description": "Optional: reset this operation and downstream deps before starting",
+                    "type": "string"
+                },
+                "variant": {
+                    "description": "Optional: pipeline variant (standard, photo-book, text-only, ocr-only)",
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.StartJobResponse": {
+            "type": "object",
+            "properties": {
+                "book_id": {
+                    "type": "string"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "job_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.StatusResponse": {
+            "type": "object",
+            "properties": {
+                "defra": {
+                    "$ref": "#/definitions/endpoints.DefraStatus"
+                },
+                "providers": {
+                    "$ref": "#/definitions/endpoints.ProvidersStatus"
+                },
+                "server": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.StorytellerExportResponse": {
+            "type": "object",
+            "properties": {
+                "audio_chapters": {
+                    "type": "integer"
+                },
+                "author": {
+                    "type": "string"
+                },
+                "book_id": {
+                    "type": "string"
+                },
+                "chapter_count": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "file_path": {
+                    "type": "string"
+                },
+                "file_size": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "total_duration_ms": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.StructureStatus": {
+            "type": "object",
+            "properties": {
+                "chapter_count": {
+                    "type": "integer"
+                },
+                "chapters_extracted": {
+                    "type": "integer"
+                },
+                "chapters_polished": {
+                    "type": "integer"
+                },
+                "chapters_total": {
+                    "type": "integer"
+                },
+                "complete": {
+                    "type": "boolean"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "failed": {
+                    "type": "boolean"
+                },
+                "phase": {
+                    "description": "Phase tracking (build -\u003e extract -\u003e classify -\u003e polish -\u003e finalize)",
+                    "type": "string"
+                },
+                "polish_failed": {
+                    "type": "integer"
+                },
+                "retries": {
+                    "type": "integer"
+                },
+                "started": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "endpoints.SyncVoicesResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "synced": {
+                    "type": "integer"
+                }
+            }
+        },
+        "endpoints.TTSConfigResponse": {
+            "type": "object",
+            "properties": {
+                "default_format": {
+                    "type": "string"
+                },
+                "default_voice": {
+                    "type": "string"
+                },
+                "formats": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "model": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "voice_cloning_url": {
+                    "type": "string"
+                },
+                "voices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.TTSVoice"
+                    }
+                }
+            }
+        },
+        "endpoints.TTSVoice": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "voice_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.ToCEntry": {
+            "type": "object",
+            "properties": {
+                "actual_page_num": {
+                    "type": "integer"
+                },
+                "entry_number": {
+                    "type": "string"
+                },
+                "is_linked": {
+                    "type": "boolean"
+                },
+                "level": {
+                    "type": "integer"
+                },
+                "level_name": {
+                    "type": "string"
+                },
+                "printed_page_number": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "source": {
+                    "description": "\"extracted\" or \"discovered\"",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.ToCStatus": {
+            "type": "object",
+            "properties": {
+                "cost_usd": {
+                    "type": "number"
+                },
+                "discover_complete": {
+                    "description": "All entries discovered",
+                    "type": "boolean"
+                },
+                "end_page": {
+                    "type": "integer"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/endpoints.ToCEntry"
+                    }
+                },
+                "entries_discovered": {
+                    "description": "Actually discovered (source=\"discovered\")",
+                    "type": "integer"
+                },
+                "entries_linked": {
+                    "type": "integer"
+                },
+                "entries_to_find": {
+                    "description": "From pattern analysis (how many should be discovered)",
+                    "type": "integer"
+                },
+                "entry_count": {
+                    "description": "Entries (when extracted)",
+                    "type": "integer"
+                },
+                "excluded_ranges": {
+                    "description": "Number of excluded page ranges",
+                    "type": "integer"
+                },
+                "extract_complete": {
+                    "type": "boolean"
+                },
+                "extract_failed": {
+                    "type": "boolean"
+                },
+                "extract_started": {
+                    "description": "Extract stage",
+                    "type": "boolean"
+                },
+                "finalize_complete": {
+                    "type": "boolean"
+                },
+                "finalize_failed": {
+                    "type": "boolean"
+                },
+                "finalize_retries": {
+                    "type": "integer"
+                },
+                "finalize_started": {
+                    "description": "Finalize stage (overall)",
+                    "type": "boolean"
+                },
+                "finder_complete": {
+                    "type": "boolean"
+                },
+                "finder_failed": {
+                    "type": "boolean"
+                },
+                "finder_started": {
+                    "description": "Finder stage",
+                    "type": "boolean"
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "link_complete": {
+                    "type": "boolean"
+                },
+                "link_failed": {
+                    "type": "boolean"
+                },
+                "link_retries": {
+                    "type": "integer"
+                },
+                "link_started": {
+                    "description": "Link stage",
+                    "type": "boolean"
+                },
+                "pattern_analysis": {
+                    "description": "Full pattern analysis result",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/endpoints.PatternAnalysisResult"
+                        }
+                    ]
+                },
+                "pattern_complete": {
+                    "description": "Finalize sub-phases: Pattern Analysis → Chapter Discovery → Gap Validation",
+                    "type": "boolean"
+                },
+                "patterns_found": {
+                    "description": "Number of patterns discovered",
+                    "type": "integer"
+                },
+                "start_page": {
+                    "type": "integer"
+                },
+                "validate_complete": {
+                    "description": "Gap validation done (same as FinalizeComplete for now)",
+                    "type": "boolean"
+                }
+            }
+        },
+        "endpoints.UpdateJobRequest": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "endpoints.UpdateSettingRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "value": {}
+            }
+        },
+        "endpoints.VoiceResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "synced_at": {
+                    "type": "string"
+                },
+                "voice_id": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_jackzampolin_shelf_internal_config.Entry": {
             "type": "object",
             "properties": {
@@ -2954,1550 +4507,6 @@ const docTemplate = `{
                 },
                 "total_tokens": {
                     "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.AgentLogDetailResponse": {
-            "type": "object",
-            "properties": {
-                "agent_type": {
-                    "type": "string"
-                },
-                "book_id": {
-                    "type": "string"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "error": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "iterations": {
-                    "type": "integer"
-                },
-                "job_id": {
-                    "type": "string"
-                },
-                "messages": {
-                    "description": "Detailed data",
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "result": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "started_at": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
-                },
-                "tool_calls": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.AgentLogSummary": {
-            "type": "object",
-            "properties": {
-                "agent_type": {
-                    "type": "string"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "error": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "iterations": {
-                    "type": "integer"
-                },
-                "started_at": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_server_endpoints.AgentLogSummaryResponse": {
-            "type": "object",
-            "properties": {
-                "agent_type": {
-                    "type": "string"
-                },
-                "book_id": {
-                    "type": "string"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "error": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "iterations": {
-                    "type": "integer"
-                },
-                "job_id": {
-                    "type": "string"
-                },
-                "started_at": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_server_endpoints.AgentLogsListResponse": {
-            "type": "object",
-            "properties": {
-                "logs": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.AgentLogSummaryResponse"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.AudioStatusResponse": {
-            "type": "object",
-            "properties": {
-                "book_id": {
-                    "type": "string"
-                },
-                "chapter_count": {
-                    "type": "integer"
-                },
-                "chapters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.ChapterAudioStatus"
-                    }
-                },
-                "format": {
-                    "type": "string"
-                },
-                "provider": {
-                    "type": "string"
-                },
-                "segment_count": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "total_cost_usd": {
-                    "type": "number"
-                },
-                "total_duration_ms": {
-                    "type": "integer"
-                },
-                "voice": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.Book": {
-            "type": "object",
-            "properties": {
-                "author": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "page_count": {
-                    "type": "integer"
-                },
-                "page_pattern_analysis_json": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.BookMetadata": {
-            "type": "object",
-            "properties": {
-                "author": {
-                    "type": "string"
-                },
-                "authors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "description": {
-                    "type": "string"
-                },
-                "isbn": {
-                    "type": "string"
-                },
-                "language": {
-                    "type": "string"
-                },
-                "lccn": {
-                    "type": "string"
-                },
-                "publication_year": {
-                    "type": "integer"
-                },
-                "publisher": {
-                    "type": "string"
-                },
-                "subjects": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "title": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.BookPromptResponse": {
-            "type": "object",
-            "properties": {
-                "cid": {
-                    "type": "string"
-                },
-                "is_override": {
-                    "type": "boolean"
-                },
-                "key": {
-                    "type": "string"
-                },
-                "text": {
-                    "type": "string"
-                },
-                "variables": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.BookPromptsListResponse": {
-            "type": "object",
-            "properties": {
-                "book_id": {
-                    "type": "string"
-                },
-                "prompts": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.BookPromptResponse"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.ChapterAudioStatus": {
-            "type": "object",
-            "properties": {
-                "audio_file": {
-                    "type": "string"
-                },
-                "chapter_idx": {
-                    "type": "integer"
-                },
-                "cost_usd": {
-                    "type": "number"
-                },
-                "download_url": {
-                    "type": "string"
-                },
-                "duration_ms": {
-                    "type": "integer"
-                },
-                "segment_count": {
-                    "type": "integer"
-                },
-                "title": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.ChapterPage": {
-            "type": "object",
-            "properties": {
-                "ocr_markdown": {
-                    "type": "string"
-                },
-                "page_num": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.ChapterParagraph": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                },
-                "polished_text": {
-                    "type": "string"
-                },
-                "raw_text": {
-                    "type": "string"
-                },
-                "sort_order": {
-                    "type": "integer"
-                },
-                "start_page": {
-                    "type": "integer"
-                },
-                "word_count": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.ChapterWithText": {
-            "type": "object",
-            "properties": {
-                "classification_reasoning": {
-                    "type": "string"
-                },
-                "edits_applied_json": {
-                    "type": "string"
-                },
-                "end_page": {
-                    "type": "integer"
-                },
-                "entry_id": {
-                    "type": "string"
-                },
-                "entry_number": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "level": {
-                    "type": "integer"
-                },
-                "level_name": {
-                    "type": "string"
-                },
-                "matter_type": {
-                    "type": "string"
-                },
-                "page_count": {
-                    "type": "integer"
-                },
-                "pages": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.ChapterPage"
-                    }
-                },
-                "paragraphs": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.ChapterParagraph"
-                    }
-                },
-                "polish_complete": {
-                    "type": "boolean"
-                },
-                "polish_failed": {
-                    "type": "boolean"
-                },
-                "polished_text": {
-                    "type": "string"
-                },
-                "sort_order": {
-                    "type": "integer"
-                },
-                "start_page": {
-                    "type": "integer"
-                },
-                "title": {
-                    "type": "string"
-                },
-                "word_count": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.ChaptersResponse": {
-            "type": "object",
-            "properties": {
-                "book_id": {
-                    "type": "string"
-                },
-                "book_title": {
-                    "type": "string"
-                },
-                "chapters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.ChapterWithText"
-                    }
-                },
-                "has_chapters": {
-                    "type": "boolean"
-                },
-                "total_pages": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.CreateJobRequest": {
-            "type": "object",
-            "properties": {
-                "job_type": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": {}
-                }
-            }
-        },
-        "internal_server_endpoints.CreateJobResponse": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.CreateVoiceRequest": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "voice_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.DefraStatus": {
-            "type": "object",
-            "properties": {
-                "container": {
-                    "type": "string"
-                },
-                "health": {
-                    "type": "string"
-                },
-                "url": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.DetailedJobStatusResponse": {
-            "type": "object",
-            "properties": {
-                "agent_logs": {
-                    "description": "Agent logs summary",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.AgentLogSummary"
-                    }
-                },
-                "book_id": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "description": "Metadata status",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/internal_server_endpoints.MetadataStatus"
-                        }
-                    ]
-                },
-                "ocr_progress": {
-                    "description": "Per-provider OCR progress",
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/internal_server_endpoints.ProviderProgress"
-                    }
-                },
-                "stages": {
-                    "description": "Stage progress with costs",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/internal_server_endpoints.StageProgress"
-                        }
-                    ]
-                },
-                "structure": {
-                    "description": "Structure status (common-structure job)",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/internal_server_endpoints.StructureStatus"
-                        }
-                    ]
-                },
-                "toc": {
-                    "description": "ToC status",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/internal_server_endpoints.ToCStatus"
-                        }
-                    ]
-                },
-                "total_pages": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.DiscoveredPattern": {
-            "type": "object",
-            "properties": {
-                "heading_format": {
-                    "type": "string"
-                },
-                "level": {
-                    "type": "integer"
-                },
-                "level_name": {
-                    "type": "string"
-                },
-                "pattern_type": {
-                    "type": "string"
-                },
-                "range_end": {
-                    "type": "string"
-                },
-                "range_start": {
-                    "type": "string"
-                },
-                "reasoning": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.EpubExportResponse": {
-            "type": "object",
-            "properties": {
-                "author": {
-                    "type": "string"
-                },
-                "book_id": {
-                    "type": "string"
-                },
-                "chapter_count": {
-                    "type": "integer"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "download_url": {
-                    "type": "string"
-                },
-                "file_path": {
-                    "type": "string"
-                },
-                "file_size": {
-                    "type": "integer"
-                },
-                "title": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.ExcludedRange": {
-            "type": "object",
-            "properties": {
-                "end_page": {
-                    "type": "integer"
-                },
-                "reason": {
-                    "type": "string"
-                },
-                "start_page": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.GenerateAudioRequest": {
-            "type": "object",
-            "properties": {
-                "format": {
-                    "description": "Optional: output format (mp3, wav)",
-                    "type": "string"
-                },
-                "voice": {
-                    "description": "Optional: voice ID",
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.GenerateAudioResponse": {
-            "type": "object",
-            "properties": {
-                "book_id": {
-                    "type": "string"
-                },
-                "chapters": {
-                    "type": "integer"
-                },
-                "job_id": {
-                    "type": "string"
-                },
-                "provider": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.GetJobResponse": {
-            "type": "object",
-            "properties": {
-                "_docID": {
-                    "type": "string"
-                },
-                "book_id": {
-                    "type": "string"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "error": {
-                    "type": "string"
-                },
-                "job_type": {
-                    "type": "string"
-                },
-                "live_status": {
-                    "description": "Live status fields (only populated for running jobs)",
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": {}
-                },
-                "pending_units": {
-                    "type": "integer"
-                },
-                "progress": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_jobs.ProviderProgress"
-                    }
-                },
-                "started_at": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_jobs.Status"
-                },
-                "worker_status": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_jobs.WorkerStatusInfo"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.GetPageResponse": {
-            "type": "object",
-            "properties": {
-                "ocr_markdown": {
-                    "type": "string"
-                },
-                "ocr_results": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.OcrResult"
-                    }
-                },
-                "page_num": {
-                    "type": "integer"
-                },
-                "status": {
-                    "$ref": "#/definitions/internal_server_endpoints.PageStatus"
-                }
-            }
-        },
-        "internal_server_endpoints.HealthResponse": {
-            "type": "object",
-            "properties": {
-                "defra": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.IngestRequest": {
-            "type": "object",
-            "properties": {
-                "author": {
-                    "type": "string"
-                },
-                "pdf_paths": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "title": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.IngestResponse": {
-            "type": "object",
-            "properties": {
-                "author": {
-                    "type": "string"
-                },
-                "book_id": {
-                    "type": "string"
-                },
-                "job_id": {
-                    "type": "string"
-                },
-                "process_job_id": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.JobStatusResponse": {
-            "type": "object",
-            "properties": {
-                "book_id": {
-                    "type": "string"
-                },
-                "is_complete": {
-                    "type": "boolean"
-                },
-                "job_type": {
-                    "type": "string"
-                },
-                "metadata_complete": {
-                    "type": "boolean"
-                },
-                "ocr_complete": {
-                    "type": "integer"
-                },
-                "toc_extracted": {
-                    "type": "boolean"
-                },
-                "toc_found": {
-                    "type": "boolean"
-                },
-                "total_pages": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.LLMCallCountsResponse": {
-            "type": "object",
-            "properties": {
-                "counts": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "integer"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.LLMCallResponse": {
-            "type": "object",
-            "properties": {
-                "call": {
-                    "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_llmcall.Call"
-                },
-                "error": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.LLMCallsResponse": {
-            "type": "object",
-            "properties": {
-                "calls": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_llmcall.Call"
-                    }
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.ListBooksResponse": {
-            "type": "object",
-            "properties": {
-                "books": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.Book"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.ListJobsResponse": {
-            "type": "object",
-            "properties": {
-                "jobs": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_jobs.Record"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.ListMetricsResponse": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                },
-                "metrics": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_metrics.Metric"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.ListPagesResponse": {
-            "type": "object",
-            "properties": {
-                "pages": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.PageSummary"
-                    }
-                },
-                "total_pages": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.ListVoicesResponse": {
-            "type": "object",
-            "properties": {
-                "voices": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.VoiceResponse"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.MetadataStatus": {
-            "type": "object",
-            "properties": {
-                "complete": {
-                    "type": "boolean"
-                },
-                "cost_usd": {
-                    "type": "number"
-                },
-                "data": {
-                    "$ref": "#/definitions/internal_server_endpoints.BookMetadata"
-                },
-                "failed": {
-                    "type": "boolean"
-                },
-                "started": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_server_endpoints.MetricsCostResponse": {
-            "type": "object",
-            "properties": {
-                "breakdown": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "number",
-                        "format": "float64"
-                    }
-                },
-                "total_cost_usd": {
-                    "type": "number"
-                }
-            }
-        },
-        "internal_server_endpoints.MetricsDetailedResponse": {
-            "type": "object",
-            "properties": {
-                "book_id": {
-                    "type": "string"
-                },
-                "stages": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_metrics.DetailedStats"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.MetricsSummaryResponse": {
-            "type": "object",
-            "properties": {
-                "avg_cost_usd": {
-                    "type": "number"
-                },
-                "avg_time_seconds": {
-                    "type": "number"
-                },
-                "avg_tokens": {
-                    "type": "number"
-                },
-                "count": {
-                    "type": "integer"
-                },
-                "error_count": {
-                    "type": "integer"
-                },
-                "success_count": {
-                    "type": "integer"
-                },
-                "total_cost_usd": {
-                    "type": "number"
-                },
-                "total_time_seconds": {
-                    "type": "number"
-                },
-                "total_tokens": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.OcrResult": {
-            "type": "object",
-            "properties": {
-                "confidence": {
-                    "type": "number"
-                },
-                "provider": {
-                    "type": "string"
-                },
-                "text": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.PageStatus": {
-            "type": "object",
-            "properties": {
-                "extract_complete": {
-                    "type": "boolean"
-                },
-                "ocr_complete": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_server_endpoints.PageSummary": {
-            "type": "object",
-            "properties": {
-                "ocr_complete": {
-                    "type": "boolean"
-                },
-                "page_num": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.PatternAnalysisResult": {
-            "type": "object",
-            "properties": {
-                "excluded_ranges": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.ExcludedRange"
-                    }
-                },
-                "patterns": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.DiscoveredPattern"
-                    }
-                },
-                "reasoning": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.PromptResponse": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "doc_id": {
-                    "type": "string"
-                },
-                "hash": {
-                    "type": "string"
-                },
-                "key": {
-                    "type": "string"
-                },
-                "text": {
-                    "type": "string"
-                },
-                "variables": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.PromptsListResponse": {
-            "type": "object",
-            "properties": {
-                "prompts": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.PromptResponse"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.ProviderProgress": {
-            "type": "object",
-            "properties": {
-                "complete": {
-                    "type": "integer"
-                },
-                "cost_usd": {
-                    "type": "number"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.ProvidersStatus": {
-            "type": "object",
-            "properties": {
-                "llm": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "ocr": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.RerunTocResponse": {
-            "type": "object",
-            "properties": {
-                "job_id": {
-                    "type": "string"
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.SetPromptRequest": {
-            "type": "object",
-            "properties": {
-                "note": {
-                    "type": "string"
-                },
-                "text": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.SettingResponse": {
-            "type": "object",
-            "properties": {
-                "entry": {
-                    "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_config.Entry"
-                },
-                "error": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.SettingsResponse": {
-            "type": "object",
-            "properties": {
-                "settings": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/github_com_jackzampolin_shelf_internal_config.Entry"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.StageProgress": {
-            "type": "object",
-            "properties": {
-                "ocr": {
-                    "type": "object",
-                    "properties": {
-                        "complete": {
-                            "type": "integer"
-                        },
-                        "cost_by_provider": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "number",
-                                "format": "float64"
-                            }
-                        },
-                        "total": {
-                            "type": "integer"
-                        },
-                        "total_cost_usd": {
-                            "type": "number"
-                        }
-                    }
-                },
-                "pattern_analysis": {
-                    "type": "object",
-                    "properties": {
-                        "complete": {
-                            "type": "boolean"
-                        },
-                        "cost_usd": {
-                            "type": "number"
-                        }
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.StartJobRequest": {
-            "type": "object",
-            "properties": {
-                "force": {
-                    "description": "Optional: force restart even if already complete",
-                    "type": "boolean"
-                },
-                "job_type": {
-                    "description": "Optional: defaults to \"process-book\"",
-                    "type": "string"
-                },
-                "reset_from": {
-                    "description": "Optional: reset this operation and downstream deps before starting",
-                    "type": "string"
-                },
-                "variant": {
-                    "description": "Optional: pipeline variant (standard, photo-book, text-only, ocr-only)",
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.StartJobResponse": {
-            "type": "object",
-            "properties": {
-                "book_id": {
-                    "type": "string"
-                },
-                "job_id": {
-                    "type": "string"
-                },
-                "job_type": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.StatusResponse": {
-            "type": "object",
-            "properties": {
-                "defra": {
-                    "$ref": "#/definitions/internal_server_endpoints.DefraStatus"
-                },
-                "providers": {
-                    "$ref": "#/definitions/internal_server_endpoints.ProvidersStatus"
-                },
-                "server": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.StorytellerExportResponse": {
-            "type": "object",
-            "properties": {
-                "audio_chapters": {
-                    "type": "integer"
-                },
-                "author": {
-                    "type": "string"
-                },
-                "book_id": {
-                    "type": "string"
-                },
-                "chapter_count": {
-                    "type": "integer"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "download_url": {
-                    "type": "string"
-                },
-                "file_path": {
-                    "type": "string"
-                },
-                "file_size": {
-                    "type": "integer"
-                },
-                "title": {
-                    "type": "string"
-                },
-                "total_duration_ms": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.StructureStatus": {
-            "type": "object",
-            "properties": {
-                "chapter_count": {
-                    "type": "integer"
-                },
-                "chapters_extracted": {
-                    "type": "integer"
-                },
-                "chapters_polished": {
-                    "type": "integer"
-                },
-                "chapters_total": {
-                    "type": "integer"
-                },
-                "complete": {
-                    "type": "boolean"
-                },
-                "cost_usd": {
-                    "type": "number"
-                },
-                "failed": {
-                    "type": "boolean"
-                },
-                "phase": {
-                    "description": "Phase tracking (build -\u003e extract -\u003e classify -\u003e polish -\u003e finalize)",
-                    "type": "string"
-                },
-                "polish_failed": {
-                    "type": "integer"
-                },
-                "retries": {
-                    "type": "integer"
-                },
-                "started": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_server_endpoints.SyncVoicesResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string"
-                },
-                "synced": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_server_endpoints.TTSConfigResponse": {
-            "type": "object",
-            "properties": {
-                "default_format": {
-                    "type": "string"
-                },
-                "default_voice": {
-                    "type": "string"
-                },
-                "formats": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "model": {
-                    "type": "string"
-                },
-                "provider": {
-                    "type": "string"
-                },
-                "voice_cloning_url": {
-                    "type": "string"
-                },
-                "voices": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.TTSVoice"
-                    }
-                }
-            }
-        },
-        "internal_server_endpoints.TTSVoice": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "voice_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.ToCEntry": {
-            "type": "object",
-            "properties": {
-                "actual_page_num": {
-                    "type": "integer"
-                },
-                "entry_number": {
-                    "type": "string"
-                },
-                "is_linked": {
-                    "type": "boolean"
-                },
-                "level": {
-                    "type": "integer"
-                },
-                "level_name": {
-                    "type": "string"
-                },
-                "printed_page_number": {
-                    "type": "string"
-                },
-                "sort_order": {
-                    "type": "integer"
-                },
-                "source": {
-                    "description": "\"extracted\" or \"discovered\"",
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.ToCStatus": {
-            "type": "object",
-            "properties": {
-                "cost_usd": {
-                    "type": "number"
-                },
-                "discover_complete": {
-                    "description": "All entries discovered",
-                    "type": "boolean"
-                },
-                "end_page": {
-                    "type": "integer"
-                },
-                "entries": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_server_endpoints.ToCEntry"
-                    }
-                },
-                "entries_discovered": {
-                    "description": "Actually discovered (source=\"discovered\")",
-                    "type": "integer"
-                },
-                "entries_linked": {
-                    "type": "integer"
-                },
-                "entries_to_find": {
-                    "description": "From pattern analysis (how many should be discovered)",
-                    "type": "integer"
-                },
-                "entry_count": {
-                    "description": "Entries (when extracted)",
-                    "type": "integer"
-                },
-                "excluded_ranges": {
-                    "description": "Number of excluded page ranges",
-                    "type": "integer"
-                },
-                "extract_complete": {
-                    "type": "boolean"
-                },
-                "extract_failed": {
-                    "type": "boolean"
-                },
-                "extract_started": {
-                    "description": "Extract stage",
-                    "type": "boolean"
-                },
-                "finalize_complete": {
-                    "type": "boolean"
-                },
-                "finalize_failed": {
-                    "type": "boolean"
-                },
-                "finalize_retries": {
-                    "type": "integer"
-                },
-                "finalize_started": {
-                    "description": "Finalize stage (overall)",
-                    "type": "boolean"
-                },
-                "finder_complete": {
-                    "type": "boolean"
-                },
-                "finder_failed": {
-                    "type": "boolean"
-                },
-                "finder_started": {
-                    "description": "Finder stage",
-                    "type": "boolean"
-                },
-                "found": {
-                    "type": "boolean"
-                },
-                "link_complete": {
-                    "type": "boolean"
-                },
-                "link_failed": {
-                    "type": "boolean"
-                },
-                "link_retries": {
-                    "type": "integer"
-                },
-                "link_started": {
-                    "description": "Link stage",
-                    "type": "boolean"
-                },
-                "pattern_analysis": {
-                    "description": "Full pattern analysis result",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/internal_server_endpoints.PatternAnalysisResult"
-                        }
-                    ]
-                },
-                "pattern_complete": {
-                    "description": "Finalize sub-phases: Pattern Analysis → Chapter Discovery → Gap Validation",
-                    "type": "boolean"
-                },
-                "patterns_found": {
-                    "description": "Number of patterns discovered",
-                    "type": "integer"
-                },
-                "start_page": {
-                    "type": "integer"
-                },
-                "validate_complete": {
-                    "description": "Gap validation done (same as FinalizeComplete for now)",
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_server_endpoints.UpdateJobRequest": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": {}
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_server_endpoints.UpdateSettingRequest": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "value": {}
-            }
-        },
-        "internal_server_endpoints.VoiceResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "is_default": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "provider": {
-                    "type": "string"
-                },
-                "synced_at": {
-                    "type": "string"
-                },
-                "voice_id": {
-                    "type": "string"
                 }
             }
         },

@@ -23,6 +23,9 @@ type Chapter struct {
 	EndPage                 int    `json:"end_page"`
 	MatterType              string `json:"matter_type"`
 	ClassificationReasoning string `json:"classification_reasoning,omitempty"`
+	ContentType             string `json:"content_type,omitempty"`
+	AudioInclude            bool   `json:"audio_include"`
+	AudioIncludeReasoning   string `json:"audio_include_reasoning,omitempty"`
 	SortOrder               int    `json:"sort_order"`
 	WordCount               int    `json:"word_count,omitempty"`
 	PageCount               int    `json:"page_count"`
@@ -144,6 +147,9 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 			end_page
 			matter_type
 			classification_reasoning
+			content_type
+			audio_include
+			audio_include_reasoning
 			sort_order
 			word_count
 			polish_complete
@@ -184,6 +190,9 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 				EndPage:                 endPage,
 				MatterType:              getString(cm, "matter_type"),
 				ClassificationReasoning: getString(cm, "classification_reasoning"),
+				ContentType:             getString(cm, "content_type"),
+				AudioInclude:            getBool(cm, "audio_include"),
+				AudioIncludeReasoning:   getString(cm, "audio_include_reasoning"),
 				SortOrder:               getInt(cm, "sort_order"),
 				WordCount:               getInt(cm, "word_count"),
 				PageCount:               endPage - startPage + 1,
