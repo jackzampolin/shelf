@@ -7,6 +7,13 @@ import (
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 )
 
+func assertCID(t *testing.T, label, got, want string) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("%s CID = %s, want %s", label, got, want)
+	}
+}
+
 // TestBookState_ConcurrentAccess tests thread-safety of BookState accessor methods.
 func TestBookState_ConcurrentAccess(t *testing.T) {
 	t.Run("concurrent_operation_state_transitions", func(t *testing.T) {
@@ -251,6 +258,8 @@ func TestBookStateOperationCIDs(t *testing.T) {
 func TestBookStateTrackWriteRouting(t *testing.T) {
 	book := NewBookState("test-book")
 
+	book.SetTocDocID("toc-doc-1")
+
 	// Page state
 	page := book.GetOrCreatePage(1)
 	page.SetPageDocID("page-doc-1")
@@ -270,32 +279,26 @@ func TestBookStateTrackWriteRouting(t *testing.T) {
 	book.TrackWrite("Page", "page-doc-1", "cid-page")
 	book.TrackWrite("Chapter", "chapter-doc-1", "cid-chapter")
 	book.TrackWrite("AgentState", "agent-doc-1", "cid-agent")
+	book.TrackWrite("Book", "test-book", "cid-book")
+	book.TrackWrite("ToC", "toc-doc-1", "cid-toc")
 
-	if got := page.GetPageCID(); got != "cid-page" {
-		t.Fatalf("page CID = %s, want cid-page", got)
-	}
-	if got := chapter.CID; got != "cid-chapter" {
-		t.Fatalf("chapter CID = %s, want cid-chapter", got)
-	}
-	if got := book.GetAgentState(AgentTypeTocFinder, "").CID; got != "cid-agent" {
-		t.Fatalf("agent CID = %s, want cid-agent", got)
-	}
+	assertCID(t, "page", page.GetPageCID(), "cid-page")
+	assertCID(t, "chapter", chapter.CID, "cid-chapter")
+	assertCID(t, "agent", book.GetAgentState(AgentTypeTocFinder, "").CID, "cid-agent")
+	assertCID(t, "book", book.GetBookCID(), "cid-book")
+	assertCID(t, "toc", book.GetTocCID(), "cid-toc")
 
-	if got := book.GetCID("Page", "page-doc-1"); got != "cid-page" {
-		t.Fatalf("cidIndex page = %s, want cid-page", got)
-	}
-	if got := book.GetCID("Chapter", "chapter-doc-1"); got != "cid-chapter" {
-		t.Fatalf("cidIndex chapter = %s, want cid-chapter", got)
-	}
-	if got := book.GetCID("AgentState", "agent-doc-1"); got != "cid-agent" {
-		t.Fatalf("cidIndex agent = %s, want cid-agent", got)
-	}
+	assertCID(t, "cidIndex page", book.GetCID("Page", "page-doc-1"), "cid-page")
+	assertCID(t, "cidIndex chapter", book.GetCID("Chapter", "chapter-doc-1"), "cid-chapter")
+	assertCID(t, "cidIndex agent", book.GetCID("AgentState", "agent-doc-1"), "cid-agent")
+	assertCID(t, "cidIndex book", book.GetCID("Book", "test-book"), "cid-book")
+	assertCID(t, "cidIndex toc", book.GetCID("ToC", "toc-doc-1"), "cid-toc")
 
 	// Unknown docIDs should not panic or mutate known state
 	book.TrackWrite("Page", "missing-doc", "cid-missing")
-	if got := page.GetPageCID(); got != "cid-page" {
-		t.Fatalf("page CID changed unexpectedly: %s", got)
-	}
+	book.TrackWrite("ToC", "missing-doc", "cid-missing")
+	assertCID(t, "page", page.GetPageCID(), "cid-page")
+	assertCID(t, "toc", book.GetTocCID(), "cid-toc")
 }
 
 func TestBookStateGetCID(t *testing.T) {
@@ -303,12 +306,8 @@ func TestBookStateGetCID(t *testing.T) {
 	book.TrackWrite("Book", "test-book", "cid-book")
 	book.TrackWrite("Page", "page-doc-1", "cid-page")
 
-	if got := book.GetCID("Book", "test-book"); got != "cid-book" {
-		t.Fatalf("GetCID book = %s, want cid-book", got)
-	}
-	if got := book.GetCID("Page", "page-doc-1"); got != "cid-page" {
-		t.Fatalf("GetCID page = %s, want cid-page", got)
-	}
+	assertCID(t, "GetCID book", book.GetCID("Book", "test-book"), "cid-book")
+	assertCID(t, "GetCID page", book.GetCID("Page", "page-doc-1"), "cid-page")
 	if got := book.GetCID("Page", "missing"); got != "" {
 		t.Fatalf("GetCID missing = %s, want empty", got)
 	}
