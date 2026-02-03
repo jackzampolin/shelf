@@ -361,6 +361,7 @@ type BookState struct {
 	bookCID       string
 	tocCID        string
 	operationCIDs map[OpType]string // CID when each operation completed
+	cidIndex      map[string]map[string]string
 
 	// Context (immutable after LoadBook)
 	HomeDir    *home.Dir
@@ -491,6 +492,7 @@ func NewBookState(bookID string) *BookState {
 			OpStructure:       {},
 		},
 		operationCIDs:               make(map[OpType]string),
+		cidIndex:                    make(map[string]map[string]string),
 		agentStates:                 make(map[string]*AgentState),
 		structureClassifications:    make(map[string]string),
 		structureClassifyReasonings: make(map[string]string),
@@ -510,6 +512,7 @@ func (b *BookState) SetBookCID(cid string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.bookCID = cid
+	b.trackCIDLocked("Book", b.BookID, cid)
 }
 
 // GetTocCID returns the latest ToC commit CID (thread-safe).
@@ -524,6 +527,9 @@ func (b *BookState) SetTocCID(cid string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.tocCID = cid
+	if b.tocDocID != "" {
+		b.trackCIDLocked("ToC", b.tocDocID, cid)
+	}
 }
 
 // GetOperationCID returns the commit CID for a completed operation (thread-safe).
@@ -544,6 +550,75 @@ func (b *BookState) SetOperationCID(op OpType, cid string) {
 		b.operationCIDs = make(map[OpType]string)
 	}
 	b.operationCIDs[op] = cid
+}
+
+// TrackWrite updates CID tracking for a write result.
+func (b *BookState) TrackWrite(collection, docID, cid string) {
+	if cid == "" || docID == "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.trackCIDLocked(collection, docID, cid)
+
+	switch collection {
+	case "Book":
+		if docID == b.BookID {
+			b.bookCID = cid
+		}
+	case "ToC":
+		if docID == b.tocDocID {
+			b.tocCID = cid
+		}
+	case "Page":
+		for _, state := range b.Pages {
+			if state != nil && state.pageDocID == docID {
+				state.SetPageCID(cid)
+				break
+			}
+		}
+	case "Chapter":
+		for _, chapter := range b.structureChapters {
+			if chapter != nil && chapter.DocID == docID {
+				chapter.CID = cid
+				break
+			}
+		}
+	case "AgentState":
+		for _, state := range b.agentStates {
+			if state != nil && state.DocID == docID {
+				state.CID = cid
+				break
+			}
+		}
+	}
+}
+
+// GetCID returns the tracked CID for a collection/docID pair.
+func (b *BookState) GetCID(collection, docID string) string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.cidIndex == nil {
+		return ""
+	}
+	if docs, ok := b.cidIndex[collection]; ok {
+		return docs[docID]
+	}
+	return ""
+}
+
+// trackCIDLocked stores a CID in the index. Caller must hold b.mu.
+func (b *BookState) trackCIDLocked(collection, docID, cid string) {
+	if cid == "" || docID == "" {
+		return
+	}
+	if b.cidIndex == nil {
+		b.cidIndex = make(map[string]map[string]string)
+	}
+	if b.cidIndex[collection] == nil {
+		b.cidIndex[collection] = make(map[string]string)
+	}
+	b.cidIndex[collection][docID] = cid
 }
 
 // GetPage returns the page state for a given page number (thread-safe).
@@ -929,6 +1004,7 @@ type AgentState struct {
 
 	// Database identity
 	DocID string // DefraDB document ID for this agent state
+	CID   string // DefraDB commit CID for this agent state
 }
 
 // Valid agent types - used for validation
@@ -992,6 +1068,9 @@ func (b *BookState) SetAgentState(state *AgentState) {
 	defer b.mu.Unlock()
 	key := AgentStateKey(state.AgentType, state.EntryDocID)
 	b.agentStates[key] = state
+	if state != nil {
+		b.trackCIDLocked("AgentState", state.DocID, state.CID)
+	}
 }
 
 // RemoveAgentState removes agent state (thread-safe).
@@ -1255,6 +1334,7 @@ type ChapterState struct {
 	EntryID   string `json:"entry_id"`   // Unique within book (e.g., "ch_001")
 	UniqueKey string `json:"unique_key"` // For upsert: "{book_id}:{toc_entry_id}" or "{book_id}:orphan:{sort_order}"
 	DocID     string `json:"doc_id"`     // DefraDB doc ID (after create)
+	CID       string `json:"cid"`        // DefraDB commit CID (latest)
 
 	// From ToC
 	Title       string `json:"title"`
@@ -1346,6 +1426,12 @@ func (b *BookState) SetStructureChapters(chapters []*ChapterState) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.structureChapters = chapters
+	for _, chapter := range chapters {
+		if chapter == nil {
+			continue
+		}
+		b.trackCIDLocked("Chapter", chapter.DocID, chapter.CID)
+	}
 }
 
 // GetStructureClassifications returns the matter classifications (thread-safe).

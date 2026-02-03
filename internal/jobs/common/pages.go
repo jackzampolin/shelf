@@ -5,17 +5,11 @@ import (
 	"fmt"
 
 	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateMissingPages creates page records in DefraDB for any pages not yet in the BookState.
 // Returns the number of pages created.
 func CreateMissingPages(ctx context.Context, book *BookState) (int, error) {
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return 0, fmt.Errorf("defra sink not in context")
-	}
-
 	// Identify pages that need creation
 	var newPageNums []int
 	for pageNum := 1; pageNum <= book.TotalPages; pageNum++ {
@@ -43,7 +37,7 @@ func CreateMissingPages(ctx context.Context, book *BookState) (int, error) {
 		}
 	}
 
-	results, err := sink.SendManySync(ctx, ops)
+	results, err := SendManyTracked(ctx, book, ops)
 	if err != nil {
 		return 0, fmt.Errorf("failed to batch create page records: %w", err)
 	}

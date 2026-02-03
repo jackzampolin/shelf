@@ -100,7 +100,7 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	// Set phase and persist for crash recovery
 	j.Book.SetFinalizePhase(FinalizePhasePattern)
-	cid, err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhasePattern)
+	cid, err := common.PersistFinalizePhaseSync(ctx, j.Book, FinalizePhasePattern)
 	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "phase", FinalizePhasePattern, "error", err)
@@ -258,7 +258,7 @@ func (j *Job) HandleFinalizePatternComplete(ctx context.Context, result jobs.Wor
 		}
 		// Mark pattern phase as skipped to prevent re-attempts on restart
 		j.Book.SetFinalizePhase(FinalizePhaseDiscover)
-		cid, err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDiscover)
+		cid, err := common.PersistFinalizePhaseSync(ctx, j.Book, FinalizePhaseDiscover)
 		if err != nil {
 			if logger != nil {
 				logger.Error("failed to persist pattern phase skip", "error", err)
@@ -421,7 +421,7 @@ func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit 
 
 	// Set phase and persist for crash recovery
 	j.Book.SetFinalizePhase(FinalizePhaseDiscover)
-	cid, err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDiscover)
+	cid, err := common.PersistFinalizePhaseSync(ctx, j.Book, FinalizePhaseDiscover)
 	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseDiscover, "error", err)
@@ -548,7 +548,13 @@ func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.Ent
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
-	common.PersistAgentStateAsync(ctx, j.Book.BookID, initialState)
+	if err := common.PersistAgentStateAsync(ctx, j.Book, initialState); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist chapter finder agent state",
+				"entry_key", entry.Key,
+				"error", err)
+		}
+	}
 	j.Book.SetAgentState(initialState)
 
 	agentUnits := agents.ExecuteToolLoop(ctx, ag)
@@ -674,7 +680,7 @@ func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit 
 
 	// Set phase and persist for crash recovery
 	j.Book.SetFinalizePhase(FinalizePhaseValidate)
-	cid, err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseValidate)
+	cid, err := common.PersistFinalizePhaseSync(ctx, j.Book, FinalizePhaseValidate)
 	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseValidate, "error", err)
@@ -905,7 +911,13 @@ func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.Fin
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
-	common.PersistAgentStateAsync(ctx, j.Book.BookID, initialState)
+	if err := common.PersistAgentStateAsync(ctx, j.Book, initialState); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist gap investigator agent state",
+				"gap_key", gap.Key,
+				"error", err)
+		}
+	}
 	j.Book.SetAgentState(initialState)
 
 	agentUnits := agents.ExecuteToolLoop(ctx, ag)
@@ -1038,7 +1050,7 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	// Persist finalize phase before marking complete
 	j.Book.SetFinalizePhase(FinalizePhaseDone)
-	cid, err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDone)
+	cid, err := common.PersistFinalizePhaseSync(ctx, j.Book, FinalizePhaseDone)
 	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "error", err)
@@ -1318,11 +1330,6 @@ func (j *Job) persistFinalizePatternResults(ctx context.Context) (defra.WriteRes
 		return defra.WriteResult{}, nil
 	}
 
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return defra.WriteResult{}, fmt.Errorf("defra sink not in context")
-	}
-
 	data := struct {
 		Patterns      []common.DiscoveredPattern `json:"patterns"`
 		Excluded      []common.ExcludedRange     `json:"excluded_ranges"`
@@ -1341,7 +1348,7 @@ func (j *Job) persistFinalizePatternResults(ctx context.Context) (defra.WriteRes
 	}
 
 	// Use sync write for pattern results - this data is critical for restart
-	writeResult, err := sink.SendSync(ctx, defra.WriteOp{
+	writeResult, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
 		Collection: "Book",
 		DocID:      j.Book.BookID,
 		Document: map[string]any{
@@ -1405,6 +1412,7 @@ func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *
 	if err != nil {
 		return defra.WriteResult{}, fmt.Errorf("failed to upsert discovered entry: %w", err)
 	}
+	j.Book.TrackWrite("TocEntry", writeResult.DocID, writeResult.CID)
 
 	return writeResult, nil
 }
@@ -1430,10 +1438,6 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return defra.WriteResult{}, fmt.Errorf("defra client not in context")
-	}
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return defra.WriteResult{}, fmt.Errorf("defra sink not in context")
 	}
 
 	switch result.FixType {
@@ -1468,6 +1472,7 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 		if err != nil {
 			return defra.WriteResult{}, fmt.Errorf("failed to upsert validated entry: %w", err)
 		}
+		j.Book.TrackWrite("TocEntry", writeResult.DocID, writeResult.CID)
 		return writeResult, nil
 
 	case "correct_entry":
@@ -1478,7 +1483,7 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 		pageDocID := j.getPageDocID(result.ScanPage)
 		if pageDocID != "" {
 			// Use sync write for entry corrections - this is the result of LLM work
-			writeResult, err := sink.SendSync(ctx, defra.WriteOp{
+			writeResult, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
 				Collection: "TocEntry",
 				DocID:      result.EntryDocID,
 				Document: map[string]any{
@@ -1530,24 +1535,29 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 		return *entries[i].ActualPage < *entries[k].ActualPage
 	})
 
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
 	var updatedCount int
+	var firstErr error
 	for i, entry := range entries {
 		newSortOrder := (i + 1) * 100
 		if entry.SortOrder != newSortOrder {
-			// Use async write - sort order can be recalculated on crash recovery
-			sink.Send(defra.WriteOp{
+			if _, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
 				Collection: "TocEntry",
 				DocID:      entry.DocID,
 				Document: map[string]any{
 					"sort_order": newSortOrder,
 				},
 				Op: defra.OpUpdate,
-			})
+			}); err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				if logger := svcctx.LoggerFrom(ctx); logger != nil {
+					logger.Warn("failed to re-sort ToC entry",
+						"entry_doc_id", entry.DocID,
+						"error", err)
+				}
+				continue
+			}
 			updatedCount++
 		}
 	}
@@ -1559,7 +1569,7 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 			"updated", updatedCount)
 	}
 
-	return nil
+	return firstErr
 }
 
 func (j *Job) convertDiscoverAgentUnits(agentUnits []agent.WorkUnit, entryKey string) []jobs.WorkUnit {

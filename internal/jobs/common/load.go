@@ -357,16 +357,21 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 		state := NewPageState()
 
 		// Use thread-safe setters for all field assignments
-		if docID, ok := page["_docID"].(string); ok {
+		docID := ""
+		if v, ok := page["_docID"].(string); ok {
+			docID = v
 			state.SetPageDocID(docID)
 		}
+		cid := ""
 		if versions, ok := page["_version"].([]any); ok && len(versions) > 0 {
 			if v, ok := versions[0].(map[string]any); ok {
-				if cid, ok := v["cid"].(string); ok && cid != "" {
+				if c, ok := v["cid"].(string); ok && c != "" {
+					cid = c
 					state.SetPageCID(cid)
 				}
 			}
 		}
+		book.trackCIDLocked("Page", docID, cid)
 		if extractComplete, ok := page["extract_complete"].(bool); ok {
 			state.SetExtractDone(extractComplete)
 		}
@@ -728,6 +733,7 @@ func LoadAgentStates(ctx context.Context, book *BookState) error {
 	query := fmt.Sprintf(`{
 		AgentState(filter: {book_id: {_eq: "%s"}}) {
 			_docID
+			_version { cid }
 			agent_id
 			agent_type
 			entry_doc_id
@@ -763,6 +769,13 @@ func LoadAgentStates(ctx context.Context, book *BookState) error {
 
 		if docID, ok := data["_docID"].(string); ok {
 			state.DocID = docID
+		}
+		if versions, ok := data["_version"].([]any); ok && len(versions) > 0 {
+			if v, ok := versions[0].(map[string]any); ok {
+				if cid, ok := v["cid"].(string); ok && cid != "" {
+					state.CID = cid
+				}
+			}
 		}
 		if agentID, ok := data["agent_id"].(string); ok {
 			state.AgentID = agentID
@@ -927,6 +940,7 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 	query := fmt.Sprintf(`{
 		Chapter(filter: {book_id: {_eq: "%s"}}, order: {sort_order: ASC}) {
 			_docID
+			_version { cid }
 			unique_key
 			entry_id
 			sort_order
@@ -975,6 +989,13 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 
 		if docID, ok := data["_docID"].(string); ok {
 			chapter.DocID = docID
+		}
+		if versions, ok := data["_version"].([]any); ok && len(versions) > 0 {
+			if v, ok := versions[0].(map[string]any); ok {
+				if cid, ok := v["cid"].(string); ok && cid != "" {
+					chapter.CID = cid
+				}
+			}
 		}
 		if uniqueKey, ok := data["unique_key"].(string); ok {
 			chapter.UniqueKey = uniqueKey

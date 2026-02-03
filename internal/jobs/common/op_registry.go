@@ -323,6 +323,9 @@ func (b *BookState) SetTocDocID(docID string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.tocDocID = docID
+	if b.tocCID != "" && docID != "" {
+		b.trackCIDLocked("ToC", docID, b.tocCID)
+	}
 }
 
 // --- Internal unlocked setters for use in ResetMemoryHook ---

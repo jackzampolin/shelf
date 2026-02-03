@@ -43,7 +43,7 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 	}
 
 	// Use common handler for persistence and state update
-	allDone, err := common.PersistOCRResult(ctx, state, j.Book.OcrProviders, info.Provider, result.OCRResult)
+	allDone, err := common.PersistOCRResult(ctx, j.Book, state, j.Book.OcrProviders, info.Provider, result.OCRResult)
 	if err != nil {
 		return nil, fmt.Errorf("failed to persist OCR result for page %d provider %s: %w", info.PageNum, info.Provider, err)
 	}
@@ -65,24 +65,21 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 			headings := common.ExtractHeadings(ocrText)
 			state.SetOcrMarkdownWithHeadings(ocrText, headings)
 
-			sink := svcctx.DefraSinkFrom(ctx)
-			if sink != nil {
-				pageDocID := state.GetPageDocID()
-				update := map[string]any{"ocr_markdown": ocrText}
-				if headingsJSON, err := json.Marshal(headings); err == nil {
-					update["headings"] = string(headingsJSON)
-				} else if logger := svcctx.LoggerFrom(ctx); logger != nil {
-					logger.Warn("failed to marshal headings", "page_num", info.PageNum, "error", err)
-				}
-				if writeResult, err := sink.SendSync(ctx, defra.WriteOp{
-					Collection: "Page",
-					DocID:      pageDocID,
-					Document:   update,
-					Op:         defra.OpUpdate,
-				}); err == nil {
-					if writeResult.CID != "" {
-						state.SetPageCID(writeResult.CID)
-					}
+			pageDocID := state.GetPageDocID()
+			update := map[string]any{"ocr_markdown": ocrText}
+			if headingsJSON, err := json.Marshal(headings); err == nil {
+				update["headings"] = string(headingsJSON)
+			} else if logger := svcctx.LoggerFrom(ctx); logger != nil {
+				logger.Warn("failed to marshal headings", "page_num", info.PageNum, "error", err)
+			}
+			if _, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
+				Collection: "Page",
+				DocID:      pageDocID,
+				Document:   update,
+				Op:         defra.OpUpdate,
+			}); err != nil {
+				if logger := svcctx.LoggerFrom(ctx); logger != nil {
+					logger.Warn("failed to persist ocr markdown", "page_num", info.PageNum, "error", err)
 				}
 			}
 		}

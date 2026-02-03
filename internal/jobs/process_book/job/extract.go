@@ -29,7 +29,7 @@ func (j *Job) HandleExtractComplete(ctx context.Context, info WorkUnitInfo, resu
 	state.SetExtractDone(true)
 
 	// Persist to DefraDB using common function (thread-safe accessor)
-	cid, err := common.PersistExtractState(ctx, state.GetPageDocID())
+	cid, err := common.PersistExtractState(ctx, j.Book, state.GetPageDocID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to persist extract state for page %d: %w", pageNum, err)
 	}
