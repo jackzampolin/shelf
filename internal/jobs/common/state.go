@@ -1465,8 +1465,11 @@ func (b *BookState) GetBookMetadataWithLazyLoad(ctx context.Context) *BookMetada
 	}
 
 	// Load from DefraDB
-	b.bookMetadata = loadBookMetadataFromDB(ctx, b.BookID)
-	b.bookMetadataLoaded = true
+	metadata, loaded := loadBookMetadataFromDB(ctx, b.BookID)
+	if loaded {
+		b.bookMetadata = metadata
+		b.bookMetadataLoaded = true
+	}
 	return b.bookMetadata
 }
 

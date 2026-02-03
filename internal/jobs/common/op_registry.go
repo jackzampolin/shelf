@@ -127,7 +127,7 @@ var OpRegistry = map[OpType]*OpConfig{
 		FieldPrefix: "finalize",
 		DocIDSource: func(b *BookState) string { return b.TocDocID() },
 		CascadesTo:  []OpType{OpStructure},
-		AgentTypes:  []string{AgentTypeGapInvestigator, "discover_entry"},
+		AgentTypes:  []string{AgentTypeGapInvestigator, AgentTypeChapterFinder},
 		ResetMemoryHook: func(book *BookState) {
 			book.finalizePhase = ""
 			book.finalizePatternResult = nil

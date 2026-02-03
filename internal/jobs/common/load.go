@@ -375,6 +375,21 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 		ocrComplete, _ := page["ocr_complete"].(bool)
 		if ocrComplete {
 			state.PopulateFromDBResult(page)
+
+			// If OCR markdown wasn't persisted yet, derive it from OCR results.
+			if state.GetOcrMarkdown() == "" {
+				ocrText := ""
+				for _, provider := range book.OcrProviders {
+					if text, ok := state.GetOcrResult(provider); ok && text != "" {
+						ocrText = text
+						break
+					}
+				}
+				if ocrText != "" {
+					headings := ExtractHeadings(ocrText)
+					state.SetOcrMarkdownWithHeadings(ocrText, headings)
+				}
+			}
 		} else {
 			if ocrMarkdown, ok := page["ocr_markdown"].(string); ok && ocrMarkdown != "" {
 				state.PopulateFromDBResult(page)
@@ -1051,17 +1066,17 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 }
 
 // loadBookMetadataFromDB loads book metadata from DefraDB.
-// Returns nil if metadata is not available or on error.
-func loadBookMetadataFromDB(ctx context.Context, bookID string) *BookMetadata {
+// Returns (metadata, loaded). loaded is true when the query succeeded (even if metadata is nil).
+func loadBookMetadataFromDB(ctx context.Context, bookID string) (*BookMetadata, bool) {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		// No DefraDB client - expected in test contexts
-		return nil
+		return nil, false
 	}
 
 	// Validate bookID to prevent GraphQL injection
 	if err := defra.ValidateID(bookID); err != nil {
-		return nil
+		return nil, false
 	}
 
 	logger := svcctx.LoggerFrom(ctx)
@@ -1085,17 +1100,17 @@ func loadBookMetadataFromDB(ctx context.Context, bookID string) *BookMetadata {
 			logger.Error("loadBookMetadataFromDB: query failed - metadata will be unavailable",
 				"book_id", bookID, "error", err)
 		}
-		return nil
+		return nil, false
 	}
 
 	books, ok := resp.Data["Book"].([]any)
 	if !ok || len(books) == 0 {
-		return nil
+		return nil, true
 	}
 
 	bookData, ok := books[0].(map[string]any)
 	if !ok {
-		return nil
+		return nil, true
 	}
 
 	metadata := &BookMetadata{}
@@ -1125,7 +1140,7 @@ func loadBookMetadataFromDB(ctx context.Context, bookID string) *BookMetadata {
 		metadata.Description = v
 	}
 
-	return metadata
+	return metadata, true
 }
 
 // loadBookCostsFromDB loads cost data from Metric records for a book.

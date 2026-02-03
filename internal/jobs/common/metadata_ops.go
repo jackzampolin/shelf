@@ -22,14 +22,8 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 	book := jc.GetBook()
 	logger := svcctx.LoggerFrom(ctx)
 
-	// Load first N pages of OCR markdown from BookState (in-memory)
-	pages := LoadPagesForMetadataFromState(book, MetadataPageCount)
-
-	// Fall back to DB if in-memory state doesn't have OCR markdown cached
-	// (happens after job reload from DB)
-	if len(pages) == 0 {
-		pages = LoadPagesForMetadataFromDB(ctx, book.BookID, MetadataPageCount)
-	}
+	// Load first N pages of OCR markdown via read-through BookState.
+	pages := LoadPagesForMetadataFromState(ctx, book, MetadataPageCount)
 
 	if len(pages) == 0 {
 		if logger != nil {
@@ -71,19 +65,17 @@ func CreateMetadataWorkUnit(ctx context.Context, jc JobContext) (*jobs.WorkUnit,
 	return unit, unitID
 }
 
-// LoadPagesForMetadataFromState loads page data for metadata extraction.
-// First tries in-memory state, then falls back to querying DefraDB.
-func LoadPagesForMetadataFromState(book *BookState, maxPages int) []metadata.Page {
+// LoadPagesForMetadataFromState loads page data for metadata extraction via read-through cache.
+// Uses BookState.GetOcrMarkdown to load from DB when needed.
+func LoadPagesForMetadataFromState(ctx context.Context, book *BookState, maxPages int) []metadata.Page {
 	var pages []metadata.Page
 
 	// Iterate through pages in order
 	for pageNum := 1; pageNum <= book.TotalPages && len(pages) < maxPages; pageNum++ {
-		state := book.GetPage(pageNum)
-		if state == nil {
+		ocrMarkdown, err := book.GetOcrMarkdown(ctx, pageNum)
+		if err != nil {
 			continue
 		}
-
-		ocrMarkdown := state.GetOcrMarkdown()
 		if ocrMarkdown == "" {
 			continue
 		}

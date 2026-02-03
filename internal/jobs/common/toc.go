@@ -25,14 +25,8 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	// Get ToC page range
 	tocStartPage, tocEndPage := book.GetTocPageRange()
 
-	// Load ToC pages from BookState (in-memory)
-	tocPages := LoadTocPagesFromState(book, tocStartPage, tocEndPage)
-
-	// Fall back to DB if in-memory state doesn't have ocr_markdown cached
-	// (happens after job reload)
-	if len(tocPages) == 0 {
-		tocPages = LoadTocPagesFromDB(ctx, book.BookID, tocStartPage, tocEndPage)
-	}
+	// Load ToC pages via read-through BookState.
+	tocPages := LoadTocPagesFromState(ctx, book, tocStartPage, tocEndPage)
 
 	if len(tocPages) == 0 {
 		if logger != nil {
@@ -70,20 +64,19 @@ func CreateTocExtractWorkUnit(ctx context.Context, jc JobContext, tocDocID strin
 	return unit, unitID
 }
 
-// LoadTocPagesFromState loads ToC page content from BookState.
-func LoadTocPagesFromState(book *BookState, startPage, endPage int) []extract_toc.ToCPage {
+// LoadTocPagesFromState loads ToC page content via read-through cache.
+// Uses BookState.GetOcrMarkdown to load from DB when needed.
+func LoadTocPagesFromState(ctx context.Context, book *BookState, startPage, endPage int) []extract_toc.ToCPage {
 	if startPage == 0 || endPage == 0 {
 		return nil
 	}
 
 	var tocPages []extract_toc.ToCPage
 	for pageNum := startPage; pageNum <= endPage; pageNum++ {
-		state := book.GetPage(pageNum)
-		if state == nil {
+		ocrMarkdown, err := book.GetOcrMarkdown(ctx, pageNum)
+		if err != nil {
 			continue
 		}
-
-		ocrMarkdown := state.GetOcrMarkdown()
 		if ocrMarkdown == "" {
 			continue
 		}
