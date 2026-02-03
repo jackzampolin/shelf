@@ -335,10 +335,14 @@ func (j *Job) extractChapterPages(startPage, endPage int) []common.PageText {
 			continue
 		}
 
+		header := pageState.GetHeader()
+		footer := pageState.GetFooter()
+		stripped := common.StripHeaderFooter(ocrText, header, footer)
+
 		pageTexts = append(pageTexts, common.PageText{
 			ScanPage:    pageNum,
 			RawText:     ocrText,
-			CleanedText: common.CleanPageText(ocrText),
+			CleanedText: common.CleanPageText(stripped),
 		})
 	}
 
@@ -424,7 +428,7 @@ func (j *Job) createStructureClassifyWorkUnit(ctx context.Context) (*jobs.WorkUn
 	}
 
 	chapters := j.Book.GetStructureChapters()
-	userPrompt := common.BuildClassifyPrompt(chapters)
+	userPrompt := common.BuildClassifyPrompt(chapters, j.Book.TotalPages)
 
 	schemaBytes, err := json.Marshal(common.ClassifyJSONSchema())
 	if err != nil {
@@ -552,8 +556,15 @@ func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.Wo
 		if matterType, ok := classifications[chapter.EntryID]; ok {
 			chapter.MatterType = matterType
 		}
+		if contentType, ok := classifyResult.ContentTypes[chapter.EntryID]; ok {
+			chapter.ContentType = contentType
+		}
+		if include, ok := classifyResult.AudioInclude[chapter.EntryID]; ok {
+			chapter.AudioInclude = include
+		}
 		if reasoning, ok := reasonings[chapter.EntryID]; ok {
 			chapter.ClassifyReasoning = reasoning
+			chapter.AudioIncludeReasoning = reasoning
 		}
 	}
 
@@ -580,10 +591,15 @@ func (j *Job) persistClassifyResults(ctx context.Context) error {
 		}
 
 		doc := map[string]any{
-			"matter_type": chapter.MatterType,
+			"matter_type":   chapter.MatterType,
+			"content_type":  chapter.ContentType,
+			"audio_include": chapter.AudioInclude,
 		}
 		if chapter.ClassifyReasoning != "" {
 			doc["classification_reasoning"] = chapter.ClassifyReasoning
+		}
+		if chapter.AudioIncludeReasoning != "" {
+			doc["audio_include_reasoning"] = chapter.AudioIncludeReasoning
 		}
 
 		if _, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
@@ -642,6 +658,12 @@ func (j *Job) createStructurePolishWorkUnits(ctx context.Context) []jobs.WorkUni
 
 	for _, chapter := range chapters {
 		if chapter.PolishDone || chapter.MechanicalText == "" {
+			continue
+		}
+		if !chapter.AudioInclude {
+			chapter.PolishedText = chapter.MechanicalText
+			chapter.PolishDone = true
+			j.Book.IncrementStructurePolished()
 			continue
 		}
 

@@ -16,6 +16,9 @@ interface Chapter {
   start_page: number
   end_page: number
   matter_type: string
+  content_type?: string
+  audio_include?: boolean
+  audio_include_reasoning?: string
   sort_order: number
   word_count?: number
   page_count: number
@@ -172,6 +175,7 @@ interface ChapterCardProps {
 function ChapterCard({ chapter, bookId, isExpanded, onToggle, matterColors }: ChapterCardProps) {
   const hasPolishedText = !!chapter.polished_text
   const indent = chapter.level * 16
+  const audioInclude = chapter.audio_include ?? false
 
   return (
     <div className="group">
@@ -219,7 +223,7 @@ function ChapterCard({ chapter, bookId, isExpanded, onToggle, matterColors }: Ch
           </div>
         </div>
 
-        {/* Right side: matter type badge and link */}
+        {/* Right side: classification badges and link */}
         <div className="flex items-center space-x-3 ml-4">
           <span
             className={`px-2 py-1 rounded text-xs font-medium border ${
@@ -227,6 +231,19 @@ function ChapterCard({ chapter, bookId, isExpanded, onToggle, matterColors }: Ch
             }`}
           >
             {chapter.matter_type?.replace('_', ' ') || 'unknown'}
+          </span>
+          {chapter.content_type && (
+            <span className="px-2 py-1 rounded text-xs font-medium border bg-gray-50 text-gray-700 border-gray-200">
+              {chapter.content_type.replace('_', ' ')}
+            </span>
+          )}
+          <span
+            className={`px-2 py-1 rounded text-xs font-medium border ${
+              audioInclude ? 'bg-green-100 text-green-800 border-green-200' : 'bg-gray-100 text-gray-600 border-gray-200'
+            }`}
+            title={chapter.audio_include_reasoning || ''}
+          >
+            {audioInclude ? 'Audio' : 'Excluded'}
           </span>
           <Link
             to="/books/$bookId/pages/$pageNum"

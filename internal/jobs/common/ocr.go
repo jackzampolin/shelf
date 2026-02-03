@@ -84,9 +84,11 @@ func PersistOCRResult(ctx context.Context, book *BookState, state *PageState, oc
 			update := map[string]any{}
 			if result.Header != "" {
 				update["header"] = result.Header
+				state.SetHeader(result.Header)
 			}
 			if result.Footer != "" {
 				update["footer"] = result.Footer
+				state.SetFooter(result.Footer)
 			}
 			if writeResult, err := SendTracked(ctx, book, defra.WriteOp{
 				Collection: "Page",
