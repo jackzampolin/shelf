@@ -193,11 +193,14 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 		if agentResult != nil && agentResult.Success {
 			if entryResult, ok := agentResult.ToolResult.(*toc_entry_finder.Result); ok {
 				// Update TocEntry with actual_page using common utility
-				writeResult, err := common.SaveTocEntryResult(ctx, j.Book, info.EntryDocID, entryResult)
+				cid, err := common.SaveTocEntryResult(ctx, j.Book, info.EntryDocID, entryResult)
 				if err != nil {
 					return nil, fmt.Errorf("failed to save entry result: %w", err)
 				}
-				if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "TocEntry", writeResult.DocID, writeResult.CID); err != nil {
+				if cid != "" {
+					j.Book.SetTocCID(cid)
+				}
+				if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "TocEntry", info.EntryDocID, cid); err != nil {
 					if logger != nil {
 						logger.Warn("failed to update metric output ref", "error", err)
 					}

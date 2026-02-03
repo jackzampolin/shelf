@@ -10,7 +10,9 @@ import (
 
 	page_pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/page_pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
+	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // HomeDir is an alias for home.Dir for external use.
@@ -27,6 +29,7 @@ type PageState struct {
 
 	// DefraDB document ID for the Page record
 	pageDocID string
+	pageCID   string // Latest commit CID for this page
 
 	// Extraction state
 	extractDone bool
@@ -132,6 +135,20 @@ func (p *PageState) SetPageDocID(docID string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.pageDocID = docID
+}
+
+// GetPageCID returns the page commit CID (thread-safe).
+func (p *PageState) GetPageCID() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.pageCID
+}
+
+// SetPageCID sets the page commit CID (thread-safe).
+func (p *PageState) SetPageCID(cid string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pageCID = cid
 }
 
 // --- Cache accessor methods ---
@@ -340,6 +357,11 @@ type BookState struct {
 	bookMetadata       *BookMetadata
 	bookMetadataLoaded bool // True if metadata has been loaded/attempted
 
+	// Version tracking (mutable - use accessor methods)
+	bookCID       string
+	tocCID        string
+	operationCIDs map[OpType]string // CID when each operation completed
+
 	// Context (immutable after LoadBook)
 	HomeDir    *home.Dir
 	PDFs       PDFList
@@ -454,10 +476,10 @@ type BookState struct {
 // NewBookState creates a new BookState with initialized maps.
 func NewBookState(bookID string) *BookState {
 	return &BookState{
-		BookID:    bookID,
-		BookDocID: bookID, // Same as BookID - both are the DefraDB document ID
-		Pages:     make(map[int]*PageState),
-		Prompts:   make(map[string]string),
+		BookID:     bookID,
+		BookDocID:  bookID, // Same as BookID - both are the DefraDB document ID
+		Pages:      make(map[int]*PageState),
+		Prompts:    make(map[string]string),
 		PromptCIDs: make(map[string]string),
 		ops: map[OpType]*OperationState{
 			OpMetadata:        {},
@@ -468,11 +490,60 @@ func NewBookState(bookID string) *BookState {
 			OpTocFinalize:     {},
 			OpStructure:       {},
 		},
+		operationCIDs:               make(map[OpType]string),
 		agentStates:                 make(map[string]*AgentState),
 		structureClassifications:    make(map[string]string),
 		structureClassifyReasonings: make(map[string]string),
 		costsByStage:                make(map[string]float64),
 	}
+}
+
+// GetBookCID returns the latest book commit CID (thread-safe).
+func (b *BookState) GetBookCID() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.bookCID
+}
+
+// SetBookCID sets the latest book commit CID (thread-safe).
+func (b *BookState) SetBookCID(cid string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.bookCID = cid
+}
+
+// GetTocCID returns the latest ToC commit CID (thread-safe).
+func (b *BookState) GetTocCID() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.tocCID
+}
+
+// SetTocCID sets the latest ToC commit CID (thread-safe).
+func (b *BookState) SetTocCID(cid string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.tocCID = cid
+}
+
+// GetOperationCID returns the commit CID for a completed operation (thread-safe).
+func (b *BookState) GetOperationCID(op OpType) string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.operationCIDs[op]
+}
+
+// SetOperationCID sets the commit CID for a completed operation (thread-safe).
+func (b *BookState) SetOperationCID(op OpType, cid string) {
+	if cid == "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.operationCIDs == nil {
+		b.operationCIDs = make(map[OpType]string)
+	}
+	b.operationCIDs[op] = cid
 }
 
 // GetPage returns the page state for a given page number (thread-safe).
@@ -490,6 +561,38 @@ func (b *BookState) GetOrCreatePage(pageNum int) *PageState {
 		b.Pages[pageNum] = NewPageState()
 	}
 	return b.Pages[pageNum]
+}
+
+// GetPageAtCID loads a page's state at a specific DefraDB commit CID.
+func (b *BookState) GetPageAtCID(ctx context.Context, pageNum int, cid string) (map[string]any, error) {
+	if cid == "" {
+		return nil, fmt.Errorf("cid is required")
+	}
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return nil, fmt.Errorf("defra client not in context")
+	}
+
+	query, vars := defra.NewQuery("Page").
+		Filter("book_id", b.BookID).
+		Filter("page_num", pageNum).
+		WithCID(cid).
+		Fields("_docID", "page_num", "ocr_markdown", "headings", "ocr_complete").
+		Build()
+
+	resp, err := defraClient.Execute(ctx, query, vars)
+	if err != nil {
+		return nil, err
+	}
+	pages, ok := resp.Data["Page"].([]any)
+	if !ok || len(pages) == 0 {
+		return nil, fmt.Errorf("page not found at CID %s", cid)
+	}
+	page, ok := pages[0].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected page format at CID %s", cid)
+	}
+	return page, nil
 }
 
 // ForEachPage calls the function for each page (thread-safe, read lock).
@@ -830,9 +933,9 @@ type AgentState struct {
 
 // Valid agent types - used for validation
 const (
-	AgentTypeTocFinder      = "toc_finder"
-	AgentTypeTocEntryFinder = "toc_entry_finder"
-	AgentTypeChapterFinder  = "chapter_finder"
+	AgentTypeTocFinder       = "toc_finder"
+	AgentTypeTocEntryFinder  = "toc_entry_finder"
+	AgentTypeChapterFinder   = "chapter_finder"
 	AgentTypeGapInvestigator = "gap_investigator"
 )
 
@@ -967,10 +1070,10 @@ type ExcludedRange struct {
 
 // EntryToFind represents a missing chapter/section to discover.
 type EntryToFind struct {
-	Key              string `json:"key"`                // Unique key like "chapter_14"
-	LevelName        string `json:"level_name"`         // "chapter", "part"
-	Identifier       string `json:"identifier"`         // "14", "III", "A"
-	HeadingFormat    string `json:"heading_format"`     // "Chapter {n}"
+	Key              string `json:"key"`            // Unique key like "chapter_14"
+	LevelName        string `json:"level_name"`     // "chapter", "part"
+	Identifier       string `json:"identifier"`     // "14", "III", "A"
+	HeadingFormat    string `json:"heading_format"` // "Chapter {n}"
 	Level            int    `json:"level"`
 	ExpectedNearPage int    `json:"expected_near_page"` // Estimated page based on sequence
 	SearchRangeStart int    `json:"search_range_start"`
@@ -979,7 +1082,7 @@ type EntryToFind struct {
 
 // FinalizeGap represents a gap in page coverage between entries.
 type FinalizeGap struct {
-	Key            string `json:"key"`              // Unique key like "gap_100_150"
+	Key            string `json:"key"` // Unique key like "gap_100_150"
 	StartPage      int    `json:"start_page"`
 	EndPage        int    `json:"end_page"`
 	Size           int    `json:"size"`
@@ -993,7 +1096,7 @@ type FinalizeGap struct {
 
 // FinalizeState holds finalize ToC sub-job state within BookState.
 type FinalizeState struct {
-	Phase           string                 `json:"phase"`            // pattern, discover, validate
+	Phase           string                 `json:"phase"` // pattern, discover, validate
 	PatternResult   *FinalizePatternResult `json:"pattern_result"`
 	EntriesToFind   []*EntryToFind         `json:"entries_to_find"`
 	EntriesComplete int                    `json:"entries_complete"`
@@ -1212,17 +1315,17 @@ func NewChapterState(entryID, uniqueKey, title string, startPage int) (*ChapterS
 
 // StructureState holds structure sub-job state within BookState (for serialization).
 type StructureState struct {
-	Phase              string                    `json:"phase"` // build, extract, classify, polish, finalize
-	Chapters           []*ChapterState           `json:"chapters"`
-	ChaptersToExtract  int                       `json:"chapters_to_extract"`
-	ChaptersExtracted  int                       `json:"chapters_extracted"`
-	ExtractsFailed     int                       `json:"extracts_failed"`
-	ClassifyPending    bool                      `json:"classify_pending"`
-	Classifications    map[string]string         `json:"classifications"`     // entry_id -> matter_type
-	ClassifyReasonings map[string]string         `json:"classify_reasonings"` // entry_id -> reasoning
-	ChaptersToPolish   int                       `json:"chapters_to_polish"`
-	ChaptersPolished   int                       `json:"chapters_polished"`
-	PolishFailed       int                       `json:"polish_failed"`
+	Phase              string            `json:"phase"` // build, extract, classify, polish, finalize
+	Chapters           []*ChapterState   `json:"chapters"`
+	ChaptersToExtract  int               `json:"chapters_to_extract"`
+	ChaptersExtracted  int               `json:"chapters_extracted"`
+	ExtractsFailed     int               `json:"extracts_failed"`
+	ClassifyPending    bool              `json:"classify_pending"`
+	Classifications    map[string]string `json:"classifications"`     // entry_id -> matter_type
+	ClassifyReasonings map[string]string `json:"classify_reasonings"` // entry_id -> reasoning
+	ChaptersToPolish   int               `json:"chapters_to_polish"`
+	ChaptersPolished   int               `json:"chapters_polished"`
+	PolishFailed       int               `json:"polish_failed"`
 }
 
 // GetStructureChapters returns the structure chapters (thread-safe).
@@ -1415,14 +1518,14 @@ func (b *BookState) SetPatternAnalysisResult(result *PagePatternResult) {
 // Deprecated: These wrapper methods delegate to the generic Op* methods.
 // New code should use OpStart(OpMetadata), OpComplete(OpMetadata), etc.
 
-func (b *BookState) MetadataStart() error          { return b.OpStart(OpMetadata) }
-func (b *BookState) MetadataComplete()              { b.OpComplete(OpMetadata) }
+func (b *BookState) MetadataStart() error             { return b.OpStart(OpMetadata) }
+func (b *BookState) MetadataComplete()                { b.OpComplete(OpMetadata) }
 func (b *BookState) MetadataFail(maxRetries int) bool { return b.OpFail(OpMetadata, maxRetries) }
-func (b *BookState) MetadataReset()                 { b.OpReset(OpMetadata) }
-func (b *BookState) MetadataIsStarted() bool        { return b.OpIsStarted(OpMetadata) }
-func (b *BookState) MetadataIsDone() bool           { return b.OpIsDone(OpMetadata) }
-func (b *BookState) MetadataCanStart() bool         { return b.OpCanStart(OpMetadata) }
-func (b *BookState) MetadataIsComplete() bool       { return b.OpIsComplete(OpMetadata) }
+func (b *BookState) MetadataReset()                   { b.OpReset(OpMetadata) }
+func (b *BookState) MetadataIsStarted() bool          { return b.OpIsStarted(OpMetadata) }
+func (b *BookState) MetadataIsDone() bool             { return b.OpIsDone(OpMetadata) }
+func (b *BookState) MetadataCanStart() bool           { return b.OpCanStart(OpMetadata) }
+func (b *BookState) MetadataIsComplete() bool         { return b.OpIsComplete(OpMetadata) }
 func (b *BookState) GetMetadataState() OperationState { return b.OpGetState(OpMetadata) }
 
 // GetBookMetadata returns the book metadata (thread-safe).
@@ -1483,7 +1586,7 @@ func (b *BookState) GetBookTitle() string {
 	return ""
 }
 
-func (b *BookState) TocFinderStart() error            { return b.OpStart(OpTocFinder) }
+func (b *BookState) TocFinderStart() error             { return b.OpStart(OpTocFinder) }
 func (b *BookState) TocFinderComplete()                { b.OpComplete(OpTocFinder) }
 func (b *BookState) TocFinderFail(maxRetries int) bool { return b.OpFail(OpTocFinder, maxRetries) }
 func (b *BookState) TocFinderReset()                   { b.OpReset(OpTocFinder) }
@@ -1493,7 +1596,7 @@ func (b *BookState) TocFinderCanStart() bool           { return b.OpCanStart(OpT
 func (b *BookState) TocFinderIsComplete() bool         { return b.OpIsComplete(OpTocFinder) }
 func (b *BookState) GetTocFinderState() OperationState { return b.OpGetState(OpTocFinder) }
 
-func (b *BookState) TocExtractStart() error            { return b.OpStart(OpTocExtract) }
+func (b *BookState) TocExtractStart() error             { return b.OpStart(OpTocExtract) }
 func (b *BookState) TocExtractComplete()                { b.OpComplete(OpTocExtract) }
 func (b *BookState) TocExtractFail(maxRetries int) bool { return b.OpFail(OpTocExtract, maxRetries) }
 func (b *BookState) TocExtractReset()                   { b.OpReset(OpTocExtract) }
@@ -1503,9 +1606,11 @@ func (b *BookState) TocExtractCanStart() bool           { return b.OpCanStart(Op
 func (b *BookState) TocExtractIsComplete() bool         { return b.OpIsComplete(OpTocExtract) }
 func (b *BookState) GetTocExtractState() OperationState { return b.OpGetState(OpTocExtract) }
 
-func (b *BookState) PatternAnalysisStart() error            { return b.OpStart(OpPatternAnalysis) }
-func (b *BookState) PatternAnalysisComplete()                { b.OpComplete(OpPatternAnalysis) }
-func (b *BookState) PatternAnalysisFail(maxRetries int) bool { return b.OpFail(OpPatternAnalysis, maxRetries) }
+func (b *BookState) PatternAnalysisStart() error { return b.OpStart(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisComplete()    { b.OpComplete(OpPatternAnalysis) }
+func (b *BookState) PatternAnalysisFail(maxRetries int) bool {
+	return b.OpFail(OpPatternAnalysis, maxRetries)
+}
 func (b *BookState) PatternAnalysisReset()                   { b.OpReset(OpPatternAnalysis) }
 func (b *BookState) PatternAnalysisIsStarted() bool          { return b.OpIsStarted(OpPatternAnalysis) }
 func (b *BookState) PatternAnalysisIsDone() bool             { return b.OpIsDone(OpPatternAnalysis) }
@@ -1513,7 +1618,7 @@ func (b *BookState) PatternAnalysisCanStart() bool           { return b.OpCanSta
 func (b *BookState) PatternAnalysisIsComplete() bool         { return b.OpIsComplete(OpPatternAnalysis) }
 func (b *BookState) GetPatternAnalysisState() OperationState { return b.OpGetState(OpPatternAnalysis) }
 
-func (b *BookState) TocLinkStart() error            { return b.OpStart(OpTocLink) }
+func (b *BookState) TocLinkStart() error             { return b.OpStart(OpTocLink) }
 func (b *BookState) TocLinkComplete()                { b.OpComplete(OpTocLink) }
 func (b *BookState) TocLinkFail(maxRetries int) bool { return b.OpFail(OpTocLink, maxRetries) }
 func (b *BookState) TocLinkReset()                   { b.OpReset(OpTocLink) }
@@ -1523,7 +1628,7 @@ func (b *BookState) TocLinkCanStart() bool           { return b.OpCanStart(OpToc
 func (b *BookState) TocLinkIsComplete() bool         { return b.OpIsComplete(OpTocLink) }
 func (b *BookState) GetTocLinkState() OperationState { return b.OpGetState(OpTocLink) }
 
-func (b *BookState) TocFinalizeStart() error            { return b.OpStart(OpTocFinalize) }
+func (b *BookState) TocFinalizeStart() error             { return b.OpStart(OpTocFinalize) }
 func (b *BookState) TocFinalizeComplete()                { b.OpComplete(OpTocFinalize) }
 func (b *BookState) TocFinalizeFail(maxRetries int) bool { return b.OpFail(OpTocFinalize, maxRetries) }
 func (b *BookState) TocFinalizeReset()                   { b.OpReset(OpTocFinalize) }
@@ -1533,7 +1638,7 @@ func (b *BookState) TocFinalizeCanStart() bool           { return b.OpCanStart(O
 func (b *BookState) TocFinalizeIsComplete() bool         { return b.OpIsComplete(OpTocFinalize) }
 func (b *BookState) GetTocFinalizeState() OperationState { return b.OpGetState(OpTocFinalize) }
 
-func (b *BookState) StructureStart() error            { return b.OpStart(OpStructure) }
+func (b *BookState) StructureStart() error             { return b.OpStart(OpStructure) }
 func (b *BookState) StructureComplete()                { b.OpComplete(OpStructure) }
 func (b *BookState) StructureFail(maxRetries int) bool { return b.OpFail(OpStructure, maxRetries) }
 func (b *BookState) StructureReset()                   { b.OpReset(OpStructure) }

@@ -139,10 +139,10 @@ func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int
 }
 
 // SaveMetadataResult saves the metadata result to the Book record in DefraDB.
-func SaveMetadataResult(ctx context.Context, bookID string, result metadata.Result) (defra.WriteResult, error) {
+func SaveMetadataResult(ctx context.Context, bookID string, result metadata.Result) (string, error) {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return defra.WriteResult{}, fmt.Errorf("defra sink not in context")
+		return "", fmt.Errorf("defra sink not in context")
 	}
 
 	update := map[string]any{
@@ -178,7 +178,7 @@ func SaveMetadataResult(ctx context.Context, bookID string, result metadata.Resu
 		Op:         defra.OpUpdate,
 	})
 	if err != nil {
-		return defra.WriteResult{}, err
+		return "", err
 	}
-	return writeResult, nil
+	return writeResult.CID, nil
 }

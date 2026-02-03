@@ -1034,7 +1034,7 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	j.Book.TocFinalizeComplete()
 	// Use sync write for completion to ensure state is persisted before continuing to structure
-	if err := common.PersistOpStateSync(ctx, j.Book, common.OpTocFinalize); err != nil {
+	if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocFinalize); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist finalize completion", "error", err)
 		}

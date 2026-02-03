@@ -179,7 +179,11 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 			} else {
 				// No entries to link - mark as complete
 				j.Book.TocLinkComplete()
-				j.PersistTocLinkState(ctx)
+				if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocLink); err != nil {
+					if logger != nil {
+						logger.Warn("failed to persist toc link completion", "error", err)
+					}
+				}
 				if logger != nil {
 					logger.Info("no ToC entries to link - marking complete")
 				}

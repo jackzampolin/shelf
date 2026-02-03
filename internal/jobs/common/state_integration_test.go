@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 	"github.com/jackzampolin/shelf/internal/testutil"
 )
 
@@ -115,6 +116,14 @@ func setupStateIntegrationTest(t *testing.T) (*defra.Client, *defra.Sink, *Defra
 			level: Int
 			sort_order: Int
 			actual_page_id: String
+		}`,
+		// Page schema
+		`type Page {
+			book_id: String
+			page_num: Int
+			ocr_markdown: String
+			headings: String
+			ocr_complete: Boolean
 		}`,
 		// Chapter schema
 		`type Chapter {
@@ -609,5 +618,58 @@ func TestStateIntegration_ConcurrentPersist(t *testing.T) {
 	if !startedOk || !completeOk {
 		t.Errorf("expected boolean values for metadata state, got started=%T complete=%T",
 			bookDoc["metadata_started"], bookDoc["metadata_complete"])
+	}
+}
+
+func TestCIDHistoricalQuery(t *testing.T) {
+	client, _, _, cleanup := setupStateIntegrationTest(t)
+	defer cleanup()
+
+	ctx := svcctx.WithServices(context.Background(), &svcctx.Services{
+		DefraClient: client,
+	})
+
+	// Create page
+	createResult, err := client.CreateWithVersion(ctx, "Page", map[string]any{
+		"book_id":      "book-1",
+		"page_num":     1,
+		"ocr_markdown": "original",
+	})
+	if err != nil {
+		t.Fatalf("CreateWithVersion error: %v", err)
+	}
+	if createResult.CID == "" {
+		t.Fatal("expected create CID")
+	}
+
+	// Update page
+	updateResult, err := client.UpdateWithVersion(ctx, "Page", createResult.DocID, map[string]any{
+		"ocr_markdown": "updated",
+	})
+	if err != nil {
+		t.Fatalf("UpdateWithVersion error: %v", err)
+	}
+	if updateResult.CID == "" {
+		t.Fatal("expected update CID")
+	}
+
+	book := NewBookState("book-1")
+
+	// Query at CID 1 - should get original
+	page1, err := book.GetPageAtCID(ctx, 1, createResult.CID)
+	if err != nil {
+		t.Fatalf("GetPageAtCID (create) error: %v", err)
+	}
+	if got, _ := page1["ocr_markdown"].(string); got != "original" {
+		t.Fatalf("unexpected ocr_markdown at create CID: %s", got)
+	}
+
+	// Query at CID 2 - should get updated
+	page2, err := book.GetPageAtCID(ctx, 1, updateResult.CID)
+	if err != nil {
+		t.Fatalf("GetPageAtCID (update) error: %v", err)
+	}
+	if got, _ := page2["ocr_markdown"].(string); got != "updated" {
+		t.Fatalf("unexpected ocr_markdown at update CID: %s", got)
 	}
 }

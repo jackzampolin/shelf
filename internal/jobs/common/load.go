@@ -72,6 +72,7 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	// 1. Query book record for page_count and metadata
 	bookQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
+			_version { cid }
 			page_count
 			title
 			author
@@ -91,6 +92,13 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 
 	if books, ok := bookResp.Data["Book"].([]any); ok && len(books) > 0 {
 		if bookData, ok := books[0].(map[string]any); ok {
+			if versions, ok := bookData["_version"].([]any); ok && len(versions) > 0 {
+				if v, ok := versions[0].(map[string]any); ok {
+					if cid, ok := v["cid"].(string); ok && cid != "" {
+						book.SetBookCID(cid)
+					}
+				}
+			}
 			if pc, ok := bookData["page_count"].(float64); ok {
 				book.TotalPages = int(pc)
 			}
@@ -302,6 +310,7 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 	query := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}}) {
 			_docID
+			_version { cid }
 			page_num
 			extract_complete
 			ocr_complete
@@ -350,6 +359,13 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 		// Use thread-safe setters for all field assignments
 		if docID, ok := page["_docID"].(string); ok {
 			state.SetPageDocID(docID)
+		}
+		if versions, ok := page["_version"].([]any); ok && len(versions) > 0 {
+			if v, ok := versions[0].(map[string]any); ok {
+				if cid, ok := v["cid"].(string); ok && cid != "" {
+					state.SetPageCID(cid)
+				}
+			}
 		}
 		if extractComplete, ok := page["extract_complete"].(bool); ok {
 			state.SetExtractDone(extractComplete)
@@ -516,6 +532,7 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			toc {
 				_docID
+				_version { cid }
 				toc_found
 				finder_started
 				finder_complete
@@ -556,6 +573,13 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 			if toc, ok := bookData["toc"].(map[string]any); ok {
 				if docID, ok := toc["_docID"].(string); ok {
 					tocDocID = docID
+				}
+				if versions, ok := toc["_version"].([]any); ok && len(versions) > 0 {
+					if v, ok := versions[0].(map[string]any); ok {
+						if cid, ok := v["cid"].(string); ok && cid != "" {
+							book.SetTocCID(cid)
+						}
+					}
 				}
 				// Load ToC-collection operation states via registry
 				loadOpStateFromData(book, OpTocFinder, toc, "finder")

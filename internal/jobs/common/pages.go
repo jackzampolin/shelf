@@ -54,6 +54,7 @@ func CreateMissingPages(ctx context.Context, book *BookState) (int, error) {
 	for i, pageNum := range newPageNums {
 		state := NewPageState()
 		state.SetPageDocID(results[i].DocID)
+		state.SetPageCID(results[i].CID)
 		book.Pages[pageNum] = state
 	}
 

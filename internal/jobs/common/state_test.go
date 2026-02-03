@@ -232,6 +232,22 @@ func TestBookState_ConcurrentAccess(t *testing.T) {
 	})
 }
 
+func TestPageStateCID(t *testing.T) {
+	state := NewPageState()
+	state.SetPageCID("bafyabc123")
+	if got := state.GetPageCID(); got != "bafyabc123" {
+		t.Fatalf("unexpected page CID: %s", got)
+	}
+}
+
+func TestBookStateOperationCIDs(t *testing.T) {
+	book := NewBookState("test-book")
+	book.SetOperationCID(OpMetadata, "bafymeta123")
+	if got := book.GetOperationCID(OpMetadata); got != "bafymeta123" {
+		t.Fatalf("unexpected operation CID: %s", got)
+	}
+}
+
 // TestPageState_ConcurrentAccess tests thread-safety of PageState accessor methods.
 func TestPageState_ConcurrentAccess(t *testing.T) {
 	t.Run("concurrent_ocr_results", func(t *testing.T) {

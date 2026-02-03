@@ -88,12 +88,16 @@ func PersistOCRResult(ctx context.Context, state *PageState, ocrProviders []stri
 			if result.Footer != "" {
 				update["footer"] = result.Footer
 			}
-			sink.Send(defra.WriteOp{
+			if writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 				Collection: "Page",
 				DocID:      pageDocID,
 				Document:   update,
 				Op:         defra.OpUpdate,
-			})
+			}); err == nil {
+				if writeResult.CID != "" {
+					state.SetPageCID(writeResult.CID)
+				}
+			}
 		}
 
 		// Update in-memory state (thread-safe)
@@ -110,12 +114,16 @@ func PersistOCRResult(ctx context.Context, state *PageState, ocrProviders []stri
 
 	if allDone {
 		// Mark page as OCR complete
-		sink.Send(defra.WriteOp{
+		if writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 			Collection: "Page",
 			DocID:      pageDocID,
 			Document:   map[string]any{"ocr_complete": true},
 			Op:         defra.OpUpdate,
-		})
+		}); err == nil {
+			if writeResult.CID != "" {
+				state.SetPageCID(writeResult.CID)
+			}
+		}
 	}
 
 	return allDone, nil

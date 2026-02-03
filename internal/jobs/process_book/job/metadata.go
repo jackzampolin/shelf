@@ -32,11 +32,15 @@ func (j *Job) HandleMetadataComplete(ctx context.Context, result jobs.WorkResult
 		return fmt.Errorf("failed to parse metadata result: %w", err)
 	}
 
-	writeResult, err := common.SaveMetadataResult(ctx, j.Book.BookID, *metadataResult)
+	cid, err := common.SaveMetadataResult(ctx, j.Book.BookID, *metadataResult)
 	if err != nil {
 		return fmt.Errorf("failed to save metadata: %w", err)
 	}
-	if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "Book", j.Book.BookID, writeResult.CID); err != nil {
+	if cid != "" {
+		j.Book.SetBookCID(cid)
+		j.Book.SetOperationCID(common.OpMetadata, cid)
+	}
+	if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "Book", j.Book.BookID, cid); err != nil {
 		if logger := svcctx.LoggerFrom(ctx); logger != nil {
 			logger.Warn("failed to update metric output ref", "error", err)
 		}

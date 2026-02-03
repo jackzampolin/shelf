@@ -32,11 +32,15 @@ func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResu
 		return fmt.Errorf("failed to parse ToC extract result: %w", err)
 	}
 
-	writeResult, err := common.SaveTocExtractResult(ctx, j.TocDocID, extractResult)
+	cid, err := common.SaveTocExtractResult(ctx, j.TocDocID, extractResult)
 	if err != nil {
 		return fmt.Errorf("failed to save ToC extract result: %w", err)
 	}
-	if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, writeResult.CID); err != nil {
+	if cid != "" {
+		j.Book.SetTocCID(cid)
+		j.Book.SetOperationCID(common.OpTocExtract, cid)
+	}
+	if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, cid); err != nil {
 		if logger := svcctx.LoggerFrom(ctx); logger != nil {
 			logger.Warn("failed to update metric output ref", "error", err)
 		}

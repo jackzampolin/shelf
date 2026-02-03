@@ -198,10 +198,10 @@ func LoadTocStructureSummary(ctx context.Context, tocDocID string) (*extract_toc
 }
 
 // SaveTocFinderResult saves the ToC finder result to DefraDB.
-func SaveTocFinderResult(ctx context.Context, tocDocID string, result *toc_finder.Result) (defra.WriteResult, error) {
+func SaveTocFinderResult(ctx context.Context, tocDocID string, result *toc_finder.Result) (string, error) {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return defra.WriteResult{}, fmt.Errorf("defra sink not in context")
+		return "", fmt.Errorf("defra sink not in context")
 	}
 
 	update := map[string]any{
@@ -228,16 +228,16 @@ func SaveTocFinderResult(ctx context.Context, tocDocID string, result *toc_finde
 		Op:         defra.OpUpdate,
 	})
 	if err != nil {
-		return defra.WriteResult{}, err
+		return "", err
 	}
-	return writeResult, nil
+	return writeResult.CID, nil
 }
 
 // SaveTocFinderNoResult marks ToC finder as complete with no ToC found.
-func SaveTocFinderNoResult(ctx context.Context, tocDocID string) (defra.WriteResult, error) {
+func SaveTocFinderNoResult(ctx context.Context, tocDocID string) (string, error) {
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return defra.WriteResult{}, fmt.Errorf("defra sink not in context")
+		return "", fmt.Errorf("defra sink not in context")
 	}
 	writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "ToC",
@@ -249,22 +249,22 @@ func SaveTocFinderNoResult(ctx context.Context, tocDocID string) (defra.WriteRes
 		Op: defra.OpUpdate,
 	})
 	if err != nil {
-		return defra.WriteResult{}, err
+		return "", err
 	}
-	return writeResult, nil
+	return writeResult.CID, nil
 }
 
 // SaveTocExtractResult saves the ToC extraction result to DefraDB.
 // This operation is idempotent - uses upsert to create or update entries.
-func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_toc.Result) (defra.WriteResult, error) {
+func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_toc.Result) (string, error) {
 	logger := svcctx.LoggerFrom(ctx)
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
-		return defra.WriteResult{}, fmt.Errorf("defra client not in context")
+		return "", fmt.Errorf("defra client not in context")
 	}
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return defra.WriteResult{}, fmt.Errorf("defra sink not in context")
+		return "", fmt.Errorf("defra sink not in context")
 	}
 
 	if logger != nil {
@@ -310,7 +310,7 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 					"title", entry.Title,
 					"error", err)
 			}
-			return defra.WriteResult{}, fmt.Errorf("failed to upsert TocEntry %d: %w", i, err)
+			return "", fmt.Errorf("failed to upsert TocEntry %d: %w", i, err)
 		}
 	}
 
@@ -330,9 +330,9 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 		Op: defra.OpUpdate,
 	})
 	if err != nil {
-		return defra.WriteResult{}, err
+		return "", err
 	}
-	return writeResult, nil
+	return writeResult.CID, nil
 }
 
 // LinkedTocEntry represents a ToC entry with its page link.
@@ -569,15 +569,15 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 
 // SaveTocEntryResult updates a TocEntry with the found page link.
 // Used by link_toc operations in both process_book and standalone link_toc jobs.
-func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string, result *toc_entry_finder.Result) (defra.WriteResult, error) {
+func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string, result *toc_entry_finder.Result) (string, error) {
 	// Validate entryDocID to prevent injection
 	if err := defra.ValidateID(entryDocID); err != nil {
-		return defra.WriteResult{}, fmt.Errorf("invalid entry doc ID: %w", err)
+		return "", fmt.Errorf("invalid entry doc ID: %w", err)
 	}
 
 	sink := svcctx.DefraSinkFrom(ctx)
 	if sink == nil {
-		return defra.WriteResult{}, fmt.Errorf("defra sink not in context")
+		return "", fmt.Errorf("defra sink not in context")
 	}
 
 	update := map[string]any{}
@@ -601,10 +601,10 @@ func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string,
 			Op:         defra.OpUpdate,
 		})
 		if err != nil {
-			return defra.WriteResult{}, err
+			return "", err
 		}
-		return writeResult, nil
+		return writeResult.CID, nil
 	}
 
-	return defra.WriteResult{}, nil
+	return "", nil
 }

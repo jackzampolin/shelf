@@ -3,6 +3,9 @@ package common
 import (
 	"context"
 	"fmt"
+
+	"github.com/jackzampolin/shelf/internal/defra"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // OpType identifies a book-level pipeline operation.
@@ -186,6 +189,66 @@ func (b *BookState) OpComplete(op OpType) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.ops[op].Complete()
+}
+
+// PersistOpComplete marks operation complete and returns commit CID.
+func PersistOpComplete(ctx context.Context, book *BookState, op OpType) (string, error) {
+	cfg, ok := OpRegistry[op]
+	if !ok || cfg == nil {
+		return "", fmt.Errorf("unknown operation: %s", op)
+	}
+
+	docID := cfg.DocIDSource(book)
+	if docID == "" {
+		return "", fmt.Errorf("no doc ID for operation %s", op)
+	}
+
+	update := map[string]any{
+		cfg.FieldPrefix + "_complete": true,
+		cfg.FieldPrefix + "_started":  false,
+	}
+
+	if book.Store != nil {
+		result, err := book.Store.SendSync(ctx, defra.WriteOp{
+			Collection: cfg.Collection,
+			DocID:      docID,
+			Document:   update,
+			Op:         defra.OpUpdate,
+		})
+		if err != nil {
+			return "", err
+		}
+		if result.CID != "" {
+			book.SetOperationCID(op, result.CID)
+			if cfg.Collection == "Book" {
+				book.SetBookCID(result.CID)
+			} else if cfg.Collection == "ToC" {
+				book.SetTocCID(result.CID)
+			}
+		}
+		return result.CID, nil
+	}
+
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return "", fmt.Errorf("defra client not in context")
+	}
+
+	result, err := defraClient.UpdateWithVersion(ctx, cfg.Collection, docID, update)
+	if err != nil {
+		return "", err
+	}
+
+	if result.CID != "" {
+		book.SetOperationCID(op, result.CID)
+		if cfg.Collection == "Book" {
+			book.SetBookCID(result.CID)
+		} else if cfg.Collection == "ToC" {
+			book.SetTocCID(result.CID)
+		}
+	}
+
+	return result.CID, nil
 }
 
 // OpFail records a failure for the given operation (thread-safe).

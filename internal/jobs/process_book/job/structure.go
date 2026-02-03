@@ -882,7 +882,7 @@ func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, erro
 
 	j.Book.StructureComplete()
 	// Use sync write for completion to ensure state is persisted before returning
-	if err := common.PersistOpStateSync(ctx, j.Book, common.OpStructure); err != nil {
+	if _, err := common.PersistOpComplete(ctx, j.Book, common.OpStructure); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist structure completion", "error", err)
 		}

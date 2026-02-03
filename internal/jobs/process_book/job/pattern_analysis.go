@@ -146,11 +146,14 @@ func (j *Job) handleBodyBoundariesComplete(ctx context.Context, result jobs.Work
 	}
 
 	// Save to database
-	writeResult, err := common.SavePatternAnalysisResult(ctx, j.Book.BookDocID, aggregatedResult)
+	cid, err := common.SavePatternAnalysisResult(ctx, j.Book.BookDocID, aggregatedResult)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save pattern analysis result: %w", err)
 	}
-	if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "Book", j.Book.BookDocID, writeResult.CID); err != nil {
+	if cid != "" {
+		j.Book.SetBookCID(cid)
+	}
+	if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "Book", j.Book.BookDocID, cid); err != nil {
 		if logger := svcctx.LoggerFrom(ctx); logger != nil {
 			logger.Warn("failed to update metric output ref", "error", err)
 		}
@@ -162,8 +165,8 @@ func (j *Job) handleBodyBoundariesComplete(ctx context.Context, result jobs.Work
 	// Mark pattern analysis as complete
 	j.Book.PatternAnalysisComplete()
 
-	// Persist completion state to DefraDB
-	if err := j.PersistPatternAnalysisState(ctx); err != nil {
+	// Persist completion state to DefraDB with CID tracking
+	if _, err := common.PersistOpComplete(ctx, j.Book, common.OpPatternAnalysis); err != nil {
 		return nil, fmt.Errorf("failed to persist pattern analysis state: %w", err)
 	}
 

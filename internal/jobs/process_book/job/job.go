@@ -186,7 +186,11 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			// Check if all entries are done
 			if j.LinkTocEntriesDone >= len(j.LinkTocEntries) {
 				j.Book.TocLinkComplete()
-				j.PersistTocLinkState(ctx)
+				if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocLink); err != nil {
+					if logger != nil {
+						logger.Warn("failed to persist toc link completion", "error", err)
+					}
+				}
 			}
 			j.RemoveWorkUnit(result.WorkUnitID)
 			j.CheckCompletion(ctx)
@@ -274,7 +278,11 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			// Check if all entries are done
 			if j.LinkTocEntriesDone >= len(j.LinkTocEntries) {
 				j.Book.TocLinkComplete()
-				j.PersistTocLinkState(ctx)
+				if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocLink); err != nil {
+					if logger != nil {
+						logger.Warn("failed to persist toc link completion", "error", err)
+					}
+				}
 				// Trigger finalize if needed
 				newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
 			}

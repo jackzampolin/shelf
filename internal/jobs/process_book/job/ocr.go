@@ -74,12 +74,16 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 				} else if logger := svcctx.LoggerFrom(ctx); logger != nil {
 					logger.Warn("failed to marshal headings", "page_num", info.PageNum, "error", err)
 				}
-				sink.Send(defra.WriteOp{
+				if writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 					Collection: "Page",
 					DocID:      pageDocID,
 					Document:   update,
 					Op:         defra.OpUpdate,
-				})
+				}); err == nil {
+					if writeResult.CID != "" {
+						state.SetPageCID(writeResult.CID)
+					}
+				}
 			}
 		}
 
