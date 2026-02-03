@@ -35,7 +35,7 @@ func SendToSinkSync(ctx context.Context, op defra.WriteOp) error {
 
 // --- Generic Operation State Persistence ---
 
-// PersistOpState persists operation state to DefraDB asynchronously via the registry.
+// PersistOpState persists operation state to DefraDB and updates CID tracking.
 // Uses OpConfig to determine collection, field prefix, and document ID.
 // If book.Store is set, uses it directly; otherwise falls back to context.
 func PersistOpState(ctx context.Context, book *BookState, op OpType) error {
@@ -60,10 +60,35 @@ func PersistOpState(ctx context.Context, book *BookState, op OpType) error {
 		Op: defra.OpUpdate,
 	}
 	if book.Store != nil {
-		book.Store.Send(writeOp)
+		result, err := book.Store.SendSync(ctx, writeOp)
+		if err != nil {
+			return err
+		}
+		if result.CID != "" {
+			if cfg.Collection == "Book" {
+				book.SetBookCID(result.CID)
+			} else if cfg.Collection == "ToC" {
+				book.SetTocCID(result.CID)
+			}
+		}
 		return nil
 	}
-	return SendToSink(ctx, writeOp)
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+	result, err := sink.SendSync(ctx, writeOp)
+	if err != nil {
+		return err
+	}
+	if result.CID != "" {
+		if cfg.Collection == "Book" {
+			book.SetBookCID(result.CID)
+		} else if cfg.Collection == "ToC" {
+			book.SetTocCID(result.CID)
+		}
+	}
+	return nil
 }
 
 // PersistOpStateSync persists operation state to DefraDB synchronously via the registry.
@@ -91,28 +116,71 @@ func PersistOpStateSync(ctx context.Context, book *BookState, op OpType) error {
 		Op: defra.OpUpdate,
 	}
 	if book.Store != nil {
-		_, err := book.Store.SendSync(ctx, writeOp)
+		result, err := book.Store.SendSync(ctx, writeOp)
+		if err != nil {
+			return err
+		}
+		if result.CID != "" {
+			if cfg.Collection == "Book" {
+				book.SetBookCID(result.CID)
+			} else if cfg.Collection == "ToC" {
+				book.SetTocCID(result.CID)
+			}
+		}
+		return nil
+	}
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+	result, err := sink.SendSync(ctx, writeOp)
+	if err != nil {
 		return err
 	}
-	return SendToSinkSync(ctx, writeOp)
+	if result.CID != "" {
+		if cfg.Collection == "Book" {
+			book.SetBookCID(result.CID)
+		} else if cfg.Collection == "ToC" {
+			book.SetTocCID(result.CID)
+		}
+	}
+	return nil
 }
 
-// PersistBookStatus persists book status to DefraDB.
-func PersistBookStatus(ctx context.Context, bookID string, status string) error {
-	return SendToSink(ctx, defra.WriteOp{
+// PersistBookStatus persists book status to DefraDB and updates CID tracking.
+func PersistBookStatus(ctx context.Context, book *BookState, status string) (string, error) {
+	if book == nil {
+		return "", fmt.Errorf("book is nil")
+	}
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return "", fmt.Errorf("defra sink not in context")
+	}
+	result, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
-		DocID:      bookID,
+		DocID:      book.BookID,
 		Document: map[string]any{
 			"status": status,
 		},
 		Op: defra.OpUpdate,
 	})
+	if err != nil {
+		return "", err
+	}
+	if result.CID != "" {
+		book.SetBookCID(result.CID)
+	}
+	return result.CID, nil
 }
 
 // PersistStructurePhase persists structure phase tracking data from BookState to DefraDB.
 func PersistStructurePhase(ctx context.Context, book *BookState) error {
 	total, extracted, polished, failed := book.GetStructureProgress()
-	return SendToSink(ctx, defra.WriteOp{
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+	result, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      book.BookID,
 		Document: map[string]any{
@@ -124,6 +192,13 @@ func PersistStructurePhase(ctx context.Context, book *BookState) error {
 		},
 		Op: defra.OpUpdate,
 	})
+	if err != nil {
+		return err
+	}
+	if result.CID != "" {
+		book.SetBookCID(result.CID)
+	}
+	return nil
 }
 
 // --- Agent State Persistence ---
@@ -138,16 +213,16 @@ func PersistAgentStateAsync(ctx context.Context, bookID string, state *AgentStat
 	}
 
 	doc := map[string]any{
-		"agent_id":            state.AgentID,
-		"agent_type":          state.AgentType,
-		"entry_doc_id":        state.EntryDocID,
-		"iteration":           state.Iteration,
-		"complete":            state.Complete,
-		"messages_json":       state.MessagesJSON,
-		"pending_tool_calls":  state.PendingToolCalls,
-		"tool_results":        state.ToolResults,
-		"result_json":         state.ResultJSON,
-		"book_id":             bookID,
+		"agent_id":           state.AgentID,
+		"agent_type":         state.AgentType,
+		"entry_doc_id":       state.EntryDocID,
+		"iteration":          state.Iteration,
+		"complete":           state.Complete,
+		"messages_json":      state.MessagesJSON,
+		"pending_tool_calls": state.PendingToolCalls,
+		"tool_results":       state.ToolResults,
+		"result_json":        state.ResultJSON,
+		"book_id":            bookID,
 	}
 
 	// Fire-and-forget create - use agent_id for later identification
@@ -385,21 +460,39 @@ func DeleteAgentStatesForType(ctx context.Context, bookID, agentType string) err
 // Use these for critical state transitions to ensure writes complete before proceeding.
 
 // PersistBookStatusSync persists book status and waits for confirmation.
-func PersistBookStatusSync(ctx context.Context, bookID string, status string) error {
-	return SendToSinkSync(ctx, defra.WriteOp{
+func PersistBookStatusSync(ctx context.Context, book *BookState, status string) (string, error) {
+	if book == nil {
+		return "", fmt.Errorf("book is nil")
+	}
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return "", fmt.Errorf("defra sink not in context")
+	}
+	result, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
-		DocID:      bookID,
+		DocID:      book.BookID,
 		Document: map[string]any{
 			"status": status,
 		},
 		Op: defra.OpUpdate,
 	})
+	if err != nil {
+		return "", err
+	}
+	if result.CID != "" {
+		book.SetBookCID(result.CID)
+	}
+	return result.CID, nil
 }
 
 // PersistStructurePhaseSync persists structure phase tracking data and waits for confirmation.
 func PersistStructurePhaseSync(ctx context.Context, book *BookState) error {
 	total, extracted, polished, failed := book.GetStructureProgress()
-	return SendToSinkSync(ctx, defra.WriteOp{
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+	result, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      book.BookID,
 		Document: map[string]any{
@@ -411,14 +504,25 @@ func PersistStructurePhaseSync(ctx context.Context, book *BookState) error {
 		},
 		Op: defra.OpUpdate,
 	})
+	if err != nil {
+		return err
+	}
+	if result.CID != "" {
+		book.SetBookCID(result.CID)
+	}
+	return nil
 }
 
 // PersistFinalizePhase persists finalize phase tracking to ToC.
-func PersistFinalizePhase(ctx context.Context, tocDocID string, phase string) error {
+func PersistFinalizePhase(ctx context.Context, tocDocID string, phase string) (string, error) {
 	if tocDocID == "" {
-		return nil
+		return "", nil
 	}
-	return SendToSink(ctx, defra.WriteOp{
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return "", fmt.Errorf("defra sink not in context")
+	}
+	result, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document: map[string]any{
@@ -426,14 +530,22 @@ func PersistFinalizePhase(ctx context.Context, tocDocID string, phase string) er
 		},
 		Op: defra.OpUpdate,
 	})
+	if err != nil {
+		return "", err
+	}
+	return result.CID, nil
 }
 
 // PersistFinalizePhaseSync persists finalize phase tracking to ToC and waits for confirmation.
-func PersistFinalizePhaseSync(ctx context.Context, tocDocID string, phase string) error {
+func PersistFinalizePhaseSync(ctx context.Context, tocDocID string, phase string) (string, error) {
 	if tocDocID == "" {
-		return nil
+		return "", nil
 	}
-	return SendToSinkSync(ctx, defra.WriteOp{
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return "", fmt.Errorf("defra sink not in context")
+	}
+	result, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "ToC",
 		DocID:      tocDocID,
 		Document: map[string]any{
@@ -441,12 +553,20 @@ func PersistFinalizePhaseSync(ctx context.Context, tocDocID string, phase string
 		},
 		Op: defra.OpUpdate,
 	})
+	if err != nil {
+		return "", err
+	}
+	return result.CID, nil
 }
 
 // PersistFinalizeProgress persists finalize progress counters to Book.
 func PersistFinalizeProgress(ctx context.Context, book *BookState) error {
 	entriesComplete, entriesFound, gapsComplete, gapsFixes := book.GetFinalizeProgress()
-	return SendToSink(ctx, defra.WriteOp{
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("defra sink not in context")
+	}
+	result, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      book.BookID,
 		Document: map[string]any{
@@ -457,4 +577,11 @@ func PersistFinalizeProgress(ctx context.Context, book *BookState) error {
 		},
 		Op: defra.OpUpdate,
 	})
+	if err != nil {
+		return err
+	}
+	if result.CID != "" {
+		book.SetBookCID(result.CID)
+	}
+	return nil
 }

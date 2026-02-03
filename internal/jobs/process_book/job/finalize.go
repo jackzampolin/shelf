@@ -100,10 +100,13 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	// Set phase and persist for crash recovery
 	j.Book.SetFinalizePhase(FinalizePhasePattern)
-	if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhasePattern); err != nil {
+	cid, err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhasePattern)
+	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "phase", FinalizePhasePattern, "error", err)
 		}
+	} else if cid != "" {
+		j.Book.SetTocCID(cid)
 	}
 
 	if logger != nil {
@@ -255,10 +258,13 @@ func (j *Job) HandleFinalizePatternComplete(ctx context.Context, result jobs.Wor
 		}
 		// Mark pattern phase as skipped to prevent re-attempts on restart
 		j.Book.SetFinalizePhase(FinalizePhaseDiscover)
-		if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDiscover); err != nil {
+		cid, err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDiscover)
+		if err != nil {
 			if logger != nil {
 				logger.Error("failed to persist pattern phase skip", "error", err)
 			}
+		} else if cid != "" {
+			j.Book.SetTocCID(cid)
 		}
 		return j.transitionToFinalizeDiscover(ctx), nil
 	}
@@ -415,10 +421,13 @@ func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit 
 
 	// Set phase and persist for crash recovery
 	j.Book.SetFinalizePhase(FinalizePhaseDiscover)
-	if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDiscover); err != nil {
+	cid, err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDiscover)
+	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseDiscover, "error", err)
 		}
+	} else if cid != "" {
+		j.Book.SetTocCID(cid)
 	}
 
 	if logger != nil {
@@ -665,10 +674,13 @@ func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit 
 
 	// Set phase and persist for crash recovery
 	j.Book.SetFinalizePhase(FinalizePhaseValidate)
-	if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseValidate); err != nil {
+	cid, err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseValidate)
+	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseValidate, "error", err)
 		}
+	} else if cid != "" {
+		j.Book.SetTocCID(cid)
 	}
 
 	// Find gaps in page coverage
@@ -1026,10 +1038,13 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	// Persist finalize phase before marking complete
 	j.Book.SetFinalizePhase(FinalizePhaseDone)
-	if err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDone); err != nil {
+	cid, err := common.PersistFinalizePhaseSync(ctx, j.TocDocID, FinalizePhaseDone)
+	if err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist finalize phase", "error", err)
 		}
+	} else if cid != "" {
+		j.Book.SetTocCID(cid)
 	}
 
 	j.Book.TocFinalizeComplete()

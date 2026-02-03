@@ -222,14 +222,18 @@ func (j *Job) persistChapterSkeleton(ctx context.Context) error {
 	}
 
 	// Mark structure as started on Book
-	sink.Send(defra.WriteOp{
+	if writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 		Collection: "Book",
 		DocID:      j.Book.BookID,
 		Document: map[string]any{
 			"structure_started": true,
 		},
 		Op: defra.OpUpdate,
-	})
+	}); err == nil {
+		if writeResult.CID != "" {
+			j.Book.SetBookCID(writeResult.CID)
+		}
+	}
 
 	chapters := j.Book.GetStructureChapters()
 	logger := svcctx.LoggerFrom(ctx)

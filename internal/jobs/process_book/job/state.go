@@ -306,7 +306,8 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 
 // PersistBookStatus persists book status to DefraDB.
 func (j *Job) PersistBookStatus(ctx context.Context, status BookStatus) error {
-	return common.PersistBookStatus(ctx, j.Book.BookID, string(status))
+	_, err := common.PersistBookStatus(ctx, j.Book, string(status))
+	return err
 }
 
 // PersistMetadataState persists metadata state to DefraDB.
