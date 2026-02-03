@@ -24,13 +24,13 @@ func CreateOcrWorkUnit(ctx context.Context, jc JobContext, pageNum int, provider
 	imagePath := book.HomeDir.SourceImagePath(book.BookID, pageNum)
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			if logger := svcctx.LoggerFrom(ctx); logger != nil {
-				logger.Warn("failed to read image for OCR",
-					"page_num", pageNum,
-					"provider", provider,
-					"error", err)
-			}
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("CreateOcrWorkUnit: failed to read image",
+				"page_num", pageNum,
+				"provider", provider,
+				"path", imagePath,
+				"is_not_exist", os.IsNotExist(err),
+				"error", err)
 		}
 		return nil, ""
 	}

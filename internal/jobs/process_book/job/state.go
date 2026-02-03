@@ -13,6 +13,7 @@ import (
 // Respects pipeline stage toggles (EnableOCR).
 func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *PageState) []jobs.WorkUnit {
 	var units []jobs.WorkUnit
+	logger := svcctx.LoggerFrom(ctx)
 
 	// Check if OCR is needed (only if enabled)
 	if j.Book.EnableOCR {
@@ -21,9 +22,18 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 				unit := j.CreateOcrWorkUnit(ctx, pageNum, provider)
 				if unit != nil {
 					units = append(units, *unit)
+				} else if logger != nil {
+					logger.Warn("GeneratePageWorkUnits: CreateOcrWorkUnit returned nil",
+						"page_num", pageNum,
+						"provider", provider)
 				}
 			}
 		}
+	} else if logger != nil {
+		logger.Debug("GeneratePageWorkUnits: OCR disabled",
+			"page_num", pageNum,
+			"enable_ocr", j.Book.EnableOCR,
+			"ocr_providers", j.Book.OcrProviders)
 	}
 
 	return units
