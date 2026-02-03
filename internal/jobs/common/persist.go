@@ -164,10 +164,10 @@ func PersistStructurePhase(ctx context.Context, book *BookState) error {
 
 // --- Agent State Persistence ---
 
-// PersistAgentStateAsync creates an agent state record in DefraDB.
-// This is now synchronous to capture DocID/CID for tracking.
+// PersistAgentState creates an agent state record in DefraDB.
+// This is synchronous to capture DocID/CID for tracking.
 // Only call this once at agent creation, not during the agent loop.
-func PersistAgentStateAsync(ctx context.Context, book *BookState, state *AgentState) error {
+func PersistAgentState(ctx context.Context, book *BookState, state *AgentState) error {
 	if book == nil {
 		return fmt.Errorf("book is nil")
 	}
@@ -427,43 +427,6 @@ func DeleteAgentStatesForType(ctx context.Context, bookID, agentType string) err
 
 // --- Synchronous Persist Functions ---
 // Use these for critical state transitions to ensure writes complete before proceeding.
-
-// PersistBookStatusSync persists book status and waits for confirmation.
-func PersistBookStatusSync(ctx context.Context, book *BookState, status string) (string, error) {
-	if book == nil {
-		return "", fmt.Errorf("book is nil")
-	}
-	result, err := SendTracked(ctx, book, defra.WriteOp{
-		Collection: "Book",
-		DocID:      book.BookID,
-		Document: map[string]any{
-			"status": status,
-		},
-		Op: defra.OpUpdate,
-	})
-	if err != nil {
-		return "", err
-	}
-	return result.CID, nil
-}
-
-// PersistStructurePhaseSync persists structure phase tracking data and waits for confirmation.
-func PersistStructurePhaseSync(ctx context.Context, book *BookState) error {
-	total, extracted, polished, failed := book.GetStructureProgress()
-	_, err := SendTracked(ctx, book, defra.WriteOp{
-		Collection: "Book",
-		DocID:      book.BookID,
-		Document: map[string]any{
-			"structure_phase":              book.GetStructurePhase(),
-			"structure_chapters_total":     total,
-			"structure_chapters_extracted": extracted,
-			"structure_chapters_polished":  polished,
-			"structure_polish_failed":      failed,
-		},
-		Op: defra.OpUpdate,
-	})
-	return err
-}
 
 // PersistFinalizePhase persists finalize phase tracking to ToC.
 func PersistFinalizePhase(ctx context.Context, book *BookState, phase string) (string, error) {

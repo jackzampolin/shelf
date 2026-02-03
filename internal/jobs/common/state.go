@@ -573,7 +573,7 @@ func (b *BookState) TrackWrite(collection, docID, cid string) {
 	case "Page":
 		for _, state := range b.Pages {
 			if state != nil && state.pageDocID == docID {
-				state.SetPageCID(cid)
+				state.pageCID = cid
 				break
 			}
 		}

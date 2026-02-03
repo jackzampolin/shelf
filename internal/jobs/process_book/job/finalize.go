@@ -548,7 +548,7 @@ func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.Ent
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
-	if err := common.PersistAgentStateAsync(ctx, j.Book, initialState); err != nil {
+	if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist chapter finder agent state",
 				"entry_key", entry.Key,
@@ -911,7 +911,7 @@ func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.Fin
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
-	if err := common.PersistAgentStateAsync(ctx, j.Book, initialState); err != nil {
+	if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist gap investigator agent state",
 				"gap_key", gap.Key,

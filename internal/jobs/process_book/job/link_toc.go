@@ -124,7 +124,7 @@ func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
-	if err := common.PersistAgentStateAsync(ctx, j.Book, initialState); err != nil {
+	if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist toc entry finder agent state",
 				"entry_doc_id", entry.DocID,

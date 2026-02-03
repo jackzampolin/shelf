@@ -167,7 +167,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 			ToolResults:      exported.ToolResults,
 			ResultJSON:       "",
 		}
-		if err := common.PersistAgentStateAsync(ctx, j.Book, initialState); err != nil {
+		if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
 			if logger != nil {
 				logger.Warn("failed to persist toc finder agent state", "error", err)
 			}

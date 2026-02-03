@@ -884,7 +884,7 @@ func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, erro
 
 	j.Book.SetStructurePhase(StructPhaseFinalize)
 	// Use sync write for phase transition to ensure crash recovery works correctly
-	if err := common.PersistStructurePhaseSync(ctx, j.Book); err != nil {
+	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist structure phase",
 				"phase", StructPhaseFinalize,
