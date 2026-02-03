@@ -40,6 +40,8 @@ type PageState struct {
 
 	// OCR markdown (stored directly from OCR, no blend step)
 	ocrMarkdown string
+	header      string
+	footer      string
 
 	// Cached data fields (populated on write-through or lazy load from DB)
 	headings   []HeadingItem // Parsed headings from ocr_markdown
@@ -197,6 +199,34 @@ func (p *PageState) SetOcrMarkdownWithHeadings(text string, headings []HeadingIt
 	p.dataLoaded = true
 }
 
+// GetHeader returns the OCR-detected running header (thread-safe).
+func (p *PageState) GetHeader() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.header
+}
+
+// SetHeader sets the OCR-detected running header (thread-safe).
+func (p *PageState) SetHeader(header string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.header = header
+}
+
+// GetFooter returns the OCR-detected running footer (thread-safe).
+func (p *PageState) GetFooter() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.footer
+}
+
+// SetFooter sets the OCR-detected running footer (thread-safe).
+func (p *PageState) SetFooter(footer string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.footer = footer
+}
+
 // PopulateFromDBResult populates cache fields from a DB query result map.
 // This is used for lazy loading and batch preloading.
 func (p *PageState) PopulateFromDBResult(data map[string]any) {
@@ -205,6 +235,12 @@ func (p *PageState) PopulateFromDBResult(data map[string]any) {
 
 	if om, ok := data["ocr_markdown"].(string); ok {
 		p.ocrMarkdown = om
+	}
+	if header, ok := data["header"].(string); ok {
+		p.header = header
+	}
+	if footer, ok := data["footer"].(string); ok {
+		p.footer = footer
 	}
 
 	if h, ok := data["headings"].(string); ok && h != "" {
@@ -1355,6 +1391,11 @@ type ChapterState struct {
 	// Matter classification (set in classify phase)
 	MatterType        string `json:"matter_type"`        // "front_matter", "body", "back_matter"
 	ClassifyReasoning string `json:"classify_reasoning"` // Why this classification was chosen
+
+	// Content classification (granular, set in classify phase)
+	ContentType           string `json:"content_type"`            // "preface", "body", "appendix", etc.
+	AudioInclude          bool   `json:"audio_include"`           // Include in audiobook output
+	AudioIncludeReasoning string `json:"audio_include_reasoning"` // Why include/exclude
 
 	// Text content (set in extract phase)
 	MechanicalText string `json:"mechanical_text,omitempty"`

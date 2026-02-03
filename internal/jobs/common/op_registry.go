@@ -156,6 +156,7 @@ var OpRegistry = map[OpType]*OpConfig{
 			book.structurePolishFailed = 0
 			book.structureChapters = nil
 			book.structureClassifications = nil
+			book.structureClassifyReasonings = nil
 			book.structureClassifyPending = false
 		},
 		ResetHook: resetStructureHook,

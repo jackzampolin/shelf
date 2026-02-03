@@ -12,23 +12,37 @@ const (
 	PromptKeyPolishSystem   = "stages.common_structure.polish.system"
 )
 
-// ClassifySystemPrompt is the system prompt for matter classification.
-const ClassifySystemPrompt = `You are a book structure analyzer. Given a list of table of contents entries from a book, classify each entry into one of three categories:
+// ClassifySystemPrompt is the system prompt for content classification.
+const ClassifySystemPrompt = `You are a book structure analyzer preparing a book for audiobook output.
+Given a list of table of contents entries, for each entry:
 
-- **front_matter**: Content that appears before the main text. Examples: preface, foreword, introduction, prologue, timeline, list of characters, maps, author's note (when at start).
+1. Assign a granular content_type:
+   - body, preface, foreword, introduction, prologue, epilogue, afterword,
+     author_note, dedication, appendix, index, bibliography, glossary,
+     notes, endnotes, acknowledgments, about_author, copyright,
+     illustrations_list, other
 
-- **body**: The main content of the book. Examples: chapters, parts, acts, sections with numbers or dates as titles.
+2. Assign matter_type (structural grouping): front_matter, body, back_matter
 
-- **back_matter**: Content that appears after the main text. Examples: epilogue, afterword, appendix, notes, endnotes, bibliography, references, glossary, index, acknowledgments, about the author, also by author.
+3. Decide audio_include (true/false): whether this content should be read aloud
+   - INCLUDE: body content, preface, foreword, introduction, prologue, epilogue,
+     afterword, author's note, dedication, acknowledgments, about the author
+   - EXCLUDE: index, bibliography, references, glossary, notes/endnotes,
+     copyright, illustrations lists, table of contents
+   - JUDGMENT: appendix (include if narrative/short, exclude if tabular/reference),
+     other (use your best judgment based on title and position)
 
 Consider:
-1. Position in the book (early entries more likely front matter, late entries more likely back matter)
-2. Title keywords and conventions
-3. Surrounding context (a "Notes" section after chapters is back matter)
+- Position in the book (page numbers relative to total pages)
+- Title keywords and conventions
+- Level/hierarchy (Part vs Chapter vs Section)
+- Surrounding context
 
 Return a JSON object with:
-- "classifications": entry_id -> category mapping
-- "reasoning": entry_id -> brief explanation of why that category was chosen`
+- "classifications": entry_id -> matter_type
+- "content_types": entry_id -> content_type
+- "audio_include": entry_id -> boolean
+- "reasoning": entry_id -> short explanation (focus on audio_include decision)`
 
 // PolishSystemPrompt is the system prompt for text polishing.
 const PolishSystemPrompt = `You are a text editor cleaning up OCR output from a scanned book.
@@ -80,6 +94,8 @@ type TextEdit struct {
 // ClassifyResult represents the LLM classification response.
 type ClassifyResult struct {
 	Classifications map[string]string `json:"classifications"`
+	ContentTypes    map[string]string `json:"content_types"`
+	AudioInclude    map[string]bool   `json:"audio_include"`
 	Reasoning       map[string]string `json:"reasoning"`
 }
 
@@ -88,18 +104,40 @@ type PolishResult struct {
 	Edits []TextEdit `json:"edits"`
 }
 
-// BuildClassifyPrompt builds the user prompt for matter classification.
-func BuildClassifyPrompt(chapters []*ChapterState) string {
+// BuildClassifyPrompt builds the user prompt for content classification.
+func BuildClassifyPrompt(chapters []*ChapterState, totalPages int) string {
 	var lines []string
-	lines = append(lines, "Classify each entry as front_matter, body, or back_matter:\n")
+	lines = append(lines, fmt.Sprintf("Total pages in book: %d", totalPages))
+	lines = append(lines, "Classify each entry with content_type, matter_type, and audio_include:\n")
 
 	for i, ch := range chapters {
-		line := fmt.Sprintf("%d. \"%s\" (page %d) [id: %s]",
-			i+1, ch.Title, ch.StartPage, ch.EntryID)
+		wordCount := ch.WordCount
+		if wordCount == 0 && ch.MechanicalText != "" {
+			wordCount = CountWords(ch.MechanicalText)
+		}
+		snippet := strings.TrimSpace(ch.MechanicalText)
+		if snippet == "" {
+			snippet = "[no text]"
+		} else {
+			snippet = strings.ReplaceAll(snippet, "\n", " ")
+			if len(snippet) > 200 {
+				snippet = snippet[:200] + "..."
+			}
+		}
+
+		pageRange := fmt.Sprintf("pages %d-%d", ch.StartPage, ch.EndPage)
+		if ch.EndPage == 0 || ch.EndPage == ch.StartPage {
+			pageRange = fmt.Sprintf("page %d", ch.StartPage)
+		}
+
+		line := fmt.Sprintf(
+			"%d. \"%s\" (%s, level %d %s, word_count %d) [id: %s]\n   text: %s",
+			i+1, ch.Title, pageRange, ch.Level, ch.LevelName, wordCount, ch.EntryID, snippet,
+		)
 		lines = append(lines, line)
 	}
 
-	lines = append(lines, "\nReturn JSON with classifications and reasoning for each entry.")
+	lines = append(lines, "\nReturn JSON with classifications, content_types, audio_include, and reasoning for each entry.")
 	return strings.Join(lines, "\n")
 }
 
@@ -138,6 +176,40 @@ func ClassifyJSONSchema() map[string]any {
 						"enum": []string{"front_matter", "body", "back_matter"},
 					},
 				},
+				"content_types": map[string]any{
+					"type": "object",
+					"additionalProperties": map[string]any{
+						"type": "string",
+						"enum": []string{
+							"body",
+							"preface",
+							"foreword",
+							"introduction",
+							"prologue",
+							"epilogue",
+							"afterword",
+							"author_note",
+							"dedication",
+							"appendix",
+							"index",
+							"bibliography",
+							"glossary",
+							"notes",
+							"endnotes",
+							"acknowledgments",
+							"about_author",
+							"copyright",
+							"illustrations_list",
+							"other",
+						},
+					},
+				},
+				"audio_include": map[string]any{
+					"type": "object",
+					"additionalProperties": map[string]any{
+						"type": "boolean",
+					},
+				},
 				"reasoning": map[string]any{
 					"type": "object",
 					"additionalProperties": map[string]any{
@@ -145,10 +217,45 @@ func ClassifyJSONSchema() map[string]any {
 					},
 				},
 			},
-			"required":             []string{"classifications", "reasoning"},
+			"required":             []string{"classifications", "content_types", "audio_include", "reasoning"},
 			"additionalProperties": false,
 		},
 	}
+}
+
+// StripHeaderFooter removes exact running header/footer lines from OCR text.
+func StripHeaderFooter(text, header, footer string) string {
+	if text == "" {
+		return text
+	}
+	headerNorm := normalizeLine(header)
+	footerNorm := normalizeLine(footer)
+	if headerNorm == "" && footerNorm == "" {
+		return text
+	}
+
+	lines := strings.Split(text, "\n")
+	cleaned := make([]string, 0, len(lines))
+	for _, line := range lines {
+		norm := normalizeLine(line)
+		if headerNorm != "" && norm == headerNorm {
+			continue
+		}
+		if footerNorm != "" && norm == footerNorm {
+			continue
+		}
+		cleaned = append(cleaned, line)
+	}
+	return strings.Join(cleaned, "\n")
+}
+
+func normalizeLine(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return ""
+	}
+	parts := strings.Fields(strings.ToLower(trimmed))
+	return strings.Join(parts, " ")
 }
 
 // PolishJSONSchema returns the JSON schema for text polishing.

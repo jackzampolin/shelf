@@ -315,6 +315,8 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 			extract_complete
 			ocr_complete
 			ocr_markdown
+			header
+			footer
 			headings
 			ocr_results {
 				provider
@@ -374,6 +376,12 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 		book.trackCIDLocked("Page", docID, cid)
 		if extractComplete, ok := page["extract_complete"].(bool); ok {
 			state.SetExtractDone(extractComplete)
+		}
+		if header, ok := page["header"].(string); ok {
+			state.SetHeader(header)
+		}
+		if footer, ok := page["footer"].(string); ok {
+			state.SetFooter(footer)
 		}
 
 		// Load OCR results from the relationship
@@ -955,6 +963,9 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 			toc_entry_id
 			matter_type
 			classification_reasoning
+			content_type
+			audio_include
+			audio_include_reasoning
 			mechanical_text
 			polished_text
 			word_count
@@ -1039,6 +1050,15 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 		if reasoning, ok := data["classification_reasoning"].(string); ok {
 			chapter.ClassifyReasoning = reasoning
 		}
+		if contentType, ok := data["content_type"].(string); ok {
+			chapter.ContentType = contentType
+		}
+		if include, ok := data["audio_include"].(bool); ok {
+			chapter.AudioInclude = include
+		}
+		if reasoning, ok := data["audio_include_reasoning"].(string); ok {
+			chapter.AudioIncludeReasoning = reasoning
+		}
 		if mechText, ok := data["mechanical_text"].(string); ok {
 			chapter.MechanicalText = mechText
 		}
@@ -1094,7 +1114,9 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 		if ch.MatterType != "" {
 			classifications[ch.EntryID] = ch.MatterType
 		}
-		if ch.ClassifyReasoning != "" {
+		if ch.AudioIncludeReasoning != "" {
+			reasonings[ch.EntryID] = ch.AudioIncludeReasoning
+		} else if ch.ClassifyReasoning != "" {
 			reasonings[ch.EntryID] = ch.ClassifyReasoning
 		}
 	}

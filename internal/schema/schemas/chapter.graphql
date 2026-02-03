@@ -29,6 +29,11 @@ type Chapter {
     matter_type: String
     classification_reasoning: String
 
+    # Content classification (granular, for audiobook inclusion)
+    content_type: String
+    audio_include: Boolean
+    audio_include_reasoning: String
+
     # Hierarchy
     parent_id: String
 

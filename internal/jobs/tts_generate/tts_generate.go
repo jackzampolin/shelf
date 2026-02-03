@@ -147,6 +147,7 @@ func loadChapters(ctx context.Context, client *defra.Client, bookID string) ([]*
 			level_name
 			entry_number
 			matter_type
+			audio_include
 			polished_text
 			sort_order
 			polish_complete
@@ -180,6 +181,9 @@ func loadChapters(ctx context.Context, client *defra.Client, bookID string) ([]*
 		if polishedText == "" {
 			continue
 		}
+		if !resolveAudioInclude(chData) {
+			continue
+		}
 
 		chapter := &Chapter{
 			DocID:        getString(chData, "_docID"),
@@ -204,6 +208,21 @@ func loadChapters(ctx context.Context, client *defra.Client, bookID string) ([]*
 	}
 
 	return chapters, nil
+}
+
+func resolveAudioInclude(chData map[string]any) bool {
+	if include, ok := chData["audio_include"].(bool); ok {
+		return include
+	}
+
+	switch getString(chData, "matter_type") {
+	case "back_matter":
+		return false
+	case "front_matter", "body":
+		return true
+	default:
+		return true
+	}
 }
 
 // loadBookAudio loads existing BookAudio record if present.
