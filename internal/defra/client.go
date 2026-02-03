@@ -112,6 +112,14 @@ func (c *Client) Execute(ctx context.Context, query string, variables map[string
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
+	if resp.StatusCode >= 500 {
+		return nil, fmt.Errorf("defra server error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	if len(respBody) == 0 {
+		return nil, fmt.Errorf("defra returned empty response (status %d)", resp.StatusCode)
+	}
+
 	var gqlResp GQLResponse
 	if err := json.Unmarshal(respBody, &gqlResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w (body: %s)", err, string(respBody))
