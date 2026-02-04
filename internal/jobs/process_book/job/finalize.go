@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/google/uuid"
@@ -1182,13 +1183,34 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 	j.Book.SetFinalizePhase(FinalizePhaseDone)
 
 	// Sync write for completion - must succeed before updating memory
-	if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocFinalize); err != nil {
-		if logger != nil {
-			logger.Error("failed to persist finalize completion", "error", err)
+	// Retry with backoff to handle transient failures (without this, job hangs with 0 pending units)
+	var persistErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if _, persistErr = common.PersistOpComplete(ctx, j.Book, common.OpTocFinalize); persistErr == nil {
+			break
 		}
-		// Revert phase - memory wasn't marked complete yet so no other rollback needed
+		if logger != nil {
+			logger.Warn("failed to persist finalize completion, retrying",
+				"attempt", attempt+1,
+				"error", persistErr)
+		}
+		// Brief backoff between retries
+		select {
+		case <-ctx.Done():
+			persistErr = ctx.Err()
+			break
+		case <-time.After(100 * time.Millisecond * time.Duration(attempt+1)):
+		}
+	}
+
+	if persistErr != nil {
+		if logger != nil {
+			logger.Error("failed to persist finalize completion after retries - marking as failed",
+				"error", persistErr)
+		}
+		// Revert phase and mark as permanently failed so job can complete with errors
 		j.Book.SetFinalizePhase(FinalizePhaseValidate)
-		// Don't continue to structure - return nil to let job retry later
+		j.Book.TocFinalizeFail(0) // Mark as failed immediately (0 = exceeded max retries)
 		return nil
 	}
 
