@@ -123,6 +123,18 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 			"phase", FinalizePhasePattern)
 	}
 
+	// Check if pattern results already exist from a previous attempt (crash recovery).
+	// This avoids re-doing the pattern analysis LLM call when finalize was retried
+	// after a crash during discover or validate phase.
+	if j.loadExistingPatternResults(ctx) {
+		if logger != nil {
+			logger.Info("reusing existing pattern analysis results from previous attempt",
+				"book_id", j.Book.BookID,
+				"entries_to_find", j.Book.GetEntriesToFindCount())
+		}
+		return j.transitionToFinalizeDiscover(ctx)
+	}
+
 	// Create pattern analysis work unit
 	unit, err := j.CreateFinalizePatternWorkUnit(ctx)
 	if err != nil {
@@ -430,13 +442,24 @@ func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit 
 		j.Book.SetTocCID(cid)
 	}
 
+	// Set entries total for progress tracking
+	entriesToFindCount := j.Book.GetEntriesToFindCount()
+	j.Book.SetFinalizeEntriesTotal(entriesToFindCount)
+
 	if logger != nil {
 		logger.Info("transitioning to discover phase",
 			"book_id", j.Book.BookID,
-			"entries_to_find", j.Book.GetEntriesToFindCount())
+			"entries_to_find", entriesToFindCount)
 	}
 
-	if j.Book.GetEntriesToFindCount() == 0 {
+	// Persist progress with totals
+	if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist finalize progress", "error", err)
+		}
+	}
+
+	if entriesToFindCount == 0 {
 		return j.transitionToFinalizeValidate(ctx)
 	}
 
@@ -774,13 +797,24 @@ func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit 
 		}
 	}
 
+	// Set gaps total for progress tracking
+	gapsCount := j.Book.GetFinalizeGapsCount()
+	j.Book.SetFinalizeGapsTotal(gapsCount)
+
 	if logger != nil {
 		logger.Info("transitioning to validate phase",
 			"book_id", j.Book.BookID,
-			"gaps", j.Book.GetFinalizeGapsCount())
+			"gaps", gapsCount)
 	}
 
-	if j.Book.GetFinalizeGapsCount() == 0 {
+	// Persist progress with totals
+	if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil {
+		if logger != nil {
+			logger.Warn("failed to persist finalize progress", "error", err)
+		}
+	}
+
+	if gapsCount == 0 {
 		return j.completeFinalizePhase(ctx)
 	}
 
@@ -1229,6 +1263,61 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 	// Continue to structure
 	return j.MaybeStartStructureInline(ctx)
+}
+
+// loadExistingPatternResults checks the DB for pattern_analysis_json from a previous
+// finalize attempt. If found, loads it into BookState and returns true.
+// This allows crash recovery to skip the pattern analysis LLM call.
+func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return false
+	}
+
+	query := fmt.Sprintf(`{
+		Book(filter: {_docID: {_eq: "%s"}}) {
+			pattern_analysis_json
+		}
+	}`, j.Book.BookID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		return false
+	}
+
+	books, ok := resp.Data["Book"].([]any)
+	if !ok || len(books) == 0 {
+		return false
+	}
+
+	bookData, ok := books[0].(map[string]any)
+	if !ok {
+		return false
+	}
+
+	paJSON, ok := bookData["pattern_analysis_json"].(string)
+	if !ok || paJSON == "" {
+		return false
+	}
+
+	var data struct {
+		Patterns      []common.DiscoveredPattern `json:"patterns"`
+		Excluded      []common.ExcludedRange     `json:"excluded_ranges"`
+		EntriesToFind []*common.EntryToFind      `json:"entries_to_find"`
+		Reasoning     string                     `json:"reasoning"`
+	}
+	if err := json.Unmarshal([]byte(paJSON), &data); err != nil {
+		return false
+	}
+
+	j.Book.SetFinalizePatternResult(&common.FinalizePatternResult{
+		Patterns:  data.Patterns,
+		Excluded:  data.Excluded,
+		Reasoning: data.Reasoning,
+	})
+	j.Book.SetEntriesToFind(data.EntriesToFind)
+
+	return true
 }
 
 // Helper functions

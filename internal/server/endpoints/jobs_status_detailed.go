@@ -351,8 +351,10 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			structure_chapters_extracted
 			structure_chapters_polished
 			structure_polish_failed
+			finalize_entries_total
 			finalize_entries_complete
 			finalize_entries_found
+			finalize_gaps_total
 			finalize_gaps_complete
 			finalize_gaps_fixes
 		}
@@ -450,13 +452,19 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			}
 
 			// Finalize progress tracking
-			var finalizeEntriesComplete, finalizeEntriesFound int
-			var finalizeGapsComplete, finalizeGapsFixes int
+			var finalizeEntriesTotal, finalizeEntriesComplete, finalizeEntriesFound int
+			var finalizeGapsTotal, finalizeGapsComplete, finalizeGapsFixes int
+			if v, ok := book["finalize_entries_total"].(float64); ok {
+				finalizeEntriesTotal = int(v)
+			}
 			if v, ok := book["finalize_entries_complete"].(float64); ok {
 				finalizeEntriesComplete = int(v)
 			}
 			if v, ok := book["finalize_entries_found"].(float64); ok {
 				finalizeEntriesFound = int(v)
+			}
+			if v, ok := book["finalize_gaps_total"].(float64); ok {
+				finalizeGapsTotal = int(v)
 			}
 			if v, ok := book["finalize_gaps_complete"].(float64); ok {
 				finalizeGapsComplete = int(v)
@@ -464,7 +472,8 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			if v, ok := book["finalize_gaps_fixes"].(float64); ok {
 				finalizeGapsFixes = int(v)
 			}
-			_ = finalizeGapsFixes // Used for future gap fix tracking
+			_ = finalizeEntriesFound // Tracked in DB, completion uses finalizeEntriesTotal
+			_ = finalizeGapsFixes    // Used for future gap fix tracking
 
 			// Parse pattern_analysis_json for finalize_toc sub-phase tracking details
 			// Pattern complete is determined by existence of pattern_analysis_json (from finalize_toc)
@@ -520,28 +529,28 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			}
 
 			// Set DiscoverComplete and ValidateComplete based on finalize progress
-			// DiscoverComplete: pattern analysis done AND (no entries to find OR all entries discovered)
+			// DiscoverComplete: pattern analysis done AND all entries discovered (complete >= total)
 			if resp.ToC.PatternComplete {
-				if resp.ToC.EntriesToFind == 0 {
+				if finalizeEntriesTotal == 0 {
 					// No entries to find - discover phase is trivially complete
 					resp.ToC.DiscoverComplete = true
-				} else if finalizeEntriesFound > 0 && finalizeEntriesComplete >= finalizeEntriesFound {
-					// All entries to find have been discovered
+				} else if finalizeEntriesComplete >= finalizeEntriesTotal {
+					// All entries have been processed
 					resp.ToC.DiscoverComplete = true
 				}
 			}
 
-			// ValidateComplete: discover is complete AND (no gaps OR all gaps processed)
+			// ValidateComplete: discover is complete AND all gaps processed (complete >= total)
 			if resp.ToC.DiscoverComplete {
-				// Check if there are gaps to process
-				// If finalize is complete, validation is done
-				// If no gaps were found, validation is trivially done
 				if resp.ToC.FinalizeComplete {
+					// Overall finalize done means validation is done
 					resp.ToC.ValidateComplete = true
-				} else if finalizeGapsComplete > 0 {
-					// Some gap validation has occurred
-					// We can't easily know total gaps here, but if finalize is complete, validation is done
-					resp.ToC.ValidateComplete = resp.ToC.FinalizeComplete
+				} else if finalizeGapsTotal == 0 {
+					// No gaps to validate - trivially complete
+					resp.ToC.ValidateComplete = true
+				} else if finalizeGapsComplete >= finalizeGapsTotal {
+					// All gaps have been processed
+					resp.ToC.ValidateComplete = true
 				}
 			}
 		}

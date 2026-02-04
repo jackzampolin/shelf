@@ -3625,7 +3625,6 @@ export interface components {
             created_at?: string;
             id?: string;
             page_count?: number;
-            page_pattern_analysis_json?: string;
             status?: string;
             title?: string;
         };

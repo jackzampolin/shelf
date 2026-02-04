@@ -63,9 +63,17 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		j.Book.TocLinkFail(MaxBookOpRetries)
 		j.PersistTocLinkState(ctx)
 	}
-	// Note: TocFinalize and Structure operations now persist agent state to DB,
-	// so agent state is restored when the job is loaded. No need to fail these
-	// operations on restart - they will resume from their persisted state.
+	// TocFinalize: fail/retry if started but not done. Pattern analysis results
+	// are preserved in pattern_analysis_json and will be reused on retry.
+	if j.Book.TocFinalizeIsStarted() {
+		j.Book.TocFinalizeFail(MaxBookOpRetries)
+		common.PersistOpState(ctx, j.Book, common.OpTocFinalize)
+	}
+	// Structure: fail/retry if started but not done.
+	if j.Book.StructureIsStarted() {
+		j.Book.StructureFail(MaxBookOpRetries)
+		common.PersistOpState(ctx, j.Book, common.OpStructure)
+	}
 
 	// Create any missing page records in DB
 	if err := checkCancelled(ctx); err != nil {

@@ -511,8 +511,10 @@ func PersistFinalizeProgress(ctx context.Context, book *BookState) error {
 		Collection: "Book",
 		DocID:      book.BookID,
 		Document: map[string]any{
+			"finalize_entries_total":    book.GetFinalizeEntriesTotalCount(),
 			"finalize_entries_complete": entriesComplete,
 			"finalize_entries_found":    entriesFound,
+			"finalize_gaps_total":       book.GetFinalizeGapsTotalCount(),
 			"finalize_gaps_complete":    gapsComplete,
 			"finalize_gaps_fixes":       gapsFixes,
 		},

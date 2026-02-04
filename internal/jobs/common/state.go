@@ -459,9 +459,11 @@ type BookState struct {
 	finalizePatternResult   *FinalizePatternResult
 	finalizePagePatternCtx  *PagePatternContext // Body boundaries and chapter patterns for finalize
 	entriesToFind           []*EntryToFind
+	finalizeEntriesTotal    int // Total entries to find (from pattern analysis)
 	finalizeEntriesComplete int
 	finalizeEntriesFound    int
 	finalizeGaps            []*FinalizeGap
+	finalizeGapsTotal       int // Total gaps to investigate
 	finalizeGapsComplete    int
 	finalizeGapsFixes       int
 
@@ -1292,6 +1294,34 @@ func (b *BookState) SetFinalizeProgress(entriesComplete, entriesFound, gapsCompl
 	b.finalizeEntriesFound = entriesFound
 	b.finalizeGapsComplete = gapsComplete
 	b.finalizeGapsFixes = gapsFixes
+}
+
+// GetFinalizeEntriesTotalCount returns the total number of entries to find (thread-safe).
+func (b *BookState) GetFinalizeEntriesTotalCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.finalizeEntriesTotal
+}
+
+// SetFinalizeEntriesTotal sets the total number of entries to find (thread-safe).
+func (b *BookState) SetFinalizeEntriesTotal(total int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.finalizeEntriesTotal = total
+}
+
+// GetFinalizeGapsTotalCount returns the total number of gaps to investigate (thread-safe).
+func (b *BookState) GetFinalizeGapsTotalCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.finalizeGapsTotal
+}
+
+// SetFinalizeGapsTotal sets the total number of gaps to investigate (thread-safe).
+func (b *BookState) SetFinalizeGapsTotal(total int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.finalizeGapsTotal = total
 }
 
 // --- ToC Link Progress ---

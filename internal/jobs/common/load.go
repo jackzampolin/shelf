@@ -471,11 +471,6 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 			metadata_complete
 			metadata_failed
 			metadata_retries
-			pattern_analysis_started
-			pattern_analysis_complete
-			pattern_analysis_failed
-			pattern_analysis_retries
-			page_pattern_analysis_json
 			structure_started
 			structure_complete
 			structure_failed
@@ -837,8 +832,10 @@ func LoadFinalizeState(ctx context.Context, book *BookState, tocDocID string) er
 	bookQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			pattern_analysis_json
+			finalize_entries_total
 			finalize_entries_complete
 			finalize_entries_found
+			finalize_gaps_total
 			finalize_gaps_complete
 			finalize_gaps_fixes
 			toc_link_entries_total
@@ -874,12 +871,18 @@ func LoadFinalizeState(ctx context.Context, book *BookState, tocDocID string) er
 			}
 
 			// Load progress counters
+			if et, ok := bookData["finalize_entries_total"].(float64); ok {
+				book.SetFinalizeEntriesTotal(int(et))
+			}
 			var entriesComplete, entriesFound, gapsComplete, gapsFixes int
 			if ec, ok := bookData["finalize_entries_complete"].(float64); ok {
 				entriesComplete = int(ec)
 			}
 			if ef, ok := bookData["finalize_entries_found"].(float64); ok {
 				entriesFound = int(ef)
+			}
+			if gt, ok := bookData["finalize_gaps_total"].(float64); ok {
+				book.SetFinalizeGapsTotal(int(gt))
 			}
 			if gc, ok := bookData["finalize_gaps_complete"].(float64); ok {
 				gapsComplete = int(gc)

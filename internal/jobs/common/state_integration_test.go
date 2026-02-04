@@ -67,10 +67,6 @@ func setupStateIntegrationTest(t *testing.T) (*defra.Client, *defra.Sink, *Defra
 			metadata_complete: Boolean
 			metadata_failed: Boolean
 			metadata_retries: Int
-			pattern_analysis_started: Boolean
-			pattern_analysis_complete: Boolean
-			pattern_analysis_failed: Boolean
-			pattern_analysis_retries: Int
 			structure_started: Boolean
 			structure_complete: Boolean
 			structure_failed: Boolean
@@ -80,7 +76,6 @@ func setupStateIntegrationTest(t *testing.T) (*defra.Client, *defra.Sink, *Defra
 			structure_chapters_extracted: Int
 			structure_chapters_polished: Int
 			structure_polish_failed: Int
-			page_pattern_analysis_json: String
 			total_chapters: Int
 			total_paragraphs: Int
 			total_words: Int

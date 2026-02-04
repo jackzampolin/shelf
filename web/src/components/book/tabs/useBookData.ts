@@ -8,7 +8,6 @@ export interface BookData {
   author?: string
   page_count?: number
   status?: string
-  page_pattern_analysis_json?: string
 }
 
 export interface CostData {
