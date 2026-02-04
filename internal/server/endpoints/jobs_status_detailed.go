@@ -12,6 +12,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -783,15 +784,18 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 				logger.Warn("failed to query cost breakdown", "book_id", bookID, "error", err)
 			}
 		} else {
-			// OCR cost (single stage, split by provider via separate query)
+			// OCR total cost from stage breakdown
 			if ocrCost, ok := costByStage["ocr"]; ok {
 				resp.Stages.OCR.TotalCostUSD = ocrCost
-				// Distribute evenly across providers (all use same per-page cost)
-				if len(resp.OcrProgress) > 0 {
-					for provider := range resp.OcrProgress {
-						resp.Stages.OCR.CostByProvider[provider] = ocrCost
+			}
+			// Per-provider OCR cost via separate query
+			if len(resp.OcrProgress) > 0 {
+				ocrByProvider, err := metricsQuery.CostByProvider(ctx, metrics.Filter{BookID: bookID, Stage: "ocr"})
+				if err == nil {
+					for provider, cost := range ocrByProvider {
+						resp.Stages.OCR.CostByProvider[provider] = cost
 						if prog, ok := resp.OcrProgress[provider]; ok {
-							prog.CostUSD = ocrCost
+							prog.CostUSD = cost
 							resp.OcrProgress[provider] = prog
 						}
 					}
