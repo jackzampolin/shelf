@@ -89,16 +89,9 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 	j.Book.SetStructurePhase(StructPhaseExtract)
 	chaptersExtracted := j.extractAllChapters(ctx)
 
-	// Update progress
+	// Update progress (async - memory is authoritative during execution)
 	j.Book.SetStructureProgress(len(chapters), chaptersExtracted, 0, 0)
-	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
-		if logger != nil {
-			logger.Error("failed to persist structure phase, crash recovery may resume from wrong state",
-				"phase", StructPhaseExtract,
-				"book_id", j.Book.BookID,
-				"error", err)
-		}
-	}
+	common.PersistStructurePhaseAsync(ctx, j.Book)
 
 	// Persist extract results
 	if err := j.persistExtractResults(ctx); err != nil {
@@ -427,14 +420,8 @@ func (j *Job) persistExtractResults(ctx context.Context) error {
 func (j *Job) transitionToStructureClassify(ctx context.Context) []jobs.WorkUnit {
 	j.Book.SetStructurePhase(StructPhaseClassify)
 	logger := svcctx.LoggerFrom(ctx)
-	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
-		if logger != nil {
-			logger.Error("failed to persist structure phase, crash recovery may resume from wrong state",
-				"phase", StructPhaseClassify,
-				"book_id", j.Book.BookID,
-				"error", err)
-		}
-	}
+	// Persist phase (async - memory is authoritative during execution)
+	common.PersistStructurePhaseAsync(ctx, j.Book)
 
 	if logger != nil {
 		logger.Info("transitioning to classify phase",
@@ -690,14 +677,8 @@ func (j *Job) persistClassifyResults(ctx context.Context) error {
 func (j *Job) transitionToStructurePolish(ctx context.Context) []jobs.WorkUnit {
 	j.Book.SetStructurePhase(StructPhasePolish)
 	logger := svcctx.LoggerFrom(ctx)
-	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
-		if logger != nil {
-			logger.Error("failed to persist structure phase, crash recovery may resume from wrong state",
-				"phase", StructPhasePolish,
-				"book_id", j.Book.BookID,
-				"error", err)
-		}
-	}
+	// Persist phase (async - memory is authoritative during execution)
+	common.PersistStructurePhaseAsync(ctx, j.Book)
 
 	chapters := j.Book.GetStructureChapters()
 	if logger != nil {
@@ -957,16 +938,8 @@ func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, erro
 	logger := svcctx.LoggerFrom(ctx)
 
 	j.Book.SetStructurePhase(StructPhaseFinalize)
-	// Use sync write for phase transition to ensure crash recovery works correctly
-	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
-		if logger != nil {
-			logger.Error("failed to persist structure phase",
-				"phase", StructPhaseFinalize,
-				"book_id", j.Book.BookID,
-				"error", err)
-		}
-		// Continue with finalization despite phase persist failure - the data is more important
-	}
+	// Persist phase (async - memory is authoritative, continue even if persist fails)
+	common.PersistStructurePhaseAsync(ctx, j.Book)
 
 	// Finalize - create paragraphs, update book status
 	if err := j.finalizeStructure(ctx); err != nil {
@@ -976,18 +949,18 @@ func (j *Job) completeStructurePhase(ctx context.Context) ([]jobs.WorkUnit, erro
 		return nil, fmt.Errorf("finalization failed: %w", err)
 	}
 
-	j.Book.StructureComplete()
-	// Use sync write for completion to ensure state is persisted before returning
+	// For critical completion operations: sync write BEFORE updating memory.
+	// This ensures memory and DB stay consistent - if write fails, memory is unchanged.
 	if _, err := common.PersistOpComplete(ctx, j.Book, common.OpStructure); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist structure completion", "error", err)
 		}
-		// Roll back in-memory state to match database - completion wasn't persisted
-		j.Book.StructureReset()
-		j.Book.StructureStart()
-		j.Book.SetStructurePhase(StructPhaseFinalize) // Keep phase to indicate we were in finalize
+		// Memory wasn't marked complete yet, so no rollback needed
 		return nil, fmt.Errorf("structure completed but failed to persist: %w", err)
 	}
+
+	// NOW mark complete in memory after successful DB write
+	j.Book.StructureComplete()
 
 	chapters := j.Book.GetStructureChapters()
 	_, _, polished, failed := j.Book.GetStructureProgress()

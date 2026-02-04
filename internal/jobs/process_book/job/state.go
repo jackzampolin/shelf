@@ -254,23 +254,22 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 	j.PersistBookStatus(ctx, BookStatusComplete)
 }
 
-// PersistBookStatus persists book status to DefraDB.
-func (j *Job) PersistBookStatus(ctx context.Context, status BookStatus) error {
-	_, err := common.PersistBookStatus(ctx, j.Book, string(status))
-	return err
+// PersistBookStatus persists book status to DefraDB (async - memory is authoritative).
+func (j *Job) PersistBookStatus(ctx context.Context, status BookStatus) {
+	common.PersistBookStatusAsync(ctx, j.Book, string(status))
 }
 
-// PersistMetadataState persists metadata state to DefraDB.
-func (j *Job) PersistMetadataState(ctx context.Context) error {
-	return common.PersistOpState(ctx, j.Book, common.OpMetadata)
+// PersistMetadataState persists metadata state to DefraDB (async - memory is authoritative).
+func (j *Job) PersistMetadataState(ctx context.Context) {
+	common.PersistOpStateAsync(ctx, j.Book, common.OpMetadata)
 }
 
-// PersistTocFinderState persists ToC finder state to DefraDB.
-func (j *Job) PersistTocFinderState(ctx context.Context) error {
-	return common.PersistOpState(ctx, j.Book, common.OpTocFinder)
+// PersistTocFinderState persists ToC finder state to DefraDB (async - memory is authoritative).
+func (j *Job) PersistTocFinderState(ctx context.Context) {
+	common.PersistOpStateAsync(ctx, j.Book, common.OpTocFinder)
 }
 
-// PersistTocExtractState persists ToC extract state to DefraDB.
-func (j *Job) PersistTocExtractState(ctx context.Context) error {
-	return common.PersistOpState(ctx, j.Book, common.OpTocExtract)
+// PersistTocExtractState persists ToC extract state to DefraDB (async - memory is authoritative).
+func (j *Job) PersistTocExtractState(ctx context.Context) {
+	common.PersistOpStateAsync(ctx, j.Book, common.OpTocExtract)
 }

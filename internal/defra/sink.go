@@ -23,6 +23,7 @@ type WriteOp struct {
 	Document   map[string]any // Document data
 	DocID      string         // For updates/deletes (empty for creates)
 	Op         OpType         // Operation type
+	Source     string         // Caller identification for debugging (e.g., "PersistBookStatusAsync")
 	result     chan<- WriteResult // Internal - set by SendSync
 }
 
@@ -479,6 +480,7 @@ func (s *Sink) processUpdates(collection string, ops []WriteOp) {
 			s.logger.Error("update failed",
 				"collection", collection,
 				"docID", op.DocID,
+				"source", op.Source,
 				"error", err)
 		}
 
@@ -499,6 +501,7 @@ func (s *Sink) processDeletes(collection string, ops []WriteOp) {
 			s.logger.Error("delete failed",
 				"collection", collection,
 				"docID", op.DocID,
+				"source", op.Source,
 				"error", err)
 		}
 

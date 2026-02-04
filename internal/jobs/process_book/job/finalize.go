@@ -257,16 +257,9 @@ func (j *Job) HandleFinalizePatternComplete(ctx context.Context, result jobs.Wor
 				"retry_count", info.RetryCount,
 				"error", result.Error)
 		}
-		// Mark pattern phase as skipped to prevent re-attempts on restart
+		// Mark pattern phase as skipped to prevent re-attempts on restart (async - memory is authoritative)
 		j.Book.SetFinalizePhase(FinalizePhaseDiscover)
-		cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseDiscover)
-		if err != nil {
-			if logger != nil {
-				logger.Error("failed to persist pattern phase skip", "error", err)
-			}
-		} else if cid != "" {
-			j.Book.SetTocCID(cid)
-		}
+		common.PersistFinalizePhaseAsync(ctx, j.Book, FinalizePhaseDiscover)
 		return j.transitionToFinalizeDiscover(ctx), nil
 	}
 
@@ -420,16 +413,9 @@ func (j *Job) generateEntriesToFind(ctx context.Context) {
 func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit {
 	logger := svcctx.LoggerFrom(ctx)
 
-	// Set phase and persist for crash recovery
+	// Set phase and persist for crash recovery (async - memory is authoritative)
 	j.Book.SetFinalizePhase(FinalizePhaseDiscover)
-	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseDiscover)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseDiscover, "error", err)
-		}
-	} else if cid != "" {
-		j.Book.SetTocCID(cid)
-	}
+	common.PersistFinalizePhaseAsync(ctx, j.Book, FinalizePhaseDiscover)
 
 	// Set entries total for progress tracking
 	entriesToFindCount := j.Book.GetEntriesToFindCount()
@@ -441,12 +427,8 @@ func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit 
 			"entries_to_find", entriesToFindCount)
 	}
 
-	// Persist progress with totals
-	if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil {
-		if logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
-	}
+	// Persist progress with totals (async - memory is authoritative)
+	common.PersistFinalizeProgressAsync(ctx, j.Book)
 
 	if entriesToFindCount == 0 {
 		return j.transitionToFinalizeValidate(ctx)
@@ -658,10 +640,8 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 	if !ok {
 		j.RemoveWorkUnit(result.WorkUnitID)
 		j.Book.IncrementFinalizeEntriesComplete()
-		// Persist progress immediately after incrementing to ensure crash recovery works
-		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistFinalizeProgressAsync(ctx, j.Book)
 		return j.checkFinalizeDiscoverCompletion(ctx), nil
 	}
 
@@ -677,10 +657,8 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 			return j.retryFinalizeDiscoverUnit(ctx, info)
 		}
 		j.Book.IncrementFinalizeEntriesComplete()
-		// Persist progress immediately after incrementing
-		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistFinalizeProgressAsync(ctx, j.Book)
 		j.RemoveWorkUnit(result.WorkUnitID)
 		if logger != nil {
 			logger.Warn("chapter finder permanently failed",
@@ -734,10 +712,8 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 		}
 
 		j.Book.IncrementFinalizeEntriesComplete()
-		// Persist progress immediately after incrementing counters
-		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistFinalizeProgressAsync(ctx, j.Book)
 		delete(j.FinalizeDiscoverAgents, info.FinalizeKey)
 	}
 
@@ -758,16 +734,9 @@ func (j *Job) checkFinalizeDiscoverCompletion(ctx context.Context) []jobs.WorkUn
 func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit {
 	logger := svcctx.LoggerFrom(ctx)
 
-	// Set phase and persist for crash recovery
+	// Set phase and persist for crash recovery (async - memory is authoritative)
 	j.Book.SetFinalizePhase(FinalizePhaseValidate)
-	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseValidate)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseValidate, "error", err)
-		}
-	} else if cid != "" {
-		j.Book.SetTocCID(cid)
-	}
+	common.PersistFinalizePhaseAsync(ctx, j.Book, FinalizePhaseValidate)
 
 	// Skip gap investigation if pattern analysis found no missing entries
 	// Gaps between chapters are normal chapter content, not missing ToC entries
@@ -796,12 +765,8 @@ func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit 
 			"gaps", gapsCount)
 	}
 
-	// Persist progress with totals
-	if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil {
-		if logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
-	}
+	// Persist progress with totals (async - memory is authoritative)
+	common.PersistFinalizeProgressAsync(ctx, j.Book)
 
 	if gapsCount == 0 {
 		return j.completeFinalizePhase(ctx)
@@ -1110,10 +1075,8 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 	if !ok {
 		j.RemoveWorkUnit(result.WorkUnitID)
 		j.Book.IncrementFinalizeGapsComplete()
-		// Persist progress immediately after incrementing
-		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistFinalizeProgressAsync(ctx, j.Book)
 		return j.checkFinalizeValidateCompletion(ctx), nil
 	}
 
@@ -1129,10 +1092,8 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 			return j.retryFinalizeGapUnit(ctx, info)
 		}
 		j.Book.IncrementFinalizeGapsComplete()
-		// Persist progress immediately after incrementing
-		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistFinalizeProgressAsync(ctx, j.Book)
 		j.RemoveWorkUnit(result.WorkUnitID)
 		if logger != nil {
 			logger.Warn("gap investigator permanently failed",
@@ -1186,10 +1147,8 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 		}
 
 		j.Book.IncrementFinalizeGapsComplete()
-		// Persist progress immediately after incrementing counters
-		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistFinalizeProgressAsync(ctx, j.Book)
 		delete(j.FinalizeGapAgents, info.FinalizeKey)
 	}
 
@@ -1217,30 +1176,27 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Persist finalize phase before marking complete
+	// For critical completion operations: sync write BEFORE updating memory.
+	// This ensures memory and DB stay consistent - if write fails, memory is unchanged.
+	// Phase is set first since it's part of the completion state.
 	j.Book.SetFinalizePhase(FinalizePhaseDone)
-	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseDone)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to persist finalize phase", "error", err)
-		}
-	} else if cid != "" {
-		j.Book.SetTocCID(cid)
-	}
 
-	j.Book.TocFinalizeComplete()
-	// Use sync write for completion to ensure state is persisted before continuing to structure
+	// Sync write for completion - must succeed before updating memory
 	if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocFinalize); err != nil {
 		if logger != nil {
 			logger.Error("failed to persist finalize completion", "error", err)
 		}
-		// Roll back in-memory state to match database
-		j.Book.TocFinalizeReset()
-		j.Book.TocFinalizeStart()
-		j.Book.SetFinalizePhase(FinalizePhaseValidate) // Set back to validate phase
+		// Revert phase - memory wasn't marked complete yet so no other rollback needed
+		j.Book.SetFinalizePhase(FinalizePhaseValidate)
 		// Don't continue to structure - return nil to let job retry later
 		return nil
 	}
+
+	// NOW mark complete in memory after successful DB write
+	j.Book.TocFinalizeComplete()
+
+	// Fire async phase persist after completion is confirmed
+	common.PersistFinalizePhaseAsync(ctx, j.Book, FinalizePhaseDone)
 
 	if logger != nil {
 		_, entriesFound, _, gapsFixes := j.Book.GetFinalizeProgress()

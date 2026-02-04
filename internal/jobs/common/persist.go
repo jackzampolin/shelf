@@ -100,6 +100,8 @@ func SendManyTracked(ctx context.Context, book *BookState, ops []defra.WriteOp) 
 // PersistOpState persists operation state to DefraDB and updates CID tracking.
 // Uses OpConfig to determine collection, field prefix, and document ID.
 // If book.Store is set, uses it directly; otherwise falls back to context.
+//
+// Deprecated: Use PersistOpStateAsync instead for better latency.
 func PersistOpState(ctx context.Context, book *BookState, op OpType) error {
 	cfg, ok := OpRegistry[op]
 	if !ok {
@@ -125,7 +127,18 @@ func PersistOpState(ctx context.Context, book *BookState, op OpType) error {
 	return err
 }
 
+// PersistOpStateAsync fires and forgets operation state to DefraDB.
+// Delegates to BookState.PersistOpStateAsync for fire-and-forget behavior.
+func PersistOpStateAsync(ctx context.Context, book *BookState, op OpType) {
+	if book == nil {
+		return
+	}
+	book.PersistOpStateAsync(ctx, op)
+}
+
 // PersistBookStatus persists book status to DefraDB and updates CID tracking.
+//
+// Deprecated: Use PersistBookStatusAsync instead for better latency.
 func PersistBookStatus(ctx context.Context, book *BookState, status string) (string, error) {
 	if book == nil {
 		return "", fmt.Errorf("book is nil")
@@ -144,7 +157,18 @@ func PersistBookStatus(ctx context.Context, book *BookState, status string) (str
 	return result.CID, nil
 }
 
+// PersistBookStatusAsync fires and forgets book status to DefraDB.
+// Delegates to BookState.PersistBookStatusAsync for fire-and-forget behavior.
+func PersistBookStatusAsync(ctx context.Context, book *BookState, status string) {
+	if book == nil {
+		return
+	}
+	book.PersistBookStatusAsync(ctx, status)
+}
+
 // PersistStructurePhase persists structure phase tracking data from BookState to DefraDB.
+//
+// Deprecated: Use PersistStructurePhaseAsync instead for better latency.
 func PersistStructurePhase(ctx context.Context, book *BookState) error {
 	total, extracted, polished, failed := book.GetStructureProgress()
 	_, err := SendTracked(ctx, book, defra.WriteOp{
@@ -160,6 +184,15 @@ func PersistStructurePhase(ctx context.Context, book *BookState) error {
 		Op: defra.OpUpdate,
 	})
 	return err
+}
+
+// PersistStructurePhaseAsync fires and forgets structure phase to DefraDB.
+// Delegates to BookState.PersistStructurePhaseAsync for fire-and-forget behavior.
+func PersistStructurePhaseAsync(ctx context.Context, book *BookState) {
+	if book == nil {
+		return
+	}
+	book.PersistStructurePhaseAsync(ctx)
 }
 
 // --- Agent State Persistence ---
@@ -271,7 +304,7 @@ func DeleteAgentState(ctx context.Context, docID string) error {
 
 // DeleteAgentStateByAgentID removes an agent state record by querying for agent_id.
 // This is used when we don't have the DocID (e.g., after async creates).
-// Uses async delete for performance - caller should not depend on completion.
+// Uses sync delete to ensure records are actually deleted (prevents orphaned records).
 func DeleteAgentStateByAgentID(ctx context.Context, agentID string) error {
 	if agentID == "" {
 		return nil
@@ -305,11 +338,7 @@ func DeleteAgentStateByAgentID(ctx context.Context, agentID string) error {
 	}
 
 	// Delete each match (should be at most one, but handle multiple defensively)
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("DeleteAgentStateByAgentID: defra sink not in context")
-	}
-
+	// Use sync delete to ensure records are actually deleted (prevents orphaned records)
 	for _, s := range states {
 		state, ok := s.(map[string]any)
 		if !ok {
@@ -319,12 +348,10 @@ func DeleteAgentStateByAgentID(ctx context.Context, agentID string) error {
 		if !ok || docID == "" {
 			continue
 		}
-		// Async delete for performance
-		sink.Send(defra.WriteOp{
-			Collection: "AgentState",
-			DocID:      docID,
-			Op:         defra.OpDelete,
-		})
+		// Sync delete to ensure completion and prevent orphaned records
+		if err := DeleteAgentState(ctx, docID); err != nil {
+			return fmt.Errorf("DeleteAgentStateByAgentID: failed to delete doc %s for agent %s: %w", docID, agentID, err)
+		}
 	}
 
 	return nil
@@ -480,8 +507,11 @@ func DeleteAgentStatesForType(ctx context.Context, bookID, agentType string) err
 
 // --- Synchronous Persist Functions ---
 // Use these for critical state transitions to ensure writes complete before proceeding.
+// DEPRECATED: Prefer async versions for better latency.
 
 // PersistFinalizePhase persists finalize phase tracking to ToC.
+//
+// Deprecated: Use PersistFinalizePhaseAsync instead for better latency.
 func PersistFinalizePhase(ctx context.Context, book *BookState, phase string) (string, error) {
 	if book == nil {
 		return "", fmt.Errorf("book is nil")
@@ -504,7 +534,18 @@ func PersistFinalizePhase(ctx context.Context, book *BookState, phase string) (s
 	return result.CID, nil
 }
 
+// PersistFinalizePhaseAsync fires and forgets finalize phase to ToC.
+// Delegates to BookState.PersistFinalizePhaseAsync for fire-and-forget behavior.
+func PersistFinalizePhaseAsync(ctx context.Context, book *BookState, phase string) {
+	if book == nil {
+		return
+	}
+	book.PersistFinalizePhaseAsync(ctx, phase)
+}
+
 // PersistFinalizeProgress persists finalize progress counters to Book.
+//
+// Deprecated: Use PersistFinalizeProgressAsync instead for better latency.
 func PersistFinalizeProgress(ctx context.Context, book *BookState) error {
 	entriesComplete, entriesFound, gapsComplete, gapsFixes := book.GetFinalizeProgress()
 	_, err := SendTracked(ctx, book, defra.WriteOp{
@@ -523,7 +564,18 @@ func PersistFinalizeProgress(ctx context.Context, book *BookState) error {
 	return err
 }
 
+// PersistFinalizeProgressAsync fires and forgets finalize progress counters to Book.
+// Delegates to BookState.PersistFinalizeProgressAsync for fire-and-forget behavior.
+func PersistFinalizeProgressAsync(ctx context.Context, book *BookState) {
+	if book == nil {
+		return
+	}
+	book.PersistFinalizeProgressAsync(ctx)
+}
+
 // PersistTocLinkProgress persists toc link progress counters to Book.
+//
+// Deprecated: Use PersistTocLinkProgressAsync instead for better latency.
 func PersistTocLinkProgress(ctx context.Context, book *BookState) error {
 	total, done := book.GetTocLinkProgress()
 	_, err := SendTracked(ctx, book, defra.WriteOp{
@@ -536,4 +588,13 @@ func PersistTocLinkProgress(ctx context.Context, book *BookState) error {
 		Op: defra.OpUpdate,
 	})
 	return err
+}
+
+// PersistTocLinkProgressAsync fires and forgets toc link progress counters to Book.
+// Delegates to BookState.PersistTocLinkProgressAsync for fire-and-forget behavior.
+func PersistTocLinkProgressAsync(ctx context.Context, book *BookState) {
+	if book == nil {
+		return
+	}
+	book.PersistTocLinkProgressAsync(ctx)
 }

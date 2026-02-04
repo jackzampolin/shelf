@@ -76,7 +76,8 @@ func PersistOCRResult(ctx context.Context, book *BookState, state *PageState, oc
 				"provider": provider,
 				"text":     result.Text,
 			},
-			Op: defra.OpCreate,
+			Op:     defra.OpCreate,
+			Source: fmt.Sprintf("PersistOCRResult:create:%s", provider),
 		})
 
 		// Persist header/footer extracted by OCR provider (Mistral) - async
@@ -96,6 +97,7 @@ func PersistOCRResult(ctx context.Context, book *BookState, state *PageState, oc
 				DocID:      pageDocID,
 				Document:   update,
 				Op:         defra.OpUpdate,
+				Source:     fmt.Sprintf("PersistOCRResult:header_footer:%s", provider),
 			})
 		}
 
@@ -118,6 +120,7 @@ func PersistOCRResult(ctx context.Context, book *BookState, state *PageState, oc
 			DocID:      pageDocID,
 			Document:   map[string]any{"ocr_complete": true},
 			Op:         defra.OpUpdate,
+			Source:     "PersistOCRResult:ocr_complete",
 		})
 	}
 

@@ -67,16 +67,14 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	// are preserved in pattern_analysis_json and will be reused on retry.
 	if j.Book.TocFinalizeIsStarted() {
 		j.Book.TocFinalizeFail(MaxBookOpRetries)
-		if err := common.PersistOpState(ctx, j.Book, common.OpTocFinalize); err != nil && logger != nil {
-			logger.Warn("crash recovery: failed to persist toc_finalize reset", "error", err)
-		}
+		// Persist async - memory is authoritative during execution
+		common.PersistOpStateAsync(ctx, j.Book, common.OpTocFinalize)
 	}
 	// Structure: fail/retry if started but not done.
 	if j.Book.StructureIsStarted() {
 		j.Book.StructureFail(MaxBookOpRetries)
-		if err := common.PersistOpState(ctx, j.Book, common.OpStructure); err != nil && logger != nil {
-			logger.Warn("crash recovery: failed to persist structure reset", "error", err)
-		}
+		// Persist async - memory is authoritative during execution
+		common.PersistOpStateAsync(ctx, j.Book, common.OpStructure)
 	}
 
 	// Create any missing page records in DB
@@ -192,11 +190,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			}
 			// Permanent failure for this entry - mark as done and continue
 			j.Book.IncrementTocLinkEntriesDone()
-			if err := common.PersistTocLinkProgress(ctx, j.Book); err != nil {
-				if logger != nil {
-					logger.Warn("failed to persist toc link progress", "error", err)
-				}
-			}
+			// Persist progress (async - memory is authoritative during execution)
+			common.PersistTocLinkProgressAsync(ctx, j.Book)
 			if logger != nil {
 				logger.Error("link_toc entry failed after retries",
 					"entry_doc_id", info.EntryDocID,

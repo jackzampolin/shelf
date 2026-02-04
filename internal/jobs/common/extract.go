@@ -59,6 +59,7 @@ func PersistExtractState(ctx context.Context, book *BookState, pageDocID string)
 		DocID:      pageDocID,
 		Document:   map[string]any{"extract_complete": true},
 		Op:         defra.OpUpdate,
+		Source:     "PersistExtractState",
 	})
 	return "", nil // CID not available for async writes
 }

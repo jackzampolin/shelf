@@ -35,11 +35,8 @@ func (j *Job) CreateLinkTocWorkUnits(ctx context.Context) []jobs.WorkUnit {
 	if total != len(j.LinkTocEntries) {
 		// Initialize or update total - keep done count for crash recovery
 		j.Book.SetTocLinkProgress(len(j.LinkTocEntries), done)
-		if err := common.PersistTocLinkProgress(ctx, j.Book); err != nil {
-			if logger != nil {
-				logger.Warn("failed to persist toc link progress", "error", err)
-			}
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistTocLinkProgressAsync(ctx, j.Book)
 	}
 
 	// Phase 1: Create all agents and collect initial states (without persisting individually)
@@ -293,11 +290,8 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 		}
 
 		j.Book.IncrementTocLinkEntriesDone()
-		if err := common.PersistTocLinkProgress(ctx, j.Book); err != nil {
-			if logger != nil {
-				logger.Warn("failed to persist toc link progress", "error", err)
-			}
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistTocLinkProgressAsync(ctx, j.Book)
 		delete(j.LinkTocEntryAgents, info.EntryDocID)
 	}
 
@@ -347,9 +341,9 @@ func (j *Job) convertLinkTocAgentUnits(agentUnits []agent.WorkUnit, entryDocID s
 	return jobUnits
 }
 
-// PersistTocLinkState persists ToC link state to DefraDB.
-func (j *Job) PersistTocLinkState(ctx context.Context) error {
-	return common.PersistOpState(ctx, j.Book, common.OpTocLink)
+// PersistTocLinkState persists ToC link state to DefraDB (async - memory is authoritative).
+func (j *Job) PersistTocLinkState(ctx context.Context) {
+	common.PersistOpStateAsync(ctx, j.Book, common.OpTocLink)
 }
 
 // StartFinalizeTocInline creates and starts the finalize phase inline.
