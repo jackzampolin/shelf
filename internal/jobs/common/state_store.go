@@ -21,12 +21,36 @@ type StateStore interface {
 
 	// SendSync sends a write operation and waits for confirmation.
 	SendSync(ctx context.Context, op defra.WriteOp) (defra.WriteResult, error)
+
+	// SendManySync sends multiple write operations and waits for all to complete.
+	// Returns results in the same order as the input operations.
+	SendManySync(ctx context.Context, ops []defra.WriteOp) ([]defra.WriteResult, error)
+
+	// UpsertWithVersion creates or updates a document based on filter.
+	// Returns WriteResult with DocID and CID.
+	UpsertWithVersion(ctx context.Context, collection string, filter, createInput, updateInput map[string]any) (defra.WriteResult, error)
+
+	// UpdateWithVersion updates a document by DocID.
+	// Returns WriteResult with DocID and CID.
+	UpdateWithVersion(ctx context.Context, collection string, docID string, input map[string]any) (defra.WriteResult, error)
 }
 
 // DefraStateStore implements StateStore using DefraDB client and sink.
 type DefraStateStore struct {
 	Client *defra.Client
 	Sink   *defra.Sink
+}
+
+// NewDefraStateStore creates a DefraStateStore with the given client and sink.
+// Returns an error if either client or sink is nil.
+func NewDefraStateStore(client *defra.Client, sink *defra.Sink) (*DefraStateStore, error) {
+	if client == nil {
+		return nil, fmt.Errorf("DefraStateStore requires non-nil Client")
+	}
+	if sink == nil {
+		return nil, fmt.Errorf("DefraStateStore requires non-nil Sink")
+	}
+	return &DefraStateStore{Client: client, Sink: sink}, nil
 }
 
 func (s *DefraStateStore) Execute(ctx context.Context, query string, variables map[string]any) (*defra.GQLResponse, error) {
@@ -39,6 +63,18 @@ func (s *DefraStateStore) Send(op defra.WriteOp) {
 
 func (s *DefraStateStore) SendSync(ctx context.Context, op defra.WriteOp) (defra.WriteResult, error) {
 	return s.Sink.SendSync(ctx, op)
+}
+
+func (s *DefraStateStore) SendManySync(ctx context.Context, ops []defra.WriteOp) ([]defra.WriteResult, error) {
+	return s.Sink.SendManySync(ctx, ops)
+}
+
+func (s *DefraStateStore) UpsertWithVersion(ctx context.Context, collection string, filter, createInput, updateInput map[string]any) (defra.WriteResult, error) {
+	return s.Client.UpsertWithVersion(ctx, collection, filter, createInput, updateInput)
+}
+
+func (s *DefraStateStore) UpdateWithVersion(ctx context.Context, collection string, docID string, input map[string]any) (defra.WriteResult, error) {
+	return s.Client.UpdateWithVersion(ctx, collection, docID, input)
 }
 
 // --- Store-based helper functions ---
