@@ -225,11 +225,51 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		// Clean up agent state from BookState and DB
 		j.cleanupTocFinderAgentState(ctx)
 
-		j.Book.TocFinderComplete()
 		agentResult := j.TocAgent.Result()
 
+		// Check if ToC was found
+		tocFound := false
 		if agentResult != nil && agentResult.Success {
-			// Save result to DefraDB
+			if tocResult, ok := agentResult.ToolResult.(*toc_finder.Result); ok {
+				tocFound = tocResult.ToCFound
+			}
+		}
+
+		// If ToC not found, retry or fail
+		if !tocFound {
+			// Check if we should retry
+			exceededRetries := j.Book.TocFinderFail(MaxBookOpRetries)
+			if exceededRetries {
+				// All retries exhausted - fail the job
+				if logger != nil {
+					logger.Error("ToC finder failed to find ToC after max retries - aborting job",
+						"book_id", j.Book.BookID,
+						"retries", MaxBookOpRetries)
+				}
+				j.Book.SetTocFound(false)
+				j.PersistTocFinderState(ctx)
+				return nil, fmt.Errorf("ToC finder failed to find table of contents after %d attempts - this book may not have a ToC or it could not be detected", MaxBookOpRetries)
+			}
+
+			// Retry - reset agent and create new work unit
+			if logger != nil {
+				logger.Warn("ToC finder did not find ToC - retrying",
+					"book_id", j.Book.BookID,
+					"retry_count", j.Book.GetTocFinderState().Retries())
+			}
+			j.TocAgent = nil // Reset agent for fresh start
+			j.cleanupTocFinderAgentState(ctx)
+			unit := j.CreateTocFinderWorkUnit(ctx)
+			if unit != nil {
+				return []jobs.WorkUnit{*unit}, nil
+			}
+			// If we can't create a work unit, fail
+			return nil, fmt.Errorf("failed to create ToC finder retry work unit")
+		}
+
+		// ToC was found - mark complete and save result
+		j.Book.TocFinderComplete()
+		if agentResult != nil && agentResult.Success {
 			if tocResult, ok := agentResult.ToolResult.(*toc_finder.Result); ok {
 				cid, err := common.SaveTocFinderResult(ctx, j.TocDocID, tocResult)
 				if err != nil {
@@ -249,22 +289,6 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 					j.Book.SetTocResult(tocResult.ToCFound, tocResult.ToCPageRange.StartPage, tocResult.ToCPageRange.EndPage)
 				} else {
 					j.Book.SetTocFound(tocResult.ToCFound)
-				}
-			}
-		} else {
-			// Agent failed or no ToC found - mark finder as done with no ToC
-			j.Book.SetTocFound(false)
-			cid, err := common.SaveTocFinderNoResult(ctx, j.TocDocID)
-			if err != nil {
-				return nil, err
-			}
-			if cid != "" {
-				j.Book.SetTocCID(cid)
-				j.Book.SetOperationCID(common.OpTocFinder, cid)
-			}
-			if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, cid); err != nil {
-				if logger != nil {
-					logger.Warn("failed to update metric output ref", "error", err)
 				}
 			}
 		}

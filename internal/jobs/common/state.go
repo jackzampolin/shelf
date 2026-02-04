@@ -374,6 +374,11 @@ func (o *OperationState) GetRetries() int {
 	return o.retries
 }
 
+// Retries returns the current retry count (value receiver for convenience).
+func (o OperationState) Retries() int {
+	return o.retries
+}
+
 // BookState tracks all state for a book: identity, context, pages, config, prompts, operations.
 // This consolidates everything about a book so the Job struct can be thin.
 //
