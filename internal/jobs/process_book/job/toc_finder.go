@@ -278,25 +278,23 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		j.Book.TocFinderComplete()
 		if agentResult != nil && agentResult.Success {
 			if tocResult, ok := agentResult.ToolResult.(*toc_finder.Result); ok {
-				cid, err := common.SaveTocFinderResult(ctx, j.TocDocID, tocResult)
-				if err != nil {
-					return nil, fmt.Errorf("failed to save ToC finder result: %w", err)
-				}
-				if cid != "" {
-					j.Book.SetTocCID(cid)
-					j.Book.SetOperationCID(common.OpTocFinder, cid)
-				}
-				if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, cid); err != nil {
-					if logger != nil {
-						logger.Warn("failed to update metric output ref", "error", err)
-					}
-				}
-				// Update in-memory state using thread-safe accessor
+				// Use async persist: updates memory immediately, fires DB write without blocking
+				// This removes DB latency from the toc_finder -> toc_extract transition
+				var startPage, endPage int
 				if tocResult.ToCPageRange != nil {
-					j.Book.SetTocResult(tocResult.ToCFound, tocResult.ToCPageRange.StartPage, tocResult.ToCPageRange.EndPage)
-				} else {
-					j.Book.SetTocFound(tocResult.ToCFound)
+					startPage = tocResult.ToCPageRange.StartPage
+					endPage = tocResult.ToCPageRange.EndPage
 				}
+				j.Book.PersistTocFinderResultAsync(ctx, tocResult.ToCFound, startPage, endPage, tocResult.StructureSummary)
+
+				// Fire-and-forget metric update (non-critical)
+				go func() {
+					if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, ""); err != nil {
+						if logger != nil {
+							logger.Debug("failed to update metric output ref", "error", err)
+						}
+					}
+				}()
 			}
 		}
 

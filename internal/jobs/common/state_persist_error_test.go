@@ -448,3 +448,108 @@ func TestDeleteAgentStatesForType_ErrorHandling(t *testing.T) {
 		}
 	})
 }
+
+// TestPersistOpStateAsync tests the fire-and-forget operation state persistence.
+func TestPersistOpStateAsync(t *testing.T) {
+	t.Run("updates memory and fires async write", func(t *testing.T) {
+		store := NewMemoryStateStore()
+		store.SetDoc("ToC", "toc1", map[string]any{})
+
+		book := NewBookState("book1")
+		book.Store = store
+		book.SetTocDocID("toc1")
+
+		// Start toc_extract operation (updates memory)
+		book.TocExtractStart()
+
+		// Call async persist
+		book.PersistOpStateAsync(context.Background(), OpTocExtract)
+
+		// Memory should be updated (TocExtractStart already did this)
+		state := book.OpGetState(OpTocExtract)
+		if !state.IsStarted() {
+			t.Error("Memory should show toc_extract started")
+		}
+
+		// Give async write time to complete (fire-and-forget)
+		// In real use, we don't wait, but for testing we verify it works
+		// Note: MemoryStateStore.Send is synchronous for testing purposes
+		doc := store.GetDoc("ToC", "toc1")
+		if doc == nil {
+			t.Error("ToC document should exist")
+		}
+		// The async write should have updated the document
+		if started, ok := doc["extract_started"].(bool); !ok || !started {
+			t.Error("DB should show extract_started=true")
+		}
+	})
+
+	t.Run("gracefully handles no store", func(t *testing.T) {
+		book := NewBookState("book1")
+		// Don't set book.Store
+
+		// Should not panic
+		book.PersistOpStateAsync(context.Background(), OpTocExtract)
+	})
+
+	t.Run("gracefully handles no doc ID", func(t *testing.T) {
+		store := NewMemoryStateStore()
+		book := NewBookState("book1")
+		book.Store = store
+		// Don't set TocDocID
+
+		// Should not panic
+		book.PersistOpStateAsync(context.Background(), OpTocExtract)
+	})
+}
+
+// TestPersistTocFinderResultAsync tests the fire-and-forget ToC finder result persistence.
+func TestPersistTocFinderResultAsync(t *testing.T) {
+	t.Run("updates memory and fires async write", func(t *testing.T) {
+		store := NewMemoryStateStore()
+		store.SetDoc("ToC", "toc1", map[string]any{})
+
+		book := NewBookState("book1")
+		book.Store = store
+		book.SetTocDocID("toc1")
+
+		// Call async persist
+		book.PersistTocFinderResultAsync(context.Background(), true, 5, 10, nil)
+
+		// Memory should be updated immediately
+		if !book.GetTocFound() {
+			t.Error("Memory should show ToC found")
+		}
+		start, end := book.GetTocPageRange()
+		if start != 5 || end != 10 {
+			t.Errorf("Page range should be 5-10, got %d-%d", start, end)
+		}
+
+		// DB should also be updated (MemoryStateStore.Send is synchronous for testing)
+		doc := store.GetDoc("ToC", "toc1")
+		if doc == nil {
+			t.Error("ToC document should exist")
+		}
+		if found, ok := doc["toc_found"].(bool); !ok || !found {
+			t.Error("DB should show toc_found=true")
+		}
+		if startPage, ok := doc["start_page"].(int); !ok || startPage != 5 {
+			t.Errorf("DB start_page should be 5, got %v", doc["start_page"])
+		}
+	})
+
+	t.Run("gracefully handles no ToC doc ID", func(t *testing.T) {
+		store := NewMemoryStateStore()
+		book := NewBookState("book1")
+		book.Store = store
+		// Don't set TocDocID
+
+		// Should update memory but not panic
+		book.PersistTocFinderResultAsync(context.Background(), true, 5, 10, nil)
+
+		// Memory should still be updated
+		if !book.GetTocFound() {
+			t.Error("Memory should show ToC found even without DB write")
+		}
+	})
+}

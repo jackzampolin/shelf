@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -306,4 +307,85 @@ func (b *BookState) PersistTocLinkProgress(ctx context.Context) error {
 	b.mu.Unlock()
 
 	return nil
+}
+
+// --- Async (fire-and-forget) methods for latency-sensitive operations ---
+// These methods update memory immediately and fire-and-forget the DB write.
+// Use for stage transitions where memory consistency matters but DB can be eventually consistent.
+
+// PersistOpStateAsync fires and forgets operation state to DB.
+// Memory is already updated by the caller (via OpStart, etc.).
+// This removes DB latency from the critical path between stages.
+func (b *BookState) PersistOpStateAsync(ctx context.Context, op OpType) {
+	cfg, ok := OpRegistry[op]
+	if !ok {
+		slog.Warn("PersistOpStateAsync: unknown operation", "operation", op)
+		return
+	}
+
+	state := b.OpGetState(op)
+	docID := cfg.DocIDSource(b)
+	if docID == "" {
+		// No document exists yet - this is expected before ToC record is created
+		return
+	}
+
+	store := b.getStore(ctx)
+	if store == nil {
+		slog.Warn("PersistOpStateAsync: no store available", "book_id", b.BookID, "operation", op)
+		return
+	}
+
+	store.Send(defra.WriteOp{
+		Collection: cfg.Collection,
+		DocID:      docID,
+		Document: map[string]any{
+			cfg.FieldPrefix + "_started":  state.IsStarted(),
+			cfg.FieldPrefix + "_complete": state.IsComplete(),
+			cfg.FieldPrefix + "_failed":   state.IsFailed(),
+			cfg.FieldPrefix + "_retries":  state.GetRetries(),
+		},
+		Op: defra.OpUpdate,
+	})
+}
+
+// PersistTocFinderResultAsync saves ToC finder result with memory-first, async DB write.
+// Updates memory state immediately, fires DB write without blocking.
+// This removes DB latency from the toc_finder -> toc_extract transition.
+func (b *BookState) PersistTocFinderResultAsync(ctx context.Context, found bool, startPage, endPage int, structureSummary any) {
+	// Update memory state first (atomic, under lock)
+	b.SetTocResult(found, startPage, endPage)
+
+	tocDocID := b.TocDocID()
+	if tocDocID == "" {
+		slog.Warn("PersistTocFinderResultAsync: no ToC doc ID", "book_id", b.BookID)
+		return
+	}
+
+	store := b.getStore(ctx)
+	if store == nil {
+		slog.Warn("PersistTocFinderResultAsync: no store available", "book_id", b.BookID)
+		return
+	}
+
+	update := map[string]any{
+		"toc_found":       found,
+		"finder_complete": true,
+		"start_page":      startPage,
+		"end_page":        endPage,
+	}
+
+	if structureSummary != nil {
+		if summaryJSON, err := json.Marshal(structureSummary); err == nil {
+			update["structure_summary"] = string(summaryJSON)
+		}
+	}
+
+	// Fire-and-forget DB write
+	store.Send(defra.WriteOp{
+		Collection: "ToC",
+		DocID:      tocDocID,
+		Document:   update,
+		Op:         defra.OpUpdate,
+	})
 }

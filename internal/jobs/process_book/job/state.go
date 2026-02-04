@@ -106,15 +106,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		if err := j.Book.TocExtractStart(); err == nil {
 			unit := j.CreateTocExtractWorkUnit(ctx)
 			if unit != nil {
-				if err := j.PersistTocExtractState(ctx); err != nil {
-					if logger != nil {
-						logger.Error("failed to persist toc extract state, rolling back",
-							"book_id", j.Book.BookID, "error", err)
-					}
-					j.Book.TocExtractReset() // Rollback on failure
-				} else {
-					units = append(units, *unit)
-				}
+				// Use async persist: memory is already updated by TocExtractStart(),
+				// fire-and-forget DB write removes latency from critical path
+				j.Book.PersistOpStateAsync(ctx, common.OpTocExtract)
+				units = append(units, *unit)
 			} else {
 				j.Book.TocExtractReset() // No work unit created, allow retry
 				if logger != nil {
