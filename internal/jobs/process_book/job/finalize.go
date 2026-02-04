@@ -1269,6 +1269,15 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 // finalize attempt. If found, loads it into BookState and returns true.
 // This allows crash recovery to skip the pattern analysis LLM call.
 func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
+	logger := svcctx.LoggerFrom(ctx)
+
+	if err := defra.ValidateID(j.Book.BookID); err != nil {
+		if logger != nil {
+			logger.Error("loadExistingPatternResults: invalid book ID", "book_id", j.Book.BookID, "error", err)
+		}
+		return false
+	}
+
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return false
@@ -1282,6 +1291,9 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
+		if logger != nil {
+			logger.Error("loadExistingPatternResults: DB query failed", "book_id", j.Book.BookID, "error", err)
+		}
 		return false
 	}
 
@@ -1307,6 +1319,9 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 		Reasoning     string                     `json:"reasoning"`
 	}
 	if err := json.Unmarshal([]byte(paJSON), &data); err != nil {
+		if logger != nil {
+			logger.Error("loadExistingPatternResults: failed to parse pattern_analysis_json", "book_id", j.Book.BookID, "error", err)
+		}
 		return false
 	}
 
@@ -1316,6 +1331,13 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 		Reasoning: data.Reasoning,
 	})
 	j.Book.SetEntriesToFind(data.EntriesToFind)
+
+	if logger != nil {
+		logger.Info("loadExistingPatternResults: reusing saved pattern analysis",
+			"book_id", j.Book.BookID,
+			"patterns", len(data.Patterns),
+			"entries_to_find", len(data.EntriesToFind))
+	}
 
 	return true
 }

@@ -67,12 +67,16 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	// are preserved in pattern_analysis_json and will be reused on retry.
 	if j.Book.TocFinalizeIsStarted() {
 		j.Book.TocFinalizeFail(MaxBookOpRetries)
-		common.PersistOpState(ctx, j.Book, common.OpTocFinalize)
+		if err := common.PersistOpState(ctx, j.Book, common.OpTocFinalize); err != nil && logger != nil {
+			logger.Warn("crash recovery: failed to persist toc_finalize reset", "error", err)
+		}
 	}
 	// Structure: fail/retry if started but not done.
 	if j.Book.StructureIsStarted() {
 		j.Book.StructureFail(MaxBookOpRetries)
-		common.PersistOpState(ctx, j.Book, common.OpStructure)
+		if err := common.PersistOpState(ctx, j.Book, common.OpStructure); err != nil && logger != nil {
+			logger.Warn("crash recovery: failed to persist structure reset", "error", err)
+		}
 	}
 
 	// Create any missing page records in DB
