@@ -73,6 +73,7 @@ type MetadataStatus struct {
 // BookMetadata contains extracted book metadata.
 type BookMetadata struct {
 	Title           string   `json:"title,omitempty"`
+	Subtitle        string   `json:"subtitle,omitempty"`
 	Author          string   `json:"author,omitempty"`
 	Authors         []string `json:"authors,omitempty"`
 	ISBN            string   `json:"isbn,omitempty"`
@@ -82,6 +83,7 @@ type BookMetadata struct {
 	Language        string   `json:"language,omitempty"`
 	Description     string   `json:"description,omitempty"`
 	Subjects        []string `json:"subjects,omitempty"`
+	CoverPage       int      `json:"cover_page,omitempty"`
 }
 
 // ToCStatus represents ToC finding and extraction status.
@@ -327,6 +329,7 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			page_count
 			title
+			subtitle
 			author
 			isbn
 			lccn
@@ -334,6 +337,7 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			publication_year
 			language
 			description
+			cover_page
 			metadata_started
 			metadata_complete
 			metadata_failed
@@ -385,6 +389,9 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 				if v, ok := book["title"].(string); ok {
 					resp.Metadata.Data.Title = v
 				}
+				if v, ok := book["subtitle"].(string); ok {
+					resp.Metadata.Data.Subtitle = v
+				}
 				if v, ok := book["author"].(string); ok {
 					resp.Metadata.Data.Author = v
 				}
@@ -405,6 +412,9 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 				}
 				if v, ok := book["description"].(string); ok {
 					resp.Metadata.Data.Description = v
+				}
+				if v, ok := book["cover_page"].(float64); ok {
+					resp.Metadata.Data.CoverPage = int(v)
 				}
 			}
 

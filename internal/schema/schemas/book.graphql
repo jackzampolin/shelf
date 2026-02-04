@@ -1,5 +1,6 @@
 type Book {
     title: String
+    subtitle: String
     author: String
     authors: [String]
     page_count: Int
@@ -14,6 +15,7 @@ type Book {
     language: String
     description: String
     subjects: [String]
+    cover_page: Int  # Scan page number containing book cover
 
     # Enrichment (Open Library)
     cover_url: String

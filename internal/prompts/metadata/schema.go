@@ -11,7 +11,7 @@ var ExtractionSchema = map[string]any{
 			"properties": map[string]any{
 				"title": map[string]any{
 					"type":        "string",
-					"description": "Official book title",
+					"description": "Official book title (without subtitle)",
 				},
 				"subtitle": map[string]any{
 					"type":        []string{"string", "null"},
@@ -44,7 +44,7 @@ var ExtractionSchema = map[string]any{
 				},
 				"description": map[string]any{
 					"type":        []string{"string", "null"},
-					"description": "Brief book summary (1-3 sentences)",
+					"description": "Brief book summary (50-100 words, 2-3 sentences)",
 				},
 				"subjects": map[string]any{
 					"type":        "array",
@@ -67,6 +67,10 @@ var ExtractionSchema = map[string]any{
 				"confidence": map[string]any{
 					"type":        "number",
 					"description": "Confidence score 0.0-1.0",
+				},
+				"cover_page": map[string]any{
+					"type":        []string{"integer", "null"},
+					"description": "Scan page number (1-indexed) containing the book's front cover image",
 				},
 			},
 			"required":             []string{"title", "authors", "language", "confidence"},
@@ -95,4 +99,5 @@ type Result struct {
 	Subjects        []string      `json:"subjects"`
 	Contributors    []Contributor `json:"contributors"`
 	Confidence      float64       `json:"confidence"`
+	CoverPage       *int          `json:"cover_page"`
 }

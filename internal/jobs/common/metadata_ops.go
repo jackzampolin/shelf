@@ -150,6 +150,9 @@ func SaveMetadataResult(ctx context.Context, bookID string, result metadata.Resu
 		"metadata_complete": true,
 	}
 
+	if result.Subtitle != nil {
+		update["subtitle"] = *result.Subtitle
+	}
 	if len(result.Authors) > 0 {
 		update["author"] = result.Authors[0]
 		update["authors"] = result.Authors
@@ -169,6 +172,9 @@ func SaveMetadataResult(ctx context.Context, bookID string, result metadata.Resu
 	}
 	if len(result.Subjects) > 0 {
 		update["subjects"] = result.Subjects
+	}
+	if result.CoverPage != nil {
+		update["cover_page"] = *result.CoverPage
 	}
 
 	writeResult, err := sink.SendSync(ctx, defra.WriteOp{

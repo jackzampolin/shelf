@@ -286,6 +286,7 @@ func (s OpStatus) String() string {
 // Populated by metadata extraction or lazy-loaded from DefraDB.
 type BookMetadata struct {
 	Title           string   `json:"title,omitempty"`
+	Subtitle        string   `json:"subtitle,omitempty"`
 	Author          string   `json:"author,omitempty"`
 	Authors         []string `json:"authors,omitempty"`
 	ISBN            string   `json:"isbn,omitempty"`
@@ -295,6 +296,7 @@ type BookMetadata struct {
 	Language        string   `json:"language,omitempty"`
 	Description     string   `json:"description,omitempty"`
 	Subjects        []string `json:"subjects,omitempty"`
+	CoverPage       int      `json:"cover_page,omitempty"` // Scan page number containing cover image
 }
 
 // OperationState tracks the state of a retriable book-level operation.
