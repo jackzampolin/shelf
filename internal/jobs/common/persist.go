@@ -203,6 +203,59 @@ func PersistAgentState(ctx context.Context, book *BookState, state *AgentState) 
 	return nil
 }
 
+// PersistAgentStates creates multiple agent state records in DefraDB in a batch.
+// This is more efficient than calling PersistAgentState in a loop.
+// Each state's DocID and CID are updated with the result.
+func PersistAgentStates(ctx context.Context, book *BookState, states []*AgentState) error {
+	if book == nil {
+		return fmt.Errorf("book is nil")
+	}
+	if len(states) == 0 {
+		return nil
+	}
+
+	// Build write operations for all states
+	ops := make([]defra.WriteOp, len(states))
+	for i, state := range states {
+		ops[i] = defra.WriteOp{
+			Collection: "AgentState",
+			Document: map[string]any{
+				"agent_id":           state.AgentID,
+				"agent_type":         state.AgentType,
+				"entry_doc_id":       state.EntryDocID,
+				"iteration":          state.Iteration,
+				"complete":           state.Complete,
+				"messages_json":      state.MessagesJSON,
+				"pending_tool_calls": state.PendingToolCalls,
+				"tool_results":       state.ToolResults,
+				"result_json":        state.ResultJSON,
+				"book_id":            book.BookID,
+			},
+			Op: defra.OpCreate,
+		}
+	}
+
+	// Batch create all agent states
+	results, err := SendManyTracked(ctx, book, ops)
+	if err != nil {
+		return err
+	}
+
+	// Update states with DocID/CID from results
+	for i, result := range results {
+		if i < len(states) {
+			if result.DocID != "" {
+				states[i].DocID = result.DocID
+			}
+			if result.CID != "" {
+				states[i].CID = result.CID
+			}
+		}
+	}
+
+	return nil
+}
+
 // DeleteAgentState removes an agent state record from DefraDB by DocID.
 // Uses synchronous write to ensure deletion completes and prevent orphaned records.
 func DeleteAgentState(ctx context.Context, docID string) error {

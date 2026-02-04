@@ -445,20 +445,72 @@ func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit 
 
 // createFinalizeDiscoverWorkUnits creates work units for all entries to discover.
 func (j *Job) createFinalizeDiscoverWorkUnits(ctx context.Context) []jobs.WorkUnit {
-	var units []jobs.WorkUnit
+	logger := svcctx.LoggerFrom(ctx)
+	entries := j.Book.GetEntriesToFind()
 
-	for _, entry := range j.Book.GetEntriesToFind() {
-		unit := j.createChapterFinderWorkUnit(ctx, entry)
-		if unit != nil {
-			units = append(units, *unit)
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// Phase 1: Create all agents and collect initial states
+	type agentWithState struct {
+		entry        *common.EntryToFind
+		agent        *agent.Agent
+		initialState *common.AgentState
+	}
+	var agentsToCreate []agentWithState
+
+	for _, entry := range entries {
+		ag, state := j.createChapterFinderAgentWithState(ctx, entry)
+		if ag != nil && state != nil {
+			agentsToCreate = append(agentsToCreate, agentWithState{
+				entry:        entry,
+				agent:        ag,
+				initialState: state,
+			})
+		}
+	}
+
+	if len(agentsToCreate) == 0 {
+		return nil
+	}
+
+	// Phase 2: Batch persist all agent states
+	states := make([]*common.AgentState, len(agentsToCreate))
+	for i, aws := range agentsToCreate {
+		states[i] = aws.initialState
+	}
+	if err := common.PersistAgentStates(ctx, j.Book, states); err != nil {
+		if logger != nil {
+			logger.Warn("failed to batch persist chapter finder agent states", "error", err)
+		}
+	}
+
+	// Phase 3: Store agents and states, then execute tool loops
+	var units []jobs.WorkUnit
+	for _, aws := range agentsToCreate {
+		j.FinalizeDiscoverAgents[aws.entry.Key] = aws.agent
+		j.Book.SetAgentState(aws.initialState)
+
+		// Execute tool loop to get first work unit
+		agentUnits := agents.ExecuteToolLoop(ctx, aws.agent)
+		if len(agentUnits) == 0 {
+			continue
+		}
+
+		// Convert and collect work units
+		jobUnits := j.convertDiscoverAgentUnits(agentUnits, aws.entry.Key)
+		if len(jobUnits) > 0 {
+			units = append(units, jobUnits[0])
 		}
 	}
 
 	return units
 }
 
-// createChapterFinderWorkUnit creates a chapter finder agent work unit.
-func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.EntryToFind) *jobs.WorkUnit {
+// createChapterFinderAgentWithState creates a chapter finder agent and its initial state.
+// Returns the agent and state without persisting - caller is responsible for batching persistence.
+func (j *Job) createChapterFinderAgentWithState(ctx context.Context, entry *common.EntryToFind) (*agent.Agent, *common.AgentState) {
 	logger := svcctx.LoggerFrom(ctx)
 
 	var excludedRanges []chapter_finder.ExcludedRange
@@ -533,9 +585,7 @@ func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.Ent
 		})
 	}
 
-	j.FinalizeDiscoverAgents[entry.Key] = ag
-
-	// Persist initial agent state (async, fire-and-forget)
+	// Build initial state (don't persist yet)
 	exported, _ := ag.ExportState()
 	initialState := &common.AgentState{
 		AgentID:          exported.AgentID,
@@ -548,6 +598,24 @@ func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.Ent
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
+
+	return ag, initialState
+}
+
+// createChapterFinderWorkUnit creates a chapter finder agent work unit.
+// Used for single agent creation (e.g., retries). For batch creation, use createFinalizeDiscoverWorkUnits.
+func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.EntryToFind) *jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Create agent and initial state
+	ag, initialState := j.createChapterFinderAgentWithState(ctx, entry)
+	if ag == nil || initialState == nil {
+		return nil
+	}
+
+	j.FinalizeDiscoverAgents[entry.Key] = ag
+
+	// Persist single agent state (uses sync write)
 	if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist chapter finder agent state",
@@ -813,20 +881,72 @@ func (j *Job) isPageExcluded(page int) bool {
 
 // createFinalizeGapWorkUnits creates work units for gap investigation.
 func (j *Job) createFinalizeGapWorkUnits(ctx context.Context) []jobs.WorkUnit {
-	var units []jobs.WorkUnit
+	logger := svcctx.LoggerFrom(ctx)
+	gaps := j.Book.GetFinalizeGaps()
 
-	for _, gap := range j.Book.GetFinalizeGaps() {
-		unit := j.createGapInvestigatorWorkUnit(ctx, gap)
-		if unit != nil {
-			units = append(units, *unit)
+	if len(gaps) == 0 {
+		return nil
+	}
+
+	// Phase 1: Create all agents and collect initial states
+	type agentWithState struct {
+		gap          *common.FinalizeGap
+		agent        *agent.Agent
+		initialState *common.AgentState
+	}
+	var agentsToCreate []agentWithState
+
+	for _, gap := range gaps {
+		ag, state := j.createGapInvestigatorAgentWithState(ctx, gap)
+		if ag != nil && state != nil {
+			agentsToCreate = append(agentsToCreate, agentWithState{
+				gap:          gap,
+				agent:        ag,
+				initialState: state,
+			})
+		}
+	}
+
+	if len(agentsToCreate) == 0 {
+		return nil
+	}
+
+	// Phase 2: Batch persist all agent states
+	states := make([]*common.AgentState, len(agentsToCreate))
+	for i, aws := range agentsToCreate {
+		states[i] = aws.initialState
+	}
+	if err := common.PersistAgentStates(ctx, j.Book, states); err != nil {
+		if logger != nil {
+			logger.Warn("failed to batch persist gap investigator agent states", "error", err)
+		}
+	}
+
+	// Phase 3: Store agents and states, then execute tool loops
+	var units []jobs.WorkUnit
+	for _, aws := range agentsToCreate {
+		j.FinalizeGapAgents[aws.gap.Key] = aws.agent
+		j.Book.SetAgentState(aws.initialState)
+
+		// Execute tool loop to get first work unit
+		agentUnits := agents.ExecuteToolLoop(ctx, aws.agent)
+		if len(agentUnits) == 0 {
+			continue
+		}
+
+		// Convert and collect work units
+		jobUnits := j.convertGapAgentUnits(agentUnits, aws.gap.Key)
+		if len(jobUnits) > 0 {
+			units = append(units, jobUnits[0])
 		}
 	}
 
 	return units
 }
 
-// createGapInvestigatorWorkUnit creates a gap investigator agent work unit.
-func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.FinalizeGap) *jobs.WorkUnit {
+// createGapInvestigatorAgentWithState creates a gap investigator agent and its initial state.
+// Returns the agent and state without persisting - caller is responsible for batching persistence.
+func (j *Job) createGapInvestigatorAgentWithState(ctx context.Context, gap *common.FinalizeGap) (*agent.Agent, *common.AgentState) {
 	logger := svcctx.LoggerFrom(ctx)
 
 	agentGap := &gap_investigator.GapInfo{
@@ -906,9 +1026,7 @@ func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.Fin
 		})
 	}
 
-	j.FinalizeGapAgents[gap.Key] = ag
-
-	// Persist initial agent state (async, fire-and-forget)
+	// Build initial state (don't persist yet)
 	exported, _ := ag.ExportState()
 	initialState := &common.AgentState{
 		AgentID:          exported.AgentID,
@@ -921,6 +1039,24 @@ func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.Fin
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
+
+	return ag, initialState
+}
+
+// createGapInvestigatorWorkUnit creates a gap investigator agent work unit.
+// Used for single agent creation (e.g., retries). For batch creation, use createFinalizeGapWorkUnits.
+func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.FinalizeGap) *jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Create agent and initial state
+	ag, initialState := j.createGapInvestigatorAgentWithState(ctx, gap)
+	if ag == nil || initialState == nil {
+		return nil
+	}
+
+	j.FinalizeGapAgents[gap.Key] = ag
+
+	// Persist single agent state (uses sync write)
 	if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist gap investigator agent state",
