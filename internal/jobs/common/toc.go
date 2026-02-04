@@ -469,16 +469,14 @@ func GetOrLoadLinkedEntries(ctx context.Context, book *BookState, tocDocID strin
 // RefreshLinkedEntries forces a reload of linked entries from DB.
 // Use this after modifications that change entry links.
 func RefreshLinkedEntries(ctx context.Context, book *BookState, tocDocID string) ([]*LinkedTocEntry, error) {
-	// Clear cache
-	book.SetLinkedEntries(nil)
-
-	// Load from DB
+	// Load from DB first - don't clear cache until load succeeds
 	entries, err := LoadLinkedEntries(ctx, tocDocID)
 	if err != nil {
+		// Preserve existing cache on failure
 		return nil, err
 	}
 
-	// Cache in BookState
+	// Only update cache after successful load
 	book.SetLinkedEntries(entries)
 	return entries, nil
 }

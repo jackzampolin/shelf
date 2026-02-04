@@ -259,6 +259,13 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 			}
 			j.TocAgent = nil // Reset agent for fresh start
 			j.cleanupTocFinderAgentState(ctx)
+			// Persist retry counter to DB for crash recovery
+			if err := j.PersistTocFinderState(ctx); err != nil {
+				if logger != nil {
+					logger.Warn("failed to persist toc finder retry state", "error", err)
+				}
+				// Continue anyway - retry will still happen in memory
+			}
 			unit := j.CreateTocFinderWorkUnit(ctx)
 			if unit != nil {
 				return []jobs.WorkUnit{*unit}, nil

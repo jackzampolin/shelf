@@ -841,6 +841,8 @@ func LoadFinalizeState(ctx context.Context, book *BookState, tocDocID string) er
 			finalize_entries_found
 			finalize_gaps_complete
 			finalize_gaps_fixes
+			toc_link_entries_total
+			toc_link_entries_done
 		}
 	}`, book.BookID)
 
@@ -886,6 +888,18 @@ func LoadFinalizeState(ctx context.Context, book *BookState, tocDocID string) er
 				gapsFixes = int(gf)
 			}
 			book.SetFinalizeProgress(entriesComplete, entriesFound, gapsComplete, gapsFixes)
+
+			// Load toc link progress counters
+			var tocLinkTotal, tocLinkDone int
+			if t, ok := bookData["toc_link_entries_total"].(float64); ok {
+				tocLinkTotal = int(t)
+			}
+			if d, ok := bookData["toc_link_entries_done"].(float64); ok {
+				tocLinkDone = int(d)
+			}
+			if tocLinkTotal > 0 || tocLinkDone > 0 {
+				book.SetTocLinkProgress(tocLinkTotal, tocLinkDone)
+			}
 		}
 	}
 

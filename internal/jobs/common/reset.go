@@ -261,7 +261,9 @@ func resetAllOcr(ctx context.Context, book *BookState) error {
 		return nil
 	}
 
-	var resetCount, skipCount, failCount int
+	// Collect all ops for batch processing
+	var ops []defra.WriteOp
+	var skipCount int
 	for _, p := range pages {
 		page, ok := p.(map[string]any)
 		if !ok {
@@ -279,8 +281,7 @@ func resetAllOcr(ctx context.Context, book *BookState) error {
 			}
 			continue
 		}
-		// Use sync write to ensure reset completes
-		_, err := sink.SendSync(ctx, defra.WriteOp{
+		ops = append(ops, defra.WriteOp{
 			Collection: "Page",
 			DocID:      docID,
 			Document: map[string]any{
@@ -290,16 +291,26 @@ func resetAllOcr(ctx context.Context, book *BookState) error {
 			},
 			Op: defra.OpUpdate,
 		})
-		if err != nil {
-			failCount++
-			if logger != nil {
-				logger.Error("failed to reset OCR for page", "doc_id", docID, "error", err)
-			}
-			continue
-		}
-		resetCount++
 	}
 
+	// Send all ops in batch
+	var failCount int
+	if len(ops) > 0 {
+		results, err := sink.SendManySync(ctx, ops)
+		if err != nil {
+			return fmt.Errorf("failed to batch reset OCR: %w", err)
+		}
+		for _, r := range results {
+			if r.Err != nil {
+				failCount++
+				if logger != nil {
+					logger.Error("failed to reset OCR for page", "doc_id", r.DocID, "error", r.Err)
+				}
+			}
+		}
+	}
+
+	resetCount := len(ops) - failCount
 	if logger != nil {
 		logger.Info("reset OCR completed", "reset_count", resetCount, "skipped", skipCount, "failed", failCount, "book_id", book.BookID)
 	}
@@ -339,7 +350,9 @@ func deleteTocEntries(ctx context.Context, tocDocID string) error {
 		return fmt.Errorf("defra sink not in context")
 	}
 
-	var deleteCount, skipCount, failCount int
+	// Collect all ops for batch processing
+	var ops []defra.WriteOp
+	var skipCount int
 	for _, e := range entries {
 		entry, ok := e.(map[string]any)
 		if !ok {
@@ -357,22 +370,31 @@ func deleteTocEntries(ctx context.Context, tocDocID string) error {
 			}
 			continue
 		}
-		// Use sync write to ensure deletion completes
-		_, err := sink.SendSync(ctx, defra.WriteOp{
+		ops = append(ops, defra.WriteOp{
 			Collection: "TocEntry",
 			DocID:      docID,
 			Op:         defra.OpDelete,
 		})
-		if err != nil {
-			failCount++
-			if logger != nil {
-				logger.Error("failed to delete ToC entry", "doc_id", docID, "error", err)
-			}
-			continue
-		}
-		deleteCount++
 	}
 
+	// Send all ops in batch
+	var failCount int
+	if len(ops) > 0 {
+		results, err := sink.SendManySync(ctx, ops)
+		if err != nil {
+			return fmt.Errorf("failed to batch delete ToC entries: %w", err)
+		}
+		for _, r := range results {
+			if r.Err != nil {
+				failCount++
+				if logger != nil {
+					logger.Error("failed to delete ToC entry", "doc_id", r.DocID, "error", r.Err)
+				}
+			}
+		}
+	}
+
+	deleteCount := len(ops) - failCount
 	if logger != nil {
 		logger.Info("ToC entries deletion completed", "delete_count", deleteCount, "skipped", skipCount, "failed", failCount, "toc_id", tocDocID)
 	}

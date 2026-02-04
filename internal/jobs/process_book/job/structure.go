@@ -199,6 +199,7 @@ func (j *Job) buildChapterHierarchy() {
 		if chapter.Level > 1 {
 			if parent, ok := recentByLevel[chapter.Level-1]; ok {
 				chapter.ParentID = parent.EntryID
+				j.Book.UpdateChapter(chapter) // Save changes back
 			}
 		}
 		recentByLevel[chapter.Level] = chapter
@@ -271,6 +272,8 @@ func (j *Job) persistChapterSkeleton(ctx context.Context) error {
 			docID = chapter.DocID
 		}
 		chapter.DocID = docID
+		chapter.CID = result.CID
+		j.Book.UpdateChapter(chapter) // Save DocID/CID back
 		j.Book.TrackWrite("Chapter", docID, result.CID)
 
 		if logger != nil {
@@ -306,6 +309,7 @@ func (j *Job) extractAllChapters(ctx context.Context) int {
 		chapter.MechanicalText = common.MergeChapterPages(pageTexts)
 		chapter.WordCount = common.CountWords(chapter.MechanicalText)
 		chapter.ExtractDone = true
+		j.Book.UpdateChapter(chapter) // Save changes back
 
 		chaptersExtracted++
 	}
@@ -553,18 +557,26 @@ func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.Wo
 	classifications := j.Book.GetStructureClassifications()
 	reasonings := j.Book.GetStructureClassifyReasonings()
 	for _, chapter := range chapters {
+		modified := false
 		if matterType, ok := classifications[chapter.EntryID]; ok {
 			chapter.MatterType = matterType
+			modified = true
 		}
 		if contentType, ok := classifyResult.ContentTypes[chapter.EntryID]; ok {
 			chapter.ContentType = contentType
+			modified = true
 		}
 		if include, ok := classifyResult.AudioInclude[chapter.EntryID]; ok {
 			chapter.AudioInclude = include
+			modified = true
 		}
 		if reasoning, ok := reasonings[chapter.EntryID]; ok {
 			chapter.ClassifyReasoning = reasoning
 			chapter.AudioIncludeReasoning = reasoning
+			modified = true
+		}
+		if modified {
+			j.Book.UpdateChapter(chapter) // Save changes back
 		}
 	}
 
@@ -663,6 +675,7 @@ func (j *Job) createStructurePolishWorkUnits(ctx context.Context) []jobs.WorkUni
 		if !chapter.AudioInclude {
 			chapter.PolishedText = chapter.MechanicalText
 			chapter.PolishDone = true
+			j.Book.UpdateChapter(chapter) // Save changes back
 			j.Book.IncrementStructurePolished()
 			continue
 		}
@@ -759,42 +772,41 @@ func (j *Job) HandleStructurePolishComplete(ctx context.Context, result jobs.Wor
 
 // processStructurePolishResult parses and applies polish results.
 func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.WorkResult, info WorkUnitInfo) error {
-	// Find chapter
+	// Find chapter (returns a copy)
 	chapter := j.Book.GetChapterByEntryID(info.ChapterID)
 	if chapter == nil {
 		return fmt.Errorf("chapter not found: %s", info.ChapterID)
 	}
 
-	if !result.Success {
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Helper to mark chapter as failed and save
+	markFailed := func(reason string, err error) error {
 		j.Book.IncrementStructurePolishFailed()
 		chapter.PolishDone = true
 		chapter.PolishFailed = true
 		chapter.PolishedText = chapter.MechanicalText // Fallback to mechanical text
-		logger := svcctx.LoggerFrom(ctx)
+		j.Book.UpdateChapter(chapter)                 // Save changes back
 		if logger != nil {
 			logger.Error("chapter polish failed, degraded quality - using mechanical text",
 				"chapter_id", chapter.EntryID,
 				"title", chapter.Title,
 				"book_id", j.Book.BookID,
-				"error", result.Error)
+				"reason", reason,
+				"error", err)
 		}
-		// Return error to surface the degradation to callers
-		return fmt.Errorf("polish failed for chapter %s, using mechanical text fallback: %v", chapter.EntryID, result.Error)
+		if err != nil {
+			return fmt.Errorf("polish failed for chapter %s, %s: %v", chapter.EntryID, reason, err)
+		}
+		return fmt.Errorf("polish failed for chapter %s, %s", chapter.EntryID, reason)
+	}
+
+	if !result.Success {
+		return markFailed("work unit failed", result.Error)
 	}
 
 	if result.ChatResult == nil {
-		j.Book.IncrementStructurePolishFailed()
-		chapter.PolishDone = true
-		chapter.PolishFailed = true
-		chapter.PolishedText = chapter.MechanicalText
-		logger := svcctx.LoggerFrom(ctx)
-		if logger != nil {
-			logger.Error("chapter polish failed (no chat result), degraded quality - using mechanical text",
-				"chapter_id", chapter.EntryID,
-				"title", chapter.Title,
-				"book_id", j.Book.BookID)
-		}
-		return fmt.Errorf("polish failed for chapter %s, no chat result - using mechanical text fallback", chapter.EntryID)
+		return markFailed("no chat result", nil)
 	}
 
 	var content []byte
@@ -803,41 +815,19 @@ func (j *Job) processStructurePolishResult(ctx context.Context, result jobs.Work
 	} else if result.ChatResult.Content != "" {
 		content = []byte(result.ChatResult.Content)
 	} else {
-		j.Book.IncrementStructurePolishFailed()
-		chapter.PolishDone = true
-		chapter.PolishFailed = true
-		chapter.PolishedText = chapter.MechanicalText
-		logger := svcctx.LoggerFrom(ctx)
-		if logger != nil {
-			logger.Error("chapter polish failed (empty response), degraded quality - using mechanical text",
-				"chapter_id", chapter.EntryID,
-				"title", chapter.Title,
-				"book_id", j.Book.BookID)
-		}
-		return fmt.Errorf("polish failed for chapter %s, empty response - using mechanical text fallback", chapter.EntryID)
+		return markFailed("empty response", nil)
 	}
 
 	var polishResult common.PolishResult
 	if err := json.Unmarshal(content, &polishResult); err != nil {
-		j.Book.IncrementStructurePolishFailed()
-		chapter.PolishDone = true
-		chapter.PolishFailed = true
-		chapter.PolishedText = chapter.MechanicalText
-		logger := svcctx.LoggerFrom(ctx)
-		if logger != nil {
-			logger.Error("chapter polish failed (parse error), degraded quality - using mechanical text",
-				"chapter_id", chapter.EntryID,
-				"title", chapter.Title,
-				"book_id", j.Book.BookID,
-				"error", err)
-		}
-		return fmt.Errorf("polish failed for chapter %s, parse error - using mechanical text fallback: %w", chapter.EntryID, err)
+		return markFailed("parse error", err)
 	}
 
 	// Apply edits
 	chapter.PolishedText = common.ApplyEdits(chapter.MechanicalText, polishResult.Edits)
 	chapter.WordCount = common.CountWords(chapter.PolishedText)
 	chapter.PolishDone = true
+	j.Book.UpdateChapter(chapter) // Save changes back
 
 	j.Book.IncrementStructurePolished()
 

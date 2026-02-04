@@ -475,6 +475,10 @@ type BookState struct {
 	// Used by finalize_toc and common_structure phases
 	linkedEntries []*LinkedTocEntry
 
+	// ToC link progress counters (persisted to Book for crash recovery)
+	tocLinkEntriesTotal int
+	tocLinkEntriesDone  int
+
 	// Body page range (set during finalize phase)
 	bodyStart int
 	bodyEnd   int
@@ -596,8 +600,8 @@ func (b *BookState) TrackWrite(collection, docID, cid string) {
 		}
 	case "Page":
 		for _, state := range b.Pages {
-			if state != nil && state.pageDocID == docID {
-				state.pageCID = cid
+			if state != nil && state.GetPageDocID() == docID {
+				state.SetPageCID(cid)
 				break
 			}
 		}
@@ -1288,6 +1292,30 @@ func (b *BookState) SetFinalizeProgress(entriesComplete, entriesFound, gapsCompl
 	b.finalizeGapsFixes = gapsFixes
 }
 
+// --- ToC Link Progress ---
+
+// GetTocLinkProgress returns toc link progress counters (thread-safe).
+func (b *BookState) GetTocLinkProgress() (total, done int) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.tocLinkEntriesTotal, b.tocLinkEntriesDone
+}
+
+// SetTocLinkProgress sets toc link progress counters (thread-safe).
+func (b *BookState) SetTocLinkProgress(total, done int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.tocLinkEntriesTotal = total
+	b.tocLinkEntriesDone = done
+}
+
+// IncrementTocLinkEntriesDone increments entries done (thread-safe).
+func (b *BookState) IncrementTocLinkEntriesDone() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.tocLinkEntriesDone++
+}
+
 // IncrementFinalizeEntriesComplete increments entries complete (thread-safe).
 func (b *BookState) IncrementFinalizeEntriesComplete() {
 	b.mu.Lock()
@@ -1365,6 +1393,22 @@ type ChapterState struct {
 	PolishFailed bool `json:"polish_failed"` // True if polish failed and fell back to mechanical text
 }
 
+// Copy returns a deep copy of the ChapterState.
+func (c *ChapterState) Copy() *ChapterState {
+	if c == nil {
+		return nil
+	}
+	copy := *c // Shallow copy of all value fields
+	// Deep copy the slice
+	if c.PageBreaks != nil {
+		copy.PageBreaks = make([]int, len(c.PageBreaks))
+		for i, v := range c.PageBreaks {
+			copy.PageBreaks[i] = v
+		}
+	}
+	return &copy
+}
+
 // NewChapterState creates a new ChapterState with validation.
 // Returns an error if required fields are missing or invalid.
 func NewChapterState(entryID, uniqueKey, title string, startPage int) (*ChapterState, error) {
@@ -1403,8 +1447,9 @@ type StructureState struct {
 	PolishFailed       int               `json:"polish_failed"`
 }
 
-// GetStructureChapters returns the structure chapters (thread-safe).
-// Returns a copy of the slice to prevent external modification.
+// GetStructureChapters returns deep copies of all structure chapters.
+// Modifications to returned chapters do not affect BookState.
+// Use UpdateChapter() to save changes back.
 func (b *BookState) GetStructureChapters() []*ChapterState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -1412,7 +1457,9 @@ func (b *BookState) GetStructureChapters() []*ChapterState {
 		return nil
 	}
 	result := make([]*ChapterState, len(b.structureChapters))
-	copy(result, b.structureChapters)
+	for i, ch := range b.structureChapters {
+		result[i] = ch.Copy()
+	}
 	return result
 }
 
@@ -1465,13 +1512,15 @@ func (b *BookState) SetStructureClassifyPending(pending bool) {
 	b.structureClassifyPending = pending
 }
 
-// GetChapterByEntryID returns a chapter by its entry ID (thread-safe).
+// GetChapterByEntryID returns a copy of the chapter by its entry ID.
+// Returns nil if not found. Callers should modify the copy and then call
+// UpdateChapter() to save changes back to BookState.
 func (b *BookState) GetChapterByEntryID(entryID string) *ChapterState {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	for _, ch := range b.structureChapters {
 		if ch.EntryID == entryID {
-			return ch
+			return ch.Copy()
 		}
 	}
 	return nil

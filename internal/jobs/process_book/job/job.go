@@ -179,7 +179,12 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 				}
 			}
 			// Permanent failure for this entry - mark as done and continue
-			j.LinkTocEntriesDone++
+			j.Book.IncrementTocLinkEntriesDone()
+			if err := common.PersistTocLinkProgress(ctx, j.Book); err != nil {
+				if logger != nil {
+					logger.Warn("failed to persist toc link progress", "error", err)
+				}
+			}
 			if logger != nil {
 				logger.Error("link_toc entry failed after retries",
 					"entry_doc_id", info.EntryDocID,
@@ -187,7 +192,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 					"error", result.Error)
 			}
 			// Check if all entries are done
-			if j.LinkTocEntriesDone >= len(j.LinkTocEntries) {
+			total, done := j.Book.GetTocLinkProgress()
+			if done >= total {
 				j.Book.TocLinkComplete()
 				if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocLink); err != nil {
 					if logger != nil {
@@ -267,7 +273,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		} else {
 			newUnits = append(newUnits, units...)
 			// Check if all entries are done
-			if j.LinkTocEntriesDone >= len(j.LinkTocEntries) {
+			total, done := j.Book.GetTocLinkProgress()
+			if done >= total {
 				j.Book.TocLinkComplete()
 				if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocLink); err != nil {
 					if logger != nil {
@@ -402,8 +409,8 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		"toc_extract_done":    fmt.Sprintf("%v", j.Book.TocExtractIsDone()),
 		"toc_link_started":    fmt.Sprintf("%v", j.Book.TocLinkIsStarted()),
 		"toc_link_done":       fmt.Sprintf("%v", j.Book.TocLinkIsDone()),
-		"toc_link_entries":    fmt.Sprintf("%d", len(j.LinkTocEntries)),
-		"toc_link_complete":   fmt.Sprintf("%d", j.LinkTocEntriesDone),
+		"toc_link_entries":    fmt.Sprintf("%d", func() int { t, _ := j.Book.GetTocLinkProgress(); return t }()),
+		"toc_link_complete":   fmt.Sprintf("%d", func() int { _, d := j.Book.GetTocLinkProgress(); return d }()),
 		"done":                fmt.Sprintf("%v", j.IsDone),
 	}, nil
 }

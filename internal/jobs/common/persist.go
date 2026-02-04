@@ -467,3 +467,18 @@ func PersistFinalizeProgress(ctx context.Context, book *BookState) error {
 	})
 	return err
 }
+
+// PersistTocLinkProgress persists toc link progress counters to Book.
+func PersistTocLinkProgress(ctx context.Context, book *BookState) error {
+	total, done := book.GetTocLinkProgress()
+	_, err := SendTracked(ctx, book, defra.WriteOp{
+		Collection: "Book",
+		DocID:      book.BookID,
+		Document: map[string]any{
+			"toc_link_entries_total": total,
+			"toc_link_entries_done":  done,
+		},
+		Op: defra.OpUpdate,
+	})
+	return err
+}

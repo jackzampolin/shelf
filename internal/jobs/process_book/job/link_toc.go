@@ -15,6 +15,8 @@ import (
 // CreateLinkTocWorkUnits creates work units for all ToC entries.
 // Must be called with j.Mu held.
 func (j *Job) CreateLinkTocWorkUnits(ctx context.Context) []jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
 	// Get entries from BookState (loaded during LoadBook)
 	if len(j.LinkTocEntries) == 0 {
 		j.LinkTocEntries = j.Book.GetTocEntries()
@@ -22,11 +24,22 @@ func (j *Job) CreateLinkTocWorkUnits(ctx context.Context) []jobs.WorkUnit {
 
 	// No entries to process
 	if len(j.LinkTocEntries) == 0 {
-		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("no ToC entries to link", "book_id", j.Book.BookID)
 		}
 		return nil
+	}
+
+	// Set total and check if already partially done (crash recovery)
+	total, done := j.Book.GetTocLinkProgress()
+	if total != len(j.LinkTocEntries) {
+		// Initialize or update total - keep done count for crash recovery
+		j.Book.SetTocLinkProgress(len(j.LinkTocEntries), done)
+		if err := common.PersistTocLinkProgress(ctx, j.Book); err != nil {
+			if logger != nil {
+				logger.Warn("failed to persist toc link progress", "error", err)
+			}
+		}
 	}
 
 	// Create work units for all entries
@@ -214,7 +227,12 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 			}
 		}
 
-		j.LinkTocEntriesDone++
+		j.Book.IncrementTocLinkEntriesDone()
+		if err := common.PersistTocLinkProgress(ctx, j.Book); err != nil {
+			if logger != nil {
+				logger.Warn("failed to persist toc link progress", "error", err)
+			}
+		}
 		delete(j.LinkTocEntryAgents, info.EntryDocID)
 	}
 

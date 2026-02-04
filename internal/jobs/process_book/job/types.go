@@ -131,9 +131,9 @@ type Job struct {
 	TocDocID string
 
 	// Link ToC entry agents (one per ToC entry)
+	// Progress counter is on BookState (GetTocLinkProgress/SetTocLinkProgress) for crash recovery
 	LinkTocEntries     []*toc_entry_finder.TocEntry
 	LinkTocEntryAgents map[string]*agent.Agent // keyed by entry DocID
-	LinkTocEntriesDone int                     // count of completed entries
 
 	// Finalize ToC agent maps (can't be on BookState due to circular imports)
 	// Data state (PatternResult, EntriesToFind, Gaps) is on BookState
