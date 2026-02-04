@@ -271,8 +271,12 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 		j.cleanupLinkTocAgentState(ctx, info.EntryDocID)
 
 		agentResult := ag.Result()
+
+		// Check if agent was successful
+		agentSuccess := false
 		if agentResult != nil && agentResult.Success {
 			if entryResult, ok := agentResult.ToolResult.(*toc_entry_finder.Result); ok {
+				agentSuccess = true
 				// Update TocEntry with actual_page using common utility
 				cid, err := common.SaveTocEntryResult(ctx, j.Book, info.EntryDocID, entryResult)
 				if err != nil {
@@ -286,6 +290,35 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 						logger.Warn("failed to update metric output ref", "error", err)
 					}
 				}
+			}
+		}
+
+		// If agent failed, retry or mark as failed
+		if !agentSuccess {
+			// Check if we should retry
+			if info.RetryCount < MaxBookOpRetries {
+				if logger != nil {
+					logger.Warn("ToC entry finder failed - retrying",
+						"book_id", j.Book.BookID,
+						"entry_doc_id", info.EntryDocID,
+						"retry_count", info.RetryCount+1,
+						"max_retries", MaxBookOpRetries)
+				}
+				// Create retry work unit
+				unit := j.createLinkTocRetryUnit(ctx, info)
+				if unit != nil {
+					return []jobs.WorkUnit{*unit}, nil
+				}
+				// If we can't create retry unit, fall through to mark as failed
+			}
+
+			// Max retries exceeded or retry creation failed - log and continue
+			if logger != nil {
+				logger.Error("ToC entry finder failed after max retries - skipping entry",
+					"book_id", j.Book.BookID,
+					"entry_doc_id", info.EntryDocID,
+					"retry_count", info.RetryCount,
+					"max_retries", MaxBookOpRetries)
 			}
 		}
 
