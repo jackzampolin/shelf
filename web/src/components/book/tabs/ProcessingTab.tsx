@@ -8,7 +8,6 @@ import {
   CollapsibleSection,
   TocSection,
   StructureSection,
-  PatternAnalysisSection,
   AgentLogModal,
   MetadataModal,
   JobHistorySection,
@@ -179,16 +178,6 @@ export function ProcessingTab({ bookId, book }: ProcessingTabProps) {
               >
                 <p className="text-sm text-gray-400 pl-4">No OCR results yet</p>
               </CollapsibleSection>
-            )}
-
-            {/* Pattern Analysis Section - only show if data exists (legacy books) */}
-            {book?.page_pattern_analysis_json && (
-              <PatternAnalysisSection
-                patternAnalysisJSON={book.page_pattern_analysis_json}
-                complete={detailedStatus.stages?.pattern_analysis?.complete}
-                cost={detailedStatus.stages?.pattern_analysis?.cost_usd}
-                metrics={detailedMetrics?.stages?.['pattern_analysis']}
-              />
             )}
 
             {/* Metadata Section */}

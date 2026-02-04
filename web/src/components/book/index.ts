@@ -1,7 +1,6 @@
 export { CollapsibleSection } from './CollapsibleSection'
 export { TocSection } from './TocSection'
 export { StructureSection } from './StructureSection'
-export { PatternAnalysisSection } from './PatternAnalysisSection'
 export { AgentLogsSection } from './AgentLogsSection'
 export { AgentLogModal } from './AgentLogModal'
 export { MetadataModal } from './MetadataModal'
