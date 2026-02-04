@@ -1097,36 +1097,10 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 
 // Helper functions
 
-func buildPagePatternContext(book *common.BookState) *PagePatternContext {
-	ctx := &PagePatternContext{}
-
-	par := book.GetPatternAnalysisResult()
-	if par != nil {
-
-		if par.BodyBoundaries != nil {
-			ctx.BodyStartPage = par.BodyBoundaries.BodyStartPage
-			if par.BodyBoundaries.BodyEndPage != nil {
-				ctx.BodyEndPage = *par.BodyBoundaries.BodyEndPage
-			} else {
-				ctx.BodyEndPage = book.TotalPages
-			}
-			ctx.HasBoundaries = true
-		}
-
-		for _, cp := range par.ChapterPatterns {
-			detected := types.DetectedChapter{
-				PageNum:       cp.StartPage,
-				RunningHeader: cp.RunningHeader,
-				ChapterTitle:  cp.ChapterTitle,
-				ChapterNumber: cp.ChapterNumber,
-				Source:        types.SourcePatternAnalysis,
-				Confidence:    types.ParseConfidenceLevel(cp.Confidence),
-			}
-			ctx.ChapterPatterns = append(ctx.ChapterPatterns, detected)
-		}
-	}
-
-	return ctx
+func buildPagePatternContext(_ *common.BookState) *PagePatternContext {
+	// Early pattern analysis has been removed - return empty context.
+	// Body boundaries will be derived from ToC entries in StartFinalizePhase.
+	return &PagePatternContext{}
 }
 
 func (j *Job) loadCandidateHeadings() []*candidateHeading {
@@ -1160,26 +1134,9 @@ type candidateHeading struct {
 }
 
 func (j *Job) loadChapterStartPages(_ context.Context) ([]types.ChapterStartPage, error) {
-	// Derive chapter start pages from pattern analysis ChapterPatterns data.
-	// This replaces the old approach of querying is_chapter_start (a label field).
-	patternResult := j.Book.GetPatternAnalysisResult()
-	if patternResult == nil {
-		return nil, nil
-	}
-
-	var result []types.ChapterStartPage
-	for _, cp := range patternResult.ChapterPatterns {
-		result = append(result, types.ChapterStartPage{
-			PageNum:       cp.StartPage,
-			RunningHeader: cp.RunningHeader,
-		})
-	}
-
-	sort.Slice(result, func(i, k int) bool {
-		return result[i].PageNum < result[k].PageNum
-	})
-
-	return result, nil
+	// Early pattern analysis has been removed - return nil.
+	// Chapter start pages will be derived from linked ToC entries during finalize.
+	return nil, nil
 }
 
 func (j *Job) convertEntriesForPattern(entries []*common.LinkedTocEntry) []pattern_analyzer.LinkedEntry {

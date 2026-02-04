@@ -12,14 +12,13 @@ import (
 type ResetOperation string
 
 const (
-	ResetMetadata        ResetOperation = "metadata"
-	ResetTocFinder       ResetOperation = "toc_finder"
-	ResetTocExtract      ResetOperation = "toc_extract"
-	ResetPatternAnalysis ResetOperation = "pattern_analysis"
-	ResetTocLink         ResetOperation = "toc_link"
-	ResetTocFinalize     ResetOperation = "toc_finalize"
-	ResetStructure       ResetOperation = "structure"
-	ResetOcr             ResetOperation = "ocr"
+	ResetMetadata    ResetOperation = "metadata"
+	ResetTocFinder   ResetOperation = "toc_finder"
+	ResetTocExtract  ResetOperation = "toc_extract"
+	ResetTocLink     ResetOperation = "toc_link"
+	ResetTocFinalize ResetOperation = "toc_finalize"
+	ResetStructure   ResetOperation = "structure"
+	ResetOcr         ResetOperation = "ocr"
 )
 
 // ValidResetOperations lists all valid reset operations.
@@ -27,7 +26,6 @@ var ValidResetOperations = []ResetOperation{
 	ResetMetadata,
 	ResetTocFinder,
 	ResetTocExtract,
-	ResetPatternAnalysis,
 	ResetTocLink,
 	ResetTocFinalize,
 	ResetStructure,
@@ -75,10 +73,7 @@ func ResetFrom(ctx context.Context, book *BookState, tocDocID string, op ResetOp
 		if err := resetAllOcr(ctx, book); err != nil {
 			return err
 		}
-		// OCR reset cascades through pattern analysis
-		if err := resetOp(ctx, book, tocDocID, OpPatternAnalysis); err != nil {
-			return err
-		}
+		// OCR reset cascades to ToC link and downstream operations
 		return resetOpWithCascade(ctx, book, tocDocID, OpTocLink)
 	}
 

@@ -23,14 +23,13 @@ type LoadBookConfig struct {
 	DebugAgents      bool
 
 	// Pipeline stage toggles (all default to false - should be set by variant)
-	EnableOCR             bool
-	EnableMetadata        bool
-	EnableTocFinder       bool
-	EnableTocExtract      bool
-	EnablePatternAnalysis bool
-	EnableTocLink         bool
-	EnableTocFinalize     bool
-	EnableStructure       bool
+	EnableOCR         bool
+	EnableMetadata    bool
+	EnableTocFinder   bool
+	EnableTocExtract  bool
+	EnableTocLink     bool
+	EnableTocFinalize bool
+	EnableStructure   bool
 
 	// Optional prompt resolution
 	// If PromptKeys is non-empty, prompts will be resolved and stored in BookState
@@ -148,7 +147,6 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	book.EnableMetadata = cfg.EnableMetadata
 	book.EnableTocFinder = cfg.EnableTocFinder
 	book.EnableTocExtract = cfg.EnableTocExtract
-	book.EnablePatternAnalysis = cfg.EnablePatternAnalysis
 	book.EnableTocLink = cfg.EnableTocLink
 	book.EnableTocFinalize = cfg.EnableTocFinalize
 	book.EnableStructure = cfg.EnableStructure
@@ -499,16 +497,7 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 		if bookData, ok := books[0].(map[string]any); ok {
 			// Load Book-collection operation states via registry
 			loadOpStateFromData(book, OpMetadata, bookData, "metadata")
-			loadOpStateFromData(book, OpPatternAnalysis, bookData, "pattern_analysis")
 			loadOpStateFromData(book, OpStructure, bookData, "structure")
-
-			// Pattern analysis result JSON (not part of standard op state)
-			if paJSON, ok := bookData["page_pattern_analysis_json"].(string); ok && paJSON != "" {
-				var result PagePatternResult
-				if err := json.Unmarshal([]byte(paJSON), &result); err == nil {
-					book.patternAnalysisResult = &result
-				}
-			}
 
 			// Structure phase tracking
 			if sp, ok := bookData["structure_phase"].(string); ok {

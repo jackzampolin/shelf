@@ -63,11 +63,6 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		j.Book.TocLinkFail(MaxBookOpRetries)
 		j.PersistTocLinkState(ctx)
 	}
-	// Pattern analysis uses work units (no agent or sub-job), so always reset if started
-	if j.Book.PatternAnalysisIsStarted() {
-		j.Book.PatternAnalysisFail(MaxBookOpRetries)
-		j.PersistPatternAnalysisState(ctx)
-	}
 	// Note: TocFinalize and Structure operations now persist agent state to DB,
 	// so agent state is restored when the job is loaded. No need to fail these
 	// operations on restart - they will resume from their persisted state.
@@ -174,9 +169,6 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		case "toc_extract":
 			j.Book.TocExtractFail(MaxBookOpRetries)
 			j.PersistTocExtractState(ctx)
-		case WorkUnitTypePatternAnalysis:
-			j.Book.PatternAnalysisFail(MaxBookOpRetries)
-			j.PersistPatternAnalysisState(ctx)
 		case WorkUnitTypeLinkToc:
 			// Link ToC entry failures - retry individual entry
 			if info.RetryCount < MaxPageOpRetries {
@@ -264,20 +256,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		if err := j.HandleTocExtractComplete(ctx, result); err != nil {
 			handlerErr = err
 		} else {
-			// ToC extraction complete - check if we should start pattern analysis
+			// ToC extraction complete - check if we should start linking
 			newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
-		}
-
-	case WorkUnitTypePatternAnalysis:
-		units, err := j.HandlePatternAnalysisComplete(ctx, info, result)
-		if err != nil {
-			handlerErr = err
-		} else {
-			newUnits = append(newUnits, units...)
-			// Check if pattern analysis complete - if so, check for book-level operations
-			if j.Book.PatternAnalysisIsComplete() {
-				newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
-			}
 		}
 
 	case WorkUnitTypeLinkToc:

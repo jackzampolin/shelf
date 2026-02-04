@@ -12,13 +12,12 @@ import (
 type OpType string
 
 const (
-	OpMetadata        OpType = "metadata"
-	OpTocFinder       OpType = "toc_finder"
-	OpTocExtract      OpType = "toc_extract"
-	OpPatternAnalysis OpType = "pattern_analysis"
-	OpTocLink         OpType = "toc_link"
-	OpTocFinalize     OpType = "toc_finalize"
-	OpStructure       OpType = "structure"
+	OpMetadata    OpType = "metadata"
+	OpTocFinder   OpType = "toc_finder"
+	OpTocExtract  OpType = "toc_extract"
+	OpTocLink     OpType = "toc_link"
+	OpTocFinalize OpType = "toc_finalize"
+	OpStructure   OpType = "structure"
 )
 
 // AllOpTypes lists all operation types in pipeline order.
@@ -26,7 +25,6 @@ var AllOpTypes = []OpType{
 	OpMetadata,
 	OpTocFinder,
 	OpTocExtract,
-	OpPatternAnalysis,
 	OpTocLink,
 	OpTocFinalize,
 	OpStructure,
@@ -98,21 +96,6 @@ var OpRegistry = map[OpType]*OpConfig{
 			book.setTocEntriesUnlocked(nil)
 		},
 		ResetHook: resetTocExtractHook,
-	},
-	OpPatternAnalysis: {
-		Collection:  "Book",
-		FieldPrefix: "pattern_analysis",
-		DocIDSource: func(b *BookState) string { return b.BookDocID },
-		CascadesTo:  []OpType{OpTocLink},
-		AgentTypes:  []string{"pattern_analysis"},
-		ResetMemoryHook: func(book *BookState) {
-			book.patternAnalysisResult = nil
-			book.pageNumberPattern = nil
-			book.chapterPatterns = nil
-		},
-		ResetDBFields: map[string]any{
-			"page_pattern_analysis_json": nil,
-		},
 	},
 	OpTocLink: {
 		Collection:  "ToC",

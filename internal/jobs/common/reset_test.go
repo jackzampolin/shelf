@@ -15,7 +15,6 @@ func TestIsValidResetOperation(t *testing.T) {
 		{"valid_metadata", "metadata", true},
 		{"valid_toc_finder", "toc_finder", true},
 		{"valid_toc_extract", "toc_extract", true},
-		{"valid_pattern_analysis", "pattern_analysis", true},
 		{"valid_toc_link", "toc_link", true},
 		{"valid_toc_finalize", "toc_finalize", true},
 		{"valid_structure", "structure", true},
@@ -48,11 +47,10 @@ func TestResetFrom_CascadeDependencies(t *testing.T) {
 	// - metadata        -> (none)
 	// - toc_finder      -> toc_extract, toc_link, toc_finalize, structure
 	// - toc_extract     -> toc_link, toc_finalize, structure
-	// - pattern_analysis -> toc_link, toc_finalize, structure
 	// - toc_link        -> toc_finalize, structure
 	// - toc_finalize    -> structure
 	// - structure       -> (none)
-	// - ocr             -> pattern_analysis, (cascade from pattern_analysis)
+	// - ocr             -> toc_link, toc_finalize, structure
 
 	t.Run("unknown_operation_returns_error", func(t *testing.T) {
 		book := NewBookState("test-book")
@@ -131,7 +129,6 @@ func TestValidResetOperations(t *testing.T) {
 		ResetMetadata,
 		ResetTocFinder,
 		ResetTocExtract,
-		ResetPatternAnalysis,
 		ResetTocLink,
 		ResetTocFinalize,
 		ResetStructure,
@@ -165,7 +162,6 @@ func TestResetOperation_StringConstants(t *testing.T) {
 		{ResetMetadata, "metadata"},
 		{ResetTocFinder, "toc_finder"},
 		{ResetTocExtract, "toc_extract"},
-		{ResetPatternAnalysis, "pattern_analysis"},
 		{ResetTocLink, "toc_link"},
 		{ResetTocFinalize, "toc_finalize"},
 		{ResetStructure, "structure"},

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	page_pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/page_pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
@@ -17,9 +16,6 @@ import (
 
 // HomeDir is an alias for home.Dir for external use.
 type HomeDir = home.Dir
-
-// PagePatternResult is an alias for the pattern analysis result.
-type PagePatternResult = page_pattern_analyzer.Result
 
 // PageState tracks the processing state of a single page.
 // All fields are unexported and protected by an internal mutex for thread-safe access.
@@ -420,14 +416,13 @@ type BookState struct {
 
 	// Pipeline stage toggles (immutable after LoadBook)
 	// Used by variants to enable/disable stages
-	EnableOCR             bool
-	EnableMetadata        bool
-	EnableTocFinder       bool
-	EnableTocExtract      bool
-	EnablePatternAnalysis bool
-	EnableTocLink         bool
-	EnableTocFinalize     bool
-	EnableStructure       bool
+	EnableOCR         bool
+	EnableMetadata    bool
+	EnableTocFinder   bool
+	EnableTocExtract  bool
+	EnableTocLink     bool
+	EnableTocFinalize bool
+	EnableStructure   bool
 
 	// Resolved prompts (immutable after LoadBook)
 	Prompts    map[string]string // prompt_key -> resolved text
@@ -480,17 +475,6 @@ type BookState struct {
 	// Used by finalize_toc and common_structure phases
 	linkedEntries []*LinkedTocEntry
 
-	// Pattern analysis results (unexported, use accessor methods)
-	patternAnalysisResult *PagePatternResult
-
-	// Pattern analysis intermediate results (mutable - unexported, use accessor methods)
-	// These are populated during the 3-phase pattern analysis process:
-	//   Phase 1: PageNumberPattern and ChapterPatterns are set independently
-	//   Phase 2: Both are used to create the boundaries work unit
-	//   Phase 3: All three are aggregated into PatternAnalysisResult
-	pageNumberPattern *page_pattern_analyzer.PageNumberPattern
-	chapterPatterns   []page_pattern_analyzer.ChapterPattern
-
 	// Body page range (set during finalize phase)
 	bodyStart int
 	bodyEnd   int
@@ -524,13 +508,12 @@ func NewBookState(bookID string) *BookState {
 		Prompts:    make(map[string]string),
 		PromptCIDs: make(map[string]string),
 		ops: map[OpType]*OperationState{
-			OpMetadata:        {},
-			OpTocFinder:       {},
-			OpTocExtract:      {},
-			OpPatternAnalysis: {},
-			OpTocLink:         {},
-			OpTocFinalize:     {},
-			OpStructure:       {},
+			OpMetadata:    {},
+			OpTocFinder:   {},
+			OpTocExtract:  {},
+			OpTocLink:     {},
+			OpTocFinalize: {},
+			OpStructure:   {},
 		},
 		operationCIDs:               make(map[OpType]string),
 		cidIndex:                    make(map[string]map[string]string),
@@ -936,40 +919,6 @@ func (b *BookState) HasLinkedEntries() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.linkedEntries != nil
-}
-
-// SetPageNumberPattern sets the page number pattern (thread-safe).
-func (b *BookState) SetPageNumberPattern(pattern *page_pattern_analyzer.PageNumberPattern) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.pageNumberPattern = pattern
-}
-
-// GetPageNumberPattern gets the page number pattern (thread-safe).
-func (b *BookState) GetPageNumberPattern() *page_pattern_analyzer.PageNumberPattern {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.pageNumberPattern
-}
-
-// SetChapterPatterns sets the chapter patterns (thread-safe).
-func (b *BookState) SetChapterPatterns(patterns []page_pattern_analyzer.ChapterPattern) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.chapterPatterns = patterns
-}
-
-// GetChapterPatterns gets the chapter patterns (thread-safe).
-// Returns a copy of the slice to prevent external modification.
-func (b *BookState) GetChapterPatterns() []page_pattern_analyzer.ChapterPattern {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	if b.chapterPatterns == nil {
-		return nil
-	}
-	result := make([]page_pattern_analyzer.ChapterPattern, len(b.chapterPatterns))
-	copy(result, b.chapterPatterns)
-	return result
 }
 
 // SetStructurePhase sets the current structure processing phase (thread-safe).
@@ -1630,22 +1579,6 @@ func (b *BookState) GetBodyEnd() int {
 	return b.bodyEnd
 }
 
-// --- Pattern Analysis Result Accessors ---
-
-// GetPatternAnalysisResult returns the pattern analysis result (thread-safe).
-func (b *BookState) GetPatternAnalysisResult() *PagePatternResult {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.patternAnalysisResult
-}
-
-// SetPatternAnalysisResult sets the pattern analysis result (thread-safe).
-func (b *BookState) SetPatternAnalysisResult(result *PagePatternResult) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.patternAnalysisResult = result
-}
-
 // --- Operation State Accessors ---
 // Deprecated: These wrapper methods delegate to the generic Op* methods.
 // New code should use OpStart(OpMetadata), OpComplete(OpMetadata), etc.
@@ -1737,18 +1670,6 @@ func (b *BookState) TocExtractIsDone() bool             { return b.OpIsDone(OpTo
 func (b *BookState) TocExtractCanStart() bool           { return b.OpCanStart(OpTocExtract) }
 func (b *BookState) TocExtractIsComplete() bool         { return b.OpIsComplete(OpTocExtract) }
 func (b *BookState) GetTocExtractState() OperationState { return b.OpGetState(OpTocExtract) }
-
-func (b *BookState) PatternAnalysisStart() error { return b.OpStart(OpPatternAnalysis) }
-func (b *BookState) PatternAnalysisComplete()    { b.OpComplete(OpPatternAnalysis) }
-func (b *BookState) PatternAnalysisFail(maxRetries int) bool {
-	return b.OpFail(OpPatternAnalysis, maxRetries)
-}
-func (b *BookState) PatternAnalysisReset()                   { b.OpReset(OpPatternAnalysis) }
-func (b *BookState) PatternAnalysisIsStarted() bool          { return b.OpIsStarted(OpPatternAnalysis) }
-func (b *BookState) PatternAnalysisIsDone() bool             { return b.OpIsDone(OpPatternAnalysis) }
-func (b *BookState) PatternAnalysisCanStart() bool           { return b.OpCanStart(OpPatternAnalysis) }
-func (b *BookState) PatternAnalysisIsComplete() bool         { return b.OpIsComplete(OpPatternAnalysis) }
-func (b *BookState) GetPatternAnalysisState() OperationState { return b.OpGetState(OpPatternAnalysis) }
 
 func (b *BookState) TocLinkStart() error             { return b.OpStart(OpTocLink) }
 func (b *BookState) TocLinkComplete()                { b.OpComplete(OpTocLink) }

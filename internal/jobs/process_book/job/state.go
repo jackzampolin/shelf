@@ -126,47 +126,11 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Start pattern analysis after ALL pages have OCR complete
-	// Pattern analysis needs OCR text from ALL pages for cross-page analysis
-	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
-	if j.Book.EnablePatternAnalysis && j.AllPagesOcrComplete() && j.Book.PatternAnalysisCanStart() {
-		logger := svcctx.LoggerFrom(ctx)
-		if logger != nil {
-			logger.Info("all pages OCR complete, starting pattern analysis",
-				"book_id", j.Book.BookID,
-				"total_pages", j.Book.TotalPages)
-		}
-		if err := j.Book.PatternAnalysisStart(); err == nil {
-			patternUnits := j.CreatePatternAnalysisWorkUnits(ctx)
-			if len(patternUnits) > 0 {
-				if err := j.PersistPatternAnalysisState(ctx); err != nil {
-					if logger != nil {
-						logger.Error("failed to persist pattern analysis state, rolling back",
-							"book_id", j.Book.BookID, "error", err)
-					}
-					j.Book.PatternAnalysisReset() // Rollback on failure
-				} else {
-					units = append(units, patternUnits...)
-					if logger != nil {
-						logger.Info("created pattern analysis work units",
-							"count", len(patternUnits))
-					}
-				}
-			} else {
-				j.Book.PatternAnalysisReset() // No work unit created, allow retry
-				if logger != nil {
-					logger.Warn("failed to create pattern analysis work units")
-				}
-			}
-		}
-	}
-
-	// Start ToC linking if extraction is done AND pattern analysis is done (or disabled) AND all pages have OCR complete
+	// Start ToC linking if extraction is done AND all pages have OCR complete
 	// ToC linker needs OCR text to find chapter start pages
 	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
-	patternReady := !j.Book.EnablePatternAnalysis || j.Book.PatternAnalysisIsComplete()
 	ocrReady := j.AllPagesOcrComplete()
-	if j.Book.EnableTocLink && j.Book.TocExtractIsDone() && patternReady && ocrReady && j.Book.TocLinkCanStart() {
+	if j.Book.EnableTocLink && j.Book.TocExtractIsDone() && ocrReady && j.Book.TocLinkCanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("starting ToC link operation",
@@ -266,11 +230,6 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 		}
 	}
 
-	// Pattern analysis must be complete or permanently failed (if enabled)
-	if j.Book.EnablePatternAnalysis && !j.Book.PatternAnalysisIsDone() {
-		return
-	}
-
 	// ToC linking depends on extraction being complete
 	// If link enabled but extract disabled/not done, linking is skipped
 	if j.Book.EnableTocLink {
@@ -333,9 +292,4 @@ func (j *Job) PersistTocFinderState(ctx context.Context) error {
 // PersistTocExtractState persists ToC extract state to DefraDB.
 func (j *Job) PersistTocExtractState(ctx context.Context) error {
 	return common.PersistOpState(ctx, j.Book, common.OpTocExtract)
-}
-
-// PersistPatternAnalysisState persists pattern analysis state to DefraDB.
-func (j *Job) PersistPatternAnalysisState(ctx context.Context) error {
-	return common.PersistOpState(ctx, j.Book, common.OpPatternAnalysis)
 }

@@ -59,13 +59,12 @@ const MaxPageOpRetries = 10
 
 // WorkUnitType constants for type-safe work unit handling.
 const (
-	WorkUnitTypeExtract         = "extract"
-	WorkUnitTypeOCR             = "ocr"
-	WorkUnitTypeMetadata        = "metadata"
-	WorkUnitTypeTocFinder       = "toc_finder"
-	WorkUnitTypeTocExtract      = "toc_extract"
-	WorkUnitTypePatternAnalysis = "pattern_analysis"
-	WorkUnitTypeLinkToc         = "link_toc"
+	WorkUnitTypeExtract    = "extract"
+	WorkUnitTypeOCR        = "ocr"
+	WorkUnitTypeMetadata   = "metadata"
+	WorkUnitTypeTocFinder  = "toc_finder"
+	WorkUnitTypeTocExtract = "toc_extract"
+	WorkUnitTypeLinkToc    = "link_toc"
 
 	// Finalize ToC work unit types
 	WorkUnitTypeFinalizePattern  = "finalize_pattern"
@@ -104,9 +103,6 @@ type WorkUnitInfo struct {
 	Provider   string // for OCR units
 	RetryCount int    // number of times this work unit has been retried
 	EntryDocID string // for link_toc units - which ToC entry this belongs to
-
-	// Pattern analysis fields
-	PatternAnalysisSubtype string // page_numbers, chapters, boundaries
 
 	// Finalize ToC fields
 	FinalizePhase string // pattern, discover, validate

@@ -512,36 +512,6 @@ func TestResetCascade_WithMemoryStore(t *testing.T) {
 		}
 	})
 
-	t.Run("pattern_analysis_cascades_to_toc_link", func(t *testing.T) {
-		book := NewBookState("test-book")
-		store := NewMemoryStateStore()
-		book.Store = store
-		book.SetTocDocID("toc-1")
-
-		// Complete pattern analysis and downstream
-		_ = book.OpStart(OpPatternAnalysis)
-		book.OpComplete(OpPatternAnalysis)
-		_ = book.OpStart(OpTocLink)
-		book.OpComplete(OpTocLink)
-		_ = book.OpStart(OpTocFinalize)
-		book.OpComplete(OpTocFinalize)
-
-		ctx := context.Background()
-		if err := ResetFrom(ctx, book, "toc-1", ResetPatternAnalysis); err != nil {
-			t.Fatalf("ResetFrom error = %v", err)
-		}
-
-		if !book.OpCanStart(OpPatternAnalysis) {
-			t.Error("pattern_analysis should be reset")
-		}
-		if !book.OpCanStart(OpTocLink) {
-			t.Error("toc_link should be reset via cascade")
-		}
-		if !book.OpCanStart(OpTocFinalize) {
-			t.Error("toc_finalize should be reset via cascade from toc_link")
-		}
-	})
-
 	t.Run("structure_no_cascade", func(t *testing.T) {
 		book := NewBookState("test-book")
 		store := NewMemoryStateStore()
@@ -628,7 +598,7 @@ func TestPersistAndReload_Roundtrip(t *testing.T) {
 func TestDocIDSource_Book(t *testing.T) {
 	book := NewBookState("book-123")
 
-	for _, op := range []OpType{OpMetadata, OpPatternAnalysis, OpStructure} {
+	for _, op := range []OpType{OpMetadata, OpStructure} {
 		cfg := OpRegistry[op]
 		docID := cfg.DocIDSource(book)
 		if docID != "book-123" {
