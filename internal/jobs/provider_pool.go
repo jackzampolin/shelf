@@ -635,6 +635,7 @@ func (p *ProviderWorkerPool) recordMetrics(ctx context.Context, unit *WorkUnit, 
 			Op:         defra.OpCreate,
 			Collection: "Metric",
 			Document:   m.ToMap(),
+			Source:     "ProviderPool:recordMetric",
 		})
 	}
 
@@ -654,6 +655,7 @@ func (p *ProviderWorkerPool) recordMetrics(ctx context.Context, unit *WorkUnit, 
 				Op:         defra.OpCreate,
 				Collection: "LLMCall",
 				Document:   call.ToMap(),
+				Source:     "ProviderPool:recordLLMCall",
 			})
 			p.logger.Debug("recordMetrics: recorded LLM call",
 				"call_id", call.ID,

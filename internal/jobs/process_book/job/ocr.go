@@ -108,6 +108,7 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 					DocID:      pageDocID,
 					Document:   update,
 					Op:         defra.OpUpdate,
+					Source:     "HandleOcrComplete:markdown",
 				})
 			}
 		}
