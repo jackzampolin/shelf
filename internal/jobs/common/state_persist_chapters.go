@@ -241,6 +241,7 @@ func (b *BookState) PersistChapterExtracts(ctx context.Context) error {
 			b.trackCIDLocked("Chapter", ch.DocID, ch.CID)
 		}
 	}
+	b.structureChapters = chapters // Replace with updated copies
 	b.mu.Unlock()
 
 	return nil
@@ -344,6 +345,7 @@ func (b *BookState) PersistChapterClassifications(ctx context.Context) error {
 			b.trackCIDLocked("Chapter", ch.DocID, ch.CID)
 		}
 	}
+	b.structureChapters = chapters // Replace with updated copies
 	b.mu.Unlock()
 
 	return nil
@@ -446,6 +448,7 @@ func (b *BookState) PersistChapterPolish(ctx context.Context) error {
 			b.trackCIDLocked("Chapter", ch.DocID, ch.CID)
 		}
 	}
+	b.structureChapters = chapters // Replace with updated copies
 	b.mu.Unlock()
 
 	return nil
