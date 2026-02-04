@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/jackzampolin/shelf/internal/defra"
@@ -25,6 +26,9 @@ const (
 	StructPhasePolish   = "polish"
 	StructPhaseFinalize = "finalize"
 )
+
+// maxPersistConcurrency bounds parallel DB writes in persist functions.
+const maxPersistConcurrency = 5
 
 // StartStructurePhase initializes and starts the structure phase.
 func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
@@ -232,56 +236,74 @@ func (j *Job) persistChapterSkeleton(ctx context.Context) error {
 
 	chapters := j.Book.GetStructureChapters()
 
-	// Upsert each chapter to preserve DocIDs
+	// Pre-compute unique keys (must happen before concurrent access)
 	for _, chapter := range chapters {
-		// Generate stable unique_key
-		uniqueKey := j.generateChapterUniqueKey(chapter)
-		chapter.UniqueKey = uniqueKey
-
-		doc := map[string]any{
-			"book_id":      j.Book.BookID,
-			"unique_key":   uniqueKey,
-			"entry_id":     chapter.EntryID,
-			"title":        chapter.Title,
-			"level":        chapter.Level,
-			"level_name":   chapter.LevelName,
-			"entry_number": chapter.EntryNumber,
-			"sort_order":   chapter.SortOrder,
-			"start_page":   chapter.StartPage,
-			"end_page":     chapter.EndPage,
-			"matter_type":  chapter.MatterType,
-			"parent_id":    chapter.ParentID,
-			"source":       chapter.Source,
-		}
-
-		if chapter.TocEntryID != "" {
-			doc["toc_entry_id"] = chapter.TocEntryID
-		}
-
-		// Filter by unique_key for upsert
-		filter := map[string]any{
-			"unique_key": map[string]any{"_eq": uniqueKey},
-		}
-
-		result, err := defraClient.UpsertWithVersion(ctx, "Chapter", filter, doc, doc)
-		if err != nil {
-			return fmt.Errorf("failed to upsert chapter %s: %w", chapter.EntryID, err)
-		}
-		docID := result.DocID
-		if docID == "" {
-			docID = chapter.DocID
-		}
-		chapter.DocID = docID
-		chapter.CID = result.CID
-		j.Book.UpdateChapter(chapter) // Save DocID/CID back
-		j.Book.TrackWrite("Chapter", docID, result.CID)
-
-		if logger != nil {
-			logger.Debug("upserted chapter", "entry_id", chapter.EntryID, "unique_key", uniqueKey, "doc_id", docID)
-		}
+		chapter.UniqueKey = j.generateChapterUniqueKey(chapter)
 	}
 
-	return nil
+	// Upsert chapters concurrently with bounded parallelism
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxPersistConcurrency)
+	var mu sync.Mutex
+	var firstErr error
+
+	for _, chapter := range chapters {
+		wg.Add(1)
+		go func(ch *common.ChapterState) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			doc := map[string]any{
+				"book_id":      j.Book.BookID,
+				"unique_key":   ch.UniqueKey,
+				"entry_id":     ch.EntryID,
+				"title":        ch.Title,
+				"level":        ch.Level,
+				"level_name":   ch.LevelName,
+				"entry_number": ch.EntryNumber,
+				"sort_order":   ch.SortOrder,
+				"start_page":   ch.StartPage,
+				"end_page":     ch.EndPage,
+				"matter_type":  ch.MatterType,
+				"parent_id":    ch.ParentID,
+				"source":       ch.Source,
+			}
+
+			if ch.TocEntryID != "" {
+				doc["toc_entry_id"] = ch.TocEntryID
+			}
+
+			filter := map[string]any{
+				"unique_key": map[string]any{"_eq": ch.UniqueKey},
+			}
+
+			result, err := defraClient.UpsertWithVersion(ctx, "Chapter", filter, doc, doc)
+			if err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = fmt.Errorf("failed to upsert chapter %s: %w", ch.EntryID, err)
+				}
+				mu.Unlock()
+				return
+			}
+			docID := result.DocID
+			if docID == "" {
+				docID = ch.DocID
+			}
+			ch.DocID = docID
+			ch.CID = result.CID
+			j.Book.UpdateChapter(ch)
+			j.Book.TrackWrite("Chapter", docID, result.CID)
+
+			if logger != nil {
+				logger.Debug("upserted chapter", "entry_id", ch.EntryID, "unique_key", ch.UniqueKey, "doc_id", docID)
+			}
+		}(chapter)
+	}
+	wg.Wait()
+
+	return firstErr
 }
 
 // generateChapterUniqueKey creates a stable unique_key for upsert.
@@ -353,43 +375,61 @@ func (j *Job) extractChapterPages(startPage, endPage int) []common.PageText {
 	return pageTexts
 }
 
-// persistExtractResults saves extract results to DefraDB using sync writes.
+// persistExtractResults saves extract results to DefraDB with parallel direct writes.
 // Extract results can be recalculated on crash recovery from page OCR data.
 func (j *Job) persistExtractResults(ctx context.Context) error {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
+	logger := svcctx.LoggerFrom(ctx)
 	chapters := j.Book.GetStructureChapters()
-	var count int
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxPersistConcurrency)
+	var mu sync.Mutex
 	var firstErr error
+	var count int
 
 	for _, chapter := range chapters {
 		if chapter.DocID == "" || !chapter.ExtractDone {
 			continue
 		}
 
-		if _, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
-			Collection: "Chapter",
-			DocID:      chapter.DocID,
-			Document: map[string]any{
-				"mechanical_text":  chapter.MechanicalText,
-				"word_count":       chapter.WordCount,
-				"extract_complete": true,
-			},
-			Op: defra.OpUpdate,
-		}); err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-			if logger := svcctx.LoggerFrom(ctx); logger != nil {
-				logger.Warn("failed to persist chapter extract result",
-					"chapter_id", chapter.EntryID,
-					"doc_id", chapter.DocID,
-					"error", err)
-			}
-			continue
-		}
-		count++
-	}
+		wg.Add(1)
+		go func(ch *common.ChapterState) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			result, err := defraClient.UpdateWithVersion(ctx, "Chapter", ch.DocID, map[string]any{
+				"mechanical_text":  ch.MechanicalText,
+				"word_count":       ch.WordCount,
+				"extract_complete": true,
+			})
+			if err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
+				if logger != nil {
+					logger.Warn("failed to persist chapter extract result",
+						"chapter_id", ch.EntryID,
+						"doc_id", ch.DocID,
+						"error", err)
+				}
+				return
+			}
+			j.Book.TrackWrite("Chapter", ch.DocID, result.CID)
+			mu.Lock()
+			count++
+			mu.Unlock()
+		}(chapter)
+	}
+	wg.Wait()
+
+	if logger != nil {
 		logger.Debug("persisted extract results", "count", count)
 	}
 	return firstErr
@@ -590,51 +630,69 @@ func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.Wo
 	return nil
 }
 
-// persistClassifyResults persists classification results to DefraDB using sync writes.
+// persistClassifyResults persists classification results to DefraDB with parallel direct writes.
 // Classification results can be re-run on crash recovery.
 func (j *Job) persistClassifyResults(ctx context.Context) error {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
+	logger := svcctx.LoggerFrom(ctx)
 	chapters := j.Book.GetStructureChapters()
-	var count int
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxPersistConcurrency)
+	var mu sync.Mutex
 	var firstErr error
+	var count int
 
 	for _, chapter := range chapters {
 		if chapter.DocID == "" {
 			continue
 		}
 
-		doc := map[string]any{
-			"matter_type":   chapter.MatterType,
-			"content_type":  chapter.ContentType,
-			"audio_include": chapter.AudioInclude,
-		}
-		if chapter.ClassifyReasoning != "" {
-			doc["classification_reasoning"] = chapter.ClassifyReasoning
-		}
-		if chapter.AudioIncludeReasoning != "" {
-			doc["audio_include_reasoning"] = chapter.AudioIncludeReasoning
-		}
+		wg.Add(1)
+		go func(ch *common.ChapterState) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-		if _, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
-			Collection: "Chapter",
-			DocID:      chapter.DocID,
-			Document:   doc,
-			Op:         defra.OpUpdate,
-		}); err != nil {
-			if firstErr == nil {
-				firstErr = err
+			doc := map[string]any{
+				"matter_type":   ch.MatterType,
+				"content_type":  ch.ContentType,
+				"audio_include": ch.AudioInclude,
 			}
-			if logger := svcctx.LoggerFrom(ctx); logger != nil {
-				logger.Warn("failed to persist chapter classify result",
-					"chapter_id", chapter.EntryID,
-					"doc_id", chapter.DocID,
-					"error", err)
+			if ch.ClassifyReasoning != "" {
+				doc["classification_reasoning"] = ch.ClassifyReasoning
 			}
-			continue
-		}
-		count++
+			if ch.AudioIncludeReasoning != "" {
+				doc["audio_include_reasoning"] = ch.AudioIncludeReasoning
+			}
+
+			result, err := defraClient.UpdateWithVersion(ctx, "Chapter", ch.DocID, doc)
+			if err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
+				if logger != nil {
+					logger.Warn("failed to persist chapter classify result",
+						"chapter_id", ch.EntryID,
+						"doc_id", ch.DocID,
+						"error", err)
+				}
+				return
+			}
+			j.Book.TrackWrite("Chapter", ch.DocID, result.CID)
+			mu.Lock()
+			count++
+			mu.Unlock()
+		}(chapter)
 	}
+	wg.Wait()
 
-	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+	if logger != nil {
 		logger.Debug("persisted classify results", "count", count)
 	}
 	return firstErr
@@ -845,46 +903,62 @@ func (j *Job) allStructurePolishDone() bool {
 	return true
 }
 
-// persistPolishResults saves polish results to DefraDB using sync writes.
+// persistPolishResults saves polish results to DefraDB with parallel direct writes.
 // Polish results are the final output and should be persisted before completion.
 func (j *Job) persistPolishResults(ctx context.Context) error {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return fmt.Errorf("defra client not in context")
+	}
+	logger := svcctx.LoggerFrom(ctx)
 	chapters := j.Book.GetStructureChapters()
-	var count int
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxPersistConcurrency)
+	var mu sync.Mutex
 	var firstErr error
+	var count int
 
 	for _, chapter := range chapters {
 		if chapter.DocID == "" || !chapter.PolishDone {
 			continue
 		}
 
-		doc := map[string]any{
-			"polished_text":   chapter.PolishedText,
-			"word_count":      chapter.WordCount,
-			"polish_complete": true,
-			"polish_failed":   chapter.PolishFailed,
-		}
+		wg.Add(1)
+		go func(ch *common.ChapterState) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-		if _, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
-			Collection: "Chapter",
-			DocID:      chapter.DocID,
-			Document:   doc,
-			Op:         defra.OpUpdate,
-		}); err != nil {
-			if firstErr == nil {
-				firstErr = err
+			result, err := defraClient.UpdateWithVersion(ctx, "Chapter", ch.DocID, map[string]any{
+				"polished_text":   ch.PolishedText,
+				"word_count":      ch.WordCount,
+				"polish_complete": true,
+				"polish_failed":   ch.PolishFailed,
+			})
+			if err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
+				if logger != nil {
+					logger.Warn("failed to persist chapter polish result",
+						"chapter_id", ch.EntryID,
+						"doc_id", ch.DocID,
+						"error", err)
+				}
+				return
 			}
-			if logger := svcctx.LoggerFrom(ctx); logger != nil {
-				logger.Warn("failed to persist chapter polish result",
-					"chapter_id", chapter.EntryID,
-					"doc_id", chapter.DocID,
-					"error", err)
-			}
-			continue
-		}
-		count++
+			j.Book.TrackWrite("Chapter", ch.DocID, result.CID)
+			mu.Lock()
+			count++
+			mu.Unlock()
+		}(chapter)
 	}
+	wg.Wait()
 
-	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+	if logger != nil {
 		logger.Debug("persisted polish results", "count", count)
 	}
 	return firstErr
