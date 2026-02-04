@@ -689,6 +689,16 @@ func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit 
 		j.Book.SetTocCID(cid)
 	}
 
+	// Skip gap investigation if pattern analysis found no missing entries
+	// Gaps between chapters are normal chapter content, not missing ToC entries
+	if j.Book.GetEntriesToFindCount() == 0 {
+		if logger != nil {
+			logger.Info("skipping gap investigation - pattern analysis found no missing entries",
+				"book_id", j.Book.BookID)
+		}
+		return j.completeFinalizePhase(ctx)
+	}
+
 	// Find gaps in page coverage
 	if err := j.findFinalizeGaps(ctx); err != nil {
 		if logger != nil {

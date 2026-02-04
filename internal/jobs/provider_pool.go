@@ -181,6 +181,7 @@ func (p *ProviderWorkerPool) init(results chan<- workerResult) {
 	p.queue = NewPriorityQueue()
 	p.work = make(chan *WorkUnit, p.workerCount) // Buffered to avoid blocking dispatcher
 	p.results = results
+	p.logger.Info("provider pool init called", "results_channel_ptr", fmt.Sprintf("%p", results))
 }
 
 // Start begins the pool's processing. Blocks until ctx cancelled.
@@ -253,11 +254,19 @@ func (p *ProviderWorkerPool) worker(ctx context.Context, id int) {
 			}
 			result := p.process(ctx, unit)
 			p.inFlight.Add(-1)
+			p.logger.Debug("worker sending result to scheduler",
+				"unit_id", unit.ID,
+				"job_id", unit.JobID,
+				"unit_type", unit.Type,
+				"success", result.Success,
+				"has_ocr_result", result.OCRResult != nil,
+				"results_channel_ptr", fmt.Sprintf("%p", p.results))
 			p.results <- workerResult{
 				JobID:  unit.JobID,
 				Unit:   unit,
 				Result: result,
 			}
+			p.logger.Debug("worker result sent", "unit_id", unit.ID, "unit_type", unit.Type)
 		}
 	}
 }

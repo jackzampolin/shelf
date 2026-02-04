@@ -2,8 +2,10 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 )
@@ -36,6 +38,11 @@ type Scheduler struct {
 	// Running state
 	running bool
 	ctx     context.Context // Scheduler's long-lived context (set in Start)
+
+	// Debug counters
+	receivedCPU int
+	receivedOCR int
+	receivedLLM int
 
 	// Sink for fire-and-forget metrics writes (passed to pools)
 	sink *defra.Sink
@@ -70,13 +77,16 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 		logger = slog.Default()
 	}
 
+	results := make(chan workerResult, 1000) // Buffered results channel
+	logger.Info("scheduler created", "results_channel_ptr", fmt.Sprintf("%p", results))
+
 	return &Scheduler{
 		manager:   cfg.Manager,
 		pools:     make(map[string]WorkerPool),
 		jobs:      make(map[string]Job),
 		factories: make(map[string]JobFactory),
 		pending:   make(map[string]int),
-		results:   make(chan workerResult, 1000), // Buffered results channel
+		results:   results,
 		logger:    logger,
 		sink:      cfg.Sink,
 	}
@@ -119,8 +129,13 @@ func (s *Scheduler) GetJobByBookID(bookID string) Job {
 // Start begins the scheduler and all registered pools.
 // Blocks until context is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {
+	s.logger.Info("scheduler Start called",
+		"results_channel_ptr", fmt.Sprintf("%p", s.results),
+		"scheduler_ptr", fmt.Sprintf("%p", s))
+
 	s.mu.Lock()
 	if s.running {
+		s.logger.Warn("scheduler Start called but already running")
 		s.mu.Unlock()
 		return
 	}
@@ -128,7 +143,8 @@ func (s *Scheduler) Start(ctx context.Context) {
 	s.ctx = ctx // Store for async job operations
 
 	// Start all pools
-	for _, p := range s.pools {
+	for name, p := range s.pools {
+		s.logger.Info("starting pool from scheduler", "name", name, "type", p.Type())
 		go p.Start(ctx)
 	}
 	s.mu.Unlock()
@@ -146,7 +162,51 @@ func (s *Scheduler) Start(ctx context.Context) {
 			return
 
 		case wr := <-s.results:
+			// Log channel buffer length
+			bufLen := len(s.results)
+
+			// Check for OCR data regardless of type field
+			hasOCRData := wr.Result.OCRResult != nil
+			hasCPUData := wr.Result.CPUResult != nil
+			hasChatData := wr.Result.ChatResult != nil
+
+			// Track by type - log raw value for debugging
+			typeStr := string(wr.Unit.Type)
+			switch wr.Unit.Type {
+			case WorkUnitTypeCPU:
+				s.receivedCPU++
+			case WorkUnitTypeOCR:
+				s.receivedOCR++
+				s.logger.Info("RECEIVED OCR RESULT!",
+					"unit_id", wr.Unit.ID,
+					"has_ocr_result", hasOCRData)
+			case WorkUnitTypeLLM:
+				s.receivedLLM++
+			default:
+				s.logger.Warn("scheduler received unknown unit type",
+					"unit_type", wr.Unit.Type,
+					"unit_type_raw", typeStr,
+					"unit_type_len", len(typeStr),
+					"unit_id", wr.Unit.ID)
+			}
+
+			// Log with data type indicators
+			s.logger.Debug("scheduler received result",
+				"job_id", wr.JobID,
+				"unit_id", wr.Unit.ID,
+				"unit_type", wr.Unit.Type,
+				"unit_type_raw", typeStr,
+				"success", wr.Result.Success,
+				"has_ocr_data", hasOCRData,
+				"has_cpu_data", hasCPUData,
+				"has_chat_data", hasChatData,
+				"buffer_len", bufLen,
+				"received_cpu", s.receivedCPU,
+				"received_ocr", s.receivedOCR,
+				"received_llm", s.receivedLLM)
+			handleStart := time.Now()
 			s.handleResult(ctx, wr)
+			s.logger.Debug("handleResult completed", "duration_ms", time.Since(handleStart).Milliseconds())
 		}
 	}
 }

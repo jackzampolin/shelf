@@ -438,7 +438,12 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 				resp.Structure.PolishFailed = int(v)
 			}
 
-			// Parse pattern_analysis_json for finalize_toc sub-phase tracking
+			// Set pattern complete from operation state (consistent with stages.pattern_analysis.complete)
+			if v, ok := book["pattern_analysis_complete"].(bool); ok && v {
+				resp.ToC.PatternComplete = true
+			}
+
+			// Parse pattern_analysis_json for finalize_toc sub-phase tracking details
 			if patternJSON, ok := book["pattern_analysis_json"].(string); ok && patternJSON != "" {
 				var patternData struct {
 					Reasoning     string `json:"reasoning"`
@@ -459,7 +464,6 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 					EntriesToFind []struct{} `json:"entries_to_find"`
 				}
 				if err := json.Unmarshal([]byte(patternJSON), &patternData); err == nil {
-					resp.ToC.PatternComplete = true
 					resp.ToC.PatternsFound = len(patternData.Patterns)
 					resp.ToC.ExcludedRanges = len(patternData.ExcludedRanges)
 					resp.ToC.EntriesToFind = len(patternData.EntriesToFind)

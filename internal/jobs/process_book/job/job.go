@@ -138,6 +138,17 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 	}
 
 	logger := svcctx.LoggerFrom(ctx)
+	if logger != nil {
+		logger.Debug("OnComplete: received result",
+			"unit_id", result.WorkUnitID,
+			"unit_type", info.UnitType,
+			"page_num", info.PageNum,
+			"provider", info.Provider,
+			"success", result.Success,
+			"has_ocr_result", result.OCRResult != nil,
+			"has_chat_result", result.ChatResult != nil,
+			"error", result.Error)
+	}
 
 	// Write-through cache: track costs on BookState
 	// Extract cost from either ChatResult or OCRResult

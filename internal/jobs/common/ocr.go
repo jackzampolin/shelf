@@ -79,7 +79,7 @@ func PersistOCRResult(ctx context.Context, book *BookState, state *PageState, oc
 			Op: defra.OpCreate,
 		})
 
-		// Persist header/footer extracted by OCR provider (Mistral)
+		// Persist header/footer extracted by OCR provider (Mistral) - async
 		if result.Header != "" || result.Footer != "" {
 			update := map[string]any{}
 			if result.Header != "" {
@@ -90,21 +90,13 @@ func PersistOCRResult(ctx context.Context, book *BookState, state *PageState, oc
 				update["footer"] = result.Footer
 				state.SetFooter(result.Footer)
 			}
-			if writeResult, err := SendTracked(ctx, book, defra.WriteOp{
+			// Use async send - header/footer not on critical path
+			sink.Send(defra.WriteOp{
 				Collection: "Page",
 				DocID:      pageDocID,
 				Document:   update,
 				Op:         defra.OpUpdate,
-			}); err == nil {
-				if writeResult.CID != "" {
-					state.SetPageCID(writeResult.CID)
-				}
-			} else if logger != nil {
-				logger.Warn("failed to persist OCR header/footer",
-					"page_doc_id", pageDocID,
-					"provider", provider,
-					"error", err)
-			}
+			})
 		}
 
 		// Update in-memory state (thread-safe)
@@ -120,21 +112,13 @@ func PersistOCRResult(ctx context.Context, book *BookState, state *PageState, oc
 	allDone := state.AllOcrDone(ocrProviders)
 
 	if allDone {
-		// Mark page as OCR complete
-		if writeResult, err := SendTracked(ctx, book, defra.WriteOp{
+		// Mark page as OCR complete - async (in-memory state already updated)
+		sink.Send(defra.WriteOp{
 			Collection: "Page",
 			DocID:      pageDocID,
 			Document:   map[string]any{"ocr_complete": true},
 			Op:         defra.OpUpdate,
-		}); err == nil {
-			if writeResult.CID != "" {
-				state.SetPageCID(writeResult.CID)
-			}
-		} else if logger != nil {
-			logger.Warn("failed to persist OCR completion",
-				"page_doc_id", pageDocID,
-				"error", err)
-		}
+		})
 	}
 
 	return allDone, nil

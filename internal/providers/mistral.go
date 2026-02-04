@@ -138,6 +138,7 @@ func (c *MistralOCRClient) HealthCheck(ctx context.Context) error {
 // ProcessImage extracts text from an image using Mistral OCR.
 func (c *MistralOCRClient) ProcessImage(ctx context.Context, image []byte, pageNum int) (*OCRResult, error) {
 	start := time.Now()
+	fmt.Printf("[MISTRAL DEBUG] ProcessImage called for page %d, image size %d bytes\n", pageNum, len(image))
 
 	// Encode image to base64
 	imageBase64 := base64.StdEncoding.EncodeToString(image)
@@ -160,12 +161,14 @@ func (c *MistralOCRClient) ProcessImage(ctx context.Context, image []byte, pageN
 	// Make request
 	resp, err := c.doRequest(ctx, "/ocr", reqBody)
 	if err != nil {
+		fmt.Printf("[MISTRAL DEBUG] doRequest failed for page %d: %v\n", pageNum, err)
 		return &OCRResult{
 			Success:       false,
 			ErrorMessage:  err.Error(),
 			ExecutionTime: time.Since(start),
 		}, err
 	}
+	fmt.Printf("[MISTRAL DEBUG] doRequest succeeded for page %d, got %d pages in response\n", pageNum, len(resp.Pages))
 
 	// Check response has pages
 	if len(resp.Pages) == 0 {
@@ -297,7 +300,12 @@ func (c *MistralOCRClient) doRequest(ctx context.Context, path string, body any)
 
 		var ocrResp mistralOCRResponse
 		if err := json.Unmarshal(respBody, &ocrResp); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+			// Log the first 500 chars of response for debugging
+			respPreview := string(respBody)
+			if len(respPreview) > 500 {
+				respPreview = respPreview[:500] + "..."
+			}
+			return nil, fmt.Errorf("failed to unmarshal response: %w (preview: %s)", err, respPreview)
 		}
 
 		return &ocrResp, nil
