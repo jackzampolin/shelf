@@ -12,7 +12,6 @@ import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -774,43 +773,53 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 		}
 	}
 
-	// Query costs from metrics
+	// Query costs from metrics using stage-based breakdown
 	metricsQuery := svcctx.MetricsQueryFrom(ctx)
 	if metricsQuery != nil {
-		if costByOp, err := metricsQuery.CostByOperationType(ctx, metrics.Filter{BookID: bookID}); err == nil {
-			// OCR costs by provider
-			for provider := range resp.OcrProgress {
-				if cost, ok := costByOp[provider]; ok {
-					resp.Stages.OCR.CostByProvider[provider] = cost
-					resp.Stages.OCR.TotalCostUSD += cost
-					if prog, ok := resp.OcrProgress[provider]; ok {
-						prog.CostUSD = cost
-						resp.OcrProgress[provider] = prog
+		costByStage, err := metricsQuery.BookStageBreakdown(ctx, bookID)
+		if err != nil {
+			logger := svcctx.LoggerFrom(ctx)
+			if logger != nil {
+				logger.Warn("failed to query cost breakdown", "book_id", bookID, "error", err)
+			}
+		} else {
+			// OCR cost (single stage, split by provider via separate query)
+			if ocrCost, ok := costByStage["ocr"]; ok {
+				resp.Stages.OCR.TotalCostUSD = ocrCost
+				// Distribute evenly across providers (all use same per-page cost)
+				if len(resp.OcrProgress) > 0 {
+					for provider := range resp.OcrProgress {
+						resp.Stages.OCR.CostByProvider[provider] = ocrCost
+						if prog, ok := resp.OcrProgress[provider]; ok {
+							prog.CostUSD = ocrCost
+							resp.OcrProgress[provider] = prog
+						}
 					}
 				}
 			}
 
 			// Pattern Analysis cost
-			if cost, ok := costByOp["pattern_analysis"]; ok {
+			if cost, ok := costByStage["toc-pattern"]; ok {
 				resp.Stages.PatternAnalysis.CostUSD = cost
 			}
 
 			// Metadata cost
-			if cost, ok := costByOp["metadata"]; ok {
+			if cost, ok := costByStage["metadata"]; ok {
 				resp.Metadata.CostUSD = cost
 			}
 
-			// ToC costs
-			if cost, ok := costByOp["toc"]; ok {
-				resp.ToC.CostUSD = cost
-			}
-			if cost, ok := costByOp["finder"]; ok {
-				resp.ToC.CostUSD += cost
+			// ToC costs (finder + link + discover + validate)
+			for _, stage := range []string{"toc", "toc-link", "toc-discover", "toc-validate"} {
+				if cost, ok := costByStage[stage]; ok {
+					resp.ToC.CostUSD += cost
+				}
 			}
 
-			// Structure cost
-			if cost, ok := costByOp["structure"]; ok {
-				resp.Structure.CostUSD = cost
+			// Structure cost (classify + polish)
+			for _, stage := range []string{"structure-classify", "structure-polish"} {
+				if cost, ok := costByStage[stage]; ok {
+					resp.Structure.CostUSD += cost
+				}
 			}
 		}
 	}

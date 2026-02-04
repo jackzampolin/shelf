@@ -181,7 +181,7 @@ export function ProcessingTab({ bookId, book }: ProcessingTabProps) {
             )}
 
             {/* Metadata Section */}
-            <div className="border-t pt-4">
+            <div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <span className="text-sm font-medium text-gray-700">Metadata</span>
