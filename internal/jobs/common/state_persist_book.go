@@ -213,6 +213,30 @@ func (b *BookState) PersistStructurePhase(ctx context.Context) error {
 	return nil
 }
 
+// PersistStructurePhaseAsync fires and forgets structure phase tracking data.
+// Memory is already updated by the caller, DB write is fire-and-forget.
+func (b *BookState) PersistStructurePhaseAsync(ctx context.Context) {
+	store := b.getStore(ctx)
+	if store == nil {
+		slog.Error("PersistStructurePhaseAsync: no store available", "book_id", b.BookID)
+		return
+	}
+
+	total, extracted, polished, failed := b.GetStructureProgress()
+	store.Send(defra.WriteOp{
+		Collection: "Book",
+		DocID:      b.BookID,
+		Document: map[string]any{
+			"structure_phase":              b.GetStructurePhase(),
+			"structure_chapters_total":     total,
+			"structure_chapters_extracted": extracted,
+			"structure_chapters_polished":  polished,
+			"structure_polish_failed":      failed,
+		},
+		Op: defra.OpUpdate,
+	})
+}
+
 // PersistFinalizePhase persists finalize phase to ToC record.
 // Returns error if no ToC document exists.
 func (b *BookState) PersistFinalizePhase(ctx context.Context, phase string) (string, error) {
@@ -245,6 +269,36 @@ func (b *BookState) PersistFinalizePhase(ctx context.Context, phase string) (str
 	b.mu.Unlock()
 
 	return result.CID, nil
+}
+
+// PersistFinalizePhaseAsync fires and forgets finalize phase to ToC record.
+// Updates memory immediately, fires DB write without blocking.
+func (b *BookState) PersistFinalizePhaseAsync(ctx context.Context, phase string) {
+	// Update memory first
+	b.mu.Lock()
+	b.finalizePhase = phase
+	b.mu.Unlock()
+
+	tocDocID := b.TocDocID()
+	if tocDocID == "" {
+		slog.Warn("PersistFinalizePhaseAsync: no ToC doc ID", "book_id", b.BookID)
+		return
+	}
+
+	store := b.getStore(ctx)
+	if store == nil {
+		slog.Error("PersistFinalizePhaseAsync: no store available", "book_id", b.BookID)
+		return
+	}
+
+	store.Send(defra.WriteOp{
+		Collection: "ToC",
+		DocID:      tocDocID,
+		Document: map[string]any{
+			"finalize_phase": phase,
+		},
+		Op: defra.OpUpdate,
+	})
 }
 
 // PersistFinalizeProgress persists finalize progress counters to Book.
@@ -316,10 +370,11 @@ func (b *BookState) PersistTocLinkProgress(ctx context.Context) error {
 // PersistOpStateAsync fires and forgets operation state to DB.
 // Memory is already updated by the caller (via OpStart, etc.).
 // This removes DB latency from the critical path between stages.
+// Note: CID tracking is skipped for async writes - memory is authoritative during execution.
 func (b *BookState) PersistOpStateAsync(ctx context.Context, op OpType) {
 	cfg, ok := OpRegistry[op]
 	if !ok {
-		slog.Warn("PersistOpStateAsync: unknown operation", "operation", op)
+		slog.Error("PersistOpStateAsync: unknown operation", "operation", op, "book_id", b.BookID)
 		return
 	}
 
@@ -332,7 +387,8 @@ func (b *BookState) PersistOpStateAsync(ctx context.Context, op OpType) {
 
 	store := b.getStore(ctx)
 	if store == nil {
-		slog.Warn("PersistOpStateAsync: no store available", "book_id", b.BookID, "operation", op)
+		slog.Error("PersistOpStateAsync: no store available - check BookState initialization",
+			"book_id", b.BookID, "operation", op)
 		return
 	}
 
@@ -352,6 +408,7 @@ func (b *BookState) PersistOpStateAsync(ctx context.Context, op OpType) {
 // PersistTocFinderResultAsync saves ToC finder result with memory-first, async DB write.
 // Updates memory state immediately, fires DB write without blocking.
 // This removes DB latency from the toc_finder -> toc_extract transition.
+// Note: CID tracking is skipped for async writes - memory is authoritative during execution.
 func (b *BookState) PersistTocFinderResultAsync(ctx context.Context, found bool, startPage, endPage int, structureSummary any) {
 	// Update memory state first (atomic, under lock)
 	b.SetTocResult(found, startPage, endPage)
@@ -364,7 +421,8 @@ func (b *BookState) PersistTocFinderResultAsync(ctx context.Context, found bool,
 
 	store := b.getStore(ctx)
 	if store == nil {
-		slog.Warn("PersistTocFinderResultAsync: no store available", "book_id", b.BookID)
+		slog.Error("PersistTocFinderResultAsync: no store available - check BookState initialization",
+			"book_id", b.BookID)
 		return
 	}
 
@@ -376,7 +434,11 @@ func (b *BookState) PersistTocFinderResultAsync(ctx context.Context, found bool,
 	}
 
 	if structureSummary != nil {
-		if summaryJSON, err := json.Marshal(structureSummary); err == nil {
+		summaryJSON, err := json.Marshal(structureSummary)
+		if err != nil {
+			slog.Warn("PersistTocFinderResultAsync: failed to marshal structure_summary",
+				"book_id", b.BookID, "error", err)
+		} else {
 			update["structure_summary"] = string(summaryJSON)
 		}
 	}

@@ -50,14 +50,9 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		}
 		return nil
 	}
-	// Use sync write at operation start to ensure state is persisted before continuing
-	if err := common.PersistOpState(ctx, j.Book, common.OpTocFinalize); err != nil {
-		if logger != nil {
-			logger.Error("failed to persist finalize start", "error", err)
-		}
-		j.Book.TocFinalizeReset()
-		return nil
-	}
+	// Use async persist: memory is already updated by TocFinalizeStart(),
+	// fire-and-forget DB write removes latency from critical path
+	j.Book.PersistOpStateAsync(ctx, common.OpTocFinalize)
 
 	// Load linked entries (uses cache if available)
 	entries, err := common.GetOrLoadLinkedEntries(ctx, j.Book, j.TocDocID)
@@ -68,7 +63,7 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 				"error", err)
 		}
 		j.Book.TocFinalizeFail(MaxBookOpRetries)
-		common.PersistOpState(ctx, j.Book, common.OpTocFinalize)
+		j.Book.PersistOpStateAsync(ctx, common.OpTocFinalize)
 		return nil
 	}
 
@@ -98,16 +93,10 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Set phase and persist for crash recovery
+	// Set phase and persist async for crash recovery
+	// Memory is updated by SetFinalizePhase, DB write is fire-and-forget
 	j.Book.SetFinalizePhase(FinalizePhasePattern)
-	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhasePattern)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to persist finalize phase", "phase", FinalizePhasePattern, "error", err)
-		}
-	} else if cid != "" {
-		j.Book.SetTocCID(cid)
-	}
+	j.Book.PersistFinalizePhaseAsync(ctx, FinalizePhasePattern)
 
 	if logger != nil {
 		linkedCount := 0

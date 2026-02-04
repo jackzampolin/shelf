@@ -41,14 +41,9 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 		}
 		return nil
 	}
-	// Use sync write at operation start to ensure state is persisted before continuing
-	if err := common.PersistOpState(ctx, j.Book, common.OpStructure); err != nil {
-		if logger != nil {
-			logger.Error("failed to persist structure start", "error", err)
-		}
-		j.Book.StructureReset()
-		return nil
-	}
+	// Use async persist: memory is already updated by StructureStart(),
+	// fire-and-forget DB write removes latency from critical path
+	j.Book.PersistOpStateAsync(ctx, common.OpStructure)
 
 	// Load linked entries (uses cache, refreshed after finalize_toc)
 	entries, err := common.RefreshLinkedEntries(ctx, j.Book, j.TocDocID)
@@ -59,7 +54,7 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 				"error", err)
 		}
 		j.Book.StructureFail(MaxBookOpRetries)
-		common.PersistOpState(ctx, j.Book, common.OpStructure)
+		j.Book.PersistOpStateAsync(ctx, common.OpStructure)
 		return nil
 	}
 
@@ -81,21 +76,14 @@ func (j *Job) StartStructurePhase(ctx context.Context) []jobs.WorkUnit {
 			logger.Error("failed to build skeleton", "error", err)
 		}
 		j.Book.StructureFail(MaxBookOpRetries)
-		common.PersistOpState(ctx, j.Book, common.OpStructure)
+		j.Book.PersistOpStateAsync(ctx, common.OpStructure)
 		return nil
 	}
 
-	// Update progress
+	// Update progress (async - memory is updated by SetStructureProgress)
 	chapters := j.Book.GetStructureChapters()
 	j.Book.SetStructureProgress(len(chapters), 0, 0, 0)
-	if err := common.PersistStructurePhase(ctx, j.Book); err != nil {
-		if logger != nil {
-			logger.Error("failed to persist structure phase, crash recovery may resume from wrong state",
-				"phase", StructPhaseBuild,
-				"book_id", j.Book.BookID,
-				"error", err)
-		}
-	}
+	j.Book.PersistStructurePhaseAsync(ctx)
 
 	// Phase 2: Extract text (synchronous)
 	j.Book.SetStructurePhase(StructPhaseExtract)

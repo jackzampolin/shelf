@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/agent"
@@ -287,14 +288,13 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 				}
 				j.Book.PersistTocFinderResultAsync(ctx, tocResult.ToCFound, startPage, endPage, tocResult.StructureSummary)
 
-				// Fire-and-forget metric update (non-critical)
-				go func() {
-					if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, ""); err != nil {
-						if logger != nil {
-							logger.Debug("failed to update metric output ref", "error", err)
-						}
+				// Fire-and-forget metric update (non-critical, use background context)
+				go func(metricDocID, tocDocID string) {
+					if err := common.UpdateMetricOutputRef(context.Background(), metricDocID, "ToC", tocDocID, ""); err != nil {
+						slog.Warn("failed to update metric output ref", "error", err,
+							"metric_doc_id", metricDocID, "toc_doc_id", tocDocID)
 					}
-				}()
+				}(result.MetricDocID, j.TocDocID)
 			}
 		}
 

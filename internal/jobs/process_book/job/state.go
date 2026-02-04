@@ -55,15 +55,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		if err := j.Book.MetadataStart(); err == nil {
 			unit := j.CreateMetadataWorkUnit(ctx)
 			if unit != nil {
-				if err := j.PersistMetadataState(ctx); err != nil {
-					if logger := svcctx.LoggerFrom(ctx); logger != nil {
-						logger.Error("failed to persist metadata state, rolling back",
-							"book_id", j.Book.BookID, "error", err)
-					}
-					j.Book.MetadataReset() // Rollback on failure
-				} else {
-					units = append(units, *unit)
-				}
+				// Use async persist: memory is already updated by MetadataStart(),
+				// fire-and-forget DB write removes latency from critical path
+				j.Book.PersistOpStateAsync(ctx, common.OpMetadata)
+				units = append(units, *unit)
 			} else {
 				j.Book.MetadataReset() // No work unit created, allow retry
 			}
@@ -77,15 +72,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		if err := j.Book.TocFinderStart(); err == nil {
 			unit := j.CreateTocFinderWorkUnit(ctx)
 			if unit != nil {
-				if err := j.PersistTocFinderState(ctx); err != nil {
-					if logger := svcctx.LoggerFrom(ctx); logger != nil {
-						logger.Error("failed to persist toc finder state, rolling back",
-							"book_id", j.Book.BookID, "error", err)
-					}
-					j.Book.TocFinderReset() // Rollback on failure
-				} else {
-					units = append(units, *unit)
-				}
+				// Use async persist: memory is already updated by TocFinderStart(),
+				// fire-and-forget DB write removes latency from critical path
+				j.Book.PersistOpStateAsync(ctx, common.OpTocFinder)
+				units = append(units, *unit)
 			} else {
 				j.Book.TocFinderReset() // No work unit created, allow retry
 			}
@@ -135,24 +125,20 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		if err := j.Book.TocLinkStart(); err == nil {
 			linkUnits := j.CreateLinkTocWorkUnits(ctx)
 			if len(linkUnits) > 0 {
-				if err := j.PersistTocLinkState(ctx); err != nil {
-					j.Book.TocLinkReset() // Rollback on failure
-				} else {
-					units = append(units, linkUnits...)
-					if logger != nil {
-						logger.Info("created link toc work units",
-							"count", len(linkUnits),
-							"entries", len(j.LinkTocEntries))
-					}
+				// Use async persist: memory is already updated by TocLinkStart(),
+				// fire-and-forget DB write removes latency from critical path
+				j.Book.PersistOpStateAsync(ctx, common.OpTocLink)
+				units = append(units, linkUnits...)
+				if logger != nil {
+					logger.Info("created link toc work units",
+						"count", len(linkUnits),
+						"entries", len(j.LinkTocEntries))
 				}
 			} else {
 				// No entries to link - mark as complete
 				j.Book.TocLinkComplete()
-				if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocLink); err != nil {
-					if logger != nil {
-						logger.Warn("failed to persist toc link completion", "error", err)
-					}
-				}
+				// Use async for completion state too
+				j.Book.PersistOpStateAsync(ctx, common.OpTocLink)
 				if logger != nil {
 					logger.Info("no ToC entries to link - marking complete")
 				}
