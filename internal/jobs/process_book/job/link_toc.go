@@ -304,7 +304,9 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 						"retry_count", info.RetryCount+1,
 						"max_retries", MaxBookOpRetries)
 				}
-				// Create retry work unit
+				// Remove old work unit from tracker before creating retry
+				j.RemoveWorkUnit(result.WorkUnitID)
+				// Create retry work unit (this creates a fresh agent)
 				unit := j.createLinkTocRetryUnit(ctx, info)
 				if unit != nil {
 					return []jobs.WorkUnit{*unit}, nil
@@ -386,6 +388,7 @@ func (j *Job) StartFinalizeTocInline(ctx context.Context) []jobs.WorkUnit {
 }
 
 // createLinkTocRetryUnit creates a retry work unit for a failed link_toc operation.
+// Cleans up old agent state and creates a fresh agent (not resuming from failed state).
 func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo) *jobs.WorkUnit {
 	// Find the entry for this doc ID
 	var entry *toc_entry_finder.TocEntry
@@ -404,10 +407,14 @@ func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo) *jo
 		return nil
 	}
 
-	// Remove old agent
+	// Remove old agent from map
 	delete(j.LinkTocEntryAgents, info.EntryDocID)
 
-	// Create new work unit
+	// Clean up old agent state from BookState and DB for fresh start
+	// (Without this, CreateEntryFinderWorkUnit would resume the failed agent state)
+	j.cleanupLinkTocAgentState(ctx, info.EntryDocID)
+
+	// Create new work unit with fresh agent
 	unit := j.CreateEntryFinderWorkUnit(ctx, entry)
 	if unit != nil {
 		// Update the registered info with incremented retry count
