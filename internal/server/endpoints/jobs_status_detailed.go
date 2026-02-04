@@ -583,29 +583,23 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 		}
 	}
 
-	// Query OCR results for per-provider progress
-	ocrQuery := fmt.Sprintf(`{
-		OcrResult(filter: {page: {book_id: {_eq: "%s"}}}) {
-			provider
-		}
-	}`, bookID)
-
-	ocrResp, err := client.Execute(ctx, ocrQuery, nil)
-	if err == nil {
-		providerCounts := make(map[string]int)
-		if results, ok := ocrResp.Data["OcrResult"].([]any); ok {
-			for _, r := range results {
-				if result, ok := r.(map[string]any); ok {
-					if provider, ok := result["provider"].(string); ok {
-						providerCounts[provider]++
-					}
+	// Populate per-provider OCR progress from metrics (OcrResult collection
+	// is no longer used after Mistral-only consolidation)
+	metricsQueryForProgress := svcctx.MetricsQueryFrom(ctx)
+	if metricsQueryForProgress != nil {
+		ocrMetrics, err := metricsQueryForProgress.List(ctx, metrics.Filter{BookID: bookID, Stage: "ocr"}, 0)
+		if err == nil {
+			providerCounts := make(map[string]int)
+			for _, m := range ocrMetrics {
+				if m.Success {
+					providerCounts[m.Provider]++
 				}
 			}
-		}
-		for provider, count := range providerCounts {
-			resp.OcrProgress[provider] = ProviderProgress{
-				Complete: count,
-				Total:    resp.TotalPages,
+			for provider, count := range providerCounts {
+				resp.OcrProgress[provider] = ProviderProgress{
+					Complete: count,
+					Total:    resp.TotalPages,
+				}
 			}
 		}
 	}
