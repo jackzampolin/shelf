@@ -1749,30 +1749,24 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 		return *entries[i].ActualPage < *entries[k].ActualPage
 	})
 
-	var updatedCount int
-	var firstErr error
+	var ops []defra.WriteOp
 	for i, entry := range entries {
 		newSortOrder := (i + 1) * 100
 		if entry.SortOrder != newSortOrder {
-			if _, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
+			ops = append(ops, defra.WriteOp{
 				Collection: "TocEntry",
 				DocID:      entry.DocID,
 				Document: map[string]any{
 					"sort_order": newSortOrder,
 				},
 				Op: defra.OpUpdate,
-			}); err != nil {
-				if firstErr == nil {
-					firstErr = err
-				}
-				if logger := svcctx.LoggerFrom(ctx); logger != nil {
-					logger.Warn("failed to re-sort ToC entry",
-						"entry_doc_id", entry.DocID,
-						"error", err)
-				}
-				continue
-			}
-			updatedCount++
+			})
+		}
+	}
+
+	if len(ops) > 0 {
+		if _, err := common.SendManyTracked(ctx, j.Book, ops); err != nil {
+			return fmt.Errorf("failed to batch re-sort ToC entries: %w", err)
 		}
 	}
 
@@ -1780,10 +1774,10 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 		logger.Info("re-sorted ToC entries by page",
 			"toc_doc_id", j.TocDocID,
 			"entry_count", len(entries),
-			"updated", updatedCount)
+			"updated", len(ops))
 	}
 
-	return firstErr
+	return nil
 }
 
 func (j *Job) convertDiscoverAgentUnits(agentUnits []agent.WorkUnit, entryKey string) []jobs.WorkUnit {
