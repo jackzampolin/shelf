@@ -14,6 +14,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
 	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // Builder reads job configurations from the DefraDB config store.
@@ -21,6 +22,13 @@ import (
 // are reflected immediately when jobs are created.
 type Builder struct {
 	store config.Store
+}
+
+func loggerFromContext(ctx context.Context) *slog.Logger {
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		return logger
+	}
+	return slog.Default()
 }
 
 // NewBuilder creates a new builder that reads from the given store.
@@ -73,7 +81,8 @@ func (b *Builder) getString(ctx context.Context, key string) (string, error) {
 			return "", fmt.Errorf("no value or default for key %q", key)
 		}
 		if s, ok := def.Value.(string); ok {
-			slog.Debug("config key not in DB, using default", "key", key, "default", s)
+			loggerFromContext(ctx).Debug("config key not in DB, using default",
+				"key", key, "default", s)
 			return s, nil
 		}
 		return "", fmt.Errorf("default for %q is not a string (got %T: %v)", key, def.Value, def.Value)
@@ -96,7 +105,8 @@ func (b *Builder) getBool(ctx context.Context, key string) (bool, error) {
 			return false, fmt.Errorf("no value or default for key %q", key)
 		}
 		if v, ok := def.Value.(bool); ok {
-			slog.Debug("config key not in DB, using default", "key", key, "default", v)
+			loggerFromContext(ctx).Debug("config key not in DB, using default",
+				"key", key, "default", v)
 			return v, nil
 		}
 		return false, fmt.Errorf("default for %q is not a bool (got %T: %v)", key, def.Value, def.Value)
@@ -119,7 +129,8 @@ func (b *Builder) getStringSlice(ctx context.Context, key string) ([]string, err
 			return nil, fmt.Errorf("no value or default for key %q", key)
 		}
 		if s, ok := def.Value.([]string); ok {
-			slog.Debug("config key not in DB, using default", "key", key, "default", s)
+			loggerFromContext(ctx).Debug("config key not in DB, using default",
+				"key", key, "default", s)
 			return s, nil
 		}
 		return nil, fmt.Errorf("default for %q is not a string slice (got %T: %v)", key, def.Value, def.Value)
@@ -161,7 +172,8 @@ func (b *Builder) GetInt(ctx context.Context, key string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		slog.Debug("config key not in DB, using default", "key", key, "default", v)
+		loggerFromContext(ctx).Debug("config key not in DB, using default",
+			"key", key, "default", v)
 		return v, nil
 	}
 	return toInt(entry.Value, key)

@@ -24,9 +24,9 @@ import (
 
 // Request contains the parameters for ingesting book scans.
 type Request struct {
-	PDFPaths []string    // PDF file paths (will be sorted by numeric suffix)
-	Title    string      // Book title (optional, derived from filename if empty)
-	Author   string      // Book author (optional)
+	PDFPaths []string     // PDF file paths (will be sorted by numeric suffix)
+	Title    string       // Book title (optional, derived from filename if empty)
+	Author   string       // Book author (optional)
 	Logger   *slog.Logger // Optional logger for progress updates
 }
 
@@ -78,14 +78,14 @@ func Ingest(ctx context.Context, client *defra.Client, homeDir *home.Dir, req Re
 	// Extract images from all PDFs
 	pageCount := 0
 	for i, pdfPath := range sortedPaths {
-		log.Info("extracting PDF", "file", filepath.Base(pdfPath), "part", i+1, "of", len(sortedPaths))
+		log.Debug("extracting PDF", "file", filepath.Base(pdfPath), "part", i+1, "of", len(sortedPaths))
 		count, err := extractImages(pdfPath, outDir, pageCount)
 		if err != nil {
 			// Clean up on failure
 			os.RemoveAll(outDir)
 			return nil, fmt.Errorf("failed to extract images from %s: %w", pdfPath, err)
 		}
-		log.Info("extracted pages", "count", count, "total", pageCount+count)
+		log.Debug("extracted pages", "count", count, "total", pageCount+count)
 		pageCount += count
 	}
 
@@ -94,7 +94,7 @@ func Ingest(ctx context.Context, client *defra.Client, homeDir *home.Dir, req Re
 		return nil, fmt.Errorf("no images extracted from PDFs")
 	}
 
-	log.Info("creating book record", "title", title, "pages", pageCount)
+	log.Debug("creating book record", "title", title, "pages", pageCount)
 
 	// Create Book record in DefraDB
 	input := map[string]any{

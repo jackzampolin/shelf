@@ -30,15 +30,20 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 	logger := svcctx.LoggerFrom(ctx)
 	defraClient := svcctx.DefraClientFrom(ctx)
+	sink := svcctx.DefraSinkFrom(ctx)
 
 	// Create or update BookAudio record
 	if err := j.ensureBookAudioRecord(ctx, defraClient); err != nil {
-		return nil, fmt.Errorf("failed to create BookAudio record: %w", err)
+		startErr := fmt.Errorf("failed to create BookAudio record: %w", err)
+		j.markBookAudioFailed(ctx, defraClient, sink, startErr)
+		return nil, startErr
 	}
 
 	// Ensure audio directories exist
 	if err := j.State.HomeDir.EnsureBookAudioDir(j.State.BookID); err != nil {
-		return nil, fmt.Errorf("failed to create audio directory: %w", err)
+		startErr := fmt.Errorf("failed to create audio directory: %w", err)
+		j.markBookAudioFailed(ctx, defraClient, sink, startErr)
+		return nil, startErr
 	}
 
 	// Queue only the FIRST incomplete segment of each chapter.
@@ -49,7 +54,9 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	for _, ch := range j.State.Chapters {
 		// Ensure chapter directory exists (use DocID for stable paths)
 		if err := j.State.HomeDir.EnsureChapterAudioDir(j.State.BookID, ch.DocID); err != nil {
-			return nil, fmt.Errorf("failed to create chapter audio directory: %w", err)
+			startErr := fmt.Errorf("failed to create chapter audio directory: %w", err)
+			j.markBookAudioFailed(ctx, defraClient, sink, startErr)
+			return nil, startErr
 		}
 
 		// Check if all segments are already complete
@@ -61,7 +68,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 				concatUnit := j.createConcatenateWorkUnit(ch.DocID, ch.ChapterIdx)
 				units = append(units, concatUnit)
 				if logger != nil {
-					logger.Info("queuing concatenation for complete chapter",
+					logger.Debug("queuing concatenation for complete chapter",
 						"chapter_doc_id", ch.DocID,
 						"chapter_idx", ch.ChapterIdx)
 				}
@@ -112,8 +119,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 	sink := svcctx.DefraSinkFrom(ctx)
 
 	if !result.Success {
-		// Handle failure with retry
-		if info.RetryCount < 3 {
+		// Retry only TTS segment failures.
+		if info.UnitType == WorkUnitTypeTTSSegment && info.RetryCount < 3 {
 			if logger != nil {
 				logger.Warn("TTS segment failed, retrying",
 					"chapter_doc_id", info.ChapterDocID,
@@ -157,7 +164,23 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		}
 
 		j.Tracker.Remove(result.WorkUnitID)
-		return nil, fmt.Errorf("TTS segment failed after retries: %w", result.Error)
+
+		cause := result.Error
+		if cause == nil {
+			cause = fmt.Errorf("unknown failure")
+		}
+
+		var failErr error
+		switch info.UnitType {
+		case WorkUnitTypeTTSSegment:
+			failErr = fmt.Errorf("TTS segment failed after retries: %w", cause)
+		case WorkUnitTypeConcatenate:
+			failErr = fmt.Errorf("chapter concatenation failed (chapter_doc_id=%s, chapter_idx=%d): %w", info.ChapterDocID, info.ChapterIdx, cause)
+		default:
+			failErr = fmt.Errorf("work unit failed (type=%s): %w", info.UnitType, cause)
+		}
+		j.markBookAudioFailed(ctx, defraClient, sink, failErr)
+		return nil, failErr
 	}
 
 	var newUnits []jobs.WorkUnit
@@ -168,7 +191,9 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		ttsResult := result.TTSResult
 		if ttsResult == nil {
 			j.Tracker.Remove(result.WorkUnitID)
-			return nil, fmt.Errorf("TTS result is nil")
+			err := fmt.Errorf("TTS result is nil")
+			j.markBookAudioFailed(ctx, defraClient, sink, err)
+			return nil, err
 		}
 
 		// Save audio file to disk (use DocID for stable paths)
@@ -181,7 +206,9 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 		if err := os.WriteFile(audioPath, ttsResult.Audio, 0644); err != nil {
 			j.Tracker.Remove(result.WorkUnitID)
-			return nil, fmt.Errorf("failed to write audio file: %w", err)
+			err := fmt.Errorf("failed to write audio file: %w", err)
+			j.markBookAudioFailed(ctx, defraClient, sink, err)
+			return nil, err
 		}
 
 		// Calculate start offset from previous segments
@@ -229,12 +256,12 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		// Save to DefraDB
 		docID, err := j.saveAudioSegment(ctx, defraClient, sink, info.ChapterDocID, info.ChapterIdx, info.ParagraphIdx, segResult, paragraph)
 		if err != nil {
-			if logger != nil {
-				logger.Error("failed to save audio segment", "error", err)
-			}
-		} else {
-			segResult.DocID = docID
+			j.Tracker.Remove(result.WorkUnitID)
+			persistErr := fmt.Errorf("failed to save audio segment: %w", err)
+			j.markBookAudioFailed(ctx, defraClient, sink, persistErr)
+			return nil, persistErr
 		}
+		segResult.DocID = docID
 
 		// Update state
 		j.State.MarkSegmentComplete(info.ChapterDocID, info.ChapterIdx, info.ParagraphIdx, segResult)
@@ -291,7 +318,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		}
 
 		if logger != nil {
-			logger.Info("chapter audio concatenated",
+			logger.Debug("chapter audio concatenated",
 				"chapter_doc_id", info.ChapterDocID,
 				"chapter_idx", info.ChapterIdx,
 				"output_path", outputPath)
@@ -299,9 +326,10 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 		// Save ChapterAudio record (now has AudioFile set)
 		if err := j.saveChapterAudio(ctx, defraClient, sink, info.ChapterDocID, info.ChapterIdx); err != nil {
-			if logger != nil {
-				logger.Error("failed to save chapter audio record", "error", err)
-			}
+			j.Tracker.Remove(result.WorkUnitID)
+			persistErr := fmt.Errorf("failed to save chapter audio record: %w", err)
+			j.markBookAudioFailed(ctx, defraClient, sink, persistErr)
+			return nil, persistErr
 		}
 
 		// Check if all chapters are done
@@ -322,9 +350,10 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		if allComplete {
 			// Update BookAudio status
 			if err := j.updateBookAudioComplete(ctx, defraClient, sink); err != nil {
-				if logger != nil {
-					logger.Error("failed to update BookAudio status", "error", err)
-				}
+				j.Tracker.Remove(result.WorkUnitID)
+				persistErr := fmt.Errorf("failed to update BookAudio status: %w", err)
+				j.markBookAudioFailed(ctx, defraClient, sink, persistErr)
+				return nil, persistErr
 			}
 			j.isDone = true
 
@@ -506,6 +535,9 @@ func (j *Job) ensureBookAudioRecord(ctx context.Context, client *defra.Client) e
 	if j.State.BookAudioID == "" {
 		return fmt.Errorf("BookAudioID not set - this should never happen")
 	}
+	if client == nil {
+		return fmt.Errorf("defra client not available")
+	}
 
 	mutation := fmt.Sprintf(`mutation {
 		update_BookAudio(filter: {_docID: {_eq: "%s"}}, input: {
@@ -552,13 +584,19 @@ func (j *Job) saveAudioSegment(ctx context.Context, client *defra.Client, sink *
 
 	// Use sink for async write if available
 	if sink != nil {
-		sink.Send(defra.WriteOp{
+		writeResult, err := sink.SendSync(ctx, defra.WriteOp{
 			Op:         defra.OpCreate,
 			Collection: "AudioSegment",
 			Document:   doc,
 			Source:     "persistSegment",
 		})
-		return "", nil
+		if err != nil {
+			return "", err
+		}
+		return writeResult.DocID, nil
+	}
+	if client == nil {
+		return "", fmt.Errorf("defra client not available")
 	}
 
 	// Fall back to direct mutation
@@ -610,6 +648,9 @@ func (j *Job) saveChapterAudio(ctx context.Context, client *defra.Client, sink *
 	if progress == nil {
 		return fmt.Errorf("no progress for chapter %s", chapterDocID)
 	}
+	if client == nil {
+		return fmt.Errorf("defra client not available")
+	}
 
 	uniqueKey := fmt.Sprintf("%s:%s", j.State.BookID, chapterDocID)
 	format := j.State.Format
@@ -657,14 +698,14 @@ func (j *Job) saveChapterAudio(ctx context.Context, client *defra.Client, sink *
 		}
 
 		if sink != nil {
-			sink.Send(defra.WriteOp{
+			_, err := sink.SendSync(ctx, defra.WriteOp{
 				Op:         defra.OpUpdate,
 				Collection: "ChapterAudio",
 				DocID:      existingDocID,
 				Document:   doc,
 				Source:     "updateChapterAudio",
 			})
-			return nil
+			return err
 		}
 
 		mutation := fmt.Sprintf(`mutation {
@@ -707,12 +748,18 @@ func (j *Job) saveChapterAudio(ctx context.Context, client *defra.Client, sink *
 	}
 
 	if sink != nil {
-		sink.Send(defra.WriteOp{
+		result, err := sink.SendSync(ctx, defra.WriteOp{
 			Op:         defra.OpCreate,
 			Collection: "ChapterAudio",
 			Document:   doc,
 			Source:     "createChapterAudio",
 		})
+		if err != nil {
+			return err
+		}
+		if result.DocID != "" {
+			progress.ChapterAudioID = result.DocID
+		}
 		return nil
 	}
 
@@ -774,14 +821,17 @@ func (j *Job) updateBookAudioComplete(ctx context.Context, client *defra.Client,
 	}
 
 	if sink != nil {
-		sink.Send(defra.WriteOp{
+		_, err := sink.SendSync(ctx, defra.WriteOp{
 			Op:         defra.OpUpdate,
 			Collection: "BookAudio",
 			DocID:      j.State.BookAudioID,
 			Document:   doc,
 			Source:     "markBookAudioComplete",
 		})
-		return nil
+		return err
+	}
+	if client == nil {
+		return fmt.Errorf("defra client not available")
 	}
 
 	mutation := fmt.Sprintf(`mutation {
@@ -804,6 +854,74 @@ func (j *Job) updateBookAudioComplete(ctx context.Context, client *defra.Client,
 
 	_, err := client.Execute(ctx, mutation, nil)
 	return err
+}
+
+func (j *Job) updateBookAudioFailed(ctx context.Context, client *defra.Client, sink *defra.Sink, cause error) error {
+	if j.State.BookAudioID == "" {
+		return nil
+	}
+
+	errMsg := ""
+	if cause != nil {
+		errMsg = cause.Error()
+		if len(errMsg) > 2000 {
+			errMsg = errMsg[:1997] + "..."
+		}
+	}
+
+	doc := map[string]any{
+		"status":            "failed",
+		"error_message":     errMsg,
+		"completed_at":      time.Now().UTC().Format(time.RFC3339),
+		"total_duration_ms": j.State.TotalDurationMS,
+		"segment_count":     j.State.CompletedSegments,
+		"total_cost_usd":    j.State.TotalCostUSD,
+	}
+
+	if sink != nil {
+		_, err := sink.SendSync(ctx, defra.WriteOp{
+			Op:         defra.OpUpdate,
+			Collection: "BookAudio",
+			DocID:      j.State.BookAudioID,
+			Document:   doc,
+			Source:     "markBookAudioFailed",
+		})
+		return err
+	}
+	if client == nil {
+		return fmt.Errorf("defra client not available")
+	}
+
+	mutation := fmt.Sprintf(`mutation {
+		update_BookAudio(filter: {_docID: {_eq: "%s"}}, input: {
+			status: "failed"
+			error_message: %q
+			completed_at: "%s"
+			total_duration_ms: %d
+			segment_count: %d
+			total_cost_usd: %f
+		}) {
+			_docID
+		}
+	}`,
+		j.State.BookAudioID,
+		errMsg,
+		time.Now().UTC().Format(time.RFC3339),
+		j.State.TotalDurationMS,
+		j.State.CompletedSegments,
+		j.State.TotalCostUSD,
+	)
+
+	_, err := client.Execute(ctx, mutation, nil)
+	return err
+}
+
+func (j *Job) markBookAudioFailed(ctx context.Context, client *defra.Client, sink *defra.Sink, cause error) {
+	if err := j.updateBookAudioFailed(ctx, client, sink, cause); err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Error("failed to update BookAudio failure status", "error", err)
+		}
+	}
 }
 
 // ConcatenateChapterAudio concatenates segment audio files into chapter audio.

@@ -49,11 +49,15 @@ func validateKey(key string) error {
 // Store provides access to LLM call records in DefraDB.
 type Store struct {
 	client *defra.Client
+	logger *slog.Logger
 }
 
 // NewStore creates a new LLMCall store.
-func NewStore(client *defra.Client) *Store {
-	return &Store{client: client}
+func NewStore(client *defra.Client, logger *slog.Logger) *Store {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Store{client: client, logger: logger}
 }
 
 // QueryFilter specifies filters for listing LLM calls.
@@ -108,7 +112,7 @@ func (s *Store) Get(ctx context.Context, id string) (*Call, error) {
 		return nil, fmt.Errorf("graphql error: %s", errMsg)
 	}
 
-	calls, err := parseLLMCalls(resp.Data)
+	calls, err := s.parseLLMCalls(resp.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +228,7 @@ func (s *Store) List(ctx context.Context, filter QueryFilter) ([]Call, error) {
 		return nil, fmt.Errorf("graphql error: %s", errMsg)
 	}
 
-	return parseLLMCalls(resp.Data)
+	return s.parseLLMCalls(resp.Data)
 }
 
 // CountByPromptKey returns call counts grouped by prompt key.
@@ -247,7 +251,7 @@ func (s *Store) CountByPromptKey(ctx context.Context, bookID string) (map[string
 }
 
 // parseLLMCalls parses LLMCall entries from GraphQL response data.
-func parseLLMCalls(data map[string]any) ([]Call, error) {
+func (s *Store) parseLLMCalls(data map[string]any) ([]Call, error) {
 	callData, ok := data["LLMCall"]
 	if !ok {
 		return nil, nil
@@ -262,7 +266,7 @@ func parseLLMCalls(data map[string]any) ([]Call, error) {
 	for i, d := range docs {
 		doc, ok := d.(map[string]any)
 		if !ok {
-			slog.Warn("skipping malformed LLM call document",
+			s.logger.Warn("skipping malformed LLM call document",
 				"index", i,
 				"type", fmt.Sprintf("%T", d))
 			continue
@@ -274,7 +278,7 @@ func parseLLMCalls(data map[string]any) ([]Call, error) {
 		}
 		if v, ok := doc["timestamp"].(string); ok {
 			if t, err := time.Parse(time.RFC3339, v); err != nil {
-				slog.Debug("failed to parse LLM call timestamp",
+				s.logger.Debug("failed to parse LLM call timestamp",
 					"id", call.ID,
 					"raw_value", v,
 					"error", err)
@@ -328,7 +332,7 @@ func parseLLMCalls(data map[string]any) ([]Call, error) {
 		// Handle tool_calls JSON
 		if v := doc["tool_calls"]; v != nil {
 			if data, err := json.Marshal(v); err != nil {
-				slog.Warn("failed to serialize tool_calls from DB",
+				s.logger.Warn("failed to serialize tool_calls from DB",
 					"id", call.ID,
 					"error", err)
 			} else {

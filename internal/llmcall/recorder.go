@@ -34,6 +34,9 @@ func (r *Recorder) Record(result *providers.ChatResult, opts RecordOptions) {
 			"job_id", opts.JobID)
 		return
 	}
+	if opts.Logger == nil {
+		opts.Logger = r.logger
+	}
 
 	call := FromChatResult(result, opts)
 	if call == nil {

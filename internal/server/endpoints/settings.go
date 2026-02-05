@@ -3,7 +3,6 @@ package endpoints
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -228,8 +227,10 @@ func (e *UpdateSettingEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 	existing, err := store.Get(r.Context(), key)
 	if err != nil {
 		// Log but don't fail - the user explicitly wants to set a value
-		slog.Warn("failed to fetch existing setting for description preservation",
-			"key", key, "error", err)
+		if logger := svcctx.LoggerFrom(r.Context()); logger != nil {
+			logger.Warn("failed to fetch existing setting for description preservation",
+				"key", key, "error", err)
+		}
 	}
 	description := req.Description
 	if description == "" && existing != nil {

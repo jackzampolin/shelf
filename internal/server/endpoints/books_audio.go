@@ -1,13 +1,16 @@
 package endpoints
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -38,6 +41,7 @@ type GenerateAudioResponse struct {
 type AudioStatusResponse struct {
 	BookID          string               `json:"book_id"`
 	Status          string               `json:"status"`
+	ErrorMessage    string               `json:"error_message,omitempty"`
 	Provider        string               `json:"provider,omitempty"`
 	Voice           string               `json:"voice,omitempty"`
 	Format          string               `json:"format,omitempty"`
@@ -79,6 +83,7 @@ func (e *GenerateAudioEndpoint) RequiresInit() bool { return true }
 //	@Param			request	body		GenerateAudioRequest	false	"TTS options"
 //	@Success		202		{object}	GenerateAudioResponse
 //	@Failure		400		{object}	ErrorResponse
+//	@Failure		409		{object}	ErrorResponse
 //	@Failure		404		{object}	ErrorResponse
 //	@Failure		500		{object}	ErrorResponse
 //	@Failure		503		{object}	ErrorResponse
@@ -166,15 +171,28 @@ func (e *GenerateAudioEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if existing := scheduler.GetJobByBookID(bookID); existing != nil && existing.Type() == tts_generate.JobType {
+		writeError(w, http.StatusConflict, fmt.Sprintf("audio generation already in progress (job_id: %s)", existing.ID()))
+		return
+	}
+
 	// Create job
 	job, err := tts_generate.NewJob(ctx, ttsCfg, bookID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create TTS job: %v", err))
+		switch {
+		case errors.Is(err, tts_generate.ErrBookNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, tts_generate.ErrBookNotComplete):
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create TTS job: %v", err))
+		}
 		return
 	}
 
 	// Submit to scheduler
 	if err := scheduler.Submit(ctx, job); err != nil {
+		markBookAudioFailedOnSubmit(ctx, bookID, err)
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to submit job: %v", err))
 		return
 	}
@@ -278,6 +296,7 @@ func (e *GetAudioStatusEndpoint) handler(w http.ResponseWriter, r *http.Request)
 		BookAudio(filter: {unique_key: {_eq: "%s"}}) {
 			_docID
 			status
+			error_message
 			provider
 			voice
 			format
@@ -312,6 +331,7 @@ func (e *GetAudioStatusEndpoint) handler(w http.ResponseWriter, r *http.Request)
 	resp := AudioStatusResponse{
 		BookID:          bookID,
 		Status:          getString(data, "status"),
+		ErrorMessage:    getString(data, "error_message"),
 		Provider:        getString(data, "provider"),
 		Voice:           getString(data, "voice"),
 		Format:          getString(data, "format"),
@@ -528,6 +548,30 @@ func sortChapterStatuses(chapters []ChapterAudioStatus) {
 			}
 		}
 	}
+}
+
+func markBookAudioFailedOnSubmit(ctx context.Context, bookID string, submitErr error) {
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return
+	}
+
+	errMsg := submitErr.Error()
+	if len(errMsg) > 2000 {
+		errMsg = errMsg[:1997] + "..."
+	}
+
+	mutation := fmt.Sprintf(`mutation {
+		update_BookAudio(filter: {unique_key: {_eq: "%s"}}, input: {
+			status: "failed"
+			error_message: %q
+			completed_at: "%s"
+		}) {
+			_docID
+		}
+	}`, bookID, errMsg, time.Now().UTC().Format(time.RFC3339))
+
+	_, _ = defraClient.Execute(ctx, mutation, nil)
 }
 
 func getFloat(m map[string]any, key string) float64 {

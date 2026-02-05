@@ -261,7 +261,7 @@ func (s *Store) SyncPrompt(ctx context.Context, embedded EmbeddedPrompt) error {
 		if errMsg := resp.Error(); errMsg != "" {
 			return fmt.Errorf("graphql error: %s", errMsg)
 		}
-		s.logger.Info("synced new prompt", "key", embedded.Key)
+		s.logger.Debug("synced new prompt", "key", embedded.Key)
 	} else if existing.EmbeddedHash == HashText(existing.Text) {
 		// Existing prompt matches its embedded hash - safe to auto-update
 		if existing.Text != embedded.Text {
@@ -283,7 +283,7 @@ func (s *Store) SyncPrompt(ctx context.Context, embedded EmbeddedPrompt) error {
 			if errMsg := resp.Error(); errMsg != "" {
 				return fmt.Errorf("graphql error: %s", errMsg)
 			}
-			s.logger.Info("auto-updated prompt from code", "key", embedded.Key)
+			s.logger.Debug("auto-updated prompt from code", "key", embedded.Key)
 		}
 	} else {
 		// Existing prompt was manually edited - don't overwrite

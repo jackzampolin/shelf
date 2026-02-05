@@ -33,7 +33,7 @@ func (j *Job) HandleExtractComplete(ctx context.Context, info WorkUnitInfo, resu
 	// Persist to DefraDB using common function (thread-safe accessor)
 	pageDocID := state.GetPageDocID()
 	if logger != nil {
-		logger.Debug("HandleExtractComplete: persisting extract state",
+		logger.Debug("persisting extract state",
 			"page_num", pageNum,
 			"page_doc_id", pageDocID,
 			"has_doc_id", pageDocID != "")
@@ -41,7 +41,7 @@ func (j *Job) HandleExtractComplete(ctx context.Context, info WorkUnitInfo, resu
 	cid, err := common.PersistExtractState(ctx, j.Book, pageDocID)
 	if err != nil {
 		if logger != nil {
-			logger.Error("HandleExtractComplete: persist failed - OCR units will NOT be created",
+			logger.Error("persisting extract state failed; OCR units will not be created",
 				"page_num", pageNum,
 				"page_doc_id", pageDocID,
 				"error", err)
@@ -55,7 +55,7 @@ func (j *Job) HandleExtractComplete(ctx context.Context, info WorkUnitInfo, resu
 	// Generate OCR work units now that image is on disk
 	units := j.GeneratePageWorkUnits(ctx, pageNum, state)
 	if logger != nil {
-		logger.Debug("HandleExtractComplete: generated work units",
+		logger.Debug("generated OCR work units after extract completion",
 			"page_num", pageNum,
 			"ocr_units_created", len(units))
 	}

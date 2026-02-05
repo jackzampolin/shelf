@@ -181,12 +181,12 @@ func (p *ProviderWorkerPool) init(results chan<- workerResult) {
 	p.queue = NewPriorityQueue()
 	p.work = make(chan *WorkUnit, p.workerCount) // Buffered to avoid blocking dispatcher
 	p.results = results
-	p.logger.Info("provider pool init called", "results_channel_ptr", fmt.Sprintf("%p", results))
+	p.logger.Debug("provider pool initialized")
 }
 
 // Start begins the pool's processing. Blocks until ctx cancelled.
 func (p *ProviderWorkerPool) Start(ctx context.Context) {
-	p.logger.Info("pool started")
+	p.logger.Debug("provider pool started")
 
 	// Start dispatcher (owns rate limiter)
 	go p.dispatcher(ctx)
@@ -198,7 +198,7 @@ func (p *ProviderWorkerPool) Start(ctx context.Context) {
 
 	// Block until context cancelled
 	<-ctx.Done()
-	p.logger.Info("pool stopping")
+	p.logger.Debug("provider pool stopping")
 }
 
 // dispatcher owns the rate limiter. Pulls from priority queue, waits for token, sends to work channel.
@@ -260,7 +260,7 @@ func (p *ProviderWorkerPool) worker(ctx context.Context, id int) {
 				"unit_type", unit.Type,
 				"success", result.Success,
 				"has_ocr_result", result.OCRResult != nil,
-				"results_channel_ptr", fmt.Sprintf("%p", p.results))
+			)
 			p.results <- workerResult{
 				JobID:  unit.JobID,
 				Unit:   unit,
@@ -551,11 +551,11 @@ func (p *ProviderWorkerPool) sleepBeforeRetry(ctx context.Context, err error, at
 
 func (p *ProviderWorkerPool) recordMetrics(ctx context.Context, unit *WorkUnit, result *WorkResult) {
 	if p.sink == nil {
-		p.logger.Warn("recordMetrics: sink not configured, metrics and LLM calls not recorded")
+		p.logger.Debug("recordMetrics: sink not configured, metrics and LLM calls not recorded")
 		return
 	}
 	if unit.Metrics == nil {
-		p.logger.Warn("recordMetrics: unit.Metrics is nil, skipping", "unit_id", unit.ID)
+		p.logger.Debug("recordMetrics: unit.Metrics is nil, skipping", "unit_id", unit.ID)
 		return
 	}
 
@@ -647,6 +647,7 @@ func (p *ProviderWorkerPool) recordMetrics(ctx context.Context, unit *WorkUnit, 
 			JobID:     unit.JobID,
 			PromptKey: unit.Metrics.PromptKey,
 			PromptCID: unit.Metrics.PromptCID,
+			Logger:    p.logger,
 		}
 		call := llmcall.FromChatResult(result.ChatResult, opts)
 		if call != nil {

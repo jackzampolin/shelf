@@ -71,7 +71,7 @@ func NewElevenLabsTTSClient(cfg ElevenLabsTTSConfig) *ElevenLabsTTSClient {
 		cfg.Timeout = 300 * time.Second // TTS can be slow for long text
 	}
 	if cfg.RateLimit == 0 {
-		cfg.RateLimit = 2.0 // Conservative default for ElevenLabs
+		cfg.RateLimit = 10.0 // ElevenLabs Pro plan: 10 concurrent requests
 	}
 	if cfg.MaxRetries == 0 {
 		cfg.MaxRetries = 3
@@ -110,7 +110,7 @@ func (c *ElevenLabsTTSClient) RequestsPerSecond() float64 {
 
 // MaxConcurrency returns the max concurrent in-flight requests.
 func (c *ElevenLabsTTSClient) MaxConcurrency() int {
-	return 5 // ElevenLabs can handle moderate concurrency
+	return 10 // ElevenLabs Pro plan allows 10 concurrent requests
 }
 
 // MaxRetries returns the maximum retry attempts.

@@ -14,6 +14,8 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
+var pageStateLogger = slog.Default().With("component", "page_state")
+
 // HomeDir is an alias for home.Dir for external use.
 type HomeDir = home.Dir
 
@@ -246,7 +248,7 @@ func (p *PageState) PopulateFromDBResult(data map[string]any) {
 			if len(sample) > 200 {
 				sample = sample[:200] + "..."
 			}
-			slog.Error("failed to parse headings JSON in PopulateFromDBResult",
+			pageStateLogger.Error("failed to parse headings JSON in PopulateFromDBResult",
 				"error", err, "content_preview", sample)
 		} else {
 			p.headings = headings

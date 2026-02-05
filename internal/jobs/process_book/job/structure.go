@@ -166,7 +166,7 @@ func (j *Job) buildChapterSkeleton(ctx context.Context, entries []*common.Linked
 	j.buildChapterHierarchy()
 
 	if logger != nil {
-		logger.Info("built chapter skeleton",
+		logger.Debug("built chapter skeleton",
 			"book_id", j.Book.BookID,
 			"chapters", len(chapters))
 	}
@@ -318,7 +318,7 @@ func (j *Job) extractAllChapters(ctx context.Context) int {
 	}
 
 	if logger != nil {
-		logger.Info("extracted chapter text",
+		logger.Debug("extracted chapter text",
 			"book_id", j.Book.BookID,
 			"chapters_extracted", chaptersExtracted)
 	}
@@ -424,7 +424,7 @@ func (j *Job) transitionToStructureClassify(ctx context.Context) []jobs.WorkUnit
 	common.PersistStructurePhaseAsync(ctx, j.Book)
 
 	if logger != nil {
-		logger.Info("transitioning to classify phase",
+		logger.Debug("transitioning to classify phase",
 			"book_id", j.Book.BookID)
 	}
 
@@ -596,7 +596,7 @@ func (j *Job) processStructureClassifyResult(ctx context.Context, result jobs.Wo
 	}
 
 	if logger != nil {
-		logger.Info("applied matter classifications",
+		logger.Debug("applied matter classifications",
 			"book_id", j.Book.BookID,
 			"classifications", len(classifications))
 	}
@@ -682,7 +682,7 @@ func (j *Job) transitionToStructurePolish(ctx context.Context) []jobs.WorkUnit {
 
 	chapters := j.Book.GetStructureChapters()
 	if logger != nil {
-		logger.Info("transitioning to polish phase",
+		logger.Debug("transitioning to polish phase",
 			"book_id", j.Book.BookID,
 			"chapters", len(chapters))
 	}

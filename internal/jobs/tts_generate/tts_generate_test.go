@@ -1,9 +1,12 @@
 package tts_generate
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/jackzampolin/shelf/internal/jobs"
 )
 
 func TestResolveAudioInclude(t *testing.T) {
@@ -117,6 +120,38 @@ func TestShouldDisableRequestStitching(t *testing.T) {
 	}
 	if shouldDisableRequestStitching(errors.New("status 500 timeout")) {
 		t.Fatal("unexpected stitching fallback for unrelated error")
+	}
+}
+
+func TestOnCompleteConcatenateFailureDoesNotRetryTTS(t *testing.T) {
+	state := &AudioState{
+		BookID:      "book-1",
+		BookAudioID: "book-audio-1",
+		Chapters: []*Chapter{
+			{
+				DocID:        "chapter-1",
+				ChapterIdx:   0,
+				PolishedText: "Only one paragraph.",
+			},
+		},
+	}
+
+	job := NewJobFromState(state)
+	concatUnit := job.createConcatenateWorkUnit("chapter-1", 0)
+
+	newUnits, err := job.OnComplete(context.Background(), jobs.WorkResult{
+		WorkUnitID: concatUnit.ID,
+		Success:    false,
+		Error:      errors.New("ffmpeg failed"),
+	})
+	if err == nil {
+		t.Fatal("expected concatenation failure to return an error")
+	}
+	if len(newUnits) != 0 {
+		t.Fatalf("expected no retry units on concatenation failure, got %d", len(newUnits))
+	}
+	if got := job.Tracker.Count(); got != 0 {
+		t.Fatalf("expected tracker to be empty after failure, got %d", got)
 	}
 }
 

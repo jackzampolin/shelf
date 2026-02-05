@@ -30,7 +30,7 @@ func (s *Scheduler) RegisterPool(p WorkerPool) {
 	ctx := s.ctx
 	s.mu.Unlock()
 
-	s.logger.Info("pool registered", "name", p.Name(), "type", p.Type())
+	s.logger.Debug("pool registered", "name", p.Name(), "type", p.Type())
 
 	// If scheduler already running, start pool immediately.
 	if running {
@@ -38,7 +38,7 @@ func (s *Scheduler) RegisterPool(p WorkerPool) {
 			ctx = context.Background()
 		}
 		go p.Start(ctx)
-		s.logger.Info("pool started after scheduler already running", "name", p.Name(), "type", p.Type())
+		s.logger.Debug("pool started after scheduler already running", "name", p.Name(), "type", p.Type())
 	}
 }
 
@@ -62,7 +62,7 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 					"error", err,
 				)
 			} else {
-				s.logger.Info("LLM provider health check passed", "name", name)
+				s.logger.Debug("LLM provider health check passed", "name", name)
 			}
 		}
 
@@ -87,7 +87,7 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 					"error", err,
 				)
 			} else {
-				s.logger.Info("OCR provider health check passed", "name", name)
+				s.logger.Debug("OCR provider health check passed", "name", name)
 			}
 		}
 
@@ -112,7 +112,7 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 					"error", err,
 				)
 			} else {
-				s.logger.Info("TTS provider health check passed", "name", name)
+				s.logger.Debug("TTS provider health check passed", "name", name)
 			}
 		}
 
@@ -160,7 +160,7 @@ func (s *Scheduler) InitCPUPool(workerCount int) *CPUWorkerPool {
 	ctx := s.ctx
 	s.mu.Unlock()
 
-	s.logger.Info("initialized CPU pool", "workers", workerCount)
+	s.logger.Debug("initialized CPU pool", "workers", workerCount)
 
 	// If scheduler already running, start pool immediately.
 	if running {
@@ -168,7 +168,7 @@ func (s *Scheduler) InitCPUPool(workerCount int) *CPUWorkerPool {
 			ctx = context.Background()
 		}
 		go pool.Start(ctx)
-		s.logger.Info("cpu pool started after scheduler already running", "workers", workerCount)
+		s.logger.Debug("cpu pool started after scheduler already running", "workers", workerCount)
 	}
 	return pool
 }

@@ -93,12 +93,12 @@ func (p *CPUWorkerPool) Type() PoolType {
 func (p *CPUWorkerPool) init(results chan<- workerResult) {
 	p.queue = make(chan *WorkUnit, p.queueSize)
 	p.results = results
-	p.logger.Info("cpu pool init called", "results_channel_ptr", fmt.Sprintf("%p", results))
+	p.logger.Debug("cpu pool initialized")
 }
 
 // Start begins the pool's processing. Blocks until ctx cancelled.
 func (p *CPUWorkerPool) Start(ctx context.Context) {
-	p.logger.Info("cpu pool starting", "queue_nil", p.queue == nil, "results_nil", p.results == nil)
+	p.logger.Debug("cpu pool started")
 
 	// Start worker goroutines - all pull from same queue
 	for i := 0; i < p.workerCount; i++ {
@@ -107,7 +107,7 @@ func (p *CPUWorkerPool) Start(ctx context.Context) {
 
 	// Block until context cancelled
 	<-ctx.Done()
-	p.logger.Info("pool stopping")
+	p.logger.Debug("cpu pool stopping")
 }
 
 // worker processes work units from the shared queue.

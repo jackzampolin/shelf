@@ -61,6 +61,9 @@ type RecordOptions struct {
 
 	// Request parameters (pointer to distinguish "not set" from "set to 0")
 	Temperature *float64
+
+	// Optional logger for non-fatal serialization warnings.
+	Logger *slog.Logger
 }
 
 // FromChatResult creates a Call from a ChatResult.
@@ -98,7 +101,11 @@ func FromChatResult(result *providers.ChatResult, opts RecordOptions) *Call {
 	// Serialize tool calls if present
 	if len(result.ToolCalls) > 0 {
 		if data, err := json.Marshal(result.ToolCalls); err != nil {
-			slog.Warn("failed to serialize tool calls for LLM call record",
+			logger := opts.Logger
+			if logger == nil {
+				logger = slog.Default()
+			}
+			logger.Warn("failed to serialize tool calls for LLM call record",
 				"error", err,
 				"tool_call_count", len(result.ToolCalls))
 		} else {

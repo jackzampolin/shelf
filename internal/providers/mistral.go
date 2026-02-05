@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -33,6 +34,7 @@ type MistralOCRConfig struct {
 	RateLimit     float64       // Requests per second (default: 6.0)
 	MaxRetries    int           // Max retry attempts (default: 7)
 	RetryDelay    time.Duration // Base delay between retries (default: 2s)
+	Logger        *slog.Logger
 }
 
 // MistralOCRClient implements OCRProvider using the Mistral OCR API.
@@ -45,6 +47,7 @@ type MistralOCRClient struct {
 	maxRetries    int
 	retryDelay    time.Duration
 	client        *http.Client
+	logger        *slog.Logger
 }
 
 // NewMistralOCRClient creates a new Mistral OCR client.
@@ -67,6 +70,9 @@ func NewMistralOCRClient(cfg MistralOCRConfig) *MistralOCRClient {
 	if cfg.RetryDelay == 0 {
 		cfg.RetryDelay = 2 * time.Second
 	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
 
 	return &MistralOCRClient{
 		apiKey:        cfg.APIKey,
@@ -79,7 +85,16 @@ func NewMistralOCRClient(cfg MistralOCRConfig) *MistralOCRClient {
 		client: &http.Client{
 			Timeout: cfg.Timeout,
 		},
+		logger: cfg.Logger.With("provider", MistralOCRName, "model", cfg.Model),
 	}
+}
+
+// SetLogger updates the client logger.
+func (c *MistralOCRClient) SetLogger(logger *slog.Logger) {
+	if logger == nil {
+		return
+	}
+	c.logger = logger.With("provider", MistralOCRName, "model", c.model)
 }
 
 // Name returns the provider identifier.
@@ -138,7 +153,11 @@ func (c *MistralOCRClient) HealthCheck(ctx context.Context) error {
 // ProcessImage extracts text from an image using Mistral OCR.
 func (c *MistralOCRClient) ProcessImage(ctx context.Context, image []byte, pageNum int) (*OCRResult, error) {
 	start := time.Now()
-	fmt.Printf("[MISTRAL DEBUG] ProcessImage called for page %d, image size %d bytes\n", pageNum, len(image))
+	if c.logger != nil {
+		c.logger.Debug("processing OCR image",
+			"page_num", pageNum,
+			"image_bytes", len(image))
+	}
 
 	// Encode image to base64
 	imageBase64 := base64.StdEncoding.EncodeToString(image)
@@ -161,14 +180,22 @@ func (c *MistralOCRClient) ProcessImage(ctx context.Context, image []byte, pageN
 	// Make request
 	resp, err := c.doRequest(ctx, "/ocr", reqBody)
 	if err != nil {
-		fmt.Printf("[MISTRAL DEBUG] doRequest failed for page %d: %v\n", pageNum, err)
+		if c.logger != nil {
+			c.logger.Debug("OCR request failed",
+				"page_num", pageNum,
+				"error", err)
+		}
 		return &OCRResult{
 			Success:       false,
 			ErrorMessage:  err.Error(),
 			ExecutionTime: time.Since(start),
 		}, err
 	}
-	fmt.Printf("[MISTRAL DEBUG] doRequest succeeded for page %d, got %d pages in response\n", pageNum, len(resp.Pages))
+	if c.logger != nil {
+		c.logger.Debug("OCR request succeeded",
+			"page_num", pageNum,
+			"response_pages", len(resp.Pages))
+	}
 
 	// Check response has pages
 	if len(resp.Pages) == 0 {

@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -123,6 +124,46 @@ func TestScheduler_ActiveJobs(t *testing.T) {
 	time.Sleep(100 * time.Millisecond) // Give scheduler time to clean up
 	if scheduler.ActiveJobs() != 0 {
 		t.Errorf("ActiveJobs() = %d after completion, want 0", scheduler.ActiveJobs())
+	}
+}
+
+// TestScheduler_OnCompleteErrorRemovesJob ensures jobs are failed/removed when OnComplete returns an error.
+func TestScheduler_OnCompleteErrorRemovesJob(t *testing.T) {
+	scheduler := NewScheduler(SchedulerConfig{})
+
+	llmClient := providers.NewMockClient()
+	llmPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{
+		Name:      "llm",
+		LLMClient: llmClient,
+		RPS:       100.0,
+	})
+	scheduler.RegisterPool(llmPool)
+
+	job := &OnCompleteErrorJob{
+		onCompleteErr: errors.New("oncomplete failed"),
+		doneCh:        make(chan struct{}),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	go scheduler.Start(ctx)
+
+	if err := scheduler.Submit(ctx, job); err != nil {
+		t.Fatalf("Submit() error = %v", err)
+	}
+
+	select {
+	case <-job.doneCh:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for OnComplete to run")
+	}
+
+	// Give scheduler a moment to remove the failed job.
+	time.Sleep(50 * time.Millisecond)
+
+	if scheduler.ActiveJobs() != 0 {
+		t.Errorf("ActiveJobs() = %d, want 0 after OnComplete failure", scheduler.ActiveJobs())
 	}
 }
 
@@ -320,10 +361,46 @@ type SyncCompleteJob struct {
 	done    bool
 }
 
-func (j *SyncCompleteJob) ID() string                  { return j.id }
-func (j *SyncCompleteJob) SetRecordID(id string)       { j.id = id }
-func (j *SyncCompleteJob) Type() string                { return "sync-complete" }
-func (j *SyncCompleteJob) Done() bool                  { return j.done }
+type OnCompleteErrorJob struct {
+	id            string
+	doneCh        chan struct{}
+	onCompleteErr error
+}
+
+func (j *OnCompleteErrorJob) ID() string                   { return j.id }
+func (j *OnCompleteErrorJob) SetRecordID(id string)        { j.id = id }
+func (j *OnCompleteErrorJob) Type() string                 { return "oncomplete-error" }
+func (j *OnCompleteErrorJob) Done() bool                   { return false }
+func (j *OnCompleteErrorJob) MetricsFor() *WorkUnitMetrics { return nil }
+func (j *OnCompleteErrorJob) Status(ctx context.Context) (map[string]string, error) {
+	return map[string]string{"done": "false"}, nil
+}
+func (j *OnCompleteErrorJob) Progress() map[string]ProviderProgress { return nil }
+func (j *OnCompleteErrorJob) Start(ctx context.Context) ([]WorkUnit, error) {
+	return []WorkUnit{
+		{
+			ID:       "oncomplete-error-unit",
+			Type:     WorkUnitTypeLLM,
+			Provider: "llm",
+			ChatRequest: &providers.ChatRequest{
+				Messages: []providers.Message{{Role: "user", Content: "trigger completion"}},
+			},
+		},
+	}, nil
+}
+func (j *OnCompleteErrorJob) OnComplete(ctx context.Context, result WorkResult) ([]WorkUnit, error) {
+	select {
+	case <-j.doneCh:
+	default:
+		close(j.doneCh)
+	}
+	return nil, j.onCompleteErr
+}
+
+func (j *SyncCompleteJob) ID() string                   { return j.id }
+func (j *SyncCompleteJob) SetRecordID(id string)        { j.id = id }
+func (j *SyncCompleteJob) Type() string                 { return "sync-complete" }
+func (j *SyncCompleteJob) Done() bool                   { return j.done }
 func (j *SyncCompleteJob) MetricsFor() *WorkUnitMetrics { return nil }
 func (j *SyncCompleteJob) Status(ctx context.Context) (map[string]string, error) {
 	return map[string]string{"done": "true"}, nil
@@ -337,7 +414,7 @@ func (j *SyncCompleteJob) Start(ctx context.Context) ([]WorkUnit, error) {
 		return nil, nil
 	}
 	j.started = true
-	j.done = true // Immediately done
+	j.done = true   // Immediately done
 	return nil, nil // Zero work units
 }
 

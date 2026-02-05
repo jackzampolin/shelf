@@ -15,6 +15,7 @@ interface Chapter {
   level_name?: string
   entry_number?: string
   matter_type?: string
+  audio_include?: boolean
   sort_order: number
   polished_text?: string
   polish_complete?: boolean
@@ -33,6 +34,7 @@ interface ChapterAudio {
 interface AudioStatus {
   book_id: string
   status: string
+  error_message?: string
   provider?: string
   voice?: string
   format?: string
@@ -128,8 +130,14 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
         body: JSON.stringify(body),
       })
       if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error.error || 'Failed to start audio generation')
+        let message = 'Failed to start audio generation'
+        try {
+          const error = await res.json()
+          message = error.error || message
+        } catch {
+          // Ignore JSON parse errors and use fallback message.
+        }
+        throw new Error(message)
       }
       return res.json() as Promise<GenerateResponse>
     },
@@ -326,6 +334,38 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
     )
   }
 
+  if (audioStatus.status === 'failed') {
+    return (
+      <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
+        <div className="text-5xl mb-4">⚠️</div>
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">Audio Generation Failed</h3>
+        <p className="text-gray-600 mb-4 max-w-2xl mx-auto">
+          {audioStatus.error_message || 'An unexpected error occurred while generating audio.'}
+        </p>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={() => generateMutation.mutate()}
+            disabled={generateMutation.isPending || book.status !== 'complete'}
+            className="inline-flex items-center px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {generateMutation.isPending ? 'Retrying...' : 'Retry Generation'}
+          </button>
+          <button
+            onClick={() => refetch()}
+            className="inline-flex items-center px-5 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Refresh Status
+          </button>
+        </div>
+        {generateMutation.error && (
+          <div className="mt-4 text-red-600 text-sm">
+            {generateMutation.error.message}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // Generating state
   if (audioStatus.status === 'generating') {
     const progress = audioStatus.segment_count && audioStatus.chapter_count
@@ -392,9 +432,19 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
   const audioChapters = audioStatus?.chapters || []
   const currentChapterAudio = audioChapters.find(c => c.chapter_idx === currentChapter)
 
-  // Find chapter text data by matching sort_order to chapter_idx
-  const sortedChapters = [...chapterTextData].sort((a, b) => a.sort_order - b.sort_order)
-  const currentChapterText = currentChapter !== null ? sortedChapters[currentChapter] : null
+  // Match chapter_idx to the same filtered/sorted chapter list used by backend TTS generation.
+  const sortedAudioEligibleChapters = [...chapterTextData]
+    .filter((chapter) => {
+      if (!chapter.polish_complete || !chapter.polished_text) {
+        return false
+      }
+      if (typeof chapter.audio_include === 'boolean') {
+        return chapter.audio_include
+      }
+      return chapter.matter_type !== 'back_matter'
+    })
+    .sort((a, b) => a.sort_order - b.sort_order)
+  const currentChapterText = currentChapter !== null ? sortedAudioEligibleChapters[currentChapter] : null
 
   return (
     <div className="flex flex-col lg:flex-row gap-6">

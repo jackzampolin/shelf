@@ -65,7 +65,7 @@ func ResetFrom(ctx context.Context, book *BookState, tocDocID string, op ResetOp
 
 	logger := svcctx.LoggerFrom(ctx)
 	if logger != nil {
-		logger.Info("resetting operation with cascade", "operation", op, "book_id", book.BookID)
+		logger.Debug("resetting operation with cascade", "operation", op, "book_id", book.BookID)
 	}
 
 	// OCR is a special case — not in the OpRegistry
@@ -312,7 +312,7 @@ func resetAllOcr(ctx context.Context, book *BookState) error {
 
 	resetCount := len(ops) - failCount
 	if logger != nil {
-		logger.Info("reset OCR completed", "reset_count", resetCount, "skipped", skipCount, "failed", failCount, "book_id", book.BookID)
+		logger.Debug("reset OCR completed", "reset_count", resetCount, "skipped", skipCount, "failed", failCount, "book_id", book.BookID)
 	}
 
 	if skipCount > 0 || failCount > 0 {
@@ -396,7 +396,7 @@ func deleteTocEntries(ctx context.Context, tocDocID string) error {
 
 	deleteCount := len(ops) - failCount
 	if logger != nil {
-		logger.Info("ToC entries deletion completed", "delete_count", deleteCount, "skipped", skipCount, "failed", failCount, "toc_id", tocDocID)
+		logger.Debug("ToC entries deletion completed", "delete_count", deleteCount, "skipped", skipCount, "failed", failCount, "toc_id", tocDocID)
 	}
 
 	if skipCount > 0 || failCount > 0 {
@@ -472,7 +472,7 @@ func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
 	}
 
 	if logger != nil {
-		logger.Info("ToC entry links clearing completed", "clear_count", clearCount, "skipped", skipCount, "failed", failCount, "toc_id", tocDocID)
+		logger.Debug("ToC entry links clearing completed", "clear_count", clearCount, "skipped", skipCount, "failed", failCount, "toc_id", tocDocID)
 	}
 
 	if skipCount > 0 || failCount > 0 {
@@ -545,7 +545,7 @@ func deleteChapters(ctx context.Context, bookID string) error {
 	}
 
 	if logger != nil {
-		logger.Info("chapter deletion completed", "delete_count", deleteCount, "skipped", skipCount, "failed", failCount, "book_id", bookID)
+		logger.Debug("chapter deletion completed", "delete_count", deleteCount, "skipped", skipCount, "failed", failCount, "book_id", bookID)
 	}
 
 	if skipCount > 0 || failCount > 0 {

@@ -123,8 +123,13 @@ func DefaultEntries() []Entry {
 		},
 		{
 			Key:         "providers.tts.elevenlabs.rate_limit",
-			Value:       2.0,
+			Value:       10.0,
 			Description: "Rate limit in requests per second for ElevenLabs",
+		},
+		{
+			Key:         "providers.tts.elevenlabs.max_concurrency",
+			Value:       10,
+			Description: "Maximum concurrent requests to ElevenLabs",
 		},
 		{
 			Key:         "providers.tts.elevenlabs.enabled",

@@ -86,7 +86,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		return nil, fmt.Errorf("failed to create page records: %w", err)
 	}
 	if createdCount > 0 && logger != nil {
-		logger.Info("created page records", "count", createdCount)
+		logger.Debug("created page records", "count", createdCount)
 	}
 
 	// Generate work units for all pages
@@ -118,7 +118,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 	units = append(units, bookUnits...)
 
 	if logger != nil {
-		logger.Info("job started",
+		logger.Debug("process_book job started",
 			"book_id", j.Book.BookID,
 			"total_pages", j.Book.TotalPages,
 			"work_units", len(units))
@@ -144,7 +144,7 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 	logger := svcctx.LoggerFrom(ctx)
 	if logger != nil {
-		logger.Debug("OnComplete: received result",
+		logger.Debug("received work unit result",
 			"unit_id", result.WorkUnitID,
 			"unit_type", info.UnitType,
 			"page_num", info.PageNum,
@@ -348,7 +348,7 @@ func (j *Job) createRetryUnit(ctx context.Context, info WorkUnitInfo, logger *sl
 
 	newRetryCount := info.RetryCount + 1
 	if logger != nil {
-		logger.Info("creating retry unit",
+		logger.Debug("creating retry unit",
 			"unit_type", info.UnitType,
 			"page_num", info.PageNum,
 			"retry_count", newRetryCount)

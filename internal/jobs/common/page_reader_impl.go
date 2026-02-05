@@ -93,7 +93,7 @@ func (b *BookState) PreloadPages(ctx context.Context, startPage, endPage int) er
 
 	logger := svcctx.LoggerFrom(ctx)
 	if logger != nil {
-		logger.Debug("PreloadPages: batch loading page data",
+		logger.Debug("batch loading page data",
 			"book_id", b.BookID,
 			"start_page", startPage,
 			"end_page", endPage,
@@ -160,7 +160,7 @@ func (b *BookState) PreloadPages(ctx context.Context, startPage, endPage int) er
 	}
 
 	if logger != nil {
-		logger.Debug("PreloadPages: completed batch load",
+		logger.Debug("completed batch page-data load",
 			"book_id", b.BookID,
 			"pages_loaded", loaded)
 	}

@@ -171,7 +171,7 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		}
 		copiedPDFs = append(copiedPDFs, destPath)
 
-		j.logger.Info("copied PDF",
+		j.logger.Debug("copied PDF",
 			"file", filepath.Base(pdfPath),
 			"pages", pageCount,
 		)

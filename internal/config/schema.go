@@ -88,7 +88,7 @@ func DefaultConfig() *Config {
 				Model:      "eleven_turbo_v2_5", // 40k char limit, 50% cheaper than multilingual_v2
 				Format:     "mp3_44100_128",
 				APIKey:     "${ELEVENLABS_API_KEY}",
-				RateLimit:  2.0, // 2 RPS - ElevenLabs standard tier
+				RateLimit:  10.0, // 10 RPS - ElevenLabs Pro tier
 				Stability:  0.5,
 				Similarity: 0.75,
 				Style:      0.0,

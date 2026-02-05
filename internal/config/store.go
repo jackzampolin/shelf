@@ -71,11 +71,15 @@ type Entry struct {
 // DefraStore implements Store using DefraDB.
 type DefraStore struct {
 	client *defra.Client
+	logger *slog.Logger
 }
 
 // NewStore creates a new DefraDB-backed config store.
 func NewStore(client *defra.Client) *DefraStore {
-	return &DefraStore{client: client}
+	return &DefraStore{
+		client: client,
+		logger: slog.Default(),
+	}
 }
 
 // Get returns a single config entry by key.
@@ -97,7 +101,7 @@ func (s *DefraStore) Get(ctx context.Context, key string) (*Entry, error) {
 		return nil, fmt.Errorf("graphql error: %s", errMsg)
 	}
 
-	entries, err := parseConfigEntries(resp.Data)
+	entries, err := s.parseConfigEntries(resp.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +143,7 @@ func (s *DefraStore) Set(ctx context.Context, key string, value any, description
 		if err != nil {
 			// If document already exists, that's fine - it's already seeded
 			if strings.Contains(err.Error(), "already exists") {
-				slog.Debug("config entry already seeded", "key", key)
+				s.logger.Debug("config entry already seeded", "key", key)
 				return nil
 			}
 			return fmt.Errorf("create failed: %w", err)
@@ -167,7 +171,7 @@ func (s *DefraStore) GetAll(ctx context.Context) (map[string]Entry, error) {
 		return nil, fmt.Errorf("graphql error: %s", errMsg)
 	}
 
-	entries, err := parseConfigEntries(resp.Data)
+	entries, err := s.parseConfigEntries(resp.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +217,7 @@ func (s *DefraStore) Delete(ctx context.Context, key string) error {
 }
 
 // parseConfigEntries parses Config entries from GraphQL response data.
-func parseConfigEntries(data map[string]any) ([]Entry, error) {
+func (s *DefraStore) parseConfigEntries(data map[string]any) ([]Entry, error) {
 	configData, ok := data["Config"]
 	if !ok {
 		return nil, nil
@@ -228,7 +232,7 @@ func parseConfigEntries(data map[string]any) ([]Entry, error) {
 	for i, d := range docs {
 		doc, ok := d.(map[string]any)
 		if !ok {
-			slog.Warn("skipping malformed config document",
+			s.logger.Warn("skipping malformed config document",
 				"index", i,
 				"type", fmt.Sprintf("%T", d))
 			continue
@@ -250,7 +254,7 @@ func parseConfigEntries(data map[string]any) ([]Entry, error) {
 			var parsed any
 			if err := json.Unmarshal([]byte(v), &parsed); err != nil {
 				// If not valid JSON, use the raw string
-				slog.Debug("config value is not valid JSON, using as raw string",
+				s.logger.Debug("config value is not valid JSON, using as raw string",
 					"key", entry.Key,
 					"error", err)
 				entry.Value = v

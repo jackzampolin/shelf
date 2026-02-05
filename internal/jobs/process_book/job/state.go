@@ -23,14 +23,14 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 				if unit != nil {
 					units = append(units, *unit)
 				} else if logger != nil {
-					logger.Warn("GeneratePageWorkUnits: CreateOcrWorkUnit returned nil",
+					logger.Warn("CreateOcrWorkUnit returned nil",
 						"page_num", pageNum,
 						"provider", provider)
 				}
 			}
 		}
 	} else if logger != nil {
-		logger.Debug("GeneratePageWorkUnits: OCR disabled",
+		logger.Debug("OCR stage disabled; skipping page work unit generation",
 			"page_num", pageNum,
 			"enable_ocr", j.Book.EnableOCR,
 			"ocr_providers", j.Book.OcrProviders)
@@ -88,7 +88,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		logger := svcctx.LoggerFrom(ctx)
 		tocStart, tocEnd := j.Book.GetTocPageRange()
 		if logger != nil {
-			logger.Info("attempting to create ToC extract work unit",
+			logger.Debug("attempting to create ToC extract work unit",
 				"toc_start_page", tocStart,
 				"toc_end_page", tocEnd,
 				"toc_doc_id", j.TocDocID)
@@ -118,7 +118,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	if j.Book.EnableTocLink && j.Book.TocExtractIsDone() && ocrReady && j.Book.TocLinkCanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
-			logger.Info("starting ToC link operation",
+			logger.Debug("starting ToC link operation",
 				"book_id", j.Book.BookID,
 				"toc_doc_id", j.TocDocID)
 		}
@@ -130,7 +130,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 				j.Book.PersistOpStateAsync(ctx, common.OpTocLink)
 				units = append(units, linkUnits...)
 				if logger != nil {
-					logger.Info("created link toc work units",
+					logger.Debug("created ToC link work units",
 						"count", len(linkUnits),
 						"entries", len(j.LinkTocEntries))
 				}
@@ -140,7 +140,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 				// Use async for completion state too
 				j.Book.PersistOpStateAsync(ctx, common.OpTocLink)
 				if logger != nil {
-					logger.Info("no ToC entries to link - marking complete")
+					logger.Debug("no ToC entries to link; marking operation complete")
 				}
 			}
 		}
@@ -150,7 +150,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	if j.Book.EnableTocFinalize && j.Book.TocLinkIsComplete() && j.Book.TocFinalizeCanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
-			logger.Info("link_toc complete, starting finalize-toc inline",
+			logger.Debug("ToC link complete; starting finalize inline",
 				"book_id", j.Book.BookID,
 				"toc_doc_id", j.TocDocID)
 		}
@@ -163,7 +163,7 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 	if j.Book.EnableStructure && j.Book.TocFinalizeIsComplete() && j.Book.StructureCanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
-			logger.Info("finalize complete, starting structure inline",
+			logger.Debug("finalize complete; starting structure inline",
 				"book_id", j.Book.BookID)
 		}
 		structureUnits := j.MaybeStartStructureInline(ctx)

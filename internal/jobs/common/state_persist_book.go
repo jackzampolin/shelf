@@ -10,6 +10,13 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
+func loggerFromContext(ctx context.Context) *slog.Logger {
+	if logger := svcctx.LoggerFrom(ctx); logger != nil {
+		return logger
+	}
+	return slog.Default()
+}
+
 // getStore returns the StateStore to use for persistence.
 // If b.Store is set, uses it directly. Otherwise builds an ad-hoc store from context.
 // Returns nil if neither is available.
@@ -21,7 +28,7 @@ func (b *BookState) getStore(ctx context.Context) StateStore {
 	client := svcctx.DefraClientFrom(ctx)
 	sink := svcctx.DefraSinkFrom(ctx)
 	if client != nil && sink != nil {
-		slog.Warn("BookState using fallback store from context - consider setting b.Store directly",
+		loggerFromContext(ctx).Warn("book state using fallback store from context; set b.Store directly",
 			"book_id", b.BookID)
 		return &DefraStateStore{Client: client, Sink: sink}
 	}
@@ -63,7 +70,8 @@ func (b *BookState) PersistBookStatus(ctx context.Context, status string) (strin
 func (b *BookState) PersistBookStatusAsync(ctx context.Context, status string) {
 	store := b.getStore(ctx)
 	if store == nil {
-		slog.Error("PersistBookStatusAsync: no store available", "book_id", b.BookID)
+		loggerFromContext(ctx).Error("failed to persist async book status: no store",
+			"book_id", b.BookID)
 		return
 	}
 
@@ -120,7 +128,8 @@ func (b *BookState) PersistMetadataResultAsync(ctx context.Context, result *Book
 
 	store := b.getStore(ctx)
 	if store == nil {
-		slog.Error("PersistMetadataResultAsync: no store available", "book_id", b.BookID)
+		loggerFromContext(ctx).Error("failed to persist async metadata result: no store",
+			"book_id", b.BookID)
 		return
 	}
 
@@ -151,7 +160,7 @@ func (b *BookState) PersistOpState(ctx context.Context, op OpType) error {
 	if docID == "" {
 		// No document exists yet - this is expected for operations like toc_finder
 		// before the ToC record is created. Log for visibility.
-		slog.Debug("PersistOpState skipped: no document yet",
+		loggerFromContext(ctx).Debug("skipping op state persist: document not created yet",
 			"book_id", b.BookID, "operation", op, "collection", cfg.Collection)
 		return nil
 	}
@@ -245,19 +254,22 @@ func (b *BookState) PersistOpComplete(ctx context.Context, op OpType) (string, e
 func (b *BookState) PersistOpCompleteAsync(ctx context.Context, op OpType) {
 	cfg, ok := OpRegistry[op]
 	if !ok || cfg == nil {
-		slog.Error("PersistOpCompleteAsync: unknown operation", "operation", op, "book_id", b.BookID)
+		loggerFromContext(ctx).Error("failed to persist op complete: unknown operation",
+			"operation", op, "book_id", b.BookID)
 		return
 	}
 
 	docID := cfg.DocIDSource(b)
 	if docID == "" {
-		slog.Warn("PersistOpCompleteAsync: no doc ID for operation", "operation", op, "book_id", b.BookID)
+		loggerFromContext(ctx).Warn("skipping op complete persist: missing document ID",
+			"operation", op, "book_id", b.BookID)
 		return
 	}
 
 	store := b.getStore(ctx)
 	if store == nil {
-		slog.Error("PersistOpCompleteAsync: no store available", "book_id", b.BookID, "operation", op)
+		loggerFromContext(ctx).Error("failed to persist async op complete: no store",
+			"book_id", b.BookID, "operation", op)
 		return
 	}
 
@@ -316,7 +328,8 @@ func (b *BookState) PersistStructurePhase(ctx context.Context) error {
 func (b *BookState) PersistStructurePhaseAsync(ctx context.Context) {
 	store := b.getStore(ctx)
 	if store == nil {
-		slog.Error("PersistStructurePhaseAsync: no store available", "book_id", b.BookID)
+		loggerFromContext(ctx).Error("failed to persist async structure phase: no store",
+			"book_id", b.BookID)
 		return
 	}
 
@@ -383,13 +396,15 @@ func (b *BookState) PersistFinalizePhaseAsync(ctx context.Context, phase string)
 
 	tocDocID := b.TocDocID()
 	if tocDocID == "" {
-		slog.Warn("PersistFinalizePhaseAsync: no ToC doc ID", "book_id", b.BookID)
+		loggerFromContext(ctx).Warn("skipping finalize phase persist: missing ToC document ID",
+			"book_id", b.BookID)
 		return
 	}
 
 	store := b.getStore(ctx)
 	if store == nil {
-		slog.Error("PersistFinalizePhaseAsync: no store available", "book_id", b.BookID)
+		loggerFromContext(ctx).Error("failed to persist async finalize phase: no store",
+			"book_id", b.BookID)
 		return
 	}
 
@@ -446,7 +461,8 @@ func (b *BookState) PersistFinalizeProgress(ctx context.Context) error {
 func (b *BookState) PersistFinalizeProgressAsync(ctx context.Context) {
 	store := b.getStore(ctx)
 	if store == nil {
-		slog.Error("PersistFinalizeProgressAsync: no store available", "book_id", b.BookID)
+		loggerFromContext(ctx).Error("failed to persist async finalize progress: no store",
+			"book_id", b.BookID)
 		return
 	}
 
@@ -505,7 +521,8 @@ func (b *BookState) PersistTocLinkProgress(ctx context.Context) error {
 func (b *BookState) PersistTocLinkProgressAsync(ctx context.Context) {
 	store := b.getStore(ctx)
 	if store == nil {
-		slog.Error("PersistTocLinkProgressAsync: no store available", "book_id", b.BookID)
+		loggerFromContext(ctx).Error("failed to persist async ToC link progress: no store",
+			"book_id", b.BookID)
 		return
 	}
 
@@ -533,7 +550,8 @@ func (b *BookState) PersistTocLinkProgressAsync(ctx context.Context) {
 func (b *BookState) PersistOpStateAsync(ctx context.Context, op OpType) {
 	cfg, ok := OpRegistry[op]
 	if !ok {
-		slog.Error("PersistOpStateAsync: unknown operation", "operation", op, "book_id", b.BookID)
+		loggerFromContext(ctx).Error("failed to persist async op state: unknown operation",
+			"operation", op, "book_id", b.BookID)
 		return
 	}
 
@@ -542,7 +560,7 @@ func (b *BookState) PersistOpStateAsync(ctx context.Context, op OpType) {
 	if docID == "" {
 		// No document exists yet - this is expected before ToC record is created.
 		// Log at debug level for visibility during debugging.
-		slog.Debug("PersistOpStateAsync: skipped - no doc ID yet",
+		loggerFromContext(ctx).Debug("skipping async op state persist: no document ID yet",
 			"book_id", b.BookID,
 			"operation", op,
 			"collection", cfg.Collection)
@@ -551,7 +569,7 @@ func (b *BookState) PersistOpStateAsync(ctx context.Context, op OpType) {
 
 	store := b.getStore(ctx)
 	if store == nil {
-		slog.Error("PersistOpStateAsync: no store available - check BookState initialization",
+		loggerFromContext(ctx).Error("failed to persist async op state: no store",
 			"book_id", b.BookID, "operation", op)
 		return
 	}
@@ -580,13 +598,14 @@ func (b *BookState) PersistTocFinderResultAsync(ctx context.Context, found bool,
 
 	tocDocID := b.TocDocID()
 	if tocDocID == "" {
-		slog.Warn("PersistTocFinderResultAsync: no ToC doc ID", "book_id", b.BookID)
+		loggerFromContext(ctx).Warn("skipping ToC finder result persist: missing ToC document ID",
+			"book_id", b.BookID)
 		return
 	}
 
 	store := b.getStore(ctx)
 	if store == nil {
-		slog.Error("PersistTocFinderResultAsync: no store available - check BookState initialization",
+		loggerFromContext(ctx).Error("failed to persist async ToC finder result: no store",
 			"book_id", b.BookID)
 		return
 	}
@@ -601,7 +620,7 @@ func (b *BookState) PersistTocFinderResultAsync(ctx context.Context, found bool,
 	if structureSummary != nil {
 		summaryJSON, err := json.Marshal(structureSummary)
 		if err != nil {
-			slog.Warn("PersistTocFinderResultAsync: failed to marshal structure_summary",
+			loggerFromContext(ctx).Warn("failed to marshal structure summary for ToC finder result",
 				"book_id", b.BookID, "error", err)
 		} else {
 			update["structure_summary"] = string(summaryJSON)

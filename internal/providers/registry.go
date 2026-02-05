@@ -29,6 +29,10 @@ type Registry struct {
 	logger       *slog.Logger
 }
 
+type ocrLoggerSetter interface {
+	SetLogger(*slog.Logger)
+}
+
 // NewRegistry creates a new empty provider registry.
 func NewRegistry() *Registry {
 	return &Registry{
@@ -43,7 +47,15 @@ func NewRegistry() *Registry {
 func (r *Registry) SetLogger(logger *slog.Logger) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if logger == nil {
+		return
+	}
 	r.logger = logger
+	for name, provider := range r.ocrProviders {
+		if lp, ok := provider.(ocrLoggerSetter); ok {
+			lp.SetLogger(r.logger.With("ocr_provider", name))
+		}
+	}
 }
 
 // RegisterLLM registers an LLM client by name.
@@ -70,6 +82,9 @@ func (r *Registry) UnregisterLLM(name string) {
 func (r *Registry) RegisterOCR(name string, provider OCRProvider) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if lp, ok := provider.(ocrLoggerSetter); ok && r.logger != nil {
+		lp.SetLogger(r.logger.With("ocr_provider", name))
+	}
 	r.ocrProviders[name] = provider
 	if r.logger != nil {
 		r.logger.Info("registered OCR provider", "name", name)
@@ -335,6 +350,9 @@ func (r *Registry) Reload(cfg RegistryConfig) {
 		if !hasExisting || needsOCRUpdate(existing, provCfg) {
 			provider := createOCRProvider(provCfg)
 			if provider != nil {
+				if lp, ok := provider.(ocrLoggerSetter); ok && r.logger != nil {
+					lp.SetLogger(r.logger.With("ocr_provider", name))
+				}
 				r.ocrProviders[name] = provider
 				if r.logger != nil {
 					if hasExisting {
@@ -417,6 +435,9 @@ func (r *Registry) applyConfig(cfg RegistryConfig) {
 		}
 		provider := createOCRProvider(provCfg)
 		if provider != nil {
+			if lp, ok := provider.(ocrLoggerSetter); ok && r.logger != nil {
+				lp.SetLogger(r.logger.With("ocr_provider", name))
+			}
 			r.ocrProviders[name] = provider
 		}
 	}
@@ -518,4 +539,3 @@ func needsTTSUpdate(provider TTSProvider, cfg TTSProviderConfig) bool {
 		return true
 	}
 }
-

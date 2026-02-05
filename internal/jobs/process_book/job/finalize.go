@@ -118,7 +118,7 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 	// after a crash during discover or validate phase.
 	if j.loadExistingPatternResults(ctx) {
 		if logger != nil {
-			logger.Info("reusing existing pattern analysis results from previous attempt",
+			logger.Debug("reusing existing pattern analysis results from previous attempt",
 				"book_id", j.Book.BookID,
 				"entries_to_find", j.Book.GetEntriesToFindCount())
 		}
@@ -163,7 +163,7 @@ func (j *Job) CreateFinalizePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit
 		if j.FinalizePagePatternCtx != nil {
 			detectedCount = len(j.FinalizePagePatternCtx.ChapterPatterns)
 		}
-		logger.Info("pattern analysis context loaded",
+		logger.Debug("pattern analysis context loaded",
 			"candidate_count", len(candidates),
 			"detected_chapters", detectedCount,
 			"chapter_start_pages", len(chapterStartPages),
@@ -423,7 +423,7 @@ func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit 
 	j.Book.SetFinalizeEntriesTotal(entriesToFindCount)
 
 	if logger != nil {
-		logger.Info("transitioning to discover phase",
+		logger.Debug("transitioning to discover phase",
 			"book_id", j.Book.BookID,
 			"entries_to_find", entriesToFindCount)
 	}
@@ -535,7 +535,7 @@ func (j *Job) createChapterFinderAgentWithState(ctx context.Context, entry *comm
 	if savedState != nil && !savedState.Complete {
 		// Resume existing agent
 		if logger != nil {
-			logger.Info("resuming chapter finder agent from saved state",
+			logger.Debug("resuming chapter finder agent from saved state",
 				"agent_id", savedState.AgentID,
 				"entry_key", entry.Key,
 				"iteration", savedState.Iteration)
@@ -743,7 +743,7 @@ func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit 
 	// Gaps between chapters are normal chapter content, not missing ToC entries
 	if j.Book.GetEntriesToFindCount() == 0 {
 		if logger != nil {
-			logger.Info("skipping gap investigation - pattern analysis found no missing entries",
+			logger.Debug("skipping gap investigation; pattern analysis found no missing entries",
 				"book_id", j.Book.BookID)
 		}
 		return j.completeFinalizePhase(ctx)
@@ -761,7 +761,7 @@ func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit 
 	j.Book.SetFinalizeGapsTotal(gapsCount)
 
 	if logger != nil {
-		logger.Info("transitioning to validate phase",
+		logger.Debug("transitioning to validate phase",
 			"book_id", j.Book.BookID,
 			"gaps", gapsCount)
 	}
@@ -970,7 +970,7 @@ func (j *Job) createGapInvestigatorAgentWithState(ctx context.Context, gap *comm
 	if savedState != nil && !savedState.Complete {
 		// Resume existing agent
 		if logger != nil {
-			logger.Info("resuming gap investigator agent from saved state",
+			logger.Debug("resuming gap investigator agent from saved state",
 				"agent_id", savedState.AgentID,
 				"gap_key", gap.Key,
 				"iteration", savedState.Iteration)
@@ -1240,7 +1240,7 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 
 	if err := defra.ValidateID(j.Book.BookID); err != nil {
 		if logger != nil {
-			logger.Error("loadExistingPatternResults: invalid book ID", "book_id", j.Book.BookID, "error", err)
+			logger.Error("loadExistingPatternResults invalid book ID", "book_id", j.Book.BookID, "error", err)
 		}
 		return false
 	}
@@ -1259,7 +1259,7 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
 		if logger != nil {
-			logger.Error("loadExistingPatternResults: DB query failed", "book_id", j.Book.BookID, "error", err)
+			logger.Error("loadExistingPatternResults query failed", "book_id", j.Book.BookID, "error", err)
 		}
 		return false
 	}
@@ -1287,7 +1287,7 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 	}
 	if err := json.Unmarshal([]byte(paJSON), &data); err != nil {
 		if logger != nil {
-			logger.Error("loadExistingPatternResults: failed to parse pattern_analysis_json", "book_id", j.Book.BookID, "error", err)
+			logger.Error("loadExistingPatternResults failed to parse pattern_analysis_json", "book_id", j.Book.BookID, "error", err)
 		}
 		return false
 	}
@@ -1300,7 +1300,7 @@ func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
 	j.Book.SetEntriesToFind(data.EntriesToFind)
 
 	if logger != nil {
-		logger.Info("loadExistingPatternResults: reusing saved pattern analysis",
+		logger.Debug("loadExistingPatternResults reusing saved pattern analysis",
 			"book_id", j.Book.BookID,
 			"patterns", len(data.Patterns),
 			"entries_to_find", len(data.EntriesToFind))
@@ -1681,7 +1681,7 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 	case "flag_for_review":
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
-			logger.Info("gap flagged for review",
+			logger.Debug("gap flagged for review",
 				"gap_key", gapKey,
 				"reasoning", result.Reasoning)
 		}
@@ -1738,7 +1738,7 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 	}
 
 	if logger := svcctx.LoggerFrom(ctx); logger != nil {
-		logger.Info("re-sorted ToC entries by page",
+		logger.Debug("re-sorted ToC entries by page",
 			"toc_doc_id", j.TocDocID,
 			"entry_count", len(entries),
 			"updated", len(ops))

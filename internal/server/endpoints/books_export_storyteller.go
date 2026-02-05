@@ -19,16 +19,16 @@ import (
 
 // StorytellerExportResponse is returned when an EPUB with Media Overlays is generated.
 type StorytellerExportResponse struct {
-	BookID           string `json:"book_id"`
-	Title            string `json:"title"`
-	Author           string `json:"author"`
-	ChapterCount     int    `json:"chapter_count"`
-	AudioChapters    int    `json:"audio_chapters"`
-	TotalDurationMS  int    `json:"total_duration_ms"`
-	FilePath         string `json:"file_path"`
-	FileSize         int64  `json:"file_size"`
-	DownloadURL      string `json:"download_url"`
-	CreatedAt        string `json:"created_at"`
+	BookID          string `json:"book_id"`
+	Title           string `json:"title"`
+	Author          string `json:"author"`
+	ChapterCount    int    `json:"chapter_count"`
+	AudioChapters   int    `json:"audio_chapters"`
+	TotalDurationMS int    `json:"total_duration_ms"`
+	FilePath        string `json:"file_path"`
+	FileSize        int64  `json:"file_size"`
+	DownloadURL     string `json:"download_url"`
+	CreatedAt       string `json:"created_at"`
 }
 
 // ExportStorytellerEndpoint handles POST /api/books/{book_id}/export/storyteller.
@@ -116,6 +116,7 @@ func (e *ExportStorytellerEndpoint) handler(w http.ResponseWriter, r *http.Reque
 			level_name
 			entry_number
 			matter_type
+			audio_include
 			polished_text
 			sort_order
 			polish_complete
@@ -134,8 +135,7 @@ func (e *ExportStorytellerEndpoint) handler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Build chapter map for audio lookup (docID -> chapter data)
-	chapterDocIDs := make(map[int]string) // sort_order -> docID
+	// Build chapter list aligned with TTS chapter filtering/indexing rules.
 	var chapters []epub.Chapter
 	for _, ch := range chapterList {
 		chData, ok := ch.(map[string]any)
@@ -147,9 +147,14 @@ func (e *ExportStorytellerEndpoint) handler(w http.ResponseWriter, r *http.Reque
 		if !polishComplete {
 			continue
 		}
+		if !resolveStorytellerAudioInclude(chData) {
+			continue
+		}
+		if getString(chData, "polished_text") == "" {
+			continue
+		}
 
 		sortOrder := getInt(chData, "sort_order")
-		chapterDocIDs[sortOrder] = getString(chData, "_docID")
 
 		chapter := epub.Chapter{
 			ID:           getString(chData, "entry_id"),
@@ -323,6 +328,21 @@ func (e *ExportStorytellerEndpoint) handler(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func resolveStorytellerAudioInclude(chData map[string]any) bool {
+	if include, ok := chData["audio_include"].(bool); ok {
+		return include
+	}
+
+	switch getString(chData, "matter_type") {
+	case "back_matter":
+		return false
+	case "front_matter", "body":
+		return true
+	default:
+		return true
+	}
 }
 
 func (e *ExportStorytellerEndpoint) Command(getServerURL func() string) *cobra.Command {

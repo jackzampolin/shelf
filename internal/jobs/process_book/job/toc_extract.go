@@ -59,7 +59,7 @@ func (j *Job) HandleTocExtractComplete(ctx context.Context, result jobs.WorkResu
 		return fmt.Errorf("failed to reload ToC entries: %w", err)
 	}
 	if logger := svcctx.LoggerFrom(ctx); logger != nil {
-		logger.Info("loaded ToC entries after extraction",
+		logger.Debug("loaded ToC entries after extraction",
 			"toc_doc_id", j.TocDocID,
 			"entry_count", len(entries))
 	}

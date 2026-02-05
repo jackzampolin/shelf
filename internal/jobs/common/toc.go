@@ -268,7 +268,7 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 	}
 
 	if logger != nil {
-		logger.Info("SaveTocExtractResult: upserting entries",
+		logger.Debug("upserting extracted ToC entries",
 			"toc_doc_id", tocDocID,
 			"entry_count", len(result.Entries))
 	}
@@ -305,7 +305,7 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 		_, err := defraClient.Upsert(ctx, "TocEntry", filter, entryData, entryData)
 		if err != nil {
 			if logger != nil {
-				logger.Error("SaveTocExtractResult: upsert failed",
+				logger.Error("failed to upsert extracted ToC entry",
 					"sort_order", i,
 					"title", entry.Title,
 					"error", err)
@@ -315,7 +315,7 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 	}
 
 	if logger != nil {
-		logger.Info("SaveTocExtractResult: upserted all entries",
+		logger.Debug("upserted all extracted ToC entries",
 			"toc_doc_id", tocDocID,
 			"count", len(result.Entries))
 	}
@@ -487,7 +487,7 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 
 	if tocDocID == "" {
 		if logger != nil {
-			logger.Warn("DeleteExistingTocEntries: empty tocDocID")
+			logger.Warn("skipping ToC entry deletion: empty tocDocID")
 		}
 		return nil
 	}
@@ -514,13 +514,13 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 	}`, tocDocID)
 
 	if logger != nil {
-		logger.Info("DeleteExistingTocEntries: querying entries", "toc_doc_id", tocDocID)
+		logger.Debug("querying existing ToC entries before delete", "toc_doc_id", tocDocID)
 	}
 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
 		if logger != nil {
-			logger.Error("DeleteExistingTocEntries: query failed", "error", err)
+			logger.Error("failed querying existing ToC entries for deletion", "error", err)
 		}
 		return err
 	}
@@ -528,7 +528,7 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 	entries, ok := resp.Data["TocEntry"].([]any)
 	if !ok || len(entries) == 0 {
 		if logger != nil {
-			logger.Info("DeleteExistingTocEntries: no existing entries to delete",
+			logger.Debug("no existing ToC entries to delete",
 				"toc_doc_id", tocDocID,
 				"raw_type", fmt.Sprintf("%T", resp.Data["TocEntry"]))
 		}
@@ -536,7 +536,7 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 	}
 
 	if logger != nil {
-		logger.Info("DeleteExistingTocEntries: found entries to delete",
+		logger.Debug("found existing ToC entries to delete",
 			"toc_doc_id", tocDocID,
 			"count", len(entries))
 	}

@@ -38,7 +38,7 @@ func (m *Manager) Create(ctx context.Context, jobType string, metadata map[strin
 		return "", fmt.Errorf("failed to create job: %w", err)
 	}
 
-	m.logger.Info("job created", "id", id, "type", jobType)
+	m.logger.Debug("job created", "id", id, "type", jobType)
 	return id, nil
 }
 
@@ -239,7 +239,7 @@ func (m *Manager) deleteJob(ctx context.Context, jobID string) error {
 		return fmt.Errorf("failed to delete job: %w", err)
 	}
 
-	m.logger.Info("job deleted", "id", jobID)
+	m.logger.Debug("job deleted", "id", jobID)
 	return nil
 }
 

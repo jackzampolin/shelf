@@ -2,6 +2,7 @@ package tts_generate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -16,6 +17,13 @@ import (
 const JobType = "tts-generate"
 
 const defaultOutputFormat = "mp3_44100_128"
+
+var (
+	// ErrBookNotFound is returned when the requested book cannot be loaded.
+	ErrBookNotFound = errors.New("book not found")
+	// ErrBookNotComplete is returned when audio generation is requested before processing is complete.
+	ErrBookNotComplete = errors.New("book is not complete")
+)
 
 var storytellerCompatibleFormats = map[string]struct{}{
 	"mp3_22050_32":  {},
@@ -87,12 +95,16 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 
 	books, ok := bookResp.Data["Book"].([]any)
 	if !ok || len(books) == 0 {
-		return nil, fmt.Errorf("book not found: %s", bookID)
+		return nil, fmt.Errorf("%w: %s", ErrBookNotFound, bookID)
 	}
 
 	bookData, ok := books[0].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("invalid book data")
+	}
+	bookStatus := getString(bookData, "status")
+	if bookStatus != "complete" {
+		return nil, fmt.Errorf("%w (status: %s)", ErrBookNotComplete, bookStatus)
 	}
 
 	// Load chapters with polished text
@@ -166,7 +178,7 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 	}
 
 	if logger != nil {
-		logger.Info("creating TTS generation job",
+		logger.Debug("creating TTS generation job",
 			"book_id", bookID,
 			"chapters", len(chapters),
 			"provider", cfg.TTSProvider)

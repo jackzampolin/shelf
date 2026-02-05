@@ -162,7 +162,7 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	book.PDFs = pdfs
 
 	if logger != nil {
-		logger.Debug("LoadBook: loaded PDFs", "book_id", bookID, "pdf_count", len(pdfs))
+		logger.Debug("loaded PDFs for book state", "book_id", bookID, "pdf_count", len(pdfs))
 	}
 
 	// 4. Load page states from DB
@@ -171,7 +171,7 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	}
 
 	if logger != nil {
-		logger.Debug("LoadBook: loaded page states", "book_id", bookID, "pages", book.CountPages())
+		logger.Debug("loaded page states", "book_id", bookID, "pages", book.CountPages())
 	}
 
 	// 5. Load operation states from DB
@@ -181,7 +181,7 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	}
 
 	if logger != nil {
-		logger.Debug("LoadBook: loaded operation states", "book_id", bookID, "toc_doc_id", tocDocID)
+		logger.Debug("loaded operation states", "book_id", bookID, "toc_doc_id", tocDocID)
 	}
 
 	// 6. Load ToC entries if extraction is complete (for link_toc phase)
@@ -194,7 +194,7 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 		}
 		book.SetTocEntries(entries)
 		if logger != nil {
-			logger.Debug("LoadBook: loaded ToC entries", "book_id", bookID, "count", len(entries))
+			logger.Debug("loaded ToC entries", "book_id", bookID, "count", len(entries))
 		}
 	}
 
@@ -205,7 +205,7 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 		}
 
 		if logger != nil {
-			logger.Debug("LoadBook: resolved prompts", "book_id", bookID, "count", len(cfg.PromptKeys))
+			logger.Debug("resolved prompts", "book_id", bookID, "count", len(cfg.PromptKeys))
 		}
 	}
 
@@ -218,7 +218,7 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 				"book_id", bookID, "error", err, "impact", "potential duplicate LLM API costs")
 		}
 	} else if logger != nil && len(book.GetAllAgentStates()) > 0 {
-		logger.Debug("LoadBook: loaded agent states", "book_id", bookID, "count", len(book.GetAllAgentStates()))
+		logger.Debug("loaded agent states", "book_id", bookID, "count", len(book.GetAllAgentStates()))
 	}
 
 	// 9. Load finalize state if finalize is in progress (for crash recovery)
@@ -244,7 +244,7 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	}
 
 	if logger != nil {
-		logger.Info("LoadBook: complete",
+		logger.Debug("book state load complete",
 			"book_id", bookID,
 			"total_pages", book.TotalPages,
 			"loaded_pages", book.CountPages(),
@@ -279,7 +279,7 @@ func ResolvePrompts(ctx context.Context, book *BookState, keys []string, default
 				text = resolved.Text
 				cid = resolved.CID
 				if resolved.IsOverride && logger != nil {
-					logger.Info("using book-level prompt override",
+					logger.Debug("using book-level prompt override",
 						"key", key, "book_id", book.BookID)
 				}
 			}
@@ -595,7 +595,7 @@ func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.T
 
 	if tocDocID == "" {
 		if logger != nil {
-			logger.Warn("LoadTocEntries: empty tocDocID")
+			logger.Warn("skipping ToC entry load: empty tocDocID")
 		}
 		return nil, nil // No ToC, no entries
 	}
@@ -628,25 +628,26 @@ func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.T
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
 		if logger != nil {
-			logger.Error("LoadTocEntries: query failed", "error", err)
+			logger.Error("ToC entry query failed", "error", err)
 		}
 		return nil, err
 	}
-
 	if logger != nil {
-		logger.Info("LoadTocEntries: query response", "data_keys", fmt.Sprintf("%v", resp.Data))
+		logger.Debug("ToC entry query response received",
+			"response_fields", len(resp.Data),
+			"has_toc_entry", resp.Data["TocEntry"] != nil)
 	}
 
 	rawEntries, ok := resp.Data["TocEntry"].([]any)
 	if !ok {
 		if logger != nil {
-			logger.Warn("LoadTocEntries: TocEntry not []any", "type", fmt.Sprintf("%T", resp.Data["TocEntry"]))
+			logger.Warn("ToC entry query returned unexpected type", "type", fmt.Sprintf("%T", resp.Data["TocEntry"]))
 		}
 		return nil, nil // No entries
 	}
 
 	if logger != nil {
-		logger.Info("LoadTocEntries: raw entries count", "count", len(rawEntries))
+		logger.Debug("loaded raw ToC entries", "raw_entries", len(rawEntries))
 	}
 
 	var entries []*toc_entry_finder.TocEntry
@@ -728,7 +729,7 @@ func LoadAgentStates(ctx context.Context, book *BookState) error {
 	states, ok := resp.Data["AgentState"].([]any)
 	if !ok || len(states) == 0 {
 		if logger != nil {
-			logger.Debug("LoadAgentStates: no agent states found", "book_id", book.BookID)
+			logger.Debug("no agent states found", "book_id", book.BookID)
 		}
 		return nil
 	}
@@ -778,7 +779,7 @@ func LoadAgentStates(ctx context.Context, book *BookState) error {
 	}
 
 	if logger != nil {
-		logger.Debug("LoadAgentStates: loaded states",
+		logger.Debug("loaded agent states",
 			"book_id", book.BookID,
 			"count", len(book.agentStates))
 	}
@@ -907,7 +908,7 @@ func LoadFinalizeState(ctx context.Context, book *BookState, tocDocID string) er
 	}
 
 	if logger != nil {
-		logger.Debug("LoadFinalizeState: loaded finalize state",
+		logger.Debug("loaded finalize state",
 			"book_id", book.BookID,
 			"phase", book.GetFinalizePhase(),
 			"has_pattern_result", book.GetFinalizePatternResult() != nil)
@@ -964,7 +965,7 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 	rawChapters, ok := resp.Data["Chapter"].([]any)
 	if !ok || len(rawChapters) == 0 {
 		if logger != nil {
-			logger.Debug("LoadStructureChapters: no chapters found", "book_id", book.BookID)
+			logger.Debug("no structure chapters found", "book_id", book.BookID)
 		}
 		return nil
 	}
@@ -1066,7 +1067,7 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 		// Validate page boundaries
 		if chapter.StartPage < 1 {
 			if logger != nil {
-				logger.Warn("LoadStructureChapters: skipping chapter with invalid start_page",
+				logger.Warn("skipping chapter with invalid start_page",
 					"doc_id", chapter.DocID,
 					"start_page", chapter.StartPage,
 					"title", chapter.Title)
@@ -1075,7 +1076,7 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 		}
 		if chapter.EndPage > 0 && chapter.EndPage < chapter.StartPage {
 			if logger != nil {
-				logger.Warn("LoadStructureChapters: skipping chapter with end_page < start_page",
+				logger.Warn("skipping chapter with end_page < start_page",
 					"doc_id", chapter.DocID,
 					"start_page", chapter.StartPage,
 					"end_page", chapter.EndPage,
@@ -1105,7 +1106,7 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 	book.SetStructureClassifyReasonings(reasonings)
 
 	if logger != nil {
-		logger.Debug("LoadStructureChapters: loaded chapters",
+		logger.Debug("loaded structure chapters",
 			"book_id", book.BookID,
 			"count", len(chapters))
 	}
@@ -1145,7 +1146,7 @@ func loadBookMetadataFromDB(ctx context.Context, bookID string) (*BookMetadata, 
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
 		if logger != nil {
-			logger.Error("loadBookMetadataFromDB: query failed - metadata will be unavailable",
+			logger.Error("book metadata query failed; metadata will be unavailable",
 				"book_id", bookID, "error", err)
 		}
 		return nil, false
@@ -1214,7 +1215,7 @@ func loadBookCostsFromDB(ctx context.Context, book *BookState) {
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
 		if logger != nil {
-			logger.Error("loadBookCostsFromDB: query failed - cost data will be unavailable",
+			logger.Error("book costs query failed; cost data will be unavailable",
 				"book_id", book.BookID, "error", err)
 		}
 		// Don't set costsLoaded=true on error - allows retry on next access
@@ -1258,7 +1259,7 @@ func loadBookCostsFromDB(ctx context.Context, book *BookState) {
 	book.costsLoaded = true
 
 	if logger != nil {
-		logger.Debug("loadBookCostsFromDB: loaded costs",
+		logger.Debug("loaded book costs",
 			"book_id", book.BookID,
 			"total_cost", totalCost,
 			"stages", len(costsByStage))
@@ -1293,7 +1294,7 @@ func loadAgentRunsFromDB(ctx context.Context, book *BookState) {
 	resp, err := defraClient.Execute(ctx, query, nil)
 	if err != nil {
 		if logger != nil {
-			logger.Error("loadAgentRunsFromDB: query failed - agent run history will be unavailable",
+			logger.Error("agent run query failed; history will be unavailable",
 				"book_id", book.BookID, "error", err)
 		}
 		// Don't set agentRunsLoaded=true on error - allows retry on next access
@@ -1350,7 +1351,7 @@ func loadAgentRunsFromDB(ctx context.Context, book *BookState) {
 	book.agentRunsLoaded = true
 
 	if logger != nil {
-		logger.Debug("loadAgentRunsFromDB: loaded agent runs",
+		logger.Debug("loaded agent runs",
 			"book_id", book.BookID,
 			"count", len(summaries))
 	}

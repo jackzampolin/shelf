@@ -2,7 +2,6 @@ package jobs
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -43,6 +42,7 @@ type Scheduler struct {
 	receivedCPU int
 	receivedOCR int
 	receivedLLM int
+	receivedTTS int
 
 	// Sink for fire-and-forget metrics writes (passed to pools)
 	sink *defra.Sink
@@ -78,7 +78,7 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 	}
 
 	results := make(chan workerResult, 1000) // Buffered results channel
-	logger.Info("scheduler created", "results_channel_ptr", fmt.Sprintf("%p", results))
+	logger.Debug("scheduler created")
 
 	return &Scheduler{
 		manager:   cfg.Manager,
@@ -129,9 +129,7 @@ func (s *Scheduler) GetJobByBookID(bookID string) Job {
 // Start begins the scheduler and all registered pools.
 // Blocks until context is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {
-	s.logger.Info("scheduler Start called",
-		"results_channel_ptr", fmt.Sprintf("%p", s.results),
-		"scheduler_ptr", fmt.Sprintf("%p", s))
+	s.logger.Debug("scheduler start called")
 
 	s.mu.Lock()
 	if s.running {
@@ -144,7 +142,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 
 	// Start all pools
 	for name, p := range s.pools {
-		s.logger.Info("starting pool from scheduler", "name", name, "type", p.Type())
+		s.logger.Debug("starting pool from scheduler", "name", name, "type", p.Type())
 		go p.Start(ctx)
 	}
 	s.mu.Unlock()
@@ -162,48 +160,45 @@ func (s *Scheduler) Start(ctx context.Context) {
 			return
 
 		case wr := <-s.results:
-			// Log channel buffer length
-			bufLen := len(s.results)
-
-			// Check for OCR data regardless of type field
+			bufferLen := len(s.results)
 			hasOCRData := wr.Result.OCRResult != nil
 			hasCPUData := wr.Result.CPUResult != nil
 			hasChatData := wr.Result.ChatResult != nil
 
-			// Track by type - log raw value for debugging
-			typeStr := string(wr.Unit.Type)
+			// Track received unit distribution for debugging.
 			switch wr.Unit.Type {
 			case WorkUnitTypeCPU:
 				s.receivedCPU++
 			case WorkUnitTypeOCR:
 				s.receivedOCR++
-				s.logger.Info("RECEIVED OCR RESULT!",
+				s.logger.Debug("received OCR result",
 					"unit_id", wr.Unit.ID,
-					"has_ocr_result", hasOCRData)
+					"has_ocr_result", hasOCRData,
+				)
 			case WorkUnitTypeLLM:
 				s.receivedLLM++
+			case WorkUnitTypeTTS:
+				s.receivedTTS++
 			default:
 				s.logger.Warn("scheduler received unknown unit type",
 					"unit_type", wr.Unit.Type,
-					"unit_type_raw", typeStr,
-					"unit_type_len", len(typeStr),
 					"unit_id", wr.Unit.ID)
 			}
 
-			// Log with data type indicators
 			s.logger.Debug("scheduler received result",
 				"job_id", wr.JobID,
 				"unit_id", wr.Unit.ID,
 				"unit_type", wr.Unit.Type,
-				"unit_type_raw", typeStr,
 				"success", wr.Result.Success,
 				"has_ocr_data", hasOCRData,
 				"has_cpu_data", hasCPUData,
 				"has_chat_data", hasChatData,
-				"buffer_len", bufLen,
+				"buffer_len", bufferLen,
 				"received_cpu", s.receivedCPU,
 				"received_ocr", s.receivedOCR,
-				"received_llm", s.receivedLLM)
+				"received_llm", s.receivedLLM,
+				"received_tts", s.receivedTTS,
+			)
 			handleStart := time.Now()
 			s.handleResult(ctx, wr)
 			s.logger.Debug("handleResult completed", "duration_ms", time.Since(handleStart).Milliseconds())
@@ -232,6 +227,13 @@ func (s *Scheduler) handleResult(ctx context.Context, wr workerResult) {
 	newUnits, err := job.OnComplete(enrichedCtx, wr.Result)
 	if err != nil {
 		s.logger.Error("job OnComplete failed", "job_id", wr.JobID, "error", err)
+		s.removeJob(wr.JobID)
+		if s.manager != nil {
+			if updateErr := s.manager.UpdateStatus(ctx, wr.JobID, StatusFailed, err.Error()); updateErr != nil {
+				s.logger.Warn("failed to update job status in DefraDB", "error", updateErr)
+			}
+		}
+		return
 	}
 
 	// Enqueue any new work units

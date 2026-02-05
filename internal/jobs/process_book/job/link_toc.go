@@ -25,7 +25,7 @@ func (j *Job) CreateLinkTocWorkUnits(ctx context.Context) []jobs.WorkUnit {
 	// No entries to process
 	if len(j.LinkTocEntries) == 0 {
 		if logger != nil {
-			logger.Info("no ToC entries to link", "book_id", j.Book.BookID)
+			logger.Debug("no ToC entries to link", "book_id", j.Book.BookID)
 		}
 		return nil
 	}
@@ -119,7 +119,7 @@ func (j *Job) createEntryFinderAgentWithState(ctx context.Context, entry *toc_en
 	if savedState != nil && !savedState.Complete {
 		// Resume existing agent
 		if logger != nil {
-			logger.Info("resuming ToC entry finder agent from saved state",
+			logger.Debug("resuming ToC entry finder agent from saved state",
 				"agent_id", savedState.AgentID,
 				"entry_doc_id", entry.DocID,
 				"iteration", savedState.Iteration)

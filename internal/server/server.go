@@ -26,9 +26,9 @@ import (
 	"github.com/jackzampolin/shelf/internal/prompts/metadata"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/schema"
-	"github.com/jackzampolin/shelf/internal/voices"
 	"github.com/jackzampolin/shelf/internal/server/endpoints"
 	"github.com/jackzampolin/shelf/internal/svcctx"
+	"github.com/jackzampolin/shelf/internal/voices"
 
 	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
 	gap_investigator "github.com/jackzampolin/shelf/internal/agents/gap_investigator"
@@ -322,7 +322,7 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 		Logger:         s.logger,
 		Home:           s.home,
 		MetricsQuery:   metrics.NewQuery(s.defraClient),
-		LLMCallStore:   llmcall.NewStore(s.defraClient),
+		LLMCallStore:   llmcall.NewStore(s.defraClient, s.logger),
 		PromptResolver: s.promptResolver,
 	}
 
@@ -451,13 +451,13 @@ func (s *Server) withServices(next http.Handler) http.Handler {
 func (s *Server) withLogging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		s.logger.Info("request started", "method", r.Method, "path", r.URL.Path)
+		s.logger.Debug("request started", "method", r.Method, "path", r.URL.Path)
 
 		// Wrap response writer to capture status code
 		wrapped := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(wrapped, r)
 
-		s.logger.Info("request completed",
+		s.logger.Debug("request completed",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", wrapped.status,

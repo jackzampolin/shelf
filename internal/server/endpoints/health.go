@@ -12,6 +12,8 @@ import (
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
+var endpointLogger = slog.Default().With("component", "endpoints")
+
 // HealthResponse is the response for health check endpoints.
 type HealthResponse struct {
 	Status string `json:"status"`
@@ -212,7 +214,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		// Status already written, can only log
-		slog.Error("failed to encode JSON response", "error", err, "status", status)
+		endpointLogger.Error("failed to encode JSON response", "error", err, "status", status)
 	}
 }
 

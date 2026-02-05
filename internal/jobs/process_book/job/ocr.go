@@ -36,7 +36,7 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 		if hasOCRResult {
 			ocrText = fmt.Sprintf("%d chars", len(result.OCRResult.Text))
 		}
-		logger.Debug("HandleOcrComplete: entry",
+		logger.Debug("received OCR completion result",
 			"page_num", info.PageNum,
 			"provider", info.Provider,
 			"success", result.Success,
@@ -62,7 +62,7 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 	allDone, err := common.PersistOCRResult(ctx, j.Book, state, j.Book.OcrProviders, info.Provider, result.OCRResult)
 	if err != nil {
 		if logger != nil {
-			logger.Error("HandleOcrComplete: PersistOCRResult failed",
+			logger.Error("persisting OCR result failed",
 				"page_num", info.PageNum,
 				"provider", info.Provider,
 				"error", err)
@@ -70,7 +70,7 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 		return nil, fmt.Errorf("failed to persist OCR result for page %d provider %s: %w", info.PageNum, info.Provider, err)
 	}
 	if logger != nil {
-		logger.Debug("HandleOcrComplete: persisted",
+		logger.Debug("persisted OCR result",
 			"page_num", info.PageNum,
 			"provider", info.Provider,
 			"all_done", allDone)

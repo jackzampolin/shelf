@@ -26,7 +26,7 @@ func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 			return fmt.Errorf("failed to create job record: %w", err)
 		}
 		job.SetRecordID(recordID)
-		s.logger.Info("job record created", "id", recordID, "type", job.Type())
+		s.logger.Debug("job record created", "id", recordID, "type", job.Type())
 	} else {
 		// Generate a temporary ID for in-memory tracking when no persistence
 		job.SetRecordID(uuid.New().String())
@@ -76,12 +76,12 @@ func (s *Scheduler) startJobAsync(job Job) {
 		return
 	}
 
-	s.logger.Info("job started", "job_id", job.ID(), "work_units", len(units))
+	s.logger.Debug("job started", "job_id", job.ID(), "work_units", len(units))
 
 	// Check if job completed synchronously with no work units (e.g., ingest jobs)
 	if len(units) == 0 && job.Done() {
 		jobID := job.ID()
-		s.logger.Info("job completed synchronously", "id", jobID, "type", job.Type())
+		s.logger.Debug("job completed synchronously", "id", jobID, "type", job.Type())
 		s.removeJob(jobID)
 
 		// Update DefraDB status to completed
@@ -181,7 +181,7 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 
 		// Check if job completed synchronously with no work units
 		if len(units) == 0 && job.Done() {
-			s.logger.Info("resumed job completed synchronously", "id", record.ID, "type", record.JobType)
+			s.logger.Debug("resumed job completed synchronously", "id", record.ID, "type", record.JobType)
 			s.removeJob(job.ID())
 
 			if err := s.manager.UpdateStatus(enrichedCtx, record.ID, StatusCompleted, ""); err != nil {
@@ -193,7 +193,7 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 
 		s.enqueueUnits(job.ID(), units)
 		resumed++
-		s.logger.Info("job resumed", "job_id", record.ID, "type", record.JobType)
+		s.logger.Debug("job resumed", "job_id", record.ID, "type", record.JobType)
 	}
 
 	return resumed, nil
