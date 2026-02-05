@@ -25,7 +25,7 @@ func CreateOcrWorkUnit(ctx context.Context, jc JobContext, pageNum int, provider
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
 		if logger := svcctx.LoggerFrom(ctx); logger != nil {
-			logger.Warn("CreateOcrWorkUnit: failed to read image",
+			logger.Warn("failed to read source image for OCR work unit",
 				"page_num", pageNum,
 				"provider", provider,
 				"path", imagePath,
@@ -187,6 +187,11 @@ func SaveExtractedImages(ctx context.Context, homeDir *home.Dir, bookID string, 
 			continue
 		}
 
+		// Strip data URI prefix if present (e.g., "data:image/jpeg;base64,...")
+		if idx := strings.Index(base64Data, ","); idx != -1 && strings.HasPrefix(base64Data, "data:") {
+			base64Data = base64Data[idx+1:]
+		}
+
 		// Decode base64
 		imageData, err := base64.StdEncoding.DecodeString(base64Data)
 		if err != nil {
@@ -231,7 +236,7 @@ func SaveExtractedImages(ctx context.Context, homeDir *home.Dir, bookID string, 
 	}
 
 	if savedCount > 0 && logger != nil {
-		logger.Info("saved extracted images from page",
+		logger.Debug("saved extracted images from page",
 			"book_id", bookID,
 			"page_num", pageNum,
 			"count", savedCount)
