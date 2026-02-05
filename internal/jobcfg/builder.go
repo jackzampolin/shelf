@@ -202,11 +202,11 @@ func (b *Builder) TTSConfig(ctx context.Context) (tts_generate.Config, error) {
 		return tts_generate.Config{}, fmt.Errorf("failed to get tts_provider: %w", err)
 	}
 
-	// Voice and format are optional - can be overridden per request
-	// Format must be full ElevenLabs format spec (e.g., mp3_44100_128)
+	// Voice and format are optional and can be overridden per request.
+	// Keep format empty here so resume can preserve the existing BookAudio format.
 	return tts_generate.Config{
 		TTSProvider: ttsProvider,
-		Format:      "mp3_44100_128",
+		Format:      "",
 	}, nil
 }
 

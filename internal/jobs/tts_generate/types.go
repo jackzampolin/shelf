@@ -3,6 +3,7 @@ package tts_generate
 import (
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
@@ -73,9 +74,16 @@ type ChapterProgress struct {
 	ChapterAudioID    string // DefraDB record ID
 
 	// RequestIDSequence holds ordered request IDs for request stitching.
-	// Each element corresponds to a completed segment's ElevenLabs request ID.
+	// Each element corresponds to a completed segment's ElevenLabs request ID and timestamp.
 	// Used to build previous_request_ids for the next segment.
-	RequestIDSequence []string
+	RequestIDSequence []RequestIDRef
+}
+
+// RequestIDRef tracks an ElevenLabs request ID and when it was created.
+// Request IDs expire after ~2 hours and should not be reused after expiry.
+type RequestIDRef struct {
+	ID        string
+	CreatedAt time.Time
 }
 
 // AudioState holds the complete state for TTS generation.
@@ -106,11 +114,11 @@ type AudioState struct {
 
 // WorkUnitInfo tracks pending work units.
 type WorkUnitInfo struct {
-	UnitType      string // tts_segment, concatenate, chapter_finish
-	ChapterDocID  string // DefraDB chapter document ID (stable key)
-	ChapterIdx    int    // Sort order index (for display/ordering)
-	ParagraphIdx  int
-	RetryCount    int
+	UnitType     string // tts_segment, concatenate, chapter_finish
+	ChapterDocID string // DefraDB chapter document ID (stable key)
+	ChapterIdx   int    // Sort order index (for display/ordering)
+	ParagraphIdx int
+	RetryCount   int
 }
 
 // Job implements the TTS generation job.
@@ -171,17 +179,26 @@ func NewJobFromState(state *AudioState) *Job {
 	if state.ChapterProgress == nil {
 		state.ChapterProgress = make(map[string]*ChapterProgress)
 	}
+	state.TotalSegments = 0
 
 	// Parse paragraphs and initialize progress for each chapter
 	for _, ch := range state.Chapters {
 		ch.Paragraphs = splitIntoParagraphs(ch.PolishedText)
 
-		if _, exists := state.ChapterProgress[ch.DocID]; !exists {
-			state.ChapterProgress[ch.DocID] = &ChapterProgress{
+		progress, exists := state.ChapterProgress[ch.DocID]
+		if !exists {
+			progress = &ChapterProgress{
 				ChapterDocID:  ch.DocID,
 				ChapterIdx:    ch.ChapterIdx,
 				TotalSegments: len(ch.Paragraphs),
 				Segments:      make(map[int]*SegmentResult),
+			}
+			state.ChapterProgress[ch.DocID] = progress
+		} else {
+			progress.ChapterIdx = ch.ChapterIdx
+			progress.TotalSegments = len(ch.Paragraphs)
+			if progress.Segments == nil {
+				progress.Segments = make(map[int]*SegmentResult)
 			}
 		}
 		state.TotalSegments += len(ch.Paragraphs)
@@ -240,10 +257,16 @@ func (s *AudioState) MarkSegmentComplete(chapterDocID string, chapterIdx, paragr
 		s.ChapterProgress[chapterDocID] = progress
 	}
 
-	// Only count if not already complete
-	if _, exists := progress.Segments[paragraphIdx]; !exists {
+	// Only count as newly complete if not already present.
+	if prev, exists := progress.Segments[paragraphIdx]; !exists {
 		progress.CompletedSegments++
 		s.CompletedSegments++
+	} else if prev != nil {
+		// Replace existing values without double-counting totals.
+		progress.TotalDurationMS -= prev.DurationMS
+		progress.TotalCostUSD -= prev.CostUSD
+		s.TotalDurationMS -= prev.DurationMS
+		s.TotalCostUSD -= prev.CostUSD
 	}
 
 	progress.Segments[paragraphIdx] = result

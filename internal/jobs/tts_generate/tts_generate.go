@@ -3,6 +3,7 @@ package tts_generate
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
@@ -13,6 +14,17 @@ import (
 
 // JobType is the identifier for this job type.
 const JobType = "tts-generate"
+
+const defaultOutputFormat = "mp3_44100_128"
+
+var storytellerCompatibleFormats = map[string]struct{}{
+	"mp3_22050_32":  {},
+	"mp3_44100_32":  {},
+	"mp3_44100_64":  {},
+	"mp3_44100_96":  {},
+	"mp3_44100_128": {},
+	"mp3_44100_192": {},
+}
 
 // Config configures the TTS generation job.
 type Config struct {
@@ -26,6 +38,16 @@ type Config struct {
 func (c Config) Validate() error {
 	if c.TTSProvider == "" {
 		return fmt.Errorf("TTS provider is required")
+	}
+	if c.Format != "" {
+		normalized := normalizeFormat(c.Format)
+		if !isStorytellerCompatibleFormat(normalized) {
+			return fmt.Errorf(
+				"unsupported output format %q for storyteller export (supported: %s)",
+				c.Format,
+				strings.Join(SupportedStorytellerFormats(), ", "),
+			)
+		}
 	}
 	return nil
 }
@@ -89,6 +111,13 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 		return nil, fmt.Errorf("failed to check existing audio: %w", err)
 	}
 
+	// Apply explicit format override only when provided.
+	// If omitted, we preserve existing BookAudio format on resume.
+	stateFormat := ""
+	if cfg.Format != "" {
+		stateFormat = normalizeFormat(cfg.Format)
+	}
+
 	// Create job state
 	state := &AudioState{
 		BookID:          bookID,
@@ -97,7 +126,7 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 		Chapters:        chapters,
 		TTSProvider:     cfg.TTSProvider,
 		Voice:           cfg.Voice,
-		Format:          cfg.Format,
+		Format:          stateFormat,
 		HomeDir:         homeDir,
 		ChapterProgress: make(map[string]*ChapterProgress),
 	}
@@ -124,6 +153,16 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 			return nil, fmt.Errorf("failed to create BookAudio record: %w", err)
 		}
 		state.BookAudioID = bookAudioID
+	}
+	if state.Format == "" {
+		state.Format = defaultOutputFormat
+	}
+	if !isStorytellerCompatibleFormat(state.Format) {
+		return nil, fmt.Errorf(
+			"output format %q is not storyteller-compatible (supported: %s)",
+			state.Format,
+			strings.Join(SupportedStorytellerFormats(), ", "),
+		)
 	}
 
 	if logger != nil {
@@ -450,17 +489,39 @@ func sortChapters(chapters []*Chapter) {
 	}
 }
 
+// SupportedStorytellerFormats returns output formats known to work with Storyteller export.
+func SupportedStorytellerFormats() []string {
+	return []string{
+		"mp3_22050_32",
+		"mp3_44100_32",
+		"mp3_44100_64",
+		"mp3_44100_96",
+		"mp3_44100_128",
+		"mp3_44100_192",
+	}
+}
+
+// NormalizeOutputFormat normalizes user input to a canonical output format.
+func NormalizeOutputFormat(format string) string {
+	return normalizeFormat(format)
+}
+
+// IsStorytellerCompatibleFormat returns true when the format is safe for Storyteller export.
+func IsStorytellerCompatibleFormat(format string) bool {
+	return isStorytellerCompatibleFormat(normalizeFormat(format))
+}
+
+func isStorytellerCompatibleFormat(format string) bool {
+	_, ok := storytellerCompatibleFormats[format]
+	return ok
+}
+
 // normalizeFormat ensures the format is a valid ElevenLabs format string.
-// ElevenLabs requires full format specification (e.g., mp3_44100_128) not just container (mp3).
+// Storyteller export currently uses MP3-only output.
 func normalizeFormat(format string) string {
+	format = strings.ToLower(strings.TrimSpace(format))
 	if format == "" || format == "mp3" {
-		return "mp3_44100_128"
-	}
-	if format == "wav" {
-		return "wav_44100"
-	}
-	if format == "pcm" {
-		return "pcm_44100"
+		return defaultOutputFormat
 	}
 	return format
 }

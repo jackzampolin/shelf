@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jackzampolin/shelf/internal/api"
+	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
 	"github.com/jackzampolin/shelf/internal/providers"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 	"github.com/jackzampolin/shelf/internal/voices"
@@ -68,7 +69,7 @@ func (e *GetTTSConfigEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 			model = client.Model()
 			defaultVoice = client.Voice()
 			format = client.Format()
-			formats = []string{"mp3_44100_128", "mp3_22050_32", "pcm_16000", "pcm_22050", "pcm_24000", "pcm_44100"}
+			formats = tts_generate.SupportedStorytellerFormats()
 			voiceCloningURL = "https://elevenlabs.io/voice-lab"
 			break
 		}

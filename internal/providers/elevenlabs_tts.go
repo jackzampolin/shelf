@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,13 +21,13 @@ const (
 // ElevenLabsTTSConfig holds configuration for the ElevenLabs TTS client.
 type ElevenLabsTTSConfig struct {
 	APIKey     string
-	Model      string        // e.g., "eleven_multilingual_v2", "eleven_turbo_v2_5", "eleven_flash_v2_5"
-	Voice      string        // Default voice ID
-	Format     string        // Output format: mp3_44100_128, mp3_22050_32, pcm_16000, etc.
-	Stability  float64       // Voice stability (0.0-1.0, default: 0.5)
-	Similarity float64       // Similarity boost (0.0-1.0, default: 0.75)
-	Style      float64       // Style exaggeration (0.0-1.0, default: 0.0)
-	Speed      float64       // Speaking speed (0.7-1.2, default: 1.0)
+	Model      string  // e.g., "eleven_multilingual_v2", "eleven_turbo_v2_5", "eleven_flash_v2_5"
+	Voice      string  // Default voice ID
+	Format     string  // Output format: mp3_44100_128, mp3_22050_32, pcm_16000, etc.
+	Stability  float64 // Voice stability (0.0-1.0, default: 0.5)
+	Similarity float64 // Similarity boost (0.0-1.0, default: 0.75)
+	Style      float64 // Style exaggeration (0.0-1.0, default: 0.0)
+	Speed      float64 // Speaking speed (0.7-1.2, default: 1.0)
 	Timeout    time.Duration
 	RateLimit  float64 // Requests per second
 	MaxRetries int     // Max retry attempts (default: 3)
@@ -179,6 +181,7 @@ func (c *ElevenLabsTTSClient) Generate(ctx context.Context, req *TTSRequest) (*T
 			Stability:       c.stability,
 			SimilarityBoost: c.similarity,
 			Style:           c.style,
+			Speed:           c.speed,
 			UseSpeakerBoost: true,
 		},
 		PreviousRequestIDs: req.PreviousRequestIDs, // For request stitching
@@ -200,14 +203,7 @@ func (c *ElevenLabsTTSClient) Generate(ctx context.Context, req *TTSRequest) (*T
 	// This is approximate - for accurate duration, would need to decode audio
 	estimatedDurationMS := (len(req.Text) * 60 * 1000) / (150 * 5)
 
-	// Extract format from output_format string (e.g., "mp3_44100_128" -> "mp3")
-	outputFormat := format
-	if len(format) >= 3 {
-		outputFormat = format[:3]
-		if outputFormat == "pcm" || outputFormat == "ula" {
-			outputFormat = "wav" // Treat raw formats as wav
-		}
-	}
+	outputFormat, sampleRate := parseOutputFormat(format)
 
 	// ElevenLabs pricing: ~$0.30 per 1000 characters for standard voices
 	cost := float64(len(req.Text)) * 0.0003
@@ -217,6 +213,7 @@ func (c *ElevenLabsTTSClient) Generate(ctx context.Context, req *TTSRequest) (*T
 		Audio:         audioBytes,
 		DurationMS:    estimatedDurationMS,
 		Format:        outputFormat,
+		SampleRate:    sampleRate,
 		CostUSD:       cost,
 		CharCount:     len(req.Text),
 		ExecutionTime: time.Since(start),
@@ -359,7 +356,31 @@ type elevenLabsVoiceSettings struct {
 	Stability       float64 `json:"stability"`
 	SimilarityBoost float64 `json:"similarity_boost"`
 	Style           float64 `json:"style,omitempty"`
+	Speed           float64 `json:"speed,omitempty"`
 	UseSpeakerBoost bool    `json:"use_speaker_boost,omitempty"`
+}
+
+// parseOutputFormat extracts container format and sample rate from output_format.
+// Examples: mp3_44100_128 -> (mp3, 44100), pcm_16000 -> (wav, 16000).
+func parseOutputFormat(format string) (container string, sampleRate int) {
+	format = strings.ToLower(strings.TrimSpace(format))
+	if format == "" {
+		return "mp3", 0
+	}
+
+	parts := strings.Split(format, "_")
+	container = parts[0]
+	if container == "pcm" || container == "ulaw" || container == "alaw" {
+		container = "wav"
+	}
+
+	if len(parts) >= 2 {
+		if sr, err := strconv.Atoi(parts[1]); err == nil {
+			sampleRate = sr
+		}
+	}
+
+	return container, sampleRate
 }
 
 type elevenLabsErrorResponse struct {

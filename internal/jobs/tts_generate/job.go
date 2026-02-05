@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/home"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/svcctx"
+)
+
+const (
+	// requestIDMaxAge is the maximum age for ElevenLabs request IDs used for stitching.
+	// ElevenLabs request IDs expire after 2 hours; we use a shorter window for safety.
+	requestIDMaxAge = 110 * time.Minute
 )
 
 // Start initializes the job and returns initial work units.
@@ -130,6 +137,16 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 			if chapter != nil && paragraph != "" {
 				j.Tracker.Remove(result.WorkUnitID)
 				previousRequestIDs := j.getPreviousRequestIDs(info.ChapterDocID)
+				if shouldDisableRequestStitching(result.Error) {
+					previousRequestIDs = nil
+					j.clearRequestIDSequence(info.ChapterDocID)
+					if logger != nil {
+						logger.Warn("retrying segment without request stitching",
+							"chapter_doc_id", info.ChapterDocID,
+							"paragraph", info.ParagraphIdx,
+							"error", result.Error)
+					}
+				}
 				retryUnit := j.createTTSWorkUnit(chapter, info.ParagraphIdx, paragraph, previousRequestIDs)
 				// Update retry count
 				retryInfo := info
@@ -190,7 +207,10 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 
 		// Store request ID in chapter progress for subsequent segments
 		if ttsResult.RequestID != "" && progress != nil {
-			progress.RequestIDSequence = append(progress.RequestIDSequence, ttsResult.RequestID)
+			progress.RequestIDSequence = append(progress.RequestIDSequence, RequestIDRef{
+				ID:        ttsResult.RequestID,
+				CreatedAt: time.Now().UTC(),
+			})
 		}
 
 		// Get paragraph text for DB record
@@ -334,15 +354,15 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 	}
 
 	return map[string]string{
-		"book_id":            j.State.BookID,
-		"provider":           j.State.TTSProvider,
-		"total_chapters":     fmt.Sprintf("%d", len(j.State.Chapters)),
-		"chapters_complete":  fmt.Sprintf("%d", chaptersComplete),
-		"total_segments":     fmt.Sprintf("%d", j.State.TotalSegments),
-		"segments_complete":  fmt.Sprintf("%d", j.State.CompletedSegments),
-		"total_duration_ms":  fmt.Sprintf("%d", j.State.TotalDurationMS),
-		"total_cost_usd":     fmt.Sprintf("%.4f", j.State.TotalCostUSD),
-		"done":               fmt.Sprintf("%v", j.isDone),
+		"book_id":           j.State.BookID,
+		"provider":          j.State.TTSProvider,
+		"total_chapters":    fmt.Sprintf("%d", len(j.State.Chapters)),
+		"chapters_complete": fmt.Sprintf("%d", chaptersComplete),
+		"total_segments":    fmt.Sprintf("%d", j.State.TotalSegments),
+		"segments_complete": fmt.Sprintf("%d", j.State.CompletedSegments),
+		"total_duration_ms": fmt.Sprintf("%d", j.State.TotalDurationMS),
+		"total_cost_usd":    fmt.Sprintf("%.4f", j.State.TotalCostUSD),
+		"done":              fmt.Sprintf("%v", j.isDone),
 	}, nil
 }
 
@@ -392,16 +412,54 @@ func (j *Job) getPreviousRequestIDs(chapterDocID string) []string {
 		return nil
 	}
 
+	// Drop stale request IDs before building the request.
+	// ElevenLabs request IDs expire after ~2 hours.
+	cutoff := time.Now().Add(-requestIDMaxAge)
+	fresh := progress.RequestIDSequence[:0]
+	for _, ref := range progress.RequestIDSequence {
+		if ref.ID == "" {
+			continue
+		}
+		if ref.CreatedAt.IsZero() || ref.CreatedAt.After(cutoff) {
+			fresh = append(fresh, ref)
+		}
+	}
+	progress.RequestIDSequence = fresh
+	if len(progress.RequestIDSequence) == 0 {
+		return nil
+	}
+
 	// ElevenLabs supports up to 3 previous request IDs
-	ids := progress.RequestIDSequence
-	if len(ids) > 3 {
-		ids = ids[len(ids)-3:]
+	refs := progress.RequestIDSequence
+	if len(refs) > 3 {
+		refs = refs[len(refs)-3:]
 	}
 
 	// Return a copy to avoid mutation
-	result := make([]string, len(ids))
-	copy(result, ids)
+	result := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		result = append(result, ref.ID)
+	}
 	return result
+}
+
+func (j *Job) clearRequestIDSequence(chapterDocID string) {
+	progress := j.State.ChapterProgress[chapterDocID]
+	if progress == nil {
+		return
+	}
+	progress.RequestIDSequence = nil
+}
+
+func shouldDisableRequestStitching(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "previous_request_ids") ||
+		strings.Contains(msg, "previous request ids") ||
+		(strings.Contains(msg, "request id") && strings.Contains(msg, "older than")) ||
+		(strings.Contains(msg, "request") && strings.Contains(msg, "two hours"))
 }
 
 // createConcatenateWorkUnit creates a work unit for concatenating chapter audio.
@@ -420,6 +478,7 @@ func (j *Job) createConcatenateWorkUnit(chapterDocID string, chapterIdx int) job
 				"book_id":        j.State.BookID,
 				"chapter_doc_id": chapterDocID,
 				"chapter_idx":    chapterIdx,
+				"format":         j.State.Format,
 			},
 		},
 
@@ -707,11 +766,11 @@ func (j *Job) updateBookAudioComplete(ctx context.Context, client *defra.Client,
 	}
 
 	doc := map[string]any{
-		"status":           "complete",
-		"completed_at":     time.Now().UTC().Format(time.RFC3339),
+		"status":            "complete",
+		"completed_at":      time.Now().UTC().Format(time.RFC3339),
 		"total_duration_ms": j.State.TotalDurationMS,
-		"segment_count":    j.State.CompletedSegments,
-		"total_cost_usd":   j.State.TotalCostUSD,
+		"segment_count":     j.State.CompletedSegments,
+		"total_cost_usd":    j.State.TotalCostUSD,
 	}
 
 	if sink != nil {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -35,16 +36,16 @@ type GenerateAudioResponse struct {
 
 // AudioStatusResponse contains audio generation status and files.
 type AudioStatusResponse struct {
-	BookID          string                 `json:"book_id"`
-	Status          string                 `json:"status"`
-	Provider        string                 `json:"provider,omitempty"`
-	Voice           string                 `json:"voice,omitempty"`
-	Format          string                 `json:"format,omitempty"`
-	TotalDurationMS int                    `json:"total_duration_ms,omitempty"`
-	TotalCostUSD    float64                `json:"total_cost_usd,omitempty"`
-	ChapterCount    int                    `json:"chapter_count,omitempty"`
-	SegmentCount    int                    `json:"segment_count,omitempty"`
-	Chapters        []ChapterAudioStatus   `json:"chapters,omitempty"`
+	BookID          string               `json:"book_id"`
+	Status          string               `json:"status"`
+	Provider        string               `json:"provider,omitempty"`
+	Voice           string               `json:"voice,omitempty"`
+	Format          string               `json:"format,omitempty"`
+	TotalDurationMS int                  `json:"total_duration_ms,omitempty"`
+	TotalCostUSD    float64              `json:"total_cost_usd,omitempty"`
+	ChapterCount    int                  `json:"chapter_count,omitempty"`
+	SegmentCount    int                  `json:"segment_count,omitempty"`
+	Chapters        []ChapterAudioStatus `json:"chapters,omitempty"`
 }
 
 // ChapterAudioStatus contains status for a single chapter's audio.
@@ -132,6 +133,23 @@ func (e *GenerateAudioEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 		ttsCfg.Format = req.Format
 	}
 
+	if ttsCfg.Format != "" {
+		normalized := tts_generate.NormalizeOutputFormat(ttsCfg.Format)
+		if !tts_generate.IsStorytellerCompatibleFormat(normalized) {
+			writeError(
+				w,
+				http.StatusBadRequest,
+				fmt.Sprintf(
+					"unsupported output format %q for storyteller export (supported: %s)",
+					ttsCfg.Format,
+					strings.Join(tts_generate.SupportedStorytellerFormats(), ", "),
+				),
+			)
+			return
+		}
+		ttsCfg.Format = normalized
+	}
+
 	// If no voice specified, get default voice from database
 	if ttsCfg.Voice == "" {
 		defraClient := svcctx.DefraClientFrom(ctx)
@@ -209,7 +227,7 @@ Use 'shelf api books audio <book-id>' to check progress.`,
 		},
 	}
 	cmd.Flags().StringVar(&voice, "voice", "", "Voice ID (optional)")
-	cmd.Flags().StringVar(&format, "format", "", "Output format: mp3, wav (default: mp3)")
+	cmd.Flags().StringVar(&format, "format", "", "Output format (Storyteller-safe MP3): mp3_44100_128 (default), mp3_22050_32, mp3_44100_32, mp3_44100_64, mp3_44100_96, mp3_44100_192")
 	return cmd
 }
 
