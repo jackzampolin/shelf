@@ -66,12 +66,9 @@ func SendManyTracked(ctx context.Context, book *BookState, ops []defra.WriteOp) 
 	var err error
 
 	if book != nil && book.Store != nil {
-		results = make([]defra.WriteResult, len(ops))
-		for i, op := range ops {
-			results[i], err = book.Store.SendSync(ctx, op)
-			if err != nil {
-				return results, err
-			}
+		results, err = book.Store.SendManySync(ctx, ops)
+		if err != nil {
+			return results, err
 		}
 	} else {
 		sink := svcctx.DefraSinkFrom(ctx)
@@ -422,7 +419,7 @@ func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 		if !ok {
 			skippedCount++
 			if logger != nil {
-				logger.Warn("DeleteAgentStatesForBook: unexpected data type in result",
+				logger.Warn("unexpected data type while deleting agent states for book",
 					"book_id", bookID,
 					"index", i,
 					"type", fmt.Sprintf("%T", s))
@@ -434,7 +431,7 @@ func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 		if !ok || docID == "" {
 			skippedCount++
 			if logger != nil {
-				logger.Warn("DeleteAgentStatesForBook: missing or invalid _docID in agent state",
+				logger.Warn("missing or invalid _docID while deleting agent states for book",
 					"book_id", bookID,
 					"index", i,
 					"state_data", state)
@@ -450,7 +447,7 @@ func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 
 	// Log summary if there were issues
 	if skippedCount > 0 && logger != nil {
-		logger.Warn("DeleteAgentStatesForBook: some records were skipped",
+		logger.Warn("some agent-state records were skipped during deletion",
 			"book_id", bookID,
 			"deleted", deletedCount,
 			"skipped", skippedCount)
@@ -501,7 +498,7 @@ func DeleteAgentStatesForType(ctx context.Context, bookID, agentType string) err
 		if !ok {
 			skippedCount++
 			if logger != nil {
-				logger.Warn("DeleteAgentStatesForType: unexpected data type",
+				logger.Warn("unexpected data type while deleting agent states by type",
 					"book_id", bookID, "agent_type", agentType, "index", i)
 			}
 			continue

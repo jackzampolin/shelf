@@ -99,6 +99,7 @@ func deleteCollectionDocsViaStore(ctx context.Context, store StateStore, collect
 		return nil
 	}
 
+	var ops []defra.WriteOp
 	for _, d := range docs {
 		doc, ok := d.(map[string]any)
 		if !ok {
@@ -108,12 +109,24 @@ func deleteCollectionDocsViaStore(ctx context.Context, store StateStore, collect
 		if !ok || docID == "" {
 			continue
 		}
-		if _, err := store.SendSync(ctx, defra.WriteOp{
+		ops = append(ops, defra.WriteOp{
 			Collection: collection,
 			DocID:      docID,
 			Op:         defra.OpDelete,
-		}); err != nil {
-			return fmt.Errorf("failed to delete %s %s: %w", collection, docID, err)
+		})
+	}
+
+	if len(ops) == 0 {
+		return nil
+	}
+
+	results, err := store.SendManySync(ctx, ops)
+	if err != nil {
+		return fmt.Errorf("failed to batch delete %s: %w", collection, err)
+	}
+	for _, r := range results {
+		if r.Err != nil {
+			return fmt.Errorf("failed to delete %s %s: %w", collection, r.DocID, r.Err)
 		}
 	}
 	return nil
@@ -137,6 +150,7 @@ func updateCollectionDocsViaStore(ctx context.Context, store StateStore, collect
 		return nil
 	}
 
+	var ops []defra.WriteOp
 	for _, d := range docs {
 		doc, ok := d.(map[string]any)
 		if !ok {
@@ -146,13 +160,25 @@ func updateCollectionDocsViaStore(ctx context.Context, store StateStore, collect
 		if !ok || docID == "" {
 			continue
 		}
-		if _, err := store.SendSync(ctx, defra.WriteOp{
+		ops = append(ops, defra.WriteOp{
 			Collection: collection,
 			DocID:      docID,
 			Document:   fields,
 			Op:         defra.OpUpdate,
-		}); err != nil {
-			return fmt.Errorf("failed to update %s %s: %w", collection, docID, err)
+		})
+	}
+
+	if len(ops) == 0 {
+		return nil
+	}
+
+	results, err := store.SendManySync(ctx, ops)
+	if err != nil {
+		return fmt.Errorf("failed to batch update %s: %w", collection, err)
+	}
+	for _, r := range results {
+		if r.Err != nil {
+			return fmt.Errorf("failed to update %s %s: %w", collection, r.DocID, r.Err)
 		}
 	}
 	return nil
