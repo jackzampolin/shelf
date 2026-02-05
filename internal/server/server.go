@@ -157,7 +157,16 @@ func New(cfg Config) (*Server, error) {
 // Start starts the server and DefraDB.
 // It blocks until the context is cancelled or an error occurs.
 // If an existing DefraDB container exists, it validates the configuration matches.
-func (s *Server) Start(ctx context.Context) error {
+func (s *Server) Start(ctx context.Context) (retErr error) {
+	// Recover from panics so the DefraDB container gets cleaned up.
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Error("panic in server", "panic", r)
+			_ = s.shutdown()
+			retErr = fmt.Errorf("server panic: %v", r)
+		}
+	}()
+
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
@@ -166,8 +175,38 @@ func (s *Server) Start(ctx context.Context) error {
 	s.running = true
 	s.mu.Unlock()
 
+	// Check for orphaned DefraDB container from a previous crash.
+	// PID file operations require a home directory; skip when home is nil (e.g., tests).
+	var pidFile string
+	if s.home != nil {
+		pidFile = s.home.PidFilePath()
+		if pid, err := defra.ReadPidFile(pidFile); err == nil {
+			if defra.IsProcessAlive(pid) {
+				s.setNotRunning()
+				return fmt.Errorf("another shelf server is running (pid %d)", pid)
+			}
+			// Previous process is dead — clean up its container.
+			s.logger.Warn("cleaning up orphaned DefraDB container", "dead_pid", pid)
+			cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := s.defraManager.Stop(cleanCtx); err != nil {
+				s.logger.Warn("orphan container cleanup failed", "error", err)
+			}
+			cancel()
+			defra.RemovePidFile(pidFile)
+		}
+
+		// Write PID file so future starts can detect orphans.
+		if err := defra.WritePidFile(pidFile); err != nil {
+			s.setNotRunning()
+			return fmt.Errorf("failed to write pid file: %w", err)
+		}
+	}
+
 	// Validate any existing container matches our config
 	if err := s.defraManager.ValidateExisting(ctx); err != nil {
+		if pidFile != "" {
+			defra.RemovePidFile(pidFile)
+		}
 		s.setNotRunning()
 		return fmt.Errorf("existing DefraDB container incompatible: %w", err)
 	}
@@ -350,6 +389,11 @@ func (s *Server) shutdown() error {
 	// Close Docker client
 	if err := s.defraManager.Close(); err != nil {
 		s.logger.Error("DefraDB manager close error", "error", err)
+	}
+
+	// Remove PID file
+	if s.home != nil {
+		defra.RemovePidFile(s.home.PidFilePath())
 	}
 
 	s.setNotRunning()

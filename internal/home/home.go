@@ -51,6 +51,11 @@ func (d *Dir) ConfigPath() string {
 	return filepath.Join(d.path, ConfigFileName)
 }
 
+// PidFilePath returns the path to the server PID file.
+func (d *Dir) PidFilePath() string {
+	return filepath.Join(d.path, "shelf.pid")
+}
+
 // EnsureExists creates the home directory and subdirectories if they don't exist.
 func (d *Dir) EnsureExists() error {
 	// Create data directory (this also creates the parent)
