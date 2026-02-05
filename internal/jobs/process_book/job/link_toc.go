@@ -15,6 +15,8 @@ import (
 // CreateLinkTocWorkUnits creates work units for all ToC entries.
 // Must be called with j.Mu held.
 func (j *Job) CreateLinkTocWorkUnits(ctx context.Context) []jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
 	// Get entries from BookState (loaded during LoadBook)
 	if len(j.LinkTocEntries) == 0 {
 		j.LinkTocEntries = j.Book.GetTocEntries()
@@ -22,27 +24,85 @@ func (j *Job) CreateLinkTocWorkUnits(ctx context.Context) []jobs.WorkUnit {
 
 	// No entries to process
 	if len(j.LinkTocEntries) == 0 {
-		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("no ToC entries to link", "book_id", j.Book.BookID)
 		}
 		return nil
 	}
 
-	// Create work units for all entries
-	var units []jobs.WorkUnit
+	// Set total and check if already partially done (crash recovery)
+	total, done := j.Book.GetTocLinkProgress()
+	if total != len(j.LinkTocEntries) {
+		// Initialize or update total - keep done count for crash recovery
+		j.Book.SetTocLinkProgress(len(j.LinkTocEntries), done)
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistTocLinkProgressAsync(ctx, j.Book)
+	}
+
+	// Phase 1: Create all agents and collect initial states (without persisting individually)
+	type agentWithState struct {
+		entry        *toc_entry_finder.TocEntry
+		agent        *agent.Agent
+		initialState *common.AgentState
+	}
+	var agentsToCreate []agentWithState
+
 	for _, entry := range j.LinkTocEntries {
-		unit := j.CreateEntryFinderWorkUnit(ctx, entry)
-		if unit != nil {
-			units = append(units, *unit)
+		ag, state := j.createEntryFinderAgentWithState(ctx, entry)
+		if ag != nil && state != nil {
+			agentsToCreate = append(agentsToCreate, agentWithState{
+				entry:        entry,
+				agent:        ag,
+				initialState: state,
+			})
+		}
+	}
+
+	if len(agentsToCreate) == 0 {
+		return nil
+	}
+
+	// Phase 2: Batch persist all agent states
+	states := make([]*common.AgentState, len(agentsToCreate))
+	for i, aws := range agentsToCreate {
+		states[i] = aws.initialState
+	}
+	if err := common.PersistAgentStates(ctx, j.Book, states); err != nil {
+		if logger != nil {
+			logger.Warn("failed to batch persist agent states", "error", err)
+		}
+	}
+
+	// Phase 3: Store agents and states, then execute tool loops
+	var units []jobs.WorkUnit
+	for _, aws := range agentsToCreate {
+		j.LinkTocEntryAgents[aws.entry.DocID] = aws.agent
+		j.Book.SetAgentState(aws.initialState)
+
+		// Execute tool loop to get first work unit
+		agentUnits := agents.ExecuteToolLoop(ctx, aws.agent)
+		if len(agentUnits) == 0 {
+			if logger != nil {
+				logger.Debug("agent produced no work units",
+					"book_id", j.Book.BookID,
+					"entry_doc_id", aws.entry.DocID)
+			}
+			continue
+		}
+
+		// Convert and collect work units
+		jobUnits := j.convertLinkTocAgentUnits(agentUnits, aws.entry.DocID)
+		if len(jobUnits) > 0 {
+			units = append(units, jobUnits[0])
 		}
 	}
 
 	return units
 }
 
-// CreateEntryFinderWorkUnit creates an entry finder agent work unit.
-func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_finder.TocEntry) *jobs.WorkUnit {
+// createEntryFinderAgentWithState creates an entry finder agent and its initial state.
+// Returns the agent and state without persisting - caller is responsible for batching persistence.
+func (j *Job) createEntryFinderAgentWithState(ctx context.Context, entry *toc_entry_finder.TocEntry) (*agent.Agent, *common.AgentState) {
 	logger := svcctx.LoggerFrom(ctx)
 
 	// Estimate book structure for back matter detection
@@ -107,11 +167,7 @@ func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 		})
 	}
 
-	// Store agent for later reference
-	j.LinkTocEntryAgents[entry.DocID] = ag
-
-	// Persist initial agent state (async, fire-and-forget)
-	// This enables crash recovery to know this agent was started
+	// Build initial state (don't persist yet)
 	exported, _ := ag.ExportState()
 	initialState := &common.AgentState{
 		AgentID:          exported.AgentID,
@@ -124,6 +180,25 @@ func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_fi
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
+
+	return ag, initialState
+}
+
+// CreateEntryFinderWorkUnit creates an entry finder agent work unit.
+// Used for single agent creation (e.g., retries). For batch creation, use CreateLinkTocWorkUnits.
+func (j *Job) CreateEntryFinderWorkUnit(ctx context.Context, entry *toc_entry_finder.TocEntry) *jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Create agent and initial state
+	ag, initialState := j.createEntryFinderAgentWithState(ctx, entry)
+	if ag == nil || initialState == nil {
+		return nil
+	}
+
+	// Store agent for later reference
+	j.LinkTocEntryAgents[entry.DocID] = ag
+
+	// Persist single agent state (uses sync write)
 	if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist toc entry finder agent state",
@@ -196,8 +271,12 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 		j.cleanupLinkTocAgentState(ctx, info.EntryDocID)
 
 		agentResult := ag.Result()
+
+		// Check if agent was successful
+		agentSuccess := false
 		if agentResult != nil && agentResult.Success {
 			if entryResult, ok := agentResult.ToolResult.(*toc_entry_finder.Result); ok {
+				agentSuccess = true
 				// Update TocEntry with actual_page using common utility
 				cid, err := common.SaveTocEntryResult(ctx, j.Book, info.EntryDocID, entryResult)
 				if err != nil {
@@ -214,7 +293,40 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 			}
 		}
 
-		j.LinkTocEntriesDone++
+		// If agent failed, retry or mark as failed
+		if !agentSuccess {
+			// Check if we should retry
+			if info.RetryCount < MaxBookOpRetries {
+				if logger != nil {
+					logger.Warn("ToC entry finder failed - retrying",
+						"book_id", j.Book.BookID,
+						"entry_doc_id", info.EntryDocID,
+						"retry_count", info.RetryCount+1,
+						"max_retries", MaxBookOpRetries)
+				}
+				// Remove old work unit from tracker before creating retry
+				j.RemoveWorkUnit(result.WorkUnitID)
+				// Create retry work unit (this creates a fresh agent)
+				unit := j.createLinkTocRetryUnit(ctx, info)
+				if unit != nil {
+					return []jobs.WorkUnit{*unit}, nil
+				}
+				// If we can't create retry unit, fall through to mark as failed
+			}
+
+			// Max retries exceeded or retry creation failed - log and continue
+			if logger != nil {
+				logger.Error("ToC entry finder failed after max retries - skipping entry",
+					"book_id", j.Book.BookID,
+					"entry_doc_id", info.EntryDocID,
+					"retry_count", info.RetryCount,
+					"max_retries", MaxBookOpRetries)
+			}
+		}
+
+		j.Book.IncrementTocLinkEntriesDone()
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistTocLinkProgressAsync(ctx, j.Book)
 		delete(j.LinkTocEntryAgents, info.EntryDocID)
 	}
 
@@ -222,20 +334,15 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 }
 
 // cleanupLinkTocAgentState removes link ToC entry agent state after completion.
+// Uses async delete to avoid blocking the critical path.
+// Skips DB cleanup if debug logging was disabled (no agent state was created).
 func (j *Job) cleanupLinkTocAgentState(ctx context.Context, entryDocID string) {
-	logger := svcctx.LoggerFrom(ctx)
 	existing := j.Book.GetAgentState(common.AgentTypeTocEntryFinder, entryDocID)
 	if existing != nil && existing.AgentID != "" {
-		// Delete by agent_id since we don't have DocID from async create
-		if err := common.DeleteAgentStateByAgentID(ctx, existing.AgentID); err != nil {
-			if logger != nil {
-				logger.Error("failed to delete agent state from DB, orphaned record remains",
-					"agent_id", existing.AgentID,
-					"agent_type", common.AgentTypeTocEntryFinder,
-					"entry_doc_id", entryDocID,
-					"book_id", j.Book.BookID,
-					"error", err)
-			}
+		// Only cleanup DB if debug logging was enabled (agent state was persisted)
+		if j.Book.DebugAgents {
+			// Async delete - fire and forget to avoid blocking critical path
+			common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
 		}
 	}
 	j.Book.RemoveAgentState(common.AgentTypeTocEntryFinder, entryDocID)
@@ -264,9 +371,9 @@ func (j *Job) convertLinkTocAgentUnits(agentUnits []agent.WorkUnit, entryDocID s
 	return jobUnits
 }
 
-// PersistTocLinkState persists ToC link state to DefraDB.
-func (j *Job) PersistTocLinkState(ctx context.Context) error {
-	return common.PersistOpState(ctx, j.Book, common.OpTocLink)
+// PersistTocLinkState persists ToC link state to DefraDB (async - memory is authoritative).
+func (j *Job) PersistTocLinkState(ctx context.Context) {
+	common.PersistOpStateAsync(ctx, j.Book, common.OpTocLink)
 }
 
 // StartFinalizeTocInline creates and starts the finalize phase inline.
@@ -276,6 +383,7 @@ func (j *Job) StartFinalizeTocInline(ctx context.Context) []jobs.WorkUnit {
 }
 
 // createLinkTocRetryUnit creates a retry work unit for a failed link_toc operation.
+// Cleans up old agent state and creates a fresh agent (not resuming from failed state).
 func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo) *jobs.WorkUnit {
 	// Find the entry for this doc ID
 	var entry *toc_entry_finder.TocEntry
@@ -294,10 +402,14 @@ func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo) *jo
 		return nil
 	}
 
-	// Remove old agent
+	// Remove old agent from map
 	delete(j.LinkTocEntryAgents, info.EntryDocID)
 
-	// Create new work unit
+	// Clean up old agent state from BookState and DB for fresh start
+	// (Without this, CreateEntryFinderWorkUnit would resume the failed agent state)
+	j.cleanupLinkTocAgentState(ctx, info.EntryDocID)
+
+	// Create new work unit with fresh agent
 	unit := j.CreateEntryFinderWorkUnit(ctx, entry)
 	if unit != nil {
 		// Update the registered info with incremented retry count

@@ -8,7 +8,6 @@ import {
   CollapsibleSection,
   TocSection,
   StructureSection,
-  PatternAnalysisSection,
   AgentLogModal,
   MetadataModal,
   JobHistorySection,
@@ -21,7 +20,7 @@ interface ProcessingTabProps {
 }
 
 const JOB_TYPES = [
-  { id: 'process-book', label: 'Full Pipeline', description: 'OCR → Pattern Analysis → ToC → Structure', force: false },
+  { id: 'process-book', label: 'Full Pipeline', description: 'OCR → Metadata → ToC → Structure', force: false },
   { id: 'ocr-book', label: 'OCR Only', description: 'OCR all pages', force: false },
   { id: 'metadata-book', label: 'Metadata Only', description: 'Extract book metadata', force: false },
   { id: 'toc-book', label: 'ToC Only', description: 'Find and extract table of contents', force: false },
@@ -181,16 +180,8 @@ export function ProcessingTab({ bookId, book }: ProcessingTabProps) {
               </CollapsibleSection>
             )}
 
-            {/* Pattern Analysis Section */}
-            <PatternAnalysisSection
-              patternAnalysisJSON={book?.page_pattern_analysis_json}
-              complete={detailedStatus.stages?.pattern_analysis?.complete}
-              cost={detailedStatus.stages?.pattern_analysis?.cost_usd}
-              metrics={detailedMetrics?.stages?.['pattern_analysis']}
-            />
-
             {/* Metadata Section */}
-            <div className="border-t pt-4">
+            <div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <span className="text-sm font-medium text-gray-700">Metadata</span>

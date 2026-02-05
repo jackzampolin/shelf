@@ -12,13 +12,12 @@ import (
 type OpType string
 
 const (
-	OpMetadata        OpType = "metadata"
-	OpTocFinder       OpType = "toc_finder"
-	OpTocExtract      OpType = "toc_extract"
-	OpPatternAnalysis OpType = "pattern_analysis"
-	OpTocLink         OpType = "toc_link"
-	OpTocFinalize     OpType = "toc_finalize"
-	OpStructure       OpType = "structure"
+	OpMetadata    OpType = "metadata"
+	OpTocFinder   OpType = "toc_finder"
+	OpTocExtract  OpType = "toc_extract"
+	OpTocLink     OpType = "toc_link"
+	OpTocFinalize OpType = "toc_finalize"
+	OpStructure   OpType = "structure"
 )
 
 // AllOpTypes lists all operation types in pipeline order.
@@ -26,7 +25,6 @@ var AllOpTypes = []OpType{
 	OpMetadata,
 	OpTocFinder,
 	OpTocExtract,
-	OpPatternAnalysis,
 	OpTocLink,
 	OpTocFinalize,
 	OpStructure,
@@ -98,21 +96,6 @@ var OpRegistry = map[OpType]*OpConfig{
 			book.setTocEntriesUnlocked(nil)
 		},
 		ResetHook: resetTocExtractHook,
-	},
-	OpPatternAnalysis: {
-		Collection:  "Book",
-		FieldPrefix: "pattern_analysis",
-		DocIDSource: func(b *BookState) string { return b.BookDocID },
-		CascadesTo:  []OpType{OpTocLink},
-		AgentTypes:  []string{"pattern_analysis"},
-		ResetMemoryHook: func(book *BookState) {
-			book.patternAnalysisResult = nil
-			book.pageNumberPattern = nil
-			book.chapterPatterns = nil
-		},
-		ResetDBFields: map[string]any{
-			"page_pattern_analysis_json": nil,
-		},
 	},
 	OpTocLink: {
 		Collection:  "ToC",
@@ -193,6 +176,8 @@ func (b *BookState) OpComplete(op OpType) {
 }
 
 // PersistOpComplete marks operation complete and returns commit CID.
+//
+// Deprecated: Use PersistOpCompleteAsync instead for better latency.
 func PersistOpComplete(ctx context.Context, book *BookState, op OpType) (string, error) {
 	cfg, ok := OpRegistry[op]
 	if !ok || cfg == nil {
@@ -250,6 +235,15 @@ func PersistOpComplete(ctx context.Context, book *BookState, op OpType) (string,
 	}
 
 	return result.CID, nil
+}
+
+// PersistOpCompleteAsync fires and forgets operation complete status to DB.
+// Delegates to BookState.PersistOpCompleteAsync for fire-and-forget behavior.
+func PersistOpCompleteAsync(ctx context.Context, book *BookState, op OpType) {
+	if book == nil {
+		return
+	}
+	book.PersistOpCompleteAsync(ctx, op)
 }
 
 // OpFail records a failure for the given operation (thread-safe).

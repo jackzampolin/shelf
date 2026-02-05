@@ -9,9 +9,21 @@ INSTRUCTIONS:
 4. If you can identify the book online, use the official metadata from sources like:
    - Open Library, WorldCat, Library of Congress, Amazon, Goodreads
 5. Generate a brief description if not found in the text
+6. Identify which page number contains the book's cover image (usually page 1)
+
+FIELD GUIDELINES:
+- title: Main title only, WITHOUT subtitle. Example: "The Great Gatsby" not "The Great Gatsby: A Novel"
+- subtitle: Subtitle if present, as a separate field. Example: "A Novel" or "The Authorized Biography"
+- description: 2-3 sentences (50-100 words) summarizing the book's content and significance.
+  Keep it factual and objective. Do not include plot spoilers for fiction.
+- cover_page: The scan page number (1-indexed) that shows the book's front cover.
+  This is typically page 1 but may be page 2 if there's a blank page first.
+- authors: Array of author names in "First Last" format. Include ALL authors.
+- language: ISO 639-1 code (en, es, fr, de, ja, zh, etc.)
 
 IMPORTANT:
 - Prefer official/authoritative metadata over OCR-extracted text
 - Include ALL authors if multiple
 - Use ISO 639-1 language codes (en, es, fr, de, etc.)
 - Set confidence based on how certain you are of the identification
+- Be consistent with formatting across runs

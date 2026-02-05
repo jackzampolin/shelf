@@ -2,6 +2,7 @@ import { Modal, MetadataRow } from '@/components/ui'
 
 interface BookMetadata {
   title?: string
+  subtitle?: string
   author?: string
   authors?: string[]
   isbn?: string
@@ -11,6 +12,7 @@ interface BookMetadata {
   language?: string
   description?: string
   subjects?: string[]
+  cover_page?: number
 }
 
 interface MetadataModalProps {
@@ -23,6 +25,7 @@ export function MetadataModal({ data, onClose }: MetadataModalProps) {
     <Modal title="Book Metadata" onClose={onClose}>
       <div className="space-y-4">
         <MetadataRow label="Title" value={data.title} />
+        {data.subtitle && <MetadataRow label="Subtitle" value={data.subtitle} />}
         <MetadataRow label="Author" value={data.author} />
         {data.authors && data.authors.length > 0 && (
           <MetadataRow label="Authors" value={data.authors.join(', ')} />
@@ -57,6 +60,9 @@ export function MetadataModal({ data, onClose }: MetadataModalProps) {
               ))}
             </dd>
           </div>
+        )}
+        {data.cover_page && (
+          <MetadataRow label="Cover Page" value={`Page ${data.cover_page}`} />
         )}
       </div>
     </Modal>

@@ -63,14 +63,19 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		j.Book.TocLinkFail(MaxBookOpRetries)
 		j.PersistTocLinkState(ctx)
 	}
-	// Pattern analysis uses work units (no agent or sub-job), so always reset if started
-	if j.Book.PatternAnalysisIsStarted() {
-		j.Book.PatternAnalysisFail(MaxBookOpRetries)
-		j.PersistPatternAnalysisState(ctx)
+	// TocFinalize: fail/retry if started but not done. Pattern analysis results
+	// are preserved in pattern_analysis_json and will be reused on retry.
+	if j.Book.TocFinalizeIsStarted() {
+		j.Book.TocFinalizeFail(MaxBookOpRetries)
+		// Persist async - memory is authoritative during execution
+		common.PersistOpStateAsync(ctx, j.Book, common.OpTocFinalize)
 	}
-	// Note: TocFinalize and Structure operations now persist agent state to DB,
-	// so agent state is restored when the job is loaded. No need to fail these
-	// operations on restart - they will resume from their persisted state.
+	// Structure: fail/retry if started but not done.
+	if j.Book.StructureIsStarted() {
+		j.Book.StructureFail(MaxBookOpRetries)
+		// Persist async - memory is authoritative during execution
+		common.PersistOpStateAsync(ctx, j.Book, common.OpStructure)
+	}
 
 	// Create any missing page records in DB
 	if err := checkCancelled(ctx); err != nil {
@@ -138,6 +143,17 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 	}
 
 	logger := svcctx.LoggerFrom(ctx)
+	if logger != nil {
+		logger.Debug("OnComplete: received result",
+			"unit_id", result.WorkUnitID,
+			"unit_type", info.UnitType,
+			"page_num", info.PageNum,
+			"provider", info.Provider,
+			"success", result.Success,
+			"has_ocr_result", result.OCRResult != nil,
+			"has_chat_result", result.ChatResult != nil,
+			"error", result.Error)
+	}
 
 	// Write-through cache: track costs on BookState
 	// Extract cost from either ChatResult or OCRResult
@@ -163,9 +179,6 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		case "toc_extract":
 			j.Book.TocExtractFail(MaxBookOpRetries)
 			j.PersistTocExtractState(ctx)
-		case WorkUnitTypePatternAnalysis:
-			j.Book.PatternAnalysisFail(MaxBookOpRetries)
-			j.PersistPatternAnalysisState(ctx)
 		case WorkUnitTypeLinkToc:
 			// Link ToC entry failures - retry individual entry
 			if info.RetryCount < MaxPageOpRetries {
@@ -176,7 +189,9 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 				}
 			}
 			// Permanent failure for this entry - mark as done and continue
-			j.LinkTocEntriesDone++
+			j.Book.IncrementTocLinkEntriesDone()
+			// Persist progress (async - memory is authoritative during execution)
+			common.PersistTocLinkProgressAsync(ctx, j.Book)
 			if logger != nil {
 				logger.Error("link_toc entry failed after retries",
 					"entry_doc_id", info.EntryDocID,
@@ -184,7 +199,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 					"error", result.Error)
 			}
 			// Check if all entries are done
-			if j.LinkTocEntriesDone >= len(j.LinkTocEntries) {
+			total, done := j.Book.GetTocLinkProgress()
+			if done >= total {
 				j.Book.TocLinkComplete()
 				if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocLink); err != nil {
 					if logger != nil {
@@ -253,20 +269,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		if err := j.HandleTocExtractComplete(ctx, result); err != nil {
 			handlerErr = err
 		} else {
-			// ToC extraction complete - check if we should start pattern analysis
+			// ToC extraction complete - check if we should start linking
 			newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
-		}
-
-	case WorkUnitTypePatternAnalysis:
-		units, err := j.HandlePatternAnalysisComplete(ctx, info, result)
-		if err != nil {
-			handlerErr = err
-		} else {
-			newUnits = append(newUnits, units...)
-			// Check if pattern analysis complete - if so, check for book-level operations
-			if j.Book.PatternAnalysisIsComplete() {
-				newUnits = append(newUnits, j.MaybeStartBookOperations(ctx)...)
-			}
 		}
 
 	case WorkUnitTypeLinkToc:
@@ -276,7 +280,8 @@ func (j *Job) OnComplete(ctx context.Context, result jobs.WorkResult) ([]jobs.Wo
 		} else {
 			newUnits = append(newUnits, units...)
 			// Check if all entries are done
-			if j.LinkTocEntriesDone >= len(j.LinkTocEntries) {
+			total, done := j.Book.GetTocLinkProgress()
+			if done >= total {
 				j.Book.TocLinkComplete()
 				if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocLink); err != nil {
 					if logger != nil {
@@ -411,8 +416,8 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		"toc_extract_done":    fmt.Sprintf("%v", j.Book.TocExtractIsDone()),
 		"toc_link_started":    fmt.Sprintf("%v", j.Book.TocLinkIsStarted()),
 		"toc_link_done":       fmt.Sprintf("%v", j.Book.TocLinkIsDone()),
-		"toc_link_entries":    fmt.Sprintf("%d", len(j.LinkTocEntries)),
-		"toc_link_complete":   fmt.Sprintf("%d", j.LinkTocEntriesDone),
+		"toc_link_entries":    fmt.Sprintf("%d", func() int { t, _ := j.Book.GetTocLinkProgress(); return t }()),
+		"toc_link_complete":   fmt.Sprintf("%d", func() int { _, d := j.Book.GetTocLinkProgress(); return d }()),
 		"done":                fmt.Sprintf("%v", j.IsDone),
 	}, nil
 }

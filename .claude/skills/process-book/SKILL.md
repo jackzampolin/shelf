@@ -120,8 +120,8 @@ shelf api agent-logs list --job-id X # Agent logs (if debug enabled)
 
 ### Via DefraDB
 ```graphql
-{ Page(filter: {book_id: {_eq: "<id>"}}) { page_num blend_complete label_complete } }
-{ Book(filter: {_docID: {_eq: "<id>"}}) { metadata_complete pattern_analysis_complete } }
+{ Page(filter: {book_id: {_eq: "<id>"}}) { page_num ocr_complete } }
+{ Book(filter: {_docID: {_eq: "<id>"}}) { metadata_complete toc_finalize_complete } }
 { AgentState(filter: {book_id: {_eq: "<id>"}}) { agent_id agent_type complete } }
 ```
 

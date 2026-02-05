@@ -9,6 +9,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/ingest"
 	"github.com/jackzampolin/shelf/internal/jobs"
+	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
 // CreateExtractWorkUnit creates a CPU work unit to extract a page from PDF.
@@ -40,21 +41,25 @@ func CreateExtractWorkUnit(jc JobContext, pageNum int) (*jobs.WorkUnit, string) 
 	}, unitID
 }
 
-// PersistExtractState saves extraction completion to DefraDB.
-// Returns the commit CID for the update.
+// PersistExtractState saves extraction completion to DefraDB asynchronously.
+// The in-memory state is already updated; DB persistence is fire-and-forget.
 // Returns error if pageDocID is empty or sink is not in context.
 func PersistExtractState(ctx context.Context, book *BookState, pageDocID string) (string, error) {
 	if pageDocID == "" {
 		return "", fmt.Errorf("cannot persist extract state: empty page document ID")
 	}
-	result, err := SendTracked(ctx, book, defra.WriteOp{
+	// Use async send - extract state is not on the critical path
+	// In-memory state tracks completion; DB is just for persistence/recovery
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return "", fmt.Errorf("defra sink not in context")
+	}
+	sink.Send(defra.WriteOp{
 		Collection: "Page",
 		DocID:      pageDocID,
 		Document:   map[string]any{"extract_complete": true},
 		Op:         defra.OpUpdate,
+		Source:     "PersistExtractState",
 	})
-	if err != nil {
-		return "", err
-	}
-	return result.CID, nil
+	return "", nil // CID not available for async writes
 }

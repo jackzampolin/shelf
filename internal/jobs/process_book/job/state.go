@@ -13,6 +13,7 @@ import (
 // Respects pipeline stage toggles (EnableOCR).
 func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *PageState) []jobs.WorkUnit {
 	var units []jobs.WorkUnit
+	logger := svcctx.LoggerFrom(ctx)
 
 	// Check if OCR is needed (only if enabled)
 	if j.Book.EnableOCR {
@@ -21,9 +22,18 @@ func (j *Job) GeneratePageWorkUnits(ctx context.Context, pageNum int, state *Pag
 				unit := j.CreateOcrWorkUnit(ctx, pageNum, provider)
 				if unit != nil {
 					units = append(units, *unit)
+				} else if logger != nil {
+					logger.Warn("GeneratePageWorkUnits: CreateOcrWorkUnit returned nil",
+						"page_num", pageNum,
+						"provider", provider)
 				}
 			}
 		}
+	} else if logger != nil {
+		logger.Debug("GeneratePageWorkUnits: OCR disabled",
+			"page_num", pageNum,
+			"enable_ocr", j.Book.EnableOCR,
+			"ocr_providers", j.Book.OcrProviders)
 	}
 
 	return units
@@ -45,15 +55,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		if err := j.Book.MetadataStart(); err == nil {
 			unit := j.CreateMetadataWorkUnit(ctx)
 			if unit != nil {
-				if err := j.PersistMetadataState(ctx); err != nil {
-					if logger := svcctx.LoggerFrom(ctx); logger != nil {
-						logger.Error("failed to persist metadata state, rolling back",
-							"book_id", j.Book.BookID, "error", err)
-					}
-					j.Book.MetadataReset() // Rollback on failure
-				} else {
-					units = append(units, *unit)
-				}
+				// Use async persist: memory is already updated by MetadataStart(),
+				// fire-and-forget DB write removes latency from critical path
+				j.Book.PersistOpStateAsync(ctx, common.OpMetadata)
+				units = append(units, *unit)
 			} else {
 				j.Book.MetadataReset() // No work unit created, allow retry
 			}
@@ -67,15 +72,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		if err := j.Book.TocFinderStart(); err == nil {
 			unit := j.CreateTocFinderWorkUnit(ctx)
 			if unit != nil {
-				if err := j.PersistTocFinderState(ctx); err != nil {
-					if logger := svcctx.LoggerFrom(ctx); logger != nil {
-						logger.Error("failed to persist toc finder state, rolling back",
-							"book_id", j.Book.BookID, "error", err)
-					}
-					j.Book.TocFinderReset() // Rollback on failure
-				} else {
-					units = append(units, *unit)
-				}
+				// Use async persist: memory is already updated by TocFinderStart(),
+				// fire-and-forget DB write removes latency from critical path
+				j.Book.PersistOpStateAsync(ctx, common.OpTocFinder)
+				units = append(units, *unit)
 			} else {
 				j.Book.TocFinderReset() // No work unit created, allow retry
 			}
@@ -96,15 +96,10 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		if err := j.Book.TocExtractStart(); err == nil {
 			unit := j.CreateTocExtractWorkUnit(ctx)
 			if unit != nil {
-				if err := j.PersistTocExtractState(ctx); err != nil {
-					if logger != nil {
-						logger.Error("failed to persist toc extract state, rolling back",
-							"book_id", j.Book.BookID, "error", err)
-					}
-					j.Book.TocExtractReset() // Rollback on failure
-				} else {
-					units = append(units, *unit)
-				}
+				// Use async persist: memory is already updated by TocExtractStart(),
+				// fire-and-forget DB write removes latency from critical path
+				j.Book.PersistOpStateAsync(ctx, common.OpTocExtract)
+				units = append(units, *unit)
 			} else {
 				j.Book.TocExtractReset() // No work unit created, allow retry
 				if logger != nil {
@@ -116,47 +111,11 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Start pattern analysis after ALL pages have OCR complete
-	// Pattern analysis needs OCR text from ALL pages for cross-page analysis
-	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
-	if j.Book.EnablePatternAnalysis && j.AllPagesOcrComplete() && j.Book.PatternAnalysisCanStart() {
-		logger := svcctx.LoggerFrom(ctx)
-		if logger != nil {
-			logger.Info("all pages OCR complete, starting pattern analysis",
-				"book_id", j.Book.BookID,
-				"total_pages", j.Book.TotalPages)
-		}
-		if err := j.Book.PatternAnalysisStart(); err == nil {
-			patternUnits := j.CreatePatternAnalysisWorkUnits(ctx)
-			if len(patternUnits) > 0 {
-				if err := j.PersistPatternAnalysisState(ctx); err != nil {
-					if logger != nil {
-						logger.Error("failed to persist pattern analysis state, rolling back",
-							"book_id", j.Book.BookID, "error", err)
-					}
-					j.Book.PatternAnalysisReset() // Rollback on failure
-				} else {
-					units = append(units, patternUnits...)
-					if logger != nil {
-						logger.Info("created pattern analysis work units",
-							"count", len(patternUnits))
-					}
-				}
-			} else {
-				j.Book.PatternAnalysisReset() // No work unit created, allow retry
-				if logger != nil {
-					logger.Warn("failed to create pattern analysis work units")
-				}
-			}
-		}
-	}
-
-	// Start ToC linking if extraction is done AND pattern analysis is done (or disabled) AND all pages have OCR complete
+	// Start ToC linking if extraction is done AND all pages have OCR complete
 	// ToC linker needs OCR text to find chapter start pages
 	// IMPORTANT: Call Start() before creating work units to prevent duplicate agents
-	patternReady := !j.Book.EnablePatternAnalysis || j.Book.PatternAnalysisIsComplete()
 	ocrReady := j.AllPagesOcrComplete()
-	if j.Book.EnableTocLink && j.Book.TocExtractIsDone() && patternReady && ocrReady && j.Book.TocLinkCanStart() {
+	if j.Book.EnableTocLink && j.Book.TocExtractIsDone() && ocrReady && j.Book.TocLinkCanStart() {
 		logger := svcctx.LoggerFrom(ctx)
 		if logger != nil {
 			logger.Info("starting ToC link operation",
@@ -166,24 +125,20 @@ func (j *Job) MaybeStartBookOperations(ctx context.Context) []jobs.WorkUnit {
 		if err := j.Book.TocLinkStart(); err == nil {
 			linkUnits := j.CreateLinkTocWorkUnits(ctx)
 			if len(linkUnits) > 0 {
-				if err := j.PersistTocLinkState(ctx); err != nil {
-					j.Book.TocLinkReset() // Rollback on failure
-				} else {
-					units = append(units, linkUnits...)
-					if logger != nil {
-						logger.Info("created link toc work units",
-							"count", len(linkUnits),
-							"entries", len(j.LinkTocEntries))
-					}
+				// Use async persist: memory is already updated by TocLinkStart(),
+				// fire-and-forget DB write removes latency from critical path
+				j.Book.PersistOpStateAsync(ctx, common.OpTocLink)
+				units = append(units, linkUnits...)
+				if logger != nil {
+					logger.Info("created link toc work units",
+						"count", len(linkUnits),
+						"entries", len(j.LinkTocEntries))
 				}
 			} else {
 				// No entries to link - mark as complete
 				j.Book.TocLinkComplete()
-				if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocLink); err != nil {
-					if logger != nil {
-						logger.Warn("failed to persist toc link completion", "error", err)
-					}
-				}
+				// Use async for completion state too
+				j.Book.PersistOpStateAsync(ctx, common.OpTocLink)
 				if logger != nil {
 					logger.Info("no ToC entries to link - marking complete")
 				}
@@ -256,11 +211,6 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 		}
 	}
 
-	// Pattern analysis must be complete or permanently failed (if enabled)
-	if j.Book.EnablePatternAnalysis && !j.Book.PatternAnalysisIsDone() {
-		return
-	}
-
 	// ToC linking depends on extraction being complete
 	// If link enabled but extract disabled/not done, linking is skipped
 	if j.Book.EnableTocLink {
@@ -304,28 +254,22 @@ func (j *Job) CheckCompletion(ctx context.Context) {
 	j.PersistBookStatus(ctx, BookStatusComplete)
 }
 
-// PersistBookStatus persists book status to DefraDB.
-func (j *Job) PersistBookStatus(ctx context.Context, status BookStatus) error {
-	_, err := common.PersistBookStatus(ctx, j.Book, string(status))
-	return err
+// PersistBookStatus persists book status to DefraDB (async - memory is authoritative).
+func (j *Job) PersistBookStatus(ctx context.Context, status BookStatus) {
+	common.PersistBookStatusAsync(ctx, j.Book, string(status))
 }
 
-// PersistMetadataState persists metadata state to DefraDB.
-func (j *Job) PersistMetadataState(ctx context.Context) error {
-	return common.PersistOpState(ctx, j.Book, common.OpMetadata)
+// PersistMetadataState persists metadata state to DefraDB (async - memory is authoritative).
+func (j *Job) PersistMetadataState(ctx context.Context) {
+	common.PersistOpStateAsync(ctx, j.Book, common.OpMetadata)
 }
 
-// PersistTocFinderState persists ToC finder state to DefraDB.
-func (j *Job) PersistTocFinderState(ctx context.Context) error {
-	return common.PersistOpState(ctx, j.Book, common.OpTocFinder)
+// PersistTocFinderState persists ToC finder state to DefraDB (async - memory is authoritative).
+func (j *Job) PersistTocFinderState(ctx context.Context) {
+	common.PersistOpStateAsync(ctx, j.Book, common.OpTocFinder)
 }
 
-// PersistTocExtractState persists ToC extract state to DefraDB.
-func (j *Job) PersistTocExtractState(ctx context.Context) error {
-	return common.PersistOpState(ctx, j.Book, common.OpTocExtract)
-}
-
-// PersistPatternAnalysisState persists pattern analysis state to DefraDB.
-func (j *Job) PersistPatternAnalysisState(ctx context.Context) error {
-	return common.PersistOpState(ctx, j.Book, common.OpPatternAnalysis)
+// PersistTocExtractState persists ToC extract state to DefraDB (async - memory is authoritative).
+func (j *Job) PersistTocExtractState(ctx context.Context) {
+	common.PersistOpStateAsync(ctx, j.Book, common.OpTocExtract)
 }

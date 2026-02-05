@@ -23,14 +23,13 @@ type LoadBookConfig struct {
 	DebugAgents      bool
 
 	// Pipeline stage toggles (all default to false - should be set by variant)
-	EnableOCR             bool
-	EnableMetadata        bool
-	EnableTocFinder       bool
-	EnableTocExtract      bool
-	EnablePatternAnalysis bool
-	EnableTocLink         bool
-	EnableTocFinalize     bool
-	EnableStructure       bool
+	EnableOCR         bool
+	EnableMetadata    bool
+	EnableTocFinder   bool
+	EnableTocExtract  bool
+	EnableTocLink     bool
+	EnableTocFinalize bool
+	EnableStructure   bool
 
 	// Optional prompt resolution
 	// If PromptKeys is non-empty, prompts will be resolved and stored in BookState
@@ -148,7 +147,6 @@ func LoadBook(ctx context.Context, bookID string, cfg LoadBookConfig) (*LoadBook
 	book.EnableMetadata = cfg.EnableMetadata
 	book.EnableTocFinder = cfg.EnableTocFinder
 	book.EnableTocExtract = cfg.EnableTocExtract
-	book.EnablePatternAnalysis = cfg.EnablePatternAnalysis
 	book.EnableTocLink = cfg.EnableTocLink
 	book.EnableTocFinalize = cfg.EnableTocFinalize
 	book.EnableStructure = cfg.EnableStructure
@@ -307,10 +305,11 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 	}
 
 	// Query pages with their related OCR results
+	// Note: _version { cid } omitted because DefraDB returns 500 on empty result sets.
+	// Page CIDs are captured at write time via SendTracked/TrackWrite.
 	query := fmt.Sprintf(`{
 		Page(filter: {book_id: {_eq: "%s"}}) {
 			_docID
-			_version { cid }
 			page_num
 			extract_complete
 			ocr_complete
@@ -359,21 +358,9 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 		state := NewPageState()
 
 		// Use thread-safe setters for all field assignments
-		docID := ""
 		if v, ok := page["_docID"].(string); ok {
-			docID = v
-			state.SetPageDocID(docID)
+			state.SetPageDocID(v)
 		}
-		cid := ""
-		if versions, ok := page["_version"].([]any); ok && len(versions) > 0 {
-			if v, ok := versions[0].(map[string]any); ok {
-				if c, ok := v["cid"].(string); ok && c != "" {
-					cid = c
-					state.SetPageCID(cid)
-				}
-			}
-		}
-		book.trackCIDLocked("Page", docID, cid)
 		if extractComplete, ok := page["extract_complete"].(bool); ok {
 			state.SetExtractDone(extractComplete)
 		}
@@ -484,11 +471,6 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 			metadata_complete
 			metadata_failed
 			metadata_retries
-			pattern_analysis_started
-			pattern_analysis_complete
-			pattern_analysis_failed
-			pattern_analysis_retries
-			page_pattern_analysis_json
 			structure_started
 			structure_complete
 			structure_failed
@@ -510,16 +492,7 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 		if bookData, ok := books[0].(map[string]any); ok {
 			// Load Book-collection operation states via registry
 			loadOpStateFromData(book, OpMetadata, bookData, "metadata")
-			loadOpStateFromData(book, OpPatternAnalysis, bookData, "pattern_analysis")
 			loadOpStateFromData(book, OpStructure, bookData, "structure")
-
-			// Pattern analysis result JSON (not part of standard op state)
-			if paJSON, ok := bookData["page_pattern_analysis_json"].(string); ok && paJSON != "" {
-				var result PagePatternResult
-				if err := json.Unmarshal([]byte(paJSON), &result); err == nil {
-					book.patternAnalysisResult = &result
-				}
-			}
 
 			// Structure phase tracking
 			if sp, ok := bookData["structure_phase"].(string); ok {
@@ -541,11 +514,12 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 	}
 
 	// Check ToC status via Book relationship (ToC doesn't have book_id field)
+	// Note: _version { cid } omitted — DefraDB 500s on empty nested relationships.
+	// ToC CIDs are captured at write time via SendTracked/TrackWrite.
 	tocQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			toc {
 				_docID
-				_version { cid }
 				toc_found
 				finder_started
 				finder_complete
@@ -586,13 +560,6 @@ func LoadBookOperationState(ctx context.Context, book *BookState) (tocDocID stri
 			if toc, ok := bookData["toc"].(map[string]any); ok {
 				if docID, ok := toc["_docID"].(string); ok {
 					tocDocID = docID
-				}
-				if versions, ok := toc["_version"].([]any); ok && len(versions) > 0 {
-					if v, ok := versions[0].(map[string]any); ok {
-						if cid, ok := v["cid"].(string); ok && cid != "" {
-							book.SetTocCID(cid)
-						}
-					}
 				}
 				// Load ToC-collection operation states via registry
 				loadOpStateFromData(book, OpTocFinder, toc, "finder")
@@ -741,7 +708,6 @@ func LoadAgentStates(ctx context.Context, book *BookState) error {
 	query := fmt.Sprintf(`{
 		AgentState(filter: {book_id: {_eq: "%s"}}) {
 			_docID
-			_version { cid }
 			agent_id
 			agent_type
 			entry_doc_id
@@ -777,13 +743,6 @@ func LoadAgentStates(ctx context.Context, book *BookState) error {
 
 		if docID, ok := data["_docID"].(string); ok {
 			state.DocID = docID
-		}
-		if versions, ok := data["_version"].([]any); ok && len(versions) > 0 {
-			if v, ok := versions[0].(map[string]any); ok {
-				if cid, ok := v["cid"].(string); ok && cid != "" {
-					state.CID = cid
-				}
-			}
 		}
 		if agentID, ok := data["agent_id"].(string); ok {
 			state.AgentID = agentID
@@ -873,10 +832,14 @@ func LoadFinalizeState(ctx context.Context, book *BookState, tocDocID string) er
 	bookQuery := fmt.Sprintf(`{
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			pattern_analysis_json
+			finalize_entries_total
 			finalize_entries_complete
 			finalize_entries_found
+			finalize_gaps_total
 			finalize_gaps_complete
 			finalize_gaps_fixes
+			toc_link_entries_total
+			toc_link_entries_done
 		}
 	}`, book.BookID)
 
@@ -908,12 +871,18 @@ func LoadFinalizeState(ctx context.Context, book *BookState, tocDocID string) er
 			}
 
 			// Load progress counters
+			if et, ok := bookData["finalize_entries_total"].(float64); ok {
+				book.SetFinalizeEntriesTotal(int(et))
+			}
 			var entriesComplete, entriesFound, gapsComplete, gapsFixes int
 			if ec, ok := bookData["finalize_entries_complete"].(float64); ok {
 				entriesComplete = int(ec)
 			}
 			if ef, ok := bookData["finalize_entries_found"].(float64); ok {
 				entriesFound = int(ef)
+			}
+			if gt, ok := bookData["finalize_gaps_total"].(float64); ok {
+				book.SetFinalizeGapsTotal(int(gt))
 			}
 			if gc, ok := bookData["finalize_gaps_complete"].(float64); ok {
 				gapsComplete = int(gc)
@@ -922,6 +891,18 @@ func LoadFinalizeState(ctx context.Context, book *BookState, tocDocID string) er
 				gapsFixes = int(gf)
 			}
 			book.SetFinalizeProgress(entriesComplete, entriesFound, gapsComplete, gapsFixes)
+
+			// Load toc link progress counters
+			var tocLinkTotal, tocLinkDone int
+			if t, ok := bookData["toc_link_entries_total"].(float64); ok {
+				tocLinkTotal = int(t)
+			}
+			if d, ok := bookData["toc_link_entries_done"].(float64); ok {
+				tocLinkDone = int(d)
+			}
+			if tocLinkTotal > 0 || tocLinkDone > 0 {
+				book.SetTocLinkProgress(tocLinkTotal, tocLinkDone)
+			}
 		}
 	}
 
@@ -948,7 +929,6 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 	query := fmt.Sprintf(`{
 		Chapter(filter: {book_id: {_eq: "%s"}}, order: {sort_order: ASC}) {
 			_docID
-			_version { cid }
 			unique_key
 			entry_id
 			sort_order
@@ -1000,13 +980,6 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 
 		if docID, ok := data["_docID"].(string); ok {
 			chapter.DocID = docID
-		}
-		if versions, ok := data["_version"].([]any); ok && len(versions) > 0 {
-			if v, ok := versions[0].(map[string]any); ok {
-				if cid, ok := v["cid"].(string); ok && cid != "" {
-					chapter.CID = cid
-				}
-			}
 		}
 		if uniqueKey, ok := data["unique_key"].(string); ok {
 			chapter.UniqueKey = uniqueKey

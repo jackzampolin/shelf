@@ -53,7 +53,6 @@ func (e *GetBookEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 			page_count
 			status
 			created_at
-			page_pattern_analysis_json
 		}
 	}`, id)
 
@@ -85,7 +84,6 @@ func (e *GetBookEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 		Title:               getString(m, "title"),
 		Author:              getString(m, "author"),
 		Status:              getString(m, "status"),
-		PatternAnalysisJSON: getString(m, "page_pattern_analysis_json"),
 	}
 	if pc, ok := m["page_count"].(float64); ok {
 		book.PageCount = int(pc)

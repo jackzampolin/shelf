@@ -93,11 +93,12 @@ func (p *CPUWorkerPool) Type() PoolType {
 func (p *CPUWorkerPool) init(results chan<- workerResult) {
 	p.queue = make(chan *WorkUnit, p.queueSize)
 	p.results = results
+	p.logger.Info("cpu pool init called", "results_channel_ptr", fmt.Sprintf("%p", results))
 }
 
 // Start begins the pool's processing. Blocks until ctx cancelled.
 func (p *CPUWorkerPool) Start(ctx context.Context) {
-	p.logger.Info("pool started")
+	p.logger.Info("cpu pool starting", "queue_nil", p.queue == nil, "results_nil", p.results == nil)
 
 	// Start worker goroutines - all pull from same queue
 	for i := 0; i < p.workerCount; i++ {
@@ -111,15 +112,18 @@ func (p *CPUWorkerPool) Start(ctx context.Context) {
 
 // worker processes work units from the shared queue.
 func (p *CPUWorkerPool) worker(ctx context.Context, id int) {
+	p.logger.Debug("cpu worker started", "worker_id", id)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 
 		case unit := <-p.queue:
+			p.logger.Debug("cpu worker received unit", "worker_id", id, "unit_id", unit.ID, "job_id", unit.JobID)
 			p.inFlight.Add(1)
 			result := p.process(ctx, unit)
 			p.inFlight.Add(-1)
+			p.logger.Debug("cpu worker completed unit", "worker_id", id, "unit_id", unit.ID, "success", result.Success)
 			p.results <- workerResult{
 				JobID:  unit.JobID,
 				Unit:   unit,
@@ -133,8 +137,10 @@ func (p *CPUWorkerPool) worker(ctx context.Context, id int) {
 func (p *CPUWorkerPool) Submit(unit *WorkUnit) error {
 	select {
 	case p.queue <- unit:
+		p.logger.Debug("cpu pool accepted unit", "unit_id", unit.ID, "job_id", unit.JobID, "queue_len", len(p.queue))
 		return nil
 	default:
+		p.logger.Warn("cpu pool queue full", "unit_id", unit.ID, "job_id", unit.JobID)
 		return fmt.Errorf("%w: %s", ErrWorkerQueueFull, p.name)
 	}
 }

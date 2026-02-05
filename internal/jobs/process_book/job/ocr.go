@@ -29,6 +29,22 @@ func (j *Job) CreateOcrWorkUnit(ctx context.Context, pageNum int, provider strin
 // Updates state, persists to DefraDB, and when all OCR is done, stores ocr_markdown
 // directly and triggers book-level operations.
 func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result jobs.WorkResult) ([]jobs.WorkUnit, error) {
+	logger := svcctx.LoggerFrom(ctx)
+	if logger != nil {
+		hasOCRResult := result.OCRResult != nil
+		ocrText := ""
+		if hasOCRResult {
+			ocrText = fmt.Sprintf("%d chars", len(result.OCRResult.Text))
+		}
+		logger.Debug("HandleOcrComplete: entry",
+			"page_num", info.PageNum,
+			"provider", info.Provider,
+			"success", result.Success,
+			"has_ocr_result", hasOCRResult,
+			"ocr_text", ocrText,
+			"error", result.Error)
+	}
+
 	state := j.Book.GetPage(info.PageNum)
 	if state == nil {
 		return nil, fmt.Errorf("no state for page %d", info.PageNum)
@@ -45,7 +61,19 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 	// Use common handler for persistence and state update
 	allDone, err := common.PersistOCRResult(ctx, j.Book, state, j.Book.OcrProviders, info.Provider, result.OCRResult)
 	if err != nil {
+		if logger != nil {
+			logger.Error("HandleOcrComplete: PersistOCRResult failed",
+				"page_num", info.PageNum,
+				"provider", info.Provider,
+				"error", err)
+		}
 		return nil, fmt.Errorf("failed to persist OCR result for page %d provider %s: %w", info.PageNum, info.Provider, err)
+	}
+	if logger != nil {
+		logger.Debug("HandleOcrComplete: persisted",
+			"page_num", info.PageNum,
+			"provider", info.Provider,
+			"all_done", allDone)
 	}
 
 	// If all OCR done, store the text directly as ocr_markdown and trigger book operations
@@ -60,7 +88,7 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 			}
 		}
 
-		// Persist ocr_markdown and headings to page state and DefraDB
+		// Persist ocr_markdown and headings to page state and DefraDB (async)
 		if ocrText != "" {
 			headings := common.ExtractHeadings(ocrText)
 			state.SetOcrMarkdownWithHeadings(ocrText, headings)
@@ -72,15 +100,16 @@ func (j *Job) HandleOcrComplete(ctx context.Context, info WorkUnitInfo, result j
 			} else if logger := svcctx.LoggerFrom(ctx); logger != nil {
 				logger.Warn("failed to marshal headings", "page_num", info.PageNum, "error", err)
 			}
-			if _, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
-				Collection: "Page",
-				DocID:      pageDocID,
-				Document:   update,
-				Op:         defra.OpUpdate,
-			}); err != nil {
-				if logger := svcctx.LoggerFrom(ctx); logger != nil {
-					logger.Warn("failed to persist ocr markdown", "page_num", info.PageNum, "error", err)
-				}
+			// Use async send - in-memory state already has the data
+			sink := svcctx.DefraSinkFrom(ctx)
+			if sink != nil {
+				sink.Send(defra.WriteOp{
+					Collection: "Page",
+					DocID:      pageDocID,
+					Document:   update,
+					Op:         defra.OpUpdate,
+					Source:     "HandleOcrComplete:markdown",
+				})
 			}
 		}
 

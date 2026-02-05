@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/google/uuid"
@@ -50,14 +51,9 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		}
 		return nil
 	}
-	// Use sync write at operation start to ensure state is persisted before continuing
-	if err := common.PersistOpState(ctx, j.Book, common.OpTocFinalize); err != nil {
-		if logger != nil {
-			logger.Error("failed to persist finalize start", "error", err)
-		}
-		j.Book.TocFinalizeReset()
-		return nil
-	}
+	// Use async persist: memory is already updated by TocFinalizeStart(),
+	// fire-and-forget DB write removes latency from critical path
+	j.Book.PersistOpStateAsync(ctx, common.OpTocFinalize)
 
 	// Load linked entries (uses cache if available)
 	entries, err := common.GetOrLoadLinkedEntries(ctx, j.Book, j.TocDocID)
@@ -68,7 +64,7 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 				"error", err)
 		}
 		j.Book.TocFinalizeFail(MaxBookOpRetries)
-		common.PersistOpState(ctx, j.Book, common.OpTocFinalize)
+		j.Book.PersistOpStateAsync(ctx, common.OpTocFinalize)
 		return nil
 	}
 
@@ -98,16 +94,10 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Set phase and persist for crash recovery
+	// Set phase and persist async for crash recovery
+	// Memory is updated by SetFinalizePhase, DB write is fire-and-forget
 	j.Book.SetFinalizePhase(FinalizePhasePattern)
-	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhasePattern)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to persist finalize phase", "phase", FinalizePhasePattern, "error", err)
-		}
-	} else if cid != "" {
-		j.Book.SetTocCID(cid)
-	}
+	j.Book.PersistFinalizePhaseAsync(ctx, FinalizePhasePattern)
 
 	if logger != nil {
 		linkedCount := 0
@@ -121,6 +111,18 @@ func (j *Job) StartFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 			"entries_count", len(entries),
 			"linked_count", linkedCount,
 			"phase", FinalizePhasePattern)
+	}
+
+	// Check if pattern results already exist from a previous attempt (crash recovery).
+	// This avoids re-doing the pattern analysis LLM call when finalize was retried
+	// after a crash during discover or validate phase.
+	if j.loadExistingPatternResults(ctx) {
+		if logger != nil {
+			logger.Info("reusing existing pattern analysis results from previous attempt",
+				"book_id", j.Book.BookID,
+				"entries_to_find", j.Book.GetEntriesToFindCount())
+		}
+		return j.transitionToFinalizeDiscover(ctx)
 	}
 
 	// Create pattern analysis work unit
@@ -256,16 +258,9 @@ func (j *Job) HandleFinalizePatternComplete(ctx context.Context, result jobs.Wor
 				"retry_count", info.RetryCount,
 				"error", result.Error)
 		}
-		// Mark pattern phase as skipped to prevent re-attempts on restart
+		// Mark pattern phase as skipped to prevent re-attempts on restart (async - memory is authoritative)
 		j.Book.SetFinalizePhase(FinalizePhaseDiscover)
-		cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseDiscover)
-		if err != nil {
-			if logger != nil {
-				logger.Error("failed to persist pattern phase skip", "error", err)
-			}
-		} else if cid != "" {
-			j.Book.SetTocCID(cid)
-		}
+		common.PersistFinalizePhaseAsync(ctx, j.Book, FinalizePhaseDiscover)
 		return j.transitionToFinalizeDiscover(ctx), nil
 	}
 
@@ -419,24 +414,24 @@ func (j *Job) generateEntriesToFind(ctx context.Context) {
 func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit {
 	logger := svcctx.LoggerFrom(ctx)
 
-	// Set phase and persist for crash recovery
+	// Set phase and persist for crash recovery (async - memory is authoritative)
 	j.Book.SetFinalizePhase(FinalizePhaseDiscover)
-	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseDiscover)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseDiscover, "error", err)
-		}
-	} else if cid != "" {
-		j.Book.SetTocCID(cid)
-	}
+	common.PersistFinalizePhaseAsync(ctx, j.Book, FinalizePhaseDiscover)
+
+	// Set entries total for progress tracking
+	entriesToFindCount := j.Book.GetEntriesToFindCount()
+	j.Book.SetFinalizeEntriesTotal(entriesToFindCount)
 
 	if logger != nil {
 		logger.Info("transitioning to discover phase",
 			"book_id", j.Book.BookID,
-			"entries_to_find", j.Book.GetEntriesToFindCount())
+			"entries_to_find", entriesToFindCount)
 	}
 
-	if j.Book.GetEntriesToFindCount() == 0 {
+	// Persist progress with totals (async - memory is authoritative)
+	common.PersistFinalizeProgressAsync(ctx, j.Book)
+
+	if entriesToFindCount == 0 {
 		return j.transitionToFinalizeValidate(ctx)
 	}
 
@@ -445,20 +440,72 @@ func (j *Job) transitionToFinalizeDiscover(ctx context.Context) []jobs.WorkUnit 
 
 // createFinalizeDiscoverWorkUnits creates work units for all entries to discover.
 func (j *Job) createFinalizeDiscoverWorkUnits(ctx context.Context) []jobs.WorkUnit {
-	var units []jobs.WorkUnit
+	logger := svcctx.LoggerFrom(ctx)
+	entries := j.Book.GetEntriesToFind()
 
-	for _, entry := range j.Book.GetEntriesToFind() {
-		unit := j.createChapterFinderWorkUnit(ctx, entry)
-		if unit != nil {
-			units = append(units, *unit)
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// Phase 1: Create all agents and collect initial states
+	type agentWithState struct {
+		entry        *common.EntryToFind
+		agent        *agent.Agent
+		initialState *common.AgentState
+	}
+	var agentsToCreate []agentWithState
+
+	for _, entry := range entries {
+		ag, state := j.createChapterFinderAgentWithState(ctx, entry)
+		if ag != nil && state != nil {
+			agentsToCreate = append(agentsToCreate, agentWithState{
+				entry:        entry,
+				agent:        ag,
+				initialState: state,
+			})
+		}
+	}
+
+	if len(agentsToCreate) == 0 {
+		return nil
+	}
+
+	// Phase 2: Batch persist all agent states
+	states := make([]*common.AgentState, len(agentsToCreate))
+	for i, aws := range agentsToCreate {
+		states[i] = aws.initialState
+	}
+	if err := common.PersistAgentStates(ctx, j.Book, states); err != nil {
+		if logger != nil {
+			logger.Warn("failed to batch persist chapter finder agent states", "error", err)
+		}
+	}
+
+	// Phase 3: Store agents and states, then execute tool loops
+	var units []jobs.WorkUnit
+	for _, aws := range agentsToCreate {
+		j.FinalizeDiscoverAgents[aws.entry.Key] = aws.agent
+		j.Book.SetAgentState(aws.initialState)
+
+		// Execute tool loop to get first work unit
+		agentUnits := agents.ExecuteToolLoop(ctx, aws.agent)
+		if len(agentUnits) == 0 {
+			continue
+		}
+
+		// Convert and collect work units
+		jobUnits := j.convertDiscoverAgentUnits(agentUnits, aws.entry.Key)
+		if len(jobUnits) > 0 {
+			units = append(units, jobUnits[0])
 		}
 	}
 
 	return units
 }
 
-// createChapterFinderWorkUnit creates a chapter finder agent work unit.
-func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.EntryToFind) *jobs.WorkUnit {
+// createChapterFinderAgentWithState creates a chapter finder agent and its initial state.
+// Returns the agent and state without persisting - caller is responsible for batching persistence.
+func (j *Job) createChapterFinderAgentWithState(ctx context.Context, entry *common.EntryToFind) (*agent.Agent, *common.AgentState) {
 	logger := svcctx.LoggerFrom(ctx)
 
 	var excludedRanges []chapter_finder.ExcludedRange
@@ -533,9 +580,7 @@ func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.Ent
 		})
 	}
 
-	j.FinalizeDiscoverAgents[entry.Key] = ag
-
-	// Persist initial agent state (async, fire-and-forget)
+	// Build initial state (don't persist yet)
 	exported, _ := ag.ExportState()
 	initialState := &common.AgentState{
 		AgentID:          exported.AgentID,
@@ -548,6 +593,24 @@ func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.Ent
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
+
+	return ag, initialState
+}
+
+// createChapterFinderWorkUnit creates a chapter finder agent work unit.
+// Used for single agent creation (e.g., retries). For batch creation, use createFinalizeDiscoverWorkUnits.
+func (j *Job) createChapterFinderWorkUnit(ctx context.Context, entry *common.EntryToFind) *jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Create agent and initial state
+	ag, initialState := j.createChapterFinderAgentWithState(ctx, entry)
+	if ag == nil || initialState == nil {
+		return nil
+	}
+
+	j.FinalizeDiscoverAgents[entry.Key] = ag
+
+	// Persist single agent state (uses sync write)
 	if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist chapter finder agent state",
@@ -578,10 +641,8 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 	if !ok {
 		j.RemoveWorkUnit(result.WorkUnitID)
 		j.Book.IncrementFinalizeEntriesComplete()
-		// Persist progress immediately after incrementing to ensure crash recovery works
-		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistFinalizeProgressAsync(ctx, j.Book)
 		return j.checkFinalizeDiscoverCompletion(ctx), nil
 	}
 
@@ -597,10 +658,8 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 			return j.retryFinalizeDiscoverUnit(ctx, info)
 		}
 		j.Book.IncrementFinalizeEntriesComplete()
-		// Persist progress immediately after incrementing
-		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistFinalizeProgressAsync(ctx, j.Book)
 		j.RemoveWorkUnit(result.WorkUnitID)
 		if logger != nil {
 			logger.Warn("chapter finder permanently failed",
@@ -654,10 +713,8 @@ func (j *Job) HandleFinalizeDiscoverComplete(ctx context.Context, result jobs.Wo
 		}
 
 		j.Book.IncrementFinalizeEntriesComplete()
-		// Persist progress immediately after incrementing counters
-		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistFinalizeProgressAsync(ctx, j.Book)
 		delete(j.FinalizeDiscoverAgents, info.FinalizeKey)
 	}
 
@@ -678,15 +735,18 @@ func (j *Job) checkFinalizeDiscoverCompletion(ctx context.Context) []jobs.WorkUn
 func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit {
 	logger := svcctx.LoggerFrom(ctx)
 
-	// Set phase and persist for crash recovery
+	// Set phase and persist for crash recovery (async - memory is authoritative)
 	j.Book.SetFinalizePhase(FinalizePhaseValidate)
-	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseValidate)
-	if err != nil {
+	common.PersistFinalizePhaseAsync(ctx, j.Book, FinalizePhaseValidate)
+
+	// Skip gap investigation if pattern analysis found no missing entries
+	// Gaps between chapters are normal chapter content, not missing ToC entries
+	if j.Book.GetEntriesToFindCount() == 0 {
 		if logger != nil {
-			logger.Warn("failed to persist finalize phase", "phase", FinalizePhaseValidate, "error", err)
+			logger.Info("skipping gap investigation - pattern analysis found no missing entries",
+				"book_id", j.Book.BookID)
 		}
-	} else if cid != "" {
-		j.Book.SetTocCID(cid)
+		return j.completeFinalizePhase(ctx)
 	}
 
 	// Find gaps in page coverage
@@ -696,13 +756,20 @@ func (j *Job) transitionToFinalizeValidate(ctx context.Context) []jobs.WorkUnit 
 		}
 	}
 
+	// Set gaps total for progress tracking
+	gapsCount := j.Book.GetFinalizeGapsCount()
+	j.Book.SetFinalizeGapsTotal(gapsCount)
+
 	if logger != nil {
 		logger.Info("transitioning to validate phase",
 			"book_id", j.Book.BookID,
-			"gaps", j.Book.GetFinalizeGapsCount())
+			"gaps", gapsCount)
 	}
 
-	if j.Book.GetFinalizeGapsCount() == 0 {
+	// Persist progress with totals (async - memory is authoritative)
+	common.PersistFinalizeProgressAsync(ctx, j.Book)
+
+	if gapsCount == 0 {
 		return j.completeFinalizePhase(ctx)
 	}
 
@@ -803,20 +870,72 @@ func (j *Job) isPageExcluded(page int) bool {
 
 // createFinalizeGapWorkUnits creates work units for gap investigation.
 func (j *Job) createFinalizeGapWorkUnits(ctx context.Context) []jobs.WorkUnit {
-	var units []jobs.WorkUnit
+	logger := svcctx.LoggerFrom(ctx)
+	gaps := j.Book.GetFinalizeGaps()
 
-	for _, gap := range j.Book.GetFinalizeGaps() {
-		unit := j.createGapInvestigatorWorkUnit(ctx, gap)
-		if unit != nil {
-			units = append(units, *unit)
+	if len(gaps) == 0 {
+		return nil
+	}
+
+	// Phase 1: Create all agents and collect initial states
+	type agentWithState struct {
+		gap          *common.FinalizeGap
+		agent        *agent.Agent
+		initialState *common.AgentState
+	}
+	var agentsToCreate []agentWithState
+
+	for _, gap := range gaps {
+		ag, state := j.createGapInvestigatorAgentWithState(ctx, gap)
+		if ag != nil && state != nil {
+			agentsToCreate = append(agentsToCreate, agentWithState{
+				gap:          gap,
+				agent:        ag,
+				initialState: state,
+			})
+		}
+	}
+
+	if len(agentsToCreate) == 0 {
+		return nil
+	}
+
+	// Phase 2: Batch persist all agent states
+	states := make([]*common.AgentState, len(agentsToCreate))
+	for i, aws := range agentsToCreate {
+		states[i] = aws.initialState
+	}
+	if err := common.PersistAgentStates(ctx, j.Book, states); err != nil {
+		if logger != nil {
+			logger.Warn("failed to batch persist gap investigator agent states", "error", err)
+		}
+	}
+
+	// Phase 3: Store agents and states, then execute tool loops
+	var units []jobs.WorkUnit
+	for _, aws := range agentsToCreate {
+		j.FinalizeGapAgents[aws.gap.Key] = aws.agent
+		j.Book.SetAgentState(aws.initialState)
+
+		// Execute tool loop to get first work unit
+		agentUnits := agents.ExecuteToolLoop(ctx, aws.agent)
+		if len(agentUnits) == 0 {
+			continue
+		}
+
+		// Convert and collect work units
+		jobUnits := j.convertGapAgentUnits(agentUnits, aws.gap.Key)
+		if len(jobUnits) > 0 {
+			units = append(units, jobUnits[0])
 		}
 	}
 
 	return units
 }
 
-// createGapInvestigatorWorkUnit creates a gap investigator agent work unit.
-func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.FinalizeGap) *jobs.WorkUnit {
+// createGapInvestigatorAgentWithState creates a gap investigator agent and its initial state.
+// Returns the agent and state without persisting - caller is responsible for batching persistence.
+func (j *Job) createGapInvestigatorAgentWithState(ctx context.Context, gap *common.FinalizeGap) (*agent.Agent, *common.AgentState) {
 	logger := svcctx.LoggerFrom(ctx)
 
 	agentGap := &gap_investigator.GapInfo{
@@ -896,9 +1015,7 @@ func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.Fin
 		})
 	}
 
-	j.FinalizeGapAgents[gap.Key] = ag
-
-	// Persist initial agent state (async, fire-and-forget)
+	// Build initial state (don't persist yet)
 	exported, _ := ag.ExportState()
 	initialState := &common.AgentState{
 		AgentID:          exported.AgentID,
@@ -911,6 +1028,24 @@ func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.Fin
 		ToolResults:      exported.ToolResults,
 		ResultJSON:       "",
 	}
+
+	return ag, initialState
+}
+
+// createGapInvestigatorWorkUnit creates a gap investigator agent work unit.
+// Used for single agent creation (e.g., retries). For batch creation, use createFinalizeGapWorkUnits.
+func (j *Job) createGapInvestigatorWorkUnit(ctx context.Context, gap *common.FinalizeGap) *jobs.WorkUnit {
+	logger := svcctx.LoggerFrom(ctx)
+
+	// Create agent and initial state
+	ag, initialState := j.createGapInvestigatorAgentWithState(ctx, gap)
+	if ag == nil || initialState == nil {
+		return nil
+	}
+
+	j.FinalizeGapAgents[gap.Key] = ag
+
+	// Persist single agent state (uses sync write)
 	if err := common.PersistAgentState(ctx, j.Book, initialState); err != nil {
 		if logger != nil {
 			logger.Warn("failed to persist gap investigator agent state",
@@ -941,10 +1076,8 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 	if !ok {
 		j.RemoveWorkUnit(result.WorkUnitID)
 		j.Book.IncrementFinalizeGapsComplete()
-		// Persist progress immediately after incrementing
-		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistFinalizeProgressAsync(ctx, j.Book)
 		return j.checkFinalizeValidateCompletion(ctx), nil
 	}
 
@@ -960,10 +1093,8 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 			return j.retryFinalizeGapUnit(ctx, info)
 		}
 		j.Book.IncrementFinalizeGapsComplete()
-		// Persist progress immediately after incrementing
-		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistFinalizeProgressAsync(ctx, j.Book)
 		j.RemoveWorkUnit(result.WorkUnitID)
 		if logger != nil {
 			logger.Warn("gap investigator permanently failed",
@@ -1017,10 +1148,8 @@ func (j *Job) HandleFinalizeGapComplete(ctx context.Context, result jobs.WorkRes
 		}
 
 		j.Book.IncrementFinalizeGapsComplete()
-		// Persist progress immediately after incrementing counters
-		if err := common.PersistFinalizeProgress(ctx, j.Book); err != nil && logger != nil {
-			logger.Warn("failed to persist finalize progress", "error", err)
-		}
+		// Persist progress (async - memory is authoritative during execution)
+		common.PersistFinalizeProgressAsync(ctx, j.Book)
 		delete(j.FinalizeGapAgents, info.FinalizeKey)
 	}
 
@@ -1048,30 +1177,48 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 		}
 	}
 
-	// Persist finalize phase before marking complete
+	// For critical completion operations: sync write BEFORE updating memory.
+	// This ensures memory and DB stay consistent - if write fails, memory is unchanged.
+	// Phase is set first since it's part of the completion state.
 	j.Book.SetFinalizePhase(FinalizePhaseDone)
-	cid, err := common.PersistFinalizePhase(ctx, j.Book, FinalizePhaseDone)
-	if err != nil {
-		if logger != nil {
-			logger.Warn("failed to persist finalize phase", "error", err)
+
+	// Sync write for completion - must succeed before updating memory
+	// Retry with backoff to handle transient failures (without this, job hangs with 0 pending units)
+	var persistErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if _, persistErr = common.PersistOpComplete(ctx, j.Book, common.OpTocFinalize); persistErr == nil {
+			break
 		}
-	} else if cid != "" {
-		j.Book.SetTocCID(cid)
+		if logger != nil {
+			logger.Warn("failed to persist finalize completion, retrying",
+				"attempt", attempt+1,
+				"error", persistErr)
+		}
+		// Brief backoff between retries
+		select {
+		case <-ctx.Done():
+			persistErr = ctx.Err()
+			break
+		case <-time.After(100 * time.Millisecond * time.Duration(attempt+1)):
+		}
 	}
 
-	j.Book.TocFinalizeComplete()
-	// Use sync write for completion to ensure state is persisted before continuing to structure
-	if _, err := common.PersistOpComplete(ctx, j.Book, common.OpTocFinalize); err != nil {
+	if persistErr != nil {
 		if logger != nil {
-			logger.Error("failed to persist finalize completion", "error", err)
+			logger.Error("failed to persist finalize completion after retries - marking as failed",
+				"error", persistErr)
 		}
-		// Roll back in-memory state to match database
-		j.Book.TocFinalizeReset()
-		j.Book.TocFinalizeStart()
-		j.Book.SetFinalizePhase(FinalizePhaseValidate) // Set back to validate phase
-		// Don't continue to structure - return nil to let job retry later
+		// Revert phase and mark as permanently failed so job can complete with errors
+		j.Book.SetFinalizePhase(FinalizePhaseValidate)
+		j.Book.TocFinalizeFail(0) // Mark as failed immediately (0 = exceeded max retries)
 		return nil
 	}
+
+	// NOW mark complete in memory after successful DB write
+	j.Book.TocFinalizeComplete()
+
+	// Fire async phase persist after completion is confirmed
+	common.PersistFinalizePhaseAsync(ctx, j.Book, FinalizePhaseDone)
 
 	if logger != nil {
 		_, entriesFound, _, gapsFixes := j.Book.GetFinalizeProgress()
@@ -1085,38 +1232,89 @@ func (j *Job) completeFinalizePhase(ctx context.Context) []jobs.WorkUnit {
 	return j.MaybeStartStructureInline(ctx)
 }
 
-// Helper functions
+// loadExistingPatternResults checks the DB for pattern_analysis_json from a previous
+// finalize attempt. If found, loads it into BookState and returns true.
+// This allows crash recovery to skip the pattern analysis LLM call.
+func (j *Job) loadExistingPatternResults(ctx context.Context) bool {
+	logger := svcctx.LoggerFrom(ctx)
 
-func buildPagePatternContext(book *common.BookState) *PagePatternContext {
-	ctx := &PagePatternContext{}
-
-	par := book.GetPatternAnalysisResult()
-	if par != nil {
-
-		if par.BodyBoundaries != nil {
-			ctx.BodyStartPage = par.BodyBoundaries.BodyStartPage
-			if par.BodyBoundaries.BodyEndPage != nil {
-				ctx.BodyEndPage = *par.BodyBoundaries.BodyEndPage
-			} else {
-				ctx.BodyEndPage = book.TotalPages
-			}
-			ctx.HasBoundaries = true
+	if err := defra.ValidateID(j.Book.BookID); err != nil {
+		if logger != nil {
+			logger.Error("loadExistingPatternResults: invalid book ID", "book_id", j.Book.BookID, "error", err)
 		}
-
-		for _, cp := range par.ChapterPatterns {
-			detected := types.DetectedChapter{
-				PageNum:       cp.StartPage,
-				RunningHeader: cp.RunningHeader,
-				ChapterTitle:  cp.ChapterTitle,
-				ChapterNumber: cp.ChapterNumber,
-				Source:        types.SourcePatternAnalysis,
-				Confidence:    types.ParseConfidenceLevel(cp.Confidence),
-			}
-			ctx.ChapterPatterns = append(ctx.ChapterPatterns, detected)
-		}
+		return false
 	}
 
-	return ctx
+	defraClient := svcctx.DefraClientFrom(ctx)
+	if defraClient == nil {
+		return false
+	}
+
+	query := fmt.Sprintf(`{
+		Book(filter: {_docID: {_eq: "%s"}}) {
+			pattern_analysis_json
+		}
+	}`, j.Book.BookID)
+
+	resp, err := defraClient.Execute(ctx, query, nil)
+	if err != nil {
+		if logger != nil {
+			logger.Error("loadExistingPatternResults: DB query failed", "book_id", j.Book.BookID, "error", err)
+		}
+		return false
+	}
+
+	books, ok := resp.Data["Book"].([]any)
+	if !ok || len(books) == 0 {
+		return false
+	}
+
+	bookData, ok := books[0].(map[string]any)
+	if !ok {
+		return false
+	}
+
+	paJSON, ok := bookData["pattern_analysis_json"].(string)
+	if !ok || paJSON == "" {
+		return false
+	}
+
+	var data struct {
+		Patterns      []common.DiscoveredPattern `json:"patterns"`
+		Excluded      []common.ExcludedRange     `json:"excluded_ranges"`
+		EntriesToFind []*common.EntryToFind      `json:"entries_to_find"`
+		Reasoning     string                     `json:"reasoning"`
+	}
+	if err := json.Unmarshal([]byte(paJSON), &data); err != nil {
+		if logger != nil {
+			logger.Error("loadExistingPatternResults: failed to parse pattern_analysis_json", "book_id", j.Book.BookID, "error", err)
+		}
+		return false
+	}
+
+	j.Book.SetFinalizePatternResult(&common.FinalizePatternResult{
+		Patterns:  data.Patterns,
+		Excluded:  data.Excluded,
+		Reasoning: data.Reasoning,
+	})
+	j.Book.SetEntriesToFind(data.EntriesToFind)
+
+	if logger != nil {
+		logger.Info("loadExistingPatternResults: reusing saved pattern analysis",
+			"book_id", j.Book.BookID,
+			"patterns", len(data.Patterns),
+			"entries_to_find", len(data.EntriesToFind))
+	}
+
+	return true
+}
+
+// Helper functions
+
+func buildPagePatternContext(_ *common.BookState) *PagePatternContext {
+	// Early pattern analysis has been removed - return empty context.
+	// Body boundaries will be derived from ToC entries in StartFinalizePhase.
+	return &PagePatternContext{}
 }
 
 func (j *Job) loadCandidateHeadings() []*candidateHeading {
@@ -1150,26 +1348,9 @@ type candidateHeading struct {
 }
 
 func (j *Job) loadChapterStartPages(_ context.Context) ([]types.ChapterStartPage, error) {
-	// Derive chapter start pages from pattern analysis ChapterPatterns data.
-	// This replaces the old approach of querying is_chapter_start (a label field).
-	patternResult := j.Book.GetPatternAnalysisResult()
-	if patternResult == nil {
-		return nil, nil
-	}
-
-	var result []types.ChapterStartPage
-	for _, cp := range patternResult.ChapterPatterns {
-		result = append(result, types.ChapterStartPage{
-			PageNum:       cp.StartPage,
-			RunningHeader: cp.RunningHeader,
-		})
-	}
-
-	sort.Slice(result, func(i, k int) bool {
-		return result[i].PageNum < result[k].PageNum
-	})
-
-	return result, nil
+	// Early pattern analysis has been removed - return nil.
+	// Chapter start pages will be derived from linked ToC entries during finalize.
+	return nil, nil
 }
 
 func (j *Job) convertEntriesForPattern(entries []*common.LinkedTocEntry) []pattern_analyzer.LinkedEntry {
@@ -1535,30 +1716,24 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 		return *entries[i].ActualPage < *entries[k].ActualPage
 	})
 
-	var updatedCount int
-	var firstErr error
+	var ops []defra.WriteOp
 	for i, entry := range entries {
 		newSortOrder := (i + 1) * 100
 		if entry.SortOrder != newSortOrder {
-			if _, err := common.SendTracked(ctx, j.Book, defra.WriteOp{
+			ops = append(ops, defra.WriteOp{
 				Collection: "TocEntry",
 				DocID:      entry.DocID,
 				Document: map[string]any{
 					"sort_order": newSortOrder,
 				},
 				Op: defra.OpUpdate,
-			}); err != nil {
-				if firstErr == nil {
-					firstErr = err
-				}
-				if logger := svcctx.LoggerFrom(ctx); logger != nil {
-					logger.Warn("failed to re-sort ToC entry",
-						"entry_doc_id", entry.DocID,
-						"error", err)
-				}
-				continue
-			}
-			updatedCount++
+			})
+		}
+	}
+
+	if len(ops) > 0 {
+		if _, err := common.SendManyTracked(ctx, j.Book, ops); err != nil {
+			return fmt.Errorf("failed to batch re-sort ToC entries: %w", err)
 		}
 	}
 
@@ -1566,10 +1741,10 @@ func (j *Job) resortEntriesByPage(ctx context.Context) error {
 		logger.Info("re-sorted ToC entries by page",
 			"toc_doc_id", j.TocDocID,
 			"entry_count", len(entries),
-			"updated", updatedCount)
+			"updated", len(ops))
 	}
 
-	return firstErr
+	return nil
 }
 
 func (j *Job) convertDiscoverAgentUnits(agentUnits []agent.WorkUnit, entryKey string) []jobs.WorkUnit {
@@ -1675,40 +1850,30 @@ func (j *Job) retryFinalizeGapUnit(ctx context.Context, info WorkUnitInfo) ([]jo
 // --- Finalize Agent State Cleanup ---
 
 // cleanupFinalizeDiscoverAgentState removes chapter finder agent state after completion.
+// Uses async delete to avoid blocking the critical path.
+// Skips DB cleanup if debug logging was disabled (no agent state was created).
 func (j *Job) cleanupFinalizeDiscoverAgentState(ctx context.Context, entryKey string) {
-	logger := svcctx.LoggerFrom(ctx)
 	existing := j.Book.GetAgentState(common.AgentTypeChapterFinder, entryKey)
 	if existing != nil && existing.AgentID != "" {
-		// Delete by agent_id since we don't have DocID from async create
-		if err := common.DeleteAgentStateByAgentID(ctx, existing.AgentID); err != nil {
-			if logger != nil {
-				logger.Error("failed to delete agent state from DB, orphaned record remains",
-					"agent_id", existing.AgentID,
-					"agent_type", common.AgentTypeChapterFinder,
-					"entry_key", entryKey,
-					"book_id", j.Book.BookID,
-					"error", err)
-			}
+		// Only cleanup DB if debug logging was enabled (agent state was persisted)
+		if j.Book.DebugAgents {
+			// Async delete - fire and forget to avoid blocking critical path
+			common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
 		}
 	}
 	j.Book.RemoveAgentState(common.AgentTypeChapterFinder, entryKey)
 }
 
 // cleanupFinalizeGapAgentState removes gap investigator agent state after completion.
+// Uses async delete to avoid blocking the critical path.
+// Skips DB cleanup if debug logging was disabled (no agent state was created).
 func (j *Job) cleanupFinalizeGapAgentState(ctx context.Context, gapKey string) {
-	logger := svcctx.LoggerFrom(ctx)
 	existing := j.Book.GetAgentState(common.AgentTypeGapInvestigator, gapKey)
 	if existing != nil && existing.AgentID != "" {
-		// Delete by agent_id since we don't have DocID from async create
-		if err := common.DeleteAgentStateByAgentID(ctx, existing.AgentID); err != nil {
-			if logger != nil {
-				logger.Error("failed to delete agent state from DB, orphaned record remains",
-					"agent_id", existing.AgentID,
-					"agent_type", common.AgentTypeGapInvestigator,
-					"gap_key", gapKey,
-					"book_id", j.Book.BookID,
-					"error", err)
-			}
+		// Only cleanup DB if debug logging was enabled (agent state was persisted)
+		if j.Book.DebugAgents {
+			// Async delete - fire and forget to avoid blocking critical path
+			common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
 		}
 	}
 	j.Book.RemoveAgentState(common.AgentTypeGapInvestigator, gapKey)

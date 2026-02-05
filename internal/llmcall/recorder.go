@@ -46,6 +46,7 @@ func (r *Recorder) Record(result *providers.ChatResult, opts RecordOptions) {
 		Op:         defra.OpCreate,
 		Collection: "LLMCall",
 		Document:   call.ToMap(),
+		Source:     "Recorder:Record",
 	})
 }
 
@@ -65,5 +66,6 @@ func (r *Recorder) RecordCall(call *Call) {
 		Op:         defra.OpCreate,
 		Collection: "LLMCall",
 		Document:   call.ToMap(),
+		Source:     "Recorder:RecordCall",
 	})
 }

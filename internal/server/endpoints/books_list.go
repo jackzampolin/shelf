@@ -22,7 +22,6 @@ type Book struct {
 	PageCount             int    `json:"page_count"`
 	Status                string `json:"status"`
 	CreatedAt             string `json:"created_at"`
-	PatternAnalysisJSON   string `json:"page_pattern_analysis_json,omitempty"`
 }
 
 // ListBooksEndpoint handles GET /api/books.

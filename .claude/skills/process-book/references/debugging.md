@@ -95,12 +95,6 @@ State is stored in DefraDB and can be queried directly via GraphQL.
     metadata_failed
     metadata_retries
 
-    # Pattern analysis
-    pattern_analysis_started
-    pattern_analysis_complete
-    pattern_analysis_failed
-    page_pattern_analysis_json
-
     # Structure
     structure_started
     structure_complete

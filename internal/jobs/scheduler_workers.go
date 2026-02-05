@@ -18,16 +18,28 @@ func (s *Scheduler) RegisterFactory(jobType string, factory JobFactory) {
 }
 
 // RegisterPool adds a worker pool to the scheduler.
-// Must be called before Start.
+// If the scheduler is already running, the pool is started immediately.
 func (s *Scheduler) RegisterPool(p WorkerPool) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// Initialize pool with shared results channel
 	p.init(s.results)
 
 	s.pools[p.Name()] = p
+	running := s.running
+	ctx := s.ctx
+	s.mu.Unlock()
+
 	s.logger.Info("pool registered", "name", p.Name(), "type", p.Type())
+
+	// If scheduler already running, start pool immediately.
+	if running {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		go p.Start(ctx)
+		s.logger.Info("pool started after scheduler already running", "name", p.Name(), "type", p.Type())
+	}
 }
 
 // InitFromRegistry creates pools from all providers in the registry.
@@ -134,7 +146,6 @@ func (s *Scheduler) InitCPUPool(workerCount int) *CPUWorkerPool {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	pool := NewCPUWorkerPool(CPUWorkerPoolConfig{
 		Name:        "cpu",
@@ -145,8 +156,20 @@ func (s *Scheduler) InitCPUPool(workerCount int) *CPUWorkerPool {
 
 	s.cpuPool = pool
 	s.pools["cpu"] = pool
+	running := s.running
+	ctx := s.ctx
+	s.mu.Unlock()
 
 	s.logger.Info("initialized CPU pool", "workers", workerCount)
+
+	// If scheduler already running, start pool immediately.
+	if running {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		go pool.Start(ctx)
+		s.logger.Info("cpu pool started after scheduler already running", "workers", workerCount)
+	}
 	return pool
 }
 

@@ -25,14 +25,13 @@ type Config struct {
 
 	// Pipeline stage toggles (all default to true for standard processing)
 	// When disabled, the stage is skipped entirely.
-	EnableOCR             bool // Run OCR on pages (required for text-based stages)
-	EnableMetadata        bool // Extract book metadata
-	EnableTocFinder       bool // Find ToC pages
-	EnableTocExtract      bool // Extract ToC entries
-	EnablePatternAnalysis bool // Analyze page patterns
-	EnableTocLink         bool // Link ToC entries to pages
-	EnableTocFinalize     bool // Run finalize phase (pattern/discover/gap)
-	EnableStructure       bool // Build chapter structure
+	EnableOCR         bool // Run OCR on pages (required for text-based stages)
+	EnableMetadata    bool // Extract book metadata
+	EnableTocFinder   bool // Find ToC pages
+	EnableTocExtract  bool // Extract ToC entries
+	EnableTocLink     bool // Link ToC entries to pages
+	EnableTocFinalize bool // Run finalize phase (pattern/discover/gap)
+	EnableStructure   bool // Build chapter structure
 }
 
 // PipelineVariant represents a predefined pipeline configuration.
@@ -77,7 +76,6 @@ func (c *Config) ApplyVariant(variant PipelineVariant) {
 		c.EnableMetadata = true
 		c.EnableTocFinder = false
 		c.EnableTocExtract = false
-		c.EnablePatternAnalysis = false
 		c.EnableTocLink = false
 		c.EnableTocFinalize = false
 		c.EnableStructure = false
@@ -88,7 +86,6 @@ func (c *Config) ApplyVariant(variant PipelineVariant) {
 		c.EnableMetadata = true
 		c.EnableTocFinder = false
 		c.EnableTocExtract = false
-		c.EnablePatternAnalysis = false
 		c.EnableTocLink = false
 		c.EnableTocFinalize = false
 		c.EnableStructure = false
@@ -99,7 +96,6 @@ func (c *Config) ApplyVariant(variant PipelineVariant) {
 		c.EnableMetadata = false
 		c.EnableTocFinder = false
 		c.EnableTocExtract = false
-		c.EnablePatternAnalysis = false
 		c.EnableTocLink = false
 		c.EnableTocFinalize = false
 		c.EnableStructure = false
@@ -110,7 +106,6 @@ func (c *Config) ApplyVariant(variant PipelineVariant) {
 		c.EnableMetadata = true
 		c.EnableTocFinder = true
 		c.EnableTocExtract = true
-		c.EnablePatternAnalysis = true
 		c.EnableTocLink = true
 		c.EnableTocFinalize = true
 		c.EnableStructure = true
@@ -261,14 +256,13 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 		DebugAgents:      cfg.DebugAgents,
 		PromptKeys:       pjob.PromptKeys(),
 		// Pipeline stage toggles
-		EnableOCR:             cfg.EnableOCR,
-		EnableMetadata:        cfg.EnableMetadata,
-		EnableTocFinder:       cfg.EnableTocFinder,
-		EnableTocExtract:      cfg.EnableTocExtract,
-		EnablePatternAnalysis: cfg.EnablePatternAnalysis,
-		EnableTocLink:         cfg.EnableTocLink,
-		EnableTocFinalize:     cfg.EnableTocFinalize,
-		EnableStructure:       cfg.EnableStructure,
+		EnableOCR:         cfg.EnableOCR,
+		EnableMetadata:    cfg.EnableMetadata,
+		EnableTocFinder:   cfg.EnableTocFinder,
+		EnableTocExtract:  cfg.EnableTocExtract,
+		EnableTocLink:     cfg.EnableTocLink,
+		EnableTocFinalize: cfg.EnableTocFinalize,
+		EnableStructure:   cfg.EnableStructure,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to load book: %w", err)

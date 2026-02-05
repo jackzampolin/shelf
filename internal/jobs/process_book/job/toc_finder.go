@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/agent"
@@ -225,47 +226,70 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 		// Clean up agent state from BookState and DB
 		j.cleanupTocFinderAgentState(ctx)
 
-		j.Book.TocFinderComplete()
 		agentResult := j.TocAgent.Result()
 
+		// Check if ToC was found
+		tocFound := false
 		if agentResult != nil && agentResult.Success {
-			// Save result to DefraDB
 			if tocResult, ok := agentResult.ToolResult.(*toc_finder.Result); ok {
-				cid, err := common.SaveTocFinderResult(ctx, j.TocDocID, tocResult)
-				if err != nil {
-					return nil, fmt.Errorf("failed to save ToC finder result: %w", err)
-				}
-				if cid != "" {
-					j.Book.SetTocCID(cid)
-					j.Book.SetOperationCID(common.OpTocFinder, cid)
-				}
-				if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, cid); err != nil {
-					if logger != nil {
-						logger.Warn("failed to update metric output ref", "error", err)
-					}
-				}
-				// Update in-memory state using thread-safe accessor
-				if tocResult.ToCPageRange != nil {
-					j.Book.SetTocResult(tocResult.ToCFound, tocResult.ToCPageRange.StartPage, tocResult.ToCPageRange.EndPage)
-				} else {
-					j.Book.SetTocFound(tocResult.ToCFound)
-				}
+				tocFound = tocResult.ToCFound
 			}
-		} else {
-			// Agent failed or no ToC found - mark finder as done with no ToC
-			j.Book.SetTocFound(false)
-			cid, err := common.SaveTocFinderNoResult(ctx, j.TocDocID)
-			if err != nil {
-				return nil, err
-			}
-			if cid != "" {
-				j.Book.SetTocCID(cid)
-				j.Book.SetOperationCID(common.OpTocFinder, cid)
-			}
-			if err := common.UpdateMetricOutputRef(ctx, result.MetricDocID, "ToC", j.TocDocID, cid); err != nil {
+		}
+
+		// If ToC not found, retry or fail
+		if !tocFound {
+			// Check if we should retry
+			exceededRetries := j.Book.TocFinderFail(MaxBookOpRetries)
+			if exceededRetries {
+				// All retries exhausted - fail the job
 				if logger != nil {
-					logger.Warn("failed to update metric output ref", "error", err)
+					logger.Error("ToC finder failed to find ToC after max retries - aborting job",
+						"book_id", j.Book.BookID,
+						"retries", MaxBookOpRetries)
 				}
+				j.Book.SetTocFound(false)
+				j.PersistTocFinderState(ctx)
+				return nil, fmt.Errorf("ToC finder failed to find table of contents after %d attempts - this book may not have a ToC or it could not be detected", MaxBookOpRetries)
+			}
+
+			// Retry - reset agent and create new work unit
+			if logger != nil {
+				logger.Warn("ToC finder did not find ToC - retrying",
+					"book_id", j.Book.BookID,
+					"retry_count", j.Book.GetTocFinderState().Retries())
+			}
+			j.TocAgent = nil // Reset agent for fresh start
+			j.cleanupTocFinderAgentState(ctx)
+			// Persist retry counter to DB for crash recovery (async - memory is authoritative)
+			j.PersistTocFinderState(ctx)
+			unit := j.CreateTocFinderWorkUnit(ctx)
+			if unit != nil {
+				return []jobs.WorkUnit{*unit}, nil
+			}
+			// If we can't create a work unit, fail
+			return nil, fmt.Errorf("failed to create ToC finder retry work unit")
+		}
+
+		// ToC was found - mark complete and save result
+		j.Book.TocFinderComplete()
+		if agentResult != nil && agentResult.Success {
+			if tocResult, ok := agentResult.ToolResult.(*toc_finder.Result); ok {
+				// Use async persist: updates memory immediately, fires DB write without blocking
+				// This removes DB latency from the toc_finder -> toc_extract transition
+				var startPage, endPage int
+				if tocResult.ToCPageRange != nil {
+					startPage = tocResult.ToCPageRange.StartPage
+					endPage = tocResult.ToCPageRange.EndPage
+				}
+				j.Book.PersistTocFinderResultAsync(ctx, tocResult.ToCFound, startPage, endPage, tocResult.StructureSummary)
+
+				// Fire-and-forget metric update (non-critical, use background context)
+				go func(metricDocID, tocDocID string) {
+					if err := common.UpdateMetricOutputRef(context.Background(), metricDocID, "ToC", tocDocID, ""); err != nil {
+						slog.Warn("failed to update metric output ref", "error", err,
+							"metric_doc_id", metricDocID, "toc_doc_id", tocDocID)
+					}
+				}(result.MetricDocID, j.TocDocID)
 			}
 		}
 
@@ -278,19 +302,15 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 }
 
 // cleanupTocFinderAgentState removes ToC finder agent state after completion.
+// Uses async delete to avoid blocking the critical path.
+// Skips DB cleanup if debug logging was disabled (no agent state was created).
 func (j *Job) cleanupTocFinderAgentState(ctx context.Context) {
-	logger := svcctx.LoggerFrom(ctx)
 	existing := j.Book.GetAgentState(AgentTypeTocFinder, "")
 	if existing != nil && existing.AgentID != "" {
-		// Delete by agent_id since we don't have DocID from async create
-		if err := common.DeleteAgentStateByAgentID(ctx, existing.AgentID); err != nil {
-			if logger != nil {
-				logger.Error("failed to delete agent state from DB, orphaned record remains",
-					"agent_id", existing.AgentID,
-					"agent_type", AgentTypeTocFinder,
-					"book_id", j.Book.BookID,
-					"error", err)
-			}
+		// Only cleanup DB if debug logging was enabled (agent state was persisted)
+		if j.Book.DebugAgents {
+			// Async delete - fire and forget to avoid blocking critical path
+			common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
 		}
 	}
 	j.Book.RemoveAgentState(AgentTypeTocFinder, "")

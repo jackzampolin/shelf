@@ -59,13 +59,12 @@ const MaxPageOpRetries = 10
 
 // WorkUnitType constants for type-safe work unit handling.
 const (
-	WorkUnitTypeExtract         = "extract"
-	WorkUnitTypeOCR             = "ocr"
-	WorkUnitTypeMetadata        = "metadata"
-	WorkUnitTypeTocFinder       = "toc_finder"
-	WorkUnitTypeTocExtract      = "toc_extract"
-	WorkUnitTypePatternAnalysis = "pattern_analysis"
-	WorkUnitTypeLinkToc         = "link_toc"
+	WorkUnitTypeExtract    = "extract"
+	WorkUnitTypeOCR        = "ocr"
+	WorkUnitTypeMetadata   = "metadata"
+	WorkUnitTypeTocFinder  = "toc_finder"
+	WorkUnitTypeTocExtract = "toc_extract"
+	WorkUnitTypeLinkToc    = "link_toc"
 
 	// Finalize ToC work unit types
 	WorkUnitTypeFinalizePattern  = "finalize_pattern"
@@ -105,9 +104,6 @@ type WorkUnitInfo struct {
 	RetryCount int    // number of times this work unit has been retried
 	EntryDocID string // for link_toc units - which ToC entry this belongs to
 
-	// Pattern analysis fields
-	PatternAnalysisSubtype string // page_numbers, chapters, boundaries
-
 	// Finalize ToC fields
 	FinalizePhase string // pattern, discover, validate
 	FinalizeKey   string // entry key or gap key
@@ -135,9 +131,9 @@ type Job struct {
 	TocDocID string
 
 	// Link ToC entry agents (one per ToC entry)
+	// Progress counter is on BookState (GetTocLinkProgress/SetTocLinkProgress) for crash recovery
 	LinkTocEntries     []*toc_entry_finder.TocEntry
 	LinkTocEntryAgents map[string]*agent.Agent // keyed by entry DocID
-	LinkTocEntriesDone int                     // count of completed entries
 
 	// Finalize ToC agent maps (can't be on BookState due to circular imports)
 	// Data state (PatternResult, EntriesToFind, Gaps) is on BookState

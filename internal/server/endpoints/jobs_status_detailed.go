@@ -73,6 +73,7 @@ type MetadataStatus struct {
 // BookMetadata contains extracted book metadata.
 type BookMetadata struct {
 	Title           string   `json:"title,omitempty"`
+	Subtitle        string   `json:"subtitle,omitempty"`
 	Author          string   `json:"author,omitempty"`
 	Authors         []string `json:"authors,omitempty"`
 	ISBN            string   `json:"isbn,omitempty"`
@@ -82,6 +83,7 @@ type BookMetadata struct {
 	Language        string   `json:"language,omitempty"`
 	Description     string   `json:"description,omitempty"`
 	Subjects        []string `json:"subjects,omitempty"`
+	CoverPage       int      `json:"cover_page,omitempty"`
 }
 
 // ToCStatus represents ToC finding and extraction status.
@@ -327,6 +329,7 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 		Book(filter: {_docID: {_eq: "%s"}}) {
 			page_count
 			title
+			subtitle
 			author
 			isbn
 			lccn
@@ -334,11 +337,10 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			publication_year
 			language
 			description
+			cover_page
 			metadata_started
 			metadata_complete
 			metadata_failed
-			pattern_analysis_started
-			pattern_analysis_complete
 			structure_started
 			structure_complete
 			structure_failed
@@ -349,6 +351,12 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			structure_chapters_extracted
 			structure_chapters_polished
 			structure_polish_failed
+			finalize_entries_total
+			finalize_entries_complete
+			finalize_entries_found
+			finalize_gaps_total
+			finalize_gaps_complete
+			finalize_gaps_fixes
 		}
 	}`, bookID)
 
@@ -374,16 +382,18 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 				resp.Metadata.Failed = v
 			}
 
-			// Pattern Analysis status
-			if v, ok := book["pattern_analysis_complete"].(bool); ok {
-				resp.Stages.PatternAnalysis.Complete = v
-			}
+			// Note: The old pattern_analysis stage was removed from the pipeline.
+			// Pattern analysis now happens as part of finalize_toc and is tracked via
+			// resp.ToC.PatternComplete (set from pattern_analysis_json existence).
 
 			// If metadata is complete, include the data
 			if resp.Metadata.Complete {
 				resp.Metadata.Data = &BookMetadata{}
 				if v, ok := book["title"].(string); ok {
 					resp.Metadata.Data.Title = v
+				}
+				if v, ok := book["subtitle"].(string); ok {
+					resp.Metadata.Data.Subtitle = v
 				}
 				if v, ok := book["author"].(string); ok {
 					resp.Metadata.Data.Author = v
@@ -405,6 +415,9 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 				}
 				if v, ok := book["description"].(string); ok {
 					resp.Metadata.Data.Description = v
+				}
+				if v, ok := book["cover_page"].(float64); ok {
+					resp.Metadata.Data.CoverPage = int(v)
 				}
 			}
 
@@ -438,8 +451,34 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 				resp.Structure.PolishFailed = int(v)
 			}
 
-			// Parse pattern_analysis_json for finalize_toc sub-phase tracking
+			// Finalize progress tracking
+			var finalizeEntriesTotal, finalizeEntriesComplete, finalizeEntriesFound int
+			var finalizeGapsTotal, finalizeGapsComplete, finalizeGapsFixes int
+			if v, ok := book["finalize_entries_total"].(float64); ok {
+				finalizeEntriesTotal = int(v)
+			}
+			if v, ok := book["finalize_entries_complete"].(float64); ok {
+				finalizeEntriesComplete = int(v)
+			}
+			if v, ok := book["finalize_entries_found"].(float64); ok {
+				finalizeEntriesFound = int(v)
+			}
+			if v, ok := book["finalize_gaps_total"].(float64); ok {
+				finalizeGapsTotal = int(v)
+			}
+			if v, ok := book["finalize_gaps_complete"].(float64); ok {
+				finalizeGapsComplete = int(v)
+			}
+			if v, ok := book["finalize_gaps_fixes"].(float64); ok {
+				finalizeGapsFixes = int(v)
+			}
+			_ = finalizeEntriesFound // Tracked in DB, completion uses finalizeEntriesTotal
+			_ = finalizeGapsFixes    // Used for future gap fix tracking
+
+			// Parse pattern_analysis_json for finalize_toc sub-phase tracking details
+			// Pattern complete is determined by existence of pattern_analysis_json (from finalize_toc)
 			if patternJSON, ok := book["pattern_analysis_json"].(string); ok && patternJSON != "" {
+				resp.ToC.PatternComplete = true
 				var patternData struct {
 					Reasoning     string `json:"reasoning"`
 					Patterns      []struct {
@@ -459,7 +498,6 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 					EntriesToFind []struct{} `json:"entries_to_find"`
 				}
 				if err := json.Unmarshal([]byte(patternJSON), &patternData); err == nil {
-					resp.ToC.PatternComplete = true
 					resp.ToC.PatternsFound = len(patternData.Patterns)
 					resp.ToC.ExcludedRanges = len(patternData.ExcludedRanges)
 					resp.ToC.EntriesToFind = len(patternData.EntriesToFind)
@@ -487,6 +525,32 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 						})
 					}
 					resp.ToC.PatternAnalysis = result
+				}
+			}
+
+			// Set DiscoverComplete and ValidateComplete based on finalize progress
+			// DiscoverComplete: pattern analysis done AND all entries discovered (complete >= total)
+			if resp.ToC.PatternComplete {
+				if finalizeEntriesTotal == 0 {
+					// No entries to find - discover phase is trivially complete
+					resp.ToC.DiscoverComplete = true
+				} else if finalizeEntriesComplete >= finalizeEntriesTotal {
+					// All entries have been processed
+					resp.ToC.DiscoverComplete = true
+				}
+			}
+
+			// ValidateComplete: discover is complete AND all gaps processed (complete >= total)
+			if resp.ToC.DiscoverComplete {
+				if resp.ToC.FinalizeComplete {
+					// Overall finalize done means validation is done
+					resp.ToC.ValidateComplete = true
+				} else if finalizeGapsTotal == 0 {
+					// No gaps to validate - trivially complete
+					resp.ToC.ValidateComplete = true
+				} else if finalizeGapsComplete >= finalizeGapsTotal {
+					// All gaps have been processed
+					resp.ToC.ValidateComplete = true
 				}
 			}
 		}
@@ -519,29 +583,23 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 		}
 	}
 
-	// Query OCR results for per-provider progress
-	ocrQuery := fmt.Sprintf(`{
-		OcrResult(filter: {page: {book_id: {_eq: "%s"}}}) {
-			provider
-		}
-	}`, bookID)
-
-	ocrResp, err := client.Execute(ctx, ocrQuery, nil)
-	if err == nil {
-		providerCounts := make(map[string]int)
-		if results, ok := ocrResp.Data["OcrResult"].([]any); ok {
-			for _, r := range results {
-				if result, ok := r.(map[string]any); ok {
-					if provider, ok := result["provider"].(string); ok {
-						providerCounts[provider]++
-					}
+	// Populate per-provider OCR progress from metrics (OcrResult collection
+	// is no longer used after Mistral-only consolidation)
+	metricsQueryForProgress := svcctx.MetricsQueryFrom(ctx)
+	if metricsQueryForProgress != nil {
+		ocrMetrics, err := metricsQueryForProgress.List(ctx, metrics.Filter{BookID: bookID, Stage: "ocr"}, 0)
+		if err == nil {
+			providerCounts := make(map[string]int)
+			for _, m := range ocrMetrics {
+				if m.Success {
+					providerCounts[m.Provider]++
 				}
 			}
-		}
-		for provider, count := range providerCounts {
-			resp.OcrProgress[provider] = ProviderProgress{
-				Complete: count,
-				Total:    resp.TotalPages,
+			for provider, count := range providerCounts {
+				resp.OcrProgress[provider] = ProviderProgress{
+					Complete: count,
+					Total:    resp.TotalPages,
+				}
 			}
 		}
 	}
@@ -693,15 +751,8 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 		}
 	}
 
-	// Set DiscoverComplete and ValidateComplete based on state
-	// DiscoverComplete: pattern analysis done AND all entries discovered (or no entries to find)
-	if resp.ToC.PatternComplete {
-		if resp.ToC.EntriesToFind == 0 || resp.ToC.EntriesDiscovered >= resp.ToC.EntriesToFind {
-			resp.ToC.DiscoverComplete = true
-		}
-	}
-	// ValidateComplete: finalize is complete (gap validation finished)
-	resp.ToC.ValidateComplete = resp.ToC.FinalizeComplete
+	// DiscoverComplete and ValidateComplete are now set inside the book parsing block
+	// where we have access to finalize progress tracking fields
 
 	// Query chapter count for structure status
 	if resp.Structure.Complete {
@@ -717,43 +768,56 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 		}
 	}
 
-	// Query costs from metrics
+	// Query costs from metrics using stage-based breakdown
 	metricsQuery := svcctx.MetricsQueryFrom(ctx)
 	if metricsQuery != nil {
-		if costByOp, err := metricsQuery.CostByOperationType(ctx, metrics.Filter{BookID: bookID}); err == nil {
-			// OCR costs by provider
-			for provider := range resp.OcrProgress {
-				if cost, ok := costByOp[provider]; ok {
-					resp.Stages.OCR.CostByProvider[provider] = cost
-					resp.Stages.OCR.TotalCostUSD += cost
-					if prog, ok := resp.OcrProgress[provider]; ok {
-						prog.CostUSD = cost
-						resp.OcrProgress[provider] = prog
+		costByStage, err := metricsQuery.BookStageBreakdown(ctx, bookID)
+		if err != nil {
+			logger := svcctx.LoggerFrom(ctx)
+			if logger != nil {
+				logger.Warn("failed to query cost breakdown", "book_id", bookID, "error", err)
+			}
+		} else {
+			// OCR total cost from stage breakdown
+			if ocrCost, ok := costByStage["ocr"]; ok {
+				resp.Stages.OCR.TotalCostUSD = ocrCost
+			}
+			// Per-provider OCR cost via separate query
+			if len(resp.OcrProgress) > 0 {
+				ocrByProvider, err := metricsQuery.CostByProvider(ctx, metrics.Filter{BookID: bookID, Stage: "ocr"})
+				if err == nil {
+					for provider, cost := range ocrByProvider {
+						resp.Stages.OCR.CostByProvider[provider] = cost
+						if prog, ok := resp.OcrProgress[provider]; ok {
+							prog.CostUSD = cost
+							resp.OcrProgress[provider] = prog
+						}
 					}
 				}
 			}
 
 			// Pattern Analysis cost
-			if cost, ok := costByOp["pattern_analysis"]; ok {
+			if cost, ok := costByStage["toc-pattern"]; ok {
 				resp.Stages.PatternAnalysis.CostUSD = cost
 			}
 
 			// Metadata cost
-			if cost, ok := costByOp["metadata"]; ok {
+			if cost, ok := costByStage["metadata"]; ok {
 				resp.Metadata.CostUSD = cost
 			}
 
-			// ToC costs
-			if cost, ok := costByOp["toc"]; ok {
-				resp.ToC.CostUSD = cost
-			}
-			if cost, ok := costByOp["finder"]; ok {
-				resp.ToC.CostUSD += cost
+			// ToC costs (finder + link + discover + validate)
+			for _, stage := range []string{"toc", "toc-link", "toc-discover", "toc-validate"} {
+				if cost, ok := costByStage[stage]; ok {
+					resp.ToC.CostUSD += cost
+				}
 			}
 
-			// Structure cost
-			if cost, ok := costByOp["structure"]; ok {
-				resp.Structure.CostUSD = cost
+			// Structure cost (classify + polish)
+			for _, stage := range []string{"structure-classify", "structure-polish"} {
+				if cost, ok := costByStage[stage]; ok {
+					resp.Structure.CostUSD += cost
+				}
 			}
 		}
 	}

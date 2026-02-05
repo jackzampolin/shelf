@@ -44,7 +44,7 @@ func (e *StartJobEndpoint) RequiresInit() bool { return true }
 // handler godoc
 //
 //	@Summary		Start job for a book
-//	@Description	Start processing job (OCR, blend, label) for a book
+//	@Description	Start processing job for a book
 //	@Tags			jobs
 //	@Accept			json
 //	@Produce		json
@@ -143,19 +143,19 @@ func (e *StartJobEndpoint) Command(getServerURL func() string) *cobra.Command {
 		Short: "Start job processing for a book",
 		Long: `Start the process-book job for a book.
 
-The job processes all pages through OCR, blend, and label stages,
-then triggers book-level operations (metadata extraction, ToC finding,
-pattern analysis, ToC linking, finalize, and structure building).
+The job processes all pages through OCR, then triggers book-level operations
+(metadata extraction, ToC finding, ToC extraction, ToC linking, finalize,
+and structure building).
 
 Pipeline variants:
   standard   - Full pipeline (default)
-  photo-book - OCR + blend + label + metadata only (no ToC/structure)
-  text-only  - OCR + blend + metadata only (no labels or ToC)
+  photo-book - OCR + metadata only (no ToC/structure)
+  text-only  - OCR + metadata only (no ToC)
   ocr-only   - OCR only (no LLM processing)
 
 Use --reset-from to re-run a specific operation and all downstream dependencies.
-Valid reset operations: metadata, toc_finder, toc_extract, pattern_analysis,
-                        toc_link, toc_finalize, structure, labels, blend
+Valid reset operations: metadata, toc_finder, toc_extract, toc_link,
+                        toc_finalize, structure, ocr
 
 The command submits a job and returns immediately.
 Use 'shelf api jobs get <job-id>' to check progress.`,

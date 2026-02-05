@@ -203,6 +203,7 @@ func (l *Logger) Save(ctx context.Context, success bool, iterations int, result 
 			DocID:      l.docID,
 			Document:   run,
 			Op:         defra.OpUpdate,
+			Source:     "AgentLogger:Save:update",
 		})
 	} else {
 		// Fallback: create new record with all fields
@@ -215,6 +216,7 @@ func (l *Logger) Save(ctx context.Context, success bool, iterations int, result 
 			Collection: "AgentRun",
 			Document:   run,
 			Op:         defra.OpCreate,
+			Source:     "AgentLogger:Save:create",
 		})
 	}
 

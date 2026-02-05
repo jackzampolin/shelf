@@ -497,6 +497,7 @@ func (j *Job) saveAudioSegment(ctx context.Context, client *defra.Client, sink *
 			Op:         defra.OpCreate,
 			Collection: "AudioSegment",
 			Document:   doc,
+			Source:     "persistSegment",
 		})
 		return "", nil
 	}
@@ -602,6 +603,7 @@ func (j *Job) saveChapterAudio(ctx context.Context, client *defra.Client, sink *
 				Collection: "ChapterAudio",
 				DocID:      existingDocID,
 				Document:   doc,
+				Source:     "updateChapterAudio",
 			})
 			return nil
 		}
@@ -650,6 +652,7 @@ func (j *Job) saveChapterAudio(ctx context.Context, client *defra.Client, sink *
 			Op:         defra.OpCreate,
 			Collection: "ChapterAudio",
 			Document:   doc,
+			Source:     "createChapterAudio",
 		})
 		return nil
 	}
@@ -717,6 +720,7 @@ func (j *Job) updateBookAudioComplete(ctx context.Context, client *defra.Client,
 			Collection: "BookAudio",
 			DocID:      j.State.BookAudioID,
 			Document:   doc,
+			Source:     "markBookAudioComplete",
 		})
 		return nil
 	}

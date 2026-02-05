@@ -75,7 +75,11 @@ func (e *JobStatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 						resp.MetadataComplete = live.MetadataComplete
 						resp.TocFound = live.TocFound
 						resp.TocExtracted = live.TocExtracted
-						resp.IsComplete = live.OcrComplete >= live.TotalPages && live.MetadataComplete && live.TocExtracted
+						// Job is complete when all phases are done (OCR, metadata, ToC finalized, structure)
+						resp.IsComplete = live.OcrComplete >= live.TotalPages &&
+							live.MetadataComplete &&
+							live.TocFinalized &&
+							live.StructureComplete
 						writeJSON(w, http.StatusOK, resp)
 						return
 					}
