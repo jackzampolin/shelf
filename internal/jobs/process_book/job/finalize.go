@@ -1850,40 +1850,30 @@ func (j *Job) retryFinalizeGapUnit(ctx context.Context, info WorkUnitInfo) ([]jo
 // --- Finalize Agent State Cleanup ---
 
 // cleanupFinalizeDiscoverAgentState removes chapter finder agent state after completion.
+// Uses async delete to avoid blocking the critical path.
+// Skips DB cleanup if debug logging was disabled (no agent state was created).
 func (j *Job) cleanupFinalizeDiscoverAgentState(ctx context.Context, entryKey string) {
-	logger := svcctx.LoggerFrom(ctx)
 	existing := j.Book.GetAgentState(common.AgentTypeChapterFinder, entryKey)
 	if existing != nil && existing.AgentID != "" {
-		// Delete by agent_id since we don't have DocID from async create
-		if err := common.DeleteAgentStateByAgentID(ctx, existing.AgentID); err != nil {
-			if logger != nil {
-				logger.Error("failed to delete agent state from DB, orphaned record remains",
-					"agent_id", existing.AgentID,
-					"agent_type", common.AgentTypeChapterFinder,
-					"entry_key", entryKey,
-					"book_id", j.Book.BookID,
-					"error", err)
-			}
+		// Only cleanup DB if debug logging was enabled (agent state was persisted)
+		if j.Book.DebugAgents {
+			// Async delete - fire and forget to avoid blocking critical path
+			common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
 		}
 	}
 	j.Book.RemoveAgentState(common.AgentTypeChapterFinder, entryKey)
 }
 
 // cleanupFinalizeGapAgentState removes gap investigator agent state after completion.
+// Uses async delete to avoid blocking the critical path.
+// Skips DB cleanup if debug logging was disabled (no agent state was created).
 func (j *Job) cleanupFinalizeGapAgentState(ctx context.Context, gapKey string) {
-	logger := svcctx.LoggerFrom(ctx)
 	existing := j.Book.GetAgentState(common.AgentTypeGapInvestigator, gapKey)
 	if existing != nil && existing.AgentID != "" {
-		// Delete by agent_id since we don't have DocID from async create
-		if err := common.DeleteAgentStateByAgentID(ctx, existing.AgentID); err != nil {
-			if logger != nil {
-				logger.Error("failed to delete agent state from DB, orphaned record remains",
-					"agent_id", existing.AgentID,
-					"agent_type", common.AgentTypeGapInvestigator,
-					"gap_key", gapKey,
-					"book_id", j.Book.BookID,
-					"error", err)
-			}
+		// Only cleanup DB if debug logging was enabled (agent state was persisted)
+		if j.Book.DebugAgents {
+			// Async delete - fire and forget to avoid blocking critical path
+			common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
 		}
 	}
 	j.Book.RemoveAgentState(common.AgentTypeGapInvestigator, gapKey)

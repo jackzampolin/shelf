@@ -302,9 +302,31 @@ func DeleteAgentState(ctx context.Context, docID string) error {
 	})
 }
 
+// DeleteAgentStateByAgentIDAsync removes an agent state record asynchronously.
+// This is fire-and-forget - errors are logged but not returned.
+// Use this for non-critical cleanup where latency matters more than guaranteed deletion.
+func DeleteAgentStateByAgentIDAsync(ctx context.Context, agentID string) {
+	if agentID == "" {
+		return
+	}
+
+	// Run in background to avoid blocking the critical path
+	go func() {
+		if err := DeleteAgentStateByAgentID(context.Background(), agentID); err != nil {
+			logger := svcctx.LoggerFrom(ctx)
+			if logger != nil {
+				logger.Warn("async agent state cleanup failed (orphaned record may remain)",
+					"agent_id", agentID,
+					"error", err)
+			}
+		}
+	}()
+}
+
 // DeleteAgentStateByAgentID removes an agent state record by querying for agent_id.
 // This is used when we don't have the DocID (e.g., after async creates).
 // Uses sync delete to ensure records are actually deleted (prevents orphaned records).
+// Prefer DeleteAgentStateByAgentIDAsync for non-critical cleanup paths.
 func DeleteAgentStateByAgentID(ctx context.Context, agentID string) error {
 	if agentID == "" {
 		return nil

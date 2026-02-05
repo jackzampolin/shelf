@@ -334,20 +334,15 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 }
 
 // cleanupLinkTocAgentState removes link ToC entry agent state after completion.
+// Uses async delete to avoid blocking the critical path.
+// Skips DB cleanup if debug logging was disabled (no agent state was created).
 func (j *Job) cleanupLinkTocAgentState(ctx context.Context, entryDocID string) {
-	logger := svcctx.LoggerFrom(ctx)
 	existing := j.Book.GetAgentState(common.AgentTypeTocEntryFinder, entryDocID)
 	if existing != nil && existing.AgentID != "" {
-		// Delete by agent_id since we don't have DocID from async create
-		if err := common.DeleteAgentStateByAgentID(ctx, existing.AgentID); err != nil {
-			if logger != nil {
-				logger.Error("failed to delete agent state from DB, orphaned record remains",
-					"agent_id", existing.AgentID,
-					"agent_type", common.AgentTypeTocEntryFinder,
-					"entry_doc_id", entryDocID,
-					"book_id", j.Book.BookID,
-					"error", err)
-			}
+		// Only cleanup DB if debug logging was enabled (agent state was persisted)
+		if j.Book.DebugAgents {
+			// Async delete - fire and forget to avoid blocking critical path
+			common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
 		}
 	}
 	j.Book.RemoveAgentState(common.AgentTypeTocEntryFinder, entryDocID)
