@@ -3,7 +3,6 @@ package job
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/agent"
@@ -26,7 +25,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		if logger != nil {
-			logger.Error("CreateTocFinderWorkUnit: defra client not in context - check service initialization",
+			logger.Error("cannot create ToC finder work unit; defra client not in context",
 				"book_id", j.Book.BookID)
 		}
 		return nil
@@ -115,7 +114,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 	if savedState != nil && !savedState.Complete {
 		// Resume existing agent
 		if logger != nil {
-			logger.Info("resuming ToC finder agent from saved state",
+			logger.Debug("resuming ToC finder agent from saved state",
 				"agent_id", savedState.AgentID,
 				"iteration", savedState.Iteration)
 		}
@@ -283,13 +282,17 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 				}
 				j.Book.PersistTocFinderResultAsync(ctx, tocResult.ToCFound, startPage, endPage, tocResult.StructureSummary)
 
-				// Fire-and-forget metric update (non-critical, use background context)
-				go func(metricDocID, tocDocID string) {
-					if err := common.UpdateMetricOutputRef(context.Background(), metricDocID, "ToC", tocDocID, ""); err != nil {
-						slog.Warn("failed to update metric output ref", "error", err,
-							"metric_doc_id", metricDocID, "toc_doc_id", tocDocID)
+				// Fire-and-forget metric update (non-critical)
+				go func(ctx context.Context, metricDocID, tocDocID string) {
+					if err := common.UpdateMetricOutputRef(ctx, metricDocID, "ToC", tocDocID, ""); err != nil {
+						if logger != nil {
+							logger.Warn("failed to update metric output ref",
+								"error", err,
+								"metric_doc_id", metricDocID,
+								"toc_doc_id", tocDocID)
+						}
 					}
-				}(result.MetricDocID, j.TocDocID)
+				}(ctx, result.MetricDocID, j.TocDocID)
 			}
 		}
 

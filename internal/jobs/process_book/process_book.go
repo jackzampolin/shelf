@@ -273,7 +273,7 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 	// If reset requested, reset the operation and all downstream dependencies
 	if cfg.ResetFrom != "" {
 		if logger != nil {
-			logger.Info("resetting operation with cascade",
+			logger.Debug("resetting operation with cascade",
 				"book_id", bookID,
 				"reset_from", cfg.ResetFrom)
 		}
@@ -282,8 +282,19 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 		}
 	}
 
+	// Set the Store on BookState so persistence methods don't fall back to context extraction.
+	client := svcctx.DefraClientFrom(ctx)
+	sink := svcctx.DefraSinkFrom(ctx)
+	if client != nil && sink != nil {
+		store, err := common.NewDefraStateStore(client, sink)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create state store: %w", err)
+		}
+		result.Book.Store = store
+	}
+
 	if logger != nil {
-		logger.Info("creating page processing job",
+		logger.Debug("creating page processing job",
 			"book_id", bookID,
 			"total_pages", result.Book.TotalPages,
 			"ocr_providers", cfg.OcrProviders)
@@ -299,4 +310,3 @@ func JobFactory(cfg Config) jobs.JobFactory {
 		return NewJob(ctx, cfg, bookID)
 	})
 }
-
