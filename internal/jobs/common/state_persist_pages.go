@@ -31,7 +31,6 @@ func (b *BookState) PersistOcrResult(ctx context.Context, pageNum int, provider 
 		"page_id":  pageDocID,
 		"provider": provider,
 		"text":     ocrText,
-		"book_id":  b.BookID,
 	}
 
 	ocrResult, err := store.SendSync(ctx, defra.WriteOp{

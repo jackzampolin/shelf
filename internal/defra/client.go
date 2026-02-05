@@ -432,7 +432,14 @@ func mapToGraphQLInput(input map[string]any) (string, error) {
 func valueToGraphQL(v any) (string, error) {
 	switch val := v.(type) {
 	case string:
-		return fmt.Sprintf("%q", val), nil
+		// Use JSON encoding for strings. Go's %q produces escape sequences
+		// like \a, \v, \xHH that are invalid in GraphQL. JSON string encoding
+		// produces only escapes that GraphQL supports (\n, \r, \t, \uXXXX, etc).
+		b, err := json.Marshal(val)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal string: %w", err)
+		}
+		return string(b), nil
 	case int:
 		return fmt.Sprintf("%d", val), nil
 	case int64:
