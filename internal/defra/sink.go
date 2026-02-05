@@ -372,13 +372,14 @@ func (s *Sink) processCreates(collection string, ops []WriteOp) {
 	}
 
 	// Determine which fields to return for matching.
-	// Different collections need different identifying fields.
+	// Only Page uses field-based matching (by page_num). Other collections
+	// use positional matching and don't need return fields.
+	// NOTE: Do not return relationship foreign keys (e.g., page_id) here —
+	// DefraDB's planner panics on relationship fields in create return clauses.
 	var returnFields []string
 	switch collection {
 	case "Page":
 		returnFields = []string{"page_num"}
-	case "OcrResult":
-		returnFields = []string{"page_id", "provider"}
 	}
 
 	// Batch create all documents in one API call
