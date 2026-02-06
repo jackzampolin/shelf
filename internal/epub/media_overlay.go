@@ -18,6 +18,7 @@ type MediaOverlayBuilder struct {
 	chapters      []Chapter
 	chapterAudios map[string]ChapterAudio // keyed by chapter ID
 	narrator      string                   // Optional narrator name
+	coverImage    string                   // Optional path to cover image file
 }
 
 // NewMediaOverlayBuilder creates a new builder for EPUBs with audio sync.
@@ -32,6 +33,11 @@ func NewMediaOverlayBuilder(book Book, chapters []Chapter) *MediaOverlayBuilder 
 // SetNarrator sets the narrator metadata.
 func (b *MediaOverlayBuilder) SetNarrator(name string) {
 	b.narrator = name
+}
+
+// SetCoverImage sets the path to a cover image file (PNG or JPEG).
+func (b *MediaOverlayBuilder) SetCoverImage(path string) {
+	b.coverImage = path
 }
 
 // AddChapterAudio adds audio timing data for a chapter.
@@ -111,6 +117,13 @@ func (b *MediaOverlayBuilder) WriteTo(w io.Writer) error {
 			if err := b.writeAudioFile(zw, audio); err != nil {
 				return fmt.Errorf("failed to write audio for %s: %w", ch.ID, err)
 			}
+		}
+	}
+
+	// 10. Write cover image if provided
+	if b.coverImage != "" {
+		if err := b.writeCoverImage(zw); err != nil {
+			return fmt.Errorf("failed to write cover image: %w", err)
 		}
 	}
 
@@ -197,6 +210,11 @@ func (b *MediaOverlayBuilder) generatePackage() string {
 		sb.WriteString("    <meta property=\"media:active-class\">-epub-media-overlay-active</meta>\n")
 	}
 
+	// Cover image meta (EPUB 2 compatibility)
+	if b.coverImage != "" {
+		sb.WriteString("    <meta name=\"cover\" content=\"cover-image\"/>\n")
+	}
+
 	// Narrator
 	if b.narrator != "" {
 		sb.WriteString(fmt.Sprintf("    <meta property=\"media:narrator\">%s</meta>\n", escapeXML(b.narrator)))
@@ -209,6 +227,13 @@ func (b *MediaOverlayBuilder) generatePackage() string {
 	sb.WriteString("    <item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>\n")
 	sb.WriteString("    <item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>\n")
 	sb.WriteString("    <item id=\"style\" href=\"styles/style.css\" media-type=\"text/css\"/>\n")
+
+	// Cover image
+	if b.coverImage != "" {
+		ext := strings.ToLower(filepath.Ext(b.coverImage))
+		sb.WriteString(fmt.Sprintf("    <item id=\"cover-image\" href=\"images/cover%s\" media-type=\"%s\" properties=\"cover-image\"/>\n",
+			ext, coverMediaType(b.coverImage)))
+	}
 
 	// Chapter items with media-overlay reference
 	for _, ch := range b.chapters {
@@ -384,6 +409,39 @@ func (b *MediaOverlayBuilder) writeAudioFile(zw *zip.Writer, audio ChapterAudio)
 
 	_, err = w.Write(data)
 	return err
+}
+
+func (b *MediaOverlayBuilder) writeCoverImage(zw *zip.Writer) error {
+	data, err := os.ReadFile(b.coverImage)
+	if err != nil {
+		return fmt.Errorf("failed to read cover image %s: %w", b.coverImage, err)
+	}
+
+	ext := strings.ToLower(filepath.Ext(b.coverImage))
+	destPath := fmt.Sprintf("OEBPS/images/cover%s", ext)
+
+	w, err := zw.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("failed to create %s in epub: %w", destPath, err)
+	}
+	_, err = w.Write(data)
+	return err
+}
+
+// coverMediaType returns the MIME type for the cover image based on extension.
+func coverMediaType(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	default:
+		return "image/png"
+	}
 }
 
 func (b *MediaOverlayBuilder) generateUUID() string {

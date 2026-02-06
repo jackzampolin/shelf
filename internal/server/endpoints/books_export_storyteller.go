@@ -256,7 +256,13 @@ func (e *ExportStorytellerEndpoint) handler(w http.ResponseWriter, r *http.Reque
 	}
 
 	builder := epub.NewMediaOverlayBuilder(book, chapters)
-	builder.SetNarrator("Chatterbox TTS")
+	builder.SetNarrator("ElevenLabs TTS")
+
+	// Set cover image from first page scan if available
+	coverPath := filepath.Join(homeDir.SourceImagesDir(bookID), "page_0001.png")
+	if _, err := os.Stat(coverPath); err == nil {
+		builder.SetCoverImage(coverPath)
+	}
 
 	// Add audio data for each chapter
 	var totalDurationMS int
