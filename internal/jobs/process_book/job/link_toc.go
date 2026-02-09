@@ -335,13 +335,27 @@ func (j *Job) HandleLinkTocComplete(ctx context.Context, result jobs.WorkResult,
 
 // cleanupLinkTocAgentState removes link ToC entry agent state after completion.
 // Uses async delete to avoid blocking the critical path.
-// Skips DB cleanup if debug logging was disabled (no agent state was created).
 func (j *Job) cleanupLinkTocAgentState(ctx context.Context, entryDocID string) {
+	j.cleanupLinkTocAgentStateWithMode(ctx, entryDocID, false)
+}
+
+// cleanupLinkTocAgentStateWithMode removes link ToC entry agent state with
+// selectable delete behavior.
+func (j *Job) cleanupLinkTocAgentStateWithMode(ctx context.Context, entryDocID string, syncDelete bool) {
 	existing := j.Book.GetAgentState(common.AgentTypeTocEntryFinder, entryDocID)
 	if existing != nil && existing.AgentID != "" {
-		// Only cleanup DB if debug logging was enabled (agent state was persisted)
-		if j.Book.DebugAgents {
-			// Async delete - fire and forget to avoid blocking critical path
+		if syncDelete {
+			// Retry paths must delete synchronously to avoid create collisions.
+			if err := common.DeleteAgentStateByAgentID(ctx, existing.AgentID); err != nil {
+				if logger := svcctx.LoggerFrom(ctx); logger != nil {
+					logger.Warn("failed to delete toc entry finder agent state",
+						"entry_doc_id", entryDocID,
+						"agent_id", existing.AgentID,
+						"error", err)
+				}
+			}
+		} else {
+			// Async delete - fire and forget to avoid blocking critical path.
 			common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
 		}
 	}
@@ -405,9 +419,9 @@ func (j *Job) createLinkTocRetryUnit(ctx context.Context, info WorkUnitInfo) *jo
 	// Remove old agent from map
 	delete(j.LinkTocEntryAgents, info.EntryDocID)
 
-	// Clean up old agent state from BookState and DB for fresh start
-	// (Without this, CreateEntryFinderWorkUnit would resume the failed agent state)
-	j.cleanupLinkTocAgentState(ctx, info.EntryDocID)
+	// Clean up old agent state from BookState and DB for fresh start.
+	// Delete synchronously here to avoid create collisions on retry.
+	j.cleanupLinkTocAgentStateWithMode(ctx, info.EntryDocID, true)
 
 	// Create new work unit with fresh agent
 	unit := j.CreateEntryFinderWorkUnit(ctx, entry)

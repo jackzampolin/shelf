@@ -1851,30 +1851,22 @@ func (j *Job) retryFinalizeGapUnit(ctx context.Context, info WorkUnitInfo) ([]jo
 
 // cleanupFinalizeDiscoverAgentState removes chapter finder agent state after completion.
 // Uses async delete to avoid blocking the critical path.
-// Skips DB cleanup if debug logging was disabled (no agent state was created).
 func (j *Job) cleanupFinalizeDiscoverAgentState(ctx context.Context, entryKey string) {
 	existing := j.Book.GetAgentState(common.AgentTypeChapterFinder, entryKey)
 	if existing != nil && existing.AgentID != "" {
-		// Only cleanup DB if debug logging was enabled (agent state was persisted)
-		if j.Book.DebugAgents {
-			// Async delete - fire and forget to avoid blocking critical path
-			common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
-		}
+		// Async delete - fire and forget to avoid blocking critical path.
+		common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
 	}
 	j.Book.RemoveAgentState(common.AgentTypeChapterFinder, entryKey)
 }
 
 // cleanupFinalizeGapAgentState removes gap investigator agent state after completion.
 // Uses async delete to avoid blocking the critical path.
-// Skips DB cleanup if debug logging was disabled (no agent state was created).
 func (j *Job) cleanupFinalizeGapAgentState(ctx context.Context, gapKey string) {
 	existing := j.Book.GetAgentState(common.AgentTypeGapInvestigator, gapKey)
 	if existing != nil && existing.AgentID != "" {
-		// Only cleanup DB if debug logging was enabled (agent state was persisted)
-		if j.Book.DebugAgents {
-			// Async delete - fire and forget to avoid blocking critical path
-			common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
-		}
+		// Async delete - fire and forget to avoid blocking critical path.
+		common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
 	}
 	j.Book.RemoveAgentState(common.AgentTypeGapInvestigator, gapKey)
 }

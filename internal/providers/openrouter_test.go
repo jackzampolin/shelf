@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 )
@@ -177,7 +176,7 @@ func TestOpenRouterClient_Chat(t *testing.T) {
 		}
 	})
 
-	t.Run("structured output anthropic schema adapter strips integer bounds", func(t *testing.T) {
+	t.Run("structured output anthropic uses prompt-only fallback mode", func(t *testing.T) {
 		schema := json.RawMessage(`{
 			"name":"toc_extraction",
 			"strict":true,
@@ -199,14 +198,9 @@ func TestOpenRouterClient_Chat(t *testing.T) {
 			}
 
 			if reqBody.ResponseFormat == nil {
-				t.Fatal("expected response_format in request")
-			}
-			schemaText := string(reqBody.ResponseFormat.JSONSchema)
-			if strings.Contains(schemaText, `"minimum":1`) || strings.Contains(schemaText, `"maximum":3`) {
-				t.Fatalf("expected integer bounds to be stripped for anthropic schema, got %s", schemaText)
-			}
-			if !strings.Contains(schemaText, `"minimum":0`) && !strings.Contains(schemaText, `"minimum":0.0`) {
-				t.Fatalf("expected number bounds to remain in schema, got %s", schemaText)
+				// Expected: anthropic models avoid provider-native structured mode.
+			} else {
+				t.Fatalf("expected no response_format for anthropic model, got %s", string(reqBody.ResponseFormat.JSONSchema))
 			}
 
 			resp := map[string]any{

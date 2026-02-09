@@ -306,15 +306,11 @@ func (j *Job) HandleTocFinderComplete(ctx context.Context, result jobs.WorkResul
 
 // cleanupTocFinderAgentState removes ToC finder agent state after completion.
 // Uses async delete to avoid blocking the critical path.
-// Skips DB cleanup if debug logging was disabled (no agent state was created).
 func (j *Job) cleanupTocFinderAgentState(ctx context.Context) {
 	existing := j.Book.GetAgentState(AgentTypeTocFinder, "")
 	if existing != nil && existing.AgentID != "" {
-		// Only cleanup DB if debug logging was enabled (agent state was persisted)
-		if j.Book.DebugAgents {
-			// Async delete - fire and forget to avoid blocking critical path
-			common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
-		}
+		// Async delete - fire and forget to avoid blocking critical path.
+		common.DeleteAgentStateByAgentIDAsync(ctx, existing.AgentID)
 	}
 	j.Book.RemoveAgentState(AgentTypeTocFinder, "")
 }

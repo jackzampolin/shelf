@@ -19,6 +19,12 @@ func adaptedResponseFormat(model string, rf *ResponseFormat) (*openRouterRespons
 	if rf == nil {
 		return nil, nil
 	}
+	// OpenRouter may route anthropic/* models to non-Anthropic backends (e.g. Google),
+	// where Anthropic beta headers used for native structured outputs are rejected.
+	// Use prompt + local validation/repair for anthropic models instead.
+	if isAnthropicModel(model) {
+		return nil, nil
+	}
 
 	adaptedSchema := rf.JSONSchema
 	if len(adaptedSchema) > 0 {
