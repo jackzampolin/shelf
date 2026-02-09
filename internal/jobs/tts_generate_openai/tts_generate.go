@@ -1,4 +1,4 @@
-package tts_generate
+package tts_generate_openai
 
 import (
 	"context"
@@ -15,9 +15,9 @@ import (
 )
 
 // JobType is the identifier for this job type.
-const JobType = "tts-generate"
+const JobType = "tts-generate-openai"
 
-const defaultOutputFormat = "mp3_44100_128"
+const defaultOutputFormat = "mp3"
 
 var (
 	// ErrBookNotFound is returned when the requested book cannot be loaded.
@@ -27,27 +27,25 @@ var (
 )
 
 var storytellerCompatibleFormats = map[string]struct{}{
-	"mp3":           {},
-	"mp3_22050_32":  {},
-	"mp3_44100_32":  {},
-	"mp3_44100_64":  {},
-	"mp3_44100_96":  {},
-	"mp3_44100_128": {},
-	"mp3_44100_192": {},
+	"mp3": {},
 }
 
 // Config configures the TTS generation job.
 type Config struct {
 	// TTS provider settings
-	TTSProvider string // TTS provider name (e.g., "elevenlabs")
-	Voice       string // Voice ID (optional)
-	Format      string // Output format (mp3, wav, etc.)
+	TTSProvider  string // TTS provider name (must be "openai")
+	Voice        string // Voice ID (optional)
+	Format       string // Output format (mp3)
+	Instructions string // Optional instructions for gpt-4o-mini-tts
 }
 
 // Validate checks that the config has all required fields.
 func (c Config) Validate() error {
 	if c.TTSProvider == "" {
 		return fmt.Errorf("TTS provider is required")
+	}
+	if c.TTSProvider != "openai" {
+		return fmt.Errorf("invalid TTS provider %q for openai job (expected: openai)", c.TTSProvider)
 	}
 	if c.Format != "" {
 		normalized := normalizeFormat(c.Format, c.TTSProvider)
@@ -141,6 +139,7 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 		TTSProvider:     cfg.TTSProvider,
 		Voice:           cfg.Voice,
 		Format:          stateFormat,
+		Instructions:    cfg.Instructions,
 		HomeDir:         homeDir,
 		ChapterProgress: make(map[string]*ChapterProgress),
 	}
@@ -487,18 +486,12 @@ func sortChapters(chapters []*Chapter) {
 func SupportedStorytellerFormats() []string {
 	return []string{
 		"mp3",
-		"mp3_22050_32",
-		"mp3_44100_32",
-		"mp3_44100_64",
-		"mp3_44100_96",
-		"mp3_44100_128",
-		"mp3_44100_192",
 	}
 }
 
 // NormalizeOutputFormat normalizes user input to a canonical output format.
 func NormalizeOutputFormat(format string) string {
-	return normalizeFormat(format, "elevenlabs")
+	return normalizeFormat(format, "openai")
 }
 
 // NormalizeOutputFormatForProvider normalizes format per provider expectations.
@@ -508,7 +501,7 @@ func NormalizeOutputFormatForProvider(provider, format string) string {
 
 // IsStorytellerCompatibleFormat returns true when the format is safe for Storyteller export.
 func IsStorytellerCompatibleFormat(format string) bool {
-	return isStorytellerCompatibleFormat(normalizeFormat(format, "elevenlabs"))
+	return isStorytellerCompatibleFormat(normalizeFormat(format, "openai"))
 }
 
 func isStorytellerCompatibleFormat(format string) bool {
@@ -522,15 +515,11 @@ func normalizeFormat(format, provider string) string {
 	format = strings.ToLower(strings.TrimSpace(format))
 	switch provider {
 	case "openai":
-		if format == "" || format == "mp3_44100_128" {
+		if format == "" || strings.HasPrefix(format, "mp3") {
 			return "mp3"
 		}
 		return format
 	default:
-		// ElevenLabs-specific normalization.
-		if format == "" || format == "mp3" {
-			return defaultOutputFormat
-		}
-		return format
+		return normalizeFormat(format, "openai")
 	}
 }

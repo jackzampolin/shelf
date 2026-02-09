@@ -281,19 +281,20 @@ type LLMProviderConfig struct {
 	Enabled   bool
 }
 
-// TTSProviderConfig matches config.TTSProviderCfg with resolved API key (ElevenLabs only).
+// TTSProviderConfig matches config.TTSProviderCfg with resolved API key.
 type TTSProviderConfig struct {
-	Type       string  // "elevenlabs"
-	Model      string  // Model name (e.g., "eleven_turbo_v2_5")
-	Voice      string  // Voice ID
-	Format     string  // Output format (mp3_44100_128, etc.)
-	APIKey     string  // Resolved API key
-	RateLimit  float64 // Requests per second
-	Stability  float64 // Voice stability (0-1)
-	Similarity float64 // Similarity boost (0-1)
-	Style      float64 // Style exaggeration (0-1)
-	Speed      float64 // Speaking speed (0.7-1.2)
-	Enabled    bool
+	Type         string  // "elevenlabs" or "openai"
+	Model        string  // Model name (provider-specific)
+	Voice        string  // Voice ID
+	Format       string  // Output format (mp3_44100_128, etc.)
+	Instructions string  // Optional provider-specific instructions (OpenAI gpt-4o-mini-tts)
+	APIKey       string  // Resolved API key
+	RateLimit    float64 // Requests per second
+	Stability    float64 // Voice stability (0-1)
+	Similarity   float64 // Similarity boost (0-1)
+	Style        float64 // Style exaggeration (0-1)
+	Speed        float64 // Speaking speed (0.7-1.2)
+	Enabled      bool
 }
 
 // NewRegistryFromConfig creates a registry with providers based on configuration.
@@ -517,6 +518,15 @@ func createTTSProvider(cfg TTSProviderConfig) TTSProvider {
 			Style:      cfg.Style,
 			Speed:      cfg.Speed,
 		})
+	case "openai":
+		return NewOpenAITTSClient(OpenAITTSConfig{
+			APIKey:       cfg.APIKey,
+			Model:        cfg.Model,
+			Voice:        cfg.Voice,
+			Speed:        cfg.Speed,
+			Instructions: cfg.Instructions,
+			RateLimit:    cfg.RateLimit,
+		})
 	default:
 		return nil
 	}
@@ -535,6 +545,13 @@ func needsTTSUpdate(provider TTSProvider, cfg TTSProviderConfig) bool {
 			p.similarity != cfg.Similarity ||
 			p.style != cfg.Style ||
 			p.speed != cfg.Speed
+	case *OpenAITTSClient:
+		return p.apiKey != cfg.APIKey ||
+			p.model != cfg.Model ||
+			p.voice != cfg.Voice ||
+			p.speed != cfg.Speed ||
+			p.instructions != cfg.Instructions ||
+			p.rateLimit != cfg.RateLimit
 	default:
 		return true
 	}

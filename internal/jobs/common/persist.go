@@ -356,8 +356,13 @@ func DeleteAgentStateByAgentID(ctx context.Context, agentID string) error {
 		return nil // Not found, nothing to delete
 	}
 
-	// Delete each match (should be at most one, but handle multiple defensively)
-	// Use sync delete to ensure records are actually deleted (prevents orphaned records)
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("DeleteAgentStateByAgentID: defra sink not in context")
+	}
+
+	ops := make([]defra.WriteOp, 0, len(states))
+	// Delete each match (should be at most one, but handle multiple defensively).
 	for _, s := range states {
 		state, ok := s.(map[string]any)
 		if !ok {
@@ -367,9 +372,24 @@ func DeleteAgentStateByAgentID(ctx context.Context, agentID string) error {
 		if !ok || docID == "" {
 			continue
 		}
-		// Sync delete to ensure completion and prevent orphaned records
-		if err := DeleteAgentState(ctx, docID); err != nil {
-			return fmt.Errorf("DeleteAgentStateByAgentID: failed to delete doc %s for agent %s: %w", docID, agentID, err)
+		ops = append(ops, defra.WriteOp{
+			Collection: "AgentState",
+			DocID:      docID,
+			Op:         defra.OpDelete,
+		})
+	}
+
+	if len(ops) == 0 {
+		return nil
+	}
+
+	results, err := sink.SendManySync(ctx, ops)
+	if err != nil {
+		return fmt.Errorf("DeleteAgentStateByAgentID: batch delete failed for agent %s: %w", agentID, err)
+	}
+	for _, result := range results {
+		if result.Err != nil {
+			return fmt.Errorf("DeleteAgentStateByAgentID: failed to delete doc %s for agent %s: %w", result.DocID, agentID, result.Err)
 		}
 	}
 
@@ -388,6 +408,10 @@ func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 	defraClient := svcctx.DefraClientFrom(ctx)
 	if defraClient == nil {
 		return fmt.Errorf("DeleteAgentStatesForBook: defra client not in context")
+	}
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("DeleteAgentStatesForBook: defra sink not in context")
 	}
 
 	logger := svcctx.LoggerFrom(ctx)
@@ -411,7 +435,7 @@ func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 
 	// Track skipped records for logging
 	var skippedCount int
-	var deletedCount int
+	ops := make([]defra.WriteOp, 0, len(states))
 
 	// Delete each one
 	for i, s := range states {
@@ -439,11 +463,26 @@ func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 			continue
 		}
 
-		if err := DeleteAgentState(ctx, docID); err != nil {
-			return fmt.Errorf("DeleteAgentStatesForBook: failed to delete agent state %s: %w", docID, err)
-		}
-		deletedCount++
+		ops = append(ops, defra.WriteOp{
+			Collection: "AgentState",
+			DocID:      docID,
+			Op:         defra.OpDelete,
+		})
 	}
+
+	if len(ops) > 0 {
+		results, err := sink.SendManySync(ctx, ops)
+		if err != nil {
+			return fmt.Errorf("DeleteAgentStatesForBook: batch delete failed: %w", err)
+		}
+		for _, result := range results {
+			if result.Err != nil {
+				return fmt.Errorf("DeleteAgentStatesForBook: failed to delete agent state %s: %w", result.DocID, result.Err)
+			}
+		}
+	}
+
+	deletedCount := len(ops)
 
 	// Log summary if there were issues
 	if skippedCount > 0 && logger != nil {
@@ -472,6 +511,10 @@ func DeleteAgentStatesForType(ctx context.Context, bookID, agentType string) err
 	if defraClient == nil {
 		return fmt.Errorf("DeleteAgentStatesForType: defra client not in context")
 	}
+	sink := svcctx.DefraSinkFrom(ctx)
+	if sink == nil {
+		return fmt.Errorf("DeleteAgentStatesForType: defra sink not in context")
+	}
 
 	logger := svcctx.LoggerFrom(ctx)
 
@@ -492,7 +535,8 @@ func DeleteAgentStatesForType(ctx context.Context, bookID, agentType string) err
 		return nil
 	}
 
-	var deletedCount, skippedCount int
+	var skippedCount int
+	ops := make([]defra.WriteOp, 0, len(states))
 	for i, s := range states {
 		state, ok := s.(map[string]any)
 		if !ok {
@@ -510,12 +554,26 @@ func DeleteAgentStatesForType(ctx context.Context, bookID, agentType string) err
 			continue
 		}
 
-		if err := DeleteAgentState(ctx, docID); err != nil {
-			return fmt.Errorf("DeleteAgentStatesForType: failed to delete %s: %w", docID, err)
-		}
-		deletedCount++
+		ops = append(ops, defra.WriteOp{
+			Collection: "AgentState",
+			DocID:      docID,
+			Op:         defra.OpDelete,
+		})
 	}
 
+	if len(ops) > 0 {
+		results, err := sink.SendManySync(ctx, ops)
+		if err != nil {
+			return fmt.Errorf("DeleteAgentStatesForType: batch delete failed: %w", err)
+		}
+		for _, result := range results {
+			if result.Err != nil {
+				return fmt.Errorf("DeleteAgentStatesForType: failed to delete %s: %w", result.DocID, result.Err)
+			}
+		}
+	}
+
+	deletedCount := len(ops)
 	if logger != nil && deletedCount > 0 {
 		logger.Debug("deleted agent states for type",
 			"book_id", bookID, "agent_type", agentType, "count", deletedCount)

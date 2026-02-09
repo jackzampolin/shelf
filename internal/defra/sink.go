@@ -19,12 +19,13 @@ const (
 
 // WriteOp represents a single write operation to be batched.
 type WriteOp struct {
-	Collection string         // Target collection name
-	Document   map[string]any // Document data
-	DocID      string         // For updates/deletes (empty for creates)
-	Op         OpType         // Operation type
-	Source     string         // Caller identification for debugging (e.g., "PersistBookStatusAsync")
-	result     chan<- WriteResult // Internal - set by SendSync
+	Collection string             // Target collection name
+	Document   map[string]any     // Document data
+	DocID      string             // For updates/deletes (empty for creates)
+	Op         OpType             // Operation type
+	Source     string             // Caller identification for debugging (e.g., "PersistBookStatusAsync")
+	result     chan<- WriteResult // Internal - set by SendSync/SendManySync
+	flushNow   bool               // Internal - force an immediate flush after enqueue
 }
 
 // WriteResult contains the result of a write operation.
@@ -57,10 +58,10 @@ type Sink struct {
 	concurrency   int
 
 	// Internal state
-	queue    chan WriteOp
-	batch    []WriteOp
-	batchMu  sync.Mutex
-	flushCh  chan struct{} // Signal to flush immediately
+	queue   chan WriteOp
+	batch   []WriteOp
+	batchMu sync.Mutex
+	flushCh chan struct{} // Signal to flush immediately
 
 	// Lifecycle
 	ctx      context.Context
@@ -131,6 +132,7 @@ func (s *Sink) Stop() {
 // Returns immediately without waiting for the write to complete.
 func (s *Sink) Send(op WriteOp) {
 	op.result = nil // Ensure fire-and-forget
+	op.flushNow = false
 
 	// Use recover to handle send on closed channel
 	defer func() {
@@ -160,6 +162,7 @@ func (s *Sink) Send(op WriteOp) {
 func (s *Sink) SendSync(ctx context.Context, op WriteOp) (WriteResult, error) {
 	resultCh := make(chan WriteResult, 1)
 	op.result = resultCh
+	op.flushNow = true
 
 	select {
 	case s.queue <- op:
@@ -190,6 +193,7 @@ func (s *Sink) Flush(ctx context.Context) error {
 		Collection: "_flush_sentinel",
 		Op:         OpUpdate,
 		result:     resultCh,
+		flushNow:   true,
 	}
 
 	// Queue the sentinel
@@ -232,7 +236,10 @@ func (s *Sink) SendManySync(ctx context.Context, ops []WriteOp) ([]WriteResult, 
 	for i := range ops {
 		resultChs[i] = make(chan WriteResult, 1)
 		ops[i].result = resultChs[i]
+		ops[i].flushNow = false
 	}
+	// Flush once after the last op in this sync batch is queued.
+	ops[len(ops)-1].flushNow = true
 
 	// Queue all operations (non-blocking for efficiency, but with context check)
 	for i := range ops {
@@ -288,6 +295,9 @@ func (s *Sink) runBatcher() {
 				return
 			}
 			s.addToBatch(op)
+			if op.flushNow {
+				s.flushBatch()
+			}
 
 		case <-ticker.C:
 			s.flushBatch()

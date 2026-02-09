@@ -541,7 +541,8 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 			"count", len(entries))
 	}
 
-	// Delete each entry synchronously to ensure ordering before creates
+	// Must complete before new entries are created, but batch to avoid per-entry sync latency.
+	ops := make([]defra.WriteOp, 0, len(entries))
 	for _, e := range entries {
 		entry, ok := e.(map[string]any)
 		if !ok {
@@ -551,14 +552,24 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 		if !ok || docID == "" {
 			continue
 		}
-		// Must be sync to ensure deletes complete before creates
-		_, err := sink.SendSync(ctx, defra.WriteOp{
+		ops = append(ops, defra.WriteOp{
 			Collection: "TocEntry",
 			DocID:      docID,
 			Op:         defra.OpDelete,
 		})
-		if err != nil {
-			return fmt.Errorf("failed to delete TocEntry %s: %w", docID, err)
+	}
+
+	if len(ops) == 0 {
+		return nil
+	}
+
+	results, err := sink.SendManySync(ctx, ops)
+	if err != nil {
+		return fmt.Errorf("failed to delete TocEntry batch: %w", err)
+	}
+	for _, result := range results {
+		if result.Err != nil {
+			return fmt.Errorf("failed to delete TocEntry %s: %w", result.DocID, result.Err)
 		}
 	}
 

@@ -316,3 +316,21 @@ func TestBuilder_ProcessBookConfig(t *testing.T) {
 	})
 }
 
+func TestBuilder_OpenAITTSConfig(t *testing.T) {
+	ctx := context.Background()
+	store := newMockStore()
+	store.Set(ctx, "defaults.tts_provider", "openai", "")
+	store.Set(ctx, "defaults.openai_tts_instructions", "Use an engaging storytelling tone.", "")
+
+	b := NewBuilder(store)
+	cfg, err := b.OpenAITTSConfig(ctx)
+	if err != nil {
+		t.Fatalf("OpenAITTSConfig() error = %v", err)
+	}
+	if cfg.TTSProvider != "openai" {
+		t.Fatalf("expected TTSProvider=openai, got %q", cfg.TTSProvider)
+	}
+	if cfg.Instructions != "Use an engaging storytelling tone." {
+		t.Fatalf("expected instructions to be loaded from config store, got %q", cfg.Instructions)
+	}
+}

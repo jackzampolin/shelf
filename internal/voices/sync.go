@@ -37,73 +37,70 @@ func Sync(ctx context.Context, cfg SyncConfig) error {
 		cfg.Logger = slog.Default()
 	}
 
-	// Find a TTS provider that can list voices
-	var apiVoices []providers.Voice
-	var providerName string
-	var err error
+	totalSynced := 0
+	now := time.Now().UTC().Format(time.RFC3339)
+	foundLister := false
 
 	for name, provider := range cfg.Registry.TTSProviders() {
-		if client, ok := provider.(*providers.ElevenLabsTTSClient); ok {
-			cfg.Logger.Debug("found ElevenLabs TTS provider", "name", name)
-			apiVoices, err = client.ListVoices(ctx)
-			if err != nil {
-				cfg.Logger.Warn("failed to fetch voices from ElevenLabs", "error", err)
+		lister, ok := provider.(providers.VoicesLister)
+		if !ok {
+			continue
+		}
+		foundLister = true
+
+		apiVoices, err := lister.ListVoices(ctx)
+		if err != nil {
+			cfg.Logger.Warn("failed to fetch voices from TTS provider", "provider", name, "error", err)
+			continue
+		}
+		if len(apiVoices) == 0 {
+			cfg.Logger.Info("no voices found from TTS provider", "provider", name)
+			continue
+		}
+
+		cfg.Logger.Info("syncing voices from TTS provider", "provider", name, "count", len(apiVoices))
+
+		for _, v := range apiVoices {
+			// Filter: match by voice_id + provider so IDs don't collide across providers.
+			filter := map[string]any{
+				"voice_id": map[string]any{"_eq": v.VoiceID},
+				"provider": map[string]any{"_eq": name},
+			}
+
+			// Create input: all fields for new record.
+			createInput := map[string]any{
+				"voice_id":    v.VoiceID,
+				"name":        v.Name,
+				"description": v.Description,
+				"provider":    name,
+				"is_default":  false,
+				"synced_at":   now,
+			}
+			if v.CreatedAt != "" {
+				createInput["created_at"] = v.CreatedAt
+			}
+
+			// Update input: sync timestamp and changed metadata.
+			updateInput := map[string]any{
+				"name":        v.Name,
+				"description": v.Description,
+				"synced_at":   now,
+			}
+
+			if _, err := cfg.Client.Upsert(ctx, "Voice", filter, createInput, updateInput); err != nil {
+				cfg.Logger.Warn("failed to upsert voice", "provider", name, "voice_id", v.VoiceID, "error", err)
 				continue
 			}
-			providerName = providers.ElevenLabsTTSName
-			break
+			totalSynced++
 		}
 	}
 
-	if len(apiVoices) == 0 {
-		if providerName == "" {
-			cfg.Logger.Debug("no TTS provider configured, skipping voice sync")
-		} else {
-			cfg.Logger.Info("no voices found from TTS provider", "provider", providerName)
-		}
+	if !foundLister {
+		cfg.Logger.Debug("no TTS provider with voice listing support configured, skipping voice sync")
 		return nil
 	}
 
-	cfg.Logger.Info("syncing voices from TTS provider", "provider", providerName, "count", len(apiVoices))
-
-	// Sync each voice to database
-	now := time.Now().UTC().Format(time.RFC3339)
-	synced := 0
-	for _, v := range apiVoices {
-		// Filter: match by voice_id (DefraDB requires operator block format)
-		filter := map[string]any{
-			"voice_id": map[string]any{"_eq": v.VoiceID},
-		}
-
-		// Create input: all fields for new record
-		createInput := map[string]any{
-			"voice_id":    v.VoiceID,
-			"name":        v.Name,
-			"description": v.Description,
-			"provider":    providerName,
-			"is_default":  false,
-			"synced_at":   now,
-		}
-		if v.CreatedAt != "" {
-			createInput["created_at"] = v.CreatedAt
-		}
-
-		// Update input: only sync timestamp and potentially changed fields
-		updateInput := map[string]any{
-			"name":        v.Name,
-			"description": v.Description,
-			"synced_at":   now,
-		}
-
-		// Upsert the voice
-		if _, err := cfg.Client.Upsert(ctx, "Voice", filter, createInput, updateInput); err != nil {
-			cfg.Logger.Warn("failed to upsert voice", "voice_id", v.VoiceID, "error", err)
-			continue
-		}
-		synced++
-	}
-
-	cfg.Logger.Info("voice sync complete", "synced", synced, "total", len(apiVoices))
+	cfg.Logger.Info("voice sync complete", "synced", totalSynced)
 	return nil
 }
 

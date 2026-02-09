@@ -228,6 +228,11 @@ type TTSProvider interface {
 	RetryDelayBase() time.Duration
 }
 
+// VoicesLister is implemented by TTS providers that can list supported voices.
+type VoicesLister interface {
+	ListVoices(ctx context.Context) ([]Voice, error)
+}
+
 // Voice represents a TTS voice from a provider.
 type Voice struct {
 	VoiceID     string `json:"voice_id"`
@@ -241,6 +246,8 @@ type TTSRequest struct {
 	Text   string `json:"text"`   // Text to convert to speech
 	Voice  string `json:"voice"`  // Voice ID or name (provider-specific)
 	Format string `json:"format"` // Output format (mp3, wav, etc.)
+	// Optional provider-specific instructions (OpenAI gpt-4o-mini-tts).
+	Instructions string `json:"instructions,omitempty"`
 
 	// Request stitching for prosody continuity (ElevenLabs).
 	// Pass up to 3 previous request IDs to condition generation on prior audio.
@@ -261,7 +268,7 @@ type TTSResult struct {
 
 	// Cost and timing
 	CostUSD       float64       `json:"cost_usd"`
-	CharCount     int           `json:"char_count"`     // Characters processed
+	CharCount     int           `json:"char_count"` // Characters processed
 	ExecutionTime time.Duration `json:"execution_time"`
 
 	// Error info

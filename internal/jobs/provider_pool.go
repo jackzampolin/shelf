@@ -419,6 +419,7 @@ func (p *ProviderWorkerPool) process(ctx context.Context, unit *WorkUnit) WorkRe
 				Text:               unit.TTSRequest.Text,
 				Voice:              unit.TTSRequest.Voice,
 				Format:             unit.TTSRequest.Format,
+				Instructions:       unit.TTSRequest.Instructions,
 				PreviousRequestIDs: unit.TTSRequest.PreviousRequestIDs, // For ElevenLabs request stitching
 			}
 			ttsResult, err := p.ttsProvider.Generate(ctx, ttsReq)

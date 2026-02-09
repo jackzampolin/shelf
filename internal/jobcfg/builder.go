@@ -14,6 +14,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
 	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
+	"github.com/jackzampolin/shelf/internal/jobs/tts_generate_openai"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -231,5 +232,31 @@ func TTSJobFactory(store config.Store) jobs.JobFactory {
 			return nil, fmt.Errorf("failed to build TTS config: %w", err)
 		}
 		return tts_generate.NewJob(ctx, cfg, bookID)
+	})
+}
+
+// OpenAITTSConfig builds a tts_generate_openai.Config from the store.
+func (b *Builder) OpenAITTSConfig(ctx context.Context) (tts_generate_openai.Config, error) {
+	instructions, err := b.getString(ctx, "defaults.openai_tts_instructions")
+	if err != nil {
+		return tts_generate_openai.Config{}, fmt.Errorf("failed to get openai_tts_instructions: %w", err)
+	}
+
+	return tts_generate_openai.Config{
+		TTSProvider:  "openai",
+		Format:       "",
+		Instructions: instructions,
+	}, nil
+}
+
+// OpenAITTSJobFactory returns a JobFactory that reads OpenAI TTS config from the store.
+func OpenAITTSJobFactory(store config.Store) jobs.JobFactory {
+	return common.MakeJobFactory(func(ctx context.Context, bookID string) (jobs.Job, error) {
+		builder := NewBuilder(store)
+		cfg, err := builder.OpenAITTSConfig(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build OpenAI TTS config: %w", err)
+		}
+		return tts_generate_openai.NewJob(ctx, cfg, bookID)
 	})
 }

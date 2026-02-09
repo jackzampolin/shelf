@@ -161,17 +161,18 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 
 	for name, tts := range c.TTSProviders {
 		cfg.TTSProviders[name] = providers.TTSProviderConfig{
-			Type:       tts.Type,
-			Model:      tts.Model,
-			Voice:      tts.Voice,
-			Format:     tts.Format,
-			APIKey:     ResolveEnvVars(tts.APIKey),
-			RateLimit:  tts.RateLimit,
-			Stability:  tts.Stability,
-			Similarity: tts.Similarity,
-			Style:      tts.Style,
-			Speed:      tts.Speed,
-			Enabled:    tts.Enabled,
+			Type:         tts.Type,
+			Model:        tts.Model,
+			Voice:        tts.Voice,
+			Format:       tts.Format,
+			Instructions: tts.Instructions,
+			APIKey:       ResolveEnvVars(tts.APIKey),
+			RateLimit:    tts.RateLimit,
+			Stability:    tts.Stability,
+			Similarity:   tts.Similarity,
+			Style:        tts.Style,
+			Speed:        tts.Speed,
+			Enabled:      tts.Enabled,
 		}
 	}
 

@@ -127,6 +127,15 @@ func TestNewRegistryFromConfig(t *testing.T) {
 					Enabled: true,
 				},
 			},
+			TTSProviders: map[string]TTSProviderConfig{
+				"openai": {
+					Type:    "openai",
+					Model:   "tts-1-hd",
+					Voice:   "onyx",
+					APIKey:  "test-openai-key",
+					Enabled: true,
+				},
+			},
 		})
 
 		if !r.HasLLM("openrouter") {
@@ -134,6 +143,9 @@ func TestNewRegistryFromConfig(t *testing.T) {
 		}
 		if !r.HasOCR("mistral") {
 			t.Error("expected mistral to be registered")
+		}
+		if !r.HasTTS("openai") {
+			t.Error("expected openai TTS provider to be registered")
 		}
 	})
 

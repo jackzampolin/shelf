@@ -60,7 +60,6 @@ func TestResolveEnvVars(t *testing.T) {
 	})
 }
 
-
 func TestNewManager(t *testing.T) {
 	t.Run("loads from config file", func(t *testing.T) {
 		tmpDir := t.TempDir()
@@ -208,8 +207,10 @@ ocr_providers:
 func TestConfig_ToProviderRegistryConfig(t *testing.T) {
 	os.Setenv("TEST_MISTRAL_KEY", "mistral-secret")
 	os.Setenv("TEST_OPENROUTER_KEY", "openrouter-secret")
+	os.Setenv("TEST_OPENAI_KEY", "openai-secret")
 	defer os.Unsetenv("TEST_MISTRAL_KEY")
 	defer os.Unsetenv("TEST_OPENROUTER_KEY")
+	defer os.Unsetenv("TEST_OPENAI_KEY")
 
 	cfg := &Config{
 		OCRProviders: map[string]OCRProviderCfg{
@@ -232,6 +233,18 @@ func TestConfig_ToProviderRegistryConfig(t *testing.T) {
 				APIKey:    "${TEST_OPENROUTER_KEY}",
 				RateLimit: 60.0,
 				Enabled:   true,
+			},
+		},
+		TTSProviders: map[string]TTSProviderCfg{
+			"openai": {
+				Type:         "openai",
+				Model:        "tts-1-hd",
+				Voice:        "onyx",
+				Format:       "mp3",
+				Instructions: "Narrate in a calm tone.",
+				APIKey:       "${TEST_OPENAI_KEY}",
+				RateLimit:    8.0,
+				Enabled:      true,
 			},
 		},
 	}
@@ -271,6 +284,19 @@ func TestConfig_ToProviderRegistryConfig(t *testing.T) {
 		}
 		if openrouter.Model != "anthropic/claude-sonnet-4" {
 			t.Errorf("expected model anthropic/claude-sonnet-4, got %s", openrouter.Model)
+		}
+	})
+
+	t.Run("resolves TTS provider API keys and instructions", func(t *testing.T) {
+		openai, ok := result.TTSProviders["openai"]
+		if !ok {
+			t.Fatal("openai TTS provider not found")
+		}
+		if openai.APIKey != "openai-secret" {
+			t.Errorf("expected openai-secret, got %s", openai.APIKey)
+		}
+		if openai.Instructions != "Narrate in a calm tone." {
+			t.Errorf("expected instructions to be mapped, got %q", openai.Instructions)
 		}
 	})
 }

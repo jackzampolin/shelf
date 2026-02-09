@@ -64,6 +64,7 @@ interface TTSConfig {
   model: string
   default_voice?: string
   default_format: string
+  available_providers?: string[]
   voices: TTSVoice[]
   formats: string[]
   voice_cloning_url?: string
@@ -77,6 +78,7 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [selectedProvider, setSelectedProvider] = useState<string>('')
   const [selectedVoice, setSelectedVoice] = useState<string>('')
 
   // Fetch chapters with polished text
@@ -92,14 +94,31 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
 
   // Fetch TTS config (voices, formats, etc.)
   const { data: ttsConfig } = useQuery<TTSConfig>({
-    queryKey: ['tts-config'],
+    queryKey: ['tts-config', selectedProvider],
     queryFn: async () => {
-      const res = await fetch('/api/tts/config')
+      const params = selectedProvider ? `?provider=${encodeURIComponent(selectedProvider)}` : ''
+      const res = await fetch(`/api/tts/config${params}`)
       if (!res.ok) throw new Error('Failed to fetch TTS config')
       return res.json()
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   })
+
+  // Keep provider selection aligned with backend default on first load.
+  useEffect(() => {
+    if (!selectedProvider && ttsConfig?.provider) {
+      setSelectedProvider(ttsConfig.provider)
+    }
+  }, [selectedProvider, ttsConfig?.provider])
+
+  // Reset invalid voice when provider changes.
+  useEffect(() => {
+    if (!selectedVoice || !ttsConfig) return
+    const valid = ttsConfig.voices.some((voice) => voice.voice_id === selectedVoice)
+    if (!valid) {
+      setSelectedVoice('')
+    }
+  }, [selectedVoice, ttsConfig])
 
   // Fetch audio status
   const { data: audioStatus, isLoading, refetch } = useQuery<AudioStatus>({
@@ -120,7 +139,10 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
   // Generate audio mutation
   const generateMutation = useMutation({
     mutationFn: async () => {
-      const body: { voice?: string } = {}
+      const body: { provider?: string; voice?: string } = {}
+      if (selectedProvider) {
+        body.provider = selectedProvider
+      }
       if (selectedVoice) {
         body.voice = selectedVoice
       }
@@ -244,6 +266,7 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
   // Not started state
   if (!audioStatus || audioStatus.status === 'not_started') {
     const hasVoices = ttsConfig?.voices && ttsConfig.voices.length > 0
+    const availableProviders = ttsConfig?.available_providers || []
 
     return (
       <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
@@ -259,6 +282,30 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
           </div>
         ) : (
           <div className="space-y-4">
+            {/* Provider selection */}
+            {availableProviders.length > 1 && (
+              <div className="max-w-xs mx-auto">
+                <label htmlFor="provider-select" className="block text-sm font-medium text-gray-700 mb-1">
+                  Provider
+                </label>
+                <select
+                  id="provider-select"
+                  value={selectedProvider}
+                  onChange={(e) => {
+                    setSelectedProvider(e.target.value)
+                    setSelectedVoice('')
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  {availableProviders.map((provider) => (
+                    <option key={provider} value={provider}>
+                      {provider}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Voice selection */}
             {hasVoices && (
               <div className="max-w-xs mx-auto">

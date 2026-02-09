@@ -152,6 +152,53 @@ func DefaultEntries() []Entry {
 			Description: "Similarity boost (0-1)",
 		},
 
+		// TTS Providers - OpenAI
+		{
+			Key:         "providers.tts.openai.type",
+			Value:       "openai",
+			Description: "TTS provider type for OpenAI",
+		},
+		{
+			Key:         "providers.tts.openai.model",
+			Value:       "tts-1-hd",
+			Description: "Default OpenAI TTS model",
+		},
+		{
+			Key:         "providers.tts.openai.voice",
+			Value:       "onyx",
+			Description: "Default OpenAI TTS voice",
+		},
+		{
+			Key:         "providers.tts.openai.api_key",
+			Value:       "${OPENAI_API_KEY}",
+			Description: "OpenAI API key (uses environment variable)",
+		},
+		{
+			Key:         "providers.tts.openai.rate_limit",
+			Value:       8.0,
+			Description: "Rate limit in requests per second for OpenAI TTS",
+		},
+		{
+			Key:         "providers.tts.openai.max_concurrency",
+			Value:       30,
+			Description: "Maximum concurrent requests to OpenAI TTS",
+		},
+		{
+			Key:         "providers.tts.openai.enabled",
+			Value:       true,
+			Description: "Whether OpenAI TTS provider is enabled",
+		},
+		{
+			Key:         "providers.tts.openai.format",
+			Value:       "mp3",
+			Description: "Default OpenAI audio output format",
+		},
+		{
+			Key:         "providers.tts.openai.speed",
+			Value:       1.0,
+			Description: "Default OpenAI speech speed",
+		},
+
 		// ===================
 		// Pipeline Defaults
 		// ===================
@@ -167,8 +214,13 @@ func DefaultEntries() []Entry {
 		},
 		{
 			Key:         "defaults.tts_provider",
-			Value:       "elevenlabs",
+			Value:       "openai",
 			Description: "Default TTS provider for audiobook generation",
+		},
+		{
+			Key:         "defaults.openai_tts_instructions",
+			Value:       "",
+			Description: "Optional instructions for OpenAI gpt-4o-mini-tts generation",
 		},
 		{
 			Key:         "defaults.debug_agents",

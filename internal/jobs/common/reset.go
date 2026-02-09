@@ -205,6 +205,7 @@ func deleteAgentStatesForTypeViaStore(ctx context.Context, store StateStore, boo
 		return nil
 	}
 
+	ops := make([]defra.WriteOp, 0, len(states))
 	for _, s := range states {
 		state, ok := s.(map[string]any)
 		if !ok {
@@ -214,12 +215,24 @@ func deleteAgentStatesForTypeViaStore(ctx context.Context, store StateStore, boo
 		if !ok || docID == "" {
 			continue
 		}
-		if _, err := store.SendSync(ctx, defra.WriteOp{
+		ops = append(ops, defra.WriteOp{
 			Collection: "AgentState",
 			DocID:      docID,
 			Op:         defra.OpDelete,
-		}); err != nil {
-			return fmt.Errorf("failed to delete agent state %s: %w", docID, err)
+		})
+	}
+
+	if len(ops) == 0 {
+		return nil
+	}
+
+	results, err := store.SendManySync(ctx, ops)
+	if err != nil {
+		return fmt.Errorf("failed to delete agent states: %w", err)
+	}
+	for _, result := range results {
+		if result.Err != nil {
+			return fmt.Errorf("failed to delete agent state %s: %w", result.DocID, result.Err)
 		}
 	}
 
@@ -435,6 +448,7 @@ func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
 	}
 
 	var clearCount, skipCount, failCount int
+	ops := make([]defra.WriteOp, 0, len(entries))
 	for _, e := range entries {
 		entry, ok := e.(map[string]any)
 		if !ok {
@@ -452,8 +466,7 @@ func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
 			}
 			continue
 		}
-		// Use sync write to ensure link clearing completes
-		_, err := sink.SendSync(ctx, defra.WriteOp{
+		ops = append(ops, defra.WriteOp{
 			Collection: "TocEntry",
 			DocID:      docID,
 			Document: map[string]any{
@@ -461,14 +474,23 @@ func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
 			},
 			Op: defra.OpUpdate,
 		})
+	}
+
+	if len(ops) > 0 {
+		results, err := sink.SendManySync(ctx, ops)
 		if err != nil {
-			failCount++
-			if logger != nil {
-				logger.Error("failed to clear ToC entry link", "doc_id", docID, "error", err)
-			}
-			continue
+			return fmt.Errorf("failed to batch clear ToC entry links: %w", err)
 		}
-		clearCount++
+		clearCount = len(ops)
+		for _, result := range results {
+			if result.Err != nil {
+				failCount++
+				clearCount--
+				if logger != nil {
+					logger.Error("failed to clear ToC entry link", "doc_id", result.DocID, "error", result.Err)
+				}
+			}
+		}
 	}
 
 	if logger != nil {
@@ -511,6 +533,7 @@ func deleteChapters(ctx context.Context, bookID string) error {
 	}
 
 	var deleteCount, skipCount, failCount int
+	ops := make([]defra.WriteOp, 0, len(chapters))
 	for _, c := range chapters {
 		chapter, ok := c.(map[string]any)
 		if !ok {
@@ -528,20 +551,28 @@ func deleteChapters(ctx context.Context, bookID string) error {
 			}
 			continue
 		}
-		// Use sync write to ensure deletion completes
-		_, err := sink.SendSync(ctx, defra.WriteOp{
+		ops = append(ops, defra.WriteOp{
 			Collection: "Chapter",
 			DocID:      docID,
 			Op:         defra.OpDelete,
 		})
+	}
+
+	if len(ops) > 0 {
+		results, err := sink.SendManySync(ctx, ops)
 		if err != nil {
-			failCount++
-			if logger != nil {
-				logger.Error("failed to delete chapter", "doc_id", docID, "error", err)
-			}
-			continue
+			return fmt.Errorf("failed to batch delete chapters: %w", err)
 		}
-		deleteCount++
+		deleteCount = len(ops)
+		for _, result := range results {
+			if result.Err != nil {
+				failCount++
+				deleteCount--
+				if logger != nil {
+					logger.Error("failed to delete chapter", "doc_id", result.DocID, "error", result.Err)
+				}
+			}
+		}
 	}
 
 	if logger != nil {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -17,15 +18,19 @@ import (
 	"github.com/jackzampolin/shelf/internal/api"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobcfg"
+	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
+	"github.com/jackzampolin/shelf/internal/jobs/tts_generate_openai"
+	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 	"github.com/jackzampolin/shelf/internal/voices"
 )
 
 // GenerateAudioRequest is the request body for starting TTS generation.
 type GenerateAudioRequest struct {
-	Voice  string `json:"voice,omitempty"`  // Optional: voice ID
-	Format string `json:"format,omitempty"` // Optional: output format (mp3, wav)
+	Provider string `json:"provider,omitempty"` // Optional: provider override ("elevenlabs" or "openai")
+	Voice    string `json:"voice,omitempty"`    // Optional: voice ID
+	Format   string `json:"format,omitempty"`   // Optional: output format (mp3)
 }
 
 // GenerateAudioResponse is returned when TTS generation is started.
@@ -129,6 +134,34 @@ func (e *GenerateAudioEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load TTS config: %v", err))
 		return
 	}
+	provider := strings.ToLower(strings.TrimSpace(ttsCfg.TTSProvider))
+	if provider == "" {
+		provider = "elevenlabs"
+	}
+
+	// Apply provider override from request.
+	if req.Provider != "" {
+		provider = strings.ToLower(strings.TrimSpace(req.Provider))
+	}
+	switch provider {
+	case "elevenlabs", "openai":
+	default:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unsupported provider %q (supported: elevenlabs, openai)", req.Provider))
+		return
+	}
+	registry := svcctx.RegistryFrom(ctx)
+	if registry == nil {
+		writeError(w, http.StatusServiceUnavailable, "provider registry not initialized")
+		return
+	}
+	if !registry.HasTTS(provider) {
+		if req.Provider != "" {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("provider %q is not configured/enabled", provider))
+			return
+		}
+		writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("default provider %q is not configured/enabled", provider))
+		return
+	}
 
 	// Apply request overrides
 	if req.Voice != "" {
@@ -137,59 +170,111 @@ func (e *GenerateAudioEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 	if req.Format != "" {
 		ttsCfg.Format = req.Format
 	}
+	ttsCfg.TTSProvider = provider
 
 	if ttsCfg.Format != "" {
-		normalized := tts_generate.NormalizeOutputFormat(ttsCfg.Format)
-		if !tts_generate.IsStorytellerCompatibleFormat(normalized) {
-			writeError(
-				w,
-				http.StatusBadRequest,
-				fmt.Sprintf(
-					"unsupported output format %q for storyteller export (supported: %s)",
-					ttsCfg.Format,
-					strings.Join(tts_generate.SupportedStorytellerFormats(), ", "),
-				),
-			)
-			return
+		switch provider {
+		case "openai":
+			normalized := tts_generate_openai.NormalizeOutputFormat(ttsCfg.Format)
+			if !tts_generate_openai.IsStorytellerCompatibleFormat(normalized) {
+				writeError(
+					w,
+					http.StatusBadRequest,
+					fmt.Sprintf(
+						"unsupported output format %q for storyteller export (supported: %s)",
+						ttsCfg.Format,
+						strings.Join(tts_generate_openai.SupportedStorytellerFormats(), ", "),
+					),
+				)
+				return
+			}
+			ttsCfg.Format = normalized
+		default:
+			normalized := tts_generate.NormalizeOutputFormatForProvider(provider, ttsCfg.Format)
+			if !tts_generate.IsStorytellerCompatibleFormat(normalized) {
+				writeError(
+					w,
+					http.StatusBadRequest,
+					fmt.Sprintf(
+						"unsupported output format %q for storyteller export (supported: %s)",
+						ttsCfg.Format,
+						strings.Join(tts_generate.SupportedStorytellerFormats(), ", "),
+					),
+				)
+				return
+			}
+			ttsCfg.Format = normalized
 		}
-		ttsCfg.Format = normalized
 	}
 
 	// If no voice specified, get default voice from database
 	if ttsCfg.Voice == "" {
 		defraClient := svcctx.DefraClientFrom(ctx)
 		if defraClient != nil {
-			if defaultVoice, err := voices.GetDefault(ctx, defraClient); err == nil && defaultVoice != nil {
-				ttsCfg.Voice = defaultVoice.VoiceID
-			}
+			ttsCfg.Voice = defaultVoiceForProvider(ctx, defraClient, provider)
 		}
 	}
+	if provider == "openai" && ttsCfg.Voice == "" {
+		ttsCfg.Voice = "onyx"
+	}
 
-	// Validate voice is set
-	if ttsCfg.Voice == "" {
+	// ElevenLabs requires explicit voice selection.
+	if provider == "elevenlabs" && ttsCfg.Voice == "" {
 		writeError(w, http.StatusBadRequest, "no voice specified and no default voice configured. Use 'shelf api voices sync' then 'shelf api voices set-default <voice_id>'")
 		return
 	}
 
-	if existing := scheduler.GetJobByBookID(bookID); existing != nil && existing.Type() == tts_generate.JobType {
+	if existing := scheduler.GetJobByBookID(bookID); existing != nil && isTTSJobType(existing.Type()) {
 		writeError(w, http.StatusConflict, fmt.Sprintf("audio generation already in progress (job_id: %s)", existing.ID()))
 		return
 	}
 
 	// Create job
-	job, err := tts_generate.NewJob(ctx, ttsCfg, bookID)
-	if err != nil {
-		switch {
-		case errors.Is(err, tts_generate.ErrBookNotFound):
-			writeError(w, http.StatusNotFound, err.Error())
-		case errors.Is(err, tts_generate.ErrBookNotComplete):
-			writeError(w, http.StatusBadRequest, err.Error())
-		default:
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create TTS job: %v", err))
+	var job jobs.Job
+	switch provider {
+	case "openai":
+		openaiCfg, err := builder.OpenAITTSConfig(ctx)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to load OpenAI TTS config: %v", err))
+			return
 		}
-		return
+		openaiCfg.TTSProvider = "openai"
+		openaiCfg.Voice = ttsCfg.Voice
+		openaiCfg.Format = ttsCfg.Format
+		if req.Format != "" {
+			openaiCfg.Format = tts_generate_openai.NormalizeOutputFormat(req.Format)
+		}
+		if req.Voice != "" {
+			openaiCfg.Voice = req.Voice
+		}
+		openaiJob, err := tts_generate_openai.NewJob(ctx, openaiCfg, bookID)
+		if err != nil {
+			switch {
+			case errors.Is(err, tts_generate_openai.ErrBookNotFound):
+				writeError(w, http.StatusNotFound, err.Error())
+			case errors.Is(err, tts_generate_openai.ErrBookNotComplete):
+				writeError(w, http.StatusBadRequest, err.Error())
+			default:
+				writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create OpenAI TTS job: %v", err))
+			}
+			return
+		}
+		job = openaiJob
+	default:
+		elevenlabsJob, err := tts_generate.NewJob(ctx, ttsCfg, bookID)
+		if err != nil {
+			switch {
+			case errors.Is(err, tts_generate.ErrBookNotFound):
+				writeError(w, http.StatusNotFound, err.Error())
+			case errors.Is(err, tts_generate.ErrBookNotComplete):
+				writeError(w, http.StatusBadRequest, err.Error())
+			default:
+				writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create TTS job: %v", err))
+			}
+			return
+		}
+		job = elevenlabsJob
 	}
-
 	// Submit to scheduler
 	if err := scheduler.Submit(ctx, job); err != nil {
 		markBookAudioFailedOnSubmit(ctx, bookID, err)
@@ -210,20 +295,19 @@ func (e *GenerateAudioEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 		BookID:   bookID,
 		Status:   "generating",
 		Chapters: chapterCount,
-		Provider: ttsCfg.TTSProvider,
+		Provider: provider,
 	})
 }
 
 func (e *GenerateAudioEndpoint) Command(getServerURL func() string) *cobra.Command {
-	var voice, format string
+	var voice, format, provider string
 	cmd := &cobra.Command{
 		Use:   "generate-audio <book_id>",
 		Short: "Start TTS audiobook generation",
 		Long: `Start TTS audiobook generation for a book.
 
-This generates audio from the book's polished chapter text using
-ElevenLabs TTS. Audio is generated paragraph-by-paragraph with request
-stitching for prosody continuity, then concatenated into chapter files.
+This generates audio from the book's polished chapter text using the
+configured TTS provider (ElevenLabs or OpenAI).
 
 The command submits a job and returns immediately.
 Use 'shelf api books audio <book-id>' to check progress.`,
@@ -235,8 +319,9 @@ Use 'shelf api books audio <book-id>' to check progress.`,
 			client := api.NewClient(getServerURL())
 			var resp GenerateAudioResponse
 			if err := client.Post(ctx, fmt.Sprintf("/api/books/%s/generate/audio", bookID), GenerateAudioRequest{
-				Voice:  voice,
-				Format: format,
+				Provider: provider,
+				Voice:    voice,
+				Format:   format,
 			}, &resp); err != nil {
 				return err
 			}
@@ -244,8 +329,9 @@ Use 'shelf api books audio <book-id>' to check progress.`,
 			return api.Output(resp)
 		},
 	}
+	cmd.Flags().StringVar(&provider, "provider", "", "TTS provider override (elevenlabs or openai)")
 	cmd.Flags().StringVar(&voice, "voice", "", "Voice ID (optional)")
-	cmd.Flags().StringVar(&format, "format", "", "Output format (Storyteller-safe MP3): mp3_44100_128 (default), mp3_22050_32, mp3_44100_32, mp3_44100_64, mp3_44100_96, mp3_44100_192")
+	cmd.Flags().StringVar(&format, "format", "", "Output format (Storyteller-safe MP3; use mp3)")
 	return cmd
 }
 
@@ -341,37 +427,48 @@ func (e *GetAudioStatusEndpoint) handler(w http.ResponseWriter, r *http.Request)
 		SegmentCount:    getInt(data, "segment_count"),
 	}
 
-	// Query ChapterAudio records
-	chapterQuery := fmt.Sprintf(`{
-		ChapterAudio(filter: {book_id: {_eq: "%s"}}) {
-			chapter_idx
-			duration_ms
-			segment_count
-			total_cost_usd
-			audio_file
+	// Query ChapterAudio records (prefer relation field, fall back to unique_key prefix).
+	chapterRecords, err := queryChapterAudioRecords(ctx, defraClient, bookID)
+	if err != nil {
+		if logger := svcctx.LoggerFrom(ctx); logger != nil {
+			logger.Warn("failed to query chapter audio records", "book_id", bookID, "error", err)
 		}
-	}`, bookID)
+	} else {
+		chapterDocIDByIdx := make(map[int]string, len(chapterRecords))
+		for _, chData := range chapterRecords {
+			chapterIdx := getInt(chData, "chapter_idx")
+			status := ChapterAudioStatus{
+				ChapterIdx:   chapterIdx,
+				DurationMS:   getInt(chData, "duration_ms"),
+				SegmentCount: getInt(chData, "segment_count"),
+				CostUSD:      getFloat(chData, "total_cost_usd"),
+				AudioFile:    getString(chData, "audio_file"),
+			}
+			if status.AudioFile != "" {
+				status.DownloadURL = fmt.Sprintf("/api/books/%s/audio/%d/download", bookID, chapterIdx)
+			}
+			if chapterDocID := chapterDocIDFromChapterAudioUniqueKey(getString(chData, "unique_key"), bookID); chapterDocID != "" {
+				chapterDocIDByIdx[chapterIdx] = chapterDocID
+			}
+			resp.Chapters = append(resp.Chapters, status)
+		}
 
-	chapterResp, err := defraClient.Execute(ctx, chapterQuery, nil)
-	if err == nil {
-		if chapters, ok := chapterResp.Data["ChapterAudio"].([]any); ok {
-			for _, ch := range chapters {
-				chData, ok := ch.(map[string]any)
-				if !ok {
-					continue
+		// Prefer metrics as source-of-truth for audiobook cost aggregation.
+		metricsQuery := svcctx.MetricsQueryFrom(ctx)
+		if metricsQuery == nil {
+			metricsQuery = metrics.NewQuery(defraClient)
+		}
+		metricsTotalCost, metricsByChapter, err := audiobookCostsFromMetrics(ctx, metricsQuery, bookID, chapterDocIDByIdx)
+		if err != nil {
+			if logger := svcctx.LoggerFrom(ctx); logger != nil {
+				logger.Warn("failed to query audiobook cost from metrics", "book_id", bookID, "error", err)
+			}
+		} else {
+			resp.TotalCostUSD = metricsTotalCost
+			for i := range resp.Chapters {
+				if cost, ok := metricsByChapter[resp.Chapters[i].ChapterIdx]; ok {
+					resp.Chapters[i].CostUSD = cost
 				}
-				chapterIdx := getInt(chData, "chapter_idx")
-				status := ChapterAudioStatus{
-					ChapterIdx:   chapterIdx,
-					DurationMS:   getInt(chData, "duration_ms"),
-					SegmentCount: getInt(chData, "segment_count"),
-					CostUSD:      getFloat(chData, "total_cost_usd"),
-					AudioFile:    getString(chData, "audio_file"),
-				}
-				if status.AudioFile != "" {
-					status.DownloadURL = fmt.Sprintf("/api/books/%s/audio/%d/download", bookID, chapterIdx)
-				}
-				resp.Chapters = append(resp.Chapters, status)
 			}
 		}
 	}
@@ -449,32 +546,17 @@ func (e *DownloadChapterAudioEndpoint) handler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Query ChapterAudio by book_id and chapter_idx
-	query := fmt.Sprintf(`{
-		ChapterAudio(filter: {book_id: {_eq: "%s"}, chapter_idx: {_eq: %d}}) {
-			audio_file
-		}
-	}`, bookID, chapterIdx)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
+	record, err := queryChapterAudioRecordForChapter(ctx, defraClient, bookID, chapterIdx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query chapter audio: %v", err))
 		return
 	}
-
-	records, ok := resp.Data["ChapterAudio"].([]any)
-	if !ok || len(records) == 0 {
+	if record == nil {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("no audio record found for chapter %d", chapterIdx))
 		return
 	}
 
-	data, ok := records[0].(map[string]any)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "invalid chapter audio data")
-		return
-	}
-
-	audioPath := getString(data, "audio_file")
+	audioPath := getString(record, "audio_file")
 	if audioPath == "" {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("audio file not found for chapter %d", chapterIdx))
 		return
@@ -541,13 +623,13 @@ func (e *DownloadChapterAudioEndpoint) Command(getServerURL func() string) *cobr
 // Helper functions
 
 func sortChapterStatuses(chapters []ChapterAudioStatus) {
-	for i := 0; i < len(chapters)-1; i++ {
-		for j := 0; j < len(chapters)-i-1; j++ {
-			if chapters[j].ChapterIdx > chapters[j+1].ChapterIdx {
-				chapters[j], chapters[j+1] = chapters[j+1], chapters[j]
-			}
-		}
-	}
+	sort.Slice(chapters, func(i, j int) bool {
+		return chapters[i].ChapterIdx < chapters[j].ChapterIdx
+	})
+}
+
+func isTTSJobType(jobType string) bool {
+	return jobType == tts_generate.JobType || jobType == tts_generate_openai.JobType
 }
 
 func markBookAudioFailedOnSubmit(ctx context.Context, bookID string, submitErr error) {
@@ -579,4 +661,207 @@ func getFloat(m map[string]any, key string) float64 {
 		return v
 	}
 	return 0
+}
+
+func defaultVoiceForProvider(ctx context.Context, client *defra.Client, provider string) string {
+	defaultVoice, err := voices.GetDefault(ctx, client)
+	if err == nil && defaultVoice != nil && strings.EqualFold(defaultVoice.Provider, provider) {
+		return defaultVoice.VoiceID
+	}
+
+	voiceList, err := voices.List(ctx, client)
+	if err != nil {
+		return ""
+	}
+	for _, v := range voiceList {
+		if v.IsDefault && strings.EqualFold(v.Provider, provider) {
+			return v.VoiceID
+		}
+	}
+	return ""
+}
+
+func queryChapterAudioRecords(ctx context.Context, client *defra.Client, bookID string) ([]map[string]any, error) {
+	primaryQuery := fmt.Sprintf(`{
+		ChapterAudio(filter: {book_id: {_eq: "%s"}}) {
+			unique_key
+			chapter_idx
+			duration_ms
+			segment_count
+			total_cost_usd
+			audio_file
+		}
+	}`, bookID)
+	primaryResp, primaryErr := client.Execute(ctx, primaryQuery, nil)
+	if primaryErr == nil {
+		records := extractDocMaps(primaryResp.Data, "ChapterAudio")
+		if len(records) > 0 {
+			return records, nil
+		}
+	}
+
+	const pageSize = 1000
+	var filtered []map[string]any
+	for offset := 0; ; offset += pageSize {
+		fallbackQuery := fmt.Sprintf(`{
+			ChapterAudio(limit: %d, offset: %d, order: {unique_key: ASC}) {
+				unique_key
+				chapter_idx
+				duration_ms
+				segment_count
+				total_cost_usd
+				audio_file
+			}
+		}`, pageSize, offset)
+		fallbackResp, fallbackErr := client.Execute(ctx, fallbackQuery, nil)
+		if fallbackErr != nil {
+			if primaryErr != nil {
+				return nil, primaryErr
+			}
+			return nil, fallbackErr
+		}
+		batch := filterChapterAudioByBookID(extractDocMaps(fallbackResp.Data, "ChapterAudio"), bookID)
+		filtered = append(filtered, batch...)
+		batchRaw := extractDocMaps(fallbackResp.Data, "ChapterAudio")
+		if len(batchRaw) < pageSize {
+			break
+		}
+	}
+	return filtered, nil
+}
+
+func queryChapterAudioRecordForChapter(ctx context.Context, client *defra.Client, bookID string, chapterIdx int) (map[string]any, error) {
+	primaryQuery := fmt.Sprintf(`{
+		ChapterAudio(filter: {book_id: {_eq: "%s"}, chapter_idx: {_eq: %d}}) {
+			unique_key
+			chapter_idx
+			audio_file
+		}
+	}`, bookID, chapterIdx)
+	primaryResp, primaryErr := client.Execute(ctx, primaryQuery, nil)
+	if primaryErr == nil {
+		records := extractDocMaps(primaryResp.Data, "ChapterAudio")
+		if len(records) > 0 {
+			return records[0], nil
+		}
+	}
+
+	const pageSize = 200
+	for offset := 0; ; offset += pageSize {
+		fallbackQuery := fmt.Sprintf(`{
+			ChapterAudio(filter: {chapter_idx: {_eq: %d}}, limit: %d, offset: %d, order: {unique_key: ASC}) {
+				unique_key
+				chapter_idx
+				audio_file
+			}
+		}`, chapterIdx, pageSize, offset)
+		fallbackResp, fallbackErr := client.Execute(ctx, fallbackQuery, nil)
+		if fallbackErr != nil {
+			if primaryErr != nil {
+				return nil, primaryErr
+			}
+			return nil, fallbackErr
+		}
+
+		batchRaw := extractDocMaps(fallbackResp.Data, "ChapterAudio")
+		records := filterChapterAudioByBookID(batchRaw, bookID)
+		if len(records) > 0 {
+			return records[0], nil
+		}
+		if len(batchRaw) < pageSize {
+			break
+		}
+	}
+	return nil, nil
+}
+
+func filterChapterAudioByBookID(records []map[string]any, bookID string) []map[string]any {
+	prefix := bookID + ":"
+	filtered := make([]map[string]any, 0, len(records))
+	for _, rec := range records {
+		if strings.HasPrefix(getString(rec, "unique_key"), prefix) {
+			filtered = append(filtered, rec)
+		}
+	}
+	return filtered
+}
+
+func extractDocMaps(data map[string]any, key string) []map[string]any {
+	raw, ok := data[key].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(raw))
+	for _, item := range raw {
+		doc, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		out = append(out, doc)
+	}
+	return out
+}
+
+func chapterDocIDFromChapterAudioUniqueKey(uniqueKey, bookID string) string {
+	if uniqueKey == "" {
+		return ""
+	}
+	prefix := bookID + ":"
+	if !strings.HasPrefix(uniqueKey, prefix) {
+		return ""
+	}
+	rest := strings.TrimPrefix(uniqueKey, prefix)
+	if rest == "" {
+		return ""
+	}
+	parts := strings.SplitN(rest, ":", 2)
+	return parts[0]
+}
+
+func chapterDocIDFromMetricItemKey(itemKey string) string {
+	const marker = "_para_"
+	idx := strings.Index(itemKey, marker)
+	if idx <= 0 {
+		return ""
+	}
+	return itemKey[:idx]
+}
+
+func audiobookCostsFromMetrics(ctx context.Context, query *metrics.Query, bookID string, chapterDocIDByIdx map[int]string) (float64, map[int]float64, error) {
+	if query == nil {
+		return 0, nil, nil
+	}
+
+	chapterIdxByDocID := make(map[string]int, len(chapterDocIDByIdx))
+	for chapterIdx, chapterDocID := range chapterDocIDByIdx {
+		if chapterDocID == "" {
+			continue
+		}
+		chapterIdxByDocID[chapterDocID] = chapterIdx
+	}
+
+	stageNames := []string{tts_generate.JobType, tts_generate_openai.JobType}
+	costByChapter := make(map[int]float64, len(chapterDocIDByIdx))
+	total := 0.0
+
+	for _, stage := range stageNames {
+		metricsList, err := query.List(ctx, metrics.Filter{
+			BookID: bookID,
+			Stage:  stage,
+		}, 0)
+		if err != nil {
+			return 0, nil, err
+		}
+		for _, metric := range metricsList {
+			total += metric.CostUSD
+			chapterDocID := chapterDocIDFromMetricItemKey(metric.ItemKey)
+			chapterIdx, ok := chapterIdxByDocID[chapterDocID]
+			if !ok {
+				continue
+			}
+			costByChapter[chapterIdx] += metric.CostUSD
+		}
+	}
+
+	return total, costByChapter, nil
 }

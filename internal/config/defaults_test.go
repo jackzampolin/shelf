@@ -31,6 +31,8 @@ func TestDefaultEntries(t *testing.T) {
 		// Defaults
 		"defaults.ocr_providers",
 		"defaults.llm_provider",
+		"defaults.tts_provider",
+		"defaults.openai_tts_instructions",
 		"defaults.debug_agents",
 	}
 

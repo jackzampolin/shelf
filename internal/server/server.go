@@ -19,6 +19,7 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/jobs/process_book"
 	"github.com/jackzampolin/shelf/internal/jobs/tts_generate"
+	"github.com/jackzampolin/shelf/internal/jobs/tts_generate_openai"
 	"github.com/jackzampolin/shelf/internal/llmcall"
 	"github.com/jackzampolin/shelf/internal/metrics"
 	"github.com/jackzampolin/shelf/internal/prompts"
@@ -302,11 +303,13 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 	// Register CPU task handlers
 	s.scheduler.RegisterCPUHandler(ingest.TaskExtractPage, ingest.ExtractPageHandler())
 	s.scheduler.RegisterCPUHandler(tts_generate.TaskConcatenateChapter, tts_generate.ConcatenateHandler(s.home))
+	s.scheduler.RegisterCPUHandler(tts_generate_openai.TaskConcatenateChapter, tts_generate_openai.ConcatenateHandler(s.home))
 
 	// Register job factories for resumption
 	// These factories read config from DefraDB, so resumed jobs use current settings
 	s.scheduler.RegisterFactory(process_book.JobType, jobcfg.ProcessBookJobFactory(s.configStore))
 	s.scheduler.RegisterFactory(tts_generate.JobType, jobcfg.TTSJobFactory(s.configStore))
+	s.scheduler.RegisterFactory(tts_generate_openai.JobType, jobcfg.OpenAITTSJobFactory(s.configStore))
 
 	// Start scheduler in background
 	go s.scheduler.Start(ctx)

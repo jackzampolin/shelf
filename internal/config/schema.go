@@ -12,43 +12,45 @@ type Config struct {
 
 // OCRProviderCfg configures an OCR provider.
 type OCRProviderCfg struct {
-	Type          string  `mapstructure:"type" yaml:"type"`                     // "mistral-ocr"
-	APIKey        string  `mapstructure:"api_key" yaml:"api_key"`               // API key (supports ${ENV_VAR} syntax)
-	RateLimit     float64 `mapstructure:"rate_limit" yaml:"rate_limit"`         // Requests per second
+	Type          string  `mapstructure:"type" yaml:"type"`             // "mistral-ocr"
+	APIKey        string  `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
+	RateLimit     float64 `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
 	Enabled       bool    `mapstructure:"enabled" yaml:"enabled"`
 	IncludeImages bool    `mapstructure:"include_images" yaml:"include_images"` // Extract images (Mistral only)
 }
 
 // LLMProviderCfg configures an LLM provider.
 type LLMProviderCfg struct {
-	Type      string  `mapstructure:"type" yaml:"type"`           // "openrouter"
-	Model     string  `mapstructure:"model" yaml:"model"`         // Model name
-	APIKey    string  `mapstructure:"api_key" yaml:"api_key"`     // API key (supports ${ENV_VAR} syntax)
+	Type      string  `mapstructure:"type" yaml:"type"`             // "openrouter"
+	Model     string  `mapstructure:"model" yaml:"model"`           // Model name
+	APIKey    string  `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
 	RateLimit float64 `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
 	Enabled   bool    `mapstructure:"enabled" yaml:"enabled"`
 }
 
-// TTSProviderCfg configures a TTS provider (ElevenLabs only).
+// TTSProviderCfg configures a TTS provider.
 type TTSProviderCfg struct {
-	Type       string  `mapstructure:"type" yaml:"type"`             // "elevenlabs"
-	Model      string  `mapstructure:"model" yaml:"model"`           // e.g., "eleven_turbo_v2_5"
-	Voice      string  `mapstructure:"voice" yaml:"voice"`           // Voice ID
-	Format     string  `mapstructure:"format" yaml:"format"`         // Output format: mp3_44100_128, etc.
-	APIKey     string  `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
-	RateLimit  float64 `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
-	Stability  float64 `mapstructure:"stability" yaml:"stability"`   // Voice stability (0-1)
-	Similarity float64 `mapstructure:"similarity" yaml:"similarity"` // Similarity boost (0-1)
-	Style      float64 `mapstructure:"style" yaml:"style"`           // Style exaggeration (0-1)
-	Speed      float64 `mapstructure:"speed" yaml:"speed"`           // Speaking speed (0.7-1.2)
-	Enabled    bool    `mapstructure:"enabled" yaml:"enabled"`
+	Type         string  `mapstructure:"type" yaml:"type"`                 // "elevenlabs" or "openai"
+	Model        string  `mapstructure:"model" yaml:"model"`               // e.g., "eleven_turbo_v2_5"
+	Voice        string  `mapstructure:"voice" yaml:"voice"`               // Voice ID
+	Format       string  `mapstructure:"format" yaml:"format"`             // Output format: mp3_44100_128, etc.
+	Instructions string  `mapstructure:"instructions" yaml:"instructions"` // Optional model instructions (OpenAI gpt-4o-mini-tts)
+	APIKey       string  `mapstructure:"api_key" yaml:"api_key"`           // API key (supports ${ENV_VAR} syntax)
+	RateLimit    float64 `mapstructure:"rate_limit" yaml:"rate_limit"`     // Requests per second
+	Stability    float64 `mapstructure:"stability" yaml:"stability"`       // Voice stability (0-1)
+	Similarity   float64 `mapstructure:"similarity" yaml:"similarity"`     // Similarity boost (0-1)
+	Style        float64 `mapstructure:"style" yaml:"style"`               // Style exaggeration (0-1)
+	Speed        float64 `mapstructure:"speed" yaml:"speed"`               // Speaking speed (0.7-1.2)
+	Enabled      bool    `mapstructure:"enabled" yaml:"enabled"`
 }
 
 // DefaultsCfg specifies default provider selections.
 type DefaultsCfg struct {
-	OCRProviders []string `mapstructure:"ocr_providers" yaml:"ocr_providers"` // Ordered list of OCR providers
-	LLMProvider  string   `mapstructure:"llm_provider" yaml:"llm_provider"`   // Default LLM provider
-	TTSProvider  string   `mapstructure:"tts_provider" yaml:"tts_provider"`   // Default TTS provider
-	MaxWorkers   int      `mapstructure:"max_workers" yaml:"max_workers"`     // Max concurrent workers
+	OCRProviders          []string `mapstructure:"ocr_providers" yaml:"ocr_providers"`                     // Ordered list of OCR providers
+	LLMProvider           string   `mapstructure:"llm_provider" yaml:"llm_provider"`                       // Default LLM provider
+	TTSProvider           string   `mapstructure:"tts_provider" yaml:"tts_provider"`                       // Default TTS provider
+	OpenAITTSInstructions string   `mapstructure:"openai_tts_instructions" yaml:"openai_tts_instructions"` // Default instructions for OpenAI gpt-4o-mini-tts
+	MaxWorkers            int      `mapstructure:"max_workers" yaml:"max_workers"`                         // Max concurrent workers
 }
 
 // DefraConfig holds DefraDB container configuration.
@@ -95,12 +97,23 @@ func DefaultConfig() *Config {
 				Speed:      1.0,
 				Enabled:    true,
 			},
+			"openai": {
+				Type:      "openai",
+				Model:     "tts-1-hd",
+				Voice:     "onyx",
+				Format:    "mp3",
+				APIKey:    "${OPENAI_API_KEY}",
+				RateLimit: 8.0, // ~500 RPM
+				Speed:     1.0,
+				Enabled:   true,
+			},
 		},
 		Defaults: DefaultsCfg{
-			OCRProviders: []string{"mistral"},
-			LLMProvider:  "openrouter",
-			TTSProvider:  "elevenlabs",
-			MaxWorkers:   10,
+			OCRProviders:          []string{"mistral"},
+			LLMProvider:           "openrouter",
+			TTSProvider:           "openai",
+			OpenAITTSInstructions: "",
+			MaxWorkers:            10,
 		},
 		Defra: DefraConfig{
 			ContainerName: "shelf-defra",

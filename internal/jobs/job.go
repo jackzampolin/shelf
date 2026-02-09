@@ -79,6 +79,7 @@ type TTSWorkRequest struct {
 	Text         string // Text to convert to speech
 	Voice        string // Voice ID or name (provider-specific)
 	Format       string // Output format (mp3, wav, etc.)
+	Instructions string // Optional provider-specific instructions (OpenAI gpt-4o-mini-tts)
 	ChapterIdx   int    // Chapter index for reference
 	ParagraphIdx int    // Paragraph index within chapter
 

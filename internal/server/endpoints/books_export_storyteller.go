@@ -1,6 +1,7 @@
 package endpoints
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -179,19 +180,8 @@ func (e *ExportStorytellerEndpoint) handler(w http.ResponseWriter, r *http.Reque
 		return chapters[i].SortOrder < chapters[j].SortOrder
 	})
 
-	// Load ChapterAudio records
-	chapterAudioQuery := fmt.Sprintf(`{
-		ChapterAudio(filter: {book_id: {_eq: "%s"}}) {
-			_docID
-			unique_key
-			chapter_idx
-			audio_file
-			duration_ms
-			segment_count
-		}
-	}`, bookID)
-
-	chapterAudioResp, err := defraClient.Execute(ctx, chapterAudioQuery, nil)
+	// Load ChapterAudio records (prefer relation field, fall back to unique_key prefix).
+	chapterAudioRecords, err := queryChapterAudioRecords(ctx, defraClient, bookID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query chapter audio: %v", err))
 		return
@@ -199,26 +189,13 @@ func (e *ExportStorytellerEndpoint) handler(w http.ResponseWriter, r *http.Reque
 
 	// Build ChapterAudio map (chapter_idx -> audio data)
 	chapterAudioMap := make(map[int]map[string]any)
-	if audioList, ok := chapterAudioResp.Data["ChapterAudio"].([]any); ok {
-		for _, a := range audioList {
-			if audioData, ok := a.(map[string]any); ok {
-				idx := getInt(audioData, "chapter_idx")
-				chapterAudioMap[idx] = audioData
-			}
-		}
+	for _, audioData := range chapterAudioRecords {
+		idx := getInt(audioData, "chapter_idx")
+		chapterAudioMap[idx] = audioData
 	}
 
-	// Load AudioSegment records for timing data
-	segmentQuery := fmt.Sprintf(`{
-		AudioSegment(filter: {book_id: {_eq: "%s"}}) {
-			chapter_idx
-			paragraph_idx
-			duration_ms
-			start_offset_ms
-		}
-	}`, bookID)
-
-	segmentResp, err := defraClient.Execute(ctx, segmentQuery, nil)
+	// Load AudioSegment records for timing data.
+	segmentRecords, err := queryAudioSegmentRecords(ctx, defraClient, bookID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to query audio segments: %v", err))
 		return
@@ -226,18 +203,14 @@ func (e *ExportStorytellerEndpoint) handler(w http.ResponseWriter, r *http.Reque
 
 	// Build segments map (chapter_idx -> []AudioSegment)
 	segmentsMap := make(map[int][]epub.AudioSegment)
-	if segList, ok := segmentResp.Data["AudioSegment"].([]any); ok {
-		for _, s := range segList {
-			if segData, ok := s.(map[string]any); ok {
-				chapterIdx := getInt(segData, "chapter_idx")
-				seg := epub.AudioSegment{
-					ParagraphIdx:  getInt(segData, "paragraph_idx"),
-					DurationMS:    getInt(segData, "duration_ms"),
-					StartOffsetMS: getInt(segData, "start_offset_ms"),
-				}
-				segmentsMap[chapterIdx] = append(segmentsMap[chapterIdx], seg)
-			}
+	for _, segData := range segmentRecords {
+		chapterIdx := getInt(segData, "chapter_idx")
+		seg := epub.AudioSegment{
+			ParagraphIdx:  getInt(segData, "paragraph_idx"),
+			DurationMS:    getInt(segData, "duration_ms"),
+			StartOffsetMS: getInt(segData, "start_offset_ms"),
 		}
+		segmentsMap[chapterIdx] = append(segmentsMap[chapterIdx], seg)
 	}
 
 	// Sort segments by paragraph_idx within each chapter
@@ -349,6 +322,59 @@ func resolveStorytellerAudioInclude(chData map[string]any) bool {
 	default:
 		return true
 	}
+}
+
+func queryAudioSegmentRecords(ctx context.Context, client *defra.Client, bookID string) ([]map[string]any, error) {
+	primaryQuery := fmt.Sprintf(`{
+		AudioSegment(filter: {book_id: {_eq: "%s"}}) {
+			unique_key
+			chapter_idx
+			paragraph_idx
+			duration_ms
+			start_offset_ms
+		}
+	}`, bookID)
+	primaryResp, primaryErr := client.Execute(ctx, primaryQuery, nil)
+	if primaryErr == nil {
+		records := extractDocMaps(primaryResp.Data, "AudioSegment")
+		if len(records) > 0 {
+			return records, nil
+		}
+	}
+
+	const pageSize = 2000
+	prefix := bookID + ":"
+	var filtered []map[string]any
+
+	for offset := 0; ; offset += pageSize {
+		fallbackQuery := fmt.Sprintf(`{
+			AudioSegment(limit: %d, offset: %d, order: {unique_key: ASC}) {
+				unique_key
+				chapter_idx
+				paragraph_idx
+				duration_ms
+				start_offset_ms
+			}
+		}`, pageSize, offset)
+		fallbackResp, fallbackErr := client.Execute(ctx, fallbackQuery, nil)
+		if fallbackErr != nil {
+			if primaryErr != nil {
+				return nil, primaryErr
+			}
+			return nil, fallbackErr
+		}
+
+		batch := extractDocMaps(fallbackResp.Data, "AudioSegment")
+		for _, rec := range batch {
+			if strings.HasPrefix(getString(rec, "unique_key"), prefix) {
+				filtered = append(filtered, rec)
+			}
+		}
+		if len(batch) < pageSize {
+			break
+		}
+	}
+	return filtered, nil
 }
 
 func (e *ExportStorytellerEndpoint) Command(getServerURL func() string) *cobra.Command {

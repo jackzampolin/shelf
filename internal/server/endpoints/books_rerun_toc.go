@@ -194,27 +194,42 @@ func (e *RerunTocEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 				"toc_id", tocDocID,
 				"error", err)
 		} else if entries, ok := entriesResp.Data["TocEntry"].([]any); ok {
-			deletedCount := 0
+			ops := make([]defra.WriteOp, 0, len(entries))
 			for _, entry := range entries {
-				if entryMap, ok := entry.(map[string]any); ok {
-					if entryDocID, ok := entryMap["_docID"].(string); ok {
-						_, err := sink.SendSync(r.Context(), defra.WriteOp{
-							Collection: "TocEntry",
-							DocID:      entryDocID,
-							Op:         defra.OpDelete,
-						})
-						if err != nil {
+				entryMap, ok := entry.(map[string]any)
+				if !ok {
+					continue
+				}
+				entryDocID, ok := entryMap["_docID"].(string)
+				if !ok || entryDocID == "" {
+					continue
+				}
+				ops = append(ops, defra.WriteOp{
+					Collection: "TocEntry",
+					DocID:      entryDocID,
+					Op:         defra.OpDelete,
+				})
+			}
+
+			if len(ops) > 0 {
+				results, err := sink.SendManySync(r.Context(), ops)
+				if err != nil {
+					logger.Warn("failed to batch delete ToC entries", "toc_id", tocDocID, "error", err)
+				} else {
+					deletedCount := 0
+					for _, result := range results {
+						if result.Err != nil {
 							logger.Warn("failed to delete ToC entry",
-								"entry_id", entryDocID,
-								"error", err)
-						} else {
-							deletedCount++
+								"entry_id", result.DocID,
+								"error", result.Err)
+							continue
 						}
+						deletedCount++
+					}
+					if deletedCount > 0 {
+						logger.Info("deleted existing ToC entries", "count", deletedCount)
 					}
 				}
-			}
-			if deletedCount > 0 {
-				logger.Info("deleted existing ToC entries", "count", deletedCount)
 			}
 		}
 	}
