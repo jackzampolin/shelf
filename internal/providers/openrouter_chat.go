@@ -85,12 +85,21 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		orReq.Messages = append(orReq.Messages, orMsg)
 	}
 
-	// Set response format if specified
+	// Set provider-adapted response format if specified.
 	if req.ResponseFormat != nil {
-		orReq.ResponseFormat = &openRouterResponseFormat{
-			Type:       req.ResponseFormat.Type,
-			JSONSchema: req.ResponseFormat.JSONSchema,
+		adaptedFormat, err := adaptedResponseFormat(model, req.ResponseFormat)
+		if err != nil {
+			return &ChatResult{
+				RequestID:    requestID,
+				Provider:     OpenRouterName,
+				ModelUsed:    model,
+				Success:      false,
+				ErrorType:    "schema_adapter",
+				ErrorMessage: err.Error(),
+				TotalTime:    time.Since(start),
+			}, fmt.Errorf("failed to adapt structured schema: %w", err)
 		}
+		orReq.ResponseFormat = adaptedFormat
 	}
 
 	// Add tools if specified
@@ -98,112 +107,144 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		orReq.Tools = tools
 	}
 
-	// Make request (pass pointer for nonce injection on retries)
-	orResp, httpErr := c.doRequest(ctx, "/chat/completions", &orReq)
-
 	result := &ChatResult{
 		RequestID: requestID,
 		Provider:  OpenRouterName,
-		Attempts:  1,
+		ModelUsed: model,
 	}
 
-	if httpErr != nil {
-		result.Success = false
-		result.ErrorType = "http_error"
-		result.ErrorMessage = httpErr.Error()
-		result.TotalTime = time.Since(start)
-		return result, httpErr
-	}
+	for attempt := 0; ; attempt++ {
+		result.Attempts = attempt + 1
 
-	// Check for API-level error (can be returned with 200 status)
-	if orResp.Error != nil {
-		result.Success = false
-		result.ErrorType = "api_error"
-		result.ErrorMessage = orResp.Error.Message
-		result.TotalTime = time.Since(start)
-		return result, fmt.Errorf("OpenRouter API error: %s", orResp.Error.Message)
-	}
-
-	// Parse response
-	if len(orResp.Choices) == 0 {
-		result.Success = false
-		result.ErrorType = "empty_response"
-		result.ErrorMessage = fmt.Sprintf("no choices in response (model=%s, id=%s)", orResp.Model, orResp.ID)
-		result.TotalTime = time.Since(start)
-		return result, fmt.Errorf("no choices in response (model=%s, id=%s)", orResp.Model, orResp.ID)
-	}
-
-	// Extract content
-	content := ""
-	if orResp.Choices[0].Message.Content != nil {
-		switch c := orResp.Choices[0].Message.Content.(type) {
-		case string:
-			content = c
-		default:
-			b, err := json.Marshal(c)
-			if err != nil {
-				result.Success = false
-				result.ErrorType = "content_marshal_error"
-				result.ErrorMessage = fmt.Sprintf("failed to marshal content: %v", err)
-				result.TotalTime = time.Since(start)
-				return result, fmt.Errorf("failed to marshal content: %w", err)
-			}
-			content = string(b)
-		}
-	}
-
-	result.Success = true
-	result.Content = content
-	result.ModelUsed = orResp.Model
-	result.PromptTokens = orResp.Usage.PromptTokens
-	result.CompletionTokens = orResp.Usage.CompletionTokens
-	result.TotalTokens = orResp.Usage.TotalTokens
-	result.ReasoningTokens = orResp.Usage.CompletionTokensDetails.ReasoningTokens
-	result.ExecutionTime = time.Since(start)
-	result.TotalTime = result.ExecutionTime
-
-	// Set cost from OpenRouter response (prefer native_total_cost, fallback to cost)
-	if orResp.Usage.NativeTotalCost > 0 {
-		result.CostUSD = orResp.Usage.NativeTotalCost
-	} else if orResp.Usage.Cost > 0 {
-		result.CostUSD = orResp.Usage.Cost
-	}
-
-	// Include reasoning_details for reasoning models
-	if len(orResp.Choices[0].Message.ReasoningDetails) > 0 {
-		result.ReasoningDetails = orResp.Choices[0].Message.ReasoningDetails
-	}
-
-	// Parse JSON if structured output was requested
-	if req.ResponseFormat != nil {
-		if content == "" {
+		// Make request (pass pointer for nonce injection on retries).
+		orResp, httpErr := c.doRequest(ctx, "/chat/completions", &orReq)
+		if httpErr != nil {
 			result.Success = false
-			result.ErrorType = "empty_content"
-			result.ErrorMessage = "expected JSON response but got empty content"
-		} else {
-			var parsed json.RawMessage
-			if err := json.Unmarshal([]byte(content), &parsed); err == nil {
-				result.ParsedJSON = parsed
-			} else {
-				result.Success = false
-				result.ErrorType = "json_parse"
-				result.ErrorMessage = fmt.Sprintf("failed to parse JSON response: %v", err)
+			result.ErrorType = "http_error"
+			result.ErrorMessage = httpErr.Error()
+			result.TotalTime = time.Since(start)
+			result.ExecutionTime = result.TotalTime
+			return result, httpErr
+		}
+
+		// Check for API-level error (can be returned with 200 status).
+		if orResp.Error != nil {
+			result.Success = false
+			result.ErrorType = "api_error"
+			result.ErrorMessage = orResp.Error.Message
+			result.TotalTime = time.Since(start)
+			result.ExecutionTime = result.TotalTime
+			return result, fmt.Errorf("OpenRouter API error: %s", orResp.Error.Message)
+		}
+
+		// Parse response.
+		if len(orResp.Choices) == 0 {
+			result.Success = false
+			result.ErrorType = "empty_response"
+			result.ErrorMessage = fmt.Sprintf("no choices in response (model=%s, id=%s)", orResp.Model, orResp.ID)
+			result.TotalTime = time.Since(start)
+			result.ExecutionTime = result.TotalTime
+			return result, fmt.Errorf("no choices in response (model=%s, id=%s)", orResp.Model, orResp.ID)
+		}
+
+		result.ModelUsed = orResp.Model
+		result.PromptTokens += orResp.Usage.PromptTokens
+		result.CompletionTokens += orResp.Usage.CompletionTokens
+		result.TotalTokens += orResp.Usage.TotalTokens
+		result.ReasoningTokens += orResp.Usage.CompletionTokensDetails.ReasoningTokens
+		if orResp.Usage.NativeTotalCost > 0 {
+			result.CostUSD += orResp.Usage.NativeTotalCost
+		} else if orResp.Usage.Cost > 0 {
+			result.CostUSD += orResp.Usage.Cost
+		}
+
+		choice := orResp.Choices[0]
+
+		// Include reasoning_details for reasoning models.
+		if len(choice.Message.ReasoningDetails) > 0 {
+			result.ReasoningDetails = choice.Message.ReasoningDetails
+		}
+
+		// Extract tool calls if present.
+		if len(choice.Message.ToolCalls) > 0 {
+			result.ToolCalls = make([]ToolCall, len(choice.Message.ToolCalls))
+			for i, tc := range choice.Message.ToolCalls {
+				result.ToolCalls[i] = ToolCall{
+					ID:   tc.ID,
+					Type: tc.Type,
+				}
+				result.ToolCalls[i].Function.Name = tc.Function.Name
+				result.ToolCalls[i].Function.Arguments = tc.Function.Arguments
 			}
 		}
-	}
 
-	// Extract tool calls if present
-	if len(orResp.Choices[0].Message.ToolCalls) > 0 {
-		result.ToolCalls = make([]ToolCall, len(orResp.Choices[0].Message.ToolCalls))
-		for i, tc := range orResp.Choices[0].Message.ToolCalls {
-			result.ToolCalls[i] = ToolCall{
-				ID:   tc.ID,
-				Type: tc.Type,
+		content := ""
+		if choice.Message.Content != nil {
+			switch contentValue := choice.Message.Content.(type) {
+			case string:
+				content = contentValue
+			default:
+				b, err := json.Marshal(contentValue)
+				if err != nil {
+					result.Success = false
+					result.ErrorType = "content_marshal_error"
+					result.ErrorMessage = fmt.Sprintf("failed to marshal content: %v", err)
+					result.TotalTime = time.Since(start)
+					result.ExecutionTime = result.TotalTime
+					return result, fmt.Errorf("failed to marshal content: %w", err)
+				}
+				content = string(b)
 			}
-			result.ToolCalls[i].Function.Name = tc.Function.Name
-			result.ToolCalls[i].Function.Arguments = tc.Function.Arguments
 		}
-	}
 
-	return result, nil
+		result.Content = content
+
+		// Non-structured responses are complete at first successful provider reply.
+		if req.ResponseFormat == nil {
+			result.Success = true
+			result.TotalTime = time.Since(start)
+			result.ExecutionTime = result.TotalTime
+			return result, nil
+		}
+
+		parsed, parseErr := parseStructuredJSON(content)
+		var validationErr error
+		if parseErr == nil {
+			result.ParsedJSON = parsed
+			validationErr = validateStructuredJSON(req.ResponseFormat.JSONSchema, parsed)
+		}
+
+		if parseErr == nil && validationErr == nil {
+			result.Success = true
+			result.ErrorType = ""
+			result.ErrorMessage = ""
+			result.TotalTime = time.Since(start)
+			result.ExecutionTime = result.TotalTime
+			return result, nil
+		}
+
+		issue := parseErr
+		result.ErrorType = "json_parse"
+		if issue == nil {
+			issue = validationErr
+			result.ErrorType = "schema_validation"
+		}
+		result.ErrorMessage = issue.Error()
+
+		if attempt >= maxStructuredRepairAttempts {
+			result.Success = false
+			result.TotalTime = time.Since(start)
+			result.ExecutionTime = result.TotalTime
+			return result, nil
+		}
+
+		// Ask the model to repair the output using the same response schema.
+		orReq.Messages = append(orReq.Messages,
+			openRouterMessage{Role: "assistant", Content: content},
+			openRouterMessage{
+				Role:    "user",
+				Content: structuredRepairPrompt(req.ResponseFormat.JSONSchema, content, issue),
+			},
+		)
+	}
 }

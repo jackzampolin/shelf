@@ -524,7 +524,7 @@ func (p *ProviderWorkerPool) isRetriableResultError(result *providers.ChatResult
 	if result == nil {
 		return false
 	}
-	return result.ErrorType == "json_parse"
+	return result.ErrorType == "json_parse" || result.ErrorType == "schema_validation"
 }
 
 func (p *ProviderWorkerPool) sleepBeforeRetry(ctx context.Context, err error, attempt int) {

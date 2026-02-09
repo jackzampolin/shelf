@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -173,6 +174,164 @@ func TestOpenRouterClient_Chat(t *testing.T) {
 		}
 		if result.ParsedJSON == nil {
 			t.Error("expected ParsedJSON to be set")
+		}
+	})
+
+	t.Run("structured output anthropic schema adapter strips integer bounds", func(t *testing.T) {
+		schema := json.RawMessage(`{
+			"name":"toc_extraction",
+			"strict":true,
+			"schema":{
+				"type":"object",
+				"properties":{
+					"level":{"type":"integer","minimum":1,"maximum":3},
+					"confidence":{"type":"number","minimum":0.0,"maximum":1.0}
+				},
+				"required":["level"],
+				"additionalProperties":false
+			}
+		}`)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var reqBody openRouterRequest
+			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+				t.Fatalf("failed to decode request body: %v", err)
+			}
+
+			if reqBody.ResponseFormat == nil {
+				t.Fatal("expected response_format in request")
+			}
+			schemaText := string(reqBody.ResponseFormat.JSONSchema)
+			if strings.Contains(schemaText, `"minimum":1`) || strings.Contains(schemaText, `"maximum":3`) {
+				t.Fatalf("expected integer bounds to be stripped for anthropic schema, got %s", schemaText)
+			}
+			if !strings.Contains(schemaText, `"minimum":0`) && !strings.Contains(schemaText, `"minimum":0.0`) {
+				t.Fatalf("expected number bounds to remain in schema, got %s", schemaText)
+			}
+
+			resp := map[string]any{
+				"id":    "test-id",
+				"model": "anthropic/claude-opus-4.6",
+				"choices": []map[string]any{
+					{
+						"message": map[string]any{
+							"role":    "assistant",
+							"content": `{"level":2,"confidence":0.7}`,
+						},
+						"finish_reason": "stop",
+					},
+				},
+				"usage": map[string]any{
+					"prompt_tokens":     10,
+					"completion_tokens": 8,
+					"total_tokens":      18,
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		defer server.Close()
+
+		client := NewOpenRouterClient(OpenRouterConfig{
+			APIKey:       "test-key",
+			BaseURL:      server.URL,
+			DefaultModel: "anthropic/claude-opus-4.6",
+		})
+
+		result, err := client.Chat(context.Background(), &ChatRequest{
+			Messages: []Message{{Role: "user", Content: "test"}},
+			ResponseFormat: &ResponseFormat{
+				Type:       "json_schema",
+				JSONSchema: schema,
+			},
+		})
+
+		if err != nil {
+			t.Fatalf("Chat() error = %v", err)
+		}
+		if !result.Success {
+			t.Fatalf("expected success, got error type=%s msg=%s", result.ErrorType, result.ErrorMessage)
+		}
+	})
+
+	t.Run("structured output repair loop validates and retries", func(t *testing.T) {
+		schema := json.RawMessage(`{
+			"name":"toc_extraction",
+			"strict":true,
+			"schema":{
+				"type":"object",
+				"properties":{
+					"level":{"type":"integer","minimum":1,"maximum":3}
+				},
+				"required":["level"],
+				"additionalProperties":false
+			}
+		}`)
+
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+			var reqBody openRouterRequest
+			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+				t.Fatalf("failed to decode request body: %v", err)
+			}
+			if requestCount == 1 && len(reqBody.Messages) != 1 {
+				t.Fatalf("expected first request to include only original prompt, got %d messages", len(reqBody.Messages))
+			}
+			if requestCount > 1 && len(reqBody.Messages) <= 1 {
+				t.Fatalf("expected repair request to include additional repair context, got %d messages", len(reqBody.Messages))
+			}
+
+			content := `{"level":5}` // invalid by canonical schema (max 3)
+			if requestCount > 1 {
+				content = `{"level":3}`
+			}
+
+			resp := map[string]any{
+				"id":    "test-id",
+				"model": "anthropic/claude-opus-4.6",
+				"choices": []map[string]any{
+					{
+						"message": map[string]any{
+							"role":    "assistant",
+							"content": content,
+						},
+						"finish_reason": "stop",
+					},
+				},
+				"usage": map[string]any{
+					"prompt_tokens":     10,
+					"completion_tokens": 5,
+					"total_tokens":      15,
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+		}))
+		defer server.Close()
+
+		client := NewOpenRouterClient(OpenRouterConfig{
+			APIKey:       "test-key",
+			BaseURL:      server.URL,
+			DefaultModel: "anthropic/claude-opus-4.6",
+		})
+
+		result, err := client.Chat(context.Background(), &ChatRequest{
+			Messages: []Message{{Role: "user", Content: "Return level"}},
+			ResponseFormat: &ResponseFormat{
+				Type:       "json_schema",
+				JSONSchema: schema,
+			},
+		})
+
+		if err != nil {
+			t.Fatalf("Chat() error = %v", err)
+		}
+		if !result.Success {
+			t.Fatalf("expected repaired structured output success, got error type=%s msg=%s", result.ErrorType, result.ErrorMessage)
+		}
+		if requestCount < 2 {
+			t.Fatalf("expected at least one repair retry, got %d request(s)", requestCount)
 		}
 	})
 
