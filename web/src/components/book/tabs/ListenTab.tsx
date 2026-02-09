@@ -74,6 +74,7 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
   const queryClient = useQueryClient()
   const audioRef = useRef<HTMLAudioElement>(null)
   const textContainerRef = useRef<HTMLDivElement>(null)
+  const defaultProvider = 'openai'
   const [currentChapter, setCurrentChapter] = useState<number | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -104,12 +105,18 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   })
 
-  // Keep provider selection aligned with backend default on first load.
+  // Prefer OpenAI on first load when available, then fall back to backend default.
   useEffect(() => {
-    if (!selectedProvider && ttsConfig?.provider) {
+    if (selectedProvider || !ttsConfig) return
+    const availableProviders = ttsConfig.available_providers || []
+    if (availableProviders.includes(defaultProvider)) {
+      setSelectedProvider(defaultProvider)
+      return
+    }
+    if (ttsConfig.provider) {
       setSelectedProvider(ttsConfig.provider)
     }
-  }, [selectedProvider, ttsConfig?.provider])
+  }, [defaultProvider, selectedProvider, ttsConfig])
 
   // Reset invalid voice when provider changes.
   useEffect(() => {
@@ -234,6 +241,17 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
+  const formatProviderLabel = (provider: string) => {
+    switch (provider.toLowerCase()) {
+      case 'openai':
+        return 'OpenAI'
+      case 'elevenlabs':
+        return 'ElevenLabs'
+      default:
+        return provider
+    }
+  }
+
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const time = parseFloat(e.target.value)
     if (audioRef.current) {
@@ -267,6 +285,11 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
   if (!audioStatus || audioStatus.status === 'not_started') {
     const hasVoices = ttsConfig?.voices && ttsConfig.voices.length > 0
     const availableProviders = ttsConfig?.available_providers || []
+    const orderedProviders = [...availableProviders].sort((a, b) => {
+      if (a === defaultProvider) return -1
+      if (b === defaultProvider) return 1
+      return a.localeCompare(b)
+    })
 
     return (
       <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
@@ -283,7 +306,7 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
         ) : (
           <div className="space-y-4">
             {/* Provider selection */}
-            {availableProviders.length > 1 && (
+            {orderedProviders.length > 1 && (
               <div className="max-w-xs mx-auto">
                 <label htmlFor="provider-select" className="block text-sm font-medium text-gray-700 mb-1">
                   Provider
@@ -297,9 +320,9 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  {availableProviders.map((provider) => (
+                  {orderedProviders.map((provider) => (
                     <option key={provider} value={provider}>
-                      {provider}
+                      {formatProviderLabel(provider)}
                     </option>
                   ))}
                 </select>
@@ -367,7 +390,7 @@ export function ListenTab({ bookId, book }: ListenTabProps) {
             {/* Show provider info */}
             {ttsConfig && (
               <div className="text-xs text-gray-400 mt-2">
-                Using {ttsConfig.provider} ({ttsConfig.model})
+                Using {formatProviderLabel(ttsConfig.provider)} ({ttsConfig.model})
               </div>
             )}
           </div>

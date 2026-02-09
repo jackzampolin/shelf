@@ -99,7 +99,7 @@ providers.ocr.paddle.rate_limit = 10.0
 providers.ocr.paddle.enabled = true
 
 providers.llm.openrouter.type = "openrouter"
-providers.llm.openrouter.model = "x-ai/grok-4.1-fast"
+providers.llm.openrouter.model = "anthropic/claude-opus-4.6"
 providers.llm.openrouter.api_key = "${OPENROUTER_API_KEY}"
 providers.llm.openrouter.rate_limit = 150.0
 providers.llm.openrouter.enabled = true

@@ -67,7 +67,7 @@ func DefaultEntries() []Entry {
 		},
 		{
 			Key:         "providers.llm.openrouter.model",
-			Value:       "x-ai/grok-4.1-fast",
+			Value:       "anthropic/claude-opus-4.6",
 			Description: "Default model for OpenRouter",
 		},
 		{

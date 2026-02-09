@@ -136,7 +136,7 @@ func (e *GenerateAudioEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 	}
 	provider := strings.ToLower(strings.TrimSpace(ttsCfg.TTSProvider))
 	if provider == "" {
-		provider = "elevenlabs"
+		provider = "openai"
 	}
 
 	// Apply provider override from request.

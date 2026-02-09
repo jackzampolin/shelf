@@ -78,7 +78,7 @@ func DefaultConfig() *Config {
 		LLMProviders: map[string]LLMProviderCfg{
 			"openrouter": {
 				Type:      "openrouter",
-				Model:     "x-ai/grok-4.1-fast",
+				Model:     "anthropic/claude-opus-4.6",
 				APIKey:    "${OPENROUTER_API_KEY}",
 				RateLimit: 150.0, // 150 RPS
 				Enabled:   true,
