@@ -81,6 +81,7 @@ func (cm *Manager) load() (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 	if viper.ConfigFileUsed() != "" && !viper.InConfig("defaults.require_healthy_providers") {
+		// Existing config files predate strict startup checks, so omitted means warn-only.
 		cfg.Defaults.RequireHealthyProviders = false
 	}
 	return &cfg, nil
@@ -133,14 +134,21 @@ func ResolveEnvVars(value string) string {
 	})
 }
 
-// resolveEnvVarsSlice applies ResolveEnvVars to each element, returning nil for empty input.
+// resolveEnvVarsSlice applies ResolveEnvVars to each element and drops empty results.
 func resolveEnvVarsSlice(values []string) []string {
 	if len(values) == 0 {
 		return nil
 	}
-	out := make([]string, len(values))
-	for i, v := range values {
-		out[i] = ResolveEnvVars(v)
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		resolved := ResolveEnvVars(v)
+		if resolved == "" {
+			continue
+		}
+		out = append(out, resolved)
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

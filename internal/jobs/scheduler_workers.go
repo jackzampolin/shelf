@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"time"
 
 	"github.com/jackzampolin/shelf/internal/providers"
 )
+
+var providerHealthCheckTimeout = 5 * time.Second
 
 // RegisterFactory registers a job factory for a job type.
 // Required for resuming jobs after restart.
@@ -61,7 +64,10 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 	// Create pools from LLM clients
 	for name, client := range registry.LLMClients() {
 		if runHealthChecks {
-			if err := client.HealthCheck(ctx); err != nil {
+			checkCtx, cancel := context.WithTimeout(ctx, providerHealthCheckTimeout)
+			err := client.HealthCheck(checkCtx)
+			cancel()
+			if err != nil {
 				if failFast {
 					return fmt.Errorf("LLM provider %q failed health check: %w", name, err)
 				}
@@ -86,7 +92,10 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 	// Create pools from OCR providers
 	for name, provider := range registry.OCRProviders() {
 		if runHealthChecks {
-			if err := provider.HealthCheck(ctx); err != nil {
+			checkCtx, cancel := context.WithTimeout(ctx, providerHealthCheckTimeout)
+			err := provider.HealthCheck(checkCtx)
+			cancel()
+			if err != nil {
 				if failFast {
 					return fmt.Errorf("OCR provider %q failed health check: %w", name, err)
 				}
@@ -111,7 +120,10 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 	// Create pools from TTS providers
 	for name, provider := range registry.TTSProviders() {
 		if runHealthChecks {
-			if err := provider.HealthCheck(ctx); err != nil {
+			checkCtx, cancel := context.WithTimeout(ctx, providerHealthCheckTimeout)
+			err := provider.HealthCheck(checkCtx)
+			cancel()
+			if err != nil {
 				if failFast {
 					return fmt.Errorf("TTS provider %q failed health check: %w", name, err)
 				}

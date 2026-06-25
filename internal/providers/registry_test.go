@@ -194,6 +194,13 @@ func TestNewRegistryFromConfig(t *testing.T) {
 					Enabled: true,
 				},
 			},
+			TTSProviders: map[string]TTSProviderConfig{
+				"openai": {
+					Type:    "openai",
+					APIKey:  "", // Empty
+					Enabled: true,
+				},
+			},
 		})
 
 		if r.HasLLM("openrouter") {
@@ -201,6 +208,9 @@ func TestNewRegistryFromConfig(t *testing.T) {
 		}
 		if r.HasOCR("mistral") {
 			t.Error("provider without API key should not be registered")
+		}
+		if r.HasTTS("openai") {
+			t.Error("TTS provider without API key should not be registered")
 		}
 	})
 
@@ -448,5 +458,68 @@ func TestCreateLLMClient_UsesBaseURL(t *testing.T) {
 		}
 	default:
 		t.Fatal("health check did not reach the configured base URL")
+	}
+}
+
+func TestCreateOCRProvider_UsesBaseURL(t *testing.T) {
+	provider := createOCRProvider(OCRProviderConfig{
+		Type:     "mistral-ocr",
+		APIKey:   "test-key",
+		BaseURLs: []string{"http://spark-1:8000/v1"},
+	})
+	if provider == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	client, ok := provider.(*MistralOCRClient)
+	if !ok {
+		t.Fatalf("provider type = %T, want *MistralOCRClient", provider)
+	}
+	if client.baseURL != "http://spark-1:8000/v1" {
+		t.Fatalf("baseURL = %q, want configured base URL", client.baseURL)
+	}
+}
+
+func TestReload_UpdatesOCRProviderBaseURL(t *testing.T) {
+	r := NewRegistryFromConfig(RegistryConfig{
+		OCRProviders: map[string]OCRProviderConfig{
+			"local-ocr": {
+				Type:     "mistral-ocr",
+				APIKey:   "",
+				BaseURLs: []string{"http://spark-1:8000/v1"},
+				Enabled:  true,
+			},
+		},
+	})
+
+	provider, err := r.GetOCR("local-ocr")
+	if err != nil {
+		t.Fatalf("GetOCR() error = %v", err)
+	}
+	initial := provider.(*MistralOCRClient)
+	if initial.baseURL != "http://spark-1:8000/v1" {
+		t.Fatalf("initial baseURL = %q", initial.baseURL)
+	}
+
+	r.Reload(RegistryConfig{
+		OCRProviders: map[string]OCRProviderConfig{
+			"local-ocr": {
+				Type:     "mistral-ocr",
+				APIKey:   "",
+				BaseURLs: []string{"http://spark-2:8000/v1"},
+				Enabled:  true,
+			},
+		},
+	})
+
+	provider, err = r.GetOCR("local-ocr")
+	if err != nil {
+		t.Fatalf("GetOCR() after reload error = %v", err)
+	}
+	updated := provider.(*MistralOCRClient)
+	if updated == initial {
+		t.Fatal("expected OCR client to be recreated after base URL change")
+	}
+	if updated.baseURL != "http://spark-2:8000/v1" {
+		t.Fatalf("updated baseURL = %q", updated.baseURL)
 	}
 }

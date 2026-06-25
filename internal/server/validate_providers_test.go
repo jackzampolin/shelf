@@ -1,6 +1,8 @@
 package server
 
 import (
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/jackzampolin/shelf/internal/providers"
@@ -38,4 +40,21 @@ func TestDedupeNonEmpty(t *testing.T) {
 	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
 		t.Fatalf("dedupeNonEmpty = %v, want [a b]", got)
 	}
+}
+
+func TestValidateProviderRoutingForStartup(t *testing.T) {
+	reg := providers.NewRegistry()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	t.Run("warn mode does not fail startup", func(t *testing.T) {
+		if err := validateProviderRoutingForStartup(logger, reg, []string{"missing-llm"}, []string{"missing-ocr"}, false); err != nil {
+			t.Fatalf("warn mode should not return error, got %v", err)
+		}
+	})
+
+	t.Run("strict mode fails startup", func(t *testing.T) {
+		if err := validateProviderRoutingForStartup(logger, reg, []string{"missing-llm"}, nil, true); err == nil {
+			t.Fatal("strict mode should return an error")
+		}
+	})
 }

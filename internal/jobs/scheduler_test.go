@@ -370,6 +370,82 @@ func TestInitFromRegistry_FailFastOnUnhealthy(t *testing.T) {
 	}
 }
 
+func TestInitFromRegistry_FailFastOnUnhealthyOCRAndTTS(t *testing.T) {
+	t.Run("OCR", func(t *testing.T) {
+		reg := providers.NewRegistry()
+		bad := providers.NewMockOCRProvider()
+		bad.ShouldFail = true
+		reg.RegisterOCR("bad-ocr", bad)
+
+		scheduler := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+		if err := scheduler.InitFromRegistryWithHealthCheck(context.Background(), reg, true, true); err == nil {
+			t.Fatal("expected error when OCR health check fails and failFast=true")
+		}
+	})
+
+	t.Run("TTS", func(t *testing.T) {
+		reg := providers.NewRegistry()
+		reg.RegisterTTS("bad-tts", failingTTSProvider{})
+
+		scheduler := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+		if err := scheduler.InitFromRegistryWithHealthCheck(context.Background(), reg, true, true); err == nil {
+			t.Fatal("expected error when TTS health check fails and failFast=true")
+		}
+	})
+}
+
+func TestInitFromRegistry_HealthCheckTimeout(t *testing.T) {
+	oldTimeout := providerHealthCheckTimeout
+	providerHealthCheckTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { providerHealthCheckTimeout = oldTimeout })
+
+	reg := providers.NewRegistry()
+	reg.RegisterLLM("slow", &slowHealthClient{
+		MockClient: providers.NewMockClient(),
+		delay:      time.Hour,
+	})
+
+	scheduler := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	start := time.Now()
+	if err := scheduler.InitFromRegistryWithHealthCheck(context.Background(), reg, true, false); err != nil {
+		t.Fatalf("expected warn-only timeout to still initialize pool, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("health check took %v, expected per-provider timeout to cap it", elapsed)
+	}
+	if _, ok := scheduler.GetPool("slow"); !ok {
+		t.Fatal("expected pool to register after warn-only timeout")
+	}
+}
+
+type slowHealthClient struct {
+	*providers.MockClient
+	delay time.Duration
+}
+
+func (c *slowHealthClient) HealthCheck(ctx context.Context) error {
+	select {
+	case <-time.After(c.delay):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+type failingTTSProvider struct{}
+
+func (failingTTSProvider) Name() string { return "failing-tts" }
+func (failingTTSProvider) Generate(ctx context.Context, req *providers.TTSRequest) (*providers.TTSResult, error) {
+	return nil, errors.New("failing TTS generate")
+}
+func (failingTTSProvider) HealthCheck(ctx context.Context) error {
+	return errors.New("failing TTS health check")
+}
+func (failingTTSProvider) RequestsPerSecond() float64    { return 1 }
+func (failingTTSProvider) MaxConcurrency() int           { return 0 }
+func (failingTTSProvider) MaxRetries() int               { return 1 }
+func (failingTTSProvider) RetryDelayBase() time.Duration { return time.Millisecond }
+
 // SyncCompleteJob is a job that completes synchronously with zero work units.
 // This mimics the behavior of ingest jobs.
 type SyncCompleteJob struct {

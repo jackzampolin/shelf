@@ -309,7 +309,7 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 			return fmt.Errorf("failed to load process-book config for provider validation: %w", err)
 		}
 		llmNames := dedupeNonEmpty(pbCfg.MetadataProvider, pbCfg.TocProvider)
-		if err := validateProviderRouting(s.registry, llmNames, pbCfg.OcrProviders); err != nil {
+		if err := validateProviderRoutingForStartup(s.logger, s.registry, llmNames, pbCfg.OcrProviders, requireHealthy); err != nil {
 			_ = s.shutdown()
 			return fmt.Errorf("provider routing validation failed: %w", err)
 		}

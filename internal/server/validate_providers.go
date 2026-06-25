@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/jackzampolin/shelf/internal/providers"
 )
@@ -25,6 +26,20 @@ func validateProviderRouting(registry *providers.Registry, llmNames, ocrNames []
 		if !registry.HasOCR(name) {
 			return fmt.Errorf("configured OCR provider %q is not registered (check ocr_providers and defaults.ocr_providers)", name)
 		}
+	}
+	return nil
+}
+
+func validateProviderRoutingForStartup(logger *slog.Logger, registry *providers.Registry, llmNames, ocrNames []string, failFast bool) error {
+	err := validateProviderRouting(registry, llmNames, ocrNames)
+	if err == nil {
+		return nil
+	}
+	if failFast {
+		return err
+	}
+	if logger != nil {
+		logger.Warn("provider routing validation failed", "error", err)
 	}
 	return nil
 }

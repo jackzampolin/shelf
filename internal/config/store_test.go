@@ -87,13 +87,13 @@ func TestDefraStore_GetAll(t *testing.T) {
 			"Config": []any{
 				map[string]any{
 					"_docID":      "doc1",
-					"name":         "providers.ocr.mistral.type",
+					"name":        "providers.ocr.mistral.type",
 					"value":       `"mistral-ocr"`,
 					"description": "OCR provider type",
 				},
 				map[string]any{
 					"_docID":      "doc2",
-					"name":         "providers.llm.openrouter.model",
+					"name":        "providers.llm.openrouter.model",
 					"value":       `"gpt-4"`,
 					"description": "LLM model name",
 				},
@@ -128,12 +128,12 @@ func TestDefraStore_GetByPrefix(t *testing.T) {
 			"Config": []any{
 				map[string]any{
 					"_docID": "doc1",
-					"name":    "providers.ocr.mistral.type",
+					"name":   "providers.ocr.mistral.type",
 					"value":  `"mistral-ocr"`,
 				},
 				map[string]any{
 					"_docID": "doc3",
-					"name":    "providers.llm.openrouter.type",
+					"name":   "providers.llm.openrouter.type",
 					"value":  `"openrouter"`,
 				},
 			},
@@ -210,6 +210,39 @@ func TestExtractProviders(t *testing.T) {
 			t.Errorf("extractProviders() with non-matching prefix should return empty map")
 		}
 	})
+}
+
+func TestStoreToProviderRegistryConfig_ResolvesBaseURLs(t *testing.T) {
+	t.Setenv("SPARK1", "http://100.74.68.88:8000/v1")
+
+	server := mockDefraServer(t, func(query string) map[string]any {
+		return map[string]any{
+			"Config": []any{
+				map[string]any{"name": "providers.ocr.local.type", "value": `"mistral-ocr"`},
+				map[string]any{"name": "providers.ocr.local.enabled", "value": `true`},
+				map[string]any{"name": "providers.ocr.local.base_urls", "value": `["${SPARK1}"]`},
+				map[string]any{"name": "providers.llm.local.type", "value": `"openrouter"`},
+				map[string]any{"name": "providers.llm.local.enabled", "value": `true`},
+				map[string]any{"name": "providers.llm.local.base_urls", "value": `["${SPARK1}","http://100.86.62.91:8000/v1"]`},
+			},
+		}
+	})
+	defer server.Close()
+
+	store := NewStore(defra.NewClient(server.URL))
+	cfg, err := StoreToProviderRegistryConfig(t.Context(), store)
+	if err != nil {
+		t.Fatalf("StoreToProviderRegistryConfig() error = %v", err)
+	}
+
+	ocrURLs := cfg.OCRProviders["local"].BaseURLs
+	if len(ocrURLs) != 1 || ocrURLs[0] != "http://100.74.68.88:8000/v1" {
+		t.Fatalf("OCR BaseURLs = %v, want resolved spark URL", ocrURLs)
+	}
+	llmURLs := cfg.LLMProviders["local"].BaseURLs
+	if len(llmURLs) != 2 || llmURLs[0] != "http://100.74.68.88:8000/v1" || llmURLs[1] != "http://100.86.62.91:8000/v1" {
+		t.Fatalf("LLM BaseURLs = %v, want resolved spark URLs", llmURLs)
+	}
 }
 
 func TestGetHelpers(t *testing.T) {

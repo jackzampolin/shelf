@@ -479,11 +479,15 @@ func createLLMClient(cfg LLMProviderConfig) LLMClient {
 func createOCRProvider(cfg OCRProviderConfig) OCRProvider {
 	switch cfg.Type {
 	case "mistral-ocr":
-		return NewMistralOCRClient(MistralOCRConfig{
+		moc := MistralOCRConfig{
 			APIKey:        cfg.APIKey,
 			RateLimit:     cfg.RateLimit,
 			IncludeImages: cfg.IncludeImages,
-		})
+		}
+		if len(cfg.BaseURLs) > 0 {
+			moc.BaseURL = cfg.BaseURLs[0]
+		}
+		return NewMistralOCRClient(moc)
 	default:
 		return nil
 	}
@@ -509,7 +513,13 @@ func needsLLMUpdate(client LLMClient, cfg LLMProviderConfig) bool {
 // needsOCRUpdate checks if an OCR provider needs to be recreated.
 func needsOCRUpdate(provider OCRProvider, cfg OCRProviderConfig) bool {
 	if p, ok := provider.(*MistralOCRClient); ok {
-		return p.apiKey != cfg.APIKey || p.rateLimit != cfg.RateLimit
+		baseURL := MistralOCRBaseURL
+		if len(cfg.BaseURLs) > 0 {
+			baseURL = cfg.BaseURLs[0]
+		}
+		return p.apiKey != cfg.APIKey ||
+			p.baseURL != baseURL ||
+			p.rateLimit != cfg.RateLimit
 	}
 	return true
 }
