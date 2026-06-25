@@ -12,20 +12,22 @@ type Config struct {
 
 // OCRProviderCfg configures an OCR provider.
 type OCRProviderCfg struct {
-	Type          string  `mapstructure:"type" yaml:"type"`             // "mistral-ocr"
-	APIKey        string  `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
-	RateLimit     float64 `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
-	Enabled       bool    `mapstructure:"enabled" yaml:"enabled"`
-	IncludeImages bool    `mapstructure:"include_images" yaml:"include_images"` // Extract images (Mistral only)
+	Type          string   `mapstructure:"type" yaml:"type"`             // "mistral-ocr"
+	APIKey        string   `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
+	RateLimit     float64  `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
+	Enabled       bool     `mapstructure:"enabled" yaml:"enabled"`
+	IncludeImages bool     `mapstructure:"include_images" yaml:"include_images"` // Extract images (Mistral only)
+	BaseURLs      []string `mapstructure:"base_urls" yaml:"base_urls"`           // Optional self-hosted endpoints (supports ${ENV_VAR})
 }
 
 // LLMProviderCfg configures an LLM provider.
 type LLMProviderCfg struct {
-	Type      string  `mapstructure:"type" yaml:"type"`             // "openrouter"
-	Model     string  `mapstructure:"model" yaml:"model"`           // Model name
-	APIKey    string  `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
-	RateLimit float64 `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
-	Enabled   bool    `mapstructure:"enabled" yaml:"enabled"`
+	Type      string   `mapstructure:"type" yaml:"type"`             // "openrouter"
+	Model     string   `mapstructure:"model" yaml:"model"`           // Model name
+	APIKey    string   `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
+	RateLimit float64  `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
+	Enabled   bool     `mapstructure:"enabled" yaml:"enabled"`
+	BaseURLs  []string `mapstructure:"base_urls" yaml:"base_urls"` // Optional self-hosted endpoints (supports ${ENV_VAR})
 }
 
 // TTSProviderCfg configures a TTS provider.
@@ -46,11 +48,12 @@ type TTSProviderCfg struct {
 
 // DefaultsCfg specifies default provider selections.
 type DefaultsCfg struct {
-	OCRProviders          []string `mapstructure:"ocr_providers" yaml:"ocr_providers"`                     // Ordered list of OCR providers
-	LLMProvider           string   `mapstructure:"llm_provider" yaml:"llm_provider"`                       // Default LLM provider
-	TTSProvider           string   `mapstructure:"tts_provider" yaml:"tts_provider"`                       // Default TTS provider
-	OpenAITTSInstructions string   `mapstructure:"openai_tts_instructions" yaml:"openai_tts_instructions"` // Default instructions for OpenAI gpt-4o-mini-tts
-	MaxWorkers            int      `mapstructure:"max_workers" yaml:"max_workers"`                         // Max concurrent workers
+	OCRProviders            []string `mapstructure:"ocr_providers" yaml:"ocr_providers"`                         // Ordered list of OCR providers
+	LLMProvider             string   `mapstructure:"llm_provider" yaml:"llm_provider"`                           // Default LLM provider
+	TTSProvider             string   `mapstructure:"tts_provider" yaml:"tts_provider"`                           // Default TTS provider
+	OpenAITTSInstructions   string   `mapstructure:"openai_tts_instructions" yaml:"openai_tts_instructions"`     // Default instructions for OpenAI gpt-4o-mini-tts
+	MaxWorkers              int      `mapstructure:"max_workers" yaml:"max_workers"`                             // Max concurrent workers
+	RequireHealthyProviders bool     `mapstructure:"require_healthy_providers" yaml:"require_healthy_providers"` // Fail startup if provider health checks fail
 }
 
 // DefraConfig holds DefraDB container configuration.
@@ -109,11 +112,12 @@ func DefaultConfig() *Config {
 			},
 		},
 		Defaults: DefaultsCfg{
-			OCRProviders:          []string{"mistral"},
-			LLMProvider:           "openrouter",
-			TTSProvider:           "openai",
-			OpenAITTSInstructions: "",
-			MaxWorkers:            10,
+			OCRProviders:            []string{"mistral"},
+			LLMProvider:             "openrouter",
+			TTSProvider:             "openai",
+			OpenAITTSInstructions:   "",
+			MaxWorkers:              10,
+			RequireHealthyProviders: true,
 		},
 		Defra: DefraConfig{
 			ContainerName: "shelf-defra",

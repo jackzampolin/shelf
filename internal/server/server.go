@@ -291,10 +291,28 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 		Sink:    s.defraSink,
 	})
 
-	// Initialize workers from provider registry
-	if err := s.scheduler.InitFromRegistry(s.registry); err != nil {
+	// Initialize workers from provider registry. For local inference a down
+	// endpoint stalls the pipeline, so configured deployments can fail fast.
+	requireHealthy := false
+	if s.configMgr != nil {
+		requireHealthy = s.configMgr.Get().Defaults.RequireHealthyProviders
+	}
+	if err := s.scheduler.InitFromRegistryWithHealthCheck(ctx, s.registry, true, requireHealthy); err != nil {
 		_ = s.shutdown()
 		return fmt.Errorf("failed to initialize workers: %w", err)
+	}
+
+	if s.configMgr != nil {
+		pbCfg, err := jobcfg.NewBuilder(s.configStore).ProcessBookConfig(ctx)
+		if err != nil {
+			_ = s.shutdown()
+			return fmt.Errorf("failed to load process-book config for provider validation: %w", err)
+		}
+		llmNames := dedupeNonEmpty(pbCfg.MetadataProvider, pbCfg.TocProvider)
+		if err := validateProviderRouting(s.registry, llmNames, pbCfg.OcrProviders); err != nil {
+			_ = s.shutdown()
+			return fmt.Errorf("provider routing validation failed: %w", err)
+		}
 	}
 
 	// Initialize CPU pool for CPU-bound tasks (uses runtime.NumCPU())

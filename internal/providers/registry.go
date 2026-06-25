@@ -269,7 +269,8 @@ type OCRProviderConfig struct {
 	APIKey        string  // Resolved API key
 	RateLimit     float64 // Requests per second
 	Enabled       bool
-	IncludeImages bool // Whether to include base64 image data (Mistral only)
+	IncludeImages bool     // Whether to include base64 image data (Mistral only)
+	BaseURLs      []string // Optional self-hosted endpoints
 }
 
 // LLMProviderConfig matches config.LLMProviderCfg with resolved API key.
@@ -279,6 +280,7 @@ type LLMProviderConfig struct {
 	APIKey    string  // Resolved API key
 	RateLimit float64 // Requests per second
 	Enabled   bool
+	BaseURLs  []string // Optional self-hosted endpoints
 }
 
 // TTSProviderConfig matches config.TTSProviderCfg with resolved API key.
@@ -298,7 +300,7 @@ type TTSProviderConfig struct {
 }
 
 // NewRegistryFromConfig creates a registry with providers based on configuration.
-// Only enabled providers with valid API keys will be registered.
+// Only enabled providers with valid API keys or configured base URLs will be registered.
 func NewRegistryFromConfig(cfg RegistryConfig) *Registry {
 	r := NewRegistry()
 	r.applyConfig(cfg)
@@ -319,7 +321,7 @@ func (r *Registry) Reload(cfg RegistryConfig) {
 
 	// Process LLM providers
 	for name, provCfg := range cfg.LLMProviders {
-		if !provCfg.Enabled || provCfg.APIKey == "" {
+		if !provCfg.Enabled || (provCfg.APIKey == "" && len(provCfg.BaseURLs) == 0) {
 			continue
 		}
 		wantLLM[name] = true
@@ -342,7 +344,7 @@ func (r *Registry) Reload(cfg RegistryConfig) {
 
 	// Process OCR providers
 	for name, provCfg := range cfg.OCRProviders {
-		if !provCfg.Enabled || provCfg.APIKey == "" {
+		if !provCfg.Enabled || (provCfg.APIKey == "" && len(provCfg.BaseURLs) == 0) {
 			continue
 		}
 		wantOCR[name] = true
@@ -420,7 +422,7 @@ func (r *Registry) Reload(cfg RegistryConfig) {
 func (r *Registry) applyConfig(cfg RegistryConfig) {
 	// Register LLM providers
 	for name, provCfg := range cfg.LLMProviders {
-		if !provCfg.Enabled || provCfg.APIKey == "" {
+		if !provCfg.Enabled || (provCfg.APIKey == "" && len(provCfg.BaseURLs) == 0) {
 			continue
 		}
 		client := createLLMClient(provCfg)
@@ -431,7 +433,7 @@ func (r *Registry) applyConfig(cfg RegistryConfig) {
 
 	// Register OCR providers
 	for name, provCfg := range cfg.OCRProviders {
-		if !provCfg.Enabled || provCfg.APIKey == "" {
+		if !provCfg.Enabled || (provCfg.APIKey == "" && len(provCfg.BaseURLs) == 0) {
 			continue
 		}
 		provider := createOCRProvider(provCfg)
@@ -459,11 +461,15 @@ func (r *Registry) applyConfig(cfg RegistryConfig) {
 func createLLMClient(cfg LLMProviderConfig) LLMClient {
 	switch cfg.Type {
 	case "openrouter":
-		return NewOpenRouterClient(OpenRouterConfig{
+		orc := OpenRouterConfig{
 			APIKey:       cfg.APIKey,
 			DefaultModel: cfg.Model,
 			RPS:          cfg.RateLimit, // Pass RPS from config
-		})
+		}
+		if len(cfg.BaseURLs) > 0 {
+			orc.BaseURL = cfg.BaseURLs[0]
+		}
+		return NewOpenRouterClient(orc)
 	default:
 		return nil
 	}
@@ -487,7 +493,12 @@ func createOCRProvider(cfg OCRProviderConfig) OCRProvider {
 func needsLLMUpdate(client LLMClient, cfg LLMProviderConfig) bool {
 	switch c := client.(type) {
 	case *OpenRouterClient:
+		baseURL := OpenRouterBaseURL
+		if len(cfg.BaseURLs) > 0 {
+			baseURL = cfg.BaseURLs[0]
+		}
 		return c.apiKey != cfg.APIKey ||
+			c.baseURL != baseURL ||
 			c.defaultModel != cfg.Model ||
 			c.rps != cfg.RateLimit
 	default:

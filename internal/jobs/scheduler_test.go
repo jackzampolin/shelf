@@ -353,6 +353,23 @@ func TestScheduler_InitFromRegistry(t *testing.T) {
 	}
 }
 
+func TestInitFromRegistry_FailFastOnUnhealthy(t *testing.T) {
+	reg := providers.NewRegistry()
+	bad := providers.NewMockClient()
+	bad.ShouldFail = true
+	reg.RegisterLLM("bad", bad)
+
+	s1 := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	if err := s1.InitFromRegistryWithHealthCheck(context.Background(), reg, true, true); err == nil {
+		t.Fatal("expected error when health check fails and failFast=true")
+	}
+
+	s2 := NewScheduler(SchedulerConfig{Logger: slog.Default()})
+	if err := s2.InitFromRegistryWithHealthCheck(context.Background(), reg, true, false); err != nil {
+		t.Fatalf("expected no error with failFast=false, got %v", err)
+	}
+}
+
 // SyncCompleteJob is a job that completes synchronously with zero work units.
 // This mimics the behavior of ingest jobs.
 type SyncCompleteJob struct {

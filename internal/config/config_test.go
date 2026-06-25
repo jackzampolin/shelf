@@ -301,6 +301,36 @@ func TestConfig_ToProviderRegistryConfig(t *testing.T) {
 	})
 }
 
+func TestToProviderRegistryConfig_ResolvesBaseURLs(t *testing.T) {
+	os.Setenv("SPARK1", "http://100.74.68.88:8000/v1")
+	defer os.Unsetenv("SPARK1")
+
+	c := &Config{
+		LLMProviders: map[string]LLMProviderCfg{
+			"local-llm": {
+				Type:     "openai-compat",
+				Model:    "nvidia/Qwen3.6-35B-A3B-NVFP4",
+				BaseURLs: []string{"${SPARK1}", "http://100.86.62.91:8000/v1"},
+				Enabled:  true,
+			},
+		},
+		OCRProviders: map[string]OCRProviderCfg{
+			"local-ocr": {Type: "chandra", BaseURLs: []string{"${SPARK1}"}, Enabled: true},
+		},
+	}
+
+	rc := c.ToProviderRegistryConfig()
+
+	llm := rc.LLMProviders["local-llm"].BaseURLs
+	if len(llm) != 2 || llm[0] != "http://100.74.68.88:8000/v1" || llm[1] != "http://100.86.62.91:8000/v1" {
+		t.Fatalf("LLM BaseURLs = %v, want resolved spark URLs", llm)
+	}
+	ocr := rc.OCRProviders["local-ocr"].BaseURLs
+	if len(ocr) != 1 || ocr[0] != "http://100.74.68.88:8000/v1" {
+		t.Fatalf("OCR BaseURLs = %v, want resolved spark URL", ocr)
+	}
+}
+
 func TestManager_WatchConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	configFile := filepath.Join(tmpDir, "config.yaml")

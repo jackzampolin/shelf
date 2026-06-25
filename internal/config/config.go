@@ -80,6 +80,9 @@ func (cm *Manager) load() (*Config, error) {
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+	if viper.ConfigFileUsed() != "" && !viper.InConfig("defaults.require_healthy_providers") {
+		cfg.Defaults.RequireHealthyProviders = false
+	}
 	return &cfg, nil
 }
 
@@ -130,8 +133,20 @@ func ResolveEnvVars(value string) string {
 	})
 }
 
+// resolveEnvVarsSlice applies ResolveEnvVars to each element, returning nil for empty input.
+func resolveEnvVarsSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, len(values))
+	for i, v := range values {
+		out[i] = ResolveEnvVars(v)
+	}
+	return out
+}
+
 // ToProviderRegistryConfig converts the config to a format suitable for providers.Registry.
-// It resolves all ${ENV_VAR} references in API keys.
+// It resolves all ${ENV_VAR} references in API keys and base URLs.
 func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 	cfg := providers.RegistryConfig{
 		OCRProviders: make(map[string]providers.OCRProviderConfig),
@@ -146,6 +161,7 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 			RateLimit:     ocr.RateLimit,
 			Enabled:       ocr.Enabled,
 			IncludeImages: ocr.IncludeImages,
+			BaseURLs:      resolveEnvVarsSlice(ocr.BaseURLs),
 		}
 	}
 
@@ -156,6 +172,7 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 			APIKey:    ResolveEnvVars(llm.APIKey),
 			RateLimit: llm.RateLimit,
 			Enabled:   llm.Enabled,
+			BaseURLs:  resolveEnvVarsSlice(llm.BaseURLs),
 		}
 	}
 

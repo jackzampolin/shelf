@@ -1,6 +1,9 @@
 package providers
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 )
@@ -385,4 +388,65 @@ func TestRegistry_Reload(t *testing.T) {
 		}
 		wg.Wait()
 	})
+}
+
+func TestReload_RegistersKeylessLocalProvider(t *testing.T) {
+	r := NewRegistry()
+	r.Reload(RegistryConfig{
+		LLMProviders: map[string]LLMProviderConfig{
+			"local-llm":      {Type: "openrouter", Model: "x", APIKey: "", BaseURLs: []string{"http://spark-1:8000/v1"}, Enabled: true},
+			"keyless-no-url": {Type: "openrouter", Model: "x", APIKey: "", Enabled: true},
+		},
+		OCRProviders: map[string]OCRProviderConfig{
+			"local-ocr":        {Type: "mistral-ocr", APIKey: "", BaseURLs: []string{"http://spark-1:8000/v1"}, Enabled: true},
+			"ocr-keyless-none": {Type: "mistral-ocr", APIKey: "", Enabled: true},
+		},
+	})
+
+	if !r.HasLLM("local-llm") {
+		t.Error("expected keyless LLM provider with base_urls to register")
+	}
+	if r.HasLLM("keyless-no-url") {
+		t.Error("expected keyless LLM provider without base_urls to be skipped")
+	}
+	if !r.HasOCR("local-ocr") {
+		t.Error("expected keyless OCR provider with base_urls to register")
+	}
+	if r.HasOCR("ocr-keyless-none") {
+		t.Error("expected keyless OCR provider without base_urls to be skipped")
+	}
+}
+
+func TestCreateLLMClient_UsesBaseURL(t *testing.T) {
+	hit := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case hit <- r.URL.Path:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := createLLMClient(LLMProviderConfig{
+		Type:     "openrouter",
+		Model:    "x",
+		APIKey:   "test-key",
+		BaseURLs: []string{srv.URL},
+	})
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+	if err := client.HealthCheck(context.Background()); err != nil {
+		t.Fatalf("HealthCheck() error = %v", err)
+	}
+
+	select {
+	case path := <-hit:
+		if path != "/auth/key" {
+			t.Fatalf("health check hit %q, want /auth/key", path)
+		}
+	default:
+		t.Fatal("health check did not reach the configured base URL")
+	}
 }

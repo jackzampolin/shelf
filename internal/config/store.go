@@ -273,7 +273,7 @@ func (s *DefraStore) parseConfigEntries(data map[string]any) ([]Entry, error) {
 
 // StoreToProviderRegistryConfig builds a ProviderRegistryConfig from the Store.
 // It reads all config entries and constructs the provider configuration,
-// resolving ${ENV_VAR} references in API keys.
+// resolving ${ENV_VAR} references in API keys and base URLs.
 func StoreToProviderRegistryConfig(ctx context.Context, store Store) (providers.RegistryConfig, error) {
 	cfg := providers.RegistryConfig{
 		OCRProviders: make(map[string]providers.OCRProviderConfig),
@@ -294,6 +294,7 @@ func StoreToProviderRegistryConfig(ctx context.Context, store Store) (providers.
 			RateLimit:     getFloat(fields, "rate_limit"),
 			Enabled:       getBool(fields, "enabled"),
 			IncludeImages: getBool(fields, "include_images"),
+			BaseURLs:      resolveEnvVarsSlice(getStringSlice(fields, "base_urls")),
 		}
 	}
 
@@ -306,6 +307,7 @@ func StoreToProviderRegistryConfig(ctx context.Context, store Store) (providers.
 			APIKey:    ResolveEnvVars(getString(fields, "api_key")),
 			RateLimit: getFloat(fields, "rate_limit"),
 			Enabled:   getBool(fields, "enabled"),
+			BaseURLs:  resolveEnvVarsSlice(getStringSlice(fields, "base_urls")),
 		}
 	}
 
@@ -366,4 +368,21 @@ func getBool(m map[string]any, key string) bool {
 		return v
 	}
 	return false
+}
+
+func getStringSlice(m map[string]any, key string) []string {
+	switch v := m[key].(type) {
+	case []string:
+		return v
+	case []any:
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }

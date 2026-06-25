@@ -46,21 +46,26 @@ func (s *Scheduler) RegisterPool(p WorkerPool) {
 // This is the recommended way to set up pools - one provider = one pool.
 // Each pool pulls its rate limit from the provider's configured value.
 func (s *Scheduler) InitFromRegistry(registry *providers.Registry) error {
-	return s.InitFromRegistryWithHealthCheck(context.Background(), registry, false)
+	return s.InitFromRegistryWithHealthCheck(context.Background(), registry, false, false)
+}
+
+// InitFromRegistryStrict runs health checks and fails fast on the first unreachable provider.
+func (s *Scheduler) InitFromRegistryStrict(ctx context.Context, registry *providers.Registry) error {
+	return s.InitFromRegistryWithHealthCheck(ctx, registry, true, true)
 }
 
 // InitFromRegistryWithHealthCheck creates pools with optional health checking.
 // When runHealthChecks is true, verifies each provider is reachable before creating pools.
-// Failed health checks are logged as warnings but don't prevent pool creation.
-func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registry *providers.Registry, runHealthChecks bool) error {
+// Failed health checks are logged as warnings unless failFast is true.
+func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registry *providers.Registry, runHealthChecks, failFast bool) error {
 	// Create pools from LLM clients
 	for name, client := range registry.LLMClients() {
 		if runHealthChecks {
 			if err := client.HealthCheck(ctx); err != nil {
-				s.logger.Warn("LLM provider health check failed",
-					"name", name,
-					"error", err,
-				)
+				if failFast {
+					return fmt.Errorf("LLM provider %q failed health check: %w", name, err)
+				}
+				s.logger.Warn("LLM provider health check failed", "name", name, "error", err)
 			} else {
 				s.logger.Debug("LLM provider health check passed", "name", name)
 			}
@@ -82,10 +87,10 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 	for name, provider := range registry.OCRProviders() {
 		if runHealthChecks {
 			if err := provider.HealthCheck(ctx); err != nil {
-				s.logger.Warn("OCR provider health check failed",
-					"name", name,
-					"error", err,
-				)
+				if failFast {
+					return fmt.Errorf("OCR provider %q failed health check: %w", name, err)
+				}
+				s.logger.Warn("OCR provider health check failed", "name", name, "error", err)
 			} else {
 				s.logger.Debug("OCR provider health check passed", "name", name)
 			}
@@ -107,10 +112,10 @@ func (s *Scheduler) InitFromRegistryWithHealthCheck(ctx context.Context, registr
 	for name, provider := range registry.TTSProviders() {
 		if runHealthChecks {
 			if err := provider.HealthCheck(ctx); err != nil {
-				s.logger.Warn("TTS provider health check failed",
-					"name", name,
-					"error", err,
-				)
+				if failFast {
+					return fmt.Errorf("TTS provider %q failed health check: %w", name, err)
+				}
+				s.logger.Warn("TTS provider health check failed", "name", name, "error", err)
 			} else {
 				s.logger.Debug("TTS provider health check passed", "name", name)
 			}
