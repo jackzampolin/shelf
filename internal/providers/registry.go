@@ -496,6 +496,13 @@ func createOCRProvider(cfg OCRProviderConfig) OCRProvider {
 			moc.BaseURL = cfg.BaseURLs[0]
 		}
 		return NewMistralOCRClient(moc)
+	case "chandra":
+		return NewChandraOCRClient(ChandraOCRConfig{
+			Name:      cfg.Type,
+			BaseURLs:  cfg.BaseURLs,
+			APIKey:    cfg.APIKey,
+			RateLimit: cfg.RateLimit,
+		})
 	default:
 		return nil
 	}
