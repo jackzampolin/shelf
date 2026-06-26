@@ -128,9 +128,11 @@ func (c *Client) Execute(ctx context.Context, query string, variables map[string
 	return &gqlResp, nil
 }
 
-// AddSchema adds a GraphQL schema to DefraDB.
+// AddSchema adds a GraphQL/SDL schema to DefraDB.
+// As of DefraDB v1.0 (the "Schema -> Collection" rename), the SDL is POSTed to
+// /api/v0/collections (formerly /api/v0/schema); the body format is unchanged (raw SDL).
 func (c *Client) AddSchema(ctx context.Context, schema string) error {
-	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/api/v0/schema", strings.NewReader(schema))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/api/v0/collections", strings.NewReader(schema))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -204,7 +206,7 @@ func (c *Client) CreateMany(ctx context.Context, collection string, inputs []map
 		fields += " " + f
 	}
 
-	query := fmt.Sprintf(`mutation { create_%s(input: %s) { %s } }`, collection, inputArray, fields)
+	query := fmt.Sprintf(`mutation { add_%s(input: %s) { %s } }`, collection, inputArray, fields)
 
 	resp, err := c.Execute(ctx, query, nil)
 	if err != nil {
@@ -215,7 +217,7 @@ func (c *Client) CreateMany(ctx context.Context, collection string, inputs []map
 	}
 
 	// Extract results from response
-	createKey := fmt.Sprintf("create_%s", collection)
+	createKey := fmt.Sprintf("add_%s", collection)
 	docs, ok := resp.Data[createKey].([]any)
 	if !ok {
 		return nil, fmt.Errorf("unexpected response format: %+v", resp.Data)
@@ -291,7 +293,7 @@ func (c *Client) CreateWithVersion(ctx context.Context, collection string, input
 	if err != nil {
 		return WriteResult{}, fmt.Errorf("failed to build input: %w", err)
 	}
-	query := fmt.Sprintf(`mutation { create_%s(input: %s) { _docID _version { cid } } }`, collection, inputGQL)
+	query := fmt.Sprintf(`mutation { add_%s(input: %s) { _docID _version { cid } } }`, collection, inputGQL)
 
 	resp, err := c.Execute(ctx, query, nil)
 	if err != nil {
@@ -301,7 +303,7 @@ func (c *Client) CreateWithVersion(ctx context.Context, collection string, input
 		return WriteResult{}, fmt.Errorf("create error: %s", errMsg)
 	}
 
-	createKey := fmt.Sprintf("create_%s", collection)
+	createKey := fmt.Sprintf("add_%s", collection)
 	if docs, ok := resp.Data[createKey].([]any); ok && len(docs) > 0 {
 		if doc, ok := docs[0].(map[string]any); ok {
 			result := WriteResult{}

@@ -12,7 +12,7 @@ func TestDockerConfig_Defaults(t *testing.T) {
 	if DefaultContainerName != "shelf-defra" {
 		t.Errorf("unexpected default container name: %s", DefaultContainerName)
 	}
-	if DefaultImage != "sourcenetwork/defradb:latest" {
+	if DefaultImage != "sourcenetwork/defradb:1.0.0-rc1" {
 		t.Errorf("unexpected default image: %s", DefaultImage)
 	}
 	if DefaultPort != "9181" {

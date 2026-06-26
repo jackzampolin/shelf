@@ -12,10 +12,10 @@ type Config struct {
 
 // OCRProviderCfg configures an OCR provider.
 type OCRProviderCfg struct {
-	Type          string   `mapstructure:"type" yaml:"type"`             // "mistral-ocr"
-	APIKey        string   `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
-	RateLimit     float64  `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
-	Enabled       bool     `mapstructure:"enabled" yaml:"enabled"`
+	Type           string   `mapstructure:"type" yaml:"type"`             // "mistral-ocr"
+	APIKey         string   `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
+	RateLimit      float64  `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
+	Enabled        bool     `mapstructure:"enabled" yaml:"enabled"`
 	IncludeImages  bool     `mapstructure:"include_images" yaml:"include_images"`   // Extract images (Mistral only)
 	BaseURLs       []string `mapstructure:"base_urls" yaml:"base_urls"`             // Optional self-hosted endpoints (supports ${ENV_VAR})
 	MaxConcurrency int      `mapstructure:"max_concurrency" yaml:"max_concurrency"` // Max concurrent in-flight requests (0 = provider default)
@@ -23,12 +23,12 @@ type OCRProviderCfg struct {
 
 // LLMProviderCfg configures an LLM provider.
 type LLMProviderCfg struct {
-	Type           string   `mapstructure:"type" yaml:"type"`                      // "openrouter"
-	Model          string   `mapstructure:"model" yaml:"model"`                    // Model name
-	APIKey         string   `mapstructure:"api_key" yaml:"api_key"`                // API key (supports ${ENV_VAR} syntax)
-	RateLimit      float64  `mapstructure:"rate_limit" yaml:"rate_limit"`          // Requests per second
+	Type           string   `mapstructure:"type" yaml:"type"`             // "openrouter"
+	Model          string   `mapstructure:"model" yaml:"model"`           // Model name
+	APIKey         string   `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
+	RateLimit      float64  `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
 	Enabled        bool     `mapstructure:"enabled" yaml:"enabled"`
-	BaseURLs       []string `mapstructure:"base_urls" yaml:"base_urls"`            // Optional self-hosted endpoints (supports ${ENV_VAR})
+	BaseURLs       []string `mapstructure:"base_urls" yaml:"base_urls"`             // Optional self-hosted endpoints (supports ${ENV_VAR})
 	MaxConcurrency int      `mapstructure:"max_concurrency" yaml:"max_concurrency"` // Max concurrent in-flight requests (0 = provider default)
 }
 
@@ -62,7 +62,7 @@ type DefaultsCfg struct {
 type DefraConfig struct {
 	// ContainerName is the Docker container name (default: shelf-defra)
 	ContainerName string `mapstructure:"container_name" yaml:"container_name"`
-	// Image is the Docker image to use (default: sourcenetwork/defradb:latest)
+	// Image is the Docker image to use (default: sourcenetwork/defradb:1.0.0-rc1)
 	Image string `mapstructure:"image" yaml:"image"`
 	// Port is the host port to bind (default: 9181)
 	Port string `mapstructure:"port" yaml:"port"`
@@ -123,7 +123,7 @@ func DefaultConfig() *Config {
 		},
 		Defra: DefraConfig{
 			ContainerName: "shelf-defra",
-			Image:         "sourcenetwork/defradb:latest",
+			Image:         "sourcenetwork/defradb:1.0.0-rc1",
 			Port:          "9181",
 		},
 	}

@@ -164,9 +164,9 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 
 	for name, ocr := range c.OCRProviders {
 		cfg.OCRProviders[name] = providers.OCRProviderConfig{
-			Type:          ocr.Type,
-			APIKey:        ResolveEnvVars(ocr.APIKey),
-			RateLimit:     ocr.RateLimit,
+			Type:           ocr.Type,
+			APIKey:         ResolveEnvVars(ocr.APIKey),
+			RateLimit:      ocr.RateLimit,
 			Enabled:        ocr.Enabled,
 			IncludeImages:  ocr.IncludeImages,
 			BaseURLs:       resolveEnvVarsSlice(ocr.BaseURLs),
@@ -176,9 +176,9 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 
 	for name, llm := range c.LLMProviders {
 		cfg.LLMProviders[name] = providers.LLMProviderConfig{
-			Type:      llm.Type,
-			Model:     llm.Model,
-			APIKey:    ResolveEnvVars(llm.APIKey),
+			Type:           llm.Type,
+			Model:          llm.Model,
+			APIKey:         ResolveEnvVars(llm.APIKey),
 			RateLimit:      llm.RateLimit,
 			Enabled:        llm.Enabled,
 			BaseURLs:       resolveEnvVarsSlice(llm.BaseURLs),

@@ -155,7 +155,7 @@ func TestClient_Execute_ContextCancellation(t *testing.T) {
 func TestClient_AddSchema(t *testing.T) {
 	var receivedSchema string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v0/schema" {
+		if r.URL.Path != "/api/v0/collections" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		if r.Method != "POST" {
@@ -203,7 +203,7 @@ func TestClient_AddSchema_Error(t *testing.T) {
 func TestClient_Create(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"data": {"create_Book": [{"_docID": "bae-abc123"}]}}`))
+		w.Write([]byte(`{"data": {"add_Book": [{"_docID": "bae-abc123"}]}}`))
 	}))
 	defer server.Close()
 

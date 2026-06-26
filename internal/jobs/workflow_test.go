@@ -274,7 +274,7 @@ func MockDefraServer(t *testing.T) (*httptest.Server, *mockDefraState) {
 			bodyStr := string(body)
 
 			// Handle create mutation
-			if strings.Contains(bodyStr, "create_Job") {
+			if strings.Contains(bodyStr, "add_Job") {
 				state.jobCounter++
 				id := "bae-job-" + string(rune('0'+state.jobCounter))
 				state.jobs[id] = &Record{
@@ -284,7 +284,7 @@ func MockDefraServer(t *testing.T) (*httptest.Server, *mockDefraState) {
 				}
 				json.NewEncoder(w).Encode(map[string]any{
 					"data": map[string]any{
-						"create_Job": []any{
+						"add_Job": []any{
 							map[string]any{"_docID": id},
 						},
 					},

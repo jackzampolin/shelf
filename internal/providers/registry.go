@@ -265,10 +265,10 @@ type RegistryConfig struct {
 
 // OCRProviderConfig matches config.OCRProviderCfg with resolved API key.
 type OCRProviderConfig struct {
-	Type          string  // "mistral-ocr"
-	APIKey        string  // Resolved API key
-	RateLimit     float64 // Requests per second
-	Enabled       bool
+	Type           string  // "mistral-ocr"
+	APIKey         string  // Resolved API key
+	RateLimit      float64 // Requests per second
+	Enabled        bool
 	IncludeImages  bool     // Whether to include base64 image data (Mistral only)
 	BaseURLs       []string // Optional self-hosted endpoints
 	MaxConcurrency int      // Max concurrent in-flight requests (0 = provider default)
@@ -276,13 +276,13 @@ type OCRProviderConfig struct {
 
 // LLMProviderConfig matches config.LLMProviderCfg with resolved API key.
 type LLMProviderConfig struct {
-	Type      string  // "openrouter"
-	Model     string  // Model name
-	APIKey    string  // Resolved API key
-	RateLimit float64 // Requests per second
-	Enabled   bool
-	BaseURLs  []string // Optional self-hosted endpoints
-	MaxConcurrency int  // Max concurrent in-flight requests (0 = provider default)
+	Type           string  // "openrouter"
+	Model          string  // Model name
+	APIKey         string  // Resolved API key
+	RateLimit      float64 // Requests per second
+	Enabled        bool
+	BaseURLs       []string // Optional self-hosted endpoints
+	MaxConcurrency int      // Max concurrent in-flight requests (0 = provider default)
 }
 
 // TTSProviderConfig matches config.TTSProviderCfg with resolved API key.

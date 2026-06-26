@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	DefaultImage         = "sourcenetwork/defradb:latest"
+	DefaultImage         = "sourcenetwork/defradb:1.0.0-rc1"
 	DefaultContainerName = "shelf-defra"
 	DefaultPort          = "9181"
 	ContainerPort        = "9181/tcp"
