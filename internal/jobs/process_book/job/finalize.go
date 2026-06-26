@@ -184,8 +184,10 @@ func (j *Job) CreateFinalizePatternWorkUnit(ctx context.Context) (*jobs.WorkUnit
 		TotalPages:        j.Book.TotalPages,
 	})
 
-	// Create chat request with structured output
-	schemaBytes, err := json.Marshal(pattern_analyzer.JSONSchema())
+	// Create chat request with structured output. Use the INNER json_schema object
+	// ({name, schema}); vLLM strictly requires response_format.json_schema.name,
+	// whereas OpenRouter tolerated marshaling the outer {type, json_schema} wrapper.
+	schemaBytes, err := json.Marshal(pattern_analyzer.JSONSchema()["json_schema"])
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal JSON schema: %w", err)
 	}

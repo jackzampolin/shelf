@@ -449,7 +449,8 @@ func (j *Job) createStructureClassifyWorkUnit(ctx context.Context) (*jobs.WorkUn
 	chapters := j.Book.GetStructureChapters()
 	userPrompt := common.BuildClassifyPrompt(chapters, j.Book.TotalPages)
 
-	schemaBytes, err := json.Marshal(common.ClassifyJSONSchema())
+	// Inner json_schema object only; vLLM requires response_format.json_schema.name.
+	schemaBytes, err := json.Marshal(common.ClassifyJSONSchema()["json_schema"])
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal JSON schema: %w", err)
 	}
@@ -725,7 +726,8 @@ func (j *Job) createChapterPolishWorkUnit(ctx context.Context, chapter *common.C
 
 	userPrompt := common.BuildPolishPrompt(chapter)
 
-	schemaBytes, err := json.Marshal(common.PolishJSONSchema())
+	// Inner json_schema object only; vLLM requires response_format.json_schema.name.
+	schemaBytes, err := json.Marshal(common.PolishJSONSchema()["json_schema"])
 	if err != nil {
 		return nil
 	}
