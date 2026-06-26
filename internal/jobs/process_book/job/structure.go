@@ -236,7 +236,7 @@ func (j *Job) persistChapterSkeleton(ctx context.Context) error {
 			defer func() { <-sem }()
 
 			doc := map[string]any{
-				"book_id":      j.Book.BookID,
+				"_bookID":      j.Book.BookID,
 				"unique_key":   ch.UniqueKey,
 				"entry_id":     ch.EntryID,
 				"title":        ch.Title,
@@ -252,7 +252,7 @@ func (j *Job) persistChapterSkeleton(ctx context.Context) error {
 			}
 
 			if ch.TocEntryID != "" {
-				doc["toc_entry_id"] = ch.TocEntryID
+				doc["_toc_entryID"] = ch.TocEntryID
 			}
 
 			filter := map[string]any{

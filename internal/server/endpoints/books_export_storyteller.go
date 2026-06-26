@@ -109,7 +109,7 @@ func (e *ExportStorytellerEndpoint) handler(w http.ResponseWriter, r *http.Reque
 
 	// Load chapters with their DocIDs
 	chapterQuery := fmt.Sprintf(`{
-		Chapter(filter: {book_id: {_eq: "%s"}}) {
+		Chapter(filter: {_bookID: {_eq: "%s"}}) {
 			_docID
 			entry_id
 			title
@@ -326,7 +326,7 @@ func resolveStorytellerAudioInclude(chData map[string]any) bool {
 
 func queryAudioSegmentRecords(ctx context.Context, client *defra.Client, bookID string) ([]map[string]any, error) {
 	primaryQuery := fmt.Sprintf(`{
-		AudioSegment(filter: {book_id: {_eq: "%s"}}) {
+		AudioSegment(filter: {_bookID: {_eq: "%s"}}) {
 			unique_key
 			chapter_idx
 			paragraph_idx

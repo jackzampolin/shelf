@@ -357,7 +357,7 @@ func (c *Client) UpdateWithVersion(ctx context.Context, collection string, docID
 
 // UpsertWithVersion creates or updates a document and returns DocID + commit CIDs.
 func (c *Client) UpsertWithVersion(ctx context.Context, collection string, filter, createInput, updateInput map[string]any) (WriteResult, error) {
-	filterGQL, err := mapToGraphQLInput(filter)
+	filterGQL, err := mapToGraphQLFilter(filter)
 	if err != nil {
 		return WriteResult{}, fmt.Errorf("failed to build filter: %w", err)
 	}
@@ -370,7 +370,8 @@ func (c *Client) UpsertWithVersion(ctx context.Context, collection string, filte
 		return WriteResult{}, fmt.Errorf("failed to build update input: %w", err)
 	}
 
-	query := fmt.Sprintf(`mutation { upsert_%s(filter: %s, create: %s, update: %s) { _docID _version { cid } } }`,
+	// DefraDB v1.0 renamed the upsert "create" argument to "add".
+	query := fmt.Sprintf(`mutation { upsert_%s(filter: %s, add: %s, update: %s) { _docID _version { cid } } }`,
 		collection, filterGQL, createGQL, updateGQL)
 
 	resp, err := c.Execute(ctx, query, nil)
@@ -418,6 +419,22 @@ func extractVersionCIDs(doc map[string]any) []string {
 }
 
 // mapToGraphQLInput converts a map to GraphQL input format.
+// mapToGraphQLFilter renders a simple equality-filter map as a DefraDB filter
+// argument. DefraDB v1.0 requires the operator form {field: {_eq: value}} and
+// rejects the old shorthand {field: value}. Values that are already operator
+// blocks (maps) are passed through unchanged.
+func mapToGraphQLFilter(filter map[string]any) (string, error) {
+	eqFilter := make(map[string]any, len(filter))
+	for k, v := range filter {
+		if _, ok := v.(map[string]any); ok {
+			eqFilter[k] = v
+		} else {
+			eqFilter[k] = map[string]any{"_eq": v}
+		}
+	}
+	return mapToGraphQLInput(eqFilter)
+}
+
 func mapToGraphQLInput(input map[string]any) (string, error) {
 	var parts []string
 	for k, v := range input {

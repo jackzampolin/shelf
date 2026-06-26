@@ -93,7 +93,7 @@ func (j *Job) CreateTocFinderWorkUnit(ctx context.Context) *jobs.WorkUnit {
 				Collection: "Book",
 				DocID:      j.Book.BookID,
 				Document: map[string]any{
-					"toc_id": j.TocDocID,
+					"_tocID": j.TocDocID,
 				},
 				Op: defra.OpUpdate,
 			})

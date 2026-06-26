@@ -114,14 +114,14 @@ type ToCStatus struct {
 	FinalizeRetries  int  `json:"finalize_retries"`
 
 	// Finalize sub-phases: Pattern Analysis → Chapter Discovery → Gap Validation
-	PatternComplete   bool                    `json:"pattern_complete"`              // Pattern analysis done (pattern_analysis_json exists)
-	PatternAnalysis   *PatternAnalysisResult  `json:"pattern_analysis,omitempty"`    // Full pattern analysis result
-	PatternsFound     int                     `json:"patterns_found"`                // Number of patterns discovered
-	ExcludedRanges    int                     `json:"excluded_ranges"`               // Number of excluded page ranges
-	EntriesToFind     int                     `json:"entries_to_find"`               // From pattern analysis (how many should be discovered)
-	EntriesDiscovered int                     `json:"entries_discovered"`            // Actually discovered (source="discovered")
-	DiscoverComplete  bool                    `json:"discover_complete"`             // All entries discovered
-	ValidateComplete  bool                    `json:"validate_complete"`             // Gap validation done (same as FinalizeComplete for now)
+	PatternComplete   bool                   `json:"pattern_complete"`           // Pattern analysis done (pattern_analysis_json exists)
+	PatternAnalysis   *PatternAnalysisResult `json:"pattern_analysis,omitempty"` // Full pattern analysis result
+	PatternsFound     int                    `json:"patterns_found"`             // Number of patterns discovered
+	ExcludedRanges    int                    `json:"excluded_ranges"`            // Number of excluded page ranges
+	EntriesToFind     int                    `json:"entries_to_find"`            // From pattern analysis (how many should be discovered)
+	EntriesDiscovered int                    `json:"entries_discovered"`         // Actually discovered (source="discovered")
+	DiscoverComplete  bool                   `json:"discover_complete"`          // All entries discovered
+	ValidateComplete  bool                   `json:"validate_complete"`          // Gap validation done (same as FinalizeComplete for now)
 
 	// Entries (when extracted)
 	EntryCount    int        `json:"entry_count"`
@@ -480,8 +480,8 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 			if patternJSON, ok := book["pattern_analysis_json"].(string); ok && patternJSON != "" {
 				resp.ToC.PatternComplete = true
 				var patternData struct {
-					Reasoning     string `json:"reasoning"`
-					Patterns      []struct {
+					Reasoning string `json:"reasoning"`
+					Patterns  []struct {
 						PatternType   string `json:"pattern_type"`
 						LevelName     string `json:"level_name"`
 						HeadingFormat string `json:"heading_format"`
@@ -561,7 +561,7 @@ func getDetailedStatus(ctx context.Context, client *defra.Client, bookID string)
 
 	// Query pages for completion counts
 	pageQuery := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}}) {
+		Page(filter: {_bookID: {_eq: "%s"}}) {
 			ocr_complete
 		}
 	}`, bookID)

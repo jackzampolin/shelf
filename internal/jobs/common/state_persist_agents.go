@@ -24,7 +24,7 @@ func (b *BookState) PersistNewAgentState(ctx context.Context, state *AgentState)
 		"pending_tool_calls": state.PendingToolCalls,
 		"tool_results":       state.ToolResults,
 		"result_json":        state.ResultJSON,
-		"book_id":            b.BookID,
+		"_bookID":            b.BookID,
 	}
 
 	result, err := store.SendSync(ctx, defra.WriteOp{
@@ -72,7 +72,7 @@ func (b *BookState) PersistNewAgentStates(ctx context.Context, states []*AgentSt
 				"pending_tool_calls": state.PendingToolCalls,
 				"tool_results":       state.ToolResults,
 				"result_json":        state.ResultJSON,
-				"book_id":            b.BookID,
+				"_bookID":            b.BookID,
 			},
 			Op: defra.OpCreate,
 		}
@@ -135,7 +135,7 @@ func (b *BookState) DeleteAgentStatesForType(ctx context.Context, agentType stri
 
 	// Query for all agent states of this type for this book
 	query := fmt.Sprintf(`{
-		AgentState(filter: {book_id: {_eq: "%s"}, agent_type: {_eq: "%s"}}) {
+		AgentState(filter: {_bookID: {_eq: "%s"}, agent_type: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, b.BookID, agentType)
@@ -193,7 +193,7 @@ func (b *BookState) DeleteAllAgentStates(ctx context.Context) error {
 
 	// Query for all agent states for this book
 	query := fmt.Sprintf(`{
-		AgentState(filter: {book_id: {_eq: "%s"}}) {
+		AgentState(filter: {_bookID: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, b.BookID)

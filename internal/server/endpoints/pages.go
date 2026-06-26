@@ -134,7 +134,7 @@ func (e *ListPagesEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 	// Query pages for this book
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}}, order: {page_num: ASC}) {
+		Page(filter: {_bookID: {_eq: "%s"}}, order: {page_num: ASC}) {
 			page_num
 			ocr_complete
 		}
@@ -245,7 +245,7 @@ func (e *GetPageEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 
 	// Query page with OCR results
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
+		Page(filter: {_bookID: {_eq: "%s"}, page_num: {_eq: %d}}) {
 			page_num
 			ocr_markdown
 			extract_complete

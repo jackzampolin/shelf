@@ -348,7 +348,7 @@ func resetTocExtractHook(ctx context.Context, book *BookState, tocDocID string) 
 		return nil
 	}
 	if book.Store != nil {
-		return deleteCollectionDocsViaStore(ctx, book.Store, "TocEntry", "toc_id", tocDocID)
+		return deleteCollectionDocsViaStore(ctx, book.Store, "TocEntry", "_tocID", tocDocID)
 	}
 	return deleteTocEntries(ctx, tocDocID)
 }
@@ -359,7 +359,7 @@ func resetTocLinkHook(ctx context.Context, book *BookState, tocDocID string) err
 		return nil
 	}
 	if book.Store != nil {
-		return updateCollectionDocsViaStore(ctx, book.Store, "TocEntry", "toc_id", tocDocID, map[string]any{"actual_page_id": nil})
+		return updateCollectionDocsViaStore(ctx, book.Store, "TocEntry", "_tocID", tocDocID, map[string]any{"_actual_pageID": nil})
 	}
 	return clearTocEntryLinks(ctx, tocDocID)
 }
@@ -367,7 +367,7 @@ func resetTocLinkHook(ctx context.Context, book *BookState, tocDocID string) err
 // resetStructureHook deletes all Chapter records for the book.
 func resetStructureHook(ctx context.Context, book *BookState, tocDocID string) error {
 	if book.Store != nil {
-		return deleteCollectionDocsViaStore(ctx, book.Store, "Chapter", "book_id", book.BookID)
+		return deleteCollectionDocsViaStore(ctx, book.Store, "Chapter", "_bookID", book.BookID)
 	}
 	return deleteChapters(ctx, book.BookID)
 }

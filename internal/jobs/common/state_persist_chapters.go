@@ -66,7 +66,7 @@ func (b *BookState) PersistChapterSkeleton(ctx context.Context, genUniqueKey fun
 			filter := map[string]any{"unique_key": uniqueKey}
 			createInput := map[string]any{
 				"unique_key":   uniqueKey,
-				"book_id":      b.BookID,
+				"_bookID":      b.BookID,
 				"entry_id":     chapter.EntryID,
 				"title":        chapter.Title,
 				"level":        chapter.Level,
@@ -74,7 +74,7 @@ func (b *BookState) PersistChapterSkeleton(ctx context.Context, genUniqueKey fun
 				"entry_number": chapter.EntryNumber,
 				"sort_order":   chapter.SortOrder,
 				"source":       chapter.Source,
-				"toc_entry_id": chapter.TocEntryID,
+				"_toc_entryID": chapter.TocEntryID,
 				"start_page":   chapter.StartPage,
 				"end_page":     chapter.EndPage,
 				"parent_id":    chapter.ParentID,
@@ -463,7 +463,7 @@ func (b *BookState) DeleteAllChapters(ctx context.Context) error {
 
 	// Query for all chapters
 	query := fmt.Sprintf(`{
-		Chapter(filter: {book_id: {_eq: "%s"}}) {
+		Chapter(filter: {_bookID: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, b.BookID)

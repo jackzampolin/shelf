@@ -683,7 +683,7 @@ func (b *BookState) GetPageAtCID(ctx context.Context, pageNum int, cid string) (
 	}
 
 	query, vars := defra.NewQuery("Page").
-		Filter("book_id", b.BookID).
+		Filter("_bookID", b.BookID).
 		Filter("page_num", pageNum).
 		WithCID(cid).
 		Fields("_docID", "page_num", "ocr_markdown", "headings", "ocr_complete").

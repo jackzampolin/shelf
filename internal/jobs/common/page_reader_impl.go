@@ -103,7 +103,7 @@ func (b *BookState) PreloadPages(ctx context.Context, startPage, endPage int) er
 	// Note: DefraDB doesn't support _gte/_lte on Int fields without index
 	// Fetch all pages for the book and filter in-memory
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}}) {
+		Page(filter: {_bookID: {_eq: "%s"}}) {
 			page_num
 			ocr_markdown
 			headings
@@ -226,7 +226,7 @@ func (b *BookState) loadPageDataFromDB(ctx context.Context, pageNum int, state *
 	}
 
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, page_num: {_eq: %d}}) {
+		Page(filter: {_bookID: {_eq: "%s"}, page_num: {_eq: %d}}) {
 			ocr_markdown
 			headings
 		}
@@ -276,7 +276,7 @@ func (b *BookState) GetPagesWithHeadingsFiltered(ctx context.Context, startPage,
 	// Note: DefraDB doesn't support _gte/_lte on Int fields without index
 	// Fetch all pages for the book and filter in-memory
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}}) {
+		Page(filter: {_bookID: {_eq: "%s"}}) {
 			page_num
 			ocr_markdown
 			headings

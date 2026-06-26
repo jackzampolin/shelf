@@ -192,7 +192,7 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 // loadChapters loads chapters with polished text for a book.
 func loadChapters(ctx context.Context, client *defra.Client, bookID string) ([]*Chapter, error) {
 	query := fmt.Sprintf(`{
-		Chapter(filter: {book_id: {_eq: "%s"}}) {
+		Chapter(filter: {_bookID: {_eq: "%s"}}) {
 			_docID
 			entry_id
 			title
@@ -329,10 +329,10 @@ func loadBookAudio(ctx context.Context, client *defra.Client, bookID string) (*B
 // loadExistingSegments loads already-generated segments for resume support.
 func loadExistingSegments(ctx context.Context, client *defra.Client, bookID string, state *AudioState) error {
 	query := fmt.Sprintf(`{
-		AudioSegment(filter: {book_id: {_eq: "%s"}}) {
+		AudioSegment(filter: {_bookID: {_eq: "%s"}}) {
 			_docID
 			unique_key
-			chapter_id
+			_chapterID
 			chapter_idx
 			paragraph_idx
 			duration_ms
@@ -358,7 +358,7 @@ func loadExistingSegments(ctx context.Context, client *defra.Client, bookID stri
 			continue
 		}
 
-		chapterDocID := getString(segData, "chapter_id")
+		chapterDocID := getString(segData, "_chapterID")
 		chapterIdx := getInt(segData, "chapter_idx")
 		paragraphIdx := getInt(segData, "paragraph_idx")
 

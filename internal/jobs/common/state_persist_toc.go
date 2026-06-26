@@ -184,7 +184,7 @@ func (b *BookState) PersistTocEntryLink(ctx context.Context, entryDocID string, 
 	}
 
 	result, err := store.UpdateWithVersion(ctx, "TocEntry", entryDocID, map[string]any{
-		"actual_page_id": actualPageDocID,
+		"_actual_pageID": actualPageDocID,
 	})
 	if err != nil {
 		return "", err
@@ -251,7 +251,7 @@ func (b *BookState) PersistDiscoveredEntry(ctx context.Context, tocDocID string,
 	if sortOrder, ok := doc["sort_order"].(int); ok {
 		entry.SortOrder = sortOrder
 	}
-	if pageID, ok := doc["actual_page_id"].(string); ok {
+	if pageID, ok := doc["_actual_pageID"].(string); ok {
 		entry.ActualPageDocID = pageID
 	}
 
@@ -428,7 +428,7 @@ func (b *BookState) DeleteAllTocEntries(ctx context.Context, tocDocID string) er
 	}
 
 	query := fmt.Sprintf(`{
-		TocEntry(filter: {toc_id: {_eq: "%s"}}) {
+		TocEntry(filter: {_tocID: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, tocDocID)
@@ -506,7 +506,7 @@ func (b *BookState) ClearAllTocEntryLinks(ctx context.Context, tocDocID string) 
 	}
 
 	query := fmt.Sprintf(`{
-		TocEntry(filter: {toc_id: {_eq: "%s"}}) {
+		TocEntry(filter: {_tocID: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, tocDocID)
@@ -537,7 +537,7 @@ func (b *BookState) ClearAllTocEntryLinks(ctx context.Context, tocDocID string) 
 		ops = append(ops, defra.WriteOp{
 			Collection: "TocEntry",
 			DocID:      docID,
-			Document:   map[string]any{"actual_page_id": nil},
+			Document:   map[string]any{"_actual_pageID": nil},
 			Op:         defra.OpUpdate,
 		})
 	}

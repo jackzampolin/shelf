@@ -683,7 +683,7 @@ func defaultVoiceForProvider(ctx context.Context, client *defra.Client, provider
 
 func queryChapterAudioRecords(ctx context.Context, client *defra.Client, bookID string) ([]map[string]any, error) {
 	primaryQuery := fmt.Sprintf(`{
-		ChapterAudio(filter: {book_id: {_eq: "%s"}}) {
+		ChapterAudio(filter: {_bookID: {_eq: "%s"}}) {
 			unique_key
 			chapter_idx
 			duration_ms
@@ -732,7 +732,7 @@ func queryChapterAudioRecords(ctx context.Context, client *defra.Client, bookID 
 
 func queryChapterAudioRecordForChapter(ctx context.Context, client *defra.Client, bookID string, chapterIdx int) (map[string]any, error) {
 	primaryQuery := fmt.Sprintf(`{
-		ChapterAudio(filter: {book_id: {_eq: "%s"}, chapter_idx: {_eq: %d}}) {
+		ChapterAudio(filter: {_bookID: {_eq: "%s"}, chapter_idx: {_eq: %d}}) {
 			unique_key
 			chapter_idx
 			audio_file

@@ -98,7 +98,7 @@ func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int
 	}
 
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, ocr_complete: {_eq: true}}, order: {page_num: ASC}, limit: %d) {
+		Page(filter: {_bookID: {_eq: "%s"}, ocr_complete: {_eq: true}}, order: {page_num: ASC}, limit: %d) {
 			page_num
 			ocr_markdown
 		}

@@ -308,7 +308,7 @@ func LoadPageStates(ctx context.Context, book *BookState) error {
 	// Note: _version { cid } omitted because DefraDB returns 500 on empty result sets.
 	// Page CIDs are captured at write time via SendTracked/TrackWrite.
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}}) {
+		Page(filter: {_bookID: {_eq: "%s"}}) {
 			_docID
 			page_num
 			extract_complete
@@ -611,7 +611,7 @@ func LoadTocEntries(ctx context.Context, tocDocID string) ([]*toc_entry_finder.T
 	}
 
 	query := fmt.Sprintf(`{
-		TocEntry(filter: {toc_id: {_eq: "%s"}}, order: {sort_order: ASC}) {
+		TocEntry(filter: {_tocID: {_eq: "%s"}}, order: {sort_order: ASC}) {
 			_docID
 			entry_number
 			title
@@ -707,7 +707,7 @@ func LoadAgentStates(ctx context.Context, book *BookState) error {
 	logger := svcctx.LoggerFrom(ctx)
 
 	query := fmt.Sprintf(`{
-		AgentState(filter: {book_id: {_eq: "%s"}}) {
+		AgentState(filter: {_bookID: {_eq: "%s"}}) {
 			_docID
 			agent_id
 			agent_type
@@ -928,7 +928,7 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 	logger := svcctx.LoggerFrom(ctx)
 
 	query := fmt.Sprintf(`{
-		Chapter(filter: {book_id: {_eq: "%s"}}, order: {sort_order: ASC}) {
+		Chapter(filter: {_bookID: {_eq: "%s"}}, order: {sort_order: ASC}) {
 			_docID
 			unique_key
 			entry_id
@@ -941,7 +941,7 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 			end_page
 			parent_id
 			source
-			toc_entry_id
+			_toc_entryID
 			matter_type
 			classification_reasoning
 			content_type
@@ -1015,7 +1015,7 @@ func LoadStructureChapters(ctx context.Context, book *BookState) error {
 		if source, ok := data["source"].(string); ok {
 			chapter.Source = source
 		}
-		if tocEntryID, ok := data["toc_entry_id"].(string); ok {
+		if tocEntryID, ok := data["_toc_entryID"].(string); ok {
 			chapter.TocEntryID = tocEntryID
 		}
 		if matterType, ok := data["matter_type"].(string); ok {

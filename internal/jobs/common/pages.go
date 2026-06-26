@@ -28,7 +28,7 @@ func CreateMissingPages(ctx context.Context, book *BookState) (int, error) {
 		ops[i] = defra.WriteOp{
 			Collection: "Page",
 			Document: map[string]any{
-				"book_id":          book.BookID,
+				"_bookID":          book.BookID,
 				"page_num":         pageNum,
 				"extract_complete": false,
 				"ocr_complete":     false,

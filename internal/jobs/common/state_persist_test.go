@@ -89,9 +89,9 @@ func TestBookState_DeleteAllChapters(t *testing.T) {
 	store := NewMemoryStateStore()
 
 	// Create some chapters
-	store.SetDoc("Chapter", "ch1", map[string]any{"book_id": "book1", "title": "Chapter 1"})
-	store.SetDoc("Chapter", "ch2", map[string]any{"book_id": "book1", "title": "Chapter 2"})
-	store.SetDoc("Chapter", "ch3", map[string]any{"book_id": "book2", "title": "Other Book"})
+	store.SetDoc("Chapter", "ch1", map[string]any{"_bookID": "book1", "title": "Chapter 1"})
+	store.SetDoc("Chapter", "ch2", map[string]any{"_bookID": "book1", "title": "Chapter 2"})
+	store.SetDoc("Chapter", "ch3", map[string]any{"_bookID": "book2", "title": "Other Book"})
 
 	book := NewBookState("book1")
 	book.Store = store
@@ -159,9 +159,9 @@ func TestBookState_DeleteAgentStatesForType(t *testing.T) {
 	store := NewMemoryStateStore()
 
 	// Create some agent states
-	store.SetDoc("AgentState", "as1", map[string]any{"book_id": "book1", "agent_type": "toc_finder"})
-	store.SetDoc("AgentState", "as2", map[string]any{"book_id": "book1", "agent_type": "toc_finder"})
-	store.SetDoc("AgentState", "as3", map[string]any{"book_id": "book1", "agent_type": "chapter_finder"})
+	store.SetDoc("AgentState", "as1", map[string]any{"_bookID": "book1", "agent_type": "toc_finder"})
+	store.SetDoc("AgentState", "as2", map[string]any{"_bookID": "book1", "agent_type": "toc_finder"})
+	store.SetDoc("AgentState", "as3", map[string]any{"_bookID": "book1", "agent_type": "chapter_finder"})
 
 	book := NewBookState("book1")
 	book.Store = store
@@ -205,7 +205,7 @@ func TestBookState_PersistTocRecord(t *testing.T) {
 	book.Store = store
 
 	doc := map[string]any{
-		"book_id": "book1",
+		"_bookID": "book1",
 	}
 
 	docID, err := book.PersistTocRecord(context.Background(), doc)
@@ -232,9 +232,9 @@ func TestBookState_DeleteAllTocEntries(t *testing.T) {
 	store := NewMemoryStateStore()
 
 	// Create some ToC entries
-	store.SetDoc("TocEntry", "te1", map[string]any{"toc_id": "toc1", "title": "Entry 1"})
-	store.SetDoc("TocEntry", "te2", map[string]any{"toc_id": "toc1", "title": "Entry 2"})
-	store.SetDoc("TocEntry", "te3", map[string]any{"toc_id": "toc2", "title": "Other ToC"})
+	store.SetDoc("TocEntry", "te1", map[string]any{"_tocID": "toc1", "title": "Entry 1"})
+	store.SetDoc("TocEntry", "te2", map[string]any{"_tocID": "toc1", "title": "Entry 2"})
+	store.SetDoc("TocEntry", "te3", map[string]any{"_tocID": "toc2", "title": "Other ToC"})
 
 	book := NewBookState("book1")
 	book.Store = store
@@ -261,7 +261,7 @@ func TestBookState_DeleteAllTocEntries(t *testing.T) {
 // TestBookState_PersistFinalizePhase tests the PersistFinalizePhase method.
 func TestBookState_PersistFinalizePhase(t *testing.T) {
 	store := NewMemoryStateStore()
-	store.SetDoc("ToC", "toc1", map[string]any{"book_id": "book1"})
+	store.SetDoc("ToC", "toc1", map[string]any{"_bookID": "book1"})
 
 	book := NewBookState("book1")
 	book.Store = store

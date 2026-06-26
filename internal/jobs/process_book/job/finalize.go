@@ -1571,7 +1571,7 @@ func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *
 	uniqueKey := fmt.Sprintf("%s:discovered:%s", j.TocDocID, entryKey)
 
 	entryData := map[string]any{
-		"toc_id":       j.TocDocID,
+		"_tocID":       j.TocDocID,
 		"unique_key":   uniqueKey,
 		"entry_number": entry.Identifier,
 		"title":        title,
@@ -1582,7 +1582,7 @@ func (j *Job) saveDiscoveredEntry(ctx context.Context, entryKey string, result *
 	}
 
 	if pageDocID != "" {
-		entryData["actual_page_id"] = pageDocID
+		entryData["_actual_pageID"] = pageDocID
 	}
 
 	filter := map[string]any{
@@ -1632,7 +1632,7 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 		uniqueKey := fmt.Sprintf("%s:validated:%s", j.TocDocID, gapKey)
 
 		entryData := map[string]any{
-			"toc_id":     j.TocDocID,
+			"_tocID":     j.TocDocID,
 			"unique_key": uniqueKey,
 			"title":      result.Title,
 			"level":      result.Level,
@@ -1642,7 +1642,7 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 		}
 
 		if pageDocID != "" {
-			entryData["actual_page_id"] = pageDocID
+			entryData["_actual_pageID"] = pageDocID
 		}
 
 		filter := map[string]any{
@@ -1668,7 +1668,7 @@ func (j *Job) applyGapFix(ctx context.Context, gapKey string, result *gap_invest
 				Collection: "TocEntry",
 				DocID:      result.EntryDocID,
 				Document: map[string]any{
-					"actual_page_id": pageDocID,
+					"_actual_pageID": pageDocID,
 				},
 				Op: defra.OpUpdate,
 			})

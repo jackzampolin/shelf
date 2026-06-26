@@ -72,7 +72,7 @@ func PersistOCRResult(ctx context.Context, book *BookState, state *PageState, oc
 		sink.Send(defra.WriteOp{
 			Collection: "OcrResult",
 			Document: map[string]any{
-				"page_id":  pageDocID,
+				"_pageID":  pageDocID,
 				"provider": provider,
 				"text":     result.Text,
 			},

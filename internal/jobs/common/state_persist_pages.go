@@ -28,7 +28,7 @@ func (b *BookState) PersistOcrResult(ctx context.Context, pageNum int, provider 
 
 	// Create OcrResult record
 	ocrResultDoc := map[string]any{
-		"page_id":  pageDocID,
+		"_pageID":  pageDocID,
 		"provider": provider,
 		"text":     ocrText,
 	}
@@ -142,7 +142,7 @@ func (b *BookState) ResetAllOcr(ctx context.Context) error {
 
 	// Query all pages with ocr_complete=true
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, ocr_complete: {_eq: true}}) {
+		Page(filter: {_bookID: {_eq: "%s"}, ocr_complete: {_eq: true}}) {
 			_docID
 		}
 	}`, b.BookID)

@@ -109,7 +109,7 @@ func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage i
 
 	// Note: DefraDB doesn't support range queries well, so we fetch all pages and filter
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, ocr_complete: {_eq: true}}, order: {page_num: ASC}) {
+		Page(filter: {_bookID: {_eq: "%s"}, ocr_complete: {_eq: true}}, order: {page_num: ASC}) {
 			page_num
 			ocr_markdown
 		}
@@ -279,7 +279,7 @@ func SaveTocExtractResult(ctx context.Context, tocDocID string, result *extract_
 		uniqueKey := fmt.Sprintf("%s:%d", tocDocID, i)
 
 		entryData := map[string]any{
-			"toc_id":     tocDocID,
+			"_tocID":     tocDocID,
 			"unique_key": uniqueKey,
 			"title":      entry.Title,
 			"level":      entry.Level,
@@ -368,7 +368,7 @@ func LoadLinkedEntries(ctx context.Context, tocDocID string) ([]*LinkedTocEntry,
 	}
 
 	query := fmt.Sprintf(`{
-		TocEntry(filter: {toc_id: {_eq: "%s"}}, order: {sort_order: ASC}) {
+		TocEntry(filter: {_tocID: {_eq: "%s"}}, order: {sort_order: ASC}) {
 			_docID
 			entry_number
 			title
@@ -508,7 +508,7 @@ func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
 
 	// Query existing entries
 	query := fmt.Sprintf(`{
-		TocEntry(filter: {toc_id: {_eq: "%s"}}) {
+		TocEntry(filter: {_tocID: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, tocDocID)
@@ -597,7 +597,7 @@ func SaveTocEntryResult(ctx context.Context, book *BookState, entryDocID string,
 		if state != nil {
 			pageDocID := state.GetPageDocID()
 			if pageDocID != "" {
-				update["actual_page_id"] = pageDocID
+				update["_actual_pageID"] = pageDocID
 			}
 		}
 	}

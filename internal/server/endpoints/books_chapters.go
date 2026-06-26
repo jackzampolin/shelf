@@ -207,7 +207,7 @@ func (e *GetBookChaptersEndpoint) handler(w http.ResponseWriter, r *http.Request
 		if includeText && startPage > 0 && endPage > 0 {
 			pageQuery := fmt.Sprintf(`{
 				Page(filter: {
-					book_id: {_eq: %q},
+					_bookID: {_eq: %q},
 					page_num: {_ge: %d, _le: %d}
 				}) {
 					page_num

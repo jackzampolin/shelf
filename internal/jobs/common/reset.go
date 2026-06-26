@@ -190,7 +190,7 @@ func resetOp(ctx context.Context, book *BookState, tocDocID string, op OpType) e
 // This enables reset operations to work without a DefraDB client in context.
 func deleteAgentStatesForTypeViaStore(ctx context.Context, store StateStore, bookID, agentType string) error {
 	query := fmt.Sprintf(`{
-		AgentState(filter: {book_id: {_eq: "%s"}, agent_type: {_eq: "%s"}}) {
+		AgentState(filter: {_bookID: {_eq: "%s"}, agent_type: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, bookID, agentType)
@@ -259,7 +259,7 @@ func resetAllOcr(ctx context.Context, book *BookState) error {
 	}
 
 	query := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}, ocr_complete: {_eq: true}}) {
+		Page(filter: {_bookID: {_eq: "%s"}, ocr_complete: {_eq: true}}) {
 			_docID
 		}
 	}`, book.BookID)
@@ -343,7 +343,7 @@ func deleteTocEntries(ctx context.Context, tocDocID string) error {
 	}
 
 	query := fmt.Sprintf(`{
-		TocEntry(filter: {toc_id: {_eq: "%s"}}) {
+		TocEntry(filter: {_tocID: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, tocDocID)
@@ -427,7 +427,7 @@ func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
 	}
 
 	query := fmt.Sprintf(`{
-		TocEntry(filter: {toc_id: {_eq: "%s"}}) {
+		TocEntry(filter: {_tocID: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, tocDocID)
@@ -470,7 +470,7 @@ func clearTocEntryLinks(ctx context.Context, tocDocID string) error {
 			Collection: "TocEntry",
 			DocID:      docID,
 			Document: map[string]any{
-				"actual_page_id": nil,
+				"_actual_pageID": nil,
 			},
 			Op: defra.OpUpdate,
 		})
@@ -512,7 +512,7 @@ func deleteChapters(ctx context.Context, bookID string) error {
 	}
 
 	query := fmt.Sprintf(`{
-		Chapter(filter: {book_id: {_eq: "%s"}}) {
+		Chapter(filter: {_bookID: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, bookID)

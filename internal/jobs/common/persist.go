@@ -212,7 +212,7 @@ func PersistAgentState(ctx context.Context, book *BookState, state *AgentState) 
 		"pending_tool_calls": state.PendingToolCalls,
 		"tool_results":       state.ToolResults,
 		"result_json":        state.ResultJSON,
-		"book_id":            book.BookID,
+		"_bookID":            book.BookID,
 	}
 
 	// Synchronous create to capture DocID/CID
@@ -259,7 +259,7 @@ func PersistAgentStates(ctx context.Context, book *BookState, states []*AgentSta
 				"pending_tool_calls": state.PendingToolCalls,
 				"tool_results":       state.ToolResults,
 				"result_json":        state.ResultJSON,
-				"book_id":            book.BookID,
+				"_bookID":            book.BookID,
 			},
 			Op: defra.OpCreate,
 		}
@@ -418,7 +418,7 @@ func DeleteAgentStatesForBook(ctx context.Context, bookID string) error {
 
 	// Query all agent states for this book
 	query := fmt.Sprintf(`{
-		AgentState(filter: {book_id: {_eq: "%s"}}) {
+		AgentState(filter: {_bookID: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, bookID)
@@ -520,7 +520,7 @@ func DeleteAgentStatesForType(ctx context.Context, bookID, agentType string) err
 
 	// Query agent states for this book and type
 	query := fmt.Sprintf(`{
-		AgentState(filter: {book_id: {_eq: "%s"}, agent_type: {_eq: "%s"}}) {
+		AgentState(filter: {_bookID: {_eq: "%s"}, agent_type: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, bookID, agentType)

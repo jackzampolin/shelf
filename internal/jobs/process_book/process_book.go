@@ -188,7 +188,7 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 
 	// Query page completion counts
 	pageQuery := fmt.Sprintf(`{
-		Page(filter: {book_id: {_eq: "%s"}}) {
+		Page(filter: {_bookID: {_eq: "%s"}}) {
 			ocr_complete
 		}
 	}`, bookID)
@@ -212,7 +212,7 @@ func GetStatusWithClient(ctx context.Context, client *defra.Client, bookID strin
 
 	// Query ToC status
 	tocQuery := fmt.Sprintf(`{
-		ToC(filter: {book_id: {_eq: "%s"}}) {
+		ToC(filter: {_bookID: {_eq: "%s"}}) {
 			toc_found
 			extract_complete
 		}
