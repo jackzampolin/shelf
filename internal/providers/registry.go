@@ -269,8 +269,9 @@ type OCRProviderConfig struct {
 	APIKey        string  // Resolved API key
 	RateLimit     float64 // Requests per second
 	Enabled       bool
-	IncludeImages bool     // Whether to include base64 image data (Mistral only)
-	BaseURLs      []string // Optional self-hosted endpoints
+	IncludeImages  bool     // Whether to include base64 image data (Mistral only)
+	BaseURLs       []string // Optional self-hosted endpoints
+	MaxConcurrency int      // Max concurrent in-flight requests (0 = provider default)
 }
 
 // LLMProviderConfig matches config.LLMProviderCfg with resolved API key.
@@ -281,6 +282,7 @@ type LLMProviderConfig struct {
 	RateLimit float64 // Requests per second
 	Enabled   bool
 	BaseURLs  []string // Optional self-hosted endpoints
+	MaxConcurrency int  // Max concurrent in-flight requests (0 = provider default)
 }
 
 // TTSProviderConfig matches config.TTSProviderCfg with resolved API key.
@@ -472,11 +474,12 @@ func createLLMClient(cfg LLMProviderConfig) LLMClient {
 		return NewOpenRouterClient(orc)
 	case "openai-compat", "vllm":
 		return NewOpenAICompatClient(OpenAICompatConfig{
-			Name:         cfg.Type,
-			BaseURLs:     cfg.BaseURLs,
-			APIKey:       cfg.APIKey,
-			DefaultModel: cfg.Model,
-			RPS:          cfg.RateLimit,
+			Name:           cfg.Type,
+			BaseURLs:       cfg.BaseURLs,
+			APIKey:         cfg.APIKey,
+			DefaultModel:   cfg.Model,
+			RPS:            cfg.RateLimit,
+			MaxConcurrency: cfg.MaxConcurrency,
 		})
 	default:
 		return nil
@@ -498,10 +501,11 @@ func createOCRProvider(cfg OCRProviderConfig) OCRProvider {
 		return NewMistralOCRClient(moc)
 	case "chandra":
 		return NewChandraOCRClient(ChandraOCRConfig{
-			Name:      cfg.Type,
-			BaseURLs:  cfg.BaseURLs,
-			APIKey:    cfg.APIKey,
-			RateLimit: cfg.RateLimit,
+			Name:           cfg.Type,
+			BaseURLs:       cfg.BaseURLs,
+			APIKey:         cfg.APIKey,
+			RateLimit:      cfg.RateLimit,
+			MaxConcurrency: cfg.MaxConcurrency,
 		})
 	default:
 		return nil

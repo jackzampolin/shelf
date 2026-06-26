@@ -167,9 +167,10 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 			Type:          ocr.Type,
 			APIKey:        ResolveEnvVars(ocr.APIKey),
 			RateLimit:     ocr.RateLimit,
-			Enabled:       ocr.Enabled,
-			IncludeImages: ocr.IncludeImages,
-			BaseURLs:      resolveEnvVarsSlice(ocr.BaseURLs),
+			Enabled:        ocr.Enabled,
+			IncludeImages:  ocr.IncludeImages,
+			BaseURLs:       resolveEnvVarsSlice(ocr.BaseURLs),
+			MaxConcurrency: ocr.MaxConcurrency,
 		}
 	}
 
@@ -178,9 +179,10 @@ func (c *Config) ToProviderRegistryConfig() providers.RegistryConfig {
 			Type:      llm.Type,
 			Model:     llm.Model,
 			APIKey:    ResolveEnvVars(llm.APIKey),
-			RateLimit: llm.RateLimit,
-			Enabled:   llm.Enabled,
-			BaseURLs:  resolveEnvVarsSlice(llm.BaseURLs),
+			RateLimit:      llm.RateLimit,
+			Enabled:        llm.Enabled,
+			BaseURLs:       resolveEnvVarsSlice(llm.BaseURLs),
+			MaxConcurrency: llm.MaxConcurrency,
 		}
 	}
 

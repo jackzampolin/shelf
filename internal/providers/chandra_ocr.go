@@ -77,14 +77,15 @@ func NewChandraOCRClient(cfg ChandraOCRConfig) *ChandraOCRClient {
 	}
 
 	llm := NewOpenAICompatClient(OpenAICompatConfig{
-		Name:         name,
-		BaseURLs:     cfg.BaseURLs,
-		APIKey:       cfg.APIKey,
-		DefaultModel: cfg.Model,
-		RPS:          cfg.RateLimit,
-		MaxRetries:   cfg.MaxRetries,
-		RetryDelay:   cfg.RetryDelay,
-		Timeout:      cfg.Timeout,
+		Name:           name,
+		BaseURLs:       cfg.BaseURLs,
+		APIKey:         cfg.APIKey,
+		DefaultModel:   cfg.Model,
+		RPS:            cfg.RateLimit,
+		MaxConcurrency: cfg.MaxConcurrency,
+		MaxRetries:     cfg.MaxRetries,
+		RetryDelay:     cfg.RetryDelay,
+		Timeout:        cfg.Timeout,
 	})
 
 	return &ChandraOCRClient{

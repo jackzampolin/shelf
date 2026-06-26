@@ -16,12 +16,13 @@ const OpenAICompatName = "openai-compat"
 type OpenAICompatConfig struct {
 	Name         string   // provider identity (default "openai-compat")
 	BaseURLs     []string // self-hosted endpoints, round-robined; first is the fallback base
-	APIKey       string   // optional; sent as Bearer only when non-empty
-	DefaultModel string
-	Timeout      time.Duration
-	RPS          float64
-	MaxRetries   int
-	RetryDelay   time.Duration
+	APIKey         string   // optional; sent as Bearer only when non-empty
+	DefaultModel   string
+	Timeout        time.Duration
+	RPS            float64
+	MaxConcurrency int // max concurrent in-flight requests (0 = DefaultMaxConcurrency)
+	MaxRetries     int
+	RetryDelay     time.Duration
 }
 
 // NewOpenAICompatClient creates an LLMClient for a self-hosted OpenAI-compatible
@@ -63,6 +64,7 @@ func NewOpenAICompatClient(cfg OpenAICompatConfig) *OpenRouterClient {
 		sendUsageInclude:  false,
 		sendVendorHeaders: false,
 		healthPath:        "/models",
+		maxConcurrency:    cfg.MaxConcurrency,
 		rps:               cfg.RPS,
 		maxRetries:        cfg.MaxRetries,
 		retryDelay:        cfg.RetryDelay,

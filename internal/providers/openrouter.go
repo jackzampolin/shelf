@@ -43,6 +43,7 @@ type OpenRouterClient struct {
 	sendUsageInclude  bool   // send the OpenRouter `usage:{include:true}` request flag
 	sendVendorHeaders bool   // send OpenRouter HTTP-Referer / X-Title headers
 	healthPath        string // path (relative to baseURL) for HealthCheck
+	maxConcurrency    int    // max concurrent in-flight requests (0 = DefaultMaxConcurrency)
 
 	// Rate limiting
 	rps        float64
@@ -108,9 +109,9 @@ func (c *OpenRouterClient) RequestsPerSecond() float64 {
 }
 
 // MaxConcurrency returns the max concurrent in-flight requests.
-// Returns 0 to use DefaultMaxConcurrency.
+// Returns 0 to use DefaultMaxConcurrency (the OpenRouter preset leaves it unset).
 func (c *OpenRouterClient) MaxConcurrency() int {
-	return 0
+	return c.maxConcurrency
 }
 
 // MaxRetries returns the maximum retry attempts.

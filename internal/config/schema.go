@@ -16,18 +16,20 @@ type OCRProviderCfg struct {
 	APIKey        string   `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
 	RateLimit     float64  `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
 	Enabled       bool     `mapstructure:"enabled" yaml:"enabled"`
-	IncludeImages bool     `mapstructure:"include_images" yaml:"include_images"` // Extract images (Mistral only)
-	BaseURLs      []string `mapstructure:"base_urls" yaml:"base_urls"`           // Optional self-hosted endpoints (supports ${ENV_VAR})
+	IncludeImages  bool     `mapstructure:"include_images" yaml:"include_images"`   // Extract images (Mistral only)
+	BaseURLs       []string `mapstructure:"base_urls" yaml:"base_urls"`             // Optional self-hosted endpoints (supports ${ENV_VAR})
+	MaxConcurrency int      `mapstructure:"max_concurrency" yaml:"max_concurrency"` // Max concurrent in-flight requests (0 = provider default)
 }
 
 // LLMProviderCfg configures an LLM provider.
 type LLMProviderCfg struct {
-	Type      string   `mapstructure:"type" yaml:"type"`             // "openrouter"
-	Model     string   `mapstructure:"model" yaml:"model"`           // Model name
-	APIKey    string   `mapstructure:"api_key" yaml:"api_key"`       // API key (supports ${ENV_VAR} syntax)
-	RateLimit float64  `mapstructure:"rate_limit" yaml:"rate_limit"` // Requests per second
-	Enabled   bool     `mapstructure:"enabled" yaml:"enabled"`
-	BaseURLs  []string `mapstructure:"base_urls" yaml:"base_urls"` // Optional self-hosted endpoints (supports ${ENV_VAR})
+	Type           string   `mapstructure:"type" yaml:"type"`                      // "openrouter"
+	Model          string   `mapstructure:"model" yaml:"model"`                    // Model name
+	APIKey         string   `mapstructure:"api_key" yaml:"api_key"`                // API key (supports ${ENV_VAR} syntax)
+	RateLimit      float64  `mapstructure:"rate_limit" yaml:"rate_limit"`          // Requests per second
+	Enabled        bool     `mapstructure:"enabled" yaml:"enabled"`
+	BaseURLs       []string `mapstructure:"base_urls" yaml:"base_urls"`            // Optional self-hosted endpoints (supports ${ENV_VAR})
+	MaxConcurrency int      `mapstructure:"max_concurrency" yaml:"max_concurrency"` // Max concurrent in-flight requests (0 = provider default)
 }
 
 // TTSProviderCfg configures a TTS provider.

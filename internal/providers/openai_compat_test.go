@@ -134,6 +134,26 @@ func TestOpenAICompatClient_RoundRobinsAcrossEndpoints(t *testing.T) {
 	}
 }
 
+func TestOpenAICompat_MaxConcurrencyConfigurable(t *testing.T) {
+	def := NewOpenAICompatClient(OpenAICompatConfig{BaseURLs: []string{"http://x:8000/v1"}})
+	if def.MaxConcurrency() != 0 {
+		t.Fatalf("default MaxConcurrency = %d, want 0 (provider default)", def.MaxConcurrency())
+	}
+	llm := createLLMClient(LLMProviderConfig{Type: "openai-compat", BaseURLs: []string{"http://x:8000/v1"}, MaxConcurrency: 32})
+	if llm.MaxConcurrency() != 32 {
+		t.Fatalf("LLM MaxConcurrency = %d, want 32", llm.MaxConcurrency())
+	}
+	ocr := createOCRProvider(OCRProviderConfig{Type: "chandra", BaseURLs: []string{"http://x:8001/v1"}, MaxConcurrency: 32})
+	if ocr.MaxConcurrency() != 32 {
+		t.Fatalf("OCR MaxConcurrency = %d, want 32", ocr.MaxConcurrency())
+	}
+	// OpenRouter preset must remain on the provider default (0).
+	or := NewOpenRouterClient(OpenRouterConfig{APIKey: "k"})
+	if or.MaxConcurrency() != 0 {
+		t.Fatalf("openrouter MaxConcurrency = %d, want 0", or.MaxConcurrency())
+	}
+}
+
 func TestCreateLLMClient_OpenAICompat(t *testing.T) {
 	srv := chatCompletionStub(t, nil)
 	defer srv.Close()
