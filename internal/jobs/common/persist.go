@@ -307,9 +307,13 @@ func DeleteAgentStateByAgentIDAsync(ctx context.Context, agentID string) {
 		return
 	}
 
-	// Run in background to avoid blocking the critical path
+	// Run in background to avoid blocking the critical path. Use WithoutCancel so
+	// the goroutine keeps the svcctx values (e.g. the defra client) from the parent
+	// ctx but is detached from its cancellation — context.Background() dropped the
+	// client, causing "defra client not in context" cleanup failures.
+	bgCtx := context.WithoutCancel(ctx)
 	go func() {
-		if err := DeleteAgentStateByAgentID(context.Background(), agentID); err != nil {
+		if err := DeleteAgentStateByAgentID(bgCtx, agentID); err != nil {
 			logger := svcctx.LoggerFrom(ctx)
 			if logger != nil {
 				logger.Warn("async agent state cleanup failed (orphaned record may remain)",

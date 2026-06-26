@@ -371,7 +371,13 @@ func (c *Client) UpsertWithVersion(ctx context.Context, collection string, filte
 	}
 
 	// DefraDB v1.0 renamed the upsert "create" argument to "add".
-	query := fmt.Sprintf(`mutation { upsert_%s(filter: %s, add: %s, update: %s) { _docID _version { cid } } }`,
+	// IMPORTANT: do NOT select `_version { cid }` in an upsert_ mutation. In
+	// DefraDB v1.0.0-rc1 the upsert planner re-runs its result Select inside the
+	// still-open write transaction; selecting the commit DAG (_version) then
+	// deadlocks reading the just-written merkle-clock heads — the request hangs
+	// and the client times out. Select only _docID here, then read the CID
+	// separately (a write-txn-free query). add_/update_ are unaffected.
+	query := fmt.Sprintf(`mutation { upsert_%s(filter: %s, add: %s, update: %s) { _docID } }`,
 		collection, filterGQL, createGQL, updateGQL)
 
 	resp, err := c.Execute(ctx, query, nil)
@@ -383,21 +389,43 @@ func (c *Client) UpsertWithVersion(ctx context.Context, collection string, filte
 	}
 
 	upsertKey := fmt.Sprintf("upsert_%s", collection)
-	if docs, ok := resp.Data[upsertKey].([]any); ok && len(docs) > 0 {
-		if doc, ok := docs[0].(map[string]any); ok {
-			result := WriteResult{}
-			if docID, ok := doc["_docID"].(string); ok {
-				result.DocID = docID
-			}
-			if cids := extractVersionCIDs(doc); len(cids) > 0 {
-				result.CIDs = cids
-				result.CID = cids[0]
-			}
-			return result, nil
-		}
+	docs, ok := resp.Data[upsertKey].([]any)
+	if !ok || len(docs) == 0 {
+		return WriteResult{}, fmt.Errorf("unexpected response format: %+v", resp.Data)
+	}
+	doc, ok := docs[0].(map[string]any)
+	if !ok {
+		return WriteResult{}, fmt.Errorf("unexpected response format: %+v", resp.Data)
 	}
 
-	return WriteResult{}, fmt.Errorf("unexpected response format: %+v", resp.Data)
+	result := WriteResult{}
+	if docID, ok := doc["_docID"].(string); ok {
+		result.DocID = docID
+	}
+	// Best-effort CID fetch via a separate read; the upsert already succeeded.
+	if result.DocID != "" {
+		if cids := c.fetchVersionCIDs(ctx, collection, result.DocID); len(cids) > 0 {
+			result.CIDs = cids
+			result.CID = cids[0]
+		}
+	}
+	return result, nil
+}
+
+// fetchVersionCIDs reads a document's commit CIDs via a separate query. Used
+// after upsert, where selecting _version inside the mutation deadlocks v1.0.
+func (c *Client) fetchVersionCIDs(ctx context.Context, collection, docID string) []string {
+	query := fmt.Sprintf(`{ %s(filter: {_docID: {_eq: %q}}) { _version { cid } } }`, collection, docID)
+	resp, err := c.Execute(ctx, query, nil)
+	if err != nil || resp.Error() != "" {
+		return nil
+	}
+	if docs, ok := resp.Data[collection].([]any); ok && len(docs) > 0 {
+		if doc, ok := docs[0].(map[string]any); ok {
+			return extractVersionCIDs(doc)
+		}
+	}
+	return nil
 }
 
 func extractVersionCIDs(doc map[string]any) []string {

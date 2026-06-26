@@ -365,7 +365,7 @@ func TestResetAllOcr_ErrorHandling(t *testing.T) {
 
 	t.Run("batch update error - memory not reset", func(t *testing.T) {
 		store := NewMemoryStateStore()
-		store.SetDoc("Page", "page1", map[string]any{"book_id": "book1", "ocr_complete": true})
+		store.SetDoc("Page", "page1", map[string]any{"_bookID": "book1", "ocr_complete": true})
 
 		book := NewBookState("book1")
 		book.Store = store
@@ -411,7 +411,7 @@ func TestDeleteAllChapters_ErrorHandling(t *testing.T) {
 
 	t.Run("batch delete error", func(t *testing.T) {
 		store := NewMemoryStateStore()
-		store.SetDoc("Chapter", "ch1", map[string]any{"book_id": "book1"})
+		store.SetDoc("Chapter", "ch1", map[string]any{"_bookID": "book1"})
 
 		book := NewBookState("book1")
 		book.Store = store
