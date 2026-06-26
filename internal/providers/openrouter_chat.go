@@ -34,13 +34,16 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		model = c.defaultModel
 	}
 
-	// Build OpenRouter request
+	// Build OpenAI-compatible chat request.
 	orReq := openRouterRequest{
 		Model:       model,
 		Messages:    make([]openRouterMessage, 0, len(req.Messages)),
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
-		Usage:       &openRouterUsageRequest{Include: true}, // Request cost tracking
+	}
+	// OpenRouter-specific cost-tracking flag; self-hosted servers don't support it.
+	if c.sendUsageInclude {
+		orReq.Usage = &openRouterUsageRequest{Include: true}
 	}
 
 	// Convert messages
@@ -91,7 +94,7 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 		if err != nil {
 			return &ChatResult{
 				RequestID:    requestID,
-				Provider:     OpenRouterName,
+				Provider:     c.name,
 				ModelUsed:    model,
 				Success:      false,
 				ErrorType:    "schema_adapter",
@@ -109,7 +112,7 @@ func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools [
 
 	result := &ChatResult{
 		RequestID: requestID,
-		Provider:  OpenRouterName,
+		Provider:  c.name,
 		ModelUsed: model,
 	}
 

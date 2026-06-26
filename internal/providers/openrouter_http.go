@@ -37,15 +37,19 @@ func (c *OpenRouterClient) doRequest(ctx context.Context, path string, body any)
 			return nil, fmt.Errorf("failed to marshal request: %w", err)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+path, bytes.NewReader(bodyBytes))
+		req, err := http.NewRequestWithContext(ctx, "POST", c.baseURLForRequest()+path, bytes.NewReader(bodyBytes))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
 
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-		req.Header.Set("HTTP-Referer", "https://github.com/jackzampolin/shelf")
-		req.Header.Set("X-Title", "Shelf")
+		if c.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		}
+		if c.sendVendorHeaders {
+			req.Header.Set("HTTP-Referer", "https://github.com/jackzampolin/shelf")
+			req.Header.Set("X-Title", "Shelf")
+		}
 
 		resp, err := c.client.Do(req)
 		if err != nil {

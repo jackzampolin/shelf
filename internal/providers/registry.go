@@ -470,6 +470,14 @@ func createLLMClient(cfg LLMProviderConfig) LLMClient {
 			orc.BaseURL = cfg.BaseURLs[0]
 		}
 		return NewOpenRouterClient(orc)
+	case "openai-compat", "vllm":
+		return NewOpenAICompatClient(OpenAICompatConfig{
+			Name:         cfg.Type,
+			BaseURLs:     cfg.BaseURLs,
+			APIKey:       cfg.APIKey,
+			DefaultModel: cfg.Model,
+			RPS:          cfg.RateLimit,
+		})
 	default:
 		return nil
 	}

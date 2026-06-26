@@ -24,12 +24,26 @@ type OpenRouterConfig struct {
 	RetryDelay time.Duration // Base delay between retries (default: 1s)
 }
 
-// OpenRouterClient implements LLMClient using the OpenRouter API.
+// OpenRouterClient implements LLMClient against an OpenAI-compatible chat API.
+// It backs two presets: NewOpenRouterClient (the OpenRouter cloud API) and
+// NewOpenAICompatClient (a self-hosted vLLM/OpenAI-compatible server). The
+// OpenRouter-specific behaviors below are gated so the self-hosted preset owns
+// its own identity, health, auth, and request shape.
+// TODO(naming): rename this struct to a neutral openAIChatClient once the
+// self-hosted providers settle; kept as-is here to minimize diff risk.
 type OpenRouterClient struct {
+	name         string // provider identity reported by Name() and on results
 	apiKey       string
 	baseURL      string
+	endpoints    *EndpointPool // optional; round-robins request base URLs when set
 	defaultModel string
 	client       *http.Client
+
+	// OpenRouter-specific behavior gates (true for the OpenRouter preset).
+	sendUsageInclude  bool   // send the OpenRouter `usage:{include:true}` request flag
+	sendVendorHeaders bool   // send OpenRouter HTTP-Referer / X-Title headers
+	healthPath        string // path (relative to baseURL) for HealthCheck
+
 	// Rate limiting
 	rps        float64
 	maxRetries int
@@ -58,21 +72,34 @@ func NewOpenRouterClient(cfg OpenRouterConfig) *OpenRouterClient {
 	}
 
 	return &OpenRouterClient{
+		name:         OpenRouterName,
 		apiKey:       cfg.APIKey,
 		baseURL:      cfg.BaseURL,
 		defaultModel: cfg.DefaultModel,
 		client: &http.Client{
 			Timeout: cfg.Timeout,
 		},
-		rps:        cfg.RPS,
-		maxRetries: cfg.MaxRetries,
-		retryDelay: cfg.RetryDelay,
+		sendUsageInclude:  true,
+		sendVendorHeaders: true,
+		healthPath:        "/auth/key",
+		rps:               cfg.RPS,
+		maxRetries:        cfg.MaxRetries,
+		retryDelay:        cfg.RetryDelay,
 	}
 }
 
 // Name returns the client identifier.
 func (c *OpenRouterClient) Name() string {
-	return OpenRouterName
+	return c.name
+}
+
+// baseURLForRequest returns the base URL to use for the next request,
+// round-robining across configured endpoints when present.
+func (c *OpenRouterClient) baseURLForRequest() string {
+	if c.endpoints != nil && c.endpoints.Len() > 0 {
+		return c.endpoints.Next()
+	}
+	return c.baseURL
 }
 
 // RequestsPerSecond returns the RPS limit for rate limiting.
@@ -96,15 +123,18 @@ func (c *OpenRouterClient) RetryDelayBase() time.Duration {
 	return c.retryDelay
 }
 
-// HealthCheck verifies the OpenRouter API is reachable and the API key is valid.
-// Uses the /auth/key endpoint which returns key info without consuming tokens.
+// HealthCheck verifies the API is reachable and (when keyed) the API key is valid.
+// OpenRouter uses /auth/key; the OpenAI-compatible preset uses /models.
 func (c *OpenRouterClient) HealthCheck(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/auth/key", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURLForRequest()+c.healthPath, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create health check request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	// Only send auth when a key is configured (self-hosted servers may be keyless).
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
