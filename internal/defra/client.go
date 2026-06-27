@@ -28,11 +28,30 @@ type Client struct {
 }
 
 // NewClient creates a new DefraDB client.
+//
+// The HTTP client uses a custom transport tuned for long pipeline runs behind
+// Docker Desktop's port-forwarder, which silently drops idle TCP flows. We
+// clone http.DefaultTransport (preserving ForceAttemptHTTP2/Proxy defaults) and
+// override the pooling/timeout knobs so pooled connections are retired before
+// the forwarder kills them.
 func NewClient(url string) *Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Retire idle pooled conns quickly so we never reuse a flow the
+	// port-forwarder has already silently dropped.
+	transport.IdleConnTimeout = 25 * time.Second
+	// Allow a healthy pool per host for parallel pipeline workers.
+	transport.MaxIdleConnsPerHost = 100
+	// Do not cap concurrent conns per host.
+	transport.MaxConnsPerHost = 0
+	// Bound the wait for response headers so a wedged conn fails fast.
+	transport.ResponseHeaderTimeout = 60 * time.Second
+
 	return &Client{
 		url: strings.TrimSuffix(url, "/"),
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			// Overall safety net; per-request context deadlines still apply.
+			Timeout:   30 * time.Second,
+			Transport: transport,
 		},
 	}
 }

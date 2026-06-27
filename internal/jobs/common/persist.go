@@ -3,6 +3,8 @@ package common
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/svcctx"
@@ -194,12 +196,20 @@ func PersistStructurePhaseAsync(ctx context.Context, book *BookState) {
 
 // --- Agent State Persistence ---
 
-// PersistAgentState creates an agent state record in DefraDB.
-// This is synchronous to capture DocID/CID for tracking.
-// Only call this once at agent creation, not during the agent loop.
+// PersistAgentState idempotently upserts an agent state record in DefraDB,
+// keyed on the agent's UUID (agent_id). This is synchronous to capture
+// DocID/CID for tracking. Because it is an upsert, re-entering the link stage
+// or re-saving the same agent's state updates the existing record instead of
+// colliding on DefraDB's stable docID ("a document with the given ID already
+// exists").
 func PersistAgentState(ctx context.Context, book *BookState, state *AgentState) error {
 	if book == nil {
 		return fmt.Errorf("book is nil")
+	}
+
+	store := book.getStore(ctx)
+	if store == nil {
+		return fmt.Errorf("no store available")
 	}
 
 	doc := map[string]any{
@@ -215,12 +225,10 @@ func PersistAgentState(ctx context.Context, book *BookState, state *AgentState) 
 		"_bookID":            book.BookID,
 	}
 
-	// Synchronous create to capture DocID/CID
-	result, err := SendTracked(ctx, book, defra.WriteOp{
-		Collection: "AgentState",
-		Document:   doc,
-		Op:         defra.OpCreate,
-	})
+	// Idempotent upsert keyed on agent_id (UUID unique per agent).
+	// createInput and updateInput are both the full agent-state doc.
+	filter := map[string]any{"agent_id": state.AgentID}
+	result, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
 	if err != nil {
 		return err
 	}
@@ -230,12 +238,17 @@ func PersistAgentState(ctx context.Context, book *BookState, state *AgentState) 
 	if result.CID != "" {
 		state.CID = result.CID
 	}
+	// Store in memory and track the CID (SetAgentState also trackCIDLocked).
+	book.SetAgentState(state)
 	return nil
 }
 
-// PersistAgentStates creates multiple agent state records in DefraDB in a batch.
-// This is more efficient than calling PersistAgentState in a loop.
-// Each state's DocID and CID are updated with the result.
+// PersistAgentStates idempotently upserts multiple agent state records in
+// DefraDB, each keyed on its own agent_id (UUID unique per agent). Like
+// PersistAgentState this is safe to re-run: existing records are updated
+// instead of colliding on DefraDB's stable docID. Upserts run with bounded
+// concurrency (mirroring PersistTocEntries) since each upsert is a
+// query-then-write rather than a single batch mutation.
 func PersistAgentStates(ctx context.Context, book *BookState, states []*AgentState) error {
 	if book == nil {
 		return fmt.Errorf("book is nil")
@@ -244,43 +257,91 @@ func PersistAgentStates(ctx context.Context, book *BookState, states []*AgentSta
 		return nil
 	}
 
-	// Build write operations for all states
-	ops := make([]defra.WriteOp, len(states))
+	store := book.getStore(ctx)
+	if store == nil {
+		return fmt.Errorf("no store available")
+	}
+
+	type upsertResult struct {
+		index int
+		docID string
+		cid   string
+		err   error
+	}
+
+	results := make(chan upsertResult, len(states))
+	sem := make(chan struct{}, maxConcurrentTocWrites)
+	var wg sync.WaitGroup
+
 	for i, state := range states {
-		ops[i] = defra.WriteOp{
-			Collection: "AgentState",
-			Document: map[string]any{
-				"agent_id":           state.AgentID,
-				"agent_type":         state.AgentType,
-				"entry_doc_id":       state.EntryDocID,
-				"iteration":          state.Iteration,
-				"complete":           state.Complete,
-				"messages_json":      state.MessagesJSON,
-				"pending_tool_calls": state.PendingToolCalls,
-				"tool_results":       state.ToolResults,
-				"result_json":        state.ResultJSON,
+		wg.Add(1)
+		go func(idx int, st *AgentState) {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					results <- upsertResult{index: idx, err: fmt.Errorf("panic at index %d: %v", idx, r)}
+				}
+			}()
+
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				results <- upsertResult{index: idx, err: ctx.Err()}
+				return
+			}
+
+			doc := map[string]any{
+				"agent_id":           st.AgentID,
+				"agent_type":         st.AgentType,
+				"entry_doc_id":       st.EntryDocID,
+				"iteration":          st.Iteration,
+				"complete":           st.Complete,
+				"messages_json":      st.MessagesJSON,
+				"pending_tool_calls": st.PendingToolCalls,
+				"tool_results":       st.ToolResults,
+				"result_json":        st.ResultJSON,
 				"_bookID":            book.BookID,
-			},
-			Op: defra.OpCreate,
-		}
+			}
+
+			filter := map[string]any{"agent_id": st.AgentID}
+			res, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
+			if err != nil {
+				results <- upsertResult{index: idx, err: fmt.Errorf("agent state %d (%s): %w", idx, st.AgentID, err)}
+				return
+			}
+			results <- upsertResult{index: idx, docID: res.DocID, cid: res.CID}
+		}(i, state)
 	}
 
-	// Batch create all agent states
-	results, err := SendManyTracked(ctx, book, ops)
-	if err != nil {
-		return err
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	resultSlice := make([]upsertResult, len(states))
+	var errs []string
+	for r := range results {
+		if r.err != nil {
+			errs = append(errs, r.err.Error())
+		}
+		resultSlice[r.index] = r
 	}
 
-	// Update states with DocID/CID from results
-	for i, result := range results {
-		if i < len(states) {
-			if result.DocID != "" {
-				states[i].DocID = result.DocID
-			}
-			if result.CID != "" {
-				states[i].CID = result.CID
-			}
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to persist %d agent states: %s", len(errs), strings.Join(errs, "; "))
+	}
+
+	// All succeeded - update states with DocID/CID and store in memory.
+	for i, r := range resultSlice {
+		if r.docID != "" {
+			states[i].DocID = r.docID
 		}
+		if r.cid != "" {
+			states[i].CID = r.cid
+		}
+		// SetAgentState stores in memory and tracks the CID.
+		book.SetAgentState(states[i])
 	}
 
 	return nil

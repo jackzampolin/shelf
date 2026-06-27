@@ -84,10 +84,21 @@ func (q *QueryBuilder) Filter(field string, value any) *QueryBuilder {
 		field:   field,
 		op:      "_eq",
 		varName: varName,
-		varType: inferGraphQLType(value),
+		varType: filterVarType(field, value),
 		value:   value,
 	})
 	return q
+}
+
+// filterVarType returns the GraphQL variable type for an equality filter on a
+// field. DefraDB v1.0 types relation foreign-key fields (_docID and the
+// auto-generated _<rel>ID fields like _bookID, _tocID, _actual_pageID) as ID,
+// not String — a String variable in an ID position is a query type error.
+func filterVarType(field string, value any) string {
+	if field == "_docID" || (strings.HasPrefix(field, "_") && strings.HasSuffix(field, "ID")) {
+		return "ID"
+	}
+	return inferGraphQLType(value)
 }
 
 // WithCID scopes the query to a specific commit CID (historical version).
@@ -98,7 +109,8 @@ func (q *QueryBuilder) WithCID(cid string) *QueryBuilder {
 	}
 	if q.cidVarName == "" {
 		q.cidVarName = q.nextVarName()
-		q.cidVarType = "String"
+		// DefraDB v1.0 types the top-level `cid` argument as [ID!], not String.
+		q.cidVarType = "[ID!]"
 	}
 	q.cid = cid
 	return q
@@ -205,7 +217,8 @@ func (q *QueryBuilder) Build() (string, map[string]any) {
 	}
 	if q.cidVarName != "" {
 		varDefs = append(varDefs, fmt.Sprintf("$%s: %s", q.cidVarName, q.cidVarType))
-		vars[q.cidVarName] = q.cid
+		// cid is typed [ID!]; pass the single CID as a one-element list.
+		vars[q.cidVarName] = []string{q.cid}
 	}
 
 	// Build filter clause

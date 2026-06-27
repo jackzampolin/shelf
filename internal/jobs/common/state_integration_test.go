@@ -57,88 +57,110 @@ func setupStateIntegrationTest(t *testing.T) (*defra.Client, *defra.Sink, *Defra
 		t.Fatalf("HealthCheck() error = %v", err)
 	}
 
-	// Add schemas for BookState testing
-	schemas := []string{
-		// Book schema (simplified for testing)
-		`type Book {
-			title: String
-			status: String
-			metadata_started: Boolean
-			metadata_complete: Boolean
-			metadata_failed: Boolean
-			metadata_retries: Int
-			structure_started: Boolean
-			structure_complete: Boolean
-			structure_failed: Boolean
-			structure_retries: Int
-			structure_phase: String
-			structure_chapters_total: Int
-			structure_chapters_extracted: Int
-			structure_chapters_polished: Int
-			structure_polish_failed: Int
-			total_chapters: Int
-			total_paragraphs: Int
-			total_words: Int
-		}`,
-		// ToC schema
-		`type ToC {
-			book_id: String
-			toc_found: Boolean
-			start_page: Int
-			end_page: Int
-			finder_started: Boolean
-			finder_complete: Boolean
-			finder_failed: Boolean
-			finder_retries: Int
-			extract_started: Boolean
-			extract_complete: Boolean
-			extract_failed: Boolean
-			extract_retries: Int
-			link_started: Boolean
-			link_complete: Boolean
-			link_failed: Boolean
-			link_retries: Int
-			finalize_started: Boolean
-			finalize_complete: Boolean
-			finalize_failed: Boolean
-			finalize_retries: Int
-			finalize_phase: String
-		}`,
-		// TocEntry schema
-		`type TocEntry {
-			toc_id: String
-			title: String
-			level: Int
-			sort_order: Int
-			actual_page_id: String
-		}`,
-		// Page schema
-		`type Page {
-			book_id: String
-			page_num: Int
-			ocr_markdown: String
-			headings: String
-			ocr_complete: Boolean
-		}`,
-		// Chapter schema
-		`type Chapter {
-			book_id: String
-			title: String
-			sort_order: Int
-		}`,
-		// AgentState schema
-		`type AgentState {
-			agent_id: String
-			agent_type: String
-			book_id: String
-			complete: Boolean
-		}`,
-	}
+	// Add schemas for BookState testing.
+	//
+	// These mirror the production schemas in internal/schema/schemas/*.graphql with
+	// respect to RELATIONS. Under DefraDB v1.0 a relation field (e.g. `book: Book`)
+	// causes DefraDB to auto-generate the foreign-key field `_<rel>ID` (e.g. `_bookID`),
+	// which is the name the production persistence/reset code reads and writes.
+	// We therefore declare relations rather than plain `book_id: String` columns so
+	// the generated FK fields match what the code under test expects.
+	//
+	// All types are combined into a single SDL document so DefraDB can resolve the
+	// circular relations (Book <-> ToC, Book <-> Page, etc.) in one shot, matching
+	// internal/schema/init.go.
+	combinedSchema := `
+type Book {
+	title: String
+	status: String
+	metadata_started: Boolean
+	metadata_complete: Boolean
+	metadata_failed: Boolean
+	metadata_retries: Int
+	structure_started: Boolean
+	structure_complete: Boolean
+	structure_failed: Boolean
+	structure_retries: Int
+	structure_phase: String
+	structure_chapters_total: Int
+	structure_chapters_extracted: Int
+	structure_chapters_polished: Int
+	structure_polish_failed: Int
+	total_chapters: Int
+	total_paragraphs: Int
+	total_words: Int
 
-	for _, schema := range schemas {
-		if err := client.AddSchema(ctx, schema); err != nil {
-			t.Logf("AddSchema result: %v", err)
-		}
+	# Relationships (auto-generate _tocID on Book; _bookID on the child types)
+	pages: [Page]
+	toc: ToC @primary
+	chapters: [Chapter]
+	agent_states: [AgentState]
+}
+
+type ToC {
+	# Many-to-one back-reference to Book (generates _bookID on ToC)
+	book: Book
+	toc_found: Boolean
+	start_page: Int
+	end_page: Int
+	finder_started: Boolean
+	finder_complete: Boolean
+	finder_failed: Boolean
+	finder_retries: Int
+	extract_started: Boolean
+	extract_complete: Boolean
+	extract_failed: Boolean
+	extract_retries: Int
+	link_started: Boolean
+	link_complete: Boolean
+	link_failed: Boolean
+	link_retries: Int
+	finalize_started: Boolean
+	finalize_complete: Boolean
+	finalize_failed: Boolean
+	finalize_retries: Int
+	finalize_phase: String
+
+	# One-to-many: ToC has many TocEntries (generates _tocID on TocEntry)
+	entries: [TocEntry]
+}
+
+type TocEntry {
+	# Many-to-one: TocEntry belongs to ToC (generates _tocID)
+	toc: ToC
+	title: String
+	level: Int
+	sort_order: Int
+	# Optional link to actual Page (generates _actual_pageID)
+	actual_page: Page
+}
+
+type Page {
+	# Many-to-one: Page belongs to Book (generates _bookID)
+	book: Book
+	page_num: Int
+	ocr_markdown: String
+	headings: String
+	ocr_complete: Boolean
+}
+
+type Chapter {
+	# Many-to-one: Chapter belongs to Book (generates _bookID)
+	book: Book
+	title: String
+	sort_order: Int
+}
+
+type AgentState {
+	agent_id: String
+	agent_type: String
+	# Many-to-one: AgentState belongs to Book (generates _bookID)
+	book: Book @primary
+	complete: Boolean
+}`
+
+	if err := client.AddSchema(ctx, combinedSchema); err != nil {
+		t.Logf("AddSchema result: %v", err)
 	}
 
 	// Create sink
@@ -190,11 +212,14 @@ func TestStateIntegration_PersistAndReload(t *testing.T) {
 	bookDocID := bookResult.DocID
 	t.Logf("Created book with DocID: %s", bookDocID)
 
-	// Create a ToC document
+	// Create a ToC document.
+	// Note: ToC is the secondary side of the one-to-one Book<->ToC relation
+	// (Book.toc @primary), so _bookID is not settable from here; the link is
+	// irrelevant to this test, which references the ToC by its DocID.
 	tocResult, err := store.SendSync(ctx, defra.WriteOp{
 		Collection: "ToC",
 		Document: map[string]any{
-			"book_id": bookDocID,
+			"finder_started": false,
 		},
 		Op: defra.OpCreate,
 	})
@@ -329,7 +354,6 @@ func TestStateIntegration_ResetCascade(t *testing.T) {
 	tocResult, err := store.SendSync(ctx, defra.WriteOp{
 		Collection: "ToC",
 		Document: map[string]any{
-			"book_id":          bookDocID,
 			"finder_started":   false,
 			"finder_complete":  true,
 			"extract_started":  false,
@@ -349,7 +373,7 @@ func TestStateIntegration_ResetCascade(t *testing.T) {
 		_, err := store.SendSync(ctx, defra.WriteOp{
 			Collection: "TocEntry",
 			Document: map[string]any{
-				"toc_id":     tocDocID,
+				"_tocID":     tocDocID,
 				"title":      fmt.Sprintf("Chapter %d", i+1),
 				"level":      1,
 				"sort_order": i,
@@ -368,7 +392,7 @@ func TestStateIntegration_ResetCascade(t *testing.T) {
 			Document: map[string]any{
 				"agent_id":   fmt.Sprintf("agent-%d", i),
 				"agent_type": "toc_extract",
-				"book_id":    bookDocID,
+				"_bookID":    bookDocID,
 				"complete":   true,
 			},
 			Op: defra.OpCreate,
@@ -380,7 +404,7 @@ func TestStateIntegration_ResetCascade(t *testing.T) {
 
 	// Verify TocEntries exist
 	entriesQuery := fmt.Sprintf(`{
-		TocEntry(filter: {toc_id: {_eq: "%s"}}) {
+		TocEntry(filter: {_tocID: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, tocDocID)
@@ -436,7 +460,7 @@ func TestStateIntegration_ResetCascade(t *testing.T) {
 
 	// Verify AgentStates for toc_extract were deleted
 	agentsQuery := fmt.Sprintf(`{
-		AgentState(filter: {book_id: {_eq: "%s"}, agent_type: {_eq: "toc_extract"}}) {
+		AgentState(filter: {_bookID: {_eq: "%s"}, agent_type: {_eq: "toc_extract"}}) {
 			_docID
 		}
 	}`, bookDocID)
@@ -484,7 +508,7 @@ func TestStateIntegration_StructureReset(t *testing.T) {
 		_, err := store.SendSync(ctx, defra.WriteOp{
 			Collection: "Chapter",
 			Document: map[string]any{
-				"book_id":    bookDocID,
+				"_bookID":    bookDocID,
 				"title":      fmt.Sprintf("Chapter %d", i+1),
 				"sort_order": i,
 			},
@@ -497,7 +521,7 @@ func TestStateIntegration_StructureReset(t *testing.T) {
 
 	// Verify Chapters exist
 	chaptersQuery := fmt.Sprintf(`{
-		Chapter(filter: {book_id: {_eq: "%s"}}) {
+		Chapter(filter: {_bookID: {_eq: "%s"}}) {
 			_docID
 		}
 	}`, bookDocID)
@@ -624,9 +648,19 @@ func TestCIDHistoricalQuery(t *testing.T) {
 		DefraClient: client,
 	})
 
-	// Create page
+	// Create a real Book first so the Page's _bookID relation references an
+	// existing document. GetPageAtCID filters by _bookID == BookState.BookID,
+	// so the Page must carry the Book's DocID for the historical query to match.
+	bookDocID, err := client.Create(ctx, "Book", map[string]any{
+		"title": "CID Test Book",
+	})
+	if err != nil {
+		t.Fatalf("create book error: %v", err)
+	}
+
+	// Create page linked to the book (generates _bookID FK).
 	createResult, err := client.CreateWithVersion(ctx, "Page", map[string]any{
-		"book_id":      "book-1",
+		"_bookID":      bookDocID,
 		"page_num":     1,
 		"ocr_markdown": "original",
 	})
@@ -648,7 +682,7 @@ func TestCIDHistoricalQuery(t *testing.T) {
 		t.Fatal("expected update CID")
 	}
 
-	book := NewBookState("book-1")
+	book := NewBookState(bookDocID)
 
 	// Query at CID 1 - should get original
 	page1, err := book.GetPageAtCID(ctx, 1, createResult.CID)

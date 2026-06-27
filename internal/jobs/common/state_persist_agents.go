@@ -7,7 +7,10 @@ import (
 	"github.com/jackzampolin/shelf/internal/defra"
 )
 
-// PersistNewAgentState creates an agent state record and adds to b.agentStates.
+// PersistNewAgentState idempotently upserts an agent state record (keyed on the
+// agent's UUID agent_id) and adds it to b.agentStates. Using an upsert keeps the
+// call safe to re-run: an existing record is updated instead of colliding on
+// DefraDB's stable docID.
 func (b *BookState) PersistNewAgentState(ctx context.Context, state *AgentState) error {
 	store := b.getStore(ctx)
 	if store == nil {
@@ -27,13 +30,10 @@ func (b *BookState) PersistNewAgentState(ctx context.Context, state *AgentState)
 		"_bookID":            b.BookID,
 	}
 
-	result, err := store.SendSync(ctx, defra.WriteOp{
-		Collection: "AgentState",
-		Document:   doc,
-		Op:         defra.OpCreate,
-	})
+	filter := map[string]any{"agent_id": state.AgentID}
+	result, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
 	if err != nil {
-		return fmt.Errorf("failed to create agent state: %w", err)
+		return fmt.Errorf("failed to upsert agent state: %w", err)
 	}
 
 	// Update state with DocID/CID
@@ -46,7 +46,10 @@ func (b *BookState) PersistNewAgentState(ctx context.Context, state *AgentState)
 	return nil
 }
 
-// PersistNewAgentStates batch-creates agent state records and adds all to b.agentStates.
+// PersistNewAgentStates idempotently upserts agent state records (each keyed on
+// its own agent_id UUID) and adds them all to b.agentStates. Each state is
+// upserted individually so re-runs update existing records instead of colliding
+// on DefraDB's stable docID.
 func (b *BookState) PersistNewAgentStates(ctx context.Context, states []*AgentState) error {
 	if len(states) == 0 {
 		return nil
@@ -57,40 +60,29 @@ func (b *BookState) PersistNewAgentStates(ctx context.Context, states []*AgentSt
 		return fmt.Errorf("no store available")
 	}
 
-	// Build write operations
-	ops := make([]defra.WriteOp, len(states))
-	for i, state := range states {
-		ops[i] = defra.WriteOp{
-			Collection: "AgentState",
-			Document: map[string]any{
-				"agent_id":           state.AgentID,
-				"agent_type":         state.AgentType,
-				"entry_doc_id":       state.EntryDocID,
-				"iteration":          state.Iteration,
-				"complete":           state.Complete,
-				"messages_json":      state.MessagesJSON,
-				"pending_tool_calls": state.PendingToolCalls,
-				"tool_results":       state.ToolResults,
-				"result_json":        state.ResultJSON,
-				"_bookID":            b.BookID,
-			},
-			Op: defra.OpCreate,
+	for _, state := range states {
+		doc := map[string]any{
+			"agent_id":           state.AgentID,
+			"agent_type":         state.AgentType,
+			"entry_doc_id":       state.EntryDocID,
+			"iteration":          state.Iteration,
+			"complete":           state.Complete,
+			"messages_json":      state.MessagesJSON,
+			"pending_tool_calls": state.PendingToolCalls,
+			"tool_results":       state.ToolResults,
+			"result_json":        state.ResultJSON,
+			"_bookID":            b.BookID,
 		}
-	}
 
-	// Batch create
-	results, err := store.SendManySync(ctx, ops)
-	if err != nil {
-		return fmt.Errorf("failed to create agent states: %w", err)
-	}
-
-	// Update states with DocID/CID and add to memory
-	for i, result := range results {
-		if i < len(states) {
-			states[i].DocID = result.DocID
-			states[i].CID = result.CID
-			b.SetAgentState(states[i])
+		filter := map[string]any{"agent_id": state.AgentID}
+		result, err := store.UpsertWithVersion(ctx, "AgentState", filter, doc, doc)
+		if err != nil {
+			return fmt.Errorf("failed to upsert agent state %s: %w", state.AgentID, err)
 		}
+
+		state.DocID = result.DocID
+		state.CID = result.CID
+		b.SetAgentState(state)
 	}
 
 	return nil
