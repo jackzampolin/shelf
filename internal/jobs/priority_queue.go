@@ -62,13 +62,13 @@ func hasPrefix(s, prefix string) bool {
 }
 
 // PriorityQueue is a thread-safe priority queue for work units.
-// Work units with higher Priority values are dequeued first.
-// When priorities are equal, work units are processed in FIFO order.
+// Work units from earlier books are dequeued first. Within the same book,
+// higher Priority values are dequeued first. Ties use FIFO order.
 type PriorityQueue struct {
 	mu     sync.Mutex
 	items  workUnitHeap
-	seq    uint64          // Sequence number for FIFO ordering within same priority
-	notify chan struct{}   // Signaled when items are pushed
+	seq    uint64        // Sequence number for FIFO ordering within same priority
+	notify chan struct{} // Signaled when items are pushed
 }
 
 // NewPriorityQueue creates a new priority queue.
@@ -189,13 +189,27 @@ type workUnitItem struct {
 }
 
 // workUnitHeap implements heap.Interface for work units.
-// Higher priority items come first. Equal priorities use FIFO (lower seq first).
+// Earlier BookSeq values come first. Equal BookSeq values use higher priority,
+// then FIFO order (lower seq first). BookSeq 0 is treated as unset and sorts
+// after all real book sequences.
 type workUnitHeap []*workUnitItem
 
 func (h workUnitHeap) Len() int { return len(h) }
 
 func (h workUnitHeap) Less(i, j int) bool {
-	// Higher priority comes first (max-heap behavior)
+	bi := h[i].unit.BookSeq
+	bj := h[j].unit.BookSeq
+	if bi != bj {
+		if bi == 0 {
+			return false
+		}
+		if bj == 0 {
+			return true
+		}
+		return bi < bj
+	}
+
+	// Higher priority comes first (max-heap behavior) within the same book.
 	if h[i].unit.Priority != h[j].unit.Priority {
 		return h[i].unit.Priority > h[j].unit.Priority
 	}

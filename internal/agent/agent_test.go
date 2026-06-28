@@ -59,7 +59,7 @@ When done, use the complete tool with your final answer.`,
 	// Create OpenRouter client
 	client := providers.NewOpenRouterClient(providers.OpenRouterConfig{
 		APIKey:       apiKey,
-		DefaultModel: "x-ai/grok-4.1-fast",
+		DefaultModel: "anthropic/claude-opus-4.6",
 	})
 
 	// Create pool
@@ -226,7 +226,7 @@ When done, use the complete tool with your result.`,
 	// Create OpenRouter client
 	client := providers.NewOpenRouterClient(providers.OpenRouterConfig{
 		APIKey:       apiKey,
-		DefaultModel: "x-ai/grok-4.1-fast",
+		DefaultModel: "anthropic/claude-opus-4.6",
 	})
 
 	// Create pool
@@ -334,7 +334,7 @@ Keep searching until you find it. Do not give up.`,
 	// Create OpenRouter client
 	client := providers.NewOpenRouterClient(providers.OpenRouterConfig{
 		APIKey:       apiKey,
-		DefaultModel: "x-ai/grok-4.1-fast",
+		DefaultModel: "anthropic/claude-opus-4.6",
 	})
 
 	// Create pool and scheduler

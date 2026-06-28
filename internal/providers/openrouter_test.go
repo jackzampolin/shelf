@@ -500,7 +500,7 @@ func TestOpenRouterIntegration(t *testing.T) {
 		defer cancel()
 
 		result, err := client.Chat(ctx, &ChatRequest{
-			Model: "x-ai/grok-4.1-fast",
+			Model: "anthropic/claude-opus-4.6",
 			Messages: []Message{
 				{Role: "user", Content: "Say 'hello' and nothing else."},
 			},
@@ -529,7 +529,7 @@ func TestOpenRouterIntegration(t *testing.T) {
 
 		// Use json_object format with explicit instructions for better compatibility
 		result, err := client.Chat(ctx, &ChatRequest{
-			Model: "x-ai/grok-4.1-fast",
+			Model: "anthropic/claude-opus-4.6",
 			Messages: []Message{
 				{Role: "system", Content: "You are a helpful assistant that responds only with valid JSON. No explanations, no markdown, just the JSON object."},
 				{Role: "user", Content: `Return exactly this JSON: {"greeting": "hello", "count": 42}`},

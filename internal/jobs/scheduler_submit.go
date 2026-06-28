@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -19,9 +20,12 @@ func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 		metadataMap["book_id"] = metricsFor.BookID
 	}
 
+	record := NewRecord(job.Type(), metadataMap)
+	bookSeq := record.CreatedAt.UnixNano()
+
 	// Persist to DefraDB if manager available, otherwise generate a temporary ID
 	if s.manager != nil {
-		recordID, err := s.manager.Create(ctx, job.Type(), metadataMap)
+		recordID, err := s.manager.CreateRecord(ctx, record)
 		if err != nil {
 			return fmt.Errorf("failed to create job record: %w", err)
 		}
@@ -30,11 +34,13 @@ func (s *Scheduler) Submit(ctx context.Context, job Job) error {
 	} else {
 		// Generate a temporary ID for in-memory tracking when no persistence
 		job.SetRecordID(uuid.New().String())
+		bookSeq = time.Now().UTC().UnixNano()
 	}
 
 	// Track in memory using DefraDB record ID
 	s.mu.Lock()
 	s.jobs[job.ID()] = job
+	s.jobSeq[job.ID()] = bookSeq
 	s.pending[job.ID()] = 0
 	s.mu.Unlock()
 
@@ -164,9 +170,16 @@ func (s *Scheduler) Resume(ctx context.Context) (int, error) {
 			continue
 		}
 
-		// Track in memory
+		// Track in memory. Guard a zero CreatedAt (e.g. a record whose created_at
+		// failed to parse on load): its UnixNano() is a large negative that would
+		// sort BEFORE every real book; map it to the 0 = unset sentinel instead.
+		seq := record.CreatedAt.UnixNano()
+		if record.CreatedAt.IsZero() {
+			seq = 0
+		}
 		s.mu.Lock()
 		s.jobs[job.ID()] = job
+		s.jobSeq[job.ID()] = seq
 		s.pending[job.ID()] = 0
 		s.mu.Unlock()
 

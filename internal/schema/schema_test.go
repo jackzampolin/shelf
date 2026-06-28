@@ -65,7 +65,7 @@ func TestGet(t *testing.T) {
 func TestInitialize(t *testing.T) {
 	t.Run("successful initialization", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v0/schema" {
+			if r.URL.Path == "/api/v0/collections" {
 				w.WriteHeader(http.StatusOK)
 				return
 			}
@@ -84,7 +84,7 @@ func TestInitialize(t *testing.T) {
 
 	t.Run("handles already exists error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v0/schema" {
+			if r.URL.Path == "/api/v0/collections" {
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("collection already exists. Name: Job"))
 				return
@@ -104,7 +104,7 @@ func TestInitialize(t *testing.T) {
 
 	t.Run("fails on other errors", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v0/schema" {
+			if r.URL.Path == "/api/v0/collections" {
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("invalid schema syntax"))
 				return

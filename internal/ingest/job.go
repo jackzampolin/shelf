@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +48,7 @@ type Job struct {
 	pdfPaths []string
 	title    string
 	author   string
+	stitch   bool
 	bookID   string // Generated UUID, later replaced with DefraDB docID
 	logger   *slog.Logger
 
@@ -67,6 +69,7 @@ type JobConfig struct {
 	PDFPaths []string
 	Title    string
 	Author   string
+	Stitch   bool
 	Logger   *slog.Logger
 }
 
@@ -77,8 +80,13 @@ func NewJob(cfg JobConfig) *Job {
 		logger = slog.Default()
 	}
 
-	// Sort PDFs by numeric suffix
-	sortedPaths := sortPDFsByNumber(cfg.PDFPaths)
+	// Sort PDFs by numeric suffix. When Stitch is set, the caller (--stitch
+	// grouping via GroupParts, possibly with a custom pattern) already ordered
+	// the parts, so preserve that order rather than re-deriving it here.
+	sortedPaths := cfg.PDFPaths
+	if !cfg.Stitch {
+		sortedPaths = sortPDFsByNumber(cfg.PDFPaths)
+	}
 
 	// Derive title from first PDF if not provided
 	title := cfg.Title
@@ -90,6 +98,7 @@ func NewJob(cfg JobConfig) *Job {
 		pdfPaths: sortedPaths,
 		title:    title,
 		author:   cfg.Author,
+		stitch:   cfg.Stitch,
 		bookID:   uuid.New().String(),
 		logger:   logger.With("job_type", JobType),
 	}
@@ -146,11 +155,26 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 		"originals_dir", originalsDir,
 	)
 
+	pathsToIngest := j.pdfPaths
+	stitchedPath := ""
+	if j.stitch && len(j.pdfPaths) > 1 {
+		stitchedPath = filepath.Join(originalsDir, safePDFName(j.title))
+		if err := StitchPDF(j.pdfPaths, stitchedPath); err != nil {
+			os.RemoveAll(j.homeDir.SourceImagesDir(j.bookID))
+			return nil, fmt.Errorf("failed to stitch PDF parts for %s: %w", j.title, err)
+		}
+		pathsToIngest = []string{stitchedPath}
+		j.logger.Info("stitched PDF parts",
+			"parts", len(j.pdfPaths),
+			"output", filepath.Base(stitchedPath),
+		)
+	}
+
 	// Copy PDFs and count pages
 	totalPages := 0
 	var copiedPDFs []string
 
-	for _, pdfPath := range j.pdfPaths {
+	for _, pdfPath := range pathsToIngest {
 		// Get page count
 		f, err := os.Open(pdfPath)
 		if err != nil {
@@ -164,10 +188,12 @@ func (j *Job) Start(ctx context.Context) ([]jobs.WorkUnit, error) {
 
 		totalPages += pageCount
 
-		// Copy PDF to originals directory
 		destPath := filepath.Join(originalsDir, filepath.Base(pdfPath))
-		if err := copyFile(pdfPath, destPath); err != nil {
-			return nil, fmt.Errorf("failed to copy PDF %s: %w", pdfPath, err)
+		if pdfPath != stitchedPath {
+			// Copy PDF to originals directory
+			if err := copyFile(pdfPath, destPath); err != nil {
+				return nil, fmt.Errorf("failed to copy PDF %s: %w", pdfPath, err)
+			}
 		}
 		copiedPDFs = append(copiedPDFs, destPath)
 
@@ -265,6 +291,7 @@ func (j *Job) Status(ctx context.Context) (map[string]string, error) {
 		"total_pages": fmt.Sprintf("%d", j.totalPages),
 		"pdfs_copied": fmt.Sprintf("%d", len(j.copiedPDFs)),
 		"done":        fmt.Sprintf("%v", j.done),
+		"stitch":      fmt.Sprintf("%v", j.stitch),
 	}
 
 	if j.author != "" {
@@ -308,4 +335,22 @@ func (j *Job) BookID() string {
 // MetricsFor returns nil for ingest jobs (CPU-only work, no API costs).
 func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 	return nil
+}
+
+func safePDFName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "stitched"
+	}
+	name = strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', ':':
+			return '-'
+		}
+		if r < 32 {
+			return -1
+		}
+		return r
+	}, name)
+	return name + ".pdf"
 }

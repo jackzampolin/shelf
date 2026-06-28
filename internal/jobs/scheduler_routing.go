@@ -10,11 +10,15 @@ func (s *Scheduler) enqueueUnits(jobID string, units []WorkUnit) {
 
 	s.mu.Lock()
 	s.pending[jobID] += len(units)
+	bookSeq := s.jobSeq[jobID]
 	s.mu.Unlock()
 
 	for i := range units {
 		unit := &units[i]
 		unit.JobID = jobID
+		if unit.BookSeq == 0 {
+			unit.BookSeq = bookSeq
+		}
 
 		pool := s.findPool(unit)
 		if pool == nil {

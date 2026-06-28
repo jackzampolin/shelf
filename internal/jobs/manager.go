@@ -32,13 +32,20 @@ func NewManager(client *defra.Client, logger *slog.Logger) *Manager {
 // Create creates a new job record in DefraDB.
 func (m *Manager) Create(ctx context.Context, jobType string, metadata map[string]any) (string, error) {
 	record := NewRecord(jobType, metadata)
+	return m.CreateRecord(ctx, record)
+}
 
+// CreateRecord creates the provided job record in DefraDB.
+func (m *Manager) CreateRecord(ctx context.Context, record *Record) (string, error) {
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = time.Now().UTC()
+	}
 	id, err := m.createJob(ctx, record)
 	if err != nil {
 		return "", fmt.Errorf("failed to create job: %w", err)
 	}
 
-	m.logger.Debug("job created", "id", id, "type", jobType)
+	m.logger.Debug("job created", "id", id, "type", record.JobType)
 	return id, nil
 }
 
@@ -81,7 +88,7 @@ func (m *Manager) createJob(ctx context.Context, record *Record) (string, error)
 	input := map[string]any{
 		"job_type":   record.JobType,
 		"status":     string(record.Status),
-		"created_at": record.CreatedAt.Format(time.RFC3339),
+		"created_at": record.CreatedAt.Format(time.RFC3339Nano),
 	}
 	if record.BookID != "" {
 		input["book_id"] = record.BookID
@@ -266,17 +273,17 @@ func parseJobRecord(data map[string]any) (*Record, error) {
 
 	// Parse timestamps
 	if ca, ok := data["created_at"].(string); ok && ca != "" {
-		if t, err := time.Parse(time.RFC3339, ca); err == nil {
+		if t, err := parseJobTime(ca); err == nil {
 			record.CreatedAt = t
 		}
 	}
 	if sa, ok := data["started_at"].(string); ok && sa != "" {
-		if t, err := time.Parse(time.RFC3339, sa); err == nil {
+		if t, err := parseJobTime(sa); err == nil {
 			record.StartedAt = &t
 		}
 	}
 	if ca, ok := data["completed_at"].(string); ok && ca != "" {
-		if t, err := time.Parse(time.RFC3339, ca); err == nil {
+		if t, err := parseJobTime(ca); err == nil {
 			record.CompletedAt = &t
 		}
 	}
@@ -290,6 +297,13 @@ func parseJobRecord(data map[string]any) (*Record, error) {
 	}
 
 	return record, nil
+}
+
+func parseJobTime(value string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.RFC3339, value)
 }
 
 func joinParts(parts []string) string {

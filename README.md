@@ -94,6 +94,7 @@ shelf serve                      # Start server
 # Books
 shelf api books list             # List all books
 shelf api books ingest <pdf>     # Ingest a PDF scan
+shelf api books ingest --stitch <dir> # Ingest a directory of numbered PDF parts as books
 shelf api books get <id>         # Get book details
 
 # Jobs
@@ -119,10 +120,11 @@ Configuration lives in `~/.shelf/config.yaml` with hot-reload support.
 Example configuration:
 
 ```yaml
-providers:
+llm_providers:
   openrouter:
     api_key: "your-key"
     rate_limit: 10  # requests per second
+    max_concurrency: 32  # concurrent in-flight requests
 
 defaults:
   debug_agents: false
@@ -130,6 +132,8 @@ defaults:
 ```
 
 See the web UI settings page or `shelf api settings get` for current configuration.
+For batch runs, `rate_limit` and per-provider `max_concurrency` are the hardware/API
+capacity knobs; the scheduler allocates those slots across queued books.
 
 ## Documentation
 

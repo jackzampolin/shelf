@@ -193,6 +193,59 @@ func TestScheduler_PoolQueueDepth(t *testing.T) {
 	}
 }
 
+func TestScheduler_BookAwareQueueOrdering(t *testing.T) {
+	scheduler := NewScheduler(SchedulerConfig{})
+
+	llmClient := providers.NewMockClient()
+	llmPool, _ := NewProviderWorkerPool(ProviderWorkerPoolConfig{Name: "llm", LLMClient: llmClient, RPS: 100.0})
+	scheduler.RegisterPool(llmPool)
+
+	earlier := &priorityTestJob{priority: PriorityLow}
+	later := &priorityTestJob{priority: PriorityHigh}
+
+	ctx := context.Background()
+	if err := scheduler.Submit(ctx, earlier); err != nil {
+		t.Fatalf("Submit earlier error = %v", err)
+	}
+	time.Sleep(time.Millisecond)
+	if err := scheduler.Submit(ctx, later); err != nil {
+		t.Fatalf("Submit later error = %v", err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for llmPool.queue.Len() < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if llmPool.queue.Len() != 2 {
+		t.Fatalf("queue length = %d, want 2", llmPool.queue.Len())
+	}
+
+	first := llmPool.queue.TryPop()
+	if first == nil {
+		t.Fatal("expected first work unit")
+	}
+	if first.JobID != earlier.ID() {
+		t.Fatalf("first JobID = %q, want earlier job %q", first.JobID, earlier.ID())
+	}
+	if first.BookSeq == 0 {
+		t.Fatal("first BookSeq was not stamped")
+	}
+
+	second := llmPool.queue.TryPop()
+	if second == nil {
+		t.Fatal("expected second work unit")
+	}
+	if second.JobID != later.ID() {
+		t.Fatalf("second JobID = %q, want later job %q", second.JobID, later.ID())
+	}
+	if second.BookSeq == 0 {
+		t.Fatal("second BookSeq was not stamped")
+	}
+	if first.BookSeq >= second.BookSeq {
+		t.Fatalf("BookSeq ordering = %d then %d, want increasing created_at", first.BookSeq, second.BookSeq)
+	}
+}
+
 // TestScheduler_RegisterFactory tests job factory registration.
 func TestScheduler_RegisterFactory(t *testing.T) {
 	scheduler := NewScheduler(SchedulerConfig{})
@@ -458,6 +511,37 @@ type OnCompleteErrorJob struct {
 	id            string
 	doneCh        chan struct{}
 	onCompleteErr error
+}
+
+type priorityTestJob struct {
+	id       string
+	priority int
+}
+
+func (j *priorityTestJob) ID() string                   { return j.id }
+func (j *priorityTestJob) SetRecordID(id string)        { j.id = id }
+func (j *priorityTestJob) Type() string                 { return "priority-test" }
+func (j *priorityTestJob) Done() bool                   { return false }
+func (j *priorityTestJob) MetricsFor() *WorkUnitMetrics { return nil }
+func (j *priorityTestJob) Status(ctx context.Context) (map[string]string, error) {
+	return map[string]string{"done": "false"}, nil
+}
+func (j *priorityTestJob) Progress() map[string]ProviderProgress { return nil }
+func (j *priorityTestJob) OnComplete(ctx context.Context, result WorkResult) ([]WorkUnit, error) {
+	return nil, nil
+}
+func (j *priorityTestJob) Start(ctx context.Context) ([]WorkUnit, error) {
+	return []WorkUnit{
+		{
+			ID:       j.id + "-unit",
+			Type:     WorkUnitTypeLLM,
+			Provider: "llm",
+			Priority: j.priority,
+			ChatRequest: &providers.ChatRequest{
+				Messages: []providers.Message{{Role: "user", Content: "test"}},
+			},
+		},
+	}, nil
 }
 
 func (j *OnCompleteErrorJob) ID() string                   { return j.id }

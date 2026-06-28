@@ -23,6 +23,7 @@ type Scheduler struct {
 	pools   map[string]WorkerPool // all pools by name
 	cpuPool *CPUWorkerPool        // CPU pool (also in pools map)
 	jobs    map[string]Job        // active jobs by ID
+	jobSeq  map[string]int64      // jobID -> created_at unix nanos for book-aware priority
 	logger  *slog.Logger
 
 	// Job factories for resumption
@@ -84,6 +85,7 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 		manager:   cfg.Manager,
 		pools:     make(map[string]WorkerPool),
 		jobs:      make(map[string]Job),
+		jobSeq:    make(map[string]int64),
 		factories: make(map[string]JobFactory),
 		pending:   make(map[string]int),
 		results:   results,
@@ -106,6 +108,7 @@ func (s *Scheduler) SetContextEnricher(enricher func(context.Context) context.Co
 func (s *Scheduler) removeJob(jobID string) {
 	s.mu.Lock()
 	delete(s.jobs, jobID)
+	delete(s.jobSeq, jobID)
 	delete(s.pending, jobID)
 	s.mu.Unlock()
 }
@@ -247,6 +250,7 @@ func (s *Scheduler) handleResult(ctx context.Context, wr workerResult) {
 	isDone := job.Done() && pendingCount == 0
 	if isDone {
 		delete(s.jobs, wr.JobID)
+		delete(s.jobSeq, wr.JobID)
 		delete(s.pending, wr.JobID)
 	}
 	s.mu.Unlock()

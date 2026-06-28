@@ -43,6 +43,7 @@ type WorkUnit struct {
 	Provider string       // Specific provider name, or "" for any of this type
 	JobID    string       // Which job this belongs to
 	Priority int          // Higher = processed first
+	BookSeq  int64        // Earlier job created_at unix nanos ranks first; 0 sorts after real sequences
 
 	// Request data (one of these will be set based on Type)
 	ChatRequest *providers.ChatRequest

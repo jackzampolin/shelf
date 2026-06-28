@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -241,28 +240,28 @@ func sortPDFsByNumber(paths []string) []string {
 	sorted := make([]string, len(paths))
 	copy(sorted, paths)
 
-	re := regexp.MustCompile(`-(\d+)\.pdf$`)
+	// Reuse the same suffix logic as GroupParts so ordering is separator- and
+	// extension-agnostic (handles "-N"/"_N", .pdf/.PDF). The old hyphen-and-
+	// lowercase-only regex sorted underscore/uppercase parts lexically, which
+	// merged "volume_10" before "volume_2".
+	partNum := func(p string) (int, bool) {
+		stem := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
+		_, n, ok := partInfo(stem, DefaultPartPattern)
+		return n, ok
+	}
 
 	sort.Slice(sorted, func(i, j int) bool {
-		mi := re.FindStringSubmatch(sorted[i])
-		mj := re.FindStringSubmatch(sorted[j])
-
-		// If both have numbers, sort numerically
-		if len(mi) > 1 && len(mj) > 1 {
-			ni, _ := strconv.Atoi(mi[1])
-			nj, _ := strconv.Atoi(mj[1])
-			return ni < nj
+		ni, oki := partNum(sorted[i])
+		nj, okj := partNum(sorted[j])
+		if oki && okj {
+			if ni != nj {
+				return ni < nj
+			}
+			return sorted[i] < sorted[j]
 		}
-
-		// Files without numbers come first
-		if len(mi) > 1 {
-			return false
+		if oki != okj {
+			return !oki // files without a numeric suffix sort first
 		}
-		if len(mj) > 1 {
-			return true
-		}
-
-		// Both without numbers: alphabetical
 		return sorted[i] < sorted[j]
 	})
 

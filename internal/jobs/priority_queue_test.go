@@ -92,6 +92,57 @@ func TestPriorityQueue_HighPriorityJumpsQueue(t *testing.T) {
 	}
 }
 
+func TestPriorityQueue_BookSeqBeforePriority(t *testing.T) {
+	pq := NewPriorityQueue()
+
+	mustPush(t, pq, &WorkUnit{ID: "later-high", BookSeq: 200, Priority: PriorityHigh})
+	mustPush(t, pq, &WorkUnit{ID: "earlier-normal", BookSeq: 100, Priority: PriorityNormal})
+
+	unit := pq.TryPop()
+	if unit.ID != "earlier-normal" {
+		t.Errorf("expected earlier book to outrank later high priority, got %q", unit.ID)
+	}
+
+	unit = pq.TryPop()
+	if unit.ID != "later-high" {
+		t.Errorf("expected later book second, got %q", unit.ID)
+	}
+}
+
+func TestPriorityQueue_PriorityWithinSameBookSeq(t *testing.T) {
+	pq := NewPriorityQueue()
+
+	mustPush(t, pq, &WorkUnit{ID: "normal", BookSeq: 100, Priority: PriorityNormal})
+	mustPush(t, pq, &WorkUnit{ID: "high", BookSeq: 100, Priority: PriorityHigh})
+
+	unit := pq.TryPop()
+	if unit.ID != "high" {
+		t.Errorf("expected high priority within same book, got %q", unit.ID)
+	}
+
+	unit = pq.TryPop()
+	if unit.ID != "normal" {
+		t.Errorf("expected normal priority second, got %q", unit.ID)
+	}
+}
+
+func TestPriorityQueue_UnsetBookSeqSortsAfterRealBooks(t *testing.T) {
+	pq := NewPriorityQueue()
+
+	mustPush(t, pq, &WorkUnit{ID: "unset-high", BookSeq: 0, Priority: PriorityHigh})
+	mustPush(t, pq, &WorkUnit{ID: "real-low", BookSeq: 100, Priority: PriorityLow})
+
+	unit := pq.TryPop()
+	if unit.ID != "real-low" {
+		t.Errorf("expected real BookSeq to outrank unset high priority, got %q", unit.ID)
+	}
+
+	unit = pq.TryPop()
+	if unit.ID != "unset-high" {
+		t.Errorf("expected unset BookSeq second, got %q", unit.ID)
+	}
+}
+
 func TestPriorityQueue_Stats(t *testing.T) {
 	pq := NewPriorityQueue()
 
@@ -435,12 +486,12 @@ func TestPriorityForStage_EdgeCases(t *testing.T) {
 		input    string
 		expected int
 	}{
-		{"lin", PriorityNormal},          // Short prefix that doesn't match
-		{"link_entry_", PriorityHigh},    // Exact prefix match
-		{"a", PriorityNormal},            // Very short input
-		{"abc", PriorityNormal},          // Below length threshold
-		{"link", PriorityNormal},         // Partial prefix
-		{"entry_x", PriorityHigh},        // Valid prefix
+		{"lin", PriorityNormal},       // Short prefix that doesn't match
+		{"link_entry_", PriorityHigh}, // Exact prefix match
+		{"a", PriorityNormal},         // Very short input
+		{"abc", PriorityNormal},       // Below length threshold
+		{"link", PriorityNormal},      // Partial prefix
+		{"entry_x", PriorityHigh},     // Valid prefix
 	}
 
 	for _, tt := range tests {
