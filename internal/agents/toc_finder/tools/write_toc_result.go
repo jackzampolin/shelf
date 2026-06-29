@@ -22,18 +22,13 @@ func writeTocResultTool() providers.Tool {
 						"description": "Whether ToC was found",
 					},
 					"toc_page_range": map[string]any{
-						"anyOf": []map[string]any{
-							{
-								"type": "object",
-								"properties": map[string]any{
-									"start_page": map[string]any{"type": "integer", "minimum": 1},
-									"end_page":   map[string]any{"type": "integer", "minimum": 1},
-								},
-								"required": []string{"start_page", "end_page"},
-							},
-							{"type": "null"},
+						"type": "object",
+						"properties": map[string]any{
+							"start_page": map[string]any{"type": "integer"},
+							"end_page":   map[string]any{"type": "integer"},
 						},
-						"description": "ToC page range with start_page and end_page (both >= 1), or null if ToC not found",
+						"required":    []string{"start_page", "end_page"},
+						"description": "ToC page range with start_page and end_page. Omit this field entirely if the ToC is not found (toc_found=false).",
 					},
 					"confidence": map[string]any{
 						"type":        "number",

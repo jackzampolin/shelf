@@ -18,11 +18,8 @@ func writeResultTool() providers.Tool {
 				"type": "object",
 				"properties": map[string]any{
 					"scan_page": map[string]any{
-						"anyOf": []map[string]any{
-							{"type": "integer", "minimum": 1},
-							{"type": "null"},
-						},
-						"description": "The scan page number where this entry begins, or null if not found",
+						"type":        "integer",
+						"description": "The scan page number where this entry begins. Omit this field entirely if the entry cannot be found.",
 					},
 					"reasoning": map[string]any{
 						"type":        "string",
