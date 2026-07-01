@@ -125,40 +125,6 @@ func cleanupTestContainers(t TestingT, cli *client.Client) {
 	}
 }
 
-// CleanupAllTestContainers removes ALL shelf-test containers.
-// Use sparingly - mainly for cleaning up after interrupted test runs.
-func CleanupAllTestContainers(ctx context.Context) error {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		return fmt.Errorf("failed to create docker client: %w", err)
-	}
-	defer cli.Close()
-
-	filterArgs := filters.NewArgs()
-	filterArgs.Add("label", CleanupLabel)
-
-	containers, err := cli.ContainerList(ctx, container.ListOptions{
-		All:     true,
-		Filters: filterArgs,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to list containers: %w", err)
-	}
-
-	for _, c := range containers {
-		timeout := 10
-		_ = cli.ContainerStop(ctx, c.ID, container.StopOptions{Timeout: &timeout})
-		if err := cli.ContainerRemove(ctx, c.ID, container.RemoveOptions{
-			Force:         true,
-			RemoveVolumes: true,
-		}); err != nil {
-			return fmt.Errorf("failed to remove container %s: %w", c.Names[0], err)
-		}
-	}
-
-	return nil
-}
-
 // randString generates a random hex string of n bytes
 func randString(n int) string {
 	b := make([]byte, n)

@@ -80,10 +80,10 @@ func (e *GetBookEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	book := Book{
-		ID:                  getString(m, "_docID"),
-		Title:               getString(m, "title"),
-		Author:              getString(m, "author"),
-		Status:              getString(m, "status"),
+		ID:     getString(m, "_docID"),
+		Title:  getString(m, "title"),
+		Author: getString(m, "author"),
+		Status: getString(m, "status"),
 	}
 	if pc, ok := m["page_count"].(float64); ok {
 		book.PageCount = int(pc)

@@ -72,23 +72,6 @@ func UserPrompt(data UserPromptData) string {
 	return buf.String()
 }
 
-// UserPromptWithOverride renders a user prompt, using an override template if provided.
-func UserPromptWithOverride(data UserPromptData, override string) string {
-	if override == "" {
-		return UserPrompt(data)
-	}
-	// Parse and execute the override template
-	tmpl, err := template.New("override").Parse(override)
-	if err != nil {
-		return UserPrompt(data) // Fallback to default on parse error
-	}
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return UserPrompt(data) // Fallback to default on execute error
-	}
-	return buf.String()
-}
-
 // BuildUserPrompt builds the user prompt for the ToC finder agent.
 // Deprecated: Use UserPrompt(UserPromptData) instead.
 func BuildUserPrompt(scanID string, bookTitle string, totalPages int, previousAttempt map[string]any) string {

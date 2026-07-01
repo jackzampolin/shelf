@@ -729,12 +729,6 @@ func validTocLinkResult(agentResult *agent.Result) (*toc_entry_finder.Result, er
 	return entryResult, nil
 }
 
-// cleanupLinkTocAgentState removes link ToC entry agent state after completion.
-// Uses async delete to avoid blocking the critical path.
-func (j *Job) cleanupLinkTocAgentState(ctx context.Context, entryDocID string) {
-	j.cleanupLinkTocAgentStateWithMode(ctx, entryDocID, false)
-}
-
 // cleanupLinkTocAgentStateWithMode removes link ToC entry agent state with
 // selectable delete behavior.
 func (j *Job) cleanupLinkTocAgentStateWithMode(ctx context.Context, entryDocID string, syncDelete bool) {

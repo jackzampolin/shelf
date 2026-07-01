@@ -26,11 +26,6 @@ type UserPromptData struct {
 	BookText string
 }
 
-// UserPrompt builds the user prompt for metadata extraction.
-func UserPrompt(bookText string) string {
-	return UserPromptFromData(UserPromptData{BookText: bookText})
-}
-
 // UserPromptFromData renders the user prompt template with the given data.
 func UserPromptFromData(data UserPromptData) string {
 	var buf bytes.Buffer

@@ -3,7 +3,6 @@ package endpoints
 import (
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -122,17 +121,4 @@ func (e *SwaggerUIEndpoint) Command(getServerURL func() string) *cobra.Command {
 			return nil
 		},
 	}
-}
-
-// GetSwaggerSpecPath returns the path to swagger.json based on executable location.
-func GetSwaggerSpecPath() string {
-	// Try relative to executable first
-	if exe, err := os.Executable(); err == nil {
-		specPath := filepath.Join(filepath.Dir(exe), "docs", "swagger", "swagger.json")
-		if _, err := os.Stat(specPath); err == nil {
-			return specPath
-		}
-	}
-	// Fall back to working directory
-	return "docs/swagger/swagger.json"
 }

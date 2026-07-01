@@ -435,7 +435,7 @@ func TestSinkIntegration_GracefulShutdown(t *testing.T) {
 	// Create sink with long flush interval (so only shutdown triggers flush)
 	sink := NewSink(SinkConfig{
 		Client:        client,
-		BatchSize:     100, // Large batch
+		BatchSize:     100,              // Large batch
 		FlushInterval: 10 * time.Second, // Long interval
 		Logger:        logger,
 	})

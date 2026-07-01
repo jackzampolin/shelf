@@ -484,15 +484,6 @@ func matchesFilters(doc map[string]any, docID string, filters []filterCondition)
 	return true
 }
 
-// matchesBoolFilter checks if a bool field matches a filter value string.
-func matchesBoolFilter(val any, filterValue string) bool {
-	boolVal, ok := val.(bool)
-	if !ok {
-		return false
-	}
-	return (boolVal && filterValue == "true") || (!boolVal && filterValue == "false")
-}
-
 // --- Relationship support ---
 // The memory store supports a simple relationship convention:
 // If a query contains "toc { ... }", it looks for a "toc" field in the document

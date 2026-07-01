@@ -24,21 +24,6 @@ const (
 	ConfidenceLow ConfidenceLevel = "low"
 )
 
-// ParseConfidenceLevel converts a string to a ConfidenceLevel.
-// Returns ConfidenceLow if the string is not recognized.
-func ParseConfidenceLevel(s string) ConfidenceLevel {
-	switch s {
-	case "high":
-		return ConfidenceHigh
-	case "medium":
-		return ConfidenceMedium
-	case "low":
-		return ConfidenceLow
-	default:
-		return ConfidenceLow
-	}
-}
-
 // DetectedChapter represents a chapter detected from page pattern analysis or labels.
 // This is GROUND TRUTH from actual page content, more reliable than ToC-based patterns.
 type DetectedChapter struct {

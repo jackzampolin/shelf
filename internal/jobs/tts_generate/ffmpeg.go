@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
@@ -57,61 +56,6 @@ func concatenateWithFFmpeg(ctx context.Context, inputFiles []string, outputPath 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ffmpeg failed: %w\nOutput: %s", err, string(output))
-	}
-
-	return nil
-}
-
-// GetAudioDuration uses ffprobe to get the duration of an audio file in milliseconds.
-func GetAudioDuration(ctx context.Context, audioPath string) (int, error) {
-	cmd := exec.CommandContext(ctx, "ffprobe",
-		"-v", "error",
-		"-show_entries", "format=duration",
-		"-of", "default=noprint_wrappers=1:nokey=1",
-		audioPath,
-	)
-
-	output, err := cmd.Output()
-	if err != nil {
-		return 0, fmt.Errorf("ffprobe failed: %w", err)
-	}
-
-	// Parse duration (in seconds with decimal)
-	var durationSec float64
-	if _, err := fmt.Sscanf(strings.TrimSpace(string(output)), "%f", &durationSec); err != nil {
-		return 0, fmt.Errorf("failed to parse duration: %w", err)
-	}
-
-	return int(durationSec * 1000), nil
-}
-
-// CheckFFmpegAvailable checks if ffmpeg and ffprobe are available.
-func CheckFFmpegAvailable() error {
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		return fmt.Errorf("ffmpeg not found in PATH: %w", err)
-	}
-	if _, err := exec.LookPath("ffprobe"); err != nil {
-		return fmt.Errorf("ffprobe not found in PATH: %w", err)
-	}
-	return nil
-}
-
-// CleanupChapterSegments removes individual segment files after concatenation.
-func CleanupChapterSegments(chapterDir string) error {
-	entries, err := os.ReadDir(chapterDir)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		// Only remove segment files
-		name := entry.Name()
-		if strings.HasPrefix(name, "segment_") {
-			os.Remove(filepath.Join(chapterDir, name))
-		}
 	}
 
 	return nil

@@ -178,7 +178,7 @@ func (b *BookState) OpComplete(op OpType) {
 
 // PersistOpComplete marks operation complete and returns commit CID.
 //
-// Deprecated: Use PersistOpCompleteAsync instead for better latency.
+// Deprecated: Use BookState.PersistOpCompleteAsync instead for better latency.
 func PersistOpComplete(ctx context.Context, book *BookState, op OpType) (string, error) {
 	cfg, ok := OpRegistry[op]
 	if !ok || cfg == nil {
@@ -236,15 +236,6 @@ func PersistOpComplete(ctx context.Context, book *BookState, op OpType) (string,
 	}
 
 	return result.CID, nil
-}
-
-// PersistOpCompleteAsync fires and forgets operation complete status to DB.
-// Delegates to BookState.PersistOpCompleteAsync for fire-and-forget behavior.
-func PersistOpCompleteAsync(ctx context.Context, book *BookState, op OpType) {
-	if book == nil {
-		return
-	}
-	book.PersistOpCompleteAsync(ctx, op)
 }
 
 // OpFail records a failure for the given operation (thread-safe).

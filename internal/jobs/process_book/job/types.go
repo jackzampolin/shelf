@@ -32,11 +32,6 @@ const ConsecutiveFrontMatterRequired = 30
 // PageState is an alias for common.PageState.
 type PageState = common.PageState
 
-// NewPageState creates a new page state with initialized maps.
-func NewPageState() *PageState {
-	return common.NewPageState()
-}
-
 // OpStatus is an alias for common.OpStatus.
 type OpStatus = common.OpStatus
 

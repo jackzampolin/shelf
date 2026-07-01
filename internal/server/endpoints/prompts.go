@@ -560,15 +560,3 @@ func getPromptStore(ctx context.Context) *prompts.Store {
 	logger := svcctx.LoggerFrom(ctx)
 	return prompts.NewStore(defraClient, logger)
 }
-
-// PromptsCommands returns endpoints for prompt operations.
-func PromptsCommands() []api.Endpoint {
-	return []api.Endpoint{
-		&ListPromptsEndpoint{},
-		&GetPromptEndpoint{},
-		&ListBookPromptsEndpoint{},
-		&GetBookPromptEndpoint{},
-		&SetBookPromptEndpoint{},
-		&ClearBookPromptEndpoint{},
-	}
-}

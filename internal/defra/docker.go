@@ -41,11 +41,11 @@ func GenerateContainerName(homePath string) string {
 type ContainerStatus string
 
 const (
-	StatusRunning    ContainerStatus = "running"
-	StatusStopped    ContainerStatus = "stopped"
-	StatusNotFound   ContainerStatus = "not_found"
-	StatusUnhealthy  ContainerStatus = "unhealthy"
-	StatusStarting   ContainerStatus = "starting"
+	StatusRunning   ContainerStatus = "running"
+	StatusStopped   ContainerStatus = "stopped"
+	StatusNotFound  ContainerStatus = "not_found"
+	StatusUnhealthy ContainerStatus = "unhealthy"
+	StatusStarting  ContainerStatus = "starting"
 )
 
 // DockerManager manages the DefraDB Docker container lifecycle.

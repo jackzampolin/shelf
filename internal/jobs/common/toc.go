@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
-	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/prompts/extract_toc"
@@ -90,72 +89,6 @@ func LoadTocPagesFromState(ctx context.Context, book *BookState, startPage, endP
 	return tocPages
 }
 
-// LoadTocPagesFromDB loads ToC page content directly from DefraDB.
-// Use this when in-memory cache doesn't have ocr_markdown (e.g., after job reload).
-func LoadTocPagesFromDB(ctx context.Context, bookID string, startPage, endPage int) []extract_toc.ToCPage {
-	if startPage == 0 || endPage == 0 {
-		return nil
-	}
-
-	// Validate bookID to prevent GraphQL injection
-	if err := defra.ValidateID(bookID); err != nil {
-		return nil
-	}
-
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return nil
-	}
-
-	// Note: DefraDB doesn't support range queries well, so we fetch all pages and filter
-	query := fmt.Sprintf(`{
-		Page(filter: {_bookID: {_eq: "%s"}, ocr_complete: {_eq: true}}, order: {page_num: ASC}) {
-			page_num
-			ocr_markdown
-		}
-	}`, bookID)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return nil
-	}
-
-	pagesData, ok := resp.Data["Page"].([]any)
-	if !ok {
-		return nil
-	}
-
-	var tocPages []extract_toc.ToCPage
-	for _, p := range pagesData {
-		page, ok := p.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		pageNum := 0
-		if pn, ok := page["page_num"].(float64); ok {
-			pageNum = int(pn)
-		}
-
-		// Filter to ToC page range
-		if pageNum < startPage || pageNum > endPage {
-			continue
-		}
-
-		ocrMarkdown, _ := page["ocr_markdown"].(string)
-		if ocrMarkdown == "" {
-			continue
-		}
-
-		tocPages = append(tocPages, extract_toc.ToCPage{
-			PageNum: pageNum,
-			OCRText: ocrMarkdown,
-		})
-	}
-
-	return tocPages
-}
-
 // LoadTocStructureSummary loads the structure summary from the ToC finder.
 func LoadTocStructureSummary(ctx context.Context, tocDocID string) (*extract_toc.StructureSummary, error) {
 	if tocDocID == "" {
@@ -195,63 +128,6 @@ func LoadTocStructureSummary(ctx context.Context, tocDocID string) (*extract_toc
 	}
 
 	return nil, nil
-}
-
-// SaveTocFinderResult saves the ToC finder result to DefraDB.
-func SaveTocFinderResult(ctx context.Context, tocDocID string, result *toc_finder.Result) (string, error) {
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return "", fmt.Errorf("defra sink not in context")
-	}
-
-	update := map[string]any{
-		"toc_found":       result.ToCFound,
-		"finder_complete": true,
-	}
-
-	if result.ToCPageRange != nil {
-		update["start_page"] = result.ToCPageRange.StartPage
-		update["end_page"] = result.ToCPageRange.EndPage
-	}
-
-	if result.StructureSummary != nil {
-		summaryJSON, err := json.Marshal(result.StructureSummary)
-		if err == nil {
-			update["structure_summary"] = string(summaryJSON)
-		}
-	}
-
-	writeResult, err := sink.SendSync(ctx, defra.WriteOp{
-		Collection: "ToC",
-		DocID:      tocDocID,
-		Document:   update,
-		Op:         defra.OpUpdate,
-	})
-	if err != nil {
-		return "", err
-	}
-	return writeResult.CID, nil
-}
-
-// SaveTocFinderNoResult marks ToC finder as complete with no ToC found.
-func SaveTocFinderNoResult(ctx context.Context, tocDocID string) (string, error) {
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return "", fmt.Errorf("defra sink not in context")
-	}
-	writeResult, err := sink.SendSync(ctx, defra.WriteOp{
-		Collection: "ToC",
-		DocID:      tocDocID,
-		Document: map[string]any{
-			"toc_found":       false,
-			"finder_complete": true,
-		},
-		Op: defra.OpUpdate,
-	})
-	if err != nil {
-		return "", err
-	}
-	return writeResult.CID, nil
 }
 
 // SaveTocExtractResult saves the ToC extraction result to DefraDB.
@@ -479,101 +355,6 @@ func RefreshLinkedEntries(ctx context.Context, book *BookState, tocDocID string)
 	// Only update cache after successful load
 	book.SetLinkedEntries(entries)
 	return entries, nil
-}
-
-// DeleteExistingTocEntries deletes any existing TocEntry records for a ToC.
-func DeleteExistingTocEntries(ctx context.Context, tocDocID string) error {
-	logger := svcctx.LoggerFrom(ctx)
-
-	if tocDocID == "" {
-		if logger != nil {
-			logger.Warn("skipping ToC entry deletion: empty tocDocID")
-		}
-		return nil
-	}
-
-	// Validate tocDocID to prevent GraphQL injection
-	if err := defra.ValidateID(tocDocID); err != nil {
-		return fmt.Errorf("invalid ToC doc ID: %w", err)
-	}
-
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return fmt.Errorf("defra client not in context")
-	}
-	sink := svcctx.DefraSinkFrom(ctx)
-	if sink == nil {
-		return fmt.Errorf("defra sink not in context")
-	}
-
-	// Query existing entries
-	query := fmt.Sprintf(`{
-		TocEntry(filter: {_tocID: {_eq: "%s"}}) {
-			_docID
-		}
-	}`, tocDocID)
-
-	if logger != nil {
-		logger.Debug("querying existing ToC entries before delete", "toc_doc_id", tocDocID)
-	}
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		if logger != nil {
-			logger.Error("failed querying existing ToC entries for deletion", "error", err)
-		}
-		return err
-	}
-
-	entries, ok := resp.Data["TocEntry"].([]any)
-	if !ok || len(entries) == 0 {
-		if logger != nil {
-			logger.Debug("no existing ToC entries to delete",
-				"toc_doc_id", tocDocID,
-				"raw_type", fmt.Sprintf("%T", resp.Data["TocEntry"]))
-		}
-		return nil // No existing entries
-	}
-
-	if logger != nil {
-		logger.Debug("found existing ToC entries to delete",
-			"toc_doc_id", tocDocID,
-			"count", len(entries))
-	}
-
-	// Must complete before new entries are created, but batch to avoid per-entry sync latency.
-	ops := make([]defra.WriteOp, 0, len(entries))
-	for _, e := range entries {
-		entry, ok := e.(map[string]any)
-		if !ok {
-			continue
-		}
-		docID, ok := entry["_docID"].(string)
-		if !ok || docID == "" {
-			continue
-		}
-		ops = append(ops, defra.WriteOp{
-			Collection: "TocEntry",
-			DocID:      docID,
-			Op:         defra.OpDelete,
-		})
-	}
-
-	if len(ops) == 0 {
-		return nil
-	}
-
-	results, err := sink.SendManySync(ctx, ops)
-	if err != nil {
-		return fmt.Errorf("failed to delete TocEntry batch: %w", err)
-	}
-	for _, result := range results {
-		if result.Err != nil {
-			return fmt.Errorf("failed to delete TocEntry %s: %w", result.DocID, result.Err)
-		}
-	}
-
-	return nil
 }
 
 // SaveTocEntryResult updates a TocEntry with the found page link.

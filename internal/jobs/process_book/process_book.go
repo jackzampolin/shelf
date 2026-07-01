@@ -302,11 +302,3 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 
 	return pjob.NewFromLoadResult(result), nil
 }
-
-// JobFactory returns a factory function for recreating jobs from stored metadata.
-// Used by the scheduler to resume interrupted jobs after restart.
-func JobFactory(cfg Config) jobs.JobFactory {
-	return common.MakeJobFactory(func(ctx context.Context, bookID string) (jobs.Job, error) {
-		return NewJob(ctx, cfg, bookID)
-	})
-}

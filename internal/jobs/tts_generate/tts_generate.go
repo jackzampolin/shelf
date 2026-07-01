@@ -10,7 +10,6 @@ import (
 
 	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/jobs"
-	"github.com/jackzampolin/shelf/internal/jobs/common"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -445,13 +444,6 @@ func createBookAudioRecord(ctx context.Context, client *defra.Client, state *Aud
 	}
 
 	return "", fmt.Errorf("no _docID in response: %+v", resp.Data)
-}
-
-// JobFactory returns a factory function for recreating jobs from stored metadata.
-func JobFactory(cfg Config) jobs.JobFactory {
-	return common.MakeJobFactory(func(ctx context.Context, bookID string) (jobs.Job, error) {
-		return NewJob(ctx, cfg, bookID)
-	})
 }
 
 // Helper functions

@@ -16,12 +16,12 @@ type ListBooksResponse struct {
 
 // Book represents a book record.
 type Book struct {
-	ID                    string `json:"id"`
-	Title                 string `json:"title"`
-	Author                string `json:"author,omitempty"`
-	PageCount             int    `json:"page_count"`
-	Status                string `json:"status"`
-	CreatedAt             string `json:"created_at"`
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Author    string `json:"author,omitempty"`
+	PageCount int    `json:"page_count"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"created_at"`
 }
 
 // ListBooksEndpoint handles GET /api/books.

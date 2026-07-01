@@ -89,55 +89,6 @@ func LoadPagesForMetadataFromState(ctx context.Context, book *BookState, maxPage
 	return pages
 }
 
-// LoadPagesForMetadataFromDB loads page data for metadata extraction directly from DefraDB.
-// Use this when OCR markdown isn't cached in memory (e.g., after job reload).
-func LoadPagesForMetadataFromDB(ctx context.Context, bookID string, maxPages int) []metadata.Page {
-	defraClient := svcctx.DefraClientFrom(ctx)
-	if defraClient == nil {
-		return nil
-	}
-
-	query := fmt.Sprintf(`{
-		Page(filter: {_bookID: {_eq: "%s"}, ocr_complete: {_eq: true}}, order: {page_num: ASC}, limit: %d) {
-			page_num
-			ocr_markdown
-		}
-	}`, bookID, maxPages)
-
-	resp, err := defraClient.Execute(ctx, query, nil)
-	if err != nil {
-		return nil
-	}
-
-	pagesData, ok := resp.Data["Page"].([]any)
-	if !ok {
-		return nil
-	}
-
-	var pages []metadata.Page
-	for _, p := range pagesData {
-		page, ok := p.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		pageNum := 0
-		if pn, ok := page["page_num"].(float64); ok {
-			pageNum = int(pn)
-		}
-		ocrMarkdown, _ := page["ocr_markdown"].(string)
-
-		if pageNum > 0 && ocrMarkdown != "" {
-			pages = append(pages, metadata.Page{
-				PageNum:     pageNum,
-				OcrMarkdown: ocrMarkdown,
-			})
-		}
-	}
-
-	return pages
-}
-
 // SaveMetadataResult saves the metadata result to the Book record in DefraDB.
 func SaveMetadataResult(ctx context.Context, bookID string, result metadata.Result) (string, error) {
 	sink := svcctx.DefraSinkFrom(ctx)

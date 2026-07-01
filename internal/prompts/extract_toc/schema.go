@@ -65,9 +65,9 @@ type Result struct {
 
 // StructureSummary describes the ToC hierarchy structure (from finder).
 type StructureSummary struct {
-	TotalLevels      int                       `json:"total_levels"`
-	LevelPatterns    map[string]LevelPattern   `json:"level_patterns"`
-	ConsistencyNotes []string                  `json:"consistency_notes,omitempty"`
+	TotalLevels      int                     `json:"total_levels"`
+	LevelPatterns    map[string]LevelPattern `json:"level_patterns"`
+	ConsistencyNotes []string                `json:"consistency_notes,omitempty"`
 }
 
 // LevelPattern describes a single level in the ToC hierarchy.
