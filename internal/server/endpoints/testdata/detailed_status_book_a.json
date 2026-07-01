@@ -1,0 +1,145 @@
+{
+  "book_id": "book-A",
+  "total_pages": 10,
+  "ocr_progress": {
+    "deepinfra": {
+      "complete": 1,
+      "total": 10,
+      "cost_usd": 0.5
+    },
+    "mistral": {
+      "complete": 2,
+      "total": 10,
+      "cost_usd": 0.375
+    }
+  },
+  "stages": {
+    "ocr": {
+      "complete": 7,
+      "total": 10,
+      "cost_by_provider": {
+        "deepinfra": 0.5,
+        "mistral": 0.375
+      },
+      "total_cost_usd": 0.875
+    },
+    "pattern_analysis": {
+      "complete": false,
+      "cost_usd": 0.0625
+    }
+  },
+  "metadata": {
+    "started": true,
+    "complete": true,
+    "failed": false,
+    "cost_usd": 0.125,
+    "data": {
+      "title": "The Test Book",
+      "subtitle": "A Golden Fixture",
+      "author": "Jane Author",
+      "isbn": "978-0-00-000000-0",
+      "lccn": "12345678",
+      "publisher": "Test Press",
+      "publication_year": 1999,
+      "language": "en",
+      "description": "A book used to pin the detailed status response shape.",
+      "cover_page": 1
+    }
+  },
+  "toc": {
+    "finder_started": true,
+    "finder_complete": true,
+    "finder_failed": false,
+    "found": true,
+    "start_page": 3,
+    "end_page": 4,
+    "extract_started": true,
+    "extract_complete": true,
+    "extract_failed": false,
+    "link_started": true,
+    "link_complete": true,
+    "link_failed": false,
+    "link_retries": 1,
+    "finalize_started": true,
+    "finalize_complete": true,
+    "finalize_failed": false,
+    "finalize_retries": 0,
+    "pattern_complete": true,
+    "pattern_analysis": {
+      "reasoning": "Chapters follow CHAPTER N headings",
+      "patterns": [
+        {
+          "pattern_type": "chapter_heading",
+          "level_name": "chapter",
+          "heading_format": "CHAPTER %d",
+          "range_start": "1",
+          "range_end": "10",
+          "level": 1,
+          "reasoning": "consistent headings"
+        }
+      ],
+      "excluded_ranges": [
+        {
+          "start_page": 1,
+          "end_page": 2,
+          "reason": "front matter"
+        }
+      ]
+    },
+    "patterns_found": 1,
+    "excluded_ranges": 1,
+    "entries_to_find": 2,
+    "entries_discovered": 1,
+    "discover_complete": true,
+    "validate_complete": true,
+    "entry_count": 2,
+    "entries_linked": 1,
+    "entries": [
+      {
+        "entry_number": "1",
+        "title": "First Chapter",
+        "level": 1,
+        "level_name": "chapter",
+        "printed_page_number": "1",
+        "sort_order": 1,
+        "actual_page_num": 5,
+        "is_linked": true,
+        "source": "extracted"
+      },
+      {
+        "entry_number": "2",
+        "title": "Second Chapter",
+        "level": 1,
+        "level_name": "chapter",
+        "printed_page_number": "15",
+        "sort_order": 2,
+        "is_linked": false,
+        "source": "discovered"
+      }
+    ],
+    "cost_usd": 0.5
+  },
+  "structure": {
+    "started": true,
+    "complete": true,
+    "failed": false,
+    "retries": 1,
+    "cost_usd": 0.375,
+    "chapter_count": 3,
+    "phase": "finalize",
+    "chapters_total": 3,
+    "chapters_extracted": 3,
+    "chapters_polished": 2,
+    "polish_failed": 1
+  },
+  "agent_logs": [
+    {
+      "id": "run-1",
+      "agent_type": "toc_finder",
+      "started_at": "2026-07-01T10:00:00Z",
+      "completed_at": "2026-07-01T10:02:00Z",
+      "iterations": 4,
+      "success": true
+    }
+  ]
+}
