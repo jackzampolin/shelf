@@ -21,6 +21,10 @@ After a feature stabilizes:
 | 005 | DefraDB Source of Truth | All state in DB, not files |
 | 006 | Worker Architecture | Jobs for all work, rate limiting |
 | 007 | Services Context | svcctx extractors, not constructors |
+| 008 | Config and Prompts in Database | Config/prompts stored in DefraDB |
+| 009 | BookState Repository | BookState is sole per-book DB access path |
+| 010 | Async Writes Refactor | Per-book DB writes are fire-and-forget |
+| 011 | Local Inference Zero Cost | Local providers report CostUSD: 0 |
 
 ---
 
@@ -270,19 +274,25 @@ For each package in `internal/`:
 | Package | Purpose | Key Files |
 |---------|---------|-----------|
 | `agent/` | LLM agent with tools | `agent.go`, `tools.go` |
+| `agents/` | Specialized agent factories | `*_factory.go`, `helpers.go` |
 | `api/` | Endpoint interface | `endpoint.go`, `client.go` |
-| `config/` | Config + hot-reload | `config.go`, `schema.go` |
+| `config/` | Config + hot-reload | `config.go`, `schema.go`, `store.go` |
 | `defra/` | DefraDB client | `client.go`, `sink.go` |
+| `epub/` | ePub 3.0 generation | `builder.go`, `package.go` |
 | `home/` | ~/.shelf directory | `home.go` |
-| `ingest/` | Book intake | `job.go` |
-| `jobs/` | Job system | `job.go`, `worker.go`, `scheduler.go` |
-| `metrics/` | Cost tracking | `metrics.go` |
-| `pipeline/` | Stage system | `stage.go`, `registry.go` |
-| `providers/` | LLM/OCR clients | `provider.go`, `openrouter.go` |
+| `ingest/` | Book intake | `ingest.go`, `job.go`, `stitch.go` |
+| `jobcfg/` | Job configuration | `builder.go` |
+| `jobs/` | Job system + implementations | `job.go`, `manager.go`, `scheduler.go` |
+| `llmcall/` | LLM call tracking | `call.go`, `store.go` |
+| `metrics/` | Cost tracking | `metric.go`, `query.go` |
+| `prompts/` | Prompt templates | `resolver.go`, `store.go`, `template.go` |
+| `providers/` | LLM/OCR clients | `provider.go`, `registry.go`, `openrouter.go` |
 | `schema/` | GraphQL schemas | `registry.go` |
 | `server/` | HTTP server | `server.go` |
 | `svcctx/` | Services context | `svcctx.go` |
-| `testutil/` | Test helpers | `mock.go` |
+| `testutil/` | Test helpers | `docker.go`, `env.go` |
+| `types/` | Shared types (no internal deps) | `chapter.go` |
+| `voices/` | TTS voice management | `sync.go` |
 
 ---
 
