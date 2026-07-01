@@ -81,3 +81,21 @@ func TestElevenLabsQueuesOneSegmentPerChapter(t *testing.T) {
 		t.Fatalf("got %d initial units, want 2 (one per chapter)", len(units))
 	}
 }
+
+func TestOpenAIQueuesAllSegments(t *testing.T) {
+	j := newTestJobWithChapters(t, JobTypeOpenAI, 2, 3)
+	units := j.strategy.InitialWorkUnits(j)
+	if len(units) != 6 {
+		t.Fatalf("got %d initial units, want 6 (all segments)", len(units))
+	}
+}
+
+func TestOpenAISegmentCap(t *testing.T) {
+	s, _ := strategyForJobType(JobTypeOpenAI)
+	long := strings.Repeat("A sentence here. ", 600) // > 4096 chars
+	for i, seg := range s.SegmentText(long) {
+		if len(seg) > 4096 {
+			t.Errorf("segment %d is %d chars, exceeds OpenAI 4096 cap", i, len(seg))
+		}
+	}
+}

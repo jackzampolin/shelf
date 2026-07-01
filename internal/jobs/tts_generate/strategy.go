@@ -231,37 +231,6 @@ func (elevenLabsStrategy) OnSegmentComplete(ctx context.Context, j *Job, result 
 	return newUnits, nil
 }
 
-// openAIStrategy is a minimal stub satisfying the identity methods; the full
-// parallel/offset orchestration is ported from tts_generate_openai in Task 16.
-type openAIStrategy struct{}
-
-func (openAIStrategy) Provider() string       { return "openai" }
-func (openAIStrategy) JobType() string        { return JobTypeOpenAI }
-func (openAIStrategy) ConcatTaskName() string { return TaskConcatenateChapterOpenAI }
-func (openAIStrategy) DefaultFormat() string  { return "mp3" }
-
-func (openAIStrategy) NormalizeFormat(format string) string {
-	return normalizeFormat(format, "openai")
-}
-
-// SegmentText is a placeholder until Task 16 ports sentence splitting with the
-// 4,096-char cap from tts_generate_openai.
-func (openAIStrategy) SegmentText(text string) []string {
-	return splitIntoParagraphs(text)
-}
-
-// InitialWorkUnits is a placeholder until Task 16 ports the parallel
-// all-segments queueing from tts_generate_openai.
-func (openAIStrategy) InitialWorkUnits(j *Job) []jobs.WorkUnit {
-	return nil
-}
-
-// OnSegmentComplete is a placeholder until Task 16 ports offset recalculation
-// from tts_generate_openai.
-func (openAIStrategy) OnSegmentComplete(ctx context.Context, j *Job, res jobs.WorkResult) ([]jobs.WorkUnit, error) {
-	return nil, fmt.Errorf("openai TTS strategy not yet implemented in tts_generate (ported in Task 16)")
-}
-
 // getPreviousRequestIDs returns up to 3 most recent request IDs for a chapter.
 // Used for ElevenLabs request stitching to maintain prosody continuity.
 func (j *Job) getPreviousRequestIDs(chapterDocID string) []string {

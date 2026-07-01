@@ -47,9 +47,10 @@ var storytellerCompatibleFormats = map[string]struct{}{
 // Config configures the TTS generation job.
 type Config struct {
 	// TTS provider settings
-	TTSProvider string // TTS provider name (e.g., "elevenlabs")
-	Voice       string // Voice ID (optional)
-	Format      string // Output format (mp3, wav, etc.)
+	TTSProvider  string // TTS provider name (e.g., "elevenlabs")
+	Voice        string // Voice ID (optional)
+	Format       string // Output format (mp3, wav, etc.)
+	Instructions string // Optional instructions for gpt-4o-mini-tts (OpenAI only)
 }
 
 // Validate checks that the config has all required fields.
@@ -154,6 +155,7 @@ func NewJob(ctx context.Context, jobType string, cfg Config, bookID string) (*Jo
 		TTSProvider:     cfg.TTSProvider,
 		Voice:           cfg.Voice,
 		Format:          stateFormat,
+		Instructions:    cfg.Instructions,
 		HomeDir:         homeDir,
 		ChapterProgress: make(map[string]*ChapterProgress),
 	}
@@ -528,7 +530,8 @@ func normalizeFormat(format, provider string) string {
 	format = strings.ToLower(strings.TrimSpace(format))
 	switch provider {
 	case "openai":
-		if format == "" || format == "mp3_44100_128" {
+		// OpenAI TTS supports mp3-only output; collapse all mp3 variants.
+		if format == "" || strings.HasPrefix(format, "mp3") {
 			return "mp3"
 		}
 		return format

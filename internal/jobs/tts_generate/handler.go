@@ -18,6 +18,8 @@ const (
 )
 
 // ConcatenateHandler returns a CPUTaskHandler for concatenating chapter audio.
+// It serves both concatenation task names: the request's task name selects the
+// provider-appropriate default format when none is supplied.
 func ConcatenateHandler(homeDir *home.Dir) jobs.CPUTaskHandler {
 	return func(ctx context.Context, req *jobs.CPUWorkRequest) (*jobs.CPUWorkResult, error) {
 		data, ok := req.Data.(map[string]any)
@@ -37,7 +39,12 @@ func ConcatenateHandler(homeDir *home.Dir) jobs.CPUTaskHandler {
 
 		format, _ := data["format"].(string)
 		if format == "" {
-			format = "mp3_44100_128"
+			switch req.Task {
+			case TaskConcatenateChapterOpenAI:
+				format = "mp3"
+			default:
+				format = "mp3_44100_128"
+			}
 		}
 
 		outputPath, err := ConcatenateChapterAudio(ctx, bookID, chapterDocID, homeDir, format)

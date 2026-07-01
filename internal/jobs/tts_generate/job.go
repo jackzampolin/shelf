@@ -258,6 +258,7 @@ func (j *Job) createTTSWorkUnit(chapter *Chapter, paragraphIdx int, text string,
 			Text:               text,
 			Voice:              j.State.Voice,
 			Format:             j.State.Format,
+			Instructions:       j.State.Instructions, // For OpenAI gpt-4o-mini-tts
 			ChapterIdx:         chapter.ChapterIdx,
 			ParagraphIdx:       paragraphIdx,
 			PreviousRequestIDs: previousRequestIDs, // For ElevenLabs request stitching

@@ -96,7 +96,10 @@ type AudioState struct {
 	TTSProvider string
 	Voice       string
 	Format      string
-	HomeDir     *home.Dir
+	// Instructions holds optional voice instructions for gpt-4o-mini-tts.
+	// Union state: only used by the OpenAI provider strategy.
+	Instructions string
+	HomeDir      *home.Dir
 
 	// Existing record (if resuming)
 	BookAudioID string
