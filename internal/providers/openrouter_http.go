@@ -15,7 +15,7 @@ import (
 const endpointFailureCooldown = 90 * time.Second
 
 // doRequest makes an HTTP request to OpenRouter with retry logic.
-func (c *OpenRouterClient) doRequest(ctx context.Context, path string, body any) (*openRouterResponse, error) {
+func (c *OpenAIChatClient) doRequest(ctx context.Context, path string, body any) (*openRouterResponse, error) {
 	// Cast to openRouterRequest for nonce injection
 	orReq, ok := body.(*openRouterRequest)
 	if !ok {
@@ -105,26 +105,26 @@ func (c *OpenRouterClient) doRequest(ctx context.Context, path string, body any)
 	return nil, fmt.Errorf("max retries (%d) exceeded: %w", c.maxRetries, lastErr)
 }
 
-func (c *OpenRouterClient) markEndpointFailure(baseURL string) {
+func (c *OpenAIChatClient) markEndpointFailure(baseURL string) {
 	if c.endpoints == nil {
 		return
 	}
 	c.endpoints.MarkFailure(baseURL, endpointFailureCooldown)
 }
 
-func (c *OpenRouterClient) markEndpointSuccess(baseURL string) {
+func (c *OpenAIChatClient) markEndpointSuccess(baseURL string) {
 	if c.endpoints == nil {
 		return
 	}
 	c.endpoints.MarkSuccess(baseURL)
 }
 
-func (c *OpenRouterClient) shouldCooldownEndpoint(statusCode int) bool {
+func (c *OpenAIChatClient) shouldCooldownEndpoint(statusCode int) bool {
 	return statusCode >= 500
 }
 
 // shouldRetry returns true for status codes that should be retried.
-func (c *OpenRouterClient) shouldRetry(statusCode int) bool {
+func (c *OpenAIChatClient) shouldRetry(statusCode int) bool {
 	switch statusCode {
 	case 413: // Payload Too Large - retry with nonce
 		return true
@@ -142,7 +142,7 @@ func (c *OpenRouterClient) shouldRetry(statusCode int) bool {
 
 // shouldRetryResponse checks if a 200 OK response has retryable content issues.
 // Returns (true, error) if retryable, (false, nil) if not.
-func (c *OpenRouterClient) shouldRetryResponse(resp *openRouterResponse) (bool, error) {
+func (c *OpenAIChatClient) shouldRetryResponse(resp *openRouterResponse) (bool, error) {
 	// API-level error in response body - some are retryable
 	if resp.Error != nil {
 		// Check for retryable error codes
@@ -165,7 +165,7 @@ func (c *OpenRouterClient) shouldRetryResponse(resp *openRouterResponse) (bool, 
 
 // injectNonce adds a unique comment to the last user message to make the request different.
 // This helps bypass caching issues that can cause 413/422 errors.
-func (c *OpenRouterClient) injectNonce(req *openRouterRequest, attempt int) {
+func (c *OpenAIChatClient) injectNonce(req *openRouterRequest, attempt int) {
 	if len(req.Messages) == 0 {
 		return
 	}
@@ -201,7 +201,7 @@ func (c *OpenRouterClient) injectNonce(req *openRouterRequest, attempt int) {
 }
 
 // sleepWithJitter sleeps for a duration with jitter, respecting context cancellation.
-func (c *OpenRouterClient) sleepWithJitter(ctx context.Context, attempt int) {
+func (c *OpenAIChatClient) sleepWithJitter(ctx context.Context, attempt int) {
 	// Base delay with exponential backoff: 0.5s, 1s, 2s, ...
 	baseDelay := c.retryDelay * time.Duration(1<<attempt)
 	if baseDelay > 10*time.Second {

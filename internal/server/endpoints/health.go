@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jackzampolin/shelf/internal/api"
-	"github.com/jackzampolin/shelf/internal/defra"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
@@ -133,10 +132,7 @@ type DefraStatus struct {
 }
 
 // StatusEndpoint handles GET /api/status.
-type StatusEndpoint struct {
-	// DefraManager is set by server since it's not in Services
-	DefraManager *defra.DockerManager
-}
+type StatusEndpoint struct{}
 
 func (e *StatusEndpoint) Route() (string, string, http.HandlerFunc) {
 	return "GET", "/api/status", e.handler
@@ -165,14 +161,14 @@ func (e *StatusEndpoint) handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get DefraDB container status
-	if e.DefraManager != nil {
-		status, err := e.DefraManager.Status(r.Context())
+	if dm := svcctx.DefraManagerFrom(r.Context()); dm != nil {
+		status, err := dm.Status(r.Context())
 		if err != nil {
 			resp.Defra.Container = "error"
 		} else {
 			resp.Defra.Container = string(status)
 		}
-		resp.Defra.URL = e.DefraManager.URL()
+		resp.Defra.URL = dm.URL()
 	} else {
 		resp.Defra.Container = "not_initialized"
 	}

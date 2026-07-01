@@ -1,11 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"log/slog"
-	"os"
-	"strings"
-
 	"github.com/spf13/cobra"
 
 	"github.com/jackzampolin/shelf/internal/api"
@@ -18,49 +13,6 @@ var (
 	outputFormat string
 	logLevel     string
 )
-
-// ParseLogLevel converts a string log level to slog.Level.
-// Supports: debug, info, warn, error (case-insensitive).
-func ParseLogLevel(level string) (slog.Level, error) {
-	switch strings.ToLower(level) {
-	case "debug":
-		return slog.LevelDebug, nil
-	case "info":
-		return slog.LevelInfo, nil
-	case "warn", "warning":
-		return slog.LevelWarn, nil
-	case "error":
-		return slog.LevelError, nil
-	default:
-		return slog.LevelInfo, fmt.Errorf("invalid log level %q: must be debug, info, warn, or error", level)
-	}
-}
-
-// GetLogLevel returns the configured log level, checking:
-// 1. CLI flag (--log-level)
-// 2. Environment variable (SHELF_LOG_LEVEL)
-// 3. Default (info)
-func GetLogLevel() slog.Level {
-	level := logLevel
-	if level == "" {
-		level = os.Getenv("SHELF_LOG_LEVEL")
-	}
-	if level == "" {
-		level = "info"
-	}
-
-	parsed, err := ParseLogLevel(level)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v, using info\n", err)
-		return slog.LevelInfo
-	}
-	return parsed
-}
-
-// IsDebugLevel returns true if the configured log level is debug.
-func IsDebugLevel() bool {
-	return GetLogLevel() == slog.LevelDebug
-}
 
 var rootCmd = &cobra.Command{
 	Use:   "shelf",

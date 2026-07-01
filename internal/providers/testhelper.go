@@ -42,7 +42,7 @@ func (c TestConfig) HasAnyLLM() bool {
 
 // NewOpenRouterClient creates an OpenRouter client from test config.
 // Returns nil if not configured.
-func (c TestConfig) NewOpenRouterClient() *OpenRouterClient {
+func (c TestConfig) NewOpenRouterClient() *OpenAIChatClient {
 	if !c.HasOpenRouter() {
 		return nil
 	}

@@ -227,7 +227,7 @@ func TestNewRegistryFromConfig(t *testing.T) {
 		})
 
 		client, _ := r.GetLLM("openrouter")
-		orClient, ok := client.(*OpenRouterClient)
+		orClient, ok := client.(*OpenAIChatClient)
 		if !ok {
 			t.Fatal("expected OpenRouterClient")
 		}
@@ -306,7 +306,7 @@ func TestRegistry_Reload(t *testing.T) {
 		})
 
 		client, _ := r.GetLLM("openrouter")
-		oldClient := client.(*OpenRouterClient)
+		oldClient := client.(*OpenAIChatClient)
 		if oldClient.apiKey != "old-key" {
 			t.Error("should start with old key")
 		}
@@ -323,7 +323,7 @@ func TestRegistry_Reload(t *testing.T) {
 		})
 
 		client, _ = r.GetLLM("openrouter")
-		newClient := client.(*OpenRouterClient)
+		newClient := client.(*OpenAIChatClient)
 		if newClient.apiKey != "new-key" {
 			t.Errorf("expected new-key, got %s", newClient.apiKey)
 		}

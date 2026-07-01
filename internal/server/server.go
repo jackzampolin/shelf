@@ -33,7 +33,6 @@ import (
 
 	chapter_finder "github.com/jackzampolin/shelf/internal/agents/chapter_finder"
 	gap_investigator "github.com/jackzampolin/shelf/internal/agents/gap_investigator"
-	page_pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/page_pattern_analyzer"
 	pattern_analyzer "github.com/jackzampolin/shelf/internal/agents/pattern_analyzer"
 	toc_entry_finder "github.com/jackzampolin/shelf/internal/agents/toc_entry_finder"
 	toc_finder "github.com/jackzampolin/shelf/internal/agents/toc_finder"
@@ -134,9 +133,7 @@ func New(cfg Config) (*Server, error) {
 	// Create endpoint registry and register all endpoints
 	// Job configs are read from DefraDB at request time, not passed here
 	s.endpointRegistry = api.NewRegistry()
-	for _, ep := range endpoints.All(endpoints.Config{
-		DefraManager: defraManager,
-	}) {
+	for _, ep := range endpoints.All(endpoints.Config{}) {
 		s.endpointRegistry.Register(ep)
 	}
 
@@ -257,7 +254,6 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 	extract_toc.RegisterPrompts(s.promptResolver)
 	toc_finder.RegisterPrompts(s.promptResolver)
 	toc_entry_finder.RegisterPrompts(s.promptResolver)
-	page_pattern_analyzer.RegisterPrompts(s.promptResolver)
 	pattern_analyzer.RegisterPrompts(s.promptResolver)
 	chapter_finder.RegisterPrompts(s.promptResolver)
 	gap_investigator.RegisterPrompts(s.promptResolver)
@@ -341,6 +337,7 @@ func (s *Server) Start(ctx context.Context) (retErr error) {
 	// Create services struct for context enrichment
 	s.services = &svcctx.Services{
 		DefraClient:    s.defraClient,
+		DefraManager:   s.defraManager,
 		DefraSink:      s.defraSink,
 		JobManager:     s.jobManager,
 		Registry:       s.registry,
@@ -448,22 +445,6 @@ func (s *Server) IsRunning() bool {
 // Returns nil if the server hasn't started yet.
 func (s *Server) DefraClient() *defra.Client {
 	return s.defraClient
-}
-
-// JobManager returns the job manager.
-// Returns nil if the server hasn't started yet.
-func (s *Server) JobManager() *jobs.Manager {
-	return s.jobManager
-}
-
-// Addr returns the server's listen address.
-func (s *Server) Addr() string {
-	return s.httpServer.Addr
-}
-
-// Registry returns the provider registry.
-func (s *Server) Registry() *providers.Registry {
-	return s.registry
 }
 
 // withServices wraps a handler to enrich the request context with services.

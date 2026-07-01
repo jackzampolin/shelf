@@ -485,7 +485,7 @@ func TestOpenRouterClient_Config(t *testing.T) {
 	})
 
 	t.Run("interface compliance", func(t *testing.T) {
-		var _ LLMClient = (*OpenRouterClient)(nil)
+		var _ LLMClient = (*OpenAIChatClient)(nil)
 	})
 }
 

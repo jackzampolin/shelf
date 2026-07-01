@@ -530,7 +530,7 @@ func createOCRProvider(cfg OCRProviderConfig) OCRProvider {
 // needsLLMUpdate checks if an LLM client needs to be recreated.
 func needsLLMUpdate(client LLMClient, cfg LLMProviderConfig) bool {
 	switch c := client.(type) {
-	case *OpenRouterClient:
+	case *OpenAIChatClient:
 		baseURL := OpenRouterBaseURL
 		if len(cfg.BaseURLs) > 0 {
 			baseURL = cfg.BaseURLs[0]

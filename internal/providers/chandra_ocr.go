@@ -105,7 +105,7 @@ type ChandraOCRClient struct {
 	includeHeadersFooters bool
 	temperature           float64
 	topP                  float64
-	llm                   *OpenRouterClient
+	llm                   *OpenAIChatClient
 	rateLimit             float64
 	maxConcurrency        int
 	maxRetries            int

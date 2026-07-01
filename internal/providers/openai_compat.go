@@ -14,8 +14,8 @@ const OpenAICompatName = "openai-compat"
 // headers or `usage.include` flag, sends auth only when APIKey is set, and
 // reports zero cost (the server returns no cost fields).
 type OpenAICompatConfig struct {
-	Name         string   // provider identity (default "openai-compat")
-	BaseURLs     []string // self-hosted endpoints, round-robined; first is the fallback base
+	Name           string   // provider identity (default "openai-compat")
+	BaseURLs       []string // self-hosted endpoints, round-robined; first is the fallback base
 	APIKey         string   // optional; sent as Bearer only when non-empty
 	DefaultModel   string
 	Timeout        time.Duration
@@ -29,7 +29,7 @@ type OpenAICompatConfig struct {
 // server. It reuses the OpenRouter client's chat/transport/structured-output
 // machinery (vLLM speaks the same wire format) but owns its own identity,
 // health endpoint (/models), auth, and request shape.
-func NewOpenAICompatClient(cfg OpenAICompatConfig) *OpenRouterClient {
+func NewOpenAICompatClient(cfg OpenAICompatConfig) *OpenAIChatClient {
 	name := cfg.Name
 	if name == "" {
 		name = OpenAICompatName
@@ -52,7 +52,7 @@ func NewOpenAICompatClient(cfg OpenAICompatConfig) *OpenRouterClient {
 		baseURL = cfg.BaseURLs[0]
 	}
 
-	return &OpenRouterClient{
+	return &OpenAIChatClient{
 		name:         name,
 		apiKey:       cfg.APIKey,
 		baseURL:      baseURL,

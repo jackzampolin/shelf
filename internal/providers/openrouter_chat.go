@@ -11,16 +11,16 @@ import (
 )
 
 // Chat sends a chat completion request.
-func (c *OpenRouterClient) Chat(ctx context.Context, req *ChatRequest) (*ChatResult, error) {
+func (c *OpenAIChatClient) Chat(ctx context.Context, req *ChatRequest) (*ChatResult, error) {
 	return c.doChat(ctx, req, nil)
 }
 
 // ChatWithTools sends a chat request with tool definitions.
-func (c *OpenRouterClient) ChatWithTools(ctx context.Context, req *ChatRequest, tools []Tool) (*ChatResult, error) {
+func (c *OpenAIChatClient) ChatWithTools(ctx context.Context, req *ChatRequest, tools []Tool) (*ChatResult, error) {
 	return c.doChat(ctx, req, tools)
 }
 
-func (c *OpenRouterClient) doChat(ctx context.Context, req *ChatRequest, tools []Tool) (*ChatResult, error) {
+func (c *OpenAIChatClient) doChat(ctx context.Context, req *ChatRequest, tools []Tool) (*ChatResult, error) {
 	start := time.Now()
 
 	// Generate request ID if not provided

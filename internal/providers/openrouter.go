@@ -24,14 +24,12 @@ type OpenRouterConfig struct {
 	RetryDelay time.Duration // Base delay between retries (default: 1s)
 }
 
-// OpenRouterClient implements LLMClient against an OpenAI-compatible chat API.
+// OpenAIChatClient implements LLMClient against an OpenAI-compatible chat API.
 // It backs two presets: NewOpenRouterClient (the OpenRouter cloud API) and
 // NewOpenAICompatClient (a self-hosted vLLM/OpenAI-compatible server). The
 // OpenRouter-specific behaviors below are gated so the self-hosted preset owns
 // its own identity, health, auth, and request shape.
-// TODO(naming): rename this struct to a neutral openAIChatClient once the
-// self-hosted providers settle; kept as-is here to minimize diff risk.
-type OpenRouterClient struct {
+type OpenAIChatClient struct {
 	name         string // provider identity reported by Name() and on results
 	apiKey       string
 	baseURL      string
@@ -52,7 +50,7 @@ type OpenRouterClient struct {
 }
 
 // NewOpenRouterClient creates a new OpenRouter client.
-func NewOpenRouterClient(cfg OpenRouterConfig) *OpenRouterClient {
+func NewOpenRouterClient(cfg OpenRouterConfig) *OpenAIChatClient {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = OpenRouterBaseURL
 	}
@@ -72,7 +70,7 @@ func NewOpenRouterClient(cfg OpenRouterConfig) *OpenRouterClient {
 		cfg.RetryDelay = 2 * time.Second
 	}
 
-	return &OpenRouterClient{
+	return &OpenAIChatClient{
 		name:         OpenRouterName,
 		apiKey:       cfg.APIKey,
 		baseURL:      cfg.BaseURL,
@@ -90,13 +88,13 @@ func NewOpenRouterClient(cfg OpenRouterConfig) *OpenRouterClient {
 }
 
 // Name returns the client identifier.
-func (c *OpenRouterClient) Name() string {
+func (c *OpenAIChatClient) Name() string {
 	return c.name
 }
 
 // baseURLForRequest returns the base URL to use for the next request,
 // round-robining across configured endpoints when present.
-func (c *OpenRouterClient) baseURLForRequest() string {
+func (c *OpenAIChatClient) baseURLForRequest() string {
 	if c.endpoints != nil && c.endpoints.Len() > 0 {
 		return c.endpoints.Next()
 	}
@@ -104,29 +102,29 @@ func (c *OpenRouterClient) baseURLForRequest() string {
 }
 
 // RequestsPerSecond returns the RPS limit for rate limiting.
-func (c *OpenRouterClient) RequestsPerSecond() float64 {
+func (c *OpenAIChatClient) RequestsPerSecond() float64 {
 	return c.rps
 }
 
 // MaxConcurrency returns the max concurrent in-flight requests.
 // Returns 0 to use DefaultMaxConcurrency (the OpenRouter preset leaves it unset).
-func (c *OpenRouterClient) MaxConcurrency() int {
+func (c *OpenAIChatClient) MaxConcurrency() int {
 	return c.maxConcurrency
 }
 
 // MaxRetries returns the maximum retry attempts.
-func (c *OpenRouterClient) MaxRetries() int {
+func (c *OpenAIChatClient) MaxRetries() int {
 	return c.maxRetries
 }
 
 // RetryDelayBase returns the base delay between retries.
-func (c *OpenRouterClient) RetryDelayBase() time.Duration {
+func (c *OpenAIChatClient) RetryDelayBase() time.Duration {
 	return c.retryDelay
 }
 
 // HealthCheck verifies the API is reachable and (when keyed) the API key is valid.
 // OpenRouter uses /auth/key; the OpenAI-compatible preset uses /models.
-func (c *OpenRouterClient) HealthCheck(ctx context.Context) error {
+func (c *OpenAIChatClient) HealthCheck(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURLForRequest()+c.healthPath, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create health check request: %w", err)
@@ -154,4 +152,4 @@ func (c *OpenRouterClient) HealthCheck(ctx context.Context) error {
 }
 
 // Verify interface
-var _ LLMClient = (*OpenRouterClient)(nil)
+var _ LLMClient = (*OpenAIChatClient)(nil)
