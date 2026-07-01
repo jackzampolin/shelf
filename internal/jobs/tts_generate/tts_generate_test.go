@@ -52,7 +52,10 @@ func TestNewJobFromStateSetsTotalSegmentsForExistingProgress(t *testing.T) {
 		},
 	}
 
-	job := NewJobFromState(state)
+	job, err := NewJobFromState(JobTypeElevenLabs, state)
+	if err != nil {
+		t.Fatalf("NewJobFromState: %v", err)
+	}
 	progress := job.State.ChapterProgress["chapter-1"]
 	if progress == nil {
 		t.Fatal("expected chapter progress to exist")
@@ -66,12 +69,12 @@ func TestNewJobFromStateSetsTotalSegmentsForExistingProgress(t *testing.T) {
 }
 
 func TestCreateConcatenateWorkUnitIncludesFormat(t *testing.T) {
-	j := &Job{
-		State: &AudioState{
-			BookID: "book-1",
-			Format: "mp3_22050_32",
-		},
-		Tracker: NewWorkUnitTracker(),
+	j, err := NewJobFromState(JobTypeElevenLabs, &AudioState{
+		BookID: "book-1",
+		Format: "mp3_22050_32",
+	})
+	if err != nil {
+		t.Fatalf("NewJobFromState: %v", err)
 	}
 
 	unit := j.createConcatenateWorkUnit("chapter-1", 4)
@@ -136,7 +139,10 @@ func TestOnCompleteConcatenateFailureDoesNotRetryTTS(t *testing.T) {
 		},
 	}
 
-	job := NewJobFromState(state)
+	job, err := NewJobFromState(JobTypeElevenLabs, state)
+	if err != nil {
+		t.Fatalf("NewJobFromState: %v", err)
+	}
 	concatUnit := job.createConcatenateWorkUnit("chapter-1", 0)
 
 	newUnits, err := job.OnComplete(context.Background(), jobs.WorkResult{

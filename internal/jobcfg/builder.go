@@ -231,7 +231,7 @@ func TTSJobFactory(store config.Store) jobs.JobFactory {
 		if err != nil {
 			return nil, fmt.Errorf("failed to build TTS config: %w", err)
 		}
-		return tts_generate.NewJob(ctx, cfg, bookID)
+		return tts_generate.NewJob(ctx, tts_generate.JobTypeElevenLabs, cfg, bookID)
 	})
 }
 

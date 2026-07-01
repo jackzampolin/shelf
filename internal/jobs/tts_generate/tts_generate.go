@@ -9,12 +9,21 @@ import (
 	"time"
 
 	"github.com/jackzampolin/shelf/internal/defra"
-	"github.com/jackzampolin/shelf/internal/jobs"
 	"github.com/jackzampolin/shelf/internal/svcctx"
 )
 
-// JobType is the identifier for this job type.
-const JobType = "tts-generate"
+// Persisted job-type strings. These identify jobs in DefraDB job records and
+// must never change; each pins a provider strategy (see strategyForJobType).
+const (
+	JobTypeElevenLabs = "tts-generate"        // persisted in DefraDB job records
+	JobTypeOpenAI     = "tts-generate-openai" // persisted in DefraDB job records
+)
+
+// JobType is the identifier for the ElevenLabs TTS job type.
+//
+// Deprecated: use JobTypeElevenLabs. Kept until remaining registration call
+// sites migrate to the strategy-aware constants.
+const JobType = JobTypeElevenLabs
 
 const defaultOutputFormat = "mp3_44100_128"
 
@@ -62,7 +71,12 @@ func (c Config) Validate() error {
 }
 
 // NewJob creates a new TTS generation job for the given book.
-func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
+// jobType is the persisted job-type string (JobTypeElevenLabs or JobTypeOpenAI)
+// and pins the provider strategy for the life of the job.
+func NewJob(ctx context.Context, jobType string, cfg Config, bookID string) (*Job, error) {
+	if _, err := strategyForJobType(jobType); err != nil {
+		return nil, err
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
@@ -185,7 +199,7 @@ func NewJob(ctx context.Context, cfg Config, bookID string) (jobs.Job, error) {
 			"provider", cfg.TTSProvider)
 	}
 
-	return NewJobFromState(state), nil
+	return NewJobFromState(jobType, state)
 }
 
 // loadChapters loads chapters with polished text for a book.

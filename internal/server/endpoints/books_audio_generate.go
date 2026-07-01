@@ -231,7 +231,7 @@ func (e *GenerateAudioEndpoint) handler(w http.ResponseWriter, r *http.Request) 
 		}
 		job = openaiJob
 	default:
-		elevenlabsJob, err := tts_generate.NewJob(ctx, ttsCfg, bookID)
+		elevenlabsJob, err := tts_generate.NewJob(ctx, tts_generate.JobTypeElevenLabs, ttsCfg, bookID)
 		if err != nil {
 			switch {
 			case errors.Is(err, tts_generate.ErrBookNotFound):

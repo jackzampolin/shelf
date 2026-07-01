@@ -8,8 +8,14 @@ import (
 	"github.com/jackzampolin/shelf/internal/jobs"
 )
 
-// TaskConcatenateChapter is the task name for chapter audio concatenation.
-const TaskConcatenateChapter = "concatenate_chapter"
+// Task names for chapter audio concatenation. Each provider strategy pins its
+// own task name so persisted work units keep routing to the right handler.
+const (
+	// TaskConcatenateChapter is the ElevenLabs chapter concatenation task.
+	TaskConcatenateChapter = "concatenate_chapter"
+	// TaskConcatenateChapterOpenAI is the OpenAI chapter concatenation task.
+	TaskConcatenateChapterOpenAI = "concatenate_chapter_openai"
+)
 
 // ConcatenateHandler returns a CPUTaskHandler for concatenating chapter audio.
 func ConcatenateHandler(homeDir *home.Dir) jobs.CPUTaskHandler {

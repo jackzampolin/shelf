@@ -1,7 +1,6 @@
 package tts_generate
 
 import (
-	"strings"
 	"sync"
 	"time"
 
@@ -127,6 +126,13 @@ type Job struct {
 	recordID string
 	isDone   bool
 
+	// jobType is the persisted job-type string (JobTypeElevenLabs or
+	// JobTypeOpenAI). It is reported everywhere the job identifies itself:
+	// Type(), MetricsFor().Stage, and per-work-unit metrics stages.
+	jobType string
+	// strategy captures the per-provider orchestration differences.
+	strategy providerStrategy
+
 	State   *AudioState
 	Tracker *WorkUnitTracker
 }
@@ -174,16 +180,23 @@ func (t *WorkUnitTracker) Count() int {
 }
 
 // NewJobFromState creates a job from loaded state.
-func NewJobFromState(state *AudioState) *Job {
+// jobType selects the provider strategy and is the persisted job-type string
+// (JobTypeElevenLabs or JobTypeOpenAI).
+func NewJobFromState(jobType string, state *AudioState) (*Job, error) {
+	strategy, err := strategyForJobType(jobType)
+	if err != nil {
+		return nil, err
+	}
+
 	// Initialize chapter progress map (keyed by DocID)
 	if state.ChapterProgress == nil {
 		state.ChapterProgress = make(map[string]*ChapterProgress)
 	}
 	state.TotalSegments = 0
 
-	// Parse paragraphs and initialize progress for each chapter
+	// Parse segments and initialize progress for each chapter
 	for _, ch := range state.Chapters {
-		ch.Paragraphs = splitIntoParagraphs(ch.PolishedText)
+		ch.Paragraphs = strategy.SegmentText(ch.PolishedText)
 
 		progress, exists := state.ChapterProgress[ch.DocID]
 		if !exists {
@@ -205,41 +218,11 @@ func NewJobFromState(state *AudioState) *Job {
 	}
 
 	return &Job{
-		State:   state,
-		Tracker: NewWorkUnitTracker(),
-	}
-}
-
-// splitIntoParagraphs splits text into paragraphs.
-// Paragraphs are separated by double newlines or significant whitespace.
-func splitIntoParagraphs(text string) []string {
-	// Normalize line endings
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
-
-	// Split on double newlines (paragraph breaks)
-	rawParagraphs := strings.Split(text, "\n\n")
-
-	var paragraphs []string
-	for _, p := range rawParagraphs {
-		// Trim whitespace and normalize internal whitespace
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-
-		// Replace single newlines with spaces (within a paragraph)
-		p = strings.ReplaceAll(p, "\n", " ")
-
-		// Collapse multiple spaces
-		for strings.Contains(p, "  ") {
-			p = strings.ReplaceAll(p, "  ", " ")
-		}
-
-		paragraphs = append(paragraphs, p)
-	}
-
-	return paragraphs
+		jobType:  jobType,
+		strategy: strategy,
+		State:    state,
+		Tracker:  NewWorkUnitTracker(),
+	}, nil
 }
 
 // MarkSegmentComplete marks a segment as complete in the state.
@@ -344,7 +327,7 @@ func (j *Job) SetRecordID(id string) {
 }
 
 func (j *Job) Type() string {
-	return JobType
+	return j.jobType
 }
 
 func (j *Job) Done() bool {
@@ -360,7 +343,7 @@ func (j *Job) BookID() string {
 func (j *Job) MetricsFor() *jobs.WorkUnitMetrics {
 	return &jobs.WorkUnitMetrics{
 		BookID: j.State.BookID,
-		Stage:  JobType,
+		Stage:  j.jobType,
 	}
 }
 
